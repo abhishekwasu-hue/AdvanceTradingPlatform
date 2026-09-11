@@ -19,8 +19,21 @@ export interface PriceLineSpec {
 
 export interface ChartMarker {
   timestamp: string; // must match one candle's timestamp
-  direction: "LONG" | "SHORT";
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown" | "circle" | "square";
   text: string;
+}
+
+/** Convenience builder for the common case: an entry marker derived from a signal's direction. */
+export function directionMarker(timestamp: string, direction: "LONG" | "SHORT", text: string): ChartMarker {
+  return {
+    timestamp,
+    position: direction === "LONG" ? "belowBar" : "aboveBar",
+    color: direction === "LONG" ? "#22c55e" : "#ef4444",
+    shape: direction === "LONG" ? "arrowUp" : "arrowDown",
+    text,
+  };
 }
 
 const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" } as const;
@@ -29,13 +42,13 @@ export default function CandleChart({
   candles,
   priceLines = [],
   zones = [],
-  marker,
+  markers = [],
   height = 340,
 }: {
   candles: OHLCVBar[];
   priceLines?: PriceLineSpec[];
   zones?: SRZone[];
-  marker?: ChartMarker;
+  markers?: ChartMarker[];
   height?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,21 +141,19 @@ export default function CandleChart({
       }
     }
 
-    if (marker) {
-      const time = Math.floor(new Date(marker.timestamp).getTime() / 1000) as UTCTimestamp;
-      series.setMarkers([
-        {
-          time,
-          position: marker.direction === "LONG" ? "belowBar" : "aboveBar",
-          color: marker.direction === "LONG" ? "#22c55e" : "#ef4444",
-          shape: marker.direction === "LONG" ? "arrowUp" : "arrowDown",
-          text: marker.text,
-        },
-      ]);
-    } else {
-      series.setMarkers([]);
-    }
-  }, [candles, priceLines, zones, marker]);
+    const sortedMarkers = [...markers].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+    series.setMarkers(
+      sortedMarkers.map((m) => ({
+        time: Math.floor(new Date(m.timestamp).getTime() / 1000) as UTCTimestamp,
+        position: m.position,
+        color: m.color,
+        shape: m.shape,
+        text: m.text,
+      })),
+    );
+  }, [candles, priceLines, zones, markers]);
 
   return <div ref={containerRef} className="w-full" />;
 }

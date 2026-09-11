@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import CandleChart, { type ChartMarker, type PriceLineSpec } from "../components/CandleChart";
+import CandleChart, { directionMarker, type PriceLineSpec } from "../components/CandleChart";
 import SignalCard from "../components/SignalCard";
 import { Card, DemoDataBanner } from "../components/ui";
 import type { EnrichedSignal, OHLCVBar, SRZone, StrategyInfo } from "../types";
@@ -86,10 +86,10 @@ export default function SignalsPage() {
     return lines;
   }, [signal]);
 
-  const marker: ChartMarker | undefined =
-    signal && signal.direction !== "NO_TRADE"
-      ? { timestamp: signal.timestamp, direction: signal.direction, text: signal.grade }
-      : undefined;
+  const markers = useMemo(() => {
+    if (!signal || signal.direction === "NO_TRADE") return [];
+    return [directionMarker(signal.timestamp, signal.direction, signal.grade)];
+  }, [signal]);
 
   return (
     <div className="space-y-4">
@@ -166,7 +166,7 @@ export default function SignalsPage() {
 
       {chartCandles.length > 0 && (
         <Card title="Chart — entry / stop loss / targets / support &amp; resistance">
-          <CandleChart candles={chartCandles} priceLines={priceLines} zones={zones} marker={marker} />
+          <CandleChart candles={chartCandles} priceLines={priceLines} zones={zones} markers={markers} />
         </Card>
       )}
 

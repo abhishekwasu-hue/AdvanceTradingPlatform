@@ -193,9 +193,12 @@ signal card: entry/stop-loss/target1/target2 as colored price lines, an up/down 
 signal bar, and the strongest few nearby support/resistance zones (`GET
 /api/support-resistance/zones`, filtered client-side to zones within 4% of the last close and
 capped to the top 5 by `strength_score` — the raw zone list can be dozens of small swing
-clusters, which is correct data but unreadable rendered directly onto a chart). Backtesting
-still plots its equity curve as inline SVG (a per-trade series, not a price series, so
-lightweight-charts' time-based x-axis isn't the right fit there).
+clusters, which is correct data but unreadable rendered directly onto a chart). The
+Backtesting page reuses the same `CandleChart` over the sample series the backtest ran
+against, with one entry marker (direction-coded arrow) and one exit marker (P&L-coded circle)
+per trade in `result.trades` (`directionMarker()` for entries, a small inline builder for
+exits) — the equity curve stays a separate inline SVG below it since that series is per-trade,
+not time-based, so lightweight-charts' time axis isn't the right fit for it.
 
 `src/auth/AuthContext.tsx` holds login state (backed by the JWT endpoints below, token kept in
 `localStorage`); `src/api/client.ts`'s `request()` attaches it as a bearer token automatically
@@ -325,10 +328,8 @@ bug to fix, not a sandbox artifact.
 
 ## What's next (not yet built)
 
-Per the original 40-section brief, still outstanding: the visual no-code strategy builder, a
-price chart on the Backtesting page itself (candles + trade markers, not just the equity
-curve - Signals now has the real candlestick chart, see Frontend Console above), the remaining
-dashboard tabs (Orders, Portfolio, Risk Management, Analytics, Settings, System Logs -
+Per the original 40-section brief, still outstanding: the visual no-code strategy builder, the
+remaining dashboard tabs (Orders, Portfolio, Risk Management, Analytics, Settings, System Logs -
 Positions/Trade Journal now exist, see Frontend Console and Database + Auth above), Redis (for real-time pub/sub
 and caching - Postgres persistence and JWT auth now exist), formal DB migrations (Alembic -
 schema changes today mean editing the SQLAlchemy models and re-running against a

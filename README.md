@@ -17,7 +17,8 @@ exposing all of it.
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) now sits on top of that
 API — Dashboard, Strategy Library, Signals (a real TradingView `lightweight-charts` candlestick
 chart with entry/SL/target lines and support/resistance zones, plus the full "why this trade"
-score breakdown), Backtesting (equity curve + trade log), Option Chain, Positions, and Account
+score breakdown), Backtesting (a candlestick chart with entry/exit trade markers, equity curve,
+and trade log), Option Chain, Positions, and Account
 (login/register) pages, all wired to real backend computation over a clearly-labeled sample
 dataset (no live broker is connected yet). Signing in is optional everywhere except Positions -
 it additionally persists your paper-execute fills to PostgreSQL so they show up on the

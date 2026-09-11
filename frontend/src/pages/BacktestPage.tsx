@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, DemoDataBanner, StatTile } from "../components/ui";
-import type { BacktestResult, StrategyInfo } from "../types";
+import type { BacktestResult, OHLCVBar, StrategyInfo } from "../types";
 import { generateSampleCandles } from "../utils/sampleData";
 
 export default function BacktestPage() {
@@ -13,6 +14,7 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
 
   useEffect(() => {
     api.listStrategies().then((list) => {
@@ -32,12 +34,33 @@ export default function BacktestPage() {
       const primaryTf = selected.timeframes[0];
       const res = await api.backtest(selected.id, symbol, primaryTf, candles);
       setResult(res);
+      setChartCandles(candles);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
   }
+
+  // One entry marker (direction-coded arrow) and one exit marker (P&L-coded circle) per trade.
+  const tradeMarkers: ChartMarker[] = useMemo(() => {
+    if (!result) return [];
+    const markers: ChartMarker[] = [];
+    for (const t of result.trades) {
+      markers.push(directionMarker(t.entry_time, t.direction as "LONG" | "SHORT", `Entry ${t.direction}`));
+      if (t.exit_time) {
+        const won = (t.pnl ?? 0) >= 0;
+        markers.push({
+          timestamp: t.exit_time,
+          position: t.direction === "LONG" ? "aboveBar" : "belowBar",
+          color: won ? "#22c55e" : "#ef4444",
+          shape: "circle",
+          text: `Exit ${t.pnl?.toFixed(0) ?? ""}`,
+        });
+      }
+    }
+    return markers;
+  }, [result]);
 
   return (
     <div className="space-y-4">
@@ -105,6 +128,10 @@ export default function BacktestPage() {
             <StatTile label="Avg Loss" value={result.avg_loss.toFixed(2)} tone="down" />
             <StatTile label="Expectancy" value={result.expectancy.toFixed(2)} />
           </div>
+
+          <Card title="Price Chart — trade entries &amp; exits">
+            <CandleChart candles={chartCandles} markers={tradeMarkers} />
+          </Card>
 
           <Card title="Equity Curve">
             <EquityCurveChart equity={result.equity_curve} />

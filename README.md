@@ -4,8 +4,8 @@ An algorithmic trading platform for Indian markets (NSE cash, F&O, indices), bui
 So far this delivers the **strategy, risk, execution, broker-abstraction, price-action,
 option-chain, and signal-scoring core**: indicators, inbuilt auto-executable multi-timeframe
 and indicator-based intraday scalping strategies, a risk engine, a paper execution router, a
-broker-agnostic `BrokerInterface` with real Zerodha and Upstox adapters (Angel One/Fyers/Dhan
-registered as pluggable stubs), a market-structure + candlestick-pattern engine, a
+broker-agnostic `BrokerInterface` with real Zerodha, Upstox, and Shoonya adapters (Angel
+One/Fyers/Dhan registered as pluggable stubs), a market-structure + candlestick-pattern engine, a
 support/resistance zone engine (swing clusters, prev day/week, opening range, VWAP, pivots,
 Fibonacci), an option-chain intelligence engine (PCR, Max Pain, ATM/ITM/OTM, OI
 buildup/unwinding, bias), a weighted-composite signal scoring engine that ties all three

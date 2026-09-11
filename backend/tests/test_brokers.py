@@ -1,6 +1,8 @@
 import asyncio
+import hashlib
 import json
 from typing import Callable
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -9,6 +11,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
+from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.stubs import AngelOneBroker, DhanBroker, FyersBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
@@ -138,10 +141,85 @@ def test_upstox_place_order_parses_order_id():
     assert response.order_id == "UP-ORDER-1"
 
 
+# --- Shoonya --------------------------------------------------------------------
+
+def test_shoonya_authenticate_sends_hashed_credentials_and_parses_session():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/QuickAuth")
+        form = parse_qs(request.content.decode())
+        payload = json.loads(form["jData"][0])
+        assert payload["uid"] == "FA12345"
+        assert payload["pwd"] == hashlib.sha256(b"mypassword").hexdigest()
+        assert payload["appkey"] == hashlib.sha256(b"FA12345|apikey123").hexdigest()
+        assert payload["factor2"] == "123456"
+        return httpx.Response(200, json={
+            "stat": "Ok", "susertoken": "sess-token-1", "actid": "FA12345", "uname": "Test User",
+        })
+
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+
+    profile = run(broker.authenticate())
+    assert profile.broker == "shoonya"
+    assert profile.user_id == "FA12345"
+    assert profile.name == "Test User"
+
+
+def test_shoonya_get_profile_requires_prior_authentication():
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123")
+    broker = ShoonyaBroker(creds, client=httpx.AsyncClient())
+    with pytest.raises(BrokerAuthenticationError):
+        run(broker.get_profile())
+
+
+def test_shoonya_place_order_sends_jkey_and_parses_order_id():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess-token-1", "actid": "FA12345"})
+        form = parse_qs(request.content.decode())
+        captured["jKey"] = form["jKey"][0]
+        payload = json.loads(form["jData"][0])
+        captured["payload"] = payload
+        return httpx.Response(200, json={"stat": "Ok", "norenordno": "23091400001234"})
+
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+
+    order = BrokerOrderRequest(symbol="RELIANCE-EQ", exchange="NSE", transaction_type=OrderSide.BUY, quantity=10, product="MIS")
+    response = run(broker.place_order(order))
+
+    assert response.order_id == "23091400001234"
+    assert captured["jKey"] == "sess-token-1"
+    assert captured["payload"]["trantype"] == "B"
+    assert captured["payload"]["prd"] == "I"
+
+
+def test_shoonya_raises_broker_api_error_on_not_ok_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess-token-1", "actid": "FA12345"})
+        return httpx.Response(200, json={"stat": "Not_Ok", "emsg": "Session Expired"})
+
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+
+    with pytest.raises(BrokerAPIError):
+        run(broker.get_margins())
+
+
+def test_shoonya_requires_core_credentials():
+    with pytest.raises(BrokerAuthenticationError):
+        ShoonyaBroker(BrokerCredentials(client_id="FA12345"))
+
+
 # --- Registry --------------------------------------------------------------------
 
 def test_registry_lists_all_five_brokers():
-    assert set(available_brokers()) == {"zerodha", "upstox", "angel_one", "fyers", "dhan"}
+    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan"}
 
 
 def test_registry_returns_correct_adapter_type():

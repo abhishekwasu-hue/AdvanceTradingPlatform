@@ -74,10 +74,12 @@ specifies (`authenticate`, `get_profile`, `get_instruments`, `get_ltp`, `get_quo
 upstream (strategy engine, risk engine, order router) ever imports a broker-specific class —
 only this interface — so adding a broker means writing one new adapter file.
 
-- **`app/brokers/zerodha.py`** and **`app/brokers/upstox.py`** are full reference
-  implementations against Kite Connect v3 and Upstox v2 respectively, using an
-  injected `httpx.AsyncClient` (so tests mock transport instead of hitting real endpoints —
-  see `tests/test_brokers.py`). Each documents which `BrokerCredentials` fields it needs.
+- **`app/brokers/zerodha.py`**, **`app/brokers/upstox.py`**, and **`app/brokers/shoonya.py`**
+  are full reference implementations against Kite Connect v3, Upstox v2, and Shoonya's
+  NorenApi (a jData/jKey form-encoded convention several Indian discount brokers share)
+  respectively, using an injected `httpx.AsyncClient` (so tests mock transport instead of
+  hitting real endpoints — see `tests/test_brokers.py`). Each documents which
+  `BrokerCredentials` fields it needs.
 - **`app/brokers/stubs.py`** provides `AngelOneBroker`, `FyersBroker`, `DhanBroker` — they
   satisfy `BrokerInterface` today (registrable, instantiable, type-safe) but every I/O method
   raises `NotImplementedError` pointing at that broker's docs, rather than shipping

@@ -2,6 +2,7 @@ import copy
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.core.enums import ExecutionMode
@@ -33,6 +34,16 @@ app = FastAPI(
     title="Advance Trading Platform - Strategy Engine",
     description="Inbuilt auto-executable multi-timeframe and indicator-based intraday scalping strategies.",
     version="0.1.0",
+)
+
+# The Vite dev server proxies /api to this service in development, but CORS is still enabled
+# for direct access (a separately-hosted frontend build, API docs "try it out", etc). Tightened
+# to specific origins once real deployment domains exist.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 _paper_state = TradingDayState()

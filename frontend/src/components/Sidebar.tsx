@@ -1,0 +1,43 @@
+export type Page = "dashboard" | "strategies" | "signals" | "backtest" | "option-chain";
+
+const NAV: { id: Page; label: string; icon: string }[] = [
+  { id: "dashboard", label: "Dashboard", icon: "▦" },
+  { id: "strategies", label: "Strategy Library", icon: "⚙" },
+  { id: "signals", label: "Signals", icon: "⚡" },
+  { id: "backtest", label: "Backtesting", icon: "⏱" },
+  { id: "option-chain", label: "Option Chain", icon: "◉" },
+];
+
+export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
+  return (
+    <aside className="w-56 shrink-0 border-r border-border bg-panel flex flex-col">
+      <div className="px-4 py-5 border-b border-border">
+        <div className="text-sm font-semibold tracking-wide text-slate-100">Advance Trading</div>
+        <div className="text-xs text-muted">Platform Console</div>
+      </div>
+      <nav className="flex-1 py-3">
+        {NAV.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onChange(item.id)}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
+              page === item.id
+                ? "bg-panel2 text-slate-50 border-r-2 border-accent"
+                : "text-muted hover:text-slate-200 hover:bg-panel2/50"
+            }`}
+          >
+            <span className="text-base">{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <div className="px-4 py-3 border-t border-border text-[11px] text-muted leading-relaxed">
+        Paper mode only.
+        <br />
+        Live trading requires an
+        <br />
+        authenticated broker.
+      </div>
+    </aside>
+  );
+}

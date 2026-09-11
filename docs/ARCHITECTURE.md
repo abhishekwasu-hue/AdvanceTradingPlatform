@@ -25,6 +25,12 @@ backend/
     backtest/          # event-driven backtest engine with HTF resampling
     main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
   tests/               # pytest coverage for every layer above
+frontend/
+  src/
+    api/client.ts       # typed fetch client for every endpoint below
+    utils/sampleData.ts # deterministic sample OHLCV/option-chain generator (no live broker yet)
+    components/          # SignalCard, EquityCurveChart, Sidebar, shared UI primitives
+    pages/                # Dashboard, Strategies, Signals, Backtest, Option Chain
 docs/
   ARCHITECTURE.md      # this file
   STRATEGIES.md        # the inbuilt auto-executable scalping strategies
@@ -160,6 +166,20 @@ existing + new tests keep passing unmodified. Exposed at
 `POST /api/strategies/{id}/signal/enrich` (generates the signal via the normal `/signal` path
 and enriches it in one call).
 
+## Frontend Console
+
+`frontend/` (Vite + React + TypeScript + Tailwind, see `frontend/README.md` for the
+Next.js-vs-Vite tradeoff) is a control-panel SPA over the API above: Dashboard, Strategy
+Library, Signals (the full `EnrichedSignal` "why this trade" card), Backtesting (metrics,
+SVG equity curve, trade log), and Option Chain. `app/main.py` enables permissive CORS
+(`CORSMiddleware`, tightened once real deployment domains exist) and the Vite dev server also
+proxies `/api` to `localhost:8000`, so either path works.
+
+No broker is authenticated yet, so every page builds candles/option-chain rows from a
+deterministic client-side generator (`frontend/src/utils/sampleData.ts`) rather than showing
+fabricated "live" data — clearly labeled in the UI. Everything computed *on* that sample data
+(scores, backtest metrics, option-chain bias) is the real backend engine, not a mock.
+
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
@@ -199,12 +219,15 @@ and enriches it in one call).
 ## What's next (not yet built)
 
 Per the original 40-section brief, still outstanding: the visual no-code strategy builder,
-TradingView-style charting UI, the React/Next.js dashboard and remaining tabs, PostgreSQL/Redis
-persistence, auth + encrypted secret storage, and Docker/CI deployment. Angel One/Fyers/Dhan
-adapters are structurally registered but still need their real endpoints wired in (see
-`app/brokers/stubs.py`). This slice is the foundation those layers plug into: strategies are
-already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
-authenticated broker adapter is constructed and instrument-master lookups are wired to a
+TradingView-style candlestick charting (the console currently plots the backtest equity curve
+only, as inline SVG - not price candles with entry/SL/target markers), the remaining dashboard
+tabs (Positions, Orders, Portfolio, Risk Management, Trade Journal, Analytics, Settings, System
+Logs), PostgreSQL/Redis persistence, auth + encrypted secret storage, and Docker/CI deployment.
+Angel One/Fyers/Dhan adapters are structurally registered but still need their real endpoints
+wired in (see `app/brokers/stubs.py`). This slice is the foundation those layers plug into:
+strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so once
+an authenticated broker adapter is constructed and instrument-master lookups are wired to a
 persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through
 to real equity/futures/options trading. Signal scoring, price action, support/resistance, and
-option-chain analysis are already wired together (see Signal Scoring Engine above).
+option-chain analysis are already wired together (see Signal Scoring Engine above) and
+reachable from the frontend console (see Frontend Console above).

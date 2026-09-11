@@ -12,6 +12,12 @@ buildup/unwinding, bias), a weighted-composite signal scoring engine that ties a
 analysis engines together into one "why this trade" score, a backtest engine, and a FastAPI
 service exposing all of it.
 
+A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) now sits on top of that
+API — Dashboard, Strategy Library, Signals (full "why this trade" score breakdown), Backtesting
+(equity curve + trade log), and Option Chain pages, all wired to real backend computation over
+a clearly-labeled sample dataset (no live broker is connected yet). See
+[`frontend/README.md`](frontend/README.md).
+
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
 be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the seven inbuilt scalping
 strategies and how to call them.
@@ -19,17 +25,27 @@ strategies and how to call them.
 ## Quick start
 
 ```bash
+# backend
 cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 # API docs at http://localhost:8000/docs
+
+# frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+# console at http://localhost:5173
 ```
 
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q
+pytest -q       # 87 passing
+
+cd frontend
+npm run build   # type-checks + production build
 ```
 
 ## Inbuilt strategies at a glance

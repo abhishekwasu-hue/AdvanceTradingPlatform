@@ -26,6 +26,22 @@ strategies and how to call them.
 
 ## Quick start
 
+### Option A: Docker Compose (one command)
+
+```bash
+cp .env.example .env   # adjust JWT_SECRET_KEY / SECRETS_ENCRYPTION_KEY for anything beyond local dev
+docker compose up --build
+# backend:  http://localhost:8000/docs
+# frontend: http://localhost:8080
+```
+
+Written and its config validated (`docker compose config`), but not build-and-run verified in
+this development sandbox — its network policy blocks Docker Hub's CDN. See "Docker Deployment"
+in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full note; please confirm it builds
+cleanly wherever you run it before relying on it.
+
+### Option B: run backend and frontend directly
+
 ```bash
 # database (one-time local setup - adjust to your Postgres install)
 sudo -u postgres psql -c "CREATE USER atp_user WITH PASSWORD 'atp_dev_password';"

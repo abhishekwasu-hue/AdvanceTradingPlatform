@@ -10,6 +10,7 @@ execution → backtest → API) is real and tested rather than stubbed.
 ## What exists today
 
 ```
+docker-compose.yml    # postgres + backend + frontend, one command locally
 backend/
   app/
     core/            # enums, pydantic domain models (Signal, Trade, RiskConfig, ...)
@@ -258,6 +259,33 @@ manually-migrated database; that's the honest gap, not a claim of production-gra
   current bar — safe for completed HTF bars, but doesn't model intrabar ticks. Noted in
   `run_backtest`'s docstring so it isn't mistaken for tick-accurate simulation.
 
+## Docker Deployment
+
+`docker-compose.yml` at the repo root wires three services: `postgres` (16-alpine, a named
+volume, a `pg_isready` healthcheck), `backend` (built from `backend/Dockerfile` — Python 3.11
+slim, non-root user, a container healthcheck against `/api/system/health`, waits for Postgres
+to be healthy before starting so `init_models()` always has a real database to create tables
+against), and `frontend` (built from `frontend/Dockerfile` — a Node build stage producing the
+Vite production bundle, served by an `nginx:alpine` stage whose `nginx.conf` reverse-proxies
+`/api/*` to the `backend` service by its compose network name and falls back to `index.html`
+for client-side routes). Copy `.env.example` to `.env` at the repo root first (Postgres
+credentials, `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY`), then:
+
+```bash
+docker compose up --build
+# backend:  http://localhost:8000
+# frontend: http://localhost:8080
+```
+
+**Honesty note on verification:** `docker compose config` was run and validates the file
+cleanly (service graph, env interpolation, healthcheck syntax all resolve correctly), but this
+sandbox's network egress policy explicitly blocks Docker Hub's CDN
+(`production.cloudfront.docker.com` — confirmed via a 403 policy denial, not a transient
+error), so pulling the `python`/`node`/`postgres`/`nginx` base images and actually running
+`docker compose up` could not be exercised here. Please run it on a machine with normal Docker
+Hub access before trusting it in production — if anything doesn't build cleanly, that's a real
+bug to fix, not a sandbox artifact.
+
 ## What's next (not yet built)
 
 Per the original 40-section brief, still outstanding: the visual no-code strategy builder,
@@ -266,8 +294,10 @@ only, as inline SVG - not price candles with entry/SL/target markers), the remai
 tabs (Positions, Orders, Portfolio, Risk Management, Trade Journal, Analytics, Settings, System
 Logs), Redis (for real-time pub/sub and caching - Postgres persistence and JWT auth now exist,
 see Database + Auth above), formal DB migrations (Alembic - schema changes today mean editing
-the SQLAlchemy models and re-running against a fresh/manually-migrated database), and Docker/CI
-deployment. Angel One/Fyers/Dhan adapters are structurally registered but still need their real
+the SQLAlchemy models and re-running against a fresh/manually-migrated database), and CI
+(Docker Compose deployment now exists - see Docker Deployment above - but it's unverified in
+this sandbox and there's no CI pipeline running the test suite/build on every push yet).
+Angel One/Fyers/Dhan adapters are structurally registered but still need their real
 endpoints wired in (see `app/brokers/stubs.py`). Persisting signals/trades/strategy configs to
 the database (today only users, broker credentials, and audit logs are persisted; paper trading
 and backtesting remain in-memory/stateless per request) is the natural next step once a

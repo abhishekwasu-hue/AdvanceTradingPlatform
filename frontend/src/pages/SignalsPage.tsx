@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import CandleChart, { type ChartMarker, type PriceLineSpec } from "../components/CandleChart";
 import SignalCard from "../components/SignalCard";
 import { Card, DemoDataBanner } from "../components/ui";
-import type { EnrichedSignal, StrategyInfo } from "../types";
+import type { EnrichedSignal, OHLCVBar, SRZone, StrategyInfo } from "../types";
 import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
 
 export default function SignalsPage() {
@@ -14,6 +15,8 @@ export default function SignalsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EnrichedSignal | null>(null);
+  const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
+  const [zones, setZones] = useState<SRZone[]>([]);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,9 +35,26 @@ export default function SignalsPage() {
     setExecuteMsg(null);
     try {
       const base = generateSampleCandles(bars, 100, seed);
+      const primaryTf = selected.timeframes[0];
       const data = buildTimeframeData(base, selected.timeframes);
-      const enriched = await api.enrichSignal(selected.id, symbol, data);
+      const primaryCandles = data[primaryTf];
+
+      const [enriched, srZones] = await Promise.all([
+        api.enrichSignal(selected.id, symbol, data),
+        api.supportResistanceZones(symbol, primaryCandles),
+      ]);
+
+      // The engine can return dozens of small swing clusters; keep only the strongest few
+      // near the current price so the chart overlay stays readable rather than a dashed grid.
+      const lastClose = primaryCandles[primaryCandles.length - 1].close;
+      const relevantZones = srZones
+        .filter((z) => Math.abs(z.mid - lastClose) / lastClose <= 0.04)
+        .sort((a, b) => b.strength_score - a.strength_score)
+        .slice(0, 5);
+
       setResult(enriched);
+      setChartCandles(primaryCandles);
+      setZones(relevantZones);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -54,6 +74,22 @@ export default function SignalsPage() {
       setExecuteMsg(String(e));
     }
   }
+
+  const signal = result?.signal;
+  const priceLines: PriceLineSpec[] = useMemo(() => {
+    if (!signal || signal.direction === "NO_TRADE") return [];
+    const lines: PriceLineSpec[] = [];
+    if (signal.entry !== null) lines.push({ price: signal.entry, color: "#e2e8f0", title: "Entry" });
+    if (signal.stop_loss !== null) lines.push({ price: signal.stop_loss, color: "#ef4444", title: "Stop Loss" });
+    if (signal.target1 !== null) lines.push({ price: signal.target1, color: "#22c55e", title: "Target 1" });
+    if (signal.target2 !== null) lines.push({ price: signal.target2, color: "#16a34a", title: "Target 2" });
+    return lines;
+  }, [signal]);
+
+  const marker: ChartMarker | undefined =
+    signal && signal.direction !== "NO_TRADE"
+      ? { timestamp: signal.timestamp, direction: signal.direction, text: signal.grade }
+      : undefined;
 
   return (
     <div className="space-y-4">
@@ -127,6 +163,12 @@ export default function SignalsPage() {
       </Card>
 
       {error && <div className="text-sm text-danger">{error}</div>}
+
+      {chartCandles.length > 0 && (
+        <Card title="Chart — entry / stop loss / targets / support &amp; resistance">
+          <CandleChart candles={chartCandles} priceLines={priceLines} zones={zones} marker={marker} />
+        </Card>
+      )}
 
       {result && <SignalCard result={result} />}
     </div>

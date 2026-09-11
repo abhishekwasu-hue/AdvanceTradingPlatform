@@ -1,5 +1,6 @@
 import copy
-from typing import Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,9 +15,12 @@ from app.core.models import (
     StrategyInfo,
     bars_to_dataframe,
 )
+from app.auth.routes import router as auth_router
 from app.backtest.engine import run_backtest
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
+from app.brokers.routes import router as broker_router
+from app.db.session import init_models
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainAnalysis
@@ -30,10 +34,17 @@ from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await init_models()
+    yield
+
+
 app = FastAPI(
     title="Advance Trading Platform - Strategy Engine",
     description="Inbuilt auto-executable multi-timeframe and indicator-based intraday scalping strategies.",
     version="0.1.0",
+    lifespan=_lifespan,
 )
 
 # The Vite dev server proxies /api to this service in development, but CORS is still enabled
@@ -45,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(broker_router)
 
 _paper_state = TradingDayState()
 _default_risk_config = RiskConfig()
@@ -208,9 +222,9 @@ def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChainAnaly
 
 @app.get("/api/broker/available")
 def list_available_brokers() -> Dict[str, List[str]]:
-    """Broker ids the abstraction layer can adapt to. Authentication/credential endpoints land
-    once the secrets-storage layer exists - credentials are never accepted over this API without
-    encryption at rest.
+    """Broker ids the abstraction layer can adapt to. Storing credentials and authenticating
+    against one requires a logged-in user - see /api/broker/{name}/credentials and
+    /api/broker/{name}/authenticate - credentials are encrypted at rest, never in plaintext.
     """
     return {"brokers": available_brokers()}
 

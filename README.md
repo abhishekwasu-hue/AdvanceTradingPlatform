@@ -2,15 +2,17 @@
 
 An algorithmic trading platform for Indian markets (NSE cash, F&O, indices), built in phases.
 So far this delivers the **strategy, risk, execution, broker-abstraction, price-action,
-option-chain, and signal-scoring core**: indicators, inbuilt auto-executable multi-timeframe
-and indicator-based intraday scalping strategies, a risk engine, a paper execution router, a
-broker-agnostic `BrokerInterface` with real Zerodha, Upstox, and Shoonya adapters (Angel
-One/Fyers/Dhan registered as pluggable stubs), a market-structure + candlestick-pattern engine, a
-support/resistance zone engine (swing clusters, prev day/week, opening range, VWAP, pivots,
-Fibonacci), an option-chain intelligence engine (PCR, Max Pain, ATM/ITM/OTM, OI
-buildup/unwinding, bias), a weighted-composite signal scoring engine that ties all three
-analysis engines together into one "why this trade" score, a backtest engine, and a FastAPI
-service exposing all of it.
+option-chain, signal-scoring, and database/auth core**: indicators, inbuilt auto-executable
+multi-timeframe and indicator-based intraday scalping strategies, a risk engine, a paper
+execution router, a broker-agnostic `BrokerInterface` with real Zerodha, Upstox, and Shoonya
+adapters (Angel One/Fyers/Dhan registered as pluggable stubs), a market-structure +
+candlestick-pattern engine, a support/resistance zone engine (swing clusters, prev day/week,
+opening range, VWAP, pivots, Fibonacci), an option-chain intelligence engine (PCR, Max Pain,
+ATM/ITM/OTM, OI buildup/unwinding, bias), a weighted-composite signal scoring engine that ties
+all three analysis engines together into one "why this trade" score, PostgreSQL persistence
+with JWT auth and Fernet-encrypted broker credential storage (unlocking a real
+`POST /api/broker/{name}/authenticate` login flow), a backtest engine, and a FastAPI service
+exposing all of it.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) now sits on top of that
 API — Dashboard, Strategy Library, Signals (full "why this trade" score breakdown), Backtesting
@@ -25,11 +27,16 @@ strategies and how to call them.
 ## Quick start
 
 ```bash
+# database (one-time local setup - adjust to your Postgres install)
+sudo -u postgres psql -c "CREATE USER atp_user WITH PASSWORD 'atp_dev_password';"
+sudo -u postgres psql -c "CREATE DATABASE advance_trading_platform OWNER atp_user;"
+
 # backend
 cd backend
+cp .env.example .env   # then fill in JWT_SECRET_KEY / SECRETS_ENCRYPTION_KEY for anything beyond local dev
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-# API docs at http://localhost:8000/docs
+# API docs at http://localhost:8000/docs - tables are created automatically on startup
 
 # frontend (separate terminal)
 cd frontend
@@ -42,7 +49,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 87 passing
+pytest -q       # 108 passing - runs against an in-memory SQLite DB, no Postgres needed
 
 cd frontend
 npm run build   # type-checks + production build
@@ -61,7 +68,8 @@ npm run build   # type-checks + production build
 Every signal carries entry, stop loss, two targets, risk/reward, a 0–100 score/grade, and the
 plain-English reasons behind it — and every order, paper or live, passes through the Risk
 Engine before execution. `ExecutionMode.LIVE` only places a real order when an authenticated
-`BrokerInterface` instance (e.g. `ZerodhaBroker`, `UpstoxBroker`) is explicitly passed to
-`OrderRouter`; with none wired in it stays safely blocked (`LiveTradingNotConfigured`) rather
-than silently doing nothing. No broker credentials are accepted over the API yet — that lands
-with the encrypted secrets-storage phase.
+`BrokerInterface` instance (e.g. `ZerodhaBroker`, `UpstoxBroker`, `ShoonyaBroker`) is explicitly
+passed to `OrderRouter`; with none wired in it stays safely blocked
+(`LiveTradingNotConfigured`) rather than silently doing nothing. Broker credentials are now
+accepted over the API (`POST /api/broker/{name}/credentials`), but only behind a JWT-authenticated
+user and encrypted at rest (Fernet) — never in plaintext, never logged.

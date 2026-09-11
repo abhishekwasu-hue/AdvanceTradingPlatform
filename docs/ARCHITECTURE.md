@@ -16,7 +16,10 @@ backend/
     indicators/       # EMA, SMA, RSI, ATR, ADX/+DI/-DI, Supertrend (pandas/numpy, no TA-Lib dep)
     strategy_engine/   # BaseStrategy, inbuilt multi-timeframe + indicator-based strategies, registry
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
-    brokers/            # BrokerInterface, domain models, Zerodha/Upstox adapters, stubs, registry
+    brokers/            # BrokerInterface, domain models, Zerodha/Upstox/Shoonya adapters, stubs, registry, routes
+    auth/                # register/login (JWT), password hashing, get_current_user dependency
+    db/                  # SQLAlchemy async engine/session, User/BrokerCredential/AuditLog models
+    secrets_store/        # Fernet encryption for broker credentials at rest
     price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
     support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
     option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
@@ -86,10 +89,9 @@ only this interface — so adding a broker means writing one new adapter file.
   under-verified endpoint guesses as if they were tested.
 - **`app/brokers/registry.py`** exposes `get_broker_adapter(name, credentials)` and
   `available_brokers()` — the latter is surfaced read-only at `GET /api/broker/available`.
-- **No credential-accepting endpoint exists yet.** Broker credentials are never accepted over
-  HTTP without an encrypted secrets store behind it (per the brief's "no secrets in
-  plaintext" rule) — that lands with the auth/database phase. Until then, adapters are
-  constructed directly in Python with a `BrokerCredentials` object.
+- **Credentials are now accepted over HTTP, but only encrypted at rest and behind auth.**
+  `POST /api/broker/{name}/credentials` (see Database + Auth below) is the endpoint that used
+  to not exist — it requires a logged-in user and stores ciphertext, never plaintext.
 - **`OrderRouter`** now takes an optional `broker: BrokerInterface` — `ExecutionMode.LIVE`
   builds a `BrokerOrderRequest` from the approved, risk-sized signal and calls
   `broker.place_order()`; a `REJECTED`/`CANCELLED` broker response surfaces as
@@ -182,6 +184,38 @@ deterministic client-side generator (`frontend/src/utils/sampleData.ts`) rather 
 fabricated "live" data — clearly labeled in the UI. Everything computed *on* that sample data
 (scores, backtest metrics, option-chain bias) is the real backend engine, not a mock.
 
+## Database + Auth
+
+PostgreSQL (async, via SQLAlchemy 2.0 + `asyncpg`) is now real, not deferred: `app/db/models.py`
+defines `User`, `BrokerCredentialRecord`, and `AuditLogRecord`; `app/db/session.py` creates the
+engine from `DATABASE_URL` and exposes `get_session` as a FastAPI dependency; tables are created
+on startup via a `lifespan` handler (`init_models()` — no formal migration tool like Alembic
+yet, so schema changes currently mean adjusting the models and re-running against a fresh or
+manually-migrated database; that's the honest gap, not a claim of production-grade migrations).
+
+- **`app/auth/`** — `security.py` hashes passwords with `bcrypt` and issues/verifies JWTs
+  (`PyJWT`, `JWT_SECRET_KEY`/`JWT_ALGORITHM`/`JWT_EXPIRE_MINUTES` from `app/core/config.py`);
+  `dependencies.py`'s `get_current_user` is the FastAPI dependency every protected route uses;
+  `routes.py` exposes `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
+- **`app/secrets_store/encryption.py`** — Fernet symmetric encryption keyed by
+  `SECRETS_ENCRYPTION_KEY` (any passphrase is hashed down to a valid key; a fixed dev-only
+  fallback keeps local runs working but is explicitly not meant to protect anything real).
+- **`app/brokers/routes.py`** — `POST /api/broker/{name}/credentials` encrypts and upserts a
+  user's `BrokerCredentials` for one broker (never plaintext, never logged);
+  `GET /api/broker/credentials` lists which brokers a user has stored (names/timestamps only);
+  `DELETE /api/broker/{name}/credentials` removes one; `POST /api/broker/{name}/authenticate`
+  decrypts the stored credentials in memory, constructs the adapter via the existing broker
+  registry, and calls its real `authenticate()` — success or failure (broker-side or a raw
+  network error) both return a clean HTTP response and write an `AuditLogRecord` row, per the
+  platform's audit-trail requirement. This is the endpoint the broker layer's original "no
+  credential-accepting endpoint exists yet" note was waiting on.
+- Verified end-to-end against a real local Postgres instance: register → login → store
+  encrypted Zerodha credentials → confirm the stored value is ciphertext in the raw DB row →
+  authenticate (a genuine network call to Zerodha's live API, which correctly came back 403
+  with fake credentials and surfaced as a clean 502) → delete, with every step logged to
+  `audit_logs`. The automated test suite instead runs against an in-memory SQLite database via
+  a dependency override, so `pytest` needs no external database.
+
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
@@ -194,10 +228,16 @@ fabricated "live" data — clearly labeled in the UI. Everything computed *on* t
 - `POST /api/backtest` — run a strategy over historical OHLCV bars, get a `BacktestResult`
   (trades, win rate, profit factor, drawdown, equity curve, ...)
 - `GET  /api/broker/available` — broker ids the abstraction layer can adapt to
+- `POST /api/broker/{name}/credentials` — encrypt and store this user's credentials (auth required)
+- `GET  /api/broker/credentials` — list which brokers this user has stored (auth required)
+- `DELETE /api/broker/{name}/credentials` — remove stored credentials (auth required)
+- `POST /api/broker/{name}/authenticate` — decrypt stored credentials and really log in (auth required)
 - `POST /api/price-action/structure` — swings, HH/HL/LH/LL labels, trend, BOS/CHoCH events
 - `POST /api/price-action/patterns` — every candlestick pattern match with its confidence score
 - `POST /api/support-resistance/zones` — the combined support/resistance zone list
 - `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
+- `POST /api/auth/register` / `POST /api/auth/login` — returns a JWT
+- `GET  /api/auth/me` — current user (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -224,12 +264,18 @@ Per the original 40-section brief, still outstanding: the visual no-code strateg
 TradingView-style candlestick charting (the console currently plots the backtest equity curve
 only, as inline SVG - not price candles with entry/SL/target markers), the remaining dashboard
 tabs (Positions, Orders, Portfolio, Risk Management, Trade Journal, Analytics, Settings, System
-Logs), PostgreSQL/Redis persistence, auth + encrypted secret storage, and Docker/CI deployment.
-Angel One/Fyers/Dhan adapters are structurally registered but still need their real endpoints
-wired in (see `app/brokers/stubs.py`). This slice is the foundation those layers plug into:
-strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so once
-an authenticated broker adapter is constructed and instrument-master lookups are wired to a
-persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through
-to real equity/futures/options trading. Signal scoring, price action, support/resistance, and
+Logs), Redis (for real-time pub/sub and caching - Postgres persistence and JWT auth now exist,
+see Database + Auth above), formal DB migrations (Alembic - schema changes today mean editing
+the SQLAlchemy models and re-running against a fresh/manually-migrated database), and Docker/CI
+deployment. Angel One/Fyers/Dhan adapters are structurally registered but still need their real
+endpoints wired in (see `app/brokers/stubs.py`). Persisting signals/trades/strategy configs to
+the database (today only users, broker credentials, and audit logs are persisted; paper trading
+and backtesting remain in-memory/stateless per request) is the natural next step once a
+strategy library or trade journal UI needs to read them back. This slice is the foundation
+those layers plug into: strategies are already timeframe- and instrument-agnostic (`symbol` is
+just a string), so once an authenticated broker adapter is constructed (now genuinely possible
+via `POST /api/broker/{name}/authenticate`) and instrument-master lookups are wired up, the
+same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through to real
+equity/futures/options trading. Signal scoring, price action, support/resistance, and
 option-chain analysis are already wired together (see Signal Scoring Engine above) and
 reachable from the frontend console (see Frontend Console above).

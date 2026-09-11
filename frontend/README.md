@@ -4,8 +4,8 @@ A Vite + React + TypeScript + Tailwind single-page app that drives the FastAPI b
 `../backend`. It is a control panel/console rather than the full 19-tab dashboard the platform
 brief describes — every page here is wired to a real backend endpoint and computes real
 results; nothing is mocked. See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for what
-exists today versus what's still to be built (auth, persistence, live market data, the
-remaining dashboard tabs).
+exists today versus what's still to be built (live market data, a strategy builder,
+TradingView-style candlestick charting, the remaining dashboard tabs).
 
 ## Pages
 
@@ -17,14 +17,22 @@ remaining dashboard tabs).
   the trade log
 - **Option Chain** — analyze a sample option chain (PCR, Max Pain, ATM/ITM/OTM, OI activity,
   bias) with a toggle to see bullish/bearish/conflicting outcomes
+- **Positions** — this account's paper-execute trade history and open positions (requires login)
+- **Account** — register/login/logout (JWT, stored in `localStorage`)
+
+Signing in is optional everywhere except Positions: Signals, Backtesting, and Option Chain work
+the same whether or not you're logged in. Being logged in additionally makes `Paper Execute`
+save the fill to your account (`app/trading/` in the backend), which is what shows up on the
+Positions page. Broker credential storage (`POST /api/broker/{name}/credentials` and
+`/authenticate`) also requires login, but isn't wired into a page yet - see
+[`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for how to call it directly.
 
 ## No live market data yet
 
-No broker is authenticated (credential-accepting endpoints don't exist until the encrypted
-secrets-storage phase — see `app/brokers/` in the backend), so every page generates a
-deterministic, clearly-labeled sample OHLCV series client-side (`src/utils/sampleData.ts`)
-instead of pretending to show live prices. The backend computation on top of that sample data
-is real: the same code path that will run against live broker data once one is connected.
+No broker is authenticated by default, so every page generates a deterministic, clearly-labeled
+sample OHLCV series client-side (`src/utils/sampleData.ts`) instead of pretending to show live
+prices. The backend computation on top of that sample data is real: the same code path that
+will run against live broker data once one is connected via the Account/credentials flow above.
 
 ## Running locally
 
@@ -46,4 +54,4 @@ npm run dev
 The brief's preferred stack is React/Next.js. This console is a client-only SPA control panel
 with no server-rendering or routing needs yet, so Vite + React + TypeScript is a faster-moving
 and equally standard substitute for that shape of app — swapping to Next.js is straightforward
-later if SSR, file-based routing, or API routes become useful once auth and persistence land.
+later if SSR or file-based routing become useful.

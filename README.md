@@ -16,9 +16,11 @@ exposing all of it.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) now sits on top of that
 API — Dashboard, Strategy Library, Signals (full "why this trade" score breakdown), Backtesting
-(equity curve + trade log), and Option Chain pages, all wired to real backend computation over
-a clearly-labeled sample dataset (no live broker is connected yet). See
-[`frontend/README.md`](frontend/README.md).
+(equity curve + trade log), Option Chain, Positions, and Account (login/register) pages, all
+wired to real backend computation over a clearly-labeled sample dataset (no live broker is
+connected yet). Signing in is optional everywhere except Positions - it additionally persists
+your paper-execute fills to PostgreSQL so they show up on the Positions page across sessions.
+See [`frontend/README.md`](frontend/README.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
 be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the seven inbuilt scalping
@@ -65,7 +67,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 108 passing - runs against an in-memory SQLite DB, no Postgres needed
+pytest -q       # 114 passing - runs against an in-memory SQLite DB, no Postgres needed
 
 cd frontend
 npm run build   # type-checks + production build

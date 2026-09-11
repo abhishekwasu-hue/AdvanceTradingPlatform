@@ -8,19 +8,53 @@ import type {
   SRZone,
   Signal,
   StrategyInfo,
+  TokenResponse,
+  TradeRecord,
+  UserResponse,
 } from "../types";
 
 const BASE = "/api";
+const TOKEN_KEY = "atp_token";
+
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // localStorage unavailable (private mode, etc) - session just won't persist across reloads.
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const response = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -77,4 +111,16 @@ export const api = {
     }),
 
   availableBrokers: () => request<{ brokers: string[] }>("/broker/available"),
+
+  register: (email: string, password: string) =>
+    request<TokenResponse>("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  login: (email: string, password: string) =>
+    request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  me: () => request<UserResponse>("/auth/me"),
+
+  listTrades: () => request<TradeRecord[]>("/trades"),
+
+  listPositions: () => request<TradeRecord[]>("/positions"),
 };

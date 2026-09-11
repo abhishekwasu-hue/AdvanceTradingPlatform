@@ -1,3 +1,32 @@
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export interface UserResponse {
+  id: number;
+  email: string;
+}
+
+export interface TradeRecord {
+  id: number;
+  mode: string;
+  symbol: string;
+  strategy_id: string;
+  direction: string;
+  entry_time: string;
+  entry_price: number;
+  quantity: number;
+  stop_loss: number;
+  target1: number;
+  target2: number | null;
+  exit_time: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  pnl: number | null;
+  charges: number;
+}
+
 export interface OHLCVBar {
   timestamp: string;
   open: number;

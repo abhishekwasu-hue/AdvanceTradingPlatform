@@ -1,4 +1,6 @@
-export type Page = "dashboard" | "strategies" | "signals" | "backtest" | "option-chain";
+import { useAuth } from "../auth/AuthContext";
+
+export type Page = "dashboard" | "strategies" | "signals" | "backtest" | "option-chain" | "positions" | "account";
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
@@ -6,9 +8,12 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "signals", label: "Signals", icon: "⚡" },
   { id: "backtest", label: "Backtesting", icon: "⏱" },
   { id: "option-chain", label: "Option Chain", icon: "◉" },
+  { id: "positions", label: "Positions", icon: "▤" },
 ];
 
 export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
+  const { user, loading } = useAuth();
+
   return (
     <aside className="w-56 shrink-0 border-r border-border bg-panel flex flex-col">
       <div className="px-4 py-5 border-b border-border">
@@ -31,13 +36,27 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
           </button>
         ))}
       </nav>
-      <div className="px-4 py-3 border-t border-border text-[11px] text-muted leading-relaxed">
-        Paper mode only.
-        <br />
-        Live trading requires an
-        <br />
-        authenticated broker.
-      </div>
+      <button
+        onClick={() => onChange("account")}
+        className={`px-4 py-3 border-t border-border text-left text-xs transition-colors ${
+          page === "account" ? "bg-panel2 text-slate-100" : "text-muted hover:text-slate-200 hover:bg-panel2/50"
+        }`}
+      >
+        {loading ? (
+          "…"
+        ) : user ? (
+          <>
+            <span className="text-accent">●</span> {user.email}
+          </>
+        ) : (
+          <>
+            <span className="text-muted">●</span> Not signed in - click to log in
+          </>
+        )}
+        <div className="mt-1 text-[11px] leading-relaxed opacity-80">
+          Paper mode only. Live trading requires an authenticated broker.
+        </div>
+      </button>
     </aside>
   );
 }

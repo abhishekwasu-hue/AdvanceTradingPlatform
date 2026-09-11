@@ -2,9 +2,10 @@ import copy
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ExecutionMode
 from app.core.models import (
@@ -15,12 +16,14 @@ from app.core.models import (
     StrategyInfo,
     bars_to_dataframe,
 )
+from app.auth.dependencies import get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.engine import run_backtest
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
-from app.db.session import init_models
+from app.db.models import User
+from app.db.session import get_session, init_models
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainAnalysis
@@ -33,6 +36,8 @@ from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
+from app.trading.persistence import persist_paper_trade
+from app.trading.routes import router as trading_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -59,6 +64,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(trading_router)
 
 _paper_state = TradingDayState()
 _default_risk_config = RiskConfig()
@@ -149,7 +155,15 @@ def generate_and_enrich_signal(strategy_id: str, request: EnrichSignalRequest) -
 
 
 @app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse)
-async def paper_execute(strategy_id: str, request: PaperExecuteRequest) -> PaperExecuteResponse:
+async def paper_execute(
+    strategy_id: str, request: PaperExecuteRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+) -> PaperExecuteResponse:
+    """Works anonymously (no persistence, matching the console's try-it-without-an-account
+    flow) or, with a valid Authorization header, persists the fill to this user's trade history
+    - see GET /api/trades and /api/positions.
+    """
     try:
         strategy = registry.get(strategy_id)
     except KeyError as exc:
@@ -164,6 +178,9 @@ async def paper_execute(strategy_id: str, request: PaperExecuteRequest) -> Paper
         result: ExecutionResult = await router.execute(signal, _paper_state)
     except LiveTradingNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result.executed and result.trade is not None and user is not None:
+        await persist_paper_trade(session, user.id, result.trade)
 
     return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
 

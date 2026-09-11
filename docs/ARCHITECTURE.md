@@ -19,8 +19,9 @@ backend/
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
     brokers/            # BrokerInterface, domain models, Zerodha/Upstox/Shoonya adapters, stubs, registry, routes
     auth/                # register/login (JWT), password hashing, get_current_user dependency
-    db/                  # SQLAlchemy async engine/session, User/BrokerCredential/AuditLog models
+    db/                  # SQLAlchemy async engine/session, User/BrokerCredential/TradeRecord/AuditLog models
     secrets_store/        # Fernet encryption for broker credentials at rest
+    trading/              # persists paper-execute fills per user; GET /api/trades, /api/positions
     price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
     support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
     option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
@@ -31,10 +32,11 @@ backend/
   tests/               # pytest coverage for every layer above
 frontend/
   src/
-    api/client.ts       # typed fetch client for every endpoint below
+    api/client.ts       # typed fetch client; attaches the JWT from localStorage when present
+    auth/AuthContext.tsx # login/register/logout state, shared via React context
     utils/sampleData.ts # deterministic sample OHLCV/option-chain generator (no live broker yet)
     components/          # SignalCard, EquityCurveChart, Sidebar, shared UI primitives
-    pages/                # Dashboard, Strategies, Signals, Backtest, Option Chain
+    pages/                # Dashboard, Strategies, Signals, Backtest, Option Chain, Positions, Account
 docs/
   ARCHITECTURE.md      # this file
   STRATEGIES.md        # the inbuilt auto-executable scalping strategies
@@ -176,23 +178,31 @@ and enriches it in one call).
 `frontend/` (Vite + React + TypeScript + Tailwind, see `frontend/README.md` for the
 Next.js-vs-Vite tradeoff) is a control-panel SPA over the API above: Dashboard, Strategy
 Library, Signals (the full `EnrichedSignal` "why this trade" card), Backtesting (metrics,
-SVG equity curve, trade log), and Option Chain. `app/main.py` enables permissive CORS
-(`CORSMiddleware`, tightened once real deployment domains exist) and the Vite dev server also
-proxies `/api` to `localhost:8000`, so either path works.
+SVG equity curve, trade log), Option Chain, Positions, and Account. `app/main.py` enables
+permissive CORS (`CORSMiddleware`, tightened once real deployment domains exist) and the Vite
+dev server also proxies `/api` to `localhost:8000`, so either path works.
 
 No broker is authenticated yet, so every page builds candles/option-chain rows from a
 deterministic client-side generator (`frontend/src/utils/sampleData.ts`) rather than showing
 fabricated "live" data — clearly labeled in the UI. Everything computed *on* that sample data
 (scores, backtest metrics, option-chain bias) is the real backend engine, not a mock.
 
+`src/auth/AuthContext.tsx` holds login state (backed by the JWT endpoints below, token kept in
+`localStorage`); `src/api/client.ts`'s `request()` attaches it as a bearer token automatically
+whenever present. The Account page handles register/login/logout; the Sidebar's footer shows
+who's signed in. Everything else keeps working anonymously (the "try without an account" flow
+from earlier phases is unchanged) — being logged in only adds persistence, per Database + Auth
+below.
+
 ## Database + Auth
 
 PostgreSQL (async, via SQLAlchemy 2.0 + `asyncpg`) is now real, not deferred: `app/db/models.py`
-defines `User`, `BrokerCredentialRecord`, and `AuditLogRecord`; `app/db/session.py` creates the
-engine from `DATABASE_URL` and exposes `get_session` as a FastAPI dependency; tables are created
-on startup via a `lifespan` handler (`init_models()` — no formal migration tool like Alembic
-yet, so schema changes currently mean adjusting the models and re-running against a fresh or
-manually-migrated database; that's the honest gap, not a claim of production-grade migrations).
+defines `User`, `BrokerCredentialRecord`, `TradeRecord`, and `AuditLogRecord`; `app/db/session.py`
+creates the engine from `DATABASE_URL` and exposes `get_session` as a FastAPI dependency; tables
+are created on startup via a `lifespan` handler (`init_models()` — no formal migration tool like
+Alembic yet, so schema changes currently mean adjusting the models and re-running against a
+fresh or manually-migrated database; that's the honest gap, not a claim of production-grade
+migrations).
 
 - **`app/auth/`** — `security.py` hashes passwords with `bcrypt` and issues/verifies JWTs
   (`PyJWT`, `JWT_SECRET_KEY`/`JWT_ALGORITHM`/`JWT_EXPIRE_MINUTES` from `app/core/config.py`);
@@ -210,12 +220,27 @@ manually-migrated database; that's the honest gap, not a claim of production-gra
   network error) both return a clean HTTP response and write an `AuditLogRecord` row, per the
   platform's audit-trail requirement. This is the endpoint the broker layer's original "no
   credential-accepting endpoint exists yet" note was waiting on.
-- Verified end-to-end against a real local Postgres instance: register → login → store
-  encrypted Zerodha credentials → confirm the stored value is ciphertext in the raw DB row →
-  authenticate (a genuine network call to Zerodha's live API, which correctly came back 403
-  with fake credentials and surfaced as a clean 502) → delete, with every step logged to
-  `audit_logs`. The automated test suite instead runs against an in-memory SQLite database via
-  a dependency override, so `pytest` needs no external database.
+- **`app/trading/`** — the first thing that actually uses `TradeRecord`. `POST
+  /api/strategies/{id}/paper-execute` now takes an *optional* bearer token
+  (`get_current_user_optional`, which returns `None` instead of raising when no/an invalid token
+  is supplied): anonymous calls behave exactly as before (no persistence, matching the "try it
+  without an account" demo flow already used by Signals/Backtest), but a logged-in user's fill
+  is written to `TradeRecord` via `persist_paper_trade()`. `app/trading/routes.py` exposes
+  `GET /api/trades` (full history) and `GET /api/positions` (rows with no `exit_time`) for the
+  current user. Nothing yet closes a paper-execute position automatically (no live price feed
+  monitors it — that only happens inside the historical backtest engine's simulation), so every
+  persisted trade shows up as "open" until a future exit-tracking pass writes back to the same
+  row; that's called out in `TradeRecord`'s docstring rather than left implicit.
+- Verified end-to-end against a real local Postgres instance, twice: once for the credential
+  flow (register → login → store encrypted Zerodha credentials → confirm the stored value is
+  ciphertext in the raw DB row → authenticate, a genuine network call to Zerodha's live API that
+  correctly came back 403 with fake credentials and surfaced as a clean 502 → delete, every step
+  logged to `audit_logs`), and again for trade persistence (register → force a real strategy
+  signal to fire → authenticated paper-execute → `GET /api/trades`/`/api/positions` show the
+  exact filled trade, matched in the frontend console by executing from the Signals page and
+  seeing it appear on the Positions page for that same session). The automated test suite
+  instead runs against an in-memory SQLite database via a dependency override, so `pytest` needs
+  no external database.
 
 ## API surface (current slice)
 
@@ -239,6 +264,8 @@ manually-migrated database; that's the honest gap, not a claim of production-gra
 - `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
 - `POST /api/auth/register` / `POST /api/auth/login` — returns a JWT
 - `GET  /api/auth/me` — current user (auth required)
+- `GET  /api/trades` — this user's full paper trade history (auth required)
+- `GET  /api/positions` — this user's open (no `exit_time`) trades (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -291,21 +318,22 @@ bug to fix, not a sandbox artifact.
 Per the original 40-section brief, still outstanding: the visual no-code strategy builder,
 TradingView-style candlestick charting (the console currently plots the backtest equity curve
 only, as inline SVG - not price candles with entry/SL/target markers), the remaining dashboard
-tabs (Positions, Orders, Portfolio, Risk Management, Trade Journal, Analytics, Settings, System
-Logs), Redis (for real-time pub/sub and caching - Postgres persistence and JWT auth now exist,
-see Database + Auth above), formal DB migrations (Alembic - schema changes today mean editing
-the SQLAlchemy models and re-running against a fresh/manually-migrated database), and CI
-(Docker Compose deployment now exists - see Docker Deployment above - but it's unverified in
-this sandbox and there's no CI pipeline running the test suite/build on every push yet).
-Angel One/Fyers/Dhan adapters are structurally registered but still need their real
-endpoints wired in (see `app/brokers/stubs.py`). Persisting signals/trades/strategy configs to
-the database (today only users, broker credentials, and audit logs are persisted; paper trading
-and backtesting remain in-memory/stateless per request) is the natural next step once a
-strategy library or trade journal UI needs to read them back. This slice is the foundation
-those layers plug into: strategies are already timeframe- and instrument-agnostic (`symbol` is
-just a string), so once an authenticated broker adapter is constructed (now genuinely possible
-via `POST /api/broker/{name}/authenticate`) and instrument-master lookups are wired up, the
-same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through to real
+tabs (Orders, Portfolio, Risk Management, Analytics, Settings, System Logs - Positions/Trade
+Journal now exist, see Frontend Console and Database + Auth above), Redis (for real-time pub/sub
+and caching - Postgres persistence and JWT auth now exist), formal DB migrations (Alembic -
+schema changes today mean editing the SQLAlchemy models and re-running against a
+fresh/manually-migrated database), and CI (Docker Compose deployment now exists - see Docker
+Deployment above - but it's unverified in this sandbox and there's no CI pipeline running the
+test suite/build on every push yet). Angel One/Fyers/Dhan adapters are structurally registered
+but still need their real endpoints wired in (see `app/brokers/stubs.py`). Persisting signals
+and strategy configs to the database (trades are now persisted per user - see `app/trading/` in
+Database + Auth above - but signal history and saved/custom strategy configurations aren't yet,
+and nothing monitors live prices to auto-close an open paper position) is the natural next step.
+This slice is the foundation those layers plug into: strategies are already timeframe- and
+instrument-agnostic (`symbol` is just a string), so once an authenticated broker adapter is
+constructed (now genuinely possible via `POST /api/broker/{name}/authenticate`) and
+instrument-master lookups are wired up, the same `Signal`/`Trade`/`BrokerOrderRequest` models
+carry straight through to real
 equity/futures/options trading. Signal scoring, price action, support/resistance, and
 option-chain analysis are already wired together (see Signal Scoring Engine above) and
 reachable from the frontend console (see Frontend Console above).

@@ -14,6 +14,7 @@ from app.core.models import (
     bars_to_dataframe,
 )
 from app.backtest.engine import run_backtest
+from app.brokers.registry import available_brokers
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.risk_engine.risk_manager import TradingDayState
 from app.strategy_engine.registry import registry
@@ -77,7 +78,7 @@ def generate_signal(strategy_id: str, request: SignalRequest) -> Signal:
 
 
 @app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse)
-def paper_execute(strategy_id: str, request: PaperExecuteRequest) -> PaperExecuteResponse:
+async def paper_execute(strategy_id: str, request: PaperExecuteRequest) -> PaperExecuteResponse:
     try:
         strategy = registry.get(strategy_id)
     except KeyError as exc:
@@ -89,7 +90,7 @@ def paper_execute(strategy_id: str, request: PaperExecuteRequest) -> PaperExecut
     risk_config = request.risk_config or _default_risk_config
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
     try:
-        result: ExecutionResult = router.execute(signal, _paper_state)
+        result: ExecutionResult = await router.execute(signal, _paper_state)
     except LiveTradingNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -110,6 +111,15 @@ def backtest(request: BacktestRequest) -> BacktestResult:
     risk_config = request.risk_config or _default_risk_config
 
     return run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config)
+
+
+@app.get("/api/broker/available")
+def list_available_brokers() -> Dict[str, List[str]]:
+    """Broker ids the abstraction layer can adapt to. Authentication/credential endpoints land
+    once the secrets-storage layer exists - credentials are never accepted over this API without
+    encryption at rest.
+    """
+    return {"brokers": available_brokers()}
 
 
 @app.get("/api/system/health")

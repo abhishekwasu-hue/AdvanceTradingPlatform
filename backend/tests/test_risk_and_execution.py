@@ -1,5 +1,9 @@
+import asyncio
+
 import pytest
 
+from app.brokers.base import BrokerInterface
+from app.brokers.models import BrokerOrderResponse
 from app.core.enums import ExecutionMode, SignalDirection
 from app.core.models import RiskConfig, Signal
 from app.execution.router import LiveTradingNotConfigured, OrderRouter
@@ -64,7 +68,7 @@ def test_risk_manager_rejects_no_trade_signal():
 def test_order_router_fills_paper_trade():
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=RiskConfig(risk_per_trade_pct=1.0))
     state = TradingDayState()
-    result = router.execute(_sample_signal(), state)
+    result = asyncio.run(router.execute(_sample_signal(), state))
     assert result.executed
     assert result.trade is not None
     assert result.trade.quantity > 0
@@ -76,4 +80,60 @@ def test_order_router_blocks_live_mode_without_broker_adapter():
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig())
     state = TradingDayState()
     with pytest.raises(LiveTradingNotConfigured):
-        router.execute(_sample_signal(), state)
+        asyncio.run(router.execute(_sample_signal(), state))
+
+
+class _FakeBroker(BrokerInterface):
+    """Minimal BrokerInterface double for testing the live execution path without real network calls."""
+
+    name = "fake"
+
+    def __init__(self, order_status: str = "OPEN") -> None:
+        self.order_status = order_status
+        self.placed_orders = []
+
+    async def place_order(self, order):
+        self.placed_orders.append(order)
+        return BrokerOrderResponse(order_id="FAKE-1", status=self.order_status)
+
+    async def authenticate(self): raise NotImplementedError
+    async def get_profile(self): raise NotImplementedError
+    async def get_instruments(self, exchange=None): raise NotImplementedError
+    async def get_ltp(self, symbols): raise NotImplementedError
+    async def get_quote(self, symbols): raise NotImplementedError
+    async def get_historical_data(self, symbol, exchange, interval, from_date, to_date): raise NotImplementedError
+    async def get_option_chain(self, underlying, expiry=None): raise NotImplementedError
+    async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None):
+        raise NotImplementedError
+    async def cancel_order(self, order_id): raise NotImplementedError
+    async def get_order_book(self): raise NotImplementedError
+    async def get_trade_book(self): raise NotImplementedError
+    async def get_positions(self): raise NotImplementedError
+    async def get_holdings(self): raise NotImplementedError
+    async def get_margins(self): raise NotImplementedError
+
+
+def test_order_router_places_live_order_through_broker():
+    broker = _FakeBroker()
+    router = OrderRouter(
+        mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker
+    )
+    state = TradingDayState()
+    result = asyncio.run(router.execute(_sample_signal(), state))
+
+    assert result.executed
+    assert result.broker_order_id == "FAKE-1"
+    assert len(broker.placed_orders) == 1
+    assert broker.placed_orders[0].quantity == 500
+    assert state.trades_today == 1
+
+
+def test_order_router_reports_broker_rejection():
+    broker = _FakeBroker(order_status="REJECTED")
+    router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(risk_per_trade_pct=1.0), broker=broker)
+    state = TradingDayState()
+    result = asyncio.run(router.execute(_sample_signal(), state))
+
+    assert not result.executed
+    assert state.trades_today == 0
+    assert any("rejected" in r.lower() for r in result.reasons)

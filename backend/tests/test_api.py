@@ -47,3 +47,29 @@ def test_health_endpoint():
     response = client.get("/api/system/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_available_brokers_endpoint():
+    response = client.get("/api/broker/available")
+    assert response.status_code == 200
+    brokers = response.json()["brokers"]
+    assert set(brokers) == {"zerodha", "upstox", "angel_one", "fyers", "dhan"}
+
+
+def test_paper_execute_endpoint():
+    df_candles = decline_then_rally(decline_len=40, rally_len=20)
+    df = make_series(df_candles)
+    candles = [
+        {
+            "timestamp": ts.isoformat(),
+            "open": row.open, "high": row.high, "low": row.low, "close": row.close, "volume": row.volume,
+        }
+        for ts, row in df.iterrows()
+    ]
+    response = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/paper-execute",
+        json={"symbol": "TESTSYM", "candles": {"1min": candles}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "executed" in body and "signal" in body

@@ -16,9 +16,10 @@ backend/
     indicators/       # EMA, SMA, RSI, ATR, ADX/+DI/-DI, Supertrend (pandas/numpy, no TA-Lib dep)
     strategy_engine/   # BaseStrategy, inbuilt multi-timeframe + indicator-based strategies, registry
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
+    brokers/            # BrokerInterface, domain models, Zerodha/Upstox adapters, stubs, registry
     execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
     backtest/          # event-driven backtest engine with HTF resampling
-    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest
+    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers
   tests/               # pytest coverage for every layer above
 docs/
   ARCHITECTURE.md      # this file
@@ -40,18 +41,48 @@ OHLCV bars (per timeframe)
  RiskManager.validate_and_size() -> RiskDecision (approve/reject + position size)
         │
         ▼
- OrderRouter (PAPER: PaperBroker simulated fill / LIVE: blocked until a real broker
-              adapter is registered — never a silent no-op)
+ OrderRouter (PAPER: PaperBroker simulated fill / LIVE: BrokerInterface.place_order()
+              via a Zerodha/Upstox/... adapter, or blocked if none is wired in — never
+              a silent no-op)
         │
         ▼
- Trade (paper) or BacktestResult (when run through the backtest engine)
+ Trade (paper) or a real BrokerOrderResponse (live), or BacktestResult (backtest engine)
 ```
 
 A strategy can **never** bypass the risk engine: `OrderRouter.execute()` always calls
 `RiskManager.validate_and_size()` first, and `ExecutionMode.LIVE` raises
-`LiveTradingNotConfigured` until a concrete `BrokerInterface` implementation exists —
-per the platform's non-negotiable safety rules (no live order without risk validation,
-no live trading while disabled).
+`LiveTradingNotConfigured` unless a concrete, authenticated `BrokerInterface` instance is
+passed in — per the platform's non-negotiable safety rules (no live order without risk
+validation, no live trading while disabled).
+
+## Broker Abstraction Layer
+
+`app/brokers/base.py` defines `BrokerInterface`, an async ABC with the 14 methods the brief
+specifies (`authenticate`, `get_profile`, `get_instruments`, `get_ltp`, `get_quote`,
+`get_historical_data`, `get_option_chain`, `place_order`, `modify_order`, `cancel_order`,
+`get_order_book`, `get_trade_book`, `get_positions`, `get_holdings`, `get_margins`). Nothing
+upstream (strategy engine, risk engine, order router) ever imports a broker-specific class —
+only this interface — so adding a broker means writing one new adapter file.
+
+- **`app/brokers/zerodha.py`** and **`app/brokers/upstox.py`** are full reference
+  implementations against Kite Connect v3 and Upstox v2 respectively, using an
+  injected `httpx.AsyncClient` (so tests mock transport instead of hitting real endpoints —
+  see `tests/test_brokers.py`). Each documents which `BrokerCredentials` fields it needs.
+- **`app/brokers/stubs.py`** provides `AngelOneBroker`, `FyersBroker`, `DhanBroker` — they
+  satisfy `BrokerInterface` today (registrable, instantiable, type-safe) but every I/O method
+  raises `NotImplementedError` pointing at that broker's docs, rather than shipping
+  under-verified endpoint guesses as if they were tested.
+- **`app/brokers/registry.py`** exposes `get_broker_adapter(name, credentials)` and
+  `available_brokers()` — the latter is surfaced read-only at `GET /api/broker/available`.
+- **No credential-accepting endpoint exists yet.** Broker credentials are never accepted over
+  HTTP without an encrypted secrets store behind it (per the brief's "no secrets in
+  plaintext" rule) — that lands with the auth/database phase. Until then, adapters are
+  constructed directly in Python with a `BrokerCredentials` object.
+- **`OrderRouter`** now takes an optional `broker: BrokerInterface` — `ExecutionMode.LIVE`
+  builds a `BrokerOrderRequest` from the approved, risk-sized signal and calls
+  `broker.place_order()`; a `REJECTED`/`CANCELLED` broker response surfaces as
+  `ExecutionResult(executed=False, ...)` rather than being swallowed. `OrderRouter.execute()`
+  is now `async` throughout (paper and live) since live calls are real network I/O.
 
 ## API surface (current slice)
 
@@ -62,6 +93,7 @@ no live trading while disabled).
   risk engine + paper broker if it's tradeable
 - `POST /api/backtest` — run a strategy over historical OHLCV bars, get a `BacktestResult`
   (trades, win rate, profit factor, drawdown, equity curve, ...)
+- `GET  /api/broker/available` — broker ids the abstraction layer can adapt to
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -84,11 +116,14 @@ no live trading while disabled).
 
 ## What's next (not yet built)
 
-Per the original 40-section brief, still outstanding: broker adapters (Upstox/Zerodha/Angel
-One/Fyers/Dhan), price-action/market-structure engine, support/resistance zone engine, option
-chain intelligence engine, visual no-code strategy builder, TradingView-style charting UI, the
-React/Next.js dashboard and remaining tabs, PostgreSQL/Redis persistence, auth, and Docker/CI
-deployment. This slice is the foundation those layers plug into: strategies are already
-timeframe- and instrument-agnostic (`symbol` is just a string), so equity/futures/options can
-be added by feeding the same `Signal`/`Trade` models once instrument metadata and a real
-broker feed exist.
+Per the original 40-section brief, still outstanding: price-action/market-structure engine,
+support/resistance zone engine, option chain intelligence engine (the broker layer can already
+fetch raw chains; scoring PCR/max-pain/bias is separate), visual no-code strategy builder,
+TradingView-style charting UI, the React/Next.js dashboard and remaining tabs, PostgreSQL/Redis
+persistence, auth + encrypted secret storage, and Docker/CI deployment. Angel One/Fyers/Dhan
+adapters are structurally registered but still need their real endpoints wired in (see
+`app/brokers/stubs.py`). This slice is the foundation those layers plug into: strategies are
+already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
+authenticated broker adapter is constructed and instrument-master lookups are wired to a
+persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through
+to real equity/futures/options trading.

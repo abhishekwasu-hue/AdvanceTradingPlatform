@@ -23,6 +23,8 @@ from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
+from app.signal_scoring.engine import enrich_signal
+from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
@@ -44,6 +46,11 @@ class SignalRequest(BaseModel):
 
 class PaperExecuteRequest(SignalRequest):
     risk_config: Optional[RiskConfig] = None
+
+
+class EnrichSignalRequest(SignalRequest):
+    option_chain: Optional[OptionChain] = None
+    swing_window: int = 3
 
 
 class BacktestRequest(BaseModel):
@@ -95,6 +102,25 @@ def generate_signal(strategy_id: str, request: SignalRequest) -> Signal:
 
     data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
     return strategy.analyze(data, request.symbol)
+
+
+@app.post("/api/strategies/{strategy_id}/signal/enrich", response_model=EnrichedSignal)
+def generate_and_enrich_signal(strategy_id: str, request: EnrichSignalRequest) -> EnrichedSignal:
+    """Generates a signal the same way /signal does, then cross-checks it against market
+    structure, support/resistance, candlestick patterns, volume, and (if supplied) option chain
+    bias to produce the weighted composite score and the "why this trade" breakdown.
+    """
+    try:
+        strategy = registry.get(strategy_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
+    signal = strategy.analyze(data, request.symbol)
+
+    primary_tf = strategy.timeframes[0]
+    ltf_df = data[primary_tf]
+    return enrich_signal(signal, ltf_df, option_chain=request.option_chain, swing_window=request.swing_window)
 
 
 @app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse)

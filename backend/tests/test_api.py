@@ -49,6 +49,25 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_signal_enrich_endpoint():
+    df = make_series(decline_then_rally(decline_len=40, rally_len=20))
+    candles = [
+        {
+            "timestamp": ts.isoformat(),
+            "open": row.open, "high": row.high, "low": row.low, "close": row.close, "volume": row.volume,
+        }
+        for ts, row in df.iterrows()
+    ]
+    response = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/signal/enrich",
+        json={"symbol": "TESTSYM", "candles": {"1min": candles}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "composite_score" in body
+    assert "signal" in body
+
+
 def test_option_chain_analyze_endpoint():
     chain = {
         "underlying": "NIFTY",

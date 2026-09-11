@@ -20,6 +20,7 @@ backend/
     price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
     support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
     option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
+    signal_scoring/     # weighted composite score combining every analysis engine (the "why this trade" layer)
     execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
     backtest/          # event-driven backtest engine with HTF resampling
     main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
@@ -89,9 +90,8 @@ only this interface — so adding a broker means writing one new adapter file.
 
 ## Price Action + Support/Resistance Engines
 
-Two standalone analysis engines, not yet wired into strategy signal scoring (kept separate to
-avoid destabilizing the already-tested strategies — see "What's next"), but usable today via
-API for charting overlays and manual/AI-assistant "why this level" queries.
+Two analysis engines, callable standalone via API for charting overlays and manual/AI-assistant
+"why this level" queries, and also consumed by the Signal Scoring Engine below.
 
 - **`app/price_action/swings.py`** — fractal swing-high/low detection (`find_swings`, a
   configurable-window local-extreme scan) plus `alternate_swings`, which collapses consecutive
@@ -134,15 +134,39 @@ get_option_chain()` returns) into the derived analytics the brief asks for:
   point opposite ways, and `NEUTRAL` whenever either signal is inconclusive or the broker
   didn't supply OI-change data at all.
 
-Exposed at `POST /api/option-chain/analyze`. Like the price-action/S&R engines, this is
-standalone today — the strategy engine's option-chain confirmation layer (brief section 11)
-is a follow-up once these three analysis engines feed into Signal Engine scoring together.
+Exposed at `POST /api/option-chain/analyze`, and consumed (optionally) by the Signal Scoring
+Engine below.
+
+## Signal Scoring Engine
+
+`app/signal_scoring/engine.py` implements the weighted composite formula from brief section 8
+(Trend 20% / Market Structure 15% / Support-Resistance 20% / Price Action 20% / Volume 10% /
+Option Chain 10% / Risk-Reward 5%, `WEIGHTS` in that file) as a **non-invasive enrichment
+layer**: `enrich_signal(signal, ltf_df, option_chain=None)` takes a `Signal` any of the seven
+inbuilt strategies already produced, re-derives market structure, support/resistance zones,
+candlestick patterns, and volume fresh from that strategy's own primary-timeframe data (plus
+option-chain bias if a chain is supplied), and returns an `EnrichedSignal` with:
+
+- `composite_score` (0-100) and `grade` (A1/High Quality/Valid/Weak/No Trade, same thresholds
+  as the base engine) computed from the seven weighted components
+- `breakdown`: each component's raw 0-100 reading, its weight, its weighted contribution, and a
+  plain-English note (e.g. "Recent BOS confirms bullish structure at 21834.50")
+- `confirmations`: those same notes as a flat list - directly answers the dashboard's
+  "WHY THIS TRADE?" requirement (brief sections 19 and 25) without the strategy itself needing
+  to know about market structure, S/R, or the option chain
+
+No existing strategy class was touched to build this - it sits entirely on top, so all 87
+existing + new tests keep passing unmodified. Exposed at
+`POST /api/strategies/{id}/signal/enrich` (generates the signal via the normal `/signal` path
+and enriches it in one call).
 
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
 - `GET  /api/strategies/{id}` — one strategy's metadata
 - `POST /api/strategies/{id}/signal` — run a strategy against supplied OHLCV candles, get a `Signal`
+- `POST /api/strategies/{id}/signal/enrich` — the same, plus the weighted composite score and
+  "why this trade" breakdown (structure, S/R, price action, volume, option chain, RR)
 - `POST /api/strategies/{id}/paper-execute` — generate a signal and auto-route it through the
   risk engine + paper broker if it's tradeable
 - `POST /api/backtest` — run a strategy over historical OHLCV bars, get a `BacktestResult`
@@ -174,14 +198,13 @@ is a follow-up once these three analysis engines feed into Signal Engine scoring
 
 ## What's next (not yet built)
 
-Per the original 40-section brief, still outstanding: wiring price-action, support-resistance
-*and* option-chain confirmation into the Signal Engine's scoring (all three engines exist and
-are API-reachable, but the seven inbuilt strategies don't consult them yet), the visual
-no-code strategy builder, TradingView-style charting UI, the React/Next.js dashboard and
-remaining tabs, PostgreSQL/Redis persistence, auth + encrypted secret storage, and Docker/CI
-deployment. Angel One/Fyers/Dhan adapters are structurally registered but still need their real
-endpoints wired in (see `app/brokers/stubs.py`). This slice is the foundation those layers plug
-into: strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so
-once an authenticated broker adapter is constructed and instrument-master lookups are wired to
-a persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight
-through to real equity/futures/options trading.
+Per the original 40-section brief, still outstanding: the visual no-code strategy builder,
+TradingView-style charting UI, the React/Next.js dashboard and remaining tabs, PostgreSQL/Redis
+persistence, auth + encrypted secret storage, and Docker/CI deployment. Angel One/Fyers/Dhan
+adapters are structurally registered but still need their real endpoints wired in (see
+`app/brokers/stubs.py`). This slice is the foundation those layers plug into: strategies are
+already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
+authenticated broker adapter is constructed and instrument-master lookups are wired to a
+persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through
+to real equity/futures/options trading. Signal scoring, price action, support/resistance, and
+option-chain analysis are already wired together (see Signal Scoring Engine above).

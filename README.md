@@ -1,11 +1,13 @@
 # Advance Trading Platform
 
 An algorithmic trading platform for Indian markets (NSE cash, F&O, indices), built in phases.
-So far this delivers the **strategy, risk, execution, and broker-abstraction core**: indicators,
-inbuilt auto-executable multi-timeframe and indicator-based intraday scalping strategies, a
-risk engine, a paper execution router, a broker-agnostic `BrokerInterface` with real Zerodha
-and Upstox adapters (Angel One/Fyers/Dhan registered as pluggable stubs), a backtest engine,
-and a FastAPI service exposing all of it.
+So far this delivers the **strategy, risk, execution, broker-abstraction, and price-action
+core**: indicators, inbuilt auto-executable multi-timeframe and indicator-based intraday
+scalping strategies, a risk engine, a paper execution router, a broker-agnostic
+`BrokerInterface` with real Zerodha and Upstox adapters (Angel One/Fyers/Dhan registered as
+pluggable stubs), a market-structure + candlestick-pattern engine, a support/resistance zone
+engine (swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci), a backtest
+engine, and a FastAPI service exposing all of it.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
 be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the seven inbuilt scalping

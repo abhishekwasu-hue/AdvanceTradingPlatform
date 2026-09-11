@@ -17,9 +17,11 @@ backend/
     strategy_engine/   # BaseStrategy, inbuilt multi-timeframe + indicator-based strategies, registry
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
     brokers/            # BrokerInterface, domain models, Zerodha/Upstox adapters, stubs, registry
+    price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
+    support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
     execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
     backtest/          # event-driven backtest engine with HTF resampling
-    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers
+    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
   tests/               # pytest coverage for every layer above
 docs/
   ARCHITECTURE.md      # this file
@@ -84,6 +86,33 @@ only this interface — so adding a broker means writing one new adapter file.
   `ExecutionResult(executed=False, ...)` rather than being swallowed. `OrderRouter.execute()`
   is now `async` throughout (paper and live) since live calls are real network I/O.
 
+## Price Action + Support/Resistance Engines
+
+Two standalone analysis engines, not yet wired into strategy signal scoring (kept separate to
+avoid destabilizing the already-tested strategies — see "What's next"), but usable today via
+API for charting overlays and manual/AI-assistant "why this level" queries.
+
+- **`app/price_action/swings.py`** — fractal swing-high/low detection (`find_swings`, a
+  configurable-window local-extreme scan) plus `alternate_swings`, which collapses consecutive
+  same-kind swings (including plateaus/ties) down to one point so the sequence strictly
+  alternates HIGH/LOW the way real market structure requires.
+- **`app/price_action/market_structure.py`** — labels each swing HH/HL/LH/LL against the prior
+  swing of the same kind, classifies the overall trend (`UPTREND`/`DOWNTREND`/`RANGE`) from the
+  last two labels, and walks the bars chronologically to emit `BOS` (break of structure, price
+  breaks a level in the direction of the prevailing trend) or `CHoCH` (change of character, it
+  breaks against it) events — each level fires once per break, not once per bar.
+- **`app/price_action/candlestick_patterns.py`** — eleven detectors (Doji, Hammer, Shooting
+  Star, Bullish/Bearish Engulfing, Morning/Evening Star, Pin Bar, Inside/Outside Bar, Strong
+  Rejection Candle), each returning a 0-100 confidence rather than a bare yes/no, per the
+  brief's "confidence scores, not every pattern is a signal" requirement.
+- **`app/support_resistance/`** — `SupportResistanceEngine.build_zones()` combines seven zone
+  sources into `SRZone` objects (a price *range*, never a single exact price): clustered swing
+  points (touches/volume-confirmation/rejection-count driven strength score), previous
+  day/week high-low, the opening range, session VWAP, standard pivot points (PP/R1-3/S1-3),
+  and Fibonacci retracement of the most recent swing leg. Each zone keeps a `source` tag rather
+  than merging across sources — spotting true confluence means comparing overlapping zones,
+  which is a natural next step once this feeds the Signal Engine.
+
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
@@ -94,6 +123,9 @@ only this interface — so adding a broker means writing one new adapter file.
 - `POST /api/backtest` — run a strategy over historical OHLCV bars, get a `BacktestResult`
   (trades, win rate, profit factor, drawdown, equity curve, ...)
 - `GET  /api/broker/available` — broker ids the abstraction layer can adapt to
+- `POST /api/price-action/structure` — swings, HH/HL/LH/LL labels, trend, BOS/CHoCH events
+- `POST /api/price-action/patterns` — every candlestick pattern match with its confidence score
+- `POST /api/support-resistance/zones` — the combined support/resistance zone list
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -116,14 +148,15 @@ only this interface — so adding a broker means writing one new adapter file.
 
 ## What's next (not yet built)
 
-Per the original 40-section brief, still outstanding: price-action/market-structure engine,
-support/resistance zone engine, option chain intelligence engine (the broker layer can already
-fetch raw chains; scoring PCR/max-pain/bias is separate), visual no-code strategy builder,
-TradingView-style charting UI, the React/Next.js dashboard and remaining tabs, PostgreSQL/Redis
-persistence, auth + encrypted secret storage, and Docker/CI deployment. Angel One/Fyers/Dhan
-adapters are structurally registered but still need their real endpoints wired in (see
-`app/brokers/stubs.py`). This slice is the foundation those layers plug into: strategies are
-already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
-authenticated broker adapter is constructed and instrument-master lookups are wired to a
-persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight through
-to real equity/futures/options trading.
+Per the original 40-section brief, still outstanding: wiring price-action/support-resistance
+confirmation into the Signal Engine's scoring (both engines exist and are API-reachable, but
+the seven inbuilt strategies don't consult them yet), option chain intelligence engine (the
+broker layer can already fetch raw chains; scoring PCR/max-pain/bias is separate), visual
+no-code strategy builder, TradingView-style charting UI, the React/Next.js dashboard and
+remaining tabs, PostgreSQL/Redis persistence, auth + encrypted secret storage, and Docker/CI
+deployment. Angel One/Fyers/Dhan adapters are structurally registered but still need their real
+endpoints wired in (see `app/brokers/stubs.py`). This slice is the foundation those layers plug
+into: strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so
+once an authenticated broker adapter is constructed and instrument-master lookups are wired to
+a persistence layer, the same `Signal`/`Trade`/`BrokerOrderRequest` models carry straight
+through to real equity/futures/options trading.

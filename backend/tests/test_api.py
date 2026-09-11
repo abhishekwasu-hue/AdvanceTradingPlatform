@@ -56,6 +56,52 @@ def test_available_brokers_endpoint():
     assert set(brokers) == {"zerodha", "upstox", "angel_one", "fyers", "dhan"}
 
 
+def _candles_payload(prices):
+    df = make_series(prices)
+    return [
+        {
+            "timestamp": ts.isoformat(),
+            "open": row.open, "high": row.high, "low": row.low, "close": row.close, "volume": row.volume,
+        }
+        for ts, row in df.iterrows()
+    ]
+
+
+def test_price_action_structure_endpoint():
+    prices = decline_then_rally(decline_len=40, rally_len=40)
+    response = client.post(
+        "/api/price-action/structure",
+        json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["trend"] in ("UPTREND", "DOWNTREND", "RANGE")
+    assert "swings" in body and "events" in body
+
+
+def test_price_action_patterns_endpoint():
+    prices = decline_then_rally(decline_len=40, rally_len=20)
+    response = client.post(
+        "/api/price-action/patterns",
+        json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
+    )
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_support_resistance_zones_endpoint():
+    prices = decline_then_rally(decline_len=40, rally_len=40)
+    response = client.post(
+        "/api/support-resistance/zones",
+        json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
+    )
+    assert response.status_code == 200
+    zones = response.json()
+    assert isinstance(zones, list)
+    for zone in zones:
+        assert zone["kind"] in ("SUPPORT", "RESISTANCE")
+
+
 def test_paper_execute_endpoint():
     df_candles = decline_then_rally(decline_len=40, rally_len=20)
     df = make_series(df_candles)

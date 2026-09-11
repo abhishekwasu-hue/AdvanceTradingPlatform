@@ -16,8 +16,13 @@ from app.core.models import (
 from app.backtest.engine import run_backtest
 from app.brokers.registry import available_brokers
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
+from app.price_action.candlestick_patterns import detect_patterns
+from app.price_action.market_structure import analyze_market_structure
+from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
 from app.strategy_engine.registry import registry
+from app.support_resistance.engine import SupportResistanceEngine
+from app.support_resistance.models import SRZone
 
 app = FastAPI(
     title="Advance Trading Platform - Strategy Engine",
@@ -51,6 +56,18 @@ class PaperExecuteResponse(BaseModel):
     signal: Signal
     executed: bool
     reasons: List[str]
+
+
+class CandlesRequest(BaseModel):
+    symbol: str
+    candles: List[OHLCVBar]
+    timeframe: str = "1min"
+    swing_window: int = 3
+
+
+class SRZonesRequest(CandlesRequest):
+    tolerance_pct: float = 0.15
+    opening_range_minutes: int = 15
 
 
 @app.get("/api/strategies", response_model=List[StrategyInfo])
@@ -111,6 +128,29 @@ def backtest(request: BacktestRequest) -> BacktestResult:
     risk_config = request.risk_config or _default_risk_config
 
     return run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config)
+
+
+@app.post("/api/price-action/structure", response_model=MarketStructureResult)
+def price_action_structure(request: CandlesRequest) -> MarketStructureResult:
+    df = bars_to_dataframe(request.candles)
+    return analyze_market_structure(df, window=request.swing_window)
+
+
+@app.post("/api/price-action/patterns", response_model=List[PatternMatch])
+def price_action_patterns(request: CandlesRequest) -> List[PatternMatch]:
+    df = bars_to_dataframe(request.candles)
+    return detect_patterns(df)
+
+
+@app.post("/api/support-resistance/zones", response_model=List[SRZone])
+def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
+    df = bars_to_dataframe(request.candles)
+    engine = SupportResistanceEngine(
+        swing_window=request.swing_window,
+        tolerance_pct=request.tolerance_pct,
+        opening_range_minutes=request.opening_range_minutes,
+    )
+    return engine.build_zones(df, request.timeframe)
 
 
 @app.get("/api/broker/available")

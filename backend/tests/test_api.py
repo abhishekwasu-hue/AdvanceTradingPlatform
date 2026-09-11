@@ -49,6 +49,24 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_option_chain_analyze_endpoint():
+    chain = {
+        "underlying": "NIFTY",
+        "expiry": "2024-01-25",
+        "underlying_ltp": 110.0,
+        "rows": [
+            {"strike": 100, "call_oi": 20, "call_change_oi": -5, "put_oi": 40, "put_change_oi": 15},
+            {"strike": 110, "call_oi": 15, "call_change_oi": -2, "put_oi": 35, "put_change_oi": 10},
+            {"strike": 120, "call_oi": 10, "call_change_oi": -1, "put_oi": 30, "put_change_oi": 8},
+        ],
+    }
+    response = client.post("/api/option-chain/analyze", json={"chain": chain})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["bias"] == "BULLISH"
+    assert body["atm_strike"] == 110
+
+
 def test_available_brokers_endpoint():
     response = client.get("/api/broker/available")
     assert response.status_code == 200

@@ -14,8 +14,11 @@ from app.core.models import (
     bars_to_dataframe,
 )
 from app.backtest.engine import run_backtest
+from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
+from app.option_chain.analysis import analyze_option_chain
+from app.option_chain.models import OptionChainAnalysis
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
@@ -151,6 +154,19 @@ def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
         opening_range_minutes=request.opening_range_minutes,
     )
     return engine.build_zones(df, request.timeframe)
+
+
+class OptionChainAnalyzeRequest(BaseModel):
+    chain: OptionChain
+    top_n: int = 3
+
+
+@app.post("/api/option-chain/analyze", response_model=OptionChainAnalysis)
+def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChainAnalysis:
+    """Takes a raw OptionChain (e.g. from BrokerInterface.get_option_chain()) and returns PCR,
+    Max Pain, ATM/ITM/OTM, OI buildup/unwinding, and a bias confirmed by more than PCR alone.
+    """
+    return analyze_option_chain(request.chain, top_n=request.top_n)
 
 
 @app.get("/api/broker/available")

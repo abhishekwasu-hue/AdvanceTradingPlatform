@@ -19,6 +19,7 @@ backend/
     brokers/            # BrokerInterface, domain models, Zerodha/Upstox adapters, stubs, registry
     price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
     support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
+    option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
     execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
     backtest/          # event-driven backtest engine with HTF resampling
     main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
@@ -113,6 +114,30 @@ API for charting overlays and manual/AI-assistant "why this level" queries.
   than merging across sources — spotting true confluence means comparing overlapping zones,
   which is a natural next step once this feeds the Signal Engine.
 
+## Option Chain Intelligence Engine
+
+`app/option_chain/analysis.py` turns a raw `OptionChain` (the same model `BrokerInterface.
+get_option_chain()` returns) into the derived analytics the brief asks for:
+
+- **PCR** (total put OI / total call OI), **Max Pain** (the strike minimizing option writers'
+  aggregate payout across all strikes, `compute_max_pain`), and **ATM strike** (closest strike
+  to the underlying LTP), with per-strike **ITM/ATM/OTM** classification for both legs.
+- **OI activity** per strike per side, from the sign of `change_oi` alone (no previous-price
+  data needed): rising call OI is tagged `CALL_WRITING` (bearish - resistance building),
+  falling is `CALL_UNWINDING`; rising put OI is `PUT_WRITING` (bullish - support building),
+  falling is `PUT_UNWINDING`.
+- **Call resistance / put support strikes** — the top-N strikes by call OI and put OI
+  respectively, the option-chain equivalent of the support/resistance engine's zones.
+- **Bias** (`BULLISH`/`BEARISH`/`NEUTRAL`/`CONFLICTING`) that deliberately never comes from PCR
+  alone, per the brief's explicit warning against that: it only reports `BULLISH`/`BEARISH`
+  when the PCR reading *and* the aggregate OI-change reading agree, `CONFLICTING` when they
+  point opposite ways, and `NEUTRAL` whenever either signal is inconclusive or the broker
+  didn't supply OI-change data at all.
+
+Exposed at `POST /api/option-chain/analyze`. Like the price-action/S&R engines, this is
+standalone today — the strategy engine's option-chain confirmation layer (brief section 11)
+is a follow-up once these three analysis engines feed into Signal Engine scoring together.
+
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
@@ -126,6 +151,7 @@ API for charting overlays and manual/AI-assistant "why this level" queries.
 - `POST /api/price-action/structure` — swings, HH/HL/LH/LL labels, trend, BOS/CHoCH events
 - `POST /api/price-action/patterns` — every candlestick pattern match with its confidence score
 - `POST /api/support-resistance/zones` — the combined support/resistance zone list
+- `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -148,10 +174,9 @@ API for charting overlays and manual/AI-assistant "why this level" queries.
 
 ## What's next (not yet built)
 
-Per the original 40-section brief, still outstanding: wiring price-action/support-resistance
-confirmation into the Signal Engine's scoring (both engines exist and are API-reachable, but
-the seven inbuilt strategies don't consult them yet), option chain intelligence engine (the
-broker layer can already fetch raw chains; scoring PCR/max-pain/bias is separate), visual
+Per the original 40-section brief, still outstanding: wiring price-action, support-resistance
+*and* option-chain confirmation into the Signal Engine's scoring (all three engines exist and
+are API-reachable, but the seven inbuilt strategies don't consult them yet), the visual
 no-code strategy builder, TradingView-style charting UI, the React/Next.js dashboard and
 remaining tabs, PostgreSQL/Redis persistence, auth + encrypted secret storage, and Docker/CI
 deployment. Angel One/Fyers/Dhan adapters are structurally registered but still need their real

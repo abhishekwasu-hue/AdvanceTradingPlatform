@@ -10,18 +10,42 @@ export default function PositionsPage() {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [priceInputs, setPriceInputs] = useState<Record<number, string>>({});
+  const [markMessages, setMarkMessages] = useState<Record<number, string>>({});
 
-  useEffect(() => {
-    if (!user) return;
+  function refresh() {
     setLoading(true);
-    Promise.all([api.listPositions(), api.listTrades()])
+    return Promise.all([api.listPositions(), api.listTrades()])
       .then(([p, t]) => {
         setPositions(p);
         setTrades(t);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    if (!user) return;
+    refresh();
   }, [user]);
+
+  async function handleMarkPrice(tradeId: number) {
+    const raw = priceInputs[tradeId];
+    const price = Number(raw);
+    if (!raw || Number.isNaN(price)) return;
+    try {
+      const result = await api.markPrice(tradeId, price);
+      setMarkMessages((m) => ({
+        ...m,
+        [tradeId]: result.closed
+          ? `Closed: ${result.exit_reason} @ ${result.exit_price} (P&L ${result.pnl?.toFixed(2)})`
+          : "Price doesn't hit SL/target yet - still open.",
+      }));
+      if (result.closed) refresh();
+    } catch (e) {
+      setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
+    }
+  }
 
   if (authLoading) return null;
 
@@ -59,7 +83,41 @@ export default function PositionsPage() {
       </div>
 
       <Card title="Open positions">
-        <TradeTable rows={positions} emptyMessage="No open positions yet - execute a signal from the Signals tab." />
+        {positions.length === 0 ? (
+          <div className="text-sm text-muted py-4 text-center">No open positions yet - execute a signal from the Signals tab.</div>
+        ) : (
+          <div className="space-y-2">
+            {positions.map((p) => (
+              <div key={p.id} className="rounded border border-border px-3 py-2 text-sm space-y-1.5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-medium text-slate-200">{p.symbol}</span>
+                  <DirectionBadge direction={p.direction as "LONG" | "SHORT"} />
+                  <span className="text-muted text-xs">{p.strategy_id}</span>
+                  <span className="text-xs text-muted">Entry {p.entry_price.toFixed(2)} × {p.quantity}</span>
+                  <span className="text-xs text-danger">SL {p.stop_loss.toFixed(2)}</span>
+                  <span className="text-xs text-accent">T1 {p.target1.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted">No live price feed yet - check manually:</span>
+                  <input
+                    type="number"
+                    placeholder="Current price"
+                    className="w-32 rounded bg-panel2 border border-border px-2 py-1 text-xs"
+                    value={priceInputs[p.id] ?? ""}
+                    onChange={(e) => setPriceInputs((v) => ({ ...v, [p.id]: e.target.value }))}
+                  />
+                  <button
+                    onClick={() => handleMarkPrice(p.id)}
+                    className="rounded border border-border hover:bg-panel2 px-2 py-1 text-xs text-slate-200"
+                  >
+                    Check price
+                  </button>
+                  {markMessages[p.id] && <span className="text-xs text-muted">{markMessages[p.id]}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card title="Trade history">

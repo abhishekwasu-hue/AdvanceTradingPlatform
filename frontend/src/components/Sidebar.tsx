@@ -1,14 +1,35 @@
 import { useAuth } from "../auth/AuthContext";
 
-export type Page = "dashboard" | "strategies" | "signals" | "backtest" | "option-chain" | "positions" | "account";
+export type Page =
+  | "dashboard"
+  | "strategies"
+  | "strategy-builder"
+  | "signals"
+  | "backtest"
+  | "option-chain"
+  | "positions"
+  | "portfolio"
+  | "orders"
+  | "analytics"
+  | "risk-management"
+  | "settings"
+  | "system-logs"
+  | "account";
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "strategies", label: "Strategy Library", icon: "⚙" },
+  { id: "strategy-builder", label: "Strategy Builder", icon: "✎" },
   { id: "signals", label: "Signals", icon: "⚡" },
   { id: "backtest", label: "Backtesting", icon: "⏱" },
   { id: "option-chain", label: "Option Chain", icon: "◉" },
   { id: "positions", label: "Positions", icon: "▤" },
+  { id: "portfolio", label: "Portfolio", icon: "◫" },
+  { id: "orders", label: "Orders", icon: "☰" },
+  { id: "analytics", label: "Analytics", icon: "▲" },
+  { id: "risk-management", label: "Risk Management", icon: "⚠" },
+  { id: "settings", label: "Settings", icon: "⚙" },
+  { id: "system-logs", label: "System Logs", icon: "▥" },
 ];
 
 export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {

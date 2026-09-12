@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import CandleChart, { directionMarker, type PriceLineSpec } from "../components/CandleChart";
 import SignalCard from "../components/SignalCard";
 import { Card, DemoDataBanner } from "../components/ui";
-import type { EnrichedSignal, OHLCVBar, SRZone, StrategyInfo } from "../types";
+import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
 
 export default function SignalsPage() {
+  const { user } = useAuth();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [strategyId, setStrategyId] = useState<string>("");
   const [symbol, setSymbol] = useState("NIFTY");
@@ -18,6 +20,7 @@ export default function SignalsPage() {
   const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
   const [zones, setZones] = useState<SRZone[]>([]);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
+  const [history, setHistory] = useState<SignalHistoryEntry[]>([]);
 
   useEffect(() => {
     api.listStrategies().then((list) => {
@@ -25,6 +28,12 @@ export default function SignalsPage() {
       if (list.length) setStrategyId(list[0].id);
     });
   }, []);
+
+  function refreshHistory() {
+    if (user) api.listSignalHistory().then(setHistory).catch(() => {});
+  }
+
+  useEffect(refreshHistory, [user]);
 
   const selected = useMemo(() => strategies.find((s) => s.id === strategyId), [strategies, strategyId]);
 
@@ -55,6 +64,7 @@ export default function SignalsPage() {
       setResult(enriched);
       setChartCandles(primaryCandles);
       setZones(relevantZones);
+      refreshHistory();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -171,6 +181,37 @@ export default function SignalsPage() {
       )}
 
       {result && <SignalCard result={result} />}
+
+      {user && history.length > 0 && (
+        <Card title={`Recent signal history (${history.length})`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-muted uppercase text-[10px] tracking-wide">
+                <tr className="text-left">
+                  <th className="py-1 pr-3">Time</th>
+                  <th className="py-1 pr-3">Strategy</th>
+                  <th className="py-1 pr-3">Symbol</th>
+                  <th className="py-1 pr-3">Direction</th>
+                  <th className="py-1 pr-3">Score</th>
+                  <th className="py-1 pr-3">Grade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.slice(0, 20).map((h) => (
+                  <tr key={h.id} className="border-t border-border">
+                    <td className="py-1 pr-3 text-muted whitespace-nowrap">{new Date(h.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3">{h.strategy_id}</td>
+                    <td className="py-1 pr-3 font-medium text-slate-200">{h.symbol}</td>
+                    <td className="py-1 pr-3">{h.direction}</td>
+                    <td className="py-1 pr-3">{h.score}</td>
+                    <td className="py-1 pr-3 text-muted">{h.grade}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

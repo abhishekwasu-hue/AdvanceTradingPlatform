@@ -207,3 +207,144 @@ export interface SRZone {
   timeframe: string;
   source: string;
 }
+
+export interface RiskConfig {
+  capital: number;
+  risk_per_trade_pct: number;
+  max_daily_loss_pct: number;
+  max_trades_per_day: number;
+  max_open_positions: number;
+  max_consecutive_losses: number;
+  min_risk_reward: number;
+  lot_size: number;
+}
+
+export interface GroupStats {
+  key: string;
+  trades: number;
+  wins: number;
+  win_rate: number;
+  net_pnl: number;
+}
+
+export interface AnalyticsSummary {
+  total_trades: number;
+  closed_trades: number;
+  open_trades: number;
+  win_rate: number;
+  net_pnl: number;
+  gross_profit: number;
+  gross_loss: number;
+  profit_factor: number | null;
+  avg_win: number;
+  avg_loss: number;
+  by_strategy: GroupStats[];
+  by_symbol: GroupStats[];
+}
+
+export interface AuditLogEntry {
+  id: number;
+  event: string;
+  detail: string;
+  created_at: string;
+}
+
+export interface SignalHistoryEntry {
+  id: number;
+  strategy_id: string;
+  symbol: string;
+  direction: string;
+  signal_time: string;
+  entry: number | null;
+  stop_loss: number | null;
+  target1: number | null;
+  target2: number | null;
+  risk_reward: number | null;
+  score: number;
+  grade: string;
+  reasons: string[];
+  timeframe_combo: string;
+  created_at: string;
+}
+
+export interface MarkPriceResponse {
+  closed: boolean;
+  exit_reason: string | null;
+  exit_price: number | null;
+  pnl: number | null;
+}
+
+export interface StoredBrokerInfo {
+  broker_name: string;
+  updated_at: string;
+}
+
+export interface BrokerCredentialsInput {
+  api_key?: string;
+  api_secret?: string;
+  access_token?: string;
+  request_token?: string;
+  client_id?: string;
+  pin?: string;
+  totp_secret?: string;
+  redirect_uri?: string;
+}
+
+// --- Custom strategy / Strategy Builder ---
+
+export type ConditionOperator = "GT" | "LT" | "GTE" | "LTE" | "CROSSES_ABOVE" | "CROSSES_BELOW";
+export type IndicatorName = "EMA" | "SMA" | "RSI" | "ADX" | "PLUS_DI" | "MINUS_DI" | "ATR" | "SUPERTREND" | "CLOSE" | "OPEN" | "HIGH" | "LOW";
+
+export interface Operand {
+  type: "value" | "indicator";
+  value: number;
+  indicator: IndicatorName;
+  period: number;
+  multiplier: number;
+}
+
+export interface Condition {
+  left: Operand;
+  operator: ConditionOperator;
+  right: Operand;
+}
+
+export interface CustomStrategyConfig {
+  name: string;
+  timeframe: string;
+  long_conditions: Condition[];
+  short_conditions: Condition[];
+  stop_loss_atr_mult: number;
+  atr_period: number;
+  target_rr: [number, number];
+  min_rr: number;
+}
+
+export interface CustomStrategyResponse {
+  id: number;
+  strategy_id: string;
+  config: CustomStrategyConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export function defaultOperand(): Operand {
+  return { type: "indicator", value: 50, indicator: "RSI", period: 14, multiplier: 3.0 };
+}
+
+export function defaultCondition(): Condition {
+  return { left: defaultOperand(), operator: "GT", right: { ...defaultOperand(), type: "value" } };
+}
+
+export function defaultCustomStrategyConfig(): CustomStrategyConfig {
+  return {
+    name: "My Strategy",
+    timeframe: "5min",
+    long_conditions: [defaultCondition()],
+    short_conditions: [],
+    stop_loss_atr_mult: 1.0,
+    atr_period: 14,
+    target_rr: [1.5, 2.0],
+    min_rr: 1.2,
+  };
+}

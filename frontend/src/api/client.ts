@@ -1,12 +1,21 @@
 import type {
+  AnalyticsSummary,
+  AuditLogEntry,
   BacktestResult,
+  BrokerCredentialsInput,
+  CustomStrategyConfig,
+  CustomStrategyResponse,
   EnrichedSignal,
+  MarkPriceResponse,
   MarketStructureResult,
   OHLCVBar,
   OptionChain,
   OptionChainAnalysis,
+  RiskConfig,
   SRZone,
   Signal,
+  SignalHistoryEntry,
+  StoredBrokerInfo,
   StrategyInfo,
   TokenResponse,
   TradeRecord,
@@ -123,4 +132,40 @@ export const api = {
   listTrades: () => request<TradeRecord[]>("/trades"),
 
   listPositions: () => request<TradeRecord[]>("/positions"),
+
+  markPrice: (tradeId: number, currentPrice: number) =>
+    request<MarkPriceResponse>(`/positions/${tradeId}/mark-price`, {
+      method: "POST",
+      body: JSON.stringify({ current_price: currentPrice }),
+    }),
+
+  getRiskSettings: () => request<RiskConfig>("/risk-settings"),
+
+  updateRiskSettings: (config: RiskConfig) =>
+    request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
+
+  getAnalyticsSummary: () => request<AnalyticsSummary>("/analytics/summary"),
+
+  listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
+
+  listSignalHistory: () => request<SignalHistoryEntry[]>("/signal-history"),
+
+  createCustomStrategy: (config: CustomStrategyConfig) =>
+    request<CustomStrategyResponse>("/custom-strategies", { method: "POST", body: JSON.stringify(config) }),
+
+  listCustomStrategies: () => request<CustomStrategyResponse[]>("/custom-strategies"),
+
+  deleteCustomStrategy: (id: number) =>
+    request<void>(`/custom-strategies/${id}`, { method: "DELETE" }),
+
+  listStoredBrokerCredentials: () => request<StoredBrokerInfo[]>("/broker/credentials"),
+
+  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput) =>
+    request<void>(`/broker/${name}/credentials`, { method: "POST", body: JSON.stringify(credentials) }),
+
+  deleteBrokerCredentials: (name: string) =>
+    request<void>(`/broker/${name}/credentials`, { method: "DELETE" }),
+
+  authenticateBroker: (name: string) =>
+    request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
 };

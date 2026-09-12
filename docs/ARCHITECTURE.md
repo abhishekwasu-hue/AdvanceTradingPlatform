@@ -340,24 +340,65 @@ error), so pulling the `python`/`node`/`postgres`/`nginx` base images and actual
 Hub access before trusting it in production — if anything doesn't build cleanly, that's a real
 bug to fix, not a sandbox artifact.
 
-## What's next (not yet built)
+## Strategy Builder, dashboard tabs, and platform hardening
 
-Per the original 40-section brief, still outstanding: the visual no-code strategy builder, the
-remaining dashboard tabs (Orders, Portfolio, Risk Management, Analytics, Settings, System Logs -
-Positions/Trade Journal now exist, see Frontend Console and Database + Auth above), Redis (for real-time pub/sub
-and caching - Postgres persistence and JWT auth now exist), and CI (Docker Compose deployment now
-exists - see Docker Deployment above - but it's unverified in this sandbox and there's no CI
-pipeline running the test suite/build on every push yet; formal DB migrations now exist, see
-Database + Auth above). Angel One/Fyers/Dhan adapters are structurally registered
-but still need their real endpoints wired in (see `app/brokers/stubs.py`). Persisting signals
-and strategy configs to the database (trades are now persisted per user - see `app/trading/` in
-Database + Auth above - but signal history and saved/custom strategy configurations aren't yet,
-and nothing monitors live prices to auto-close an open paper position) is the natural next step.
-This slice is the foundation those layers plug into: strategies are already timeframe- and
-instrument-agnostic (`symbol` is just a string), so once an authenticated broker adapter is
-constructed (now genuinely possible via `POST /api/broker/{name}/authenticate`) and
-instrument-master lookups are wired up, the same `Signal`/`Trade`/`BrokerOrderRequest` models
-carry straight through to real
-equity/futures/options trading. Signal scoring, price action, support/resistance, and
-option-chain analysis are already wired together (see Signal Scoring Engine above) and
-reachable from the frontend console (see Frontend Console above).
+A full pass since the last section closed most of the previously-open gaps:
+
+- **No-code Strategy Builder** (`app/strategy_engine/declarative.py` + `app/custom_strategies/`):
+  a user composes AND-combined long/short entry conditions (indicator vs. a fixed value or
+  another indicator, plain comparisons or crossover detection) through a form UI - no drag-and-drop
+  canvas, but genuinely code-free. A saved `CustomStrategyConfig` becomes a `DeclarativeStrategy`
+  resolved under a `custom:<id>` strategy id by `app/custom_strategies/resolver.py`, and every
+  route that accepts a strategy id (`/signal`, `/signal/enrich`, `/paper-execute`, `/backtest`,
+  and the `GET /api/strategies` listing itself) resolves it the same way it resolves a built-in
+  strategy - a custom strategy is private to its owner (403/404 for anyone else) but otherwise
+  indistinguishable from `ema_rsi_scalper_1m` to the rest of the app. Frontend: `Strategy
+  Builder` page.
+- **Signal history**: every `/signal/enrich` call for a logged-in user is now logged
+  (`SignalHistoryRecord`, `GET /api/signal-history`) independent of whether it was ever executed
+  - surfaced as a "Recent signal history" table on the Signals page.
+- **Manual position exit-tracking**: `POST /api/positions/{id}/mark-price` checks a supplied
+  current price against an open position's stop loss/target1/target2 (same SL-then-target2-then-target1
+  priority as the backtest engine) and closes it with `PaperBroker`'s real cost model if hit -
+  the honest replacement for a live price feed that doesn't exist yet (a "Check price" control on
+  the Positions page). Once a real broker quote stream exists, a scheduled job can call the same
+  endpoint instead of a person.
+- **Per-user Risk Management**: `RiskSettingsRecord` + `GET`/`PUT /api/risk-settings` persist a
+  user's own capital/risk-per-trade/daily-loss/trade-count/consecutive-loss/lot-size limits,
+  which `/paper-execute` now applies automatically instead of always falling back to the
+  hardcoded platform default. Frontend: `Risk Management` tab.
+- **Portfolio, Orders, Analytics tabs**: Portfolio aggregates capital deployed and cumulative
+  realized P&L from existing trade data; Orders presents every entry/exit fill as a broker-style
+  blotter; Analytics (`GET /api/analytics/summary`) breaks win rate/net P&L/profit factor down by
+  strategy and by symbol from a user's full persisted trade history.
+- **Settings + System Logs tabs**: Settings is the previously-missing UI for the broker
+  credential endpoints that already existed (`POST/GET/DELETE /api/broker/{name}/credentials`,
+  `POST /api/broker/{name}/authenticate`); System Logs is a viewer for `AuditLogRecord`
+  (`GET /api/audit-logs`), which had been written to since the DB/auth phase but had no read path
+  until now.
+- **Optional Redis caching** (`app/cache/client.py`): a fail-open async wrapper caches
+  `POST /api/option-chain/analyze` and `POST /api/support-resistance/zones` (both pure,
+  side-effect-free computations) for 5 seconds. Verified for real by stopping the local
+  redis-server mid-test-run and confirming the cache-backed endpoints still pass - Redis is
+  optional infrastructure here, never a hard dependency. `docker-compose.yml` gets a
+  `redis:7-alpine` service.
+- **CI** (`.github/workflows/ci.yml`): a `backend` job runs the full pytest suite, then applies
+  Alembic migrations against a real Postgres service container and runs `alembic check` to catch
+  model/migration drift; a `frontend` job runs `npm run build` (TypeScript type-check + Vite
+  production bundle). Both on every push/PR.
+
+Genuinely still outstanding: Angel One/Fyers/Dhan adapters are structurally registered but still
+need their real endpoints wired in (see `app/brokers/stubs.py`) - deliberately deprioritized once
+Zerodha/Upstox/Shoonya existed. Full `docker compose up --build` execution remains unverified in
+this sandbox (its network policy blocks Docker Hub's CDN - see Docker Deployment above); `docker
+compose config` validates cleanly and the backend/CI both exercise the same Dockerfile logic
+(migrate-then-serve), but an actual build-and-run pass on a machine with normal Docker Hub access
+is still worth doing before trusting it in production.
+
+Strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
+authenticated broker adapter is constructed (genuinely possible via `POST
+/api/broker/{name}/authenticate`) and instrument-master lookups are wired up, the same
+`Signal`/`Trade`/`BrokerOrderRequest` models carry straight through to real equity/futures/options
+trading. Signal scoring, price action, support/resistance, and option-chain analysis are already
+wired together (see Signal Scoring Engine above) and reachable from the frontend console (see
+Frontend Console above).

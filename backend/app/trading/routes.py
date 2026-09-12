@@ -1,15 +1,17 @@
+import json
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import json
-
 from app.auth.dependencies import get_current_user
 from app.db.models import SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
+from app.execution.paper_broker import PaperBroker
+from app.trading.exit_logic import check_exit
 
 router = APIRouter(prefix="/api", tags=["trading"])
 
@@ -115,3 +117,51 @@ async def list_signal_history(
         .limit(limit)
     )
     return [SignalHistoryResponse.from_record(r) for r in rows]
+
+
+class MarkPriceRequest(BaseModel):
+    current_price: float
+
+
+class MarkPriceResponse(BaseModel):
+    closed: bool
+    exit_reason: Optional[str] = None
+    exit_price: Optional[float] = None
+    pnl: Optional[float] = None
+
+
+@router.post("/positions/{trade_id}/mark-price", response_model=MarkPriceResponse)
+async def mark_price(
+    trade_id: int, request: MarkPriceRequest,
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> MarkPriceResponse:
+    """Checks a supplied current price against this open position's stop loss/targets and closes
+    it if hit. There's no live broker market-data stream yet, so this is the honest replacement
+    for continuous monitoring: the console (or, later, a scheduled job once a broker quote feed
+    exists) calls this periodically with the latest price rather than a background task silently
+    watching prices that don't actually exist yet.
+    """
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None or trade.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Unknown position")
+    if trade.exit_time is not None:
+        raise HTTPException(status_code=409, detail="Position is already closed")
+
+    outcome = check_exit(trade, request.current_price)
+    if outcome is None:
+        return MarkPriceResponse(closed=False)
+
+    reason, exit_price = outcome
+    broker = PaperBroker()
+    direction_sign = 1 if trade.direction == "LONG" else -1
+    gross_pnl = direction_sign * (exit_price - trade.entry_price) * trade.quantity
+    charges = broker.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity)
+
+    trade.exit_price = round(exit_price, 2)
+    trade.exit_time = datetime.now(timezone.utc)
+    trade.exit_reason = reason
+    trade.charges = charges
+    trade.pnl = round(gross_pnl - charges, 2)
+    await session.commit()
+
+    return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=trade.exit_price, pnl=trade.pnl)

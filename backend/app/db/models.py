@@ -120,6 +120,29 @@ class CustomStrategyRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
+class RiskSettingsRecord(Base):
+    """A user's own risk parameters (position sizing, daily loss/trade-count/consecutive-loss
+    guards), persisted so paper-execute uses their configured limits by default instead of the
+    hardcoded RiskConfig() every anonymous call falls back to. One row per user.
+    """
+
+    __tablename__ = "risk_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    capital: Mapped[float] = mapped_column(Float, nullable=False, default=100_000.0)
+    risk_per_trade_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    max_daily_loss_pct: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)
+    max_trades_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
+    min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
 class AuditLogRecord(Base):
     """Security-relevant events (register, login, credential stored, broker authenticated, ...).
     Per the platform's audit-trail requirement: every credential/auth action leaves a row here.

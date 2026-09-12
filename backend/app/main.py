@@ -34,6 +34,8 @@ from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
+from app.risk_engine.routes import get_user_risk_config
+from app.risk_engine.routes import router as risk_settings_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
@@ -69,6 +71,7 @@ app.include_router(auth_router)
 app.include_router(broker_router)
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
+app.include_router(risk_settings_router)
 
 _paper_state = TradingDayState()
 _default_risk_config = RiskConfig()
@@ -204,7 +207,9 @@ async def paper_execute(
 ) -> PaperExecuteResponse:
     """Works anonymously (no persistence, matching the console's try-it-without-an-account
     flow) or, with a valid Authorization header, persists the fill to this user's trade history
-    - see GET /api/trades and /api/positions.
+    - see GET /api/trades and /api/positions. When the request doesn't explicitly pass a
+    risk_config, a logged-in user's own saved risk settings apply (see GET/PUT
+    /api/risk-settings) instead of the platform default.
     """
     try:
         strategy = await resolve_strategy(strategy_id, user, session)
@@ -216,7 +221,10 @@ async def paper_execute(
     data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
     signal = strategy.analyze(data, request.symbol)
 
-    risk_config = request.risk_config or _default_risk_config
+    risk_config = request.risk_config
+    if risk_config is None and user is not None:
+        risk_config = await get_user_risk_config(user.id, session)
+    risk_config = risk_config or _default_risk_config
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
     try:
         result: ExecutionResult = await router.execute(signal, _paper_state)

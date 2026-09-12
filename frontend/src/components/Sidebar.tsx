@@ -4,6 +4,7 @@ export type Page =
   | "dashboard"
   | "strategies"
   | "strategy-builder"
+  | "fundamentals"
   | "signals"
   | "backtest"
   | "option-chain"
@@ -20,6 +21,7 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "strategies", label: "Strategy Library", icon: "⚙" },
   { id: "strategy-builder", label: "Strategy Builder", icon: "✎" },
+  { id: "fundamentals", label: "Fundamental Analysis", icon: "🏢" },
   { id: "signals", label: "Signals", icon: "⚡" },
   { id: "backtest", label: "Backtesting", icon: "⏱" },
   { id: "option-chain", label: "Option Chain", icon: "◉" },

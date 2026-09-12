@@ -402,3 +402,46 @@ authenticated broker adapter is constructed (genuinely possible via `POST
 trading. Signal scoring, price action, support/resistance, and option-chain analysis are already
 wired together (see Signal Scoring Engine above) and reachable from the frontend console (see
 Frontend Console above).
+
+## Fundamental Analysis & Company Intelligence Engine
+
+A companion to the technical Signal Scoring Engine, covering the "should I even be looking at
+this company" question technical signals don't answer: business quality, earnings quality,
+valuation, balance sheet/cash flow health, red flags, SWOT, and a composite Fundamental Score
+that fuses with the technical score into a final trading bias. Full detail (design principle,
+engine-by-engine breakdown, what's deliberately out of scope) lives in
+[`docs/FUNDAMENTALS.md`](FUNDAMENTALS.md) - the short version:
+
+- `app/fundamentals/models.py` + DB (`companies`, `financial_periods`,
+  `shareholding_snapshots`, `corporate_actions`, `qualitative_factors`): every input carries a
+  `SourceCitation` (source, URL, dates, confidence); ratios are always derived live from raw
+  supplied figures, never stored redundantly; qualitative judgments (moat factors, management
+  quality, SWOT bullets) only ever come from a cited human-entered `QualitativeFactor`, never
+  invented by an engine.
+- `app/fundamentals/engines/`: Revenue growth/CAGR, Profitability (margins/ROE/ROCE/ROA +
+  trend), Earnings Quality (CFO vs PAT), Quarterly QoQ/YoY comparison, Balance Sheet (debt/
+  liquidity risk), Cash Flow, relative Valuation + a real DCF calculator (bull/base/bear
+  sensitivity), Business Quality scorecard, Red Flag aggregator, SWOT generator, Bull/Base/Bear
+  scenario projector, and the Fundamental Score (exact weights from the spec) + a Fusion engine
+  combining it with the existing Signal Scoring Engine into A1 LONG/SHORT BIAS, WATCHLIST,
+  CAUTION, or NO TRADE.
+- `app/fundamentals/providers/nse.py`: a real `NSEProvider` for NSE India's public JSON API,
+  following the same `BrokerInterface` adapter pattern as the broker adapters - parsing verified
+  with mocked HTTP responses, but its live network behavior is unverified in this sandbox (same
+  network-policy block that stopped Docker Hub verification - see Docker Deployment above).
+- `app/fundamentals/routes.py`: company/financial/shareholding/corporate-action/qualitative-
+  factor CRUD (open reads - shared reference data; auth-required writes so contributions are
+  attributed) plus per-engine analysis endpoints, a screener, and a lightweight sector-rotation
+  ranking - both limited to whatever companies have actually been entered, not the full NSE/BSE
+  universe (no live market-wide feed exists).
+- Frontend: a `Fundamental Analysis` page (company profile/financials entry, tabbed analysis,
+  valuation & DCF calculator, SWOT/red-flags/qualitative-factor entry, Fundamental Score +
+  Fusion, one-page Intelligence Card, screener + sector rotation) - verified end-to-end with
+  Playwright against the live backend.
+
+Deliberately out of scope for this pass (per explicit user direction to build the core engines
+for real rather than a larger surface that silently does nothing without a live feed): national/
+international event impact engines, earnings-call-transcript NLP, and a true market-wide/NIFTY-
+level fundamental engine - all three need a live macro/news/analyst-consensus feed this platform
+doesn't have credentials for. Angel One/Fyers/Dhan real broker adapters and full `docker compose
+up --build` execution remain the same explicitly-deferred items noted above.

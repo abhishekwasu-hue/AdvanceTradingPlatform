@@ -165,3 +165,15 @@ def test_screener_filters_by_persisted_companies():
 
     response2 = client.post("/api/fundamentals/screener", json={"min_promoter_holding_pct": 99.0})
     assert not any(c["symbol"] == "ZETA" for c in response2.json())
+
+
+def test_sector_rotation_aggregates_by_sector():
+    token = _register("analyst8@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("ETA"))
+    client.post("/api/fundamentals/companies/ETA/financials", headers=headers, json=_sample_period())
+
+    response = client.get("/api/fundamentals/sectors")
+    assert response.status_code == 200
+    sector_row = next(r for r in response.json() if r["sector"] == "Information Technology")
+    assert sector_row["companies_tracked"] >= 1

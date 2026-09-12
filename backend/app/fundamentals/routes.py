@@ -447,6 +447,50 @@ async def screener(filters: ScreenerFilter, session: AsyncSession = Depends(get_
     return results
 
 
+@router.get("/sectors")
+async def sector_rotation(session: AsyncSession = Depends(get_session)) -> List[Dict[str, object]]:
+    """A lightweight sector ranking (spec section 46) over whatever companies have been entered
+    so far: average 3Y revenue CAGR and average ROCE per sector, ranked by CAGR. This is real
+    aggregation of persisted data, not a live institutional-flow/momentum feed - with only a
+    handful of companies entered, treat it as directional, not a market-wide sector call (that
+    needs the full NIFTY universe, which requires a live data feed this platform doesn't have).
+    """
+    companies = await session.scalars(select(CompanyRecord).order_by(CompanyRecord.symbol))
+    by_sector: Dict[str, Dict[str, object]] = {}
+
+    for company in companies:
+        periods = await _load_periods(session, company.id)
+        if not periods:
+            continue
+        bucket = by_sector.setdefault(company.sector, {"companies": 0, "cagr_values": [], "roce_values": []})
+        bucket["companies"] += 1
+
+        try:
+            growth = RevenueAnalysisEngine().analyze(periods)
+            if growth.cagr_3y_pct is not None:
+                bucket["cagr_values"].append(growth.cagr_3y_pct)
+        except ValueError:
+            pass
+
+        profitability = ProfitabilityEngine().analyze(periods)
+        if profitability.roce_pct is not None:
+            bucket["roce_values"].append(profitability.roce_pct)
+
+    ranking = []
+    for sector, bucket in by_sector.items():
+        cagr_values = bucket["cagr_values"]
+        roce_values = bucket["roce_values"]
+        ranking.append({
+            "sector": sector,
+            "companies_tracked": bucket["companies"],
+            "avg_revenue_cagr_3y_pct": round(sum(cagr_values) / len(cagr_values), 1) if cagr_values else None,
+            "avg_roce_pct": round(sum(roce_values) / len(roce_values), 1) if roce_values else None,
+        })
+
+    ranking.sort(key=lambda r: (r["avg_revenue_cagr_3y_pct"] is None, -(r["avg_revenue_cagr_3y_pct"] or 0)))
+    return ranking
+
+
 @router.get("/companies/{symbol}/card", response_model=CompanyIntelligenceCard)
 async def company_intelligence_card(symbol: str, session: AsyncSession = Depends(get_session)) -> CompanyIntelligenceCard:
     """The one-page summary (spec section 39)."""

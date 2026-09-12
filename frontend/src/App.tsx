@@ -5,6 +5,7 @@ import AccountPage from "./pages/AccountPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
 import DashboardPage from "./pages/DashboardPage";
+import FundamentalsPage from "./pages/FundamentalsPage";
 import OptionChainPage from "./pages/OptionChainPage";
 import OrdersPage from "./pages/OrdersPage";
 import PortfolioPage from "./pages/PortfolioPage";
@@ -27,6 +28,7 @@ export default function App() {
           {page === "dashboard" && <DashboardPage />}
           {page === "strategies" && <StrategiesPage />}
           {page === "strategy-builder" && <StrategyBuilderPage />}
+          {page === "fundamentals" && <FundamentalsPage />}
           {page === "signals" && <SignalsPage />}
           {page === "backtest" && <BacktestPage />}
           {page === "option-chain" && <OptionChainPage />}

@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.db.models import SignalHistoryRecord, TradeRecord, User
+from app.db.models import AuditLogRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.paper_broker import PaperBroker
+from app.trading.analytics import AnalyticsSummary, build_analytics_summary
 from app.trading.exit_logic import check_exit
 
 router = APIRouter(prefix="/api", tags=["trading"])
@@ -165,3 +166,42 @@ async def mark_price(
     await session.commit()
 
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=trade.exit_price, pnl=trade.pnl)
+
+
+@router.get("/analytics/summary", response_model=AnalyticsSummary)
+async def analytics_summary(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> AnalyticsSummary:
+    """Win rate / P&L breakdown by strategy and symbol, computed from this user's full trade
+    history (GET /api/trades) - closed trades only for win-rate/profit-factor purposes.
+    """
+    rows = list(await session.scalars(select(TradeRecord).where(TradeRecord.user_id == user.id)))
+    return build_analytics_summary(rows)
+
+
+class AuditLogResponse(BaseModel):
+    id: int
+    event: str
+    detail: str
+    created_at: str
+
+    @classmethod
+    def from_record(cls, record: AuditLogRecord) -> "AuditLogResponse":
+        return cls(id=record.id, event=record.event, detail=record.detail, created_at=record.created_at.isoformat())
+
+
+@router.get("/audit-logs", response_model=List[AuditLogResponse])
+async def list_audit_logs(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 200,
+) -> List[AuditLogResponse]:
+    """This user's own security-relevant events (register, login, credential stored/deleted,
+    broker authenticated/failed, ...), most recent first. Never another user's - System Logs is
+    a per-account audit trail, not a global admin view.
+    """
+    rows = await session.scalars(
+        select(AuditLogRecord)
+        .where(AuditLogRecord.user_id == user.id)
+        .order_by(AuditLogRecord.created_at.desc())
+        .limit(limit)
+    )
+    return [AuditLogResponse.from_record(r) for r in rows]

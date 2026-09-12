@@ -5,6 +5,7 @@ from typing import AsyncIterator, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ExecutionMode
@@ -22,7 +23,9 @@ from app.backtest.engine import run_backtest
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
-from app.db.models import User
+from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
+from app.custom_strategies.routes import router as custom_strategies_router
+from app.db.models import CustomStrategyRecord, User
 from app.db.session import get_session, init_models
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.option_chain.analysis import analyze_option_chain
@@ -36,7 +39,7 @@ from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
-from app.trading.persistence import persist_paper_trade
+from app.trading.persistence import persist_paper_trade, persist_signal_history
 from app.trading.routes import router as trading_router
 
 @asynccontextmanager
@@ -65,6 +68,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(broker_router)
 app.include_router(trading_router)
+app.include_router(custom_strategies_router)
 
 _paper_state = TradingDayState()
 _default_risk_config = RiskConfig()
@@ -112,22 +116,48 @@ class SRZonesRequest(CandlesRequest):
 
 
 @app.get("/api/strategies", response_model=List[StrategyInfo])
-def list_strategies() -> List[StrategyInfo]:
-    return [s.info() for s in registry.list_all()]
+async def list_strategies(
+    user: Optional[User] = Depends(get_current_user_optional), session: AsyncSession = Depends(get_session),
+) -> List[StrategyInfo]:
+    """Every inbuilt strategy, plus - when logged in - this user's own saved custom strategies
+    (id "custom:<id>"), so the rest of the console treats the two identically.
+    """
+    strategies = [s.info() for s in registry.list_all()]
+    if user is not None:
+        rows = await session.scalars(
+            select(CustomStrategyRecord)
+            .where(CustomStrategyRecord.user_id == user.id)
+            .order_by(CustomStrategyRecord.created_at.desc())
+        )
+        strategies.extend(custom_strategy_info(r) for r in rows)
+    return strategies
 
 
 @app.get("/api/strategies/{strategy_id}", response_model=StrategyInfo)
-def get_strategy(strategy_id: str) -> StrategyInfo:
+async def get_strategy(
+    strategy_id: str,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+) -> StrategyInfo:
     try:
-        return registry.get(strategy_id).info()
+        strategy = await resolve_strategy(strategy_id, user, session)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return strategy.info()
 
 
 @app.post("/api/strategies/{strategy_id}/signal", response_model=Signal)
-def generate_signal(strategy_id: str, request: SignalRequest) -> Signal:
+async def generate_signal(
+    strategy_id: str, request: SignalRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+) -> Signal:
     try:
-        strategy = registry.get(strategy_id)
+        strategy = await resolve_strategy(strategy_id, user, session)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -136,13 +166,20 @@ def generate_signal(strategy_id: str, request: SignalRequest) -> Signal:
 
 
 @app.post("/api/strategies/{strategy_id}/signal/enrich", response_model=EnrichedSignal)
-def generate_and_enrich_signal(strategy_id: str, request: EnrichSignalRequest) -> EnrichedSignal:
+async def generate_and_enrich_signal(
+    strategy_id: str, request: EnrichSignalRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+) -> EnrichedSignal:
     """Generates a signal the same way /signal does, then cross-checks it against market
     structure, support/resistance, candlestick patterns, volume, and (if supplied) option chain
-    bias to produce the weighted composite score and the "why this trade" breakdown.
+    bias to produce the weighted composite score and the "why this trade" breakdown. Logged-in
+    calls are also appended to this user's signal history - see GET /api/signal-history.
     """
     try:
-        strategy = registry.get(strategy_id)
+        strategy = await resolve_strategy(strategy_id, user, session)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -151,7 +188,12 @@ def generate_and_enrich_signal(strategy_id: str, request: EnrichSignalRequest) -
 
     primary_tf = strategy.timeframes[0]
     ltf_df = data[primary_tf]
-    return enrich_signal(signal, ltf_df, option_chain=request.option_chain, swing_window=request.swing_window)
+    enriched = enrich_signal(signal, ltf_df, option_chain=request.option_chain, swing_window=request.swing_window)
+
+    if user is not None:
+        await persist_signal_history(session, user.id, enriched)
+
+    return enriched
 
 
 @app.post("/api/strategies/{strategy_id}/paper-execute", response_model=PaperExecuteResponse)
@@ -165,7 +207,9 @@ async def paper_execute(
     - see GET /api/trades and /api/positions.
     """
     try:
-        strategy = registry.get(strategy_id)
+        strategy = await resolve_strategy(strategy_id, user, session)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -186,9 +230,15 @@ async def paper_execute(
 
 
 @app.post("/api/backtest", response_model=BacktestResult)
-def backtest(request: BacktestRequest) -> BacktestResult:
+async def backtest(
+    request: BacktestRequest,
+    user: Optional[User] = Depends(get_current_user_optional),
+    session: AsyncSession = Depends(get_session),
+) -> BacktestResult:
     try:
-        strategy = copy.copy(registry.get(request.strategy_id))
+        strategy = copy.copy(await resolve_strategy(request.strategy_id, user, session))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

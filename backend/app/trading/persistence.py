@@ -1,7 +1,37 @@
+import json
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Trade
-from app.db.models import TradeRecord
+from app.db.models import SignalHistoryRecord, TradeRecord
+from app.signal_scoring.models import EnrichedSignal
+
+
+async def persist_signal_history(session: AsyncSession, user_id: int, enriched: EnrichedSignal) -> SignalHistoryRecord:
+    """Logs every enriched signal a logged-in user generates, tradeable or not - a history of
+    what the engine said, independent of whether it was ever executed.
+    """
+    signal = enriched.signal
+    record = SignalHistoryRecord(
+        user_id=user_id,
+        strategy_id=signal.strategy_id,
+        symbol=signal.symbol,
+        direction=signal.direction.value,
+        signal_time=signal.timestamp,
+        entry=signal.entry,
+        stop_loss=signal.stop_loss,
+        target1=signal.target1,
+        target2=signal.target2,
+        risk_reward=signal.risk_reward,
+        score=enriched.composite_score,
+        grade=enriched.grade.value,
+        reasons_json=json.dumps(signal.reasons),
+        timeframe_combo=signal.timeframe_combo,
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return record
 
 
 async def persist_paper_trade(session: AsyncSession, user_id: int, trade: Trade) -> TradeRecord:

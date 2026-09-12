@@ -5,8 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import json
+
 from app.auth.dependencies import get_current_user
-from app.db.models import TradeRecord, User
+from app.db.models import SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api", tags=["trading"])
@@ -58,9 +60,9 @@ async def list_trades(
 async def list_open_positions(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> List[TradeRecordResponse]:
-    """Trades with no exit yet. Nothing currently monitors live prices to close a paper-execute
-    fill automatically, so today every persisted trade shows up here until manual exit tracking
-    is wired in - see the TradeRecord docstring.
+    """Trades with no exit yet. See POST /api/positions/{id}/mark-price for how a position
+    actually gets closed - there's no live broker feed yet, so exit tracking is a manual/periodic
+    price check rather than continuous monitoring.
     """
     rows = await session.scalars(
         select(TradeRecord)
@@ -68,3 +70,48 @@ async def list_open_positions(
         .order_by(TradeRecord.entry_time.desc())
     )
     return [TradeRecordResponse.from_record(r) for r in rows]
+
+
+class SignalHistoryResponse(BaseModel):
+    id: int
+    strategy_id: str
+    symbol: str
+    direction: str
+    signal_time: str
+    entry: Optional[float]
+    stop_loss: Optional[float]
+    target1: Optional[float]
+    target2: Optional[float]
+    risk_reward: Optional[float]
+    score: int
+    grade: str
+    reasons: List[str]
+    timeframe_combo: str
+    created_at: str
+
+    @classmethod
+    def from_record(cls, record: SignalHistoryRecord) -> "SignalHistoryResponse":
+        return cls(
+            id=record.id, strategy_id=record.strategy_id, symbol=record.symbol,
+            direction=record.direction, signal_time=record.signal_time.isoformat(),
+            entry=record.entry, stop_loss=record.stop_loss, target1=record.target1,
+            target2=record.target2, risk_reward=record.risk_reward, score=record.score,
+            grade=record.grade, reasons=json.loads(record.reasons_json),
+            timeframe_combo=record.timeframe_combo, created_at=record.created_at.isoformat(),
+        )
+
+
+@router.get("/signal-history", response_model=List[SignalHistoryResponse])
+async def list_signal_history(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 100,
+) -> List[SignalHistoryResponse]:
+    """Every enriched signal this user has generated (tradeable or not), most recent first -
+    independent of the Trade Journal, which only has rows for signals that were actually filled.
+    """
+    rows = await session.scalars(
+        select(SignalHistoryRecord)
+        .where(SignalHistoryRecord.user_id == user.id)
+        .order_by(SignalHistoryRecord.created_at.desc())
+        .limit(limit)
+    )
+    return [SignalHistoryResponse.from_record(r) for r in rows]

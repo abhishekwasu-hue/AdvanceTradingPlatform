@@ -127,3 +127,36 @@ def test_anonymous_paper_execute_still_works_without_persisting(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["executed"] is True
+
+
+def test_signal_history_requires_authentication():
+    assert client.get("/api/signal-history").status_code in (401, 403)
+
+
+def test_anonymous_enrich_does_not_persist_signal_history():
+    response = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/signal/enrich",
+        json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+    )
+    assert response.status_code == 200
+
+
+def test_authenticated_enrich_persists_signal_history(monkeypatch):
+    token = _register("nora@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    strategy = registry.get("ema_rsi_scalper_1m")
+    monkeypatch.setattr(strategy, "analyze", lambda data, symbol: _fake_long_signal())
+
+    response = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/signal/enrich",
+        headers=headers, json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+    )
+    assert response.status_code == 200
+
+    history = client.get("/api/signal-history", headers=headers).json()
+    assert len(history) == 1
+    assert history[0]["symbol"] == "TESTSYM"
+    assert history[0]["direction"] == "LONG"
+    assert history[0]["strategy_id"] == "ema_rsi_scalper_1m"
+    assert isinstance(history[0]["reasons"], list) and history[0]["reasons"] == ["forced for test"]

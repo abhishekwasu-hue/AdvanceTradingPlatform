@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atp_user
+          POSTGRES_PASSWORD: atp_dev_password
+          POSTGRES_DB: advance_trading_platform
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U atp_user"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite (in-memory SQLite, no DB dependency)
+        run: python -m pytest -q
+
+      - name: Apply Alembic migrations against a real Postgres
+        env:
+          DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
+        run: alembic upgrade head
+
+      - name: Confirm no schema drift between models and migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
+        run: alembic check
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check + production build
+        run: npm run build

@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -154,4 +154,144 @@ class AuditLogRecord(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     event: Mapped[str] = mapped_column(String(100), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class CompanyRecord(Base):
+    """Reference data about a listed company - shared, not user-private (like an instrument
+    master), but every write is attributed to the user who entered it since nothing here is
+    fetched automatically (no live SEBI/NSE/BSE feed is wired in - see
+    app/fundamentals/providers/). `source_json` holds the SourceCitation for the profile itself.
+    """
+
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sector: Mapped[str] = mapped_column(String(100), nullable=False)
+    industry: Mapped[str] = mapped_column(String(100), nullable=False)
+    sub_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cap_category: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    promoter_holding_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fii_holding_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dii_holding_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    public_holding_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    promoter_pledge_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    face_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    headquarters: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    business_segments_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    business_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domestic_revenue_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    international_revenue_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cyclical: Mapped[bool | None] = mapped_column(nullable=True)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class FinancialPeriodRecord(Base):
+    """One reported quarter or year's raw statement figures for a company. Ratios/margins are
+    always derived live by the analysis engines from these raw numbers - never stored - so
+    there is exactly one place a figure can be wrong: the cited source it was entered from.
+    """
+
+    __tablename__ = "financial_periods"
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", name="uq_company_period"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    period_label: Mapped[str] = mapped_column(String(20), nullable=False)
+    period_end_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    revenue: Mapped[float] = mapped_column(Float, nullable=False)
+    cogs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ebitda: Mapped[float] = mapped_column(Float, nullable=False)
+    depreciation: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ebit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interest_expense: Mapped[float | None] = mapped_column(Float, nullable=True)
+    other_income: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    exceptional_items: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    tax_expense: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pat: Mapped[float] = mapped_column(Float, nullable=False)
+    eps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    shares_outstanding: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    cfo: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cfi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cff: Mapped[float | None] = mapped_column(Float, nullable=True)
+    capex: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    total_debt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cash_and_equivalents: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_assets: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_liabilities: Mapped[float | None] = mapped_column(Float, nullable=True)
+    receivables: Mapped[float | None] = mapped_column(Float, nullable=True)
+    inventory: Mapped[float | None] = mapped_column(Float, nullable=True)
+    payables: Mapped[float | None] = mapped_column(Float, nullable=True)
+    contingent_liabilities: Mapped[float | None] = mapped_column(Float, nullable=True)
+    shareholders_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_assets: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class ShareholdingSnapshotRecord(Base):
+    __tablename__ = "shareholding_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    promoter_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    promoter_pledge_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    fii_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dii_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    public_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class CorporateActionRecord(Base):
+    __tablename__ = "corporate_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    announced_date: Mapped[date] = mapped_column(Date, nullable=False)
+    headline: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expected_revenue_impact: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    expected_margin_impact: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    expected_eps_impact: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class QualitativeFactorRecord(Base):
+    """A human-entered judgement (business-quality moat factor rating, management-quality note,
+    SWOT bullet) - deliberately never computed or invented by an engine, only ever supplied and
+    cited (spec sections 2, 9, 21).
+    """
+
+    __tablename__ = "qualitative_factors"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)

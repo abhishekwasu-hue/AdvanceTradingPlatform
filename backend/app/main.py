@@ -28,6 +28,7 @@ from app.brokers.routes import router as broker_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
 from app.custom_strategies.routes import router as custom_strategies_router
+from app.fundamentals.routes import router as fundamentals_router
 from app.db.models import CustomStrategyRecord, User
 from app.db.session import get_session, init_models
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
@@ -75,6 +76,7 @@ app.include_router(broker_router)
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
+app.include_router(fundamentals_router)
 
 _paper_state = TradingDayState()
 _default_risk_config = RiskConfig()

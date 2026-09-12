@@ -4,6 +4,7 @@ import pytest
 
 from app.core.enums import Bias, PeriodType, RiskLevel
 from app.fundamentals.engines.peer_comparison import PeerComparisonEngine
+from app.fundamentals.engines.post_earnings import PostEarningsEngine
 from app.fundamentals.engines.pre_earnings import PreEarningsEngine
 from app.fundamentals.models import FinancialPeriod, RedFlag
 
@@ -67,3 +68,34 @@ def test_pre_earnings_engine_bearish_with_high_severity_red_flags():
     assert result.earnings_bias == Bias.BEARISH
     assert result.risk_level == RiskLevel.EXTREME
     assert result.red_flag_count == 2
+
+
+def test_post_earnings_engine_requires_at_least_three_periods():
+    fy22 = _period(revenue=700.0, pat=70.0, label="FY22", end_date=date(2022, 3, 31))
+    fy23 = _period(revenue=800.0, pat=80.0, label="FY23", end_date=date(2023, 3, 31))
+    with pytest.raises(ValueError):
+        PostEarningsEngine().analyze([fy22, fy23], results_event_date=date(2024, 5, 1))
+
+
+def test_post_earnings_engine_detects_beat_vs_own_trend():
+    fy22 = _period(revenue=700.0, pat=70.0, label="FY22", end_date=date(2022, 3, 31))
+    fy23 = _period(revenue=800.0, pat=80.0, label="FY23", end_date=date(2023, 3, 31))
+    fy24 = _period(revenue=1000.0, pat=110.0, label="FY24", end_date=date(2024, 3, 31))
+
+    result = PostEarningsEngine().analyze([fy22, fy23, fy24], results_event_date=date(2024, 5, 1))
+
+    assert result.verdict == Bias.BULLISH
+    assert result.revenue_surprise_pct > 0
+    assert result.pat_surprise_pct > 0
+    assert result.results_event_date == date(2024, 5, 1)
+
+
+def test_post_earnings_engine_detects_miss_vs_own_trend():
+    fy22 = _period(revenue=700.0, pat=70.0, label="FY22", end_date=date(2022, 3, 31))
+    fy23 = _period(revenue=800.0, pat=80.0, label="FY23", end_date=date(2023, 3, 31))
+    fy24 = _period(revenue=850.0, pat=70.0, label="FY24", end_date=date(2024, 3, 31))
+
+    result = PostEarningsEngine().analyze([fy22, fy23, fy24], results_event_date=date(2024, 5, 1))
+
+    assert result.verdict == Bias.BEARISH
+    assert result.revenue_surprise_pct < 0

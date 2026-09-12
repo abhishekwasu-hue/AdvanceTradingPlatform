@@ -13,6 +13,7 @@ import type {
   FundamentalScoreResult,
   FusionResult,
   PeerMetrics,
+  PostEarningsAnalysis,
   PreEarningsAnalysis,
   QualitativeFactor,
   RedFlag,
@@ -96,6 +97,7 @@ export const fundamentalsApi = {
   peerComparison: (sector: string) => request<PeerMetrics[]>(`/fundamentals/sectors/${encodeURIComponent(sector)}/peers`),
 
   preEarnings: (symbol: string) => request<PreEarningsAnalysis>(`/fundamentals/companies/${symbol}/analysis/pre-earnings`),
+  postEarnings: (symbol: string) => request<PostEarningsAnalysis>(`/fundamentals/companies/${symbol}/analysis/post-earnings`),
 
   sectorMetricSpecs: () => request<SectorMetricSpecs>("/fundamentals/sector-metrics/specs"),
   listSectorMetrics: (symbol: string) => request<SectorMetric[]>(`/fundamentals/companies/${symbol}/sector-metrics`),

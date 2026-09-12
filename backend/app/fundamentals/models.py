@@ -379,6 +379,24 @@ class PreEarningsAnalysis(BaseModel):
     note: str
 
 
+class PostEarningsAnalysis(BaseModel):
+    """Compares the just-reported actual result against this company's own historical growth
+    trend - never an external analyst consensus, since no such feed exists here. Closes the loop
+    PreEarningsEngine opens once results are actually in.
+    """
+
+    results_event_date: date
+    revenue_actual: float
+    revenue_expected_trend: float
+    revenue_surprise_pct: float
+    pat_actual: float
+    pat_expected_trend: float
+    pat_surprise_pct: float
+    earnings_quality: QualityLabel
+    verdict: Bias
+    note: str
+
+
 class CompanyIntelligenceCard(BaseModel):
     """The one-page summary (spec section 39)."""
 

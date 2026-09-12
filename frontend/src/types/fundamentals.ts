@@ -322,6 +322,19 @@ export interface PreEarningsAnalysis {
   note: string;
 }
 
+export interface PostEarningsAnalysis {
+  results_event_date: string;
+  revenue_actual: number;
+  revenue_expected_trend: number;
+  revenue_surprise_pct: number;
+  pat_actual: number;
+  pat_expected_trend: number;
+  pat_surprise_pct: number;
+  earnings_quality: "Strong" | "Good" | "Average" | "Weak" | "Deteriorating";
+  verdict: "Bullish" | "Neutral" | "Bearish";
+  note: string;
+}
+
 export function defaultCalendarEvent(): EarningsCalendarEvent {
   return { event_type: "RESULTS", event_date: new Date().toISOString().slice(0, 10) };
 }

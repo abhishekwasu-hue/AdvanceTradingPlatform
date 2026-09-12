@@ -23,6 +23,7 @@ from app.fundamentals.engines.alerts import AlertEngine
 from app.fundamentals.engines.business_quality import BusinessQualityEngine
 from app.fundamentals.engines.event_impact import EventImpactEngine
 from app.fundamentals.engines.peer_comparison import PeerComparisonEngine
+from app.fundamentals.engines.post_earnings import PostEarningsEngine
 from app.fundamentals.engines.pre_earnings import PreEarningsEngine
 from app.fundamentals.engines.red_flags import RedFlagEngine
 from app.fundamentals.engines.scenario import ScenarioEngine
@@ -49,6 +50,7 @@ from app.fundamentals.models import (
     FinalCompanyReport,
     FinancialPeriod,
     PeerMetrics,
+    PostEarningsAnalysis,
     PreEarningsAnalysis,
     QualitativeFactor,
     RedFlag,
@@ -397,6 +399,33 @@ async def analysis_pre_earnings(symbol: str, session: AsyncSession = Depends(get
         corporate_actions=[db.corporate_action_to_model(r) for r in action_rows],
     )
     return PreEarningsEngine().analyze(periods, upcoming_event_date=next_event.event_date, red_flags=red_flags)
+
+
+@router.get("/companies/{symbol}/analysis/post-earnings", response_model=PostEarningsAnalysis)
+async def analysis_post_earnings(symbol: str, session: AsyncSession = Depends(get_session)) -> PostEarningsAnalysis:
+    """Post-earnings read - the follow-up to pre-earnings once results are actually in, anchored
+    to the most recent past RESULTS event on this company's calendar. 404s if none has been
+    entered; 422s if fewer than 3 financial periods exist (a trend needs at least two periods
+    before the just-reported one).
+    """
+    from datetime import date as date_cls
+
+    company = await _get_company_or_404(session, symbol)
+    periods = await _load_periods(session, company.id)
+
+    calendar_rows = await db.list_calendar_events(session, company.id)
+    today = date_cls.today()
+    past_results = [
+        db.calendar_event_to_model(r) for r in calendar_rows if r.event_type == "RESULTS" and r.event_date < today
+    ]
+    if not past_results:
+        raise HTTPException(status_code=404, detail="No past RESULTS event on this company's calendar - add one via POST /companies/{symbol}/calendar first.")
+    last_event = max(past_results, key=lambda e: e.event_date)
+
+    try:
+        return PostEarningsEngine().analyze(periods, results_event_date=last_event.event_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/companies/{symbol}/analysis/sector-specific", response_model=SectorSpecificResult)

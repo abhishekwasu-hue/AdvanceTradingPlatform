@@ -341,3 +341,35 @@ def test_final_company_report_aggregates_other_engines():
     assert body["symbol"] == "PICO"
     assert "card" in body and "swot" in body and "alerts" in body
     assert "generated_note" in body
+
+
+def test_post_earnings_requires_past_event_and_three_periods_then_analyzes():
+    token = _register("analyst17@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("RHOCO"))
+    client.post("/api/fundamentals/companies/RHOCO/financials", headers=headers, json=_sample_period())
+
+    missing_event = client.get("/api/fundamentals/companies/RHOCO/analysis/post-earnings")
+    assert missing_event.status_code == 404
+
+    client.post(
+        "/api/fundamentals/companies/RHOCO/calendar", headers=headers,
+        json={"event_type": "RESULTS", "event_date": "2020-01-01"},
+    )
+    not_enough_periods = client.get("/api/fundamentals/companies/RHOCO/analysis/post-earnings")
+    assert not_enough_periods.status_code == 422
+
+    client.post(
+        "/api/fundamentals/companies/RHOCO/financials", headers=headers,
+        json={**_sample_period(label="FY23"), "period_end_date": "2023-03-31", "revenue": 800.0, "pat": 80.0},
+    )
+    client.post(
+        "/api/fundamentals/companies/RHOCO/financials", headers=headers,
+        json={**_sample_period(label="FY22"), "period_end_date": "2022-03-31", "revenue": 700.0, "pat": 70.0},
+    )
+
+    response = client.get("/api/fundamentals/companies/RHOCO/analysis/post-earnings")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results_event_date"] == "2020-01-01"
+    assert "verdict" in body and "revenue_surprise_pct" in body

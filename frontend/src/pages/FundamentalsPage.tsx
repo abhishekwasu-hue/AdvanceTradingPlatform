@@ -22,6 +22,7 @@ import {
   type FusionResult,
   type GrowthAnalysis,
   type PeerMetrics,
+  type PostEarningsAnalysis,
   type PreEarningsAnalysis,
   type ProfitabilityAnalysis,
   type QuarterlyResultAnalysis,
@@ -105,6 +106,8 @@ export default function FundamentalsPage() {
   const [newCalendarEvent, setNewCalendarEvent] = useState<EarningsCalendarEvent>(defaultCalendarEvent());
   const [preEarnings, setPreEarnings] = useState<PreEarningsAnalysis | null>(null);
   const [preEarningsError, setPreEarningsError] = useState<string | null>(null);
+  const [postEarnings, setPostEarnings] = useState<PostEarningsAnalysis | null>(null);
+  const [postEarningsError, setPostEarningsError] = useState<string | null>(null);
 
   const [peerMetrics, setPeerMetrics] = useState<PeerMetrics[]>([]);
 
@@ -246,6 +249,8 @@ export default function FundamentalsPage() {
     fundamentalsApi.upcomingCalendarEvents().then(setUpcomingEvents).catch(() => setUpcomingEvents([]));
     setPreEarnings(null);
     setPreEarningsError(null);
+    setPostEarnings(null);
+    setPostEarningsError(null);
   }, [tab, symbol]);
 
   useEffect(() => {
@@ -287,6 +292,15 @@ export default function FundamentalsPage() {
       setPreEarnings(await fundamentalsApi.preEarnings(symbol));
     } catch (e) {
       setPreEarningsError(String(e));
+    }
+  }
+
+  async function handlePostEarnings() {
+    setPostEarningsError(null);
+    try {
+      setPostEarnings(await fundamentalsApi.postEarnings(symbol));
+    } catch (e) {
+      setPostEarningsError(String(e));
     }
   }
 
@@ -855,6 +869,27 @@ export default function FundamentalsPage() {
                       <StatTile label="Risk Level" value={preEarnings.risk_level} tone={toneForRisk(preEarnings.risk_level)} />
                     </div>
                     <div className="text-xs text-muted">{preEarnings.note}</div>
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Post-Earnings Analysis">
+                <button onClick={handlePostEarnings} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                  Analyze Most Recent Past Results
+                </button>
+                {postEarningsError && <div className="text-sm text-danger">{postEarningsError}</div>}
+                {postEarnings && (
+                  <div className="space-y-2 text-sm">
+                    <div>Results Date: <span className="text-slate-200">{postEarnings.results_event_date}</span></div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <StatTile label="Verdict" value={postEarnings.verdict} tone={postEarnings.verdict === "Bullish" ? "up" : postEarnings.verdict === "Bearish" ? "down" : "default"} />
+                      <StatTile label="Revenue Surprise" value={`${postEarnings.revenue_surprise_pct >= 0 ? "+" : ""}${postEarnings.revenue_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.revenue_surprise_pct)} />
+                      <StatTile label="PAT Surprise" value={`${postEarnings.pat_surprise_pct >= 0 ? "+" : ""}${postEarnings.pat_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.pat_surprise_pct)} />
+                    </div>
+                    <div className="text-xs text-muted">
+                      Actual revenue {postEarnings.revenue_actual} vs. own-trend expected {postEarnings.revenue_expected_trend} · Actual PAT {postEarnings.pat_actual} vs. expected {postEarnings.pat_expected_trend}
+                    </div>
+                    <div className="text-xs text-muted">{postEarnings.note}</div>
                   </div>
                 )}
               </Card>

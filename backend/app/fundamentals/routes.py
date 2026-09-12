@@ -19,12 +19,15 @@ from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, Qual
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
 from app.fundamentals import persistence as db
+from app.fundamentals.engines.alerts import AlertEngine
 from app.fundamentals.engines.business_quality import BusinessQualityEngine
+from app.fundamentals.engines.event_impact import EventImpactEngine
 from app.fundamentals.engines.peer_comparison import PeerComparisonEngine
 from app.fundamentals.engines.pre_earnings import PreEarningsEngine
 from app.fundamentals.engines.red_flags import RedFlagEngine
 from app.fundamentals.engines.scenario import ScenarioEngine
 from app.fundamentals.engines.score import FundamentalScoreEngine, FusionEngine, WEIGHTS, score_from_quality_label, score_from_risk_level, score_from_valuation_label
+from app.fundamentals.engines.sector_specific import SECTOR_METRIC_SPECS, SectorSpecificEngine
 from app.fundamentals.engines.statement_analysis import (
     BalanceSheetEngine,
     CashFlowEngine,
@@ -36,16 +39,21 @@ from app.fundamentals.engines.statement_analysis import (
 from app.fundamentals.engines.swot import SWOTEngine
 from app.fundamentals.engines.valuation import DCFEngine, ValuationEngine
 from app.fundamentals.models import (
+    Alert,
     CompanyIntelligenceCard,
     CompanyProfile,
     CorporateAction,
     DCFAssumptions,
     EarningsCalendarEvent,
+    EventImpactResult,
+    FinalCompanyReport,
     FinancialPeriod,
     PeerMetrics,
     PreEarningsAnalysis,
     QualitativeFactor,
     RedFlag,
+    SectorMetric,
+    SectorSpecificResult,
     ShareholdingSnapshot,
     SWOTResult,
 )
@@ -217,6 +225,37 @@ async def upcoming_calendar_events(session: AsyncSession = Depends(get_session))
     return upcoming
 
 
+@router.post("/companies/{symbol}/sector-metrics", response_model=SectorMetric, status_code=201)
+async def add_sector_metric(
+    symbol: str, metric: SectorMetric, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> SectorMetric:
+    company = await _get_company_or_404(session, symbol)
+    session.add(db.sector_metric_from_model(company.id, metric, user.id))
+    await session.commit()
+    return metric
+
+
+@router.get("/companies/{symbol}/sector-metrics", response_model=List[SectorMetric])
+async def list_sector_metrics_route(symbol: str, session: AsyncSession = Depends(get_session)) -> List[SectorMetric]:
+    company = await _get_company_or_404(session, symbol)
+    rows = await db.list_sector_metrics(session, company.id)
+    return [db.sector_metric_to_model(r) for r in rows]
+
+
+@router.get("/sector-metrics/specs")
+async def sector_metric_specs() -> Dict[str, Dict[str, Dict[str, object]]]:
+    """The known sector keys and metric codes SectorSpecificEngine can classify, with their unit
+    and whether higher is better - lets the frontend build the entry form without hardcoding it.
+    """
+    return {
+        sector: {
+            code: {"label": spec.label, "unit": spec.unit, "higher_is_better": spec.higher_is_better}
+            for code, spec in specs.items()
+        }
+        for sector, specs in SECTOR_METRIC_SPECS.items()
+    }
+
+
 # --- Analysis endpoints -----------------------------------------------------------------------
 
 
@@ -358,6 +397,78 @@ async def analysis_pre_earnings(symbol: str, session: AsyncSession = Depends(get
         corporate_actions=[db.corporate_action_to_model(r) for r in action_rows],
     )
     return PreEarningsEngine().analyze(periods, upcoming_event_date=next_event.event_date, red_flags=red_flags)
+
+
+@router.post("/companies/{symbol}/analysis/sector-specific", response_model=SectorSpecificResult)
+async def analysis_sector_specific(
+    symbol: str, sector_key: str, period_label: Optional[str] = None, session: AsyncSession = Depends(get_session),
+) -> SectorSpecificResult:
+    """Classifies sector-specific KPIs entered via POST /companies/{symbol}/sector-metrics
+    (banking/IT/auto/pharma/oil & gas/cement). `sector_key` is explicit, not inferred from the
+    company's free-text sector/industry fields - see GET /sector-metrics/specs for valid keys
+    and metric codes. Optionally scope to one `period_label`; otherwise every metric on record
+    is classified together.
+    """
+    company = await _get_company_or_404(session, symbol)
+    rows = await db.list_sector_metrics(session, company.id)
+    metrics = [db.sector_metric_to_model(r) for r in rows]
+    if period_label:
+        metrics = [m for m in metrics if m.period_label == period_label]
+    try:
+        return SectorSpecificEngine().analyze(sector_key, metrics)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/companies/{symbol}/analysis/event-impact", response_model=EventImpactResult)
+async def analysis_event_impact(symbol: str, session: AsyncSession = Depends(get_session)) -> EventImpactResult:
+    company = await _get_company_or_404(session, symbol)
+    action_rows = await db.list_corporate_actions(session, company.id)
+    actions = [db.corporate_action_to_model(r) for r in action_rows]
+    try:
+        return EventImpactEngine().analyze(actions)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/companies/{symbol}/alerts", response_model=List[Alert])
+async def company_alerts(symbol: str, session: AsyncSession = Depends(get_session)) -> List[Alert]:
+    """Fundamental Alert Engine feed - re-packages red flags, an imminent earnings date, and
+    negative event momentum into one prioritized list. Skips valuation/DCF-derived alerts here
+    since those need a market price (not persisted) - use POST /analysis/valuation and
+    /analysis/dcf directly for that read.
+    """
+    from datetime import date as date_cls
+
+    company = await _get_company_or_404(session, symbol)
+    periods = await _load_periods(session, company.id)
+    action_rows = await db.list_corporate_actions(session, company.id)
+    actions = [db.corporate_action_to_model(r) for r in action_rows]
+
+    red_flags: List[RedFlag] = []
+    if periods:
+        earnings_quality = EarningsQualityEngine().analyze(periods[-1])
+        balance_sheet = BalanceSheetEngine().analyze(periods[-1])
+        cash_flow = CashFlowEngine().analyze(periods[-1], market_cap=company.market_cap)
+        shareholding_rows = await db.list_shareholding_history(session, company.id)
+        red_flags = RedFlagEngine().analyze(
+            earnings_quality=earnings_quality, balance_sheet=balance_sheet, cash_flow=cash_flow,
+            shareholding_history=[db.shareholding_to_model(r) for r in shareholding_rows],
+            corporate_actions=actions,
+        )
+
+    event_impact = None
+    try:
+        event_impact = EventImpactEngine().analyze(actions)
+    except ValueError:
+        pass
+
+    calendar_rows = await db.list_calendar_events(session, company.id)
+    today = date_cls.today()
+    upcoming_results = [r.event_date for r in calendar_rows if r.event_type == "RESULTS" and r.event_date >= today]
+    days_to_next_results = (min(upcoming_results) - today).days if upcoming_results else None
+
+    return AlertEngine().analyze(red_flags=red_flags, days_to_next_results=days_to_next_results, event_impact=event_impact)
 
 
 class ValuationRequest(BaseModel):
@@ -623,3 +734,42 @@ def _earnings_outlook_from_score(grade: FundamentalGrade):
         FundamentalGrade.POOR: EarningsGrowthVisibility.DETERIORATING,
     }
     return mapping[grade]
+
+
+@router.get("/companies/{symbol}/report", response_model=FinalCompanyReport)
+async def final_company_report(symbol: str, session: AsyncSession = Depends(get_session)) -> FinalCompanyReport:
+    """The Final Company Report - the spec's closing section. Assembles the Intelligence Card,
+    SWOT, red flags, alerts, and event impact into one document; it computes nothing new of its
+    own, so it inherits every other engine's never-fabricate guarantee. Valuation/DCF are left
+    out (they need a market price supplied separately) rather than guessed.
+    """
+    company = await _get_company_or_404(session, symbol)
+    card = await company_intelligence_card(symbol, session)
+
+    qual_rows = await db.list_qualitative_factors(session, company.id)
+    factors = [db.qualitative_factor_to_model(r) for r in qual_rows]
+    periods = await _load_periods(session, company.id)
+    profitability = ProfitabilityEngine().analyze(periods) if periods else None
+    balance_sheet = BalanceSheetEngine().analyze(periods[-1]) if periods else None
+    earnings_quality = EarningsQualityEngine().analyze(periods[-1]) if periods else None
+    swot = SWOTEngine().analyze(factors, profitability=profitability, balance_sheet=balance_sheet, earnings_quality=earnings_quality)
+
+    red_flags = await analysis_red_flags(symbol, session)
+    alerts = await company_alerts(symbol, session)
+
+    action_rows = await db.list_corporate_actions(session, company.id)
+    actions = [db.corporate_action_to_model(r) for r in action_rows]
+    event_impact = None
+    try:
+        event_impact = EventImpactEngine().analyze(actions)
+    except ValueError:
+        pass
+
+    return FinalCompanyReport(
+        symbol=company.symbol, name=company.name, sector=company.sector, card=card, swot=swot,
+        red_flags=red_flags, alerts=alerts, event_impact=event_impact,
+        generated_note=(
+            "Valuation and DCF are not included here - both require a market price, supplied "
+            "separately via POST /analysis/valuation and /analysis/dcf."
+        ),
+    )

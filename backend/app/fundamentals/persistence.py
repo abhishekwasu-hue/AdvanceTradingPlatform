@@ -15,6 +15,7 @@ from app.db.models import (
     EarningsCalendarEventRecord,
     FinancialPeriodRecord,
     QualitativeFactorRecord,
+    SectorMetricRecord,
     ShareholdingSnapshotRecord,
 )
 from app.fundamentals.models import (
@@ -25,6 +26,7 @@ from app.fundamentals.models import (
     FinancialPeriod,
     PeriodType,
     QualitativeFactor,
+    SectorMetric,
     ShareholdingSnapshot,
     SourceCitation,
 )
@@ -215,5 +217,26 @@ def calendar_event_from_model(company_id: int, event: EarningsCalendarEvent, cre
 async def list_calendar_events(session: AsyncSession, company_id: int) -> List[EarningsCalendarEventRecord]:
     rows = await session.scalars(
         select(EarningsCalendarEventRecord).where(EarningsCalendarEventRecord.company_id == company_id).order_by(EarningsCalendarEventRecord.event_date)
+    )
+    return list(rows)
+
+
+def sector_metric_to_model(record: SectorMetricRecord) -> SectorMetric:
+    return SectorMetric(
+        period_label=record.period_label, metric_code=record.metric_code, value=record.value,
+        source=_source_from_json(record.source_json),
+    )
+
+
+def sector_metric_from_model(company_id: int, metric: SectorMetric, created_by: Optional[int]) -> SectorMetricRecord:
+    return SectorMetricRecord(
+        company_id=company_id, period_label=metric.period_label, metric_code=metric.metric_code.upper(),
+        value=metric.value, source_json=_source_to_json(metric.source), created_by=created_by,
+    )
+
+
+async def list_sector_metrics(session: AsyncSession, company_id: int) -> List[SectorMetricRecord]:
+    rows = await session.scalars(
+        select(SectorMetricRecord).where(SectorMetricRecord.company_id == company_id).order_by(SectorMetricRecord.period_label)
     )
     return list(rows)

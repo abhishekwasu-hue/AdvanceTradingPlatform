@@ -17,9 +17,10 @@ engine** (win rate/P&L by strategy and symbol), an **audit log**, optional **Red
 backtest engine, **CI** (GitHub Actions: pytest + migration drift check + frontend build), a
 **Fundamental Analysis & Company Intelligence Engine** (business quality, earnings quality,
 valuation, DCF, red flags, SWOT, scenario projection, an earnings calendar, peer/competitor
-comparison, pre-earnings analysis, and a composite Fundamental Score fused with the technical
-signal score - see [`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md)), and a FastAPI service
-exposing all of it.
+comparison, pre-earnings analysis, sector-specific fundamentals for banking/IT/auto/pharma/
+oil & gas/cement, an Event Impact Score, a Fundamental Alert Engine, a Final Company Report, and
+a composite Fundamental Score fused with the technical signal score - see
+[`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md)), and a FastAPI service exposing all of it.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -29,7 +30,8 @@ Backtesting (a candlestick chart with entry/exit trade markers, equity curve, an
 Option Chain, Positions (with a manual "check price" exit control), **Portfolio**, **Orders**,
 **Analytics**, **Risk Management**, **Fundamental Analysis** (company profile, financials,
 valuation & DCF, SWOT, red flags, Fundamental Score, fusion with the technical signal, an
-earnings calendar with pre-earnings analysis, and peer/competitor comparison),
+earnings calendar with pre-earnings analysis, peer/competitor comparison, sector-specific
+metrics, and a final report with a fundamental alert feed),
 **Settings** (broker credentials), **System Logs** (audit trail), and Account (login/register)
 pages, all wired to real backend computation over a
 clearly-labeled sample dataset (no live broker is connected yet). Signing in is optional
@@ -86,7 +88,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 203 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 217 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

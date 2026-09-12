@@ -394,3 +394,68 @@ class CompanyIntelligenceCard(BaseModel):
     earnings_outlook: EarningsGrowthVisibility
     technical_bias: Optional[str] = None
     final_bias: Optional[FusionBias] = None
+
+
+class SectorMetric(BaseModel):
+    """A single sector-specific KPI value, entered and cited - see SectorSpecificEngine for the
+    known metric codes per sector (banking NIM/CASA/GNPA, IT utilization/attrition, auto volume
+    growth, pharma US-generics mix, oil & gas GRM, cement capacity utilization, ...).
+    """
+
+    period_label: str
+    metric_code: str
+    value: float
+    source: Optional[SourceCitation] = None
+
+
+class SectorMetricResult(BaseModel):
+    metric_code: str
+    label: str
+    value: float
+    unit: str
+    classification: QualityLabel
+    note: str
+
+
+class SectorSpecificResult(BaseModel):
+    sector: str
+    metrics: List[SectorMetricResult]
+    overall_note: str
+
+
+class EventImpactResult(BaseModel):
+    """Event Impact Score: a -100 (very bearish) .. +100 (very bullish) read on the net
+    directional impact of corporate actions on record, weighted toward more recent events -
+    computed purely from CorporateAction.expected_*_impact fields someone already entered.
+    """
+
+    score: float
+    bias: Bias
+    events_considered: int
+    note: str
+
+
+class Alert(BaseModel):
+    code: str
+    severity: RiskLevel
+    message: str
+    claim_type: ClaimType = ClaimType.RISK
+
+
+class FinalCompanyReport(BaseModel):
+    """The Final Company Report - one aggregated read combining every other engine's output. It
+    computes nothing new itself; it only assembles what the other engines already produced, so
+    it inherits their never-fabricate guarantee.
+    """
+
+    symbol: str
+    name: str
+    sector: str
+    card: CompanyIntelligenceCard
+    swot: SWOTResult
+    red_flags: List[RedFlag]
+    alerts: List[Alert]
+    valuation: Optional[ValuationResult] = None
+    dcf: Optional[DCFResult] = None
+    event_impact: Optional[EventImpactResult] = None
+    generated_note: str

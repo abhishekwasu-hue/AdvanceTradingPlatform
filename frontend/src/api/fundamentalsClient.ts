@@ -1,11 +1,14 @@
 import { request } from "./client";
 import type {
+  Alert,
   CompanyIntelligenceCard,
   CompanyProfile,
   CorporateAction,
   DCFAssumptions,
   DCFResult,
   EarningsCalendarEvent,
+  EventImpactResult,
+  FinalCompanyReport,
   FinancialPeriod,
   FundamentalScoreResult,
   FusionResult,
@@ -15,7 +18,10 @@ import type {
   RedFlag,
   SWOTResult,
   ScenarioResult,
+  SectorMetric,
+  SectorMetricSpecs,
   SectorRotationRow,
+  SectorSpecificResult,
   ShareholdingSnapshot,
   UpcomingCalendarEvent,
 } from "../types/fundamentals";
@@ -90,4 +96,18 @@ export const fundamentalsApi = {
   peerComparison: (sector: string) => request<PeerMetrics[]>(`/fundamentals/sectors/${encodeURIComponent(sector)}/peers`),
 
   preEarnings: (symbol: string) => request<PreEarningsAnalysis>(`/fundamentals/companies/${symbol}/analysis/pre-earnings`),
+
+  sectorMetricSpecs: () => request<SectorMetricSpecs>("/fundamentals/sector-metrics/specs"),
+  listSectorMetrics: (symbol: string) => request<SectorMetric[]>(`/fundamentals/companies/${symbol}/sector-metrics`),
+  addSectorMetric: (symbol: string, metric: SectorMetric) =>
+    request<SectorMetric>(`/fundamentals/companies/${symbol}/sector-metrics`, { method: "POST", body: JSON.stringify(metric) }),
+  sectorSpecificAnalysis: (symbol: string, sectorKey: string, periodLabel?: string) =>
+    request<SectorSpecificResult>(
+      `/fundamentals/companies/${symbol}/analysis/sector-specific?sector_key=${encodeURIComponent(sectorKey)}${periodLabel ? `&period_label=${encodeURIComponent(periodLabel)}` : ""}`,
+      { method: "POST" },
+    ),
+
+  eventImpact: (symbol: string) => request<EventImpactResult>(`/fundamentals/companies/${symbol}/analysis/event-impact`),
+  alerts: (symbol: string) => request<Alert[]>(`/fundamentals/companies/${symbol}/alerts`),
+  finalReport: (symbol: string) => request<FinalCompanyReport>(`/fundamentals/companies/${symbol}/report`),
 };

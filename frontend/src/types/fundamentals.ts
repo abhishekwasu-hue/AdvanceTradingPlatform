@@ -326,6 +326,65 @@ export function defaultCalendarEvent(): EarningsCalendarEvent {
   return { event_type: "RESULTS", event_date: new Date().toISOString().slice(0, 10) };
 }
 
+export interface SectorMetric {
+  period_label: string;
+  metric_code: string;
+  value: number;
+  source?: SourceCitation | null;
+}
+
+export interface SectorMetricSpec {
+  label: string;
+  unit: string;
+  higher_is_better: boolean;
+}
+
+export type SectorMetricSpecs = Record<string, Record<string, SectorMetricSpec>>;
+
+export interface SectorMetricResult {
+  metric_code: string;
+  label: string;
+  value: number;
+  unit: string;
+  classification: "Strong" | "Good" | "Average" | "Weak" | "Deteriorating";
+  note: string;
+}
+
+export interface SectorSpecificResult {
+  sector: string;
+  metrics: SectorMetricResult[];
+  overall_note: string;
+}
+
+export interface EventImpactResult {
+  score: number;
+  bias: "Bullish" | "Neutral" | "Bearish";
+  events_considered: number;
+  note: string;
+}
+
+export interface Alert {
+  code: string;
+  severity: "Low" | "Medium" | "High" | "Extreme";
+  message: string;
+}
+
+export interface FinalCompanyReport {
+  symbol: string;
+  name: string;
+  sector: string;
+  card: CompanyIntelligenceCard;
+  swot: SWOTResult;
+  red_flags: RedFlag[];
+  alerts: Alert[];
+  event_impact?: EventImpactResult | null;
+  generated_note: string;
+}
+
+export function defaultSectorMetric(): SectorMetric {
+  return { period_label: "", metric_code: "", value: 0 };
+}
+
 export function defaultCompanyProfile(): CompanyProfile {
   return { symbol: "", name: "", sector: "", industry: "", business_segments: [] };
 }

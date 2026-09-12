@@ -241,3 +241,103 @@ def test_pre_earnings_requires_upcoming_event_then_analyzes():
     body = response.json()
     assert body["upcoming_event_date"] == "2099-06-30"
     assert "earnings_bias" in body and "risk_level" in body
+
+
+def test_sector_metrics_crud_and_specs_endpoint():
+    token = _register("analyst12@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("MUCO"))
+
+    specs = client.get("/api/fundamentals/sector-metrics/specs")
+    assert specs.status_code == 200
+    assert "BANKING" in specs.json()
+    assert "NIM_PCT" in specs.json()["BANKING"]
+
+    unauth = client.post("/api/fundamentals/companies/MUCO/sector-metrics", json={"period_label": "FY24", "metric_code": "NIM_PCT", "value": 4.5})
+    assert unauth.status_code in (401, 403)
+
+    add = client.post(
+        "/api/fundamentals/companies/MUCO/sector-metrics", headers=headers,
+        json={"period_label": "FY24", "metric_code": "NIM_PCT", "value": 4.5},
+    )
+    assert add.status_code == 201, add.text
+
+    listing = client.get("/api/fundamentals/companies/MUCO/sector-metrics")
+    assert listing.status_code == 200
+    assert any(m["metric_code"] == "NIM_PCT" for m in listing.json())
+
+
+def test_sector_specific_analysis_endpoint_classifies_entered_metrics():
+    token = _register("analyst13@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("NUCO"))
+    client.post(
+        "/api/fundamentals/companies/NUCO/sector-metrics", headers=headers,
+        json={"period_label": "FY24", "metric_code": "NIM_PCT", "value": 4.5},
+    )
+
+    response = client.post("/api/fundamentals/companies/NUCO/analysis/sector-specific?sector_key=BANKING")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sector"] == "BANKING"
+    assert body["metrics"][0]["classification"] == "Strong"
+
+    bad = client.post("/api/fundamentals/companies/NUCO/analysis/sector-specific?sector_key=NOT_REAL")
+    assert bad.status_code == 422
+
+
+def test_event_impact_analysis_endpoint():
+    token = _register("analyst14@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("XICO"))
+
+    missing = client.get("/api/fundamentals/companies/XICO/analysis/event-impact")
+    assert missing.status_code == 422
+
+    client.post(
+        "/api/fundamentals/companies/XICO/corporate-actions", headers=headers,
+        json={
+            "action_type": "ORDER_WIN", "announced_date": "2024-03-01", "headline": "Large order win",
+            "expected_revenue_impact": "Bullish", "expected_margin_impact": "Bullish", "expected_eps_impact": "Bullish",
+        },
+    )
+    response = client.get("/api/fundamentals/companies/XICO/analysis/event-impact")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["events_considered"] == 1
+    assert body["bias"] == "Bullish"
+
+
+def test_alerts_endpoint_flags_imminent_earnings():
+    token = _register("analyst15@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("OMICO"))
+    client.post("/api/fundamentals/companies/OMICO/financials", headers=headers, json=_sample_period())
+
+    empty = client.get("/api/fundamentals/companies/OMICO/alerts")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    from datetime import date, timedelta
+    soon = (date.today() + timedelta(days=3)).isoformat()
+    client.post(
+        "/api/fundamentals/companies/OMICO/calendar", headers=headers,
+        json={"event_type": "RESULTS", "event_date": soon},
+    )
+    response = client.get("/api/fundamentals/companies/OMICO/alerts")
+    assert response.status_code == 200
+    assert any(a["code"] == "EARNINGS_IMMINENT" for a in response.json())
+
+
+def test_final_company_report_aggregates_other_engines():
+    token = _register("analyst16@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("PICO"))
+    client.post("/api/fundamentals/companies/PICO/financials", headers=headers, json=_sample_period())
+
+    response = client.get("/api/fundamentals/companies/PICO/report")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "PICO"
+    assert "card" in body and "swot" in body and "alerts" in body
+    assert "generated_note" in body

@@ -6,6 +6,8 @@ import {
   defaultCalendarEvent,
   defaultCompanyProfile,
   defaultFinancialPeriod,
+  defaultSectorMetric,
+  type Alert,
   type BalanceSheetAnalysis,
   type CashFlowAnalysis,
   type CompanyIntelligenceCard,
@@ -13,6 +15,8 @@ import {
   type DCFResult,
   type EarningsCalendarEvent,
   type EarningsQualityResult,
+  type EventImpactResult,
+  type FinalCompanyReport,
   type FinancialPeriod,
   type FundamentalScoreResult,
   type FusionResult,
@@ -24,7 +28,10 @@ import {
   type RedFlag,
   type SWOTResult,
   type ScenarioResult,
+  type SectorMetric,
+  type SectorMetricSpecs,
   type SectorRotationRow,
+  type SectorSpecificResult,
   type UpcomingCalendarEvent,
   type ValuationResult,
 } from "../types/fundamentals";
@@ -32,6 +39,7 @@ import {
 const TABS = [
   "Profile", "Financials", "Analysis", "Valuation & DCF", "Quality & Risk", "Score & Fusion",
   "Intelligence Card", "Screener & Sectors", "Calendar & Pre-Earnings", "Peer Comparison",
+  "Sector Metrics", "Alerts & Report",
 ] as const;
 type Tab = (typeof TABS)[number];
 
@@ -99,6 +107,18 @@ export default function FundamentalsPage() {
   const [preEarningsError, setPreEarningsError] = useState<string | null>(null);
 
   const [peerMetrics, setPeerMetrics] = useState<PeerMetrics[]>([]);
+
+  const [sectorMetricSpecs, setSectorMetricSpecs] = useState<SectorMetricSpecs>({});
+  const [sectorMetrics, setSectorMetrics] = useState<SectorMetric[]>([]);
+  const [newSectorMetric, setNewSectorMetric] = useState<SectorMetric>(defaultSectorMetric());
+  const [sectorKey, setSectorKey] = useState("BANKING");
+  const [sectorSpecificResult, setSectorSpecificResult] = useState<SectorSpecificResult | null>(null);
+  const [sectorSpecificError, setSectorSpecificError] = useState<string | null>(null);
+
+  const [alerts, setAlerts] = useState<Alert[] | null>(null);
+  const [eventImpact, setEventImpact] = useState<EventImpactResult | null>(null);
+  const [finalReport, setFinalReport] = useState<FinalCompanyReport | null>(null);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
 
   function refreshCompanies() {
     fundamentalsApi.listCompanies().then((list) => {
@@ -233,6 +253,22 @@ export default function FundamentalsPage() {
     fundamentalsApi.peerComparison(selectedCompany.sector).then(setPeerMetrics).catch(() => setPeerMetrics([]));
   }, [tab, selectedCompany]);
 
+  useEffect(() => {
+    if (tab !== "Sector Metrics" || !symbol) return;
+    fundamentalsApi.sectorMetricSpecs().then(setSectorMetricSpecs).catch(() => setSectorMetricSpecs({}));
+    fundamentalsApi.listSectorMetrics(symbol).then(setSectorMetrics).catch(() => setSectorMetrics([]));
+    setSectorSpecificResult(null);
+    setSectorSpecificError(null);
+  }, [tab, symbol]);
+
+  useEffect(() => {
+    if (tab !== "Alerts & Report" || !symbol) return;
+    fundamentalsApi.alerts(symbol).then(setAlerts).catch(() => setAlerts(null));
+    fundamentalsApi.eventImpact(symbol).then(setEventImpact).catch(() => setEventImpact(null));
+    setFinalReport(null);
+    setAlertsError(null);
+  }, [tab, symbol]);
+
   async function handleAddCalendarEvent() {
     setError(null);
     try {
@@ -251,6 +287,35 @@ export default function FundamentalsPage() {
       setPreEarnings(await fundamentalsApi.preEarnings(symbol));
     } catch (e) {
       setPreEarningsError(String(e));
+    }
+  }
+
+  async function handleAddSectorMetric() {
+    setError(null);
+    try {
+      await fundamentalsApi.addSectorMetric(symbol, newSectorMetric);
+      setSectorMetrics(await fundamentalsApi.listSectorMetrics(symbol));
+      setNewSectorMetric(defaultSectorMetric());
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleSectorSpecificAnalysis() {
+    setSectorSpecificError(null);
+    try {
+      setSectorSpecificResult(await fundamentalsApi.sectorSpecificAnalysis(symbol, sectorKey));
+    } catch (e) {
+      setSectorSpecificError(String(e));
+    }
+  }
+
+  async function handleGenerateReport() {
+    setAlertsError(null);
+    try {
+      setFinalReport(await fundamentalsApi.finalReport(symbol));
+    } catch (e) {
+      setAlertsError(String(e));
     }
   }
 
@@ -822,6 +887,139 @@ export default function FundamentalsPage() {
                 </table>
               )}
             </Card>
+          )}
+
+          {tab === "Sector Metrics" && (
+            <div className="space-y-4">
+              <Card title="Sector-Specific Fundamentals (banking / IT / auto / pharma / oil & gas / cement)">
+                <div className="flex flex-wrap items-end gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Sector</label>
+                    <select className="w-56 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={sectorKey} onChange={(e) => setSectorKey(e.target.value)}>
+                      {Object.keys(sectorMetricSpecs).map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={handleSectorSpecificAnalysis} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                    Analyze
+                  </button>
+                </div>
+                {sectorSpecificError && <div className="text-sm text-danger">{sectorSpecificError}</div>}
+                {sectorSpecificResult && (
+                  <div className="mb-3">
+                    <table className="w-full text-xs">
+                      <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                        <th className="py-1 pr-3">Metric</th><th className="py-1 pr-3">Value</th><th className="py-1 pr-3">Classification</th>
+                      </tr></thead>
+                      <tbody>
+                        {sectorSpecificResult.metrics.map((m) => (
+                          <tr key={m.metric_code} className="border-t border-border">
+                            <td className="py-1 pr-3 font-medium text-slate-200">{m.label}</td>
+                            <td className="py-1 pr-3">{m.value}{m.unit}</td>
+                            <td className={`py-1 pr-3 ${m.classification === "Strong" || m.classification === "Good" ? "text-accent" : m.classification === "Weak" ? "text-danger" : ""}`}>{m.classification}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-2 text-xs text-muted">{sectorSpecificResult.overall_note}</div>
+                  </div>
+                )}
+
+                <div className="text-sm mb-2">Entered metrics for {symbol}:</div>
+                {sectorMetrics.length === 0 ? (
+                  <div className="text-sm text-muted py-2">None entered yet — add one below.</div>
+                ) : (
+                  <table className="w-full text-xs mb-3">
+                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                      <th className="py-1 pr-3">Period</th><th className="py-1 pr-3">Metric Code</th><th className="py-1 pr-3">Value</th>
+                    </tr></thead>
+                    <tbody>
+                      {sectorMetrics.map((m, i) => (
+                        <tr key={i} className="border-t border-border">
+                          <td className="py-1 pr-3">{m.period_label}</td><td className="py-1 pr-3">{m.metric_code}</td><td className="py-1 pr-3">{m.value}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="grid sm:grid-cols-4 gap-2 text-sm">
+                  <input placeholder="Period (e.g. FY24)" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                    value={newSectorMetric.period_label} onChange={(e) => setNewSectorMetric({ ...newSectorMetric, period_label: e.target.value })} />
+                  <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={newSectorMetric.metric_code}
+                    onChange={(e) => setNewSectorMetric({ ...newSectorMetric, metric_code: e.target.value })}>
+                    <option value="">Metric code…</option>
+                    {Object.entries(sectorMetricSpecs[sectorKey] ?? {}).map(([code, spec]) => (
+                      <option key={code} value={code}>{spec.label} ({code})</option>
+                    ))}
+                  </select>
+                  <input type="number" placeholder="Value" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                    value={newSectorMetric.value} onChange={(e) => setNewSectorMetric({ ...newSectorMetric, value: Number(e.target.value) })} />
+                  <button onClick={handleAddSectorMetric} disabled={!user || !newSectorMetric.metric_code || !newSectorMetric.period_label} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                    Add Metric
+                  </button>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {tab === "Alerts & Report" && (
+            <div className="space-y-4">
+              <Card title="Fundamental Alerts">
+                {alertsError && <div className="text-sm text-danger">{alertsError}</div>}
+                {alerts == null ? (
+                  <div className="text-sm text-muted py-2">Loading…</div>
+                ) : alerts.length === 0 ? (
+                  <div className="text-sm text-muted py-2">No alerts — nothing crossing a threshold right now.</div>
+                ) : (
+                  alerts.map((a, i) => (
+                    <div key={i} className={`text-xs mb-1 ${a.severity === "High" || a.severity === "Extreme" ? "text-danger" : a.severity === "Medium" ? "text-warn" : "text-muted"}`}>
+                      [{a.severity}] {a.message}
+                    </div>
+                  ))
+                )}
+              </Card>
+
+              <Card title="Event Impact Score">
+                {eventImpact ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <StatTile label="Score (-100..+100)" value={eventImpact.score.toFixed(0)} tone={toneForNumber(eventImpact.score)} />
+                    <StatTile label="Bias" value={eventImpact.bias} tone={eventImpact.bias === "Bullish" ? "up" : eventImpact.bias === "Bearish" ? "down" : "default"} />
+                    <StatTile label="Events Considered" value={String(eventImpact.events_considered)} />
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted py-2">No corporate actions with a recorded expected impact yet — add one on the Quality & Risk tab's corporate actions, or via the API.</div>
+                )}
+                {eventImpact && <div className="mt-2 text-xs text-muted">{eventImpact.note}</div>}
+              </Card>
+
+              <Card title="Final Company Report">
+                <button onClick={handleGenerateReport} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                  Generate Final Report
+                </button>
+                {finalReport && (
+                  <div className="max-w-2xl space-y-3 text-sm">
+                    <div className="text-lg font-semibold text-slate-100">{finalReport.name} ({finalReport.symbol}) — {finalReport.sector}</div>
+                    <div className="text-2xl font-bold text-accent">{finalReport.card.fundamental_score}/100 <span className="text-sm text-slate-300">({finalReport.card.fundamental_grade})</span></div>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div><div className="text-xs uppercase text-muted mb-1">Strengths</div>{finalReport.swot.strengths.length ? finalReport.swot.strengths.map((s, i) => <div key={i} className="text-accent text-xs">+ {s}</div>) : <div className="text-muted text-xs">None entered</div>}</div>
+                      <div><div className="text-xs uppercase text-muted mb-1">Weaknesses</div>{finalReport.swot.weaknesses.length ? finalReport.swot.weaknesses.map((s, i) => <div key={i} className="text-danger text-xs">− {s}</div>) : <div className="text-muted text-xs">None entered</div>}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase text-muted mb-1">Red Flags ({finalReport.red_flags.length})</div>
+                      {finalReport.red_flags.length === 0 ? <div className="text-xs text-muted">None detected</div> : finalReport.red_flags.map((f, i) => <div key={i} className="text-xs text-warn">[{f.severity}] {f.description}</div>)}
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase text-muted mb-1">Alerts ({finalReport.alerts.length})</div>
+                      {finalReport.alerts.length === 0 ? <div className="text-xs text-muted">None</div> : finalReport.alerts.map((a, i) => <div key={i} className="text-xs text-warn">[{a.severity}] {a.message}</div>)}
+                    </div>
+                    {finalReport.event_impact && (
+                      <div className="text-xs">Event Impact: <span className="text-slate-200">{finalReport.event_impact.score.toFixed(0)} ({finalReport.event_impact.bias})</span></div>
+                    )}
+                    <div className="text-xs text-muted italic">{finalReport.generated_note}</div>
+                  </div>
+                )}
+              </Card>
+            </div>
           )}
         </>
       )}

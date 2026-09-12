@@ -297,6 +297,25 @@ class EarningsCalendarEventRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class SectorMetricRecord(Base):
+    """A sector-specific KPI (NIM/CASA/GNPA for banking, utilization/attrition for IT, volume
+    growth for auto, US-generics mix for pharma, GRM for oil & gas, capacity utilization for
+    cement, ...). Always user-entered and cited - there is no live regulatory/industry-body feed
+    wired in, so SectorSpecificEngine only ever classifies numbers someone actually supplied.
+    """
+
+    __tablename__ = "sector_metrics"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_label: Mapped[str] = mapped_column(String(50), nullable=False)
+    metric_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
 class QualitativeFactorRecord(Base):
     """A human-entered judgement (business-quality moat factor rating, management-quality note,
     SWOT bullet) - deliberately never computed or invented by an engine, only ever supplied and

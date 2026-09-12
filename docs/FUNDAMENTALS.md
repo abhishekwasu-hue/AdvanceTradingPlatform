@@ -51,6 +51,9 @@ analysis tab → score → fusion → intelligence card → screener → sector 
 | Fusion | `FusionEngine` | Combines the Fundamental Score with this platform's existing technical Signal Scoring Engine into a Final Composite Score and one of A1 LONG BIAS / A1 SHORT BIAS / WATCHLIST / CAUTION / NO TRADE, per the 2×2 decision matrix (technical strong/weak × fundamental strong/weak) |
 | Peer comparison | `engines/peer_comparison.py` `PeerComparisonEngine` | Ranks companies entered under the same sector by ROCE (falling back to EBITDA margin), skipping any company with no financial periods rather than showing fabricated zeros |
 | Pre-earnings analysis | `engines/pre_earnings.py` `PreEarningsEngine` | Synthesizes revenue/margin trend and red-flag severity into a Bullish/Neutral/Bearish bias and risk level ahead of a company's nearest upcoming RESULTS calendar event - never a fabricated "Street expectation" |
+| Sector-specific fundamentals | `engines/sector_specific.py` `SectorSpecificEngine` | Classifies user-entered sector KPIs (banking NIM/CASA/GNPA/NNPA/PCR/CRAR, IT utilization/attrition/TCV growth/revenue-per-employee, auto volume growth/inventory days/export mix, pharma US-generics mix/R&D%/USFDA observations, oil & gas GRM/refining utilization, cement capacity utilization/realization) against published-style thresholds - `sector_key` is explicit, never inferred from free-text sector/industry fields |
+| Event Impact Score | `engines/event_impact.py` `EventImpactEngine` | A -100..+100 net directional score from `CorporateAction.expected_*_impact` fields already on record, weighted toward more recent events |
+| Fundamental Alert Engine | `engines/alerts.py` `AlertEngine` | Re-packages high/extreme red flags, an extremely-expensive valuation, a DCF overvaluation >20%, an imminent (≤7 day) RESULTS event, and strongly negative event momentum into one prioritized alert feed - computes no new judgement itself |
 
 Two more real, non-fabricated pieces sit alongside these engines:
 
@@ -64,6 +67,17 @@ Two more real, non-fabricated pieces sit alongside these engines:
 - **Pre-earnings endpoint** (`GET /api/fundamentals/companies/{symbol}/analysis/pre-earnings`) -
   anchors `PreEarningsEngine` to the nearest upcoming RESULTS event on that company's calendar;
   404s if none has been entered, since there's nothing to be "pre-" of otherwise.
+- **Sector metrics CRUD** (`GET/POST /api/fundamentals/companies/{symbol}/sector-metrics`,
+  `GET /api/fundamentals/sector-metrics/specs` for the known sector keys/metric codes/units) and
+  the analysis endpoint (`POST /api/fundamentals/companies/{symbol}/analysis/sector-specific?sector_key=...`).
+- **Event impact endpoint** (`GET /api/fundamentals/companies/{symbol}/analysis/event-impact`).
+- **Alerts feed** (`GET /api/fundamentals/companies/{symbol}/alerts`) - red flags plus imminent-earnings
+  and negative-event-momentum checks; skips valuation/DCF-derived alerts since those need a market
+  price that isn't persisted.
+- **Final Company Report** (`GET /api/fundamentals/companies/{symbol}/report`) - the spec's closing
+  section, aggregating the Intelligence Card, SWOT, red flags, alerts, and event impact into one
+  document. It computes nothing new of its own, so it inherits every other engine's never-fabricate
+  guarantee; valuation/DCF are left out rather than guessed, since both need a market price.
 
 All company/financial/shareholding/corporate-action/qualitative-factor data is **shared
 reference data** (like an instrument master), not user-private: reads are open to everyone,

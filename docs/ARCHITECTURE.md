@@ -10,16 +10,33 @@ execution → backtest → API) is real and tested rather than stubbed.
 ## What exists today
 
 ```
+docker-compose.yml    # postgres + backend + frontend, one command locally
 backend/
   app/
     core/            # enums, pydantic domain models (Signal, Trade, RiskConfig, ...)
     indicators/       # EMA, SMA, RSI, ATR, ADX/+DI/-DI, Supertrend (pandas/numpy, no TA-Lib dep)
     strategy_engine/   # BaseStrategy, inbuilt multi-timeframe + indicator-based strategies, registry
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
+    brokers/            # BrokerInterface, domain models, Zerodha/Upstox/Shoonya adapters, stubs, registry, routes
+    auth/                # register/login (JWT), password hashing, get_current_user dependency
+    db/                  # SQLAlchemy async engine/session, User/BrokerCredential/TradeRecord/AuditLog models
+    secrets_store/        # Fernet encryption for broker credentials at rest
+    trading/              # persists paper-execute fills per user; GET /api/trades, /api/positions
+    price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
+    support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
+    option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
+    signal_scoring/     # weighted composite score combining every analysis engine (the "why this trade" layer)
     execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
     backtest/          # event-driven backtest engine with HTF resampling
-    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest
+    main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
   tests/               # pytest coverage for every layer above
+frontend/
+  src/
+    api/client.ts       # typed fetch client; attaches the JWT from localStorage when present
+    auth/AuthContext.tsx # login/register/logout state, shared via React context
+    utils/sampleData.ts # deterministic sample OHLCV/option-chain generator (no live broker yet)
+    components/          # SignalCard, EquityCurveChart, Sidebar, shared UI primitives
+    pages/                # Dashboard, Strategies, Signals, Backtest, Option Chain, Positions, Account
 docs/
   ARCHITECTURE.md      # this file
   STRATEGIES.md        # the inbuilt auto-executable scalping strategies
@@ -40,28 +57,241 @@ OHLCV bars (per timeframe)
  RiskManager.validate_and_size() -> RiskDecision (approve/reject + position size)
         │
         ▼
- OrderRouter (PAPER: PaperBroker simulated fill / LIVE: blocked until a real broker
-              adapter is registered — never a silent no-op)
+ OrderRouter (PAPER: PaperBroker simulated fill / LIVE: BrokerInterface.place_order()
+              via a Zerodha/Upstox/... adapter, or blocked if none is wired in — never
+              a silent no-op)
         │
         ▼
- Trade (paper) or BacktestResult (when run through the backtest engine)
+ Trade (paper) or a real BrokerOrderResponse (live), or BacktestResult (backtest engine)
 ```
 
 A strategy can **never** bypass the risk engine: `OrderRouter.execute()` always calls
 `RiskManager.validate_and_size()` first, and `ExecutionMode.LIVE` raises
-`LiveTradingNotConfigured` until a concrete `BrokerInterface` implementation exists —
-per the platform's non-negotiable safety rules (no live order without risk validation,
-no live trading while disabled).
+`LiveTradingNotConfigured` unless a concrete, authenticated `BrokerInterface` instance is
+passed in — per the platform's non-negotiable safety rules (no live order without risk
+validation, no live trading while disabled).
+
+## Broker Abstraction Layer
+
+`app/brokers/base.py` defines `BrokerInterface`, an async ABC with the 14 methods the brief
+specifies (`authenticate`, `get_profile`, `get_instruments`, `get_ltp`, `get_quote`,
+`get_historical_data`, `get_option_chain`, `place_order`, `modify_order`, `cancel_order`,
+`get_order_book`, `get_trade_book`, `get_positions`, `get_holdings`, `get_margins`). Nothing
+upstream (strategy engine, risk engine, order router) ever imports a broker-specific class —
+only this interface — so adding a broker means writing one new adapter file.
+
+- **`app/brokers/zerodha.py`**, **`app/brokers/upstox.py`**, and **`app/brokers/shoonya.py`**
+  are full reference implementations against Kite Connect v3, Upstox v2, and Shoonya's
+  NorenApi (a jData/jKey form-encoded convention several Indian discount brokers share)
+  respectively, using an injected `httpx.AsyncClient` (so tests mock transport instead of
+  hitting real endpoints — see `tests/test_brokers.py`). Each documents which
+  `BrokerCredentials` fields it needs.
+- **`app/brokers/stubs.py`** provides `AngelOneBroker`, `FyersBroker`, `DhanBroker` — they
+  satisfy `BrokerInterface` today (registrable, instantiable, type-safe) but every I/O method
+  raises `NotImplementedError` pointing at that broker's docs, rather than shipping
+  under-verified endpoint guesses as if they were tested.
+- **`app/brokers/registry.py`** exposes `get_broker_adapter(name, credentials)` and
+  `available_brokers()` — the latter is surfaced read-only at `GET /api/broker/available`.
+- **Credentials are now accepted over HTTP, but only encrypted at rest and behind auth.**
+  `POST /api/broker/{name}/credentials` (see Database + Auth below) is the endpoint that used
+  to not exist — it requires a logged-in user and stores ciphertext, never plaintext.
+- **`OrderRouter`** now takes an optional `broker: BrokerInterface` — `ExecutionMode.LIVE`
+  builds a `BrokerOrderRequest` from the approved, risk-sized signal and calls
+  `broker.place_order()`; a `REJECTED`/`CANCELLED` broker response surfaces as
+  `ExecutionResult(executed=False, ...)` rather than being swallowed. `OrderRouter.execute()`
+  is now `async` throughout (paper and live) since live calls are real network I/O.
+
+## Price Action + Support/Resistance Engines
+
+Two analysis engines, callable standalone via API for charting overlays and manual/AI-assistant
+"why this level" queries, and also consumed by the Signal Scoring Engine below.
+
+- **`app/price_action/swings.py`** — fractal swing-high/low detection (`find_swings`, a
+  configurable-window local-extreme scan) plus `alternate_swings`, which collapses consecutive
+  same-kind swings (including plateaus/ties) down to one point so the sequence strictly
+  alternates HIGH/LOW the way real market structure requires.
+- **`app/price_action/market_structure.py`** — labels each swing HH/HL/LH/LL against the prior
+  swing of the same kind, classifies the overall trend (`UPTREND`/`DOWNTREND`/`RANGE`) from the
+  last two labels, and walks the bars chronologically to emit `BOS` (break of structure, price
+  breaks a level in the direction of the prevailing trend) or `CHoCH` (change of character, it
+  breaks against it) events — each level fires once per break, not once per bar.
+- **`app/price_action/candlestick_patterns.py`** — eleven detectors (Doji, Hammer, Shooting
+  Star, Bullish/Bearish Engulfing, Morning/Evening Star, Pin Bar, Inside/Outside Bar, Strong
+  Rejection Candle), each returning a 0-100 confidence rather than a bare yes/no, per the
+  brief's "confidence scores, not every pattern is a signal" requirement.
+- **`app/support_resistance/`** — `SupportResistanceEngine.build_zones()` combines seven zone
+  sources into `SRZone` objects (a price *range*, never a single exact price): clustered swing
+  points (touches/volume-confirmation/rejection-count driven strength score), previous
+  day/week high-low, the opening range, session VWAP, standard pivot points (PP/R1-3/S1-3),
+  and Fibonacci retracement of the most recent swing leg. Each zone keeps a `source` tag rather
+  than merging across sources — spotting true confluence means comparing overlapping zones,
+  which is a natural next step once this feeds the Signal Engine.
+
+## Option Chain Intelligence Engine
+
+`app/option_chain/analysis.py` turns a raw `OptionChain` (the same model `BrokerInterface.
+get_option_chain()` returns) into the derived analytics the brief asks for:
+
+- **PCR** (total put OI / total call OI), **Max Pain** (the strike minimizing option writers'
+  aggregate payout across all strikes, `compute_max_pain`), and **ATM strike** (closest strike
+  to the underlying LTP), with per-strike **ITM/ATM/OTM** classification for both legs.
+- **OI activity** per strike per side, from the sign of `change_oi` alone (no previous-price
+  data needed): rising call OI is tagged `CALL_WRITING` (bearish - resistance building),
+  falling is `CALL_UNWINDING`; rising put OI is `PUT_WRITING` (bullish - support building),
+  falling is `PUT_UNWINDING`.
+- **Call resistance / put support strikes** — the top-N strikes by call OI and put OI
+  respectively, the option-chain equivalent of the support/resistance engine's zones.
+- **Bias** (`BULLISH`/`BEARISH`/`NEUTRAL`/`CONFLICTING`) that deliberately never comes from PCR
+  alone, per the brief's explicit warning against that: it only reports `BULLISH`/`BEARISH`
+  when the PCR reading *and* the aggregate OI-change reading agree, `CONFLICTING` when they
+  point opposite ways, and `NEUTRAL` whenever either signal is inconclusive or the broker
+  didn't supply OI-change data at all.
+
+Exposed at `POST /api/option-chain/analyze`, and consumed (optionally) by the Signal Scoring
+Engine below.
+
+## Signal Scoring Engine
+
+`app/signal_scoring/engine.py` implements the weighted composite formula from brief section 8
+(Trend 20% / Market Structure 15% / Support-Resistance 20% / Price Action 20% / Volume 10% /
+Option Chain 10% / Risk-Reward 5%, `WEIGHTS` in that file) as a **non-invasive enrichment
+layer**: `enrich_signal(signal, ltf_df, option_chain=None)` takes a `Signal` any of the seven
+inbuilt strategies already produced, re-derives market structure, support/resistance zones,
+candlestick patterns, and volume fresh from that strategy's own primary-timeframe data (plus
+option-chain bias if a chain is supplied), and returns an `EnrichedSignal` with:
+
+- `composite_score` (0-100) and `grade` (A1/High Quality/Valid/Weak/No Trade, same thresholds
+  as the base engine) computed from the seven weighted components
+- `breakdown`: each component's raw 0-100 reading, its weight, its weighted contribution, and a
+  plain-English note (e.g. "Recent BOS confirms bullish structure at 21834.50")
+- `confirmations`: those same notes as a flat list - directly answers the dashboard's
+  "WHY THIS TRADE?" requirement (brief sections 19 and 25) without the strategy itself needing
+  to know about market structure, S/R, or the option chain
+
+No existing strategy class was touched to build this - it sits entirely on top, so all 87
+existing + new tests keep passing unmodified. Exposed at
+`POST /api/strategies/{id}/signal/enrich` (generates the signal via the normal `/signal` path
+and enriches it in one call).
+
+## Frontend Console
+
+`frontend/` (Vite + React + TypeScript + Tailwind, see `frontend/README.md` for the
+Next.js-vs-Vite tradeoff) is a control-panel SPA over the API above: Dashboard, Strategy
+Library, Signals (the full `EnrichedSignal` "why this trade" card), Backtesting (metrics,
+SVG equity curve, trade log), Option Chain, Positions, and Account. `app/main.py` enables
+permissive CORS (`CORSMiddleware`, tightened once real deployment domains exist) and the Vite
+dev server also proxies `/api` to `localhost:8000`, so either path works.
+
+No broker is authenticated yet, so every page builds candles/option-chain rows from a
+deterministic client-side generator (`frontend/src/utils/sampleData.ts`) rather than showing
+fabricated "live" data — clearly labeled in the UI. Everything computed *on* that sample data
+(scores, backtest metrics, option-chain bias) is the real backend engine, not a mock.
+
+The Signals page now includes a real candlestick chart (`src/components/CandleChart.tsx`,
+TradingView's `lightweight-charts` — the library the brief names directly), not just the
+signal card: entry/stop-loss/target1/target2 as colored price lines, an up/down marker on the
+signal bar, and the strongest few nearby support/resistance zones (`GET
+/api/support-resistance/zones`, filtered client-side to zones within 4% of the last close and
+capped to the top 5 by `strength_score` — the raw zone list can be dozens of small swing
+clusters, which is correct data but unreadable rendered directly onto a chart). The
+Backtesting page reuses the same `CandleChart` over the sample series the backtest ran
+against, with one entry marker (direction-coded arrow) and one exit marker (P&L-coded circle)
+per trade in `result.trades` (`directionMarker()` for entries, a small inline builder for
+exits) — the equity curve stays a separate inline SVG below it since that series is per-trade,
+not time-based, so lightweight-charts' time axis isn't the right fit for it.
+
+`src/auth/AuthContext.tsx` holds login state (backed by the JWT endpoints below, token kept in
+`localStorage`); `src/api/client.ts`'s `request()` attaches it as a bearer token automatically
+whenever present. The Account page handles register/login/logout; the Sidebar's footer shows
+who's signed in. Everything else keeps working anonymously (the "try without an account" flow
+from earlier phases is unchanged) — being logged in only adds persistence, per Database + Auth
+below.
+
+## Database + Auth
+
+PostgreSQL (async, via SQLAlchemy 2.0 + `asyncpg`) is now real, not deferred: `app/db/models.py`
+defines `User`, `BrokerCredentialRecord`, `TradeRecord`, and `AuditLogRecord`; `app/db/session.py`
+creates the engine from `DATABASE_URL` and exposes `get_session` as a FastAPI dependency.
+
+Schema changes are now tracked with **Alembic** (`backend/alembic/`, async template): `alembic
+upgrade head` applies every tracked migration in order (`alembic/versions/`, starting from
+`5ee6c638e477_initial_schema.py`, which was autogenerated against an empty database and matches
+`Base.metadata` exactly — verified with `alembic check`/a second autogenerate producing no diff).
+`alembic/env.py` reads `DATABASE_URL` from `app.core.config` (the same variable the app itself
+uses) rather than a hardcoded URL in `alembic.ini`, and imports `app.db.models` so every table
+registers on `Base.metadata` before autogenerate compares against it. Going forward, a model
+change means `alembic revision --autogenerate -m "..."` (review the generated script — autogenerate
+doesn't catch everything, e.g. plain column renames show up as drop+add) then `alembic upgrade
+head`, not hand-editing a live database. The `lifespan` handler's `init_models()` (`create_all`)
+still runs on startup as a convenience for a brand-new empty dev database (it's a no-op once
+tables exist), but the authoritative schema history — and the only safe way to evolve a database
+that already has data — is the migration chain. This closes what was previously an honest gap:
+the naive/aware-datetime column bug found earlier this project required manually dropping tables
+and restarting because nothing tracked schema versions; that class of problem is what Alembic is
+for.
+
+- **`app/auth/`** — `security.py` hashes passwords with `bcrypt` and issues/verifies JWTs
+  (`PyJWT`, `JWT_SECRET_KEY`/`JWT_ALGORITHM`/`JWT_EXPIRE_MINUTES` from `app/core/config.py`);
+  `dependencies.py`'s `get_current_user` is the FastAPI dependency every protected route uses;
+  `routes.py` exposes `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
+- **`app/secrets_store/encryption.py`** — Fernet symmetric encryption keyed by
+  `SECRETS_ENCRYPTION_KEY` (any passphrase is hashed down to a valid key; a fixed dev-only
+  fallback keeps local runs working but is explicitly not meant to protect anything real).
+- **`app/brokers/routes.py`** — `POST /api/broker/{name}/credentials` encrypts and upserts a
+  user's `BrokerCredentials` for one broker (never plaintext, never logged);
+  `GET /api/broker/credentials` lists which brokers a user has stored (names/timestamps only);
+  `DELETE /api/broker/{name}/credentials` removes one; `POST /api/broker/{name}/authenticate`
+  decrypts the stored credentials in memory, constructs the adapter via the existing broker
+  registry, and calls its real `authenticate()` — success or failure (broker-side or a raw
+  network error) both return a clean HTTP response and write an `AuditLogRecord` row, per the
+  platform's audit-trail requirement. This is the endpoint the broker layer's original "no
+  credential-accepting endpoint exists yet" note was waiting on.
+- **`app/trading/`** — the first thing that actually uses `TradeRecord`. `POST
+  /api/strategies/{id}/paper-execute` now takes an *optional* bearer token
+  (`get_current_user_optional`, which returns `None` instead of raising when no/an invalid token
+  is supplied): anonymous calls behave exactly as before (no persistence, matching the "try it
+  without an account" demo flow already used by Signals/Backtest), but a logged-in user's fill
+  is written to `TradeRecord` via `persist_paper_trade()`. `app/trading/routes.py` exposes
+  `GET /api/trades` (full history) and `GET /api/positions` (rows with no `exit_time`) for the
+  current user. Nothing yet closes a paper-execute position automatically (no live price feed
+  monitors it — that only happens inside the historical backtest engine's simulation), so every
+  persisted trade shows up as "open" until a future exit-tracking pass writes back to the same
+  row; that's called out in `TradeRecord`'s docstring rather than left implicit.
+- Verified end-to-end against a real local Postgres instance, twice: once for the credential
+  flow (register → login → store encrypted Zerodha credentials → confirm the stored value is
+  ciphertext in the raw DB row → authenticate, a genuine network call to Zerodha's live API that
+  correctly came back 403 with fake credentials and surfaced as a clean 502 → delete, every step
+  logged to `audit_logs`), and again for trade persistence (register → force a real strategy
+  signal to fire → authenticated paper-execute → `GET /api/trades`/`/api/positions` show the
+  exact filled trade, matched in the frontend console by executing from the Signals page and
+  seeing it appear on the Positions page for that same session). The automated test suite
+  instead runs against an in-memory SQLite database via a dependency override, so `pytest` needs
+  no external database.
 
 ## API surface (current slice)
 
 - `GET  /api/strategies` — list every inbuilt strategy (id, name, category, timeframes, params)
 - `GET  /api/strategies/{id}` — one strategy's metadata
 - `POST /api/strategies/{id}/signal` — run a strategy against supplied OHLCV candles, get a `Signal`
+- `POST /api/strategies/{id}/signal/enrich` — the same, plus the weighted composite score and
+  "why this trade" breakdown (structure, S/R, price action, volume, option chain, RR)
 - `POST /api/strategies/{id}/paper-execute` — generate a signal and auto-route it through the
   risk engine + paper broker if it's tradeable
 - `POST /api/backtest` — run a strategy over historical OHLCV bars, get a `BacktestResult`
   (trades, win rate, profit factor, drawdown, equity curve, ...)
+- `GET  /api/broker/available` — broker ids the abstraction layer can adapt to
+- `POST /api/broker/{name}/credentials` — encrypt and store this user's credentials (auth required)
+- `GET  /api/broker/credentials` — list which brokers this user has stored (auth required)
+- `DELETE /api/broker/{name}/credentials` — remove stored credentials (auth required)
+- `POST /api/broker/{name}/authenticate` — decrypt stored credentials and really log in (auth required)
+- `POST /api/price-action/structure` — swings, HH/HL/LH/LL labels, trend, BOS/CHoCH events
+- `POST /api/price-action/patterns` — every candlestick pattern match with its confidence score
+- `POST /api/support-resistance/zones` — the combined support/resistance zone list
+- `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
+- `POST /api/auth/register` / `POST /api/auth/login` — returns a JWT
+- `GET  /api/auth/me` — current user (auth required)
+- `GET  /api/trades` — this user's full paper trade history (auth required)
+- `GET  /api/positions` — this user's open (no `exit_time`) trades (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -82,13 +312,136 @@ no live trading while disabled).
   current bar — safe for completed HTF bars, but doesn't model intrabar ticks. Noted in
   `run_backtest`'s docstring so it isn't mistaken for tick-accurate simulation.
 
-## What's next (not yet built)
+## Docker Deployment
 
-Per the original 40-section brief, still outstanding: broker adapters (Upstox/Zerodha/Angel
-One/Fyers/Dhan), price-action/market-structure engine, support/resistance zone engine, option
-chain intelligence engine, visual no-code strategy builder, TradingView-style charting UI, the
-React/Next.js dashboard and remaining tabs, PostgreSQL/Redis persistence, auth, and Docker/CI
-deployment. This slice is the foundation those layers plug into: strategies are already
-timeframe- and instrument-agnostic (`symbol` is just a string), so equity/futures/options can
-be added by feeding the same `Signal`/`Trade` models once instrument metadata and a real
-broker feed exist.
+`docker-compose.yml` at the repo root wires three services: `postgres` (16-alpine, a named
+volume, a `pg_isready` healthcheck), `backend` (built from `backend/Dockerfile` — Python 3.11
+slim, non-root user, a container healthcheck against `/api/system/health`, waits for Postgres
+to be healthy before starting, and its `CMD` now runs `alembic upgrade head` before starting
+`uvicorn` so the container always boots against the current tracked schema rather than relying
+on `create_all`), and `frontend` (built from `frontend/Dockerfile` — a Node build stage producing the
+Vite production bundle, served by an `nginx:alpine` stage whose `nginx.conf` reverse-proxies
+`/api/*` to the `backend` service by its compose network name and falls back to `index.html`
+for client-side routes). Copy `.env.example` to `.env` at the repo root first (Postgres
+credentials, `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY`), then:
+
+```bash
+docker compose up --build
+# backend:  http://localhost:8000
+# frontend: http://localhost:8080
+```
+
+**Honesty note on verification:** `docker compose config` was run and validates the file
+cleanly (service graph, env interpolation, healthcheck syntax all resolve correctly), but this
+sandbox's network egress policy explicitly blocks Docker Hub's CDN
+(`production.cloudfront.docker.com` — confirmed via a 403 policy denial, not a transient
+error), so pulling the `python`/`node`/`postgres`/`nginx` base images and actually running
+`docker compose up` could not be exercised here. Please run it on a machine with normal Docker
+Hub access before trusting it in production — if anything doesn't build cleanly, that's a real
+bug to fix, not a sandbox artifact.
+
+## Strategy Builder, dashboard tabs, and platform hardening
+
+A full pass since the last section closed most of the previously-open gaps:
+
+- **No-code Strategy Builder** (`app/strategy_engine/declarative.py` + `app/custom_strategies/`):
+  a user composes AND-combined long/short entry conditions (indicator vs. a fixed value or
+  another indicator, plain comparisons or crossover detection) through a form UI - no drag-and-drop
+  canvas, but genuinely code-free. A saved `CustomStrategyConfig` becomes a `DeclarativeStrategy`
+  resolved under a `custom:<id>` strategy id by `app/custom_strategies/resolver.py`, and every
+  route that accepts a strategy id (`/signal`, `/signal/enrich`, `/paper-execute`, `/backtest`,
+  and the `GET /api/strategies` listing itself) resolves it the same way it resolves a built-in
+  strategy - a custom strategy is private to its owner (403/404 for anyone else) but otherwise
+  indistinguishable from `ema_rsi_scalper_1m` to the rest of the app. Frontend: `Strategy
+  Builder` page.
+- **Signal history**: every `/signal/enrich` call for a logged-in user is now logged
+  (`SignalHistoryRecord`, `GET /api/signal-history`) independent of whether it was ever executed
+  - surfaced as a "Recent signal history" table on the Signals page.
+- **Manual position exit-tracking**: `POST /api/positions/{id}/mark-price` checks a supplied
+  current price against an open position's stop loss/target1/target2 (same SL-then-target2-then-target1
+  priority as the backtest engine) and closes it with `PaperBroker`'s real cost model if hit -
+  the honest replacement for a live price feed that doesn't exist yet (a "Check price" control on
+  the Positions page). Once a real broker quote stream exists, a scheduled job can call the same
+  endpoint instead of a person.
+- **Per-user Risk Management**: `RiskSettingsRecord` + `GET`/`PUT /api/risk-settings` persist a
+  user's own capital/risk-per-trade/daily-loss/trade-count/consecutive-loss/lot-size limits,
+  which `/paper-execute` now applies automatically instead of always falling back to the
+  hardcoded platform default. Frontend: `Risk Management` tab.
+- **Portfolio, Orders, Analytics tabs**: Portfolio aggregates capital deployed and cumulative
+  realized P&L from existing trade data; Orders presents every entry/exit fill as a broker-style
+  blotter; Analytics (`GET /api/analytics/summary`) breaks win rate/net P&L/profit factor down by
+  strategy and by symbol from a user's full persisted trade history.
+- **Settings + System Logs tabs**: Settings is the previously-missing UI for the broker
+  credential endpoints that already existed (`POST/GET/DELETE /api/broker/{name}/credentials`,
+  `POST /api/broker/{name}/authenticate`); System Logs is a viewer for `AuditLogRecord`
+  (`GET /api/audit-logs`), which had been written to since the DB/auth phase but had no read path
+  until now.
+- **Optional Redis caching** (`app/cache/client.py`): a fail-open async wrapper caches
+  `POST /api/option-chain/analyze` and `POST /api/support-resistance/zones` (both pure,
+  side-effect-free computations) for 5 seconds. Verified for real by stopping the local
+  redis-server mid-test-run and confirming the cache-backed endpoints still pass - Redis is
+  optional infrastructure here, never a hard dependency. `docker-compose.yml` gets a
+  `redis:7-alpine` service.
+- **CI** (`.github/workflows/ci.yml`): a `backend` job runs the full pytest suite, then applies
+  Alembic migrations against a real Postgres service container and runs `alembic check` to catch
+  model/migration drift; a `frontend` job runs `npm run build` (TypeScript type-check + Vite
+  production bundle). Both on every push/PR.
+
+Genuinely still outstanding: Angel One/Fyers/Dhan adapters are structurally registered but still
+need their real endpoints wired in (see `app/brokers/stubs.py`) - deliberately deprioritized once
+Zerodha/Upstox/Shoonya existed. Full `docker compose up --build` execution remains unverified in
+this sandbox (its network policy blocks Docker Hub's CDN - see Docker Deployment above); `docker
+compose config` validates cleanly and the backend/CI both exercise the same Dockerfile logic
+(migrate-then-serve), but an actual build-and-run pass on a machine with normal Docker Hub access
+is still worth doing before trusting it in production.
+
+Strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
+authenticated broker adapter is constructed (genuinely possible via `POST
+/api/broker/{name}/authenticate`) and instrument-master lookups are wired up, the same
+`Signal`/`Trade`/`BrokerOrderRequest` models carry straight through to real equity/futures/options
+trading. Signal scoring, price action, support/resistance, and option-chain analysis are already
+wired together (see Signal Scoring Engine above) and reachable from the frontend console (see
+Frontend Console above).
+
+## Fundamental Analysis & Company Intelligence Engine
+
+A companion to the technical Signal Scoring Engine, covering the "should I even be looking at
+this company" question technical signals don't answer: business quality, earnings quality,
+valuation, balance sheet/cash flow health, red flags, SWOT, and a composite Fundamental Score
+that fuses with the technical score into a final trading bias. Full detail (design principle,
+engine-by-engine breakdown, what's deliberately out of scope) lives in
+[`docs/FUNDAMENTALS.md`](FUNDAMENTALS.md) - the short version:
+
+- `app/fundamentals/models.py` + DB (`companies`, `financial_periods`,
+  `shareholding_snapshots`, `corporate_actions`, `qualitative_factors`): every input carries a
+  `SourceCitation` (source, URL, dates, confidence); ratios are always derived live from raw
+  supplied figures, never stored redundantly; qualitative judgments (moat factors, management
+  quality, SWOT bullets) only ever come from a cited human-entered `QualitativeFactor`, never
+  invented by an engine.
+- `app/fundamentals/engines/`: Revenue growth/CAGR, Profitability (margins/ROE/ROCE/ROA +
+  trend), Earnings Quality (CFO vs PAT), Quarterly QoQ/YoY comparison, Balance Sheet (debt/
+  liquidity risk), Cash Flow, relative Valuation + a real DCF calculator (bull/base/bear
+  sensitivity), Business Quality scorecard, Red Flag aggregator, SWOT generator, Bull/Base/Bear
+  scenario projector, and the Fundamental Score (exact weights from the spec) + a Fusion engine
+  combining it with the existing Signal Scoring Engine into A1 LONG/SHORT BIAS, WATCHLIST,
+  CAUTION, or NO TRADE.
+- `app/fundamentals/providers/nse.py`: a real `NSEProvider` for NSE India's public JSON API,
+  following the same `BrokerInterface` adapter pattern as the broker adapters - parsing verified
+  with mocked HTTP responses, but its live network behavior is unverified in this sandbox (same
+  network-policy block that stopped Docker Hub verification - see Docker Deployment above).
+- `app/fundamentals/routes.py`: company/financial/shareholding/corporate-action/qualitative-
+  factor CRUD (open reads - shared reference data; auth-required writes so contributions are
+  attributed) plus per-engine analysis endpoints, a screener, and a lightweight sector-rotation
+  ranking - both limited to whatever companies have actually been entered, not the full NSE/BSE
+  universe (no live market-wide feed exists).
+- Frontend: a `Fundamental Analysis` page (company profile/financials entry, tabbed analysis,
+  valuation & DCF calculator, SWOT/red-flags/qualitative-factor entry, Fundamental Score +
+  Fusion, one-page Intelligence Card, screener + sector rotation) - verified end-to-end with
+  Playwright against the live backend.
+
+Deliberately out of scope for this pass (per explicit user direction to build the core engines
+for real rather than a larger surface that silently does nothing without a live feed): national/
+international event impact engines, earnings-call-transcript NLP, and a true market-wide/NIFTY-
+level fundamental engine - all three need a live macro/news/analyst-consensus feed this platform
+doesn't have credentials for. Angel One/Fyers/Dhan real broker adapters and full `docker compose
+up --build` execution remain the same explicitly-deferred items noted above.

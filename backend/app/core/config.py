@@ -16,3 +16,7 @@ JWT_EXPIRE_MINUTES = 60 * 24
 # deployment - a process-local fallback is generated here only so the app still runs for local
 # development, but anything encrypted with it becomes unreadable across restarts.
 SECRETS_ENCRYPTION_KEY = os.environ.get("SECRETS_ENCRYPTION_KEY")
+
+# Optional: caches short-lived, pure-computation results (option chain analysis, S/R zones).
+# The app runs fine without Redis reachable - every cache call is wrapped to fail open.
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

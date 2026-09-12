@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, List, Optional
 
@@ -23,6 +25,7 @@ from app.backtest.engine import run_backtest
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
+from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
 from app.custom_strategies.routes import router as custom_strategies_router
 from app.db.models import CustomStrategyRecord, User
@@ -271,15 +274,30 @@ def price_action_patterns(request: CandlesRequest) -> List[PatternMatch]:
     return detect_patterns(df)
 
 
+def _cache_key(prefix: str, payload: str) -> str:
+    return f"{prefix}:{hashlib.sha256(payload.encode()).hexdigest()}"
+
+
 @app.post("/api/support-resistance/zones", response_model=List[SRZone])
-def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
+async def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
+    """Pure function of its input candles, so short-lived results are cached in Redis (when
+    reachable - this fails open to a plain recompute otherwise) to avoid rebuilding the same
+    swing-cluster/pivot/Fibonacci zones on every identical repeated call.
+    """
+    key = _cache_key("sr_zones", request.model_dump_json())
+    cached = await cache_get(key)
+    if cached is not None:
+        return [SRZone.model_validate(z) for z in json.loads(cached)]
+
     df = bars_to_dataframe(request.candles)
     engine = SupportResistanceEngine(
         swing_window=request.swing_window,
         tolerance_pct=request.tolerance_pct,
         opening_range_minutes=request.opening_range_minutes,
     )
-    return engine.build_zones(df, request.timeframe)
+    zones = engine.build_zones(df, request.timeframe)
+    await cache_set(key, "[" + ",".join(z.model_dump_json() for z in zones) + "]", ttl_seconds=5)
+    return zones
 
 
 class OptionChainAnalyzeRequest(BaseModel):
@@ -288,11 +306,21 @@ class OptionChainAnalyzeRequest(BaseModel):
 
 
 @app.post("/api/option-chain/analyze", response_model=OptionChainAnalysis)
-def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChainAnalysis:
+async def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChainAnalysis:
     """Takes a raw OptionChain (e.g. from BrokerInterface.get_option_chain()) and returns PCR,
     Max Pain, ATM/ITM/OTM, OI buildup/unwinding, and a bias confirmed by more than PCR alone.
+    Pure function of its input, so short-lived results are cached in Redis (fails open to a
+    plain recompute if Redis isn't reachable) - useful once a real option chain is being polled
+    repeatedly for the same underlying/expiry within the same few seconds.
     """
-    return analyze_option_chain(request.chain, top_n=request.top_n)
+    key = _cache_key("option_chain_analysis", request.model_dump_json())
+    cached = await cache_get(key)
+    if cached is not None:
+        return OptionChainAnalysis.model_validate_json(cached)
+
+    result = analyze_option_chain(request.chain, top_n=request.top_n)
+    await cache_set(key, result.model_dump_json(), ttl_seconds=5)
+    return result
 
 
 @app.get("/api/broker/available")

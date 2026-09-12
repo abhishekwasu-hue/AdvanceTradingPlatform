@@ -5,15 +5,19 @@ import type {
   CorporateAction,
   DCFAssumptions,
   DCFResult,
+  EarningsCalendarEvent,
   FinancialPeriod,
   FundamentalScoreResult,
   FusionResult,
+  PeerMetrics,
+  PreEarningsAnalysis,
   QualitativeFactor,
   RedFlag,
   SWOTResult,
   ScenarioResult,
   SectorRotationRow,
   ShareholdingSnapshot,
+  UpcomingCalendarEvent,
 } from "../types/fundamentals";
 import type { BalanceSheetAnalysis, CashFlowAnalysis, EarningsQualityResult, GrowthAnalysis, ProfitabilityAnalysis, QuarterlyResultAnalysis, ValuationResult } from "../types/fundamentals";
 
@@ -77,4 +81,13 @@ export const fundamentalsApi = {
     request<{ symbol: string; name: string; sector: string }[]>("/fundamentals/screener", { method: "POST", body: JSON.stringify(filters) }),
 
   sectors: () => request<SectorRotationRow[]>("/fundamentals/sectors"),
+
+  listCalendarEvents: (symbol: string) => request<EarningsCalendarEvent[]>(`/fundamentals/companies/${symbol}/calendar`),
+  addCalendarEvent: (symbol: string, event: EarningsCalendarEvent) =>
+    request<EarningsCalendarEvent>(`/fundamentals/companies/${symbol}/calendar`, { method: "POST", body: JSON.stringify(event) }),
+  upcomingCalendarEvents: () => request<UpcomingCalendarEvent[]>("/fundamentals/calendar/upcoming"),
+
+  peerComparison: (sector: string) => request<PeerMetrics[]>(`/fundamentals/sectors/${encodeURIComponent(sector)}/peers`),
+
+  preEarnings: (symbol: string) => request<PreEarningsAnalysis>(`/fundamentals/companies/${symbol}/analysis/pre-earnings`),
 };

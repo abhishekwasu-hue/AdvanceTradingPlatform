@@ -177,3 +177,67 @@ def test_sector_rotation_aggregates_by_sector():
     assert response.status_code == 200
     sector_row = next(r for r in response.json() if r["sector"] == "Information Technology")
     assert sector_row["companies_tracked"] >= 1
+
+
+def test_earnings_calendar_crud_and_upcoming_feed():
+    token = _register("analyst9@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("THETA"))
+
+    unauth = client.post("/api/fundamentals/companies/THETA/calendar", json={"event_type": "RESULTS", "event_date": "2099-01-01"})
+    assert unauth.status_code in (401, 403)
+
+    add = client.post(
+        "/api/fundamentals/companies/THETA/calendar", headers=headers,
+        json={"event_type": "RESULTS", "event_date": "2099-01-01", "description": "Q3 FY99 results"},
+    )
+    assert add.status_code == 201, add.text
+
+    listing = client.get("/api/fundamentals/companies/THETA/calendar")
+    assert listing.status_code == 200
+    assert any(e["event_type"] == "RESULTS" for e in listing.json())
+
+    upcoming = client.get("/api/fundamentals/calendar/upcoming")
+    assert upcoming.status_code == 200
+    assert any(e["symbol"] == "THETA" for e in upcoming.json())
+
+
+def test_peer_comparison_ranks_companies_in_same_sector():
+    token = _register("analyst10@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("IOTA"))
+    client.post("/api/fundamentals/companies/IOTA/financials", headers=headers, json=_sample_period(pat=100.0))
+
+    weaker = _sample_profile("KAPPA")
+    client.post("/api/fundamentals/companies", headers=headers, json=weaker)
+    weak_period = _sample_period(pat=10.0)
+    weak_period["ebitda"] = 50.0
+    weak_period["ebit"] = 20.0
+    client.post("/api/fundamentals/companies/KAPPA/financials", headers=headers, json=weak_period)
+
+    response = client.get("/api/fundamentals/sectors/Information Technology/peers")
+    assert response.status_code == 200
+    symbols = [r["symbol"] for r in response.json()]
+    assert "IOTA" in symbols and "KAPPA" in symbols
+    assert symbols.index("IOTA") < symbols.index("KAPPA")
+
+
+def test_pre_earnings_requires_upcoming_event_then_analyzes():
+    token = _register("analyst11@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/fundamentals/companies", headers=headers, json=_sample_profile("LAMBDA"))
+    client.post("/api/fundamentals/companies/LAMBDA/financials", headers=headers, json=_sample_period())
+
+    missing = client.get("/api/fundamentals/companies/LAMBDA/analysis/pre-earnings")
+    assert missing.status_code == 404
+
+    client.post(
+        "/api/fundamentals/companies/LAMBDA/calendar", headers=headers,
+        json={"event_type": "RESULTS", "event_date": "2099-06-30"},
+    )
+
+    response = client.get("/api/fundamentals/companies/LAMBDA/analysis/pre-earnings")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["upcoming_event_date"] == "2099-06-30"
+    assert "earnings_bias" in body and "risk_level" in body

@@ -288,6 +288,44 @@ export interface SectorRotationRow {
   avg_roce_pct: number | null;
 }
 
+export interface EarningsCalendarEvent {
+  event_type: string;
+  event_date: string;
+  description?: string | null;
+  source?: SourceCitation | null;
+}
+
+export interface UpcomingCalendarEvent {
+  symbol: string;
+  event_type: string;
+  event_date: string;
+  description?: string | null;
+}
+
+export interface PeerMetrics {
+  symbol: string;
+  name: string;
+  revenue_yoy_growth_pct?: number | null;
+  ebitda_margin_pct?: number | null;
+  roe_pct?: number | null;
+  roce_pct?: number | null;
+  debt_to_equity?: number | null;
+}
+
+export interface PreEarningsAnalysis {
+  upcoming_event_date: string;
+  revenue_trend_note: string;
+  margin_trend_note: string;
+  red_flag_count: number;
+  earnings_bias: "Bullish" | "Neutral" | "Bearish";
+  risk_level: "Low" | "Medium" | "High" | "Extreme";
+  note: string;
+}
+
+export function defaultCalendarEvent(): EarningsCalendarEvent {
+  return { event_type: "RESULTS", event_date: new Date().toISOString().slice(0, 10) };
+}
+
 export function defaultCompanyProfile(): CompanyProfile {
   return { symbol: "", name: "", sector: "", industry: "", business_segments: [] };
 }

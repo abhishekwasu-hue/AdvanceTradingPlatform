@@ -20,6 +20,8 @@ from app.db.models import CompanyRecord, User
 from app.db.session import get_session
 from app.fundamentals import persistence as db
 from app.fundamentals.engines.business_quality import BusinessQualityEngine
+from app.fundamentals.engines.peer_comparison import PeerComparisonEngine
+from app.fundamentals.engines.pre_earnings import PreEarningsEngine
 from app.fundamentals.engines.red_flags import RedFlagEngine
 from app.fundamentals.engines.scenario import ScenarioEngine
 from app.fundamentals.engines.score import FundamentalScoreEngine, FusionEngine, WEIGHTS, score_from_quality_label, score_from_risk_level, score_from_valuation_label
@@ -38,7 +40,10 @@ from app.fundamentals.models import (
     CompanyProfile,
     CorporateAction,
     DCFAssumptions,
+    EarningsCalendarEvent,
     FinancialPeriod,
+    PeerMetrics,
+    PreEarningsAnalysis,
     QualitativeFactor,
     RedFlag,
     ShareholdingSnapshot,
@@ -173,6 +178,45 @@ async def list_qualitative_factors_route(symbol: str, session: AsyncSession = De
     return [db.qualitative_factor_to_model(r) for r in rows]
 
 
+@router.post("/companies/{symbol}/calendar", response_model=EarningsCalendarEvent, status_code=201)
+async def add_calendar_event(
+    symbol: str, event: EarningsCalendarEvent, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> EarningsCalendarEvent:
+    company = await _get_company_or_404(session, symbol)
+    session.add(db.calendar_event_from_model(company.id, event, user.id))
+    await session.commit()
+    return event
+
+
+@router.get("/companies/{symbol}/calendar", response_model=List[EarningsCalendarEvent])
+async def list_calendar_events_route(symbol: str, session: AsyncSession = Depends(get_session)) -> List[EarningsCalendarEvent]:
+    company = await _get_company_or_404(session, symbol)
+    rows = await db.list_calendar_events(session, company.id)
+    return [db.calendar_event_to_model(r) for r in rows]
+
+
+@router.get("/calendar/upcoming")
+async def upcoming_calendar_events(session: AsyncSession = Depends(get_session)) -> List[Dict[str, object]]:
+    """Every scheduled event, across every company entered, from today onward - a dashboard-
+    ready feed (spec section 30). Sorted soonest first.
+    """
+    from datetime import date as date_cls
+
+    today = date_cls.today()
+    companies = await session.scalars(select(CompanyRecord).order_by(CompanyRecord.symbol))
+    upcoming: List[Dict[str, object]] = []
+    for company in companies:
+        rows = await db.list_calendar_events(session, company.id)
+        for row in rows:
+            if row.event_date >= today:
+                upcoming.append({
+                    "symbol": company.symbol, "event_type": row.event_type,
+                    "event_date": row.event_date.isoformat(), "description": row.description,
+                })
+    upcoming.sort(key=lambda e: e["event_date"])
+    return upcoming
+
+
 # --- Analysis endpoints -----------------------------------------------------------------------
 
 
@@ -280,6 +324,40 @@ async def analysis_scenario(symbol: str, session: AsyncSession = Depends(get_ses
     periods = await _load_periods(session, company.id)
     _require_periods(periods)
     return ScenarioEngine().project(periods[-1])
+
+
+@router.get("/companies/{symbol}/analysis/pre-earnings", response_model=PreEarningsAnalysis)
+async def analysis_pre_earnings(symbol: str, session: AsyncSession = Depends(get_session)) -> PreEarningsAnalysis:
+    """Pre-earnings read (spec section 31), anchored to the nearest upcoming RESULTS event on
+    this company's calendar. 404s if no such event has been entered - there's nothing to be
+    "pre-" of otherwise.
+    """
+    from datetime import date as date_cls
+
+    company = await _get_company_or_404(session, symbol)
+    periods = await _load_periods(session, company.id)
+    _require_periods(periods)
+
+    calendar_rows = await db.list_calendar_events(session, company.id)
+    today = date_cls.today()
+    upcoming_results = [
+        db.calendar_event_to_model(r) for r in calendar_rows if r.event_type == "RESULTS" and r.event_date >= today
+    ]
+    if not upcoming_results:
+        raise HTTPException(status_code=404, detail="No upcoming RESULTS event on this company's calendar - add one via POST /companies/{symbol}/calendar first.")
+    next_event = min(upcoming_results, key=lambda e: e.event_date)
+
+    shareholding_rows = await db.list_shareholding_history(session, company.id)
+    action_rows = await db.list_corporate_actions(session, company.id)
+    earnings_quality = EarningsQualityEngine().analyze(periods[-1])
+    balance_sheet = BalanceSheetEngine().analyze(periods[-1])
+    cash_flow = CashFlowEngine().analyze(periods[-1], market_cap=company.market_cap)
+    red_flags = RedFlagEngine().analyze(
+        earnings_quality=earnings_quality, balance_sheet=balance_sheet, cash_flow=cash_flow,
+        shareholding_history=[db.shareholding_to_model(r) for r in shareholding_rows],
+        corporate_actions=[db.corporate_action_to_model(r) for r in action_rows],
+    )
+    return PreEarningsEngine().analyze(periods, upcoming_event_date=next_event.event_date, red_flags=red_flags)
 
 
 class ValuationRequest(BaseModel):
@@ -489,6 +567,21 @@ async def sector_rotation(session: AsyncSession = Depends(get_session)) -> List[
 
     ranking.sort(key=lambda r: (r["avg_revenue_cagr_3y_pct"] is None, -(r["avg_revenue_cagr_3y_pct"] or 0)))
     return ranking
+
+
+@router.get("/sectors/{sector}/peers", response_model=List[PeerMetrics])
+async def sector_peer_comparison(sector: str, session: AsyncSession = Depends(get_session)) -> List[PeerMetrics]:
+    """Ranks every company entered under `sector` against each other (spec section 20). Only
+    ever compares companies already in this platform - see PeerComparisonEngine's docstring.
+    """
+    companies = await session.scalars(
+        select(CompanyRecord).where(CompanyRecord.sector.ilike(sector)).order_by(CompanyRecord.symbol)
+    )
+    entries = []
+    for company in companies:
+        periods = await _load_periods(session, company.id)
+        entries.append((company.symbol, company.name, periods))
+    return PeerComparisonEngine().compare(entries)
 
 
 @router.get("/companies/{symbol}/card", response_model=CompanyIntelligenceCard)

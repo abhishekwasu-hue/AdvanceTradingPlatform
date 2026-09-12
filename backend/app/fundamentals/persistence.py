@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     CompanyRecord,
     CorporateActionRecord,
+    EarningsCalendarEventRecord,
     FinancialPeriodRecord,
     QualitativeFactorRecord,
     ShareholdingSnapshotRecord,
@@ -20,6 +21,7 @@ from app.fundamentals.models import (
     Bias,
     CompanyProfile,
     CorporateAction,
+    EarningsCalendarEvent,
     FinancialPeriod,
     PeriodType,
     QualitativeFactor,
@@ -192,5 +194,26 @@ async def list_corporate_actions(session: AsyncSession, company_id: int) -> List
 async def list_qualitative_factors(session: AsyncSession, company_id: int) -> List[QualitativeFactorRecord]:
     rows = await session.scalars(
         select(QualitativeFactorRecord).where(QualitativeFactorRecord.company_id == company_id)
+    )
+    return list(rows)
+
+
+def calendar_event_to_model(record: EarningsCalendarEventRecord) -> EarningsCalendarEvent:
+    return EarningsCalendarEvent(
+        event_type=record.event_type, event_date=record.event_date, description=record.description,
+        source=_source_from_json(record.source_json),
+    )
+
+
+def calendar_event_from_model(company_id: int, event: EarningsCalendarEvent, created_by: Optional[int]) -> EarningsCalendarEventRecord:
+    return EarningsCalendarEventRecord(
+        company_id=company_id, event_type=event.event_type, event_date=event.event_date,
+        description=event.description, source_json=_source_to_json(event.source), created_by=created_by,
+    )
+
+
+async def list_calendar_events(session: AsyncSession, company_id: int) -> List[EarningsCalendarEventRecord]:
+    rows = await session.scalars(
+        select(EarningsCalendarEventRecord).where(EarningsCalendarEventRecord.company_id == company_id).order_by(EarningsCalendarEventRecord.event_date)
     )
     return list(rows)

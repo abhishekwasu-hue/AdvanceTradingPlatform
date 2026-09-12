@@ -3,6 +3,7 @@ import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
 import {
+  defaultCalendarEvent,
   defaultCompanyProfile,
   defaultFinancialPeriod,
   type BalanceSheetAnalysis,
@@ -10,21 +11,28 @@ import {
   type CompanyIntelligenceCard,
   type CompanyProfile,
   type DCFResult,
+  type EarningsCalendarEvent,
   type EarningsQualityResult,
   type FinancialPeriod,
   type FundamentalScoreResult,
   type FusionResult,
   type GrowthAnalysis,
+  type PeerMetrics,
+  type PreEarningsAnalysis,
   type ProfitabilityAnalysis,
   type QuarterlyResultAnalysis,
   type RedFlag,
   type SWOTResult,
   type ScenarioResult,
   type SectorRotationRow,
+  type UpcomingCalendarEvent,
   type ValuationResult,
 } from "../types/fundamentals";
 
-const TABS = ["Profile", "Financials", "Analysis", "Valuation & DCF", "Quality & Risk", "Score & Fusion", "Intelligence Card", "Screener & Sectors"] as const;
+const TABS = [
+  "Profile", "Financials", "Analysis", "Valuation & DCF", "Quality & Risk", "Score & Fusion",
+  "Intelligence Card", "Screener & Sectors", "Calendar & Pre-Earnings", "Peer Comparison",
+] as const;
 type Tab = (typeof TABS)[number];
 
 function toneForRisk(risk?: string) {
@@ -83,6 +91,14 @@ export default function FundamentalsPage() {
   const [sectors, setSectors] = useState<SectorRotationRow[]>([]);
   const [screenerResults, setScreenerResults] = useState<{ symbol: string; name: string; sector: string }[]>([]);
   const [screenerFilters, setScreenerFilters] = useState({ min_roce_pct: "", max_debt_to_equity: "", min_revenue_cagr_3y_pct: "", min_promoter_holding_pct: "" });
+
+  const [calendarEvents, setCalendarEvents] = useState<EarningsCalendarEvent[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<UpcomingCalendarEvent[]>([]);
+  const [newCalendarEvent, setNewCalendarEvent] = useState<EarningsCalendarEvent>(defaultCalendarEvent());
+  const [preEarnings, setPreEarnings] = useState<PreEarningsAnalysis | null>(null);
+  const [preEarningsError, setPreEarningsError] = useState<string | null>(null);
+
+  const [peerMetrics, setPeerMetrics] = useState<PeerMetrics[]>([]);
 
   function refreshCompanies() {
     fundamentalsApi.listCompanies().then((list) => {
@@ -203,6 +219,40 @@ export default function FundamentalsPage() {
   useEffect(() => {
     if (tab === "Screener & Sectors") fundamentalsApi.sectors().then(setSectors);
   }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "Calendar & Pre-Earnings" || !symbol) return;
+    fundamentalsApi.listCalendarEvents(symbol).then(setCalendarEvents).catch(() => setCalendarEvents([]));
+    fundamentalsApi.upcomingCalendarEvents().then(setUpcomingEvents).catch(() => setUpcomingEvents([]));
+    setPreEarnings(null);
+    setPreEarningsError(null);
+  }, [tab, symbol]);
+
+  useEffect(() => {
+    if (tab !== "Peer Comparison" || !selectedCompany) return;
+    fundamentalsApi.peerComparison(selectedCompany.sector).then(setPeerMetrics).catch(() => setPeerMetrics([]));
+  }, [tab, selectedCompany]);
+
+  async function handleAddCalendarEvent() {
+    setError(null);
+    try {
+      await fundamentalsApi.addCalendarEvent(symbol, newCalendarEvent);
+      setCalendarEvents(await fundamentalsApi.listCalendarEvents(symbol));
+      setUpcomingEvents(await fundamentalsApi.upcomingCalendarEvents());
+      setNewCalendarEvent(defaultCalendarEvent());
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handlePreEarnings() {
+    setPreEarningsError(null);
+    try {
+      setPreEarnings(await fundamentalsApi.preEarnings(symbol));
+    } catch (e) {
+      setPreEarningsError(String(e));
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -668,6 +718,110 @@ export default function FundamentalsPage() {
                 </table>
               </Card>
             </div>
+          )}
+
+          {tab === "Calendar & Pre-Earnings" && (
+            <div className="space-y-4">
+              <Card title={`Earnings Calendar — ${symbol}`}>
+                {calendarEvents.length === 0 ? (
+                  <div className="text-sm text-muted py-2">No events entered yet — add one below.</div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                      <th className="py-1 pr-3">Type</th><th className="py-1 pr-3">Date</th><th className="py-1 pr-3">Description</th>
+                    </tr></thead>
+                    <tbody>
+                      {calendarEvents.map((e, i) => (
+                        <tr key={i} className="border-t border-border">
+                          <td className="py-1 pr-3 font-medium text-slate-200">{e.event_type}</td>
+                          <td className="py-1 pr-3">{e.event_date}</td>
+                          <td className="py-1 pr-3 text-muted">{e.description ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className="mt-3 grid sm:grid-cols-4 gap-2 text-sm">
+                  <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={newCalendarEvent.event_type}
+                    onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, event_type: e.target.value })}>
+                    <option value="RESULTS">Results</option>
+                    <option value="AGM">AGM</option>
+                    <option value="BOARD_MEETING">Board Meeting</option>
+                    <option value="DIVIDEND">Dividend</option>
+                    <option value="BONUS">Bonus</option>
+                    <option value="SPLIT">Split</option>
+                    <option value="BUYBACK">Buyback</option>
+                    <option value="RECORD_DATE">Record Date</option>
+                    <option value="INVESTOR_DAY">Investor Day</option>
+                    <option value="PRODUCT_LAUNCH">Product Launch</option>
+                    <option value="REGULATORY_DECISION">Regulatory Decision</option>
+                  </select>
+                  <input type="date" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                    value={newCalendarEvent.event_date} onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, event_date: e.target.value })} />
+                  <input placeholder="Description" className="rounded bg-panel2 border border-border px-2 py-1.5 sm:col-span-2"
+                    value={newCalendarEvent.description ?? ""} onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, description: e.target.value })} />
+                </div>
+                <button onClick={handleAddCalendarEvent} disabled={!user} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  Add Event
+                </button>
+              </Card>
+
+              <Card title="Upcoming Across All Companies">
+                {upcomingEvents.length === 0 ? <div className="text-sm text-muted py-2">Nothing scheduled.</div> : (
+                  <div className="text-sm space-y-1">
+                    {upcomingEvents.map((e, i) => (
+                      <div key={i}><span className="font-medium text-slate-200">{e.symbol}</span> — {e.event_type} on {e.event_date}{e.description ? ` (${e.description})` : ""}</div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Pre-Earnings Analysis">
+                <button onClick={handlePreEarnings} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                  Analyze Nearest Upcoming Results
+                </button>
+                {preEarningsError && <div className="text-sm text-danger">{preEarningsError}</div>}
+                {preEarnings && (
+                  <div className="space-y-2 text-sm">
+                    <div>Upcoming Results: <span className="text-slate-200">{preEarnings.upcoming_event_date}</span></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <StatTile label="Earnings Bias" value={preEarnings.earnings_bias} tone={preEarnings.earnings_bias === "Bullish" ? "up" : preEarnings.earnings_bias === "Bearish" ? "down" : "default"} />
+                      <StatTile label="Risk Level" value={preEarnings.risk_level} tone={toneForRisk(preEarnings.risk_level)} />
+                    </div>
+                    <div className="text-xs text-muted">{preEarnings.note}</div>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+
+          {tab === "Peer Comparison" && (
+            <Card title={selectedCompany ? `Peers in ${selectedCompany.sector}` : "Peer Comparison"}>
+              {peerMetrics.length === 0 ? (
+                <div className="text-sm text-muted py-2">No peer companies with financial data in this sector yet.</div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Name</th><th className="py-1 pr-3">Revenue YoY</th>
+                    <th className="py-1 pr-3">EBITDA Margin</th><th className="py-1 pr-3">ROE</th><th className="py-1 pr-3">ROCE</th><th className="py-1 pr-3">D/E</th>
+                  </tr></thead>
+                  <tbody>
+                    {peerMetrics.map((p) => (
+                      <tr key={p.symbol} className={`border-t border-border ${p.symbol === symbol ? "bg-panel2" : ""}`}>
+                        <td className="py-1 pr-3 font-medium text-slate-200">{p.symbol}</td>
+                        <td className="py-1 pr-3">{p.name}</td>
+                        <td className="py-1 pr-3">{p.revenue_yoy_growth_pct != null ? `${p.revenue_yoy_growth_pct.toFixed(1)}%` : "-"}</td>
+                        <td className="py-1 pr-3">{p.ebitda_margin_pct != null ? `${p.ebitda_margin_pct.toFixed(1)}%` : "-"}</td>
+                        <td className="py-1 pr-3">{p.roe_pct != null ? `${p.roe_pct.toFixed(1)}%` : "-"}</td>
+                        <td className="py-1 pr-3">{p.roce_pct != null ? `${p.roce_pct.toFixed(1)}%` : "-"}</td>
+                        <td className="py-1 pr-3">{p.debt_to_equity != null ? p.debt_to_equity.toFixed(2) : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
           )}
         </>
       )}

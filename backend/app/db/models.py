@@ -278,6 +278,25 @@ class CorporateActionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class EarningsCalendarEventRecord(Base):
+    """A scheduled company event (spec section 30) - results date, AGM, board meeting, dividend/
+    bonus/split/buyback, record date, investor day, product launch, regulatory decision. Always
+    user-entered (there's no live corporate-actions feed wired in), so it's exactly as reliable
+    as whoever entered it - cite the source.
+    """
+
+    __tablename__ = "earnings_calendar_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
 class QualitativeFactorRecord(Base):
     """A human-entered judgement (business-quality moat factor rating, management-quality note,
     SWOT bullet) - deliberately never computed or invented by an engine, only ever supplied and

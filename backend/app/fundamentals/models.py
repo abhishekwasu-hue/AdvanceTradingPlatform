@@ -157,6 +157,13 @@ class CorporateAction(BaseModel):
     source: Optional[SourceCitation] = None
 
 
+class EarningsCalendarEvent(BaseModel):
+    event_type: str  # RESULTS, AGM, BOARD_MEETING, DIVIDEND, BONUS, SPLIT, BUYBACK, RECORD_DATE, INVESTOR_DAY, PRODUCT_LAUNCH, REGULATORY_DECISION
+    event_date: date
+    description: Optional[str] = None
+    source: Optional[SourceCitation] = None
+
+
 class QualitativeFactor(BaseModel):
     """A single analyst/user-entered judgement - a moat factor rating, a management-quality
     note, a SWOT bullet. Deliberately separate from the statement-driven engines: the platform
@@ -350,6 +357,26 @@ class FusionResult(BaseModel):
     bias: FusionBias
     horizon: InvestmentHorizon
     note: str = ""
+
+
+class PeerMetrics(BaseModel):
+    symbol: str
+    name: str
+    revenue_yoy_growth_pct: Optional[float] = None
+    ebitda_margin_pct: Optional[float] = None
+    roe_pct: Optional[float] = None
+    roce_pct: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+
+
+class PreEarningsAnalysis(BaseModel):
+    upcoming_event_date: date
+    revenue_trend_note: str
+    margin_trend_note: str
+    red_flag_count: int
+    earnings_bias: Bias
+    risk_level: RiskLevel
+    note: str
 
 
 class CompanyIntelligenceCard(BaseModel):

@@ -49,6 +49,21 @@ analysis tab → score → fusion → intelligence card → screener → sector 
 | Scenario | `engines/scenario.py` | Bull/Base/Bear one-year revenue/EBITDA/PAT/EPS projection off the latest period |
 | Fundamental Score | `engines/score.py` `FundamentalScoreEngine` | The exact weighted composite (Business Quality 15%, Earnings Quality 15%, Growth 15%, Profitability 10%, Balance Sheet 10%, Cash Flow 10%, Management 10%, Sector Outlook 5%, Valuation 5%, Macro/Event Risk 5%) → 0-100, graded Exceptional/Strong/Good/Average/Weak/Poor |
 | Fusion | `FusionEngine` | Combines the Fundamental Score with this platform's existing technical Signal Scoring Engine into a Final Composite Score and one of A1 LONG BIAS / A1 SHORT BIAS / WATCHLIST / CAUTION / NO TRADE, per the 2×2 decision matrix (technical strong/weak × fundamental strong/weak) |
+| Peer comparison | `engines/peer_comparison.py` `PeerComparisonEngine` | Ranks companies entered under the same sector by ROCE (falling back to EBITDA margin), skipping any company with no financial periods rather than showing fabricated zeros |
+| Pre-earnings analysis | `engines/pre_earnings.py` `PreEarningsEngine` | Synthesizes revenue/margin trend and red-flag severity into a Bullish/Neutral/Bearish bias and risk level ahead of a company's nearest upcoming RESULTS calendar event - never a fabricated "Street expectation" |
+
+Two more real, non-fabricated pieces sit alongside these engines:
+
+- **Earnings calendar** (`EarningsCalendarEvent` model, `GET/POST /api/fundamentals/companies/{symbol}/calendar`,
+  `GET /api/fundamentals/calendar/upcoming`) - a company's own scheduled events (results, AGM, board
+  meeting, dividend, bonus, split, buyback, record date, investor day, product launch, regulatory
+  decision), each user-entered and citable, never invented. The "upcoming" endpoint aggregates
+  every company's calendar into one soonest-first feed.
+- **Peer comparison endpoint** (`GET /api/fundamentals/sectors/{sector}/peers`) - wires
+  `PeerComparisonEngine` to every company persisted under a given sector.
+- **Pre-earnings endpoint** (`GET /api/fundamentals/companies/{symbol}/analysis/pre-earnings`) -
+  anchors `PreEarningsEngine` to the nearest upcoming RESULTS event on that company's calendar;
+  404s if none has been entered, since there's nothing to be "pre-" of otherwise.
 
 All company/financial/shareholding/corporate-action/qualitative-factor data is **shared
 reference data** (like an instrument master), not user-private: reads are open to everyone,
@@ -85,10 +100,12 @@ honestly would mean they do nothing without a subscription:
   feed or manual entry; `QualitativeFactor` supports manual entry of a guidance-credibility
   score today, but there's no automatic extraction.
 - **Market-wide/NIFTY-level fundamental engine** - the sector rotation endpoint
-  (`GET /api/fundamentals/sectors`) only ranks sectors among companies actually entered into
-  this platform, not the full NSE universe.
+  (`GET /api/fundamentals/sectors`) and the peer comparison endpoint
+  (`GET /api/fundamentals/sectors/{sector}/peers`) only rank companies actually entered into
+  this platform, not the full NSE/BSE universe for that sector.
 - **Automatic earnings-surprise detection against analyst consensus** - no consensus-estimate
-  feed exists; the closest equivalent today is comparing entered periods QoQ/YoY.
+  feed exists; the closest equivalent today is comparing entered periods QoQ/YoY, or the
+  pre-earnings bias/risk read against a company's own trend.
 
 These are natural next steps once a real data feed (a paid vendor, or a working NSE/BSE
 integration verified outside this sandbox) is connected - the engines and data model above are

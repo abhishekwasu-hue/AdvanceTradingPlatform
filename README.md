@@ -28,7 +28,12 @@ broker-parsing bugs fixed with regression tests. The platform is now genuine **m
 SaaS** (see "Multi-Tenancy + RBAC Foundation" in `docs/ARCHITECTURE.md`): a `Tenant` isolation
 boundary, `tenant_id` scoping on every shared resource (broker credentials, trades, signal
 history, custom strategies, risk settings), and RBAC roles (`SUPER_ADMIN`/`USER`/
-`STRATEGY_CREATOR`/`SUPPORT`) on every user.
+`STRATEGY_CREATOR`/`SUPPORT`) on every user. Every paper-execute call also now runs through a
+**formal order state machine** (see "Order Idempotency + Formal Order State Machine" in
+`docs/ARCHITECTURE.md`): an auditable `orders`/`order_events` ledger for every execution attempt
+(filled or rejected), enforced CREATED→...→POSITION_OPEN/REJECTED/FAILED/CANCELLED transitions,
+and an `idempotency_key` so a retried submission replays its original outcome instead of
+double-executing.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -96,7 +101,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 244 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 262 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

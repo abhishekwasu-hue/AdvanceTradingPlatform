@@ -41,6 +41,26 @@ class OrderSide(str, Enum):
     SELL = "SELL"
 
 
+class OrderStatus(str, Enum):
+    """The formal order lifecycle every paper/live execution attempt is recorded against
+    (app/execution/order_state_machine.py enforces which transitions are legal). Terminal states
+    are POSITION_OPEN, REJECTED, FAILED, CANCELLED - PENDING/PARTIAL_FILL are the only
+    non-terminal states an order can sit in between submission and a final outcome.
+    """
+
+    CREATED = "CREATED"
+    VALIDATING = "VALIDATING"
+    RISK_CHECK = "RISK_CHECK"
+    SUBMITTED = "SUBMITTED"
+    PENDING = "PENDING"
+    PARTIAL_FILL = "PARTIAL_FILL"
+    FILLED = "FILLED"
+    POSITION_OPEN = "POSITION_OPEN"
+    REJECTED = "REJECTED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
 class PositionStatus(str, Enum):
     OPEN = "OPEN"
     CLOSED_TARGET = "CLOSED_TARGET"

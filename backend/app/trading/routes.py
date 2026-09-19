@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
-from app.db.models import AuditLogRecord, SignalHistoryRecord, TradeRecord, User
+from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.paper_broker import PaperBroker
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
@@ -206,3 +206,75 @@ async def list_audit_logs(
         .limit(limit)
     )
     return [AuditLogResponse.from_record(r) for r in rows]
+
+
+class OrderResponse(BaseModel):
+    id: int
+    mode: str
+    strategy_id: str
+    symbol: str
+    direction: str
+    quantity: int
+    status: str
+    idempotency_key: Optional[str]
+    broker_order_id: Optional[str]
+    trade_id: Optional[int]
+    reasons: List[str]
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_record(cls, record: OrderRecord) -> "OrderResponse":
+        return cls(
+            id=record.id, mode=record.mode, strategy_id=record.strategy_id, symbol=record.symbol,
+            direction=record.direction, quantity=record.quantity, status=record.status,
+            idempotency_key=record.idempotency_key, broker_order_id=record.broker_order_id,
+            trade_id=record.trade_id, reasons=json.loads(record.reasons_json),
+            created_at=record.created_at.isoformat(), updated_at=record.updated_at.isoformat(),
+        )
+
+
+class OrderEventResponse(BaseModel):
+    id: int
+    from_status: Optional[str]
+    to_status: str
+    detail: str
+    created_at: str
+
+    @classmethod
+    def from_record(cls, record: OrderEventRecord) -> "OrderEventResponse":
+        return cls(
+            id=record.id, from_status=record.from_status, to_status=record.to_status,
+            detail=record.detail, created_at=record.created_at.isoformat(),
+        )
+
+
+@router.get("/orders", response_model=List[OrderResponse])
+async def list_orders(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session), limit: int = 200,
+) -> List[OrderResponse]:
+    """This tenant's full order ledger - every paper/live execution attempt, rejected or filled,
+    most recent first. Unlike GET /api/trades (only rows that actually filled), this is the
+    complete audit trail the formal order state machine produces."""
+    rows = await session.scalars(
+        select(OrderRecord)
+        .where(OrderRecord.tenant_id == user.tenant_id)
+        .order_by(OrderRecord.created_at.desc())
+        .limit(limit)
+    )
+    return [OrderResponse.from_record(r) for r in rows]
+
+
+@router.get("/orders/{order_id}/events", response_model=List[OrderEventResponse])
+async def list_order_events(
+    order_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> List[OrderEventResponse]:
+    """The full append-only state-transition history for one order, oldest first."""
+    order = await session.get(OrderRecord, order_id)
+    if order is None or order.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Unknown order")
+
+    rows = await session.scalars(
+        select(OrderEventRecord).where(OrderEventRecord.order_id == order_id).order_by(OrderEventRecord.created_at.asc())
+    )
+    return [OrderEventResponse.from_record(r) for r in rows]

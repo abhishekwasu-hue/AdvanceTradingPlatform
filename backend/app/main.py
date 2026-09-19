@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ALLOWED_ORIGINS, validate_production_config
-from app.core.enums import ExecutionMode
+from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
     BacktestResult,
     OHLCVBar,
@@ -32,6 +32,7 @@ from app.custom_strategies.routes import router as custom_strategies_router
 from app.fundamentals.routes import router as fundamentals_router
 from app.db.models import CustomStrategyRecord, User
 from app.db.session import get_session, init_models
+from app.execution.order_persistence import create_order, get_order_by_idempotency_key, transition_order
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainAnalysis
@@ -92,6 +93,7 @@ class SignalRequest(BaseModel):
 
 class PaperExecuteRequest(SignalRequest):
     risk_config: Optional[RiskConfig] = None
+    idempotency_key: Optional[str] = None
 
 
 class EnrichSignalRequest(SignalRequest):
@@ -112,6 +114,8 @@ class PaperExecuteResponse(BaseModel):
     signal: Signal
     executed: bool
     reasons: List[str]
+    order_id: Optional[int] = None
+    idempotent_replay: bool = False
 
 
 class CandlesRequest(BaseModel):
@@ -218,6 +222,12 @@ async def paper_execute(
     - see GET /api/trades and /api/positions. When the request doesn't explicitly pass a
     risk_config, a logged-in user's own saved risk settings apply (see GET/PUT
     /api/risk-settings) instead of the platform default.
+
+    Every logged-in call also creates a formal order-lifecycle record (`app/db/models.py::
+    OrderRecord` + an append-only `OrderEventRecord` trail per transition - see
+    `app/execution/order_state_machine.py`), whether or not it ends up filling, and passing the
+    same `idempotency_key` twice replays the first attempt's recorded outcome instead of
+    re-running risk checks and placing a second order - see GET /api/orders/{id}/events.
     """
     try:
         strategy = await resolve_strategy(strategy_id, user, session)
@@ -228,6 +238,24 @@ async def paper_execute(
 
     data = {tf: bars_to_dataframe(bars) for tf, bars in request.candles.items()}
     signal = strategy.analyze(data, request.symbol)
+
+    if user is not None and request.idempotency_key:
+        existing = await get_order_by_idempotency_key(session, user.tenant_id, request.idempotency_key)
+        if existing is not None:
+            return PaperExecuteResponse(
+                signal=Signal.model_validate_json(existing.signal_json),
+                executed=existing.status in (OrderStatus.FILLED.value, OrderStatus.POSITION_OPEN.value),
+                reasons=json.loads(existing.reasons_json), order_id=existing.id, idempotent_replay=True,
+            )
+
+    order = None
+    if user is not None:
+        order = await create_order(
+            session, user, mode="PAPER", strategy_id=strategy_id, signal=signal,
+            idempotency_key=request.idempotency_key,
+        )
+        order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal generated")
+        order = await transition_order(session, order, OrderStatus.RISK_CHECK, detail="Running risk checks")
 
     risk_config = request.risk_config
     if risk_config is None and user is not None:
@@ -246,10 +274,29 @@ async def paper_execute(
     except LiveTradingNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    if result.executed and result.trade is not None and user is not None:
-        await persist_paper_trade(session, user, result.trade)
+    if order is not None:
+        order.reasons_json = json.dumps(result.reasons)
+        if not result.executed:
+            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(result.reasons))
+        else:
+            if result.trade is not None:
+                order.quantity = result.trade.quantity
+            order = await transition_order(session, order, OrderStatus.SUBMITTED, detail="Submitted to paper broker")
+            order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
+            order = await transition_order(session, order, OrderStatus.FILLED, detail="Paper fill")
 
-    return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
+    if result.executed and result.trade is not None and user is not None:
+        trade_record = await persist_paper_trade(session, user, result.trade)
+        if order is not None:
+            order.trade_id = trade_record.id
+            order = await transition_order(
+                session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{trade_record.id})"
+            )
+
+    return PaperExecuteResponse(
+        signal=signal, executed=result.executed, reasons=result.reasons,
+        order_id=order.id if order is not None else None,
+    )
 
 
 @app.post("/api/backtest", response_model=BacktestResult)

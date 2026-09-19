@@ -290,8 +290,11 @@ for.
 - `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
 - `POST /api/auth/register` / `POST /api/auth/login` — returns a JWT
 - `GET  /api/auth/me` — current user (auth required)
-- `GET  /api/trades` — this user's full paper trade history (auth required)
-- `GET  /api/positions` — this user's open (no `exit_time`) trades (auth required)
+- `GET  /api/trades` — this tenant's full paper trade history (auth required)
+- `GET  /api/positions` — this tenant's open (no `exit_time`) trades (auth required)
+- `GET  /api/orders` — this tenant's full order ledger, every execution attempt whether it
+  filled or not (auth required) - see "Order Idempotency + Formal Order State Machine" below
+- `GET  /api/orders/{id}/events` — one order's full append-only state-transition history (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -578,3 +581,47 @@ accepted from the client - so tenants can never read or write each other's data.
 Full backend suite: 244 passing (up from 238 before this pass), including a new
 `tests/test_multi_tenancy.py` covering tenant creation on registration, cross-tenant isolation of
 custom strategies/risk settings/broker credentials, and same-tenant sharing between two users.
+
+## Order Idempotency + Formal Order State Machine
+
+Every `POST /api/strategies/{id}/paper-execute` call by a logged-in user now creates a formal,
+auditable order record - not just a `TradeRecord` the moment something fills, but a full
+lifecycle for every execution *attempt*, rejected or not.
+
+- **`OrderRecord`** (`app/db/models.py`) - one row per attempt: tenant/user, strategy, symbol,
+  direction, quantity, current `status`, the full `Signal` that produced it (`signal_json`, so a
+  replayed idempotent call can return the exact same signal), the rejection/fill `reasons`, and
+  (once filled) the `trade_id` it opened.
+- **`OrderEventRecord`** - an append-only audit trail, one row per transition, never mutated or
+  deleted: `from_status` → `to_status` + a human-readable `detail`. `GET /api/orders/{id}/events`
+  exposes the full ordered history for one order.
+- **State machine** (`app/execution/order_state_machine.py`) enforces the legal transition graph
+  from the spec's order lifecycle: `CREATED → VALIDATING → RISK_CHECK → SUBMITTED → PENDING →
+  FILLED → POSITION_OPEN` on the happy path, with `REJECTED`/`FAILED`/`CANCELLED`/`PARTIAL_FILL`
+  branching off `RISK_CHECK`/`SUBMITTED`/`PENDING`/`PARTIAL_FILL` respectively.
+  `assert_valid_transition` raises `InvalidOrderTransition` on any transition outside that graph
+  - a defensive check against a future bug in the calling code, not something a caller's input
+  can trigger. `app/execution/order_persistence.py` wraps the DB side: `create_order` opens
+  `CREATED` and logs the first event; `transition_order` validates, updates the row, and appends
+  the next event, all in one commit, so the ledger is durable even if something crashes
+  mid-request.
+- **Idempotency**: `PaperExecuteRequest.idempotency_key` (optional) is unique per tenant
+  (`OrderRecord`'s `uq_tenant_idempotency_key` constraint - `NULL` is never deduplicated, so
+  omitting it behaves exactly as before). A client retrying the same submission - a network
+  retry, a duplicated webhook delivery once TradingView ingestion (task #102) lands - gets back
+  the first attempt's recorded outcome (`idempotent_replay: true` in the response) instead of
+  running risk checks and placing a second order; the unique constraint itself is what makes this
+  safe under a concurrent double-send, not just the read-before-write check.
+- Anonymous (no-login) paper-execute calls behave exactly as before: no `OrderRecord`, no
+  idempotency tracking, matching the console's try-it-without-an-account flow.
+- `GET /api/orders` lists a tenant's full order ledger (every attempt, not just fills) - the
+  complement to `GET /api/trades`, which only ever gets a row once an order actually fills.
+- Migration: `alembic/versions/9a3c6e1b2d47_add_orders_and_order_events.py` - two new tables, no
+  backfill needed (there was no prior order-lifecycle data to migrate). Verified against a real
+  Postgres instance: applies, downgrades, and re-applies cleanly, with zero `alembic check` drift.
+
+Full backend suite: 262 passing (up from 244 before this pass), including new
+`tests/test_order_state_machine.py` (every legal/illegal transition) and `tests/test_orders_api.py`
+(full lifecycle on a fill, full lifecycle on a risk rejection, idempotent replay returning the
+same order without a second trade, distinct keys each executing independently, and tenant
+isolation on both `/api/orders` and `/api/orders/{id}/events`).

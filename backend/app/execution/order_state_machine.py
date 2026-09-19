@@ -11,7 +11,14 @@ _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     # REJECTED here covers pre-risk-check rejections (an engaged kill switch, a malformed
     # signal) that never reach the risk engine at all.
     OrderStatus.VALIDATING: frozenset({OrderStatus.RISK_CHECK, OrderStatus.REJECTED, OrderStatus.CANCELLED}),
-    OrderStatus.RISK_CHECK: frozenset({OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.CANCELLED}),
+    # FAILED here (distinct from REJECTED) covers the broker call itself erroring/timing out
+    # while placing a LIVE order - the broker never explicitly declined it, this platform simply
+    # couldn't confirm whether it went through (see OrderRouter.execute's broker exception
+    # handling) - a "disaster" case Section 50 explicitly asks to be tested, not a business
+    # rejection like an engaged kill switch or a risk-limit breach.
+    OrderStatus.RISK_CHECK: frozenset({
+        OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.FAILED, OrderStatus.CANCELLED,
+    }),
     OrderStatus.SUBMITTED: frozenset({
         OrderStatus.PENDING, OrderStatus.REJECTED, OrderStatus.FAILED, OrderStatus.CANCELLED,
     }),

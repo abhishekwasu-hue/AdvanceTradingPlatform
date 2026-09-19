@@ -1367,6 +1367,67 @@ has normal internet access) rather than being claimed as verified here. The YAML
 validated to parse correctly, and the `pip-audit`/`npm audit` steps were run for real against the
 project's actual dependency files with the results described above.
 
+### Idempotency race, DSL/webhook fuzzing, and disaster-simulation tests (Section 50)
+
+Three real bugs found and fixed while building out the test categories Section 50 explicitly
+calls out as missing, each confirmed directly (not just reasoned about) before being fixed:
+
+- **Idempotency race under real concurrency.** The existing idempotency-key check (`main.py::
+  paper_execute`, `app/webhooks/routes.py::tradingview_webhook`) reads "does an order already
+  exist for this key?" before either request commits - a classic TOCTOU race. Running two
+  concurrent `execute_signal_for_user` calls sharing one idempotency key with `asyncio.gather`
+  reliably crashed with an unhandled `sqlalchemy.exc.IntegrityError` on the `(tenant_id,
+  idempotency_key)` unique constraint. Fixed in `create_order` (`app/execution/
+  order_persistence.py`): it now catches that IntegrityError and returns the row that actually
+  won the race (`(order, was_newly_created=False)`) instead of raising, and
+  `execute_signal_for_user` replays that order's already-decided outcome
+  (`execution_result_from_order`) rather than re-running the settled order through the pipeline a
+  second time. Verified under genuine 8-way concurrent load against a real Postgres instance:
+  exactly one order created, zero crashes (versus reliably crashing before the fix). Fixing this
+  surfaced a *second* bug in the fix's own first draft: reading `user.tenant_id` after
+  `session.rollback()` (rollback expires every loaded object) raised `MissingGreenlet` - fixed by
+  capturing `tenant_id` into a local variable before any DB operation runs. Also fixed in the same
+  pass: the kill-switch-rejection branch never set `order.reasons_json`, so a race-detected replay
+  of a kill-switch-rejected order would have replayed with an empty reasons list instead of the
+  real rejection reason.
+- **DSL parser fuzzing.** New `tests/test_nlu_parser_fuzz.py` (Hypothesis, ~750 generated
+  examples across arbitrary text, high-Unicode/emoji input, and the exact decimal-vs-sentence-
+  boundary character classes the parser's own sentence-splitter was already fixed for once) -
+  `parse_strategy_description` never raised on any generated input. No bug found here; the
+  parser's existing "never fabricate, always warn on the unrecognized" design held up under fuzz
+  pressure, not just the hand-picked examples in `tests/test_nlu_parser.py`.
+- **Webhook schema fuzzing.** New `tests/test_webhook_fuzz.py` (Hypothesis, ~250 generated
+  examples: every field replaced with an arbitrary JSON scalar/collection, and the whole body
+  replaced with something that isn't even a dict) posted against the real `/api/webhooks/
+  tradingview/{token}` endpoint - every response was a clean 200 or 422, never a 500. No bug found
+  here either; `TradingViewAlertPayload`'s Pydantic validation already rejects malformed input
+  cleanly, and the existing `entry != stop_loss` guard on the risk_reward division already
+  prevents a divide-by-zero.
+- **Disaster simulation: kill broker mid-fill.** `OrderRouter.execute`'s live-order path
+  (`await self.broker.place_order(...)`) had no exception handling at all - a broker call that
+  errors mid-flight (network failure, timeout, the broker's own outage) would propagate all the
+  way up as an unhandled exception, leaving the order stuck at `RISK_CHECK` forever: never
+  REJECTED, never FAILED, invisible to any "list my pending orders" query, and the caller's
+  request ending in an unhandled 500. Fixed by catching the exception and returning a new
+  `ExecutionResult.system_failure=True` flag, distinguishing "the broker explicitly declined this
+  order" (REJECTED, a business decision) from "the broker call itself failed" (FAILED, a system
+  failure notified as one via the existing `SYSTEM_FAILURE` notification type). `RISK_CHECK ->
+  FAILED` was added to the order state machine's allowed transitions (`app/execution/
+  order_state_machine.py`) specifically to make this reachable - it was not legal before this fix,
+  which is exactly why the order used to get stuck rather than ever reaching FAILED on its own.
+  New `tests/test_disaster_simulation.py` covers a broker exception, a broker timeout specifically,
+  confirms an ordinary broker rejection is *not* misclassified as a system failure, and confirms
+  the new state transition is narrowly scoped (RISK_CHECK still can't jump straight to
+  POSITION_OPEN). LIVE mode is not yet wired into the shared `execute_signal_for_user` pipeline
+  (only reachable by constructing `OrderRouter` directly, same as the pre-existing LIVE tests in
+  `tests/test_risk_and_execution.py`) - this fix and its tests operate at that same level, ready
+  for whenever LIVE gets wired into the shared pipeline (see Task A / Upstox sandbox testing).
+
+`hypothesis>=6.100,<7.0` added to `requirements.txt` for the two fuzz test files above - `pip-audit`
+re-checked clean with it installed.
+
+Full backend suite: 429 passing (up from 412).
+
 ### Disaster recovery & data governance runbooks (Section 52/53)
 
 New `docs/OPERATIONS.md`: RPO/RTO targets, backup/restore-verification procedure, a crash-recovery

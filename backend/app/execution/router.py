@@ -21,12 +21,19 @@ class LiveTradingNotConfigured(RuntimeError):
 
 class ExecutionResult:
     def __init__(
-        self, executed: bool, reasons: list[str], trade: Optional[Trade] = None, broker_order_id: Optional[str] = None
+        self, executed: bool, reasons: list[str], trade: Optional[Trade] = None,
+        broker_order_id: Optional[str] = None, system_failure: bool = False,
     ) -> None:
         self.executed = executed
         self.reasons = reasons
         self.trade = trade
         self.broker_order_id = broker_order_id
+        # Distinguishes "the broker was reachable and explicitly declined this order" (a business
+        # rejection - REJECTED) from "the broker call itself errored/timed out, so this platform
+        # never got a real answer" (a system failure - FAILED) - see OrderRouter.execute's broker
+        # exception handling below. Always False for PAPER fills/rejections, which never make a
+        # real network call that can fail this way.
+        self.system_failure = system_failure
 
 
 class OrderRouter:
@@ -75,7 +82,21 @@ class OrderRouter:
             product=self.product,
             tag=f"{signal.strategy_id}:{signal.grade.value}",
         )
-        response = await self.broker.place_order(order_request)
+        try:
+            response = await self.broker.place_order(order_request)
+        except Exception as exc:
+            # A "kill broker mid-fill" disaster case (master prompt Section 50's own required
+            # test category, confirmed directly: an uncaught exception here previously propagated
+            # all the way up through execute_signal_for_user as an unhandled 500, leaving the
+            # order stuck at RISK_CHECK forever - never REJECTED, never FAILED, invisible to any
+            # "list my open/pending orders" query). Never known whether the broker actually
+            # received this order before erroring - system_failure=True routes this to FAILED
+            # (not REJECTED) precisely because it's not a business decision either way, and
+            # reconciliation (app/reconciliation/) is what actually resolves the ambiguity against
+            # the broker's own book.
+            return ExecutionResult(
+                executed=False, reasons=[f"Broker call failed: {exc}"], system_failure=True,
+            )
         if response.status in ("REJECTED", "CANCELLED"):
             return ExecutionResult(executed=False, reasons=[f"Broker rejected order: {response.message or response.status}"])
 

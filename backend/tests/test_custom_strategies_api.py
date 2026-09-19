@@ -64,6 +64,28 @@ def test_create_rejects_invalid_config():
     assert response.status_code == 422
 
 
+def test_create_rejects_zero_indicator_period():
+    """Regression test: an indicator period of 0 must be rejected as a normal 422 at creation
+    time, not accepted and left to crash the next /signal or /backtest call with a
+    ZeroDivisionError/ValueError deep inside the indicator math.
+    """
+    token = _register("sybil@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    config = _rsi_config()
+    config["long_conditions"][0]["left"]["period"] = 0
+    response = client.post("/api/custom-strategies", headers=headers, json=config)
+    assert response.status_code == 422
+
+
+def test_create_rejects_zero_atr_period():
+    token = _register("tomas@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    config = _rsi_config()
+    config["atr_period"] = 0
+    response = client.post("/api/custom-strategies", headers=headers, json=config)
+    assert response.status_code == 422
+
+
 def test_custom_strategy_not_visible_or_usable_by_other_users():
     token_a = _register("quinn@example.com")
     token_b = _register("rose@example.com")

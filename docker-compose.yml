@@ -29,10 +29,12 @@ services:
     build:
       context: ./backend
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
       REDIS_URL: redis://redis:6379/0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
     depends_on:
       postgres:
         condition: service_healthy

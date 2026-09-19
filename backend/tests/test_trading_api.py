@@ -150,6 +150,49 @@ def test_anonymous_paper_execute_still_works_without_persisting(monkeypatch):
     assert response.json()["executed"] is True
 
 
+def test_paper_execute_risk_state_is_per_user_not_shared_globally(monkeypatch):
+    """Regression test: paper-execute's trading-day state must come from each user's own
+    persisted trade history, not a single in-memory counter shared across every caller. Before
+    the fix, running one user up to max_open_positions (default 3) permanently locked out every
+    other user (and anonymous callers) until the process restarted.
+    """
+    strategy = registry.get("ema_rsi_scalper_1m")
+    monkeypatch.setattr(strategy, "analyze", lambda data, symbol: _fake_long_signal())
+
+    token_a = _register("naomi@example.com")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    for _ in range(3):
+        response = client.post(
+            "/api/strategies/ema_rsi_scalper_1m/paper-execute",
+            headers=headers_a, json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+        )
+        assert response.json()["executed"] is True
+
+    # User A is now at max_open_positions (3) and should be rejected on a 4th call.
+    blocked = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/paper-execute",
+        headers=headers_a, json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+    )
+    assert blocked.json()["executed"] is False
+    assert any("Max open positions" in r for r in blocked.json()["reasons"])
+
+    # A different, fresh user must be unaffected by user A's open positions.
+    token_b = _register("otto@example.com")
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    response_b = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/paper-execute",
+        headers=headers_b, json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+    )
+    assert response_b.json()["executed"] is True
+
+    # Anonymous calls must also be unaffected.
+    anon = client.post(
+        "/api/strategies/ema_rsi_scalper_1m/paper-execute",
+        json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}},
+    )
+    assert anon.json()["executed"] is True
+
+
 def test_signal_history_requires_authentication():
     assert client.get("/api/signal-history").status_code in (401, 403)
 

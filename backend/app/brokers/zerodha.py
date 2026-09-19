@@ -1,8 +1,9 @@
 import csv
 import hashlib
 import io
+import time
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -37,6 +38,11 @@ KITE_INTERVAL_MAP = {
     "day": "day",
 }
 
+# Kite's instruments dump is a full exchange CSV that changes at most once a day; re-downloading
+# and re-parsing it on every historical-data/option-chain call would add needless latency per
+# request, so each adapter instance caches it for a while.
+_INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
+
 
 class ZerodhaBroker(BrokerInterface):
     """Kite Connect (Zerodha) adapter. Reference implementation for the BrokerInterface.
@@ -55,6 +61,7 @@ class ZerodhaBroker(BrokerInterface):
         self.credentials = credentials
         self._access_token = credentials.access_token
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
+        self._instruments_cache: Dict[str, Tuple[float, List[Instrument]]] = {}
 
     def _headers(self) -> Dict[str, str]:
         if not self._access_token:
@@ -103,6 +110,11 @@ class ZerodhaBroker(BrokerInterface):
         return BrokerProfile(broker=self.name, user_id=data["user_id"], name=data.get("user_name"), email=data.get("email"))
 
     async def get_instruments(self, exchange: Optional[str] = None) -> List[Instrument]:
+        cache_key = exchange or "__all__"
+        cached = self._instruments_cache.get(cache_key)
+        if cached is not None and (time.monotonic() - cached[0]) < _INSTRUMENT_CACHE_TTL_SECONDS:
+            return cached[1]
+
         path = f"/instruments/{exchange}" if exchange else "/instruments"
         response = await self._client.get(path, headers=self._headers())
         if response.status_code >= 400:
@@ -111,6 +123,11 @@ class ZerodhaBroker(BrokerInterface):
         reader = csv.DictReader(io.StringIO(response.text))
         instruments = []
         for row in reader:
+            # Kite's CSV puts "0" (a non-empty, truthy string) in the strike column for every
+            # non-option instrument, not an empty value - `if row.get("strike")` alone treats
+            # that "0" as present and would set strike=0.0 on every equity/future row instead of
+            # None. Parse first, then collapse a genuine zero to None.
+            strike_raw = float(row["strike"]) if row.get("strike") else None
             instruments.append(
                 Instrument(
                     instrument_token=row["instrument_token"],
@@ -122,9 +139,10 @@ class ZerodhaBroker(BrokerInterface):
                     lot_size=int(row["lot_size"]) if row.get("lot_size") else 1,
                     tick_size=float(row["tick_size"]) if row.get("tick_size") else 0.05,
                     expiry=row.get("expiry") or None,
-                    strike=float(row["strike"]) if row.get("strike") else None,
+                    strike=strike_raw or None,
                 )
             )
+        self._instruments_cache[cache_key] = (time.monotonic(), instruments)
         return instruments
 
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:

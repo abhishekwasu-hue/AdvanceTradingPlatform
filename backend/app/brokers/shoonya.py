@@ -183,9 +183,36 @@ class ShoonyaBroker(BrokerInterface):
         body = await self._post("/GetOptionChain", {
             "uid": self._uid, "exch": "NFO", "tsym": underlying, "strprc": "0", "cnt": "20",
         })
-        values = body.get("values", [])
-        rows = [OptionChainRow(strike=float(v["strprc"])) for v in values if v.get("strprc")]
-        return OptionChain(underlying=underlying, expiry=expiry.isoformat() if expiry else "", rows=rows)
+        contracts = [v for v in body.get("values", []) if v.get("strprc") and v.get("token")]
+        if not contracts:
+            return OptionChain(underlying=underlying, expiry=expiry.isoformat() if expiry else "")
+
+        # GetOptionChain lists each CE/PE contract (strike, token, option type) but not live
+        # oi/ltp/volume - those come from a GetQuotes call per token, same as get_quote() already
+        # does elsewhere in this adapter, and the same pattern ZerodhaBroker.get_option_chain uses.
+        symbols = [f"{v.get('exch', 'NFO')}:{v['token']}" for v in contracts]
+        quotes = await self.get_quote(symbols)
+
+        rows_by_strike: Dict[float, OptionChainRow] = {}
+        for v in contracts:
+            strike = float(v["strprc"])
+            symbol_key = f"{v.get('exch', 'NFO')}:{v['token']}"
+            quote = quotes.get(symbol_key)
+            if quote is None:
+                continue
+            row = rows_by_strike.setdefault(strike, OptionChainRow(strike=strike))
+            option_type = (v.get("optt") or v.get("otype") or "").upper()
+            if option_type == "CE":
+                row.call_oi, row.call_ltp, row.call_volume = quote.oi, quote.ltp, quote.volume
+                row.call_bid, row.call_ask = quote.bid, quote.ask
+            elif option_type == "PE":
+                row.put_oi, row.put_ltp, row.put_volume = quote.oi, quote.ltp, quote.volume
+                row.put_bid, row.put_ask = quote.bid, quote.ask
+
+        return OptionChain(
+            underlying=underlying, expiry=expiry.isoformat() if expiry else "",
+            rows=sorted(rows_by_strike.values(), key=lambda r: r.strike),
+        )
 
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
         body = await self._post("/PlaceOrder", {

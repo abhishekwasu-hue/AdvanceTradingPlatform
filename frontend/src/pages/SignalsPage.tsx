@@ -21,6 +21,7 @@ export default function SignalsPage() {
   const [zones, setZones] = useState<SRZone[]>([]);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<SignalHistoryEntry[]>([]);
+  const [lastGenerated, setLastGenerated] = useState<{ strategyId: string; symbol: string; data: Record<string, OHLCVBar[]> } | null>(null);
 
   useEffect(() => {
     api.listStrategies().then((list) => {
@@ -64,6 +65,10 @@ export default function SignalsPage() {
       setResult(enriched);
       setChartCandles(primaryCandles);
       setZones(relevantZones);
+      // Pin the exact candles that produced this signal, so Paper Execute always fires the
+      // trade the user is actually looking at - even if they nudge the bars/seed inputs
+      // afterward without clicking Generate again.
+      setLastGenerated({ strategyId: selected.id, symbol, data });
       refreshHistory();
     } catch (e) {
       setError(String(e));
@@ -73,12 +78,10 @@ export default function SignalsPage() {
   }
 
   async function handlePaperExecute() {
-    if (!selected) return;
+    if (!lastGenerated) return;
     setExecuteMsg(null);
     try {
-      const base = generateSampleCandles(bars, 100, seed);
-      const data = buildTimeframeData(base, selected.timeframes);
-      const res = await api.paperExecute(selected.id, symbol, data);
+      const res = await api.paperExecute(lastGenerated.strategyId, lastGenerated.symbol, lastGenerated.data);
       setExecuteMsg(res.executed ? `Paper order filled: ${res.reasons.join("; ")}` : `Not executed: ${res.reasons.join("; ")}`);
     } catch (e) {
       setExecuteMsg(String(e));
@@ -162,8 +165,9 @@ export default function SignalsPage() {
             </button>
             <button
               onClick={handlePaperExecute}
-              disabled={!selected}
-              className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm"
+              disabled={!lastGenerated}
+              title={lastGenerated ? undefined : "Generate a signal first"}
+              className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm disabled:opacity-50"
             >
               Paper Execute
             </button>

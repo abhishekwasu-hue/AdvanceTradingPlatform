@@ -4,8 +4,16 @@ from app.brokers.models import OptionChain, OptionChainRow
 from app.option_chain.models import Moneyness, OIActivity, OptionChainAnalysis, OptionChainBias, StrikeAnalysis
 
 
-def _moneyness(strike: float, underlying_ltp: Optional[float], side: str) -> Moneyness:
-    if underlying_ltp is None or strike == underlying_ltp:
+def _moneyness(strike: float, underlying_ltp: Optional[float], atm_strike: Optional[float], side: str) -> Moneyness:
+    """`atm_strike` is the strike nearest the real underlying price (computed once in
+    analyze_option_chain) - comparing against it, not against the raw underlying_ltp directly,
+    is what actually marks a strike ATM. A real (non-integer) underlying price almost never
+    equals any strike exactly, so an `strike == underlying_ltp` check would never fire and no
+    strike would ever come out ATM in this per-strike breakdown.
+    """
+    if underlying_ltp is None:
+        return Moneyness.ATM
+    if atm_strike is not None and strike == atm_strike:
         return Moneyness.ATM
     if side == "CALL":
         return Moneyness.ITM if strike < underlying_ltp else Moneyness.OTM
@@ -70,10 +78,10 @@ def analyze_option_chain(chain: OptionChain, top_n: int = 3) -> OptionChainAnaly
             strike=r.strike,
             call_oi=r.call_oi, call_change_oi=r.call_change_oi,
             call_activity=_activity(r.call_change_oi, "CALL"),
-            call_moneyness=_moneyness(r.strike, chain.underlying_ltp, "CALL"),
+            call_moneyness=_moneyness(r.strike, chain.underlying_ltp, atm_strike, "CALL"),
             put_oi=r.put_oi, put_change_oi=r.put_change_oi,
             put_activity=_activity(r.put_change_oi, "PUT"),
-            put_moneyness=_moneyness(r.strike, chain.underlying_ltp, "PUT"),
+            put_moneyness=_moneyness(r.strike, chain.underlying_ltp, atm_strike, "PUT"),
         )
         for r in rows
     ]

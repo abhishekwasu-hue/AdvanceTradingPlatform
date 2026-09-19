@@ -33,8 +33,11 @@ class Operand(BaseModel):
     type: Literal["value", "indicator"]
     value: float = 0.0
     indicator: IndicatorName = "CLOSE"
-    period: int = 14
-    multiplier: float = 3.0  # only used by SUPERTREND
+    # A period of 0 (or negative) reaches pandas .ewm(alpha=1/period, ...)/.rolling(period) and
+    # raises ZeroDivisionError/ValueError deep inside analyze() rather than at strategy-creation
+    # time - bounding it here makes that a normal 422 on POST /api/custom-strategies instead.
+    period: int = Field(default=14, gt=0, le=500)
+    multiplier: float = Field(default=3.0, gt=0)  # only used by SUPERTREND
 
     def label(self) -> str:
         if self.type == "value":
@@ -121,10 +124,10 @@ class CustomStrategyConfig(BaseModel):
     timeframe: str = "5min"
     long_conditions: List[Condition] = Field(default_factory=list)
     short_conditions: List[Condition] = Field(default_factory=list)
-    stop_loss_atr_mult: float = 1.0
-    atr_period: int = 14
+    stop_loss_atr_mult: float = Field(default=1.0, gt=0)
+    atr_period: int = Field(default=14, gt=0, le=500)
     target_rr: Tuple[float, float] = (1.5, 2.0)
-    min_rr: float = 1.2
+    min_rr: float = Field(default=1.2, gt=0)
 
     def model_post_init(self, __context: Any) -> None:
         if not self.long_conditions and not self.short_conditions:

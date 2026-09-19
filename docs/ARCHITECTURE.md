@@ -445,3 +445,82 @@ international event impact engines, earnings-call-transcript NLP, and a true mar
 level fundamental engine - all three need a live macro/news/analyst-consensus feed this platform
 doesn't have credentials for. Angel One/Fyers/Dhan real broker adapters and full `docker compose
 up --build` execution remain the same explicitly-deferred items noted above.
+
+## Production Hardening Pass
+
+A full correctness/security review across the codebase, requested explicitly rather than
+inferred - the diff was reviewed against the project's very first commit so nothing was
+skipped. Real bugs found and fixed, each with a regression test:
+
+- **Cross-tenant paper-trading lockout**: `/paper-execute`'s risk-engine state
+  (`TradingDayState`) was one process-global object shared by every user and anonymous caller,
+  and nothing ever decremented `open_positions` when a position closed. After
+  `max_open_positions` (default 3) successful paper trades from *anyone* since the server
+  started, every future call from every user was permanently rejected until a restart. Fixed by
+  deriving a logged-in user's state fresh from their own persisted trade history on every
+  request (`app/trading/persistence.py::build_trading_day_state`); anonymous calls now always
+  start clean instead of inheriting anyone else's counters.
+- **Backtest engine ignored target2**: the backtest only ever checked stop-loss/target1, unlike
+  the live/paper exit logic (`app/trading/exit_logic.py::check_exit`), which checks target2
+  first. A bar crossing both targets closed at target1 in a backtest but would close at target2
+  in real paper trading - so backtested performance didn't match the platform's own real exit
+  behavior for every inbuilt strategy (they all set a target2). Fixed to match priority: stop
+  loss, then target2, then target1.
+- **Shoonya option chain returned no OI/LTP data**: `ShoonyaBroker.get_option_chain` built a
+  bare list of strikes and never called `/GetQuotes` for oi/ltp/volume, and never merged CE/PE
+  legs by strike (unlike the Zerodha adapter's `rows_by_strike` pattern) - so any PCR/Max
+  Pain/OI-buildup analysis over a Shoonya chain silently got nothing to work with. Fixed to
+  resolve each contract's live quote and merge by strike.
+- **Upstox `place_order` sent a plain trading symbol where Upstox's API needs its own
+  `instrument_key`** (e.g. `"NSE_EQ|INE002A01018"`) - every other adapter accepts a plain
+  trading symbol per `BrokerOrderRequest`'s contract, so a live Upstox order would have carried
+  an invalid `instrument_token` and been rejected. Fixed to resolve the symbol via the
+  instrument master, the same way `get_historical_data`/`get_option_chain` already did. Both
+  Zerodha's and Upstox's instrument-master fetches (a multi-MB file that changes at most daily)
+  are now cached per adapter instance instead of re-fetched on every call.
+- **Zerodha's CSV strike parsing**: Kite's instrument CSV puts the literal string `"0"` (a
+  non-empty, truthy string) in the strike column for every non-option instrument - the old
+  `if row.get("strike")` check treated that as present and set `strike=0.0` on every
+  equity/future row instead of `None`, making every non-option instrument look like an option
+  at strike 0 to anything that branches on `strike is None`. Fixed to parse first, then collapse
+  a genuine zero to `None`.
+- **Option chain ATM classification never fired for a real price**: `_moneyness()` marked a
+  strike ATM only on exact float equality with the raw underlying LTP, which essentially never
+  holds for a real (non-integer) price - so the per-strike breakdown never tagged any strike
+  ATM even though the top-level `atm_strike` field correctly found the nearest one. Fixed to
+  compare against that same `atm_strike`.
+- **Declarative strategy (Strategy Builder) accepted a period of 0**: `POST
+  /api/custom-strategies`'s own docstring claims constructing a `DeclarativeStrategy` "catches
+  e.g. an indicator/period combination that can't run," but construction never actually
+  evaluates any indicator - so an indicator period (or ATR period) of 0 saved cleanly and only
+  crashed with a `ZeroDivisionError`/`ValueError` on the next `/signal`, `/paper-execute`, or
+  `/backtest` call. Fixed with Pydantic field bounds (`gt=0`) so it's a normal 422 at creation
+  time instead.
+- **Signals page could execute a different signal than the one displayed**: "Paper Execute"
+  regenerated sample candles from the *current* bars/seed inputs rather than reusing the exact
+  candles that produced the currently-shown signal card, so changing either input after
+  generating (without regenerating) could fire a trade the user never actually saw. Fixed by
+  pinning the exact data used for the last generated signal and disabling the button until one
+  exists.
+- **Fundamentals screener swallowed errors silently** (no `try`/`catch`, unlike every other tab
+  on that page) - fixed to show the same inline error pattern as the rest of the page.
+
+Security/config hardening also added, all gated behind a new `ENVIRONMENT` variable (default
+`development`, so nothing changes for local dev with no `.env` at all):
+
+- `validate_production_config()` (`app/core/config.py`) refuses to start when
+  `ENVIRONMENT=production` and `JWT_SECRET_KEY`/`SECRETS_ENCRYPTION_KEY` are still unset/default
+  or `ALLOWED_ORIGINS` is still `"*"` - a known-insecure default left over from local dev is a
+  common way real deployments get compromised, so failing fast at boot is cheaper than that
+  incident.
+- CORS origins are now configurable via `ALLOWED_ORIGINS` (comma-separated) instead of a
+  hardcoded `"*"`.
+- Login now runs a bcrypt comparison against a fixed dummy hash even when the email doesn't
+  exist, so response timing doesn't leak whether an email is registered.
+- Registration now enforces a minimum (8) and maximum (128) password length.
+- The DB engine now sets `pool_pre_ping=True`/`pool_recycle=1800`, so a DB restart or an idle
+  connection killed by a load balancer surfaces as a clean retry instead of a mysterious
+  mid-request error.
+
+Full backend suite: 238 passing (up from 221 before this pass). See individual commit messages
+for the complete list of touched files.

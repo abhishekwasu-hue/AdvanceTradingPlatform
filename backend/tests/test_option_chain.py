@@ -85,6 +85,25 @@ def test_atm_strike_and_moneyness_classification():
     assert itm_put.put_moneyness == Moneyness.ITM
 
 
+def test_atm_strike_itself_is_tagged_atm_for_a_realistic_non_integer_ltp():
+    """Regression test: a real underlying price is essentially never exactly equal to a strike,
+    so classifying ATM by `strike == underlying_ltp` would never mark any strike ATM at all.
+    The strike nearest the underlying (already exposed as `atm_strike`) must be the one tagged
+    Moneyness.ATM in the per-strike breakdown, for both legs.
+    """
+    rows = [
+        OptionChainRow(strike=24100, call_oi=1, put_oi=1),
+        OptionChainRow(strike=24150, call_oi=1, put_oi=1),
+        OptionChainRow(strike=24200, call_oi=1, put_oi=1),
+    ]
+    result = analyze_option_chain(_chain(rows, underlying_ltp=24152.35))
+    assert result.atm_strike == 24150
+
+    atm_row = next(s for s in result.strikes if s.strike == 24150)
+    assert atm_row.call_moneyness == Moneyness.ATM
+    assert atm_row.put_moneyness == Moneyness.ATM
+
+
 def test_call_writing_and_put_writing_activity_labels():
     rows = [OptionChainRow(strike=100, call_oi=20, call_change_oi=5, put_oi=20, put_change_oi=-3)]
     result = analyze_option_chain(_chain(rows))

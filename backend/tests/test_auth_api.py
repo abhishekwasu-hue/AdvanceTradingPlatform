@@ -68,6 +68,24 @@ def test_me_requires_authentication():
     assert response.status_code in (401, 403)
 
 
+def test_register_rejects_password_shorter_than_8_characters():
+    response = client.post("/api/auth/register", json={"email": "shortpw@example.com", "password": "abc123"})
+    assert response.status_code == 422
+
+
+def test_register_rejects_password_longer_than_128_characters():
+    response = client.post("/api/auth/register", json={"email": "longpw@example.com", "password": "a" * 129})
+    assert response.status_code == 422
+
+
+def test_login_with_unregistered_email_returns_401_without_error():
+    """Exercises the timing-safe branch (a dummy bcrypt check against an unknown email) - must
+    behave exactly like a wrong password, not raise or leak whether the email exists.
+    """
+    response = client.post("/api/auth/login", json={"email": "nobody-registered@example.com", "password": "whatever123"})
+    assert response.status_code == 401
+
+
 def test_store_list_and_delete_broker_credentials():
     token = _register("erin@example.com")
     headers = {"Authorization": f"Bearer {token}"}

@@ -5,11 +5,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import AuditLogRecord, BrokerCredentialRecord, User
+from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
 from app.secrets_store.encryption import decrypt_text, encrypt_text
@@ -53,7 +54,7 @@ async def store_broker_credentials(
             )
         )
 
-    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_credentials_stored", detail=name))
+    await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored", name)
     await session.commit()
 
 
@@ -80,7 +81,7 @@ async def delete_broker_credentials(
     )
     if existing:
         await session.delete(existing)
-        session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_credentials_deleted", detail=name))
+        await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_deleted", name)
         await session.commit()
 
 
@@ -111,12 +112,7 @@ async def authenticate_broker(
         # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
         # both mean the same thing to the caller: authentication did not succeed. Either way
         # this must come back as a clean error, never an unhandled 500, and always be audited.
-        session.add(
-            AuditLogRecord(
-                tenant_id=user.tenant_id, user_id=user.id,
-                event="broker_authentication_failed", detail=f"{name}: {exc}",
-            )
-        )
+        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}: {exc}")
         await session.commit()
         # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
         # error text for an expired/invalid token vs. other failures, but there's no structured
@@ -130,6 +126,6 @@ async def authenticate_broker(
         )
         raise HTTPException(status_code=502, detail=f"Broker authentication failed: {exc}") from exc
 
-    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_authenticated", detail=name))
+    await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", name)
     await session.commit()
     return profile

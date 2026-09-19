@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.audit.log import verify_audit_chain
+from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
@@ -216,6 +217,23 @@ async def list_audit_logs(
         .limit(limit)
     )
     return [AuditLogResponse.from_record(r) for r in rows]
+
+
+class AuditChainVerificationResponse(BaseModel):
+    intact: bool
+    first_broken_row_id: Optional[int] = None
+
+
+@router.get("/audit-logs/verify", response_model=AuditChainVerificationResponse)
+async def verify_audit_logs(
+    user: User = Depends(require_role()),  # SUPER_ADMIN only - the chain spans every tenant
+    session: AsyncSession = Depends(get_session),
+) -> AuditChainVerificationResponse:
+    """Recomputes the whole platform's audit-log hash chain (master prompt Section 48) and
+    reports whether it is intact - a platform operator's tamper check, not a per-tenant view.
+    """
+    intact, first_broken_row_id = await verify_audit_chain(session)
+    return AuditChainVerificationResponse(intact=intact, first_broken_row_id=first_broken_row_id)
 
 
 class OrderResponse(BaseModel):

@@ -285,6 +285,13 @@ class KillSwitchRecord(Base):
 class AuditLogRecord(Base):
     """Security-relevant events (register, login, credential stored, broker authenticated, ...).
     Per the platform's audit-trail requirement: every credential/auth action leaves a row here.
+
+    `prev_hash`/`hash` form a tamper-evident hash chain (master prompt Section 48) across every
+    row in this table in `id` order: `hash` is a SHA-256 of this row's own fields concatenated
+    with the previous row's `hash` (or `GENESIS` for the first row ever written). Altering or
+    deleting any row, or inserting one out of band, breaks every subsequent row's hash - see
+    `app/audit/log.py::write_audit_log`/`verify_audit_chain`, which are the only sanctioned way to
+    append to or check this table; never construct/add an `AuditLogRecord` directly.
     """
 
     __tablename__ = "audit_logs"
@@ -295,6 +302,8 @@ class AuditLogRecord(Base):
     event: Mapped[str] = mapped_column(String(100), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    prev_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
 
 
 class NotificationRecord(Base):

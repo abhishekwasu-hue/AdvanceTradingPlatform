@@ -1219,3 +1219,50 @@ logic of its own left to drift.
 
 Full backend suite: 398 passing (up from 377), refactor is behavior-preserving (the pre-existing
 `tests/test_backtest.py` suite, including the target2-priority regression test, passes unchanged).
+
+### Tamper-evident hash-chained audit logs (Section 48)
+
+`AuditLogRecord` (register/login, broker credentials stored/deleted, broker authenticated/
+failed, kill-switch engaged/disengaged, emergency exit, position-reconciliation mismatches, ...)
+previously had no integrity guarantee beyond normal row-level DB access control - anyone with
+write access to the table (a compromised app server, a rogue DB admin, a bad migration) could
+edit or delete a row with nothing to detect it. Master prompt Section 48 calls for a
+tamper-evident hash chain specifically so that this class of tampering is *detectable* after the
+fact, independent of trusting whoever currently holds DB access.
+
+Added `app/audit/log.py`: every row's `hash` is a SHA-256 of its own fields plus the previous
+row's `hash` (or the literal `GENESIS` for the very first row ever written), forming one chain
+across the whole table in `id` order. `write_audit_log()` is now the *only* sanctioned way to
+create an `AuditLogRecord` - every previous direct `session.add(AuditLogRecord(...))` call site
+(auth, brokers, kill-switch, reconciliation routes) was migrated to it, so there is no way left in
+the codebase to write an audit row outside the chain. `verify_audit_chain()` recomputes every
+row's hash from its stored fields and reports the first row where it (or its `prev_hash` link)
+disagrees - altering, deleting, or splicing in a row anywhere in the table's history breaks every
+hash from that point forward. `GET /api/audit-logs/verify` (SUPER_ADMIN-gated, since the chain
+spans every tenant) exposes this as a platform operator's tamper check.
+
+Migration `c81f4e2a9d36` adds the two columns and backfills a real hash chain for whatever rows
+already existed before it ran (verified directly against a real Postgres instance seeded with
+genuine pre-existing rows from earlier dev/testing sessions: the backfilled chain reads back as
+intact via `verify_audit_chain`, a live write after the migration correctly extends it, and a
+downgrade/upgrade round trip plus `alembic check` both come back clean).
+
+One real bug found and fixed while writing the tests, not by inspection: the first version of
+`verify_audit_chain` intermittently reported an intact two-row chain as broken. Root cause -
+SQLite's `DateTime(timezone=True)` does not reliably round-trip tzinfo; reading a just-inserted
+row back within the same still-open transaction (exactly what `write_audit_log`'s "fetch the last
+row" query does for every write after the first) came back tz-naive, while the in-memory object
+used to *compute* that same row's hash was tz-aware - two different `.isoformat()` strings for the
+same instant, so the recomputed hash never matched the stored one. Fixed by normalizing every
+timestamp to UTC-naive (`_normalize_timestamp` in `app/audit/log.py`) before it ever goes into a
+hash, so the hash is stable regardless of which way a given read happens to come back. The
+existing v1 limitation of computing the "previous row" without a DB-level lock (a real concern
+only under genuinely concurrent writers on Postgres, never hit by this single-threaded test suite)
+is called out directly in that module's docstring rather than silently assumed safe.
+
+Full backend suite: 403 passing (up from 398), including new `tests/test_audit_log_chain.py` (a
+valid chain, a row correctly chaining off whatever the actual previous hash is, the SUPER_ADMIN
+gate on the verify endpoint, the endpoint reporting an intact chain, and - run deliberately last in
+the file, since it permanently corrupts the shared test database every other test in the file and
+in `tests/test_audit_logs_api.py` reads from - that tampering with a row's `detail` after the fact
+is actually detected, at the exact row that was changed).

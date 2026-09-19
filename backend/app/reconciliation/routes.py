@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import AuditLogRecord, BrokerCredentialRecord, TradeRecord, User
+from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
 from app.reconciliation.engine import reconcile_positions
@@ -44,11 +45,8 @@ async def reconcile_broker_positions(
     try:
         broker_positions = await adapter.get_positions()
     except Exception as exc:
-        session.add(
-            AuditLogRecord(
-                tenant_id=user.tenant_id, user_id=user.id, event="position_reconciliation_failed",
-                detail=f"{broker_name}: {exc}",
-            )
+        await write_audit_log(
+            session, user.tenant_id, user.id, "position_reconciliation_failed", f"{broker_name}: {exc}",
         )
         await session.commit()
         await notify(
@@ -68,17 +66,13 @@ async def reconcile_broker_positions(
 
     for item in report.items:
         if item.status != ReconciliationStatus.MATCHED:
-            session.add(
-                AuditLogRecord(
-                    tenant_id=user.tenant_id, user_id=user.id, event="position_reconciliation_mismatch",
-                    detail=f"{item.status.value} {item.symbol}: {item.detail}",
-                )
+            await write_audit_log(
+                session, user.tenant_id, user.id, "position_reconciliation_mismatch",
+                f"{item.status.value} {item.symbol}: {item.detail}",
             )
-    session.add(
-        AuditLogRecord(
-            tenant_id=user.tenant_id, user_id=user.id, event="position_reconciliation_run",
-            detail=f"{broker_name}: {report.mismatched_count} mismatch(es) across {len(report.items)} symbol(s)",
-        )
+    await write_audit_log(
+        session, user.tenant_id, user.id, "position_reconciliation_run",
+        f"{broker_name}: {report.mismatched_count} mismatch(es) across {len(report.items)} symbol(s)",
     )
     await session.commit()
 

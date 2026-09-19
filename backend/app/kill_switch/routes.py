@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationType, OrderStatus
-from app.db.models import AuditLogRecord, KillSwitchRecord, OrderRecord, TradeRecord, User
+from app.db.models import KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.order_persistence import transition_order
 from app.execution.order_state_machine import TERMINAL_STATUSES
@@ -77,7 +78,7 @@ async def engage_global(
     """Platform-wide emergency stop. Blocks every new order across every tenant until
     disengaged - reserved for a platform operator, never something a tenant's own users can flip."""
     record = await checks.engage(session, KillSwitchScope.GLOBAL, None, user, request.reason)
-    session.add(AuditLogRecord(tenant_id=None, user_id=user.id, event="kill_switch_global_engaged", detail=request.reason))
+    await write_audit_log(session, None, user.id, "kill_switch_global_engaged", request.reason)
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.GLOBAL, record)
 
@@ -87,7 +88,7 @@ async def disengage_global(
     user: User = Depends(require_role()), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.GLOBAL, None)
-    session.add(AuditLogRecord(tenant_id=None, user_id=user.id, event="kill_switch_global_disengaged", detail=""))
+    await write_audit_log(session, None, user.id, "kill_switch_global_disengaged")
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.GLOBAL, record)
 
@@ -99,7 +100,7 @@ async def engage_tenant(
     """Blocks every new order for this user's own tenant - the "stop everything for my account"
     panic button, available to any logged-in user of that tenant."""
     record = await checks.engage(session, KillSwitchScope.TENANT, user.tenant_id, user, request.reason)
-    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="kill_switch_tenant_engaged", detail=request.reason))
+    await write_audit_log(session, user.tenant_id, user.id, "kill_switch_tenant_engaged", request.reason)
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.TENANT, record)
 
@@ -109,7 +110,7 @@ async def disengage_tenant(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.TENANT, user.tenant_id)
-    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="kill_switch_tenant_disengaged", detail=""))
+    await write_audit_log(session, user.tenant_id, user.id, "kill_switch_tenant_disengaged")
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.TENANT, record)
 
@@ -121,11 +122,8 @@ async def engage_strategy(
 ) -> KillSwitchStateResponse:
     """Blocks new orders for one strategy within this tenant only - other strategies keep trading."""
     record = await checks.engage(session, KillSwitchScope.STRATEGY, user.tenant_id, user, request.reason, strategy_id)
-    session.add(
-        AuditLogRecord(
-            tenant_id=user.tenant_id, user_id=user.id, event="kill_switch_strategy_engaged",
-            detail=f"{strategy_id}: {request.reason}",
-        )
+    await write_audit_log(
+        session, user.tenant_id, user.id, "kill_switch_strategy_engaged", f"{strategy_id}: {request.reason}",
     )
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.STRATEGY, record, strategy_id)
@@ -136,11 +134,7 @@ async def disengage_strategy(
     strategy_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.STRATEGY, user.tenant_id, strategy_id)
-    session.add(
-        AuditLogRecord(
-            tenant_id=user.tenant_id, user_id=user.id, event="kill_switch_strategy_disengaged", detail=strategy_id,
-        )
-    )
+    await write_audit_log(session, user.tenant_id, user.id, "kill_switch_strategy_disengaged", strategy_id)
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.STRATEGY, record, strategy_id)
 
@@ -206,14 +200,12 @@ async def emergency_exit(
         closed_ids.append(trade.id)
     await session.commit()
 
-    session.add(
-        AuditLogRecord(
-            tenant_id=user.tenant_id, user_id=user.id, event="emergency_exit_triggered",
-            detail=(
-                f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; "
-                f"closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"
-            ),
-        )
+    await write_audit_log(
+        session, user.tenant_id, user.id, "emergency_exit_triggered",
+        (
+            f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; "
+            f"closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"
+        ),
     )
     await session.commit()
 

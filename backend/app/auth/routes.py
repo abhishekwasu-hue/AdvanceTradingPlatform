@@ -5,10 +5,11 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.auth.security import create_access_token, hash_password, verify_password
 from app.core.enums import UserRole
-from app.db.models import AuditLogRecord, Tenant, User
+from app.db.models import Tenant, User
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -62,7 +63,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     )
     session.add(user)
     await session.flush()
-    session.add(AuditLogRecord(tenant_id=tenant.id, user_id=user.id, event="user_registered", detail=request.email))
+    await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
     await session.commit()
 
     return TokenResponse(access_token=create_access_token(user.id, user.email))
@@ -77,7 +78,7 @@ async def login(request: LoginRequest, session: AsyncSession = Depends(get_sessi
     if user is None or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="user_login", detail=""))
+    await write_audit_log(session, user.tenant_id, user.id, "user_login")
     await session.commit()
     return TokenResponse(access_token=create_access_token(user.id, user.email))
 

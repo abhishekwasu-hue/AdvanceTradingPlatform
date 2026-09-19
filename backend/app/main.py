@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import ALLOWED_ORIGINS, validate_production_config
 from app.core.enums import ExecutionMode
 from app.core.models import (
     BacktestResult,
@@ -45,11 +46,12 @@ from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
-from app.trading.persistence import persist_paper_trade, persist_signal_history
+from app.trading.persistence import build_trading_day_state, persist_paper_trade, persist_signal_history
 from app.trading.routes import router as trading_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    validate_production_config()
     await init_models()
     yield
 
@@ -62,11 +64,13 @@ app = FastAPI(
 )
 
 # The Vite dev server proxies /api to this service in development, but CORS is still enabled
-# for direct access (a separately-hosted frontend build, API docs "try it out", etc). Tightened
-# to specific origins once real deployment domains exist.
+# for direct access (a separately-hosted frontend build, API docs "try it out", etc). Defaults to
+# any origin for zero-config local dev; set ALLOWED_ORIGINS (comma-separated) to your real
+# frontend domain(s) in production - validate_production_config() refuses to boot with the "*"
+# default when ENVIRONMENT=production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -78,7 +82,6 @@ app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
 app.include_router(fundamentals_router)
 
-_paper_state = TradingDayState()
 _default_risk_config = RiskConfig()
 
 
@@ -230,9 +233,16 @@ async def paper_execute(
     if risk_config is None and user is not None:
         risk_config = await get_user_risk_config(user.id, session)
     risk_config = risk_config or _default_risk_config
+
+    # Derived fresh per request: a logged-in user's real trading-day state comes straight from
+    # their persisted trade history (see build_trading_day_state's docstring for why a
+    # process-memory counter shared across users/restarts would be wrong). An anonymous demo
+    # call has no history to derive from and never persists anything, so it always starts clean.
+    state = await build_trading_day_state(session, user.id) if user is not None else TradingDayState()
+
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
     try:
-        result: ExecutionResult = await router.execute(signal, _paper_state)
+        result: ExecutionResult = await router.execute(signal, state)
     except LiveTradingNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

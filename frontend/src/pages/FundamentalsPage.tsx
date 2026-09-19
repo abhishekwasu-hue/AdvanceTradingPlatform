@@ -78,6 +78,7 @@ export default function FundamentalsPage() {
   const [redFlags, setRedFlags] = useState<RedFlag[]>([]);
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [screenerError, setScreenerError] = useState<string | null>(null);
 
   const [marketPrice, setMarketPrice] = useState(300);
   const [valuation, setValuation] = useState<ValuationResult | null>(null);
@@ -232,11 +233,16 @@ export default function FundamentalsPage() {
   }
 
   async function handleScreener() {
+    setScreenerError(null);
     const filters: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(screenerFilters)) {
       if (value !== "") filters[key] = Number(value);
     }
-    setScreenerResults(await fundamentalsApi.screener(filters));
+    try {
+      setScreenerResults(await fundamentalsApi.screener(filters));
+    } catch (e) {
+      setScreenerError(String(e));
+    }
   }
 
   useEffect(() => {
@@ -278,8 +284,11 @@ export default function FundamentalsPage() {
     setError(null);
     try {
       await fundamentalsApi.addCalendarEvent(symbol, newCalendarEvent);
-      setCalendarEvents(await fundamentalsApi.listCalendarEvents(symbol));
-      setUpcomingEvents(await fundamentalsApi.upcomingCalendarEvents());
+      const [events, upcoming] = await Promise.all([
+        fundamentalsApi.listCalendarEvents(symbol), fundamentalsApi.upcomingCalendarEvents(),
+      ]);
+      setCalendarEvents(events);
+      setUpcomingEvents(upcoming);
       setNewCalendarEvent(defaultCalendarEvent());
     } catch (e) {
       setError(String(e));
@@ -772,6 +781,7 @@ export default function FundamentalsPage() {
                 <button onClick={handleScreener} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
                   Run Screener
                 </button>
+                {screenerError && <div className="mt-2 text-sm text-danger">{screenerError}</div>}
                 {screenerResults.length > 0 && (
                   <div className="mt-3 text-sm space-y-1">
                     {screenerResults.map((r) => <div key={r.symbol}>{r.symbol} — {r.name} ({r.sector})</div>)}

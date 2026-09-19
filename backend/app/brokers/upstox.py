@@ -1,7 +1,8 @@
 import gzip
 import json
+import time
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -32,6 +33,11 @@ UPSTOX_INTERVAL_MAP = {
 # Static, unauthenticated per-exchange instrument master published by Upstox.
 INSTRUMENTS_URL_TEMPLATE = "https://assets.upstox.com/market-quote/instruments/exchange/{exchange}.json.gz"
 
+# The instrument master is a multi-MB file that changes at most once a day; re-downloading and
+# re-parsing it on every historical-data/option-chain/place-order call would add seconds of
+# needless latency per request, so each adapter instance caches it per exchange for a while.
+_INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
+
 
 class UpstoxBroker(BrokerInterface):
     """Upstox API v2 adapter.
@@ -51,6 +57,7 @@ class UpstoxBroker(BrokerInterface):
         self.credentials = credentials
         self._access_token = credentials.access_token
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
+        self._instruments_cache: Dict[str, Tuple[float, List[Instrument]]] = {}
 
     def _headers(self) -> Dict[str, str]:
         if not self._access_token:
@@ -98,11 +105,15 @@ class UpstoxBroker(BrokerInterface):
 
     async def get_instruments(self, exchange: Optional[str] = None) -> List[Instrument]:
         exchange = exchange or "NSE"
+        cached = self._instruments_cache.get(exchange)
+        if cached is not None and (time.monotonic() - cached[0]) < _INSTRUMENT_CACHE_TTL_SECONDS:
+            return cached[1]
+
         response = await self._client.get(INSTRUMENTS_URL_TEMPLATE.format(exchange=exchange))
         if response.status_code >= 400:
             raise BrokerAPIError("Failed to fetch instrument master", response.status_code, response.text)
         raw = json.loads(gzip.decompress(response.content))
-        return [
+        instruments = [
             Instrument(
                 instrument_token=row["instrument_key"],
                 exchange=row.get("exchange", exchange),
@@ -117,6 +128,8 @@ class UpstoxBroker(BrokerInterface):
             )
             for row in raw
         ]
+        self._instruments_cache[exchange] = (time.monotonic(), instruments)
+        return instruments
 
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
         data = await self._request("GET", "/market-quote/ltp", params={"instrument_key": ",".join(symbols)})
@@ -188,11 +201,20 @@ class UpstoxBroker(BrokerInterface):
         )
 
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
+        # BrokerOrderRequest.symbol is a plain trading symbol (the same contract every other
+        # adapter uses) - Upstox's own API needs its "instrument_key" format instead
+        # (e.g. "NSE_EQ|INE002A01018"), so resolve it here rather than making every caller know
+        # Upstox-specific identifiers.
+        instruments = await self.get_instruments(order.exchange)
+        match = next((i for i in instruments if i.tradingsymbol == order.symbol), None)
+        if match is None:
+            raise BrokerAPIError(f"Instrument {order.exchange}:{order.symbol} not found in Upstox instrument master")
+
         data = await self._request(
             "POST",
             "/order/place",
             json={
-                "instrument_token": order.symbol,
+                "instrument_token": match.instrument_token,
                 "transaction_type": order.transaction_type.value,
                 "order_type": order.order_type,
                 "quantity": order.quantity,

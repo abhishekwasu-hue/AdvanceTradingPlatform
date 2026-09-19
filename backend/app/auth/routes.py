@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,10 +10,16 @@ from app.db.session import get_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# A bcrypt hash of an unguessable, unused password - compared against on login when the email
+# doesn't exist, purely to make that branch take roughly as long as a real password check.
+# Otherwise a missing-user response returns near-instantly while a wrong-password response
+# takes a full bcrypt round, letting an attacker enumerate registered emails by response timing.
+_DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-parity")
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -49,7 +55,10 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     user = await session.scalar(select(User).where(User.email == request.email))
-    if user is None or not verify_password(request.password, user.hashed_password):
+    # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
+    # time doesn't leak whether an email is registered (see _DUMMY_PASSWORD_HASH above).
+    password_ok = verify_password(request.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
+    if user is None or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     session.add(AuditLogRecord(user_id=user.id, event="user_login", detail=""))

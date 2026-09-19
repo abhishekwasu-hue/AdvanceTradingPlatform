@@ -20,7 +20,11 @@ valuation, DCF, red flags, SWOT, scenario projection, an earnings calendar, peer
 comparison, pre- and post-earnings analysis, sector-specific fundamentals for banking/IT/auto/
 pharma/oil & gas/cement, an Event Impact Score, a Fundamental Alert Engine, a Final Company
 Report, and a composite Fundamental Score fused with the technical signal score - see
-[`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md)), and a FastAPI service exposing all of it.
+[`docs/FUNDAMENTALS.md`](docs/FUNDAMENTALS.md)), and a FastAPI service exposing all of it -
+**production-hardened** in a full correctness/security review (see "Production Hardening Pass"
+in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)): a fail-fast startup check against insecure
+default secrets, configurable CORS, timing-safe login, and several real cross-tenant/exit-logic/
+broker-parsing bugs fixed with regression tests.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -88,7 +92,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 221 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 238 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

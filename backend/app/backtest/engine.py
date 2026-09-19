@@ -49,13 +49,20 @@ def run_backtest(
         if open_trade is not None:
             is_long = open_trade.direction == SignalDirection.LONG
             hit_sl = bar["low"] <= open_trade.stop_loss if is_long else bar["high"] >= open_trade.stop_loss
-            hit_target = bar["high"] >= open_trade.target1 if is_long else bar["low"] <= open_trade.target1
+            # Priority matches the live/paper exit logic (app/trading/exit_logic.py::check_exit):
+            # stop loss first, then target2 (the more ambitious level), then target1.
+            hit_target2 = open_trade.target2 is not None and (
+                bar["high"] >= open_trade.target2 if is_long else bar["low"] <= open_trade.target2
+            )
+            hit_target1 = bar["high"] >= open_trade.target1 if is_long else bar["low"] <= open_trade.target1
 
             exit_price = None
             reason = ""
             if hit_sl:
                 exit_price, reason = open_trade.stop_loss, "Stop Loss"
-            elif hit_target:
+            elif hit_target2:
+                exit_price, reason = open_trade.target2, "Target 2"
+            elif hit_target1:
                 exit_price, reason = open_trade.target1, "Target 1"
 
             if exit_price is not None:

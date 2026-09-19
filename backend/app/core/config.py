@@ -32,6 +32,12 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # ENVIRONMENT=production.
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
+# The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
+# (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable
+# since the "right" rate drifts with the rate cycle and reasonable people disagree on which
+# tenor to use; the default is a reasonable long-run approximation, not a live rate feed.
+RISK_FREE_RATE = float(os.environ.get("RISK_FREE_RATE", "0.07"))
+
 
 def validate_production_config() -> None:
     """Fails fast at startup rather than silently serving traffic with a known-insecure

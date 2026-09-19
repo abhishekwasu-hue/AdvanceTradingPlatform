@@ -37,7 +37,8 @@ from app.execution.router import ExecutionResult, LiveTradingNotConfigured, Orde
 from app.kill_switch.checks import active_kill_switch_reasons, is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.option_chain.analysis import analyze_option_chain
-from app.option_chain.models import OptionChainAnalysis
+from app.option_chain.leg_greeks import compute_strategy_greeks
+from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
@@ -397,6 +398,24 @@ async def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChai
     result = analyze_option_chain(request.chain, top_n=request.top_n)
     await cache_set(key, result.model_dump_json(), ttl_seconds=5)
     return result
+
+
+class GreeksRequest(BaseModel):
+    legs: List[OptionLegInput]
+
+
+@app.post("/api/option-chain/greeks", response_model=StrategyGreeksResult)
+async def option_chain_greeks(request: GreeksRequest) -> StrategyGreeksResult:
+    """Black-Scholes Delta/Gamma/Theta/Vega for one or more option legs, and the net Greeks of
+    the combined position (a spread/straddle/strangle nets a short leg's Greeks against a long
+    leg's). Each leg supplies either a real quoted `option_ltp` (implied volatility is solved
+    from it) or an `implied_volatility` directly - never a fabricated one. A 422 means a leg's
+    price is outside what's solvable (a stale/crossed quote), not a server error.
+    """
+    try:
+        return compute_strategy_greeks(request.legs)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/broker/available")

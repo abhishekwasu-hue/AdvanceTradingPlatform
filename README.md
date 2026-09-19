@@ -39,7 +39,11 @@ Exit" in `docs/ARCHITECTURE.md`) can block new orders at any of those three scop
 open position a current price is supplied for. Custom strategies now have **immutable version
 control** (see "Strategy Version Control" in `docs/ARCHITECTURE.md`): every edit appends a new
 version rather than overwriting one, and a rollback appends a new version too rather than
-resurrecting an old one - full history via `GET /api/custom-strategies/{id}/versions`.
+resurrecting an old one - full history via `GET /api/custom-strategies/{id}/versions`. The
+Option Chain engine now includes a **Black-Scholes Greeks engine** (see "Greeks Engine" in
+`docs/ARCHITECTURE.md`): Delta/Gamma/Theta/Vega per strike inside the existing chain analysis
+(solved from a real quoted price when no IV is supplied), plus a standalone per-leg/per-strategy
+calculator (`POST /api/option-chain/greeks`) that nets Greeks across a multi-leg position.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -107,7 +111,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 278 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 303 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

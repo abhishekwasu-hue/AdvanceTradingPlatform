@@ -148,7 +148,8 @@ get_option_chain()` returns) into the derived analytics the brief asks for:
   didn't supply OI-change data at all.
 
 Exposed at `POST /api/option-chain/analyze`, and consumed (optionally) by the Signal Scoring
-Engine below.
+Engine below. See "Greeks Engine" further down for the Black-Scholes Delta/Gamma/Theta/Vega
+this same analysis now attaches per strike.
 
 ## Signal Scoring Engine
 
@@ -287,7 +288,10 @@ for.
 - `POST /api/price-action/structure` — swings, HH/HL/LH/LL labels, trend, BOS/CHoCH events
 - `POST /api/price-action/patterns` — every candlestick pattern match with its confidence score
 - `POST /api/support-resistance/zones` — the combined support/resistance zone list
-- `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias
+- `POST /api/option-chain/analyze` — PCR, Max Pain, ATM/ITM/OTM, OI activity, bias, and
+  per-strike Greeks whenever there's enough real data to compute them from
+- `POST /api/option-chain/greeks` — Black-Scholes Delta/Gamma/Theta/Vega for one or more option
+  legs plus the net Greeks of the combined position - see "Greeks Engine" below
 - `POST /api/auth/register` / `POST /api/auth/login` — returns a JWT
 - `GET  /api/auth/me` — current user (auth required)
 - `GET  /api/trades` — this tenant's full paper trade history (auth required)
@@ -716,3 +720,42 @@ creating a new live one, a rejected update creating no version, rollback appendi
 version without touching the original row's content, rollback to an unknown version returning
 404, tenant isolation on versions/update/rollback, and a strategy actually executing signals
 against its current live version after an edit).
+
+## Greeks Engine
+
+Pure-Python (no scipy dependency) European Black-Scholes Delta/Gamma/Theta/Vega
+(`app/option_chain/greeks.py`), integrated two ways:
+
+- **Per-strike, inside the existing option chain analysis** (`analyze_option_chain` in
+  `app/option_chain/analysis.py`, still `POST /api/option-chain/analyze`): for each strike,
+  `call_greeks`/`put_greeks` on `StrikeAnalysis` are computed from the chain's own real
+  `underlying_ltp`, `expiry`, and either a broker-supplied `call_iv`/`put_iv` or (since none of
+  Zerodha/Upstox/Shoonya populate IV directly today, but all three populate `call_ltp`/`put_ltp`
+  from a real quote) an implied volatility *solved* from that real quoted price. Never
+  fabricated: a strike with no real price/IV to compute from gets `None`, not a guessed number,
+  and a quote outside no-arbitrage bounds (below intrinsic value, above the theoretical maximum)
+  also gets `None` rather than a nonsensical solved volatility.
+- **Per-leg and per-strategy, as a standalone calculator** (`POST /api/option-chain/greeks`,
+  `app/option_chain/leg_greeks.py`): takes one or more `OptionLegInput`s (strike, type, signed
+  `quantity` - negative for short, already scaled by lot size - underlying LTP, expiry, and
+  either a real `option_ltp` or a direct `implied_volatility`), returns each leg's Greeks plus
+  position-level Greeks (a short leg's Greeks come back sign-inverted) and the strategy's net
+  Delta/Gamma/Theta/Vega across every leg - so a spread/straddle/strangle nets a short leg's
+  Greeks against a long leg's rather than reporting each leg in isolation. A 422 means a leg's
+  supplied price is outside what's solvable, not a server error.
+- `implied_volatility()` solves via bisection rather than Newton-Raphson: Black-Scholes price is
+  monotonically increasing in volatility, so bisection is both simple and guaranteed to converge
+  within `[0.001, 5.0]` if a solution exists there, without Newton's instability near-zero vega
+  (deep ITM/OTM strikes).
+- `RISK_FREE_RATE` (`app/core/config.py`, default `0.07`) is a configurable approximation of the
+  short-term Indian G-Sec/repo yield used to discount payoffs - not a live rate feed, documented
+  as such.
+
+Full backend suite: 303 passing (up from 278 before this pass), including new `tests/
+test_greeks.py` (Black-Scholes sanity checks - ATM delta near 0.5, deep ITM/OTM delta bounds,
+call/put gamma-vega parity, negative theta for a long option, implied-volatility round-tripping
+through the pricer, `None` below intrinsic value and above the theoretical maximum, short-leg
+sign inversion, net-zero Greeks for a long+short pair, a bull call spread's bounded positive
+delta), `tests/test_greeks_api.py`, and three new cases in `tests/test_option_chain.py` covering
+Greeks solved from a real quoted price inside the existing chain analysis, and `None` when
+expiry/underlying LTP/price data is missing.

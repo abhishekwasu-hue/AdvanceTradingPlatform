@@ -47,7 +47,11 @@ calculator (`POST /api/option-chain/greeks`) that nets Greeks across a multi-leg
 **position reconciliation engine** (`POST /api/reconciliation/{broker_name}` - see "Position
 Reconciliation Engine" in `docs/ARCHITECTURE.md`) compares what the platform believes it holds
 against what a real broker reports, flagging quantity mismatches and positions missing or
-untracked on either side, with every mismatch logged to the audit trail.
+untracked on either side, with every mismatch logged to the audit trail. An **in-app notification
+engine** (a new Notifications tab in the console - see "Notification Engine" in
+`docs/ARCHITECTURE.md`) now surfaces entries, exits, rejections, broker disconnects/token
+expiry, risk and daily-loss-limit rejections, emergency exits, and system failures as they
+happen, each with a severity level, with read/unread state.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -59,13 +63,14 @@ Option Chain, Positions (with a manual "check price" exit control), **Portfolio*
 valuation & DCF, SWOT, red flags, Fundamental Score, fusion with the technical signal, an
 earnings calendar with pre- and post-earnings analysis, peer/competitor comparison,
 sector-specific metrics, and a final report with a fundamental alert feed),
-**Settings** (broker credentials), **System Logs** (audit trail), and Account (login/register)
+**Settings** (broker credentials), **System Logs** (audit trail), **Notifications** (in-app
+entry/exit/rejection/broker/risk/emergency-exit/system-failure feed), and Account (login/register)
 pages, all wired to real backend computation over a
 clearly-labeled sample dataset (no live broker is connected yet). Signing in is optional
 everywhere except the account-scoped tabs (Positions, Portfolio, Orders, Analytics, Risk
-Management, Settings, System Logs) - it persists your paper-execute fills, signal history, risk
-settings, custom strategies, and broker credentials to PostgreSQL so they show up across
-sessions. See [`frontend/README.md`](frontend/README.md).
+Management, Settings, System Logs, Notifications) - it persists your paper-execute fills, signal
+history, risk settings, custom strategies, and broker credentials to PostgreSQL so they show up
+across sessions. See [`frontend/README.md`](frontend/README.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
 be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the seven inbuilt scalping
@@ -115,7 +120,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 318 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 330 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

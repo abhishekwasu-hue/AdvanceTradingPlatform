@@ -7,13 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
-from app.core.enums import KillSwitchScope, OrderStatus
+from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationType, OrderStatus
 from app.db.models import AuditLogRecord, KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.order_persistence import transition_order
 from app.execution.order_state_machine import TERMINAL_STATUSES
 from app.execution.paper_broker import PaperBroker
 from app.kill_switch import checks
+from app.notifications.service import notify
 
 router = APIRouter(prefix="/api/kill-switch", tags=["kill-switch"])
 
@@ -215,6 +216,15 @@ async def emergency_exit(
         )
     )
     await session.commit()
+
+    await notify(
+        session, user.tenant_id, NotificationType.EMERGENCY_EXIT,
+        title="Emergency exit triggered", severity=NotificationSeverity.CRITICAL, user_id=user.id,
+        message=(
+            f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; "
+            f"closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"
+        ),
+    )
 
     return EmergencyExitResponse(
         tenant_kill_switch_engaged=True, cancelled_order_ids=cancelled_ids,

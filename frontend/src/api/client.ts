@@ -8,6 +8,7 @@ import type {
   EnrichedSignal,
   MarkPriceResponse,
   MarketStructureResult,
+  NotificationEntry,
   OHLCVBar,
   OptionChain,
   OptionChainAnalysis,
@@ -168,4 +169,13 @@ export const api = {
 
   authenticateBroker: (name: string) =>
     request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
+
+  listNotifications: (unreadOnly = false) =>
+    request<NotificationEntry[]>(`/notifications${unreadOnly ? "?unread_only=true" : ""}`),
+
+  markNotificationRead: (id: number) =>
+    request<NotificationEntry>(`/notifications/${id}/read`, { method: "POST" }),
+
+  markAllNotificationsRead: () =>
+    request<{ marked_read: number }>("/notifications/read-all", { method: "POST" }),
 };

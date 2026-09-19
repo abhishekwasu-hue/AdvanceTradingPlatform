@@ -15,6 +15,7 @@ export type Page =
   | "risk-management"
   | "settings"
   | "system-logs"
+  | "notifications"
   | "account";
 
 const NAV: { id: Page; label: string; icon: string }[] = [
@@ -32,6 +33,7 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "risk-management", label: "Risk Management", icon: "⚠" },
   { id: "settings", label: "Settings", icon: "⚙" },
   { id: "system-logs", label: "System Logs", icon: "▥" },
+  { id: "notifications", label: "Notifications", icon: "🔔" },
 ];
 
 export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {

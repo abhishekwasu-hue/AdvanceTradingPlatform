@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
+from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AuditLogRecord, BrokerCredentialRecord, User
 from app.db.session import get_session
+from app.notifications.service import notify
 from app.secrets_store.encryption import decrypt_text, encrypt_text
 
 router = APIRouter(prefix="/api/broker", tags=["broker"])
@@ -116,6 +118,16 @@ async def authenticate_broker(
             )
         )
         await session.commit()
+        # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
+        # error text for an expired/invalid token vs. other failures, but there's no structured
+        # error code to key off across three different broker error formats.
+        is_token_issue = "token" in str(exc).lower()
+        await notify(
+            session, user.tenant_id,
+            NotificationType.TOKEN_EXPIRED if is_token_issue else NotificationType.BROKER_DISCONNECT,
+            title=f"{name} authentication failed", message=str(exc),
+            severity=NotificationSeverity.CRITICAL, user_id=user.id,
+        )
         raise HTTPException(status_code=502, detail=f"Broker authentication failed: {exc}") from exc
 
     session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_authenticated", detail=name))

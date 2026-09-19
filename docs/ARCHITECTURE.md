@@ -313,6 +313,9 @@ for.
 - `POST /api/reconciliation/{broker_name}` — compare this tenant's internally-tracked open
   positions against the broker's real ones and flag mismatches (auth required) - see "Position
   Reconciliation Engine" below
+- `GET  /api/notifications` — this tenant's in-app notification feed, most recent first (auth
+  required) - see "Notification Engine" below
+- `POST /api/notifications/{id}/read` / `POST /api/notifications/read-all` — mark read (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -800,3 +803,45 @@ rows ignored, multiple open trades for one symbol netted correctly, multiple sym
 independently) and `tests/test_reconciliation_api.py` (auth, missing stored credentials, unknown
 broker, a full mixed matched/mismatched report with its audit trail, a broker failure surfacing
 as a 502 with its own audit entry, and tenant isolation).
+
+## Notification Engine
+
+An in-app (not yet email/SMS/push - that's future work once a delivery channel exists) feed of
+the platform's own significant events, all nine categories the spec calls for
+(`app/core/enums.py::NotificationType`): `ENTRY`, `EXIT`, `REJECTION`, `BROKER_DISCONNECT`,
+`TOKEN_EXPIRED`, `RISK_REJECTION`, `DAILY_LOSS_LIMIT`, `EMERGENCY_EXIT`, `SYSTEM_FAILURE` - each
+tagged `INFO`/`WARNING`/`CRITICAL`.
+
+- `app/notifications/service.py::notify` is the single choke point every other engine emits a
+  notification through - one `NotificationRecord` row per event, visible to the whole tenant
+  like every other tenant-shared resource (`GET /api/notifications`, `unread_only` filter, `POST
+  .../{id}/read` and `.../read-all`). `read_at` is a simple per-row marker - an honest v1
+  approximation, since a real per-user read-state join table only matters once a tenant can have
+  more than its one original user (the same limitation already noted for `GET /api/audit-logs`).
+- Wired into every concretely-exercised event source in `paper_execute` (`app/main.py`): a
+  successful fill → `ENTRY`; a kill-switch rejection → `REJECTION`; a risk-engine rejection →
+  `RISK_REJECTION`, except when the rejection reason specifically names the daily loss limit, in
+  which case it's the louder `DAILY_LOSS_LIMIT` (`CRITICAL`, not `WARNING`) - breaching the
+  account's daily loss limit is a materially different kind of event than an ordinary R:R
+  rejection. `mark_price` (`app/trading/routes.py`) closing a position → `EXIT` (`WARNING` for a
+  net loss after costs, `INFO` otherwise). A broker authentication failure
+  (`app/brokers/routes.py`) → `TOKEN_EXPIRED` if the error text mentions a token, else the more
+  generic `BROKER_DISCONNECT` - a heuristic, not a certainty, since there's no structured error
+  code to key off across three different broker APIs. Emergency exit
+  (`app/kill_switch/routes.py`) → `EMERGENCY_EXIT`. A reconciliation fetch failure
+  (`app/reconciliation/routes.py`) → `SYSTEM_FAILURE`.
+- **Frontend**: a new Notifications tab (`frontend/src/pages/NotificationsPage.tsx`) renders the
+  feed with a severity badge per entry, an unread count, "mark read" per item, and "mark all
+  read." Verified live against a running backend + Vite dev server with Playwright: registering,
+  generating a signal, and paper-executing produced a real notification (a `RISK_REJECTION` from
+  the sample data's `NO_TRADE` signal) that rendered correctly with proper styling, and marking
+  it read updated the UI live with no console errors.
+- Migration: `alembic/versions/d84e2f6a1b93_add_notifications.py` - new table only, no backfill
+  needed (no prior notification history exists). Verified against a real Postgres instance:
+  applies, downgrades, and re-applies cleanly, zero `alembic check` drift.
+
+Full backend suite: 330 passing (up from 318 before this pass), including new
+`tests/test_notifications_api.py` covering every wired event source (entry, risk rejection,
+daily-loss-limit escalation to CRITICAL, kill-switch rejection, exit with loss-vs-profit
+severity, both broker-auth-failure branches, emergency exit, reconciliation failure), read/
+read-all state transitions, and tenant isolation.

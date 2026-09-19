@@ -15,6 +15,29 @@ class SignalGrade(str, Enum):
     NO_TRADE = "No Trade"
 
 
+class NotificationType(str, Enum):
+    """In-app notification categories (spec section - notification engine). RISK_REJECTION and
+    DAILY_LOSS_LIMIT are both risk-engine outcomes; DAILY_LOSS_LIMIT is split out specifically
+    because breaching the daily loss limit warrants louder (CRITICAL) treatment than an ordinary
+    risk rejection (e.g. R:R below minimum)."""
+
+    ENTRY = "ENTRY"
+    EXIT = "EXIT"
+    REJECTION = "REJECTION"
+    BROKER_DISCONNECT = "BROKER_DISCONNECT"
+    TOKEN_EXPIRED = "TOKEN_EXPIRED"
+    RISK_REJECTION = "RISK_REJECTION"
+    DAILY_LOSS_LIMIT = "DAILY_LOSS_LIMIT"
+    EMERGENCY_EXIT = "EMERGENCY_EXIT"
+    SYSTEM_FAILURE = "SYSTEM_FAILURE"
+
+
+class NotificationSeverity(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    CRITICAL = "CRITICAL"
+
+
 class KillSwitchScope(str, Enum):
     """Kill switches stop new order entries at three widening scopes (spec: strategy/user/
     global). GLOBAL is platform-wide (SUPER_ADMIN only); TENANT and STRATEGY are scoped to the

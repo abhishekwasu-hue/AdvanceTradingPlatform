@@ -8,9 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.paper_broker import PaperBroker
+from app.notifications.service import notify
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
 from app.trading.exit_logic import check_exit
 
@@ -165,6 +167,14 @@ async def mark_price(
     trade.charges = charges
     trade.pnl = round(gross_pnl - charges, 2)
     await session.commit()
+
+    await notify(
+        session, user.tenant_id, NotificationType.EXIT,
+        title=f"{trade.direction} position closed: {trade.symbol}",
+        message=f"{reason} at {trade.exit_price}, P&L {trade.pnl}",
+        severity=NotificationSeverity.WARNING if trade.pnl is not None and trade.pnl < 0 else NotificationSeverity.INFO,
+        user_id=user.id, related_trade_id=trade.id,
+    )
 
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=trade.exit_price, pnl=trade.pnl)
 

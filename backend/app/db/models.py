@@ -290,6 +290,30 @@ class AuditLogRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class NotificationRecord(Base):
+    """An in-app notification event (entry/exit/rejection/broker-disconnect/token-expired/
+    risk-rejection/daily-loss/emergency-exit/system-failure), visible to the whole tenant like
+    every other tenant-shared resource. `read_at` is a simple per-row read marker - an honest v1
+    approximation; a real per-user read-state join table is future work once a tenant can have
+    more than its one original user (see the Multi-Tenancy Foundation notes on this same
+    limitation for GET /api/audit-logs).
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="INFO")
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    related_trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    related_order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
 class CompanyRecord(Base):
     """Reference data about a listed company - shared, not user-private (like an instrument
     master), but every write is attributed to the user who entered it since nothing here is

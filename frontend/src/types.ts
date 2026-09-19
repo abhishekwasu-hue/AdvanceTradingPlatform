@@ -251,6 +251,31 @@ export interface AuditLogEntry {
   created_at: string;
 }
 
+export type NotificationEventType =
+  | "ENTRY"
+  | "EXIT"
+  | "REJECTION"
+  | "BROKER_DISCONNECT"
+  | "TOKEN_EXPIRED"
+  | "RISK_REJECTION"
+  | "DAILY_LOSS_LIMIT"
+  | "EMERGENCY_EXIT"
+  | "SYSTEM_FAILURE";
+
+export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL";
+
+export interface NotificationEntry {
+  id: number;
+  event_type: NotificationEventType;
+  severity: NotificationSeverity;
+  title: string;
+  message: string;
+  related_trade_id: number | null;
+  related_order_id: number | null;
+  read: boolean;
+  created_at: string;
+}
+
 export interface SignalHistoryEntry {
   id: number;
   strategy_id: string;

@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers, get_broker_adapter
+from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AuditLogRecord, BrokerCredentialRecord, TradeRecord, User
 from app.db.session import get_session
+from app.notifications.service import notify
 from app.reconciliation.engine import reconcile_positions
 from app.reconciliation.models import ReconciliationReport, ReconciliationStatus
 from app.secrets_store.encryption import decrypt_text
@@ -49,6 +51,11 @@ async def reconcile_broker_positions(
             )
         )
         await session.commit()
+        await notify(
+            session, user.tenant_id, NotificationType.SYSTEM_FAILURE,
+            title=f"Failed to fetch positions from {broker_name}", message=str(exc),
+            severity=NotificationSeverity.CRITICAL, user_id=user.id,
+        )
         raise HTTPException(status_code=502, detail=f"Failed to fetch positions from {broker_name}: {exc}") from exc
 
     open_trades = list(

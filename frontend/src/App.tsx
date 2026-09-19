@@ -6,6 +6,7 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
 import DashboardPage from "./pages/DashboardPage";
 import FundamentalsPage from "./pages/FundamentalsPage";
+import NotificationsPage from "./pages/NotificationsPage";
 import OptionChainPage from "./pages/OptionChainPage";
 import OrdersPage from "./pages/OrdersPage";
 import PortfolioPage from "./pages/PortfolioPage";
@@ -39,6 +40,7 @@ export default function App() {
           {page === "risk-management" && <RiskManagementPage />}
           {page === "settings" && <SettingsPage />}
           {page === "system-logs" && <SystemLogsPage />}
+          {page === "notifications" && <NotificationsPage />}
           {page === "account" && <AccountPage />}
         </main>
       </div>

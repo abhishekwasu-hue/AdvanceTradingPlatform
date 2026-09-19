@@ -39,6 +39,7 @@ from app.kill_switch.routes import router as kill_switch_router
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
+from app.reconciliation.routes import router as reconciliation_router
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
@@ -86,6 +87,7 @@ app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
 app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
+app.include_router(reconciliation_router)
 
 _default_risk_config = RiskConfig()
 

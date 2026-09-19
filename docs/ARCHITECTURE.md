@@ -310,6 +310,9 @@ for.
 - `GET  /api/custom-strategies/{id}/versions` — a strategy's full version history (auth required)
 - `POST /api/custom-strategies/{id}/versions/{n}/rollback` — make an earlier version live again,
   itself recorded as a new version (auth required)
+- `POST /api/reconciliation/{broker_name}` — compare this tenant's internally-tracked open
+  positions against the broker's real ones and flag mismatches (auth required) - see "Position
+  Reconciliation Engine" below
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -759,3 +762,41 @@ sign inversion, net-zero Greeks for a long+short pair, a bull call spread's boun
 delta), `tests/test_greeks_api.py`, and three new cases in `tests/test_option_chain.py` covering
 Greeks solved from a real quoted price inside the existing chain analysis, and `None` when
 expiry/underlying LTP/price data is missing.
+
+## Position Reconciliation Engine
+
+`app/reconciliation/engine.py::reconcile_positions` compares this tenant's internally-tracked
+open positions (`TradeRecord` rows with no `exit_time`, netted by symbol - `LONG` contributes
+`+quantity`, `SHORT` contributes `-quantity`, the same signed-net-quantity convention every
+broker adapter's own `get_positions()` already uses) against what the broker itself reports, one
+row per symbol:
+
+- **MATCHED** - platform and broker agree.
+- **QUANTITY_MISMATCH** - both sides have a position in the symbol, but the net quantities differ.
+- **MISSING_AT_BROKER** - the platform believes a position is open, but the broker reports none
+  (a manual exit at the broker, a missed fill webhook, ...).
+- **UNTRACKED_AT_BROKER** - the broker reports a position the platform has no record of at all
+  (a manual entry at the broker, an order placed outside the platform, ...).
+
+A broker position with `quantity=0` (a broker's own way of reporting a closed-out position) is
+ignored rather than treated as an open position needing reconciliation. Symbols are matched by
+exact string equality - the same trading symbol the strategy/order router used going in.
+
+`POST /api/reconciliation/{broker_name}` (auth required) loads this tenant's stored, decrypted
+credentials for that broker (the same ones `POST /api/broker/{name}/authenticate` uses), calls
+`BrokerInterface.get_positions()` for the real numbers, and compares them against every
+internally open `TradeRecord` for this tenant. Every non-`MATCHED` item is written to the audit
+trail as it's found (`position_reconciliation_mismatch`), plus one summary row for the run itself
+(`position_reconciliation_run`); a broker-side failure (network error, expired session) is caught,
+audited (`position_reconciliation_failed`), and surfaced as a clean 502 rather than a raw
+exception. Reconciliation works against `TradeRecord` regardless of `mode` (`PAPER` today; ready
+for `LIVE` once live order fills are persisted there too), since the comparison itself - what the
+platform believes it holds vs. what the broker actually reports - is identical either way.
+
+Full backend suite: 318 passing (up from 303 before this pass), including new
+`tests/test_reconciliation.py` (matched long/short positions using the signed-quantity
+convention, quantity mismatches, missing-at-broker, untracked-at-broker, zero-quantity broker
+rows ignored, multiple open trades for one symbol netted correctly, multiple symbols reported
+independently) and `tests/test_reconciliation_api.py` (auth, missing stored credentials, unknown
+broker, a full mixed matched/mismatched report with its audit trail, a broker failure surfacing
+as a 502 with its own audit entry, and tenant isolation).

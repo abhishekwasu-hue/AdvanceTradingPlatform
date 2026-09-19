@@ -43,7 +43,11 @@ resurrecting an old one - full history via `GET /api/custom-strategies/{id}/vers
 Option Chain engine now includes a **Black-Scholes Greeks engine** (see "Greeks Engine" in
 `docs/ARCHITECTURE.md`): Delta/Gamma/Theta/Vega per strike inside the existing chain analysis
 (solved from a real quoted price when no IV is supplied), plus a standalone per-leg/per-strategy
-calculator (`POST /api/option-chain/greeks`) that nets Greeks across a multi-leg position.
+calculator (`POST /api/option-chain/greeks`) that nets Greeks across a multi-leg position. A new
+**position reconciliation engine** (`POST /api/reconciliation/{broker_name}` - see "Position
+Reconciliation Engine" in `docs/ARCHITECTURE.md`) compares what the platform believes it holds
+against what a real broker reports, flagging quantity mismatches and positions missing or
+untracked on either side, with every mismatch logged to the audit trail.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -111,7 +115,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 303 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 318 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

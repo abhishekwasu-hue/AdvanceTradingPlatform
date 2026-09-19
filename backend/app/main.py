@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ALLOWED_ORIGINS, validate_production_config
+from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
     BacktestResult,
@@ -63,6 +64,7 @@ from app.webhooks.routes import router as webhooks_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
     validate_production_config()
     await init_models()
     yield

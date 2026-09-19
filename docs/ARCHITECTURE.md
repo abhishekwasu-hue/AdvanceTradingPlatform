@@ -1295,3 +1295,39 @@ rejected, login and register are limited independently, and two different IPs ar
 cross-blocked.
 
 Full backend suite: 406 passing (up from 403).
+
+### Structured, correlated logging on the Signal -> Risk -> Order pipeline (Section 49)
+
+No part of the codebase used Python's `logging` module before this - the only trace of a
+pipeline run was the DB rows themselves (`OrderRecord`/`OrderEventRecord`), fine for after-the-
+fact auditing but useless for an operator grepping/alerting on live log output, and with no way to
+tell which log line belongs to which tenant/strategy/order without re-deriving it from the DB.
+
+Added `app/core/logging_config.py`: a `contextvars`-based correlation context
+(`bind_log_context(tenant_id=..., strategy_id=..., signal_ref=...)` as a context manager,
+`update_log_context(order_id=...)` to add fields to whichever context is currently active), a
+`logging.Filter` that copies the active context onto every `LogRecord`, and a `JsonFormatter` so
+every log line is one structured JSON object instead of free text. `configure_logging()` wires
+this into the root logger at app startup (`app/main.py`'s lifespan).
+
+There is no dedicated `signal_id` anywhere in this codebase - `Signal` is a transient, in-memory
+Pydantic value with no DB identity on the paper/live execution path - so `signal_ref`
+(`"{symbol}@{timestamp}"`) is used instead as the best available stand-in, documented as such in
+the module's own docstring rather than silently treated as equivalent to a real id.
+
+`app/execution/signal_execution.py::execute_signal_for_user` (the actual Signal -> Risk -> Order
+pipeline every paper/live execution goes through) now wraps its whole body in
+`bind_log_context(tenant_id=user.tenant_id, strategy_id=strategy_id, signal_ref=...)`, adds
+`order_id` via `update_log_context` the moment the order exists, and logs at every meaningful
+transition (order created, kill-switch rejection, risk-engine rejection, filled, position opened).
+`app/execution/order_persistence.py::transition_order` logs every state-machine transition at
+DEBUG - since it reads the same contextvar, every transition it logs automatically inherits
+whatever tenant/strategy/order context the caller already bound, with no need to pass those ids
+into every individual log call by hand.
+
+Full backend suite: 412 passing (up from 406), including new `tests/test_logging_config.py`:
+direct unit tests of context binding/nesting/restoration and the JSON formatter, plus one
+end-to-end test that runs a real paper-execute call through the API, attaches a collecting log
+handler with the correlation filter to the actual execution/persistence loggers, and asserts every
+captured record carries that specific request's own `tenant_id`/`strategy_id`/`order_id` - not
+just that some logging call happened somewhere.

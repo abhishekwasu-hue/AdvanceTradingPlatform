@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from sqlalchemy import select
@@ -7,6 +8,8 @@ from app.core.enums import OrderStatus
 from app.core.models import Signal
 from app.db.models import OrderEventRecord, OrderRecord, User
 from app.execution.order_state_machine import assert_valid_transition
+
+logger = logging.getLogger(__name__)
 
 
 async def get_order_by_idempotency_key(session: AsyncSession, tenant_id: int, idempotency_key: str) -> Optional[OrderRecord]:
@@ -52,4 +55,5 @@ async def transition_order(
     session.add(OrderEventRecord(order_id=order.id, from_status=from_status.value, to_status=to_status.value, detail=detail))
     await session.commit()
     await session.refresh(order)
+    logger.debug("Order %s -> %s: %s", from_status.value, to_status.value, detail)
     return order

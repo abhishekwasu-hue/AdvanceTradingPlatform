@@ -1331,3 +1331,38 @@ end-to-end test that runs a real paper-execute call through the API, attaches a 
 handler with the correlation filter to the actual execution/persistence loggers, and asserts every
 captured record carries that specific request's own `tenant_id`/`strategy_id`/`order_id` - not
 just that some logging call happened somewhere.
+
+### CI dependency and container scanning (Section 48/51)
+
+CI (`.github/workflows/ci.yml`) previously only ran the test suite, an Alembic migration apply,
+and a schema-drift check - no step ever checked whether a pinned dependency or a built container
+image actually had a known vulnerability. Running `pip-audit` against `backend/requirements.txt`
+for the first time surfaced *real, currently-known* CVEs, not hypothetical ones: 13-15 advisories
+across `cryptography` (multiple, fixed only as of 50.0.0) and `pytest` (fixed at 9.0.3) that the
+existing version caps (`cryptography<46.0`, `pytest<9.0`) were still exposed to. Fixed by widening
+`requirements.txt` to `cryptography>=50.0.0,<51.0` and `pytest>=8.0,<10.0` (and `cffi>=1.16,<3.0`,
+since `cryptography>=50` requires `cffi>=2.0` - the old `<2.0` cap made the upgrade
+un-installable) - re-running `pip-audit` afterward reports zero known vulnerabilities, and the
+full 412-test suite passes unchanged against the upgraded versions (installed and run directly,
+not just resolved on paper).
+
+Added to CI:
+- **`pip-audit -r requirements.txt`** (backend job) - blocking, since it's now proven to catch
+  real issues, not just theoretical ones.
+- **`npm audit --omit=dev`** (frontend job) - blocking on production dependencies, which audit
+  clean today. A separate `npm audit` (including dev dependencies) runs as report-only
+  (`|| true`): it currently flags a moderate/high advisory in `esbuild`/`vite`'s dev server only
+  (never shipped to production), whose only fix is a breaking Vite major-version upgrade - a
+  framework-migration decision deliberately left for its own discussion rather than forced
+  silently by a CI dependency bump.
+- **`container-scan` job** - builds both `backend/Dockerfile` and `frontend/Dockerfile` and scans
+  each image with Trivy (`aquasecurity/trivy-action`, failing on CRITICAL/HIGH findings that have
+  a known fix, `ignore-unfixed: true` so an unfixable base-image issue can't block every build).
+
+Honest limitation: the `container-scan` job's build-and-scan steps could not be exercised in this
+sandbox - its network egress policy blocks Docker Hub/CDN image pulls entirely (`docker build`
+fails immediately trying to pull `python:3.13-slim`, independent of the pre-configured HTTPS
+proxy), so this specific job needs to be watched on its first real run in GitHub Actions (which
+has normal internet access) rather than being claimed as verified here. The YAML itself was
+validated to parse correctly, and the `pip-audit`/`npm audit` steps were run for real against the
+project's actual dependency files with the results described above.

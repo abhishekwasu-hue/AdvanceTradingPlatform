@@ -1178,3 +1178,44 @@ parameters across separate sentences, the decimal-number sentence-splitting edge
 unrecognized clause producing a warning instead of a fabricated condition, and the `/parse`
 endpoint itself - including that it never persists anything and never errors on fully
 unparseable input).
+
+## Phase 1 Production Hardening (master-prompt Sections 47-55)
+
+The platform's own master specification lays out a phased roadmap (its Section 62) that
+explicitly forbids starting a later phase before the previous phase's Backtest→Paper→Sandbox→Live
+pipeline is fully validated and production-hardened for one asset class - "no phase skips that
+gate just because the underlying engine is 'the same code.'" MCX/crypto support (`##
+Multi-Asset...` above) and the conversational strategy builder were both built ahead of that gate
+being closed. This section is the work to close it: go back and harden Phase 1 (NSE F&O core)
+against the spec's own Sections 47-55 (compliance, security, reliability/observability, testing,
+CI/CD, disaster recovery, data governance, performance, documentation) before resuming later
+phases.
+
+### Backtest-vs-live exit-logic parity (Section 50/13)
+
+Found while writing the parity test Section 50 explicitly calls out as missing ("the test that
+actually enforces Section 13's 'same DSL everywhere' requirement; without it, that requirement
+silently rots"): `app/backtest/engine.py`'s per-bar exit check and `app/trading/exit_logic.py`'s
+`check_exit` (the live/paper path) were two independently written copies of the same stop-loss/
+target2/target1 priority rule, linked only by a comment claiming they matched - nothing enforced
+that claim, so a future change to either could have silently drifted from the other without any
+test catching it.
+
+Fixed by extracting the priority rule into one function, `determine_exit_price(direction,
+stop_loss, target1, target2, low, high)` in `app/trading/exit_logic.py`, and making both callers
+pure delegations to it:
+- `check_exit(trade, current_price)` calls it with `low == high == current_price` (a live/paper
+  feed only ever has one price at a time).
+- `run_backtest`'s per-bar loop calls it with the bar's actual `low`/`high` range (a backtest
+  knows the full range a bar traded through).
+
+`tests/test_exit_logic.py` (new, 21 tests) is the parity suite: direct coverage of
+`determine_exit_price` for every direction/priority combination (including the same-bar-crosses-
+both-targets case, where target2 must win), tests proving `check_exit` returns exactly what
+`determine_exit_price` returns for the same inputs, and tests driving the real `run_backtest`
+through engineered OHLCV bars and asserting its trade outcome equals `determine_exit_price`
+called directly on the same bar - i.e. the backtest engine is proven to have no exit-priority
+logic of its own left to drift.
+
+Full backend suite: 398 passing (up from 377), refactor is behavior-preserving (the pre-existing
+`tests/test_backtest.py` suite, including the target2-priority regression test, passes unchanged).

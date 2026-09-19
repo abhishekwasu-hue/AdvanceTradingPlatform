@@ -6,6 +6,7 @@ from app.brokers.models import BrokerOrderRequest
 from app.core.enums import ExecutionMode, SignalDirection, OrderSide
 from app.core.models import RiskConfig, Signal, Trade
 from app.execution.paper_broker import PaperBroker
+from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 
 
@@ -48,7 +49,8 @@ class OrderRouter:
         self.product = product
 
     async def execute(self, signal: Signal, state: TradingDayState) -> ExecutionResult:
-        decision = self.risk_manager.validate_and_size(signal, state)
+        contract_spec = get_contract_spec(signal.symbol)
+        decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
         if not decision.approved:
             return ExecutionResult(executed=False, reasons=decision.reasons)
 

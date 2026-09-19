@@ -38,6 +38,20 @@ class NotificationSeverity(str, Enum):
     CRITICAL = "CRITICAL"
 
 
+class AssetClass(str, Enum):
+    """What kind of instrument a symbol is - drives position sizing in the risk engine
+    (app/instruments/registry.py): equity/index options size in whole lots off the tenant's
+    configured lot_size exactly as before, while COMMODITY and CRYPTO size off the instrument's
+    own contract spec instead, and CRYPTO allows fractional quantities (you can buy 0.001 BTC;
+    there is no such thing as "one lot" of a spot crypto pair).
+    """
+
+    EQUITY = "EQUITY"
+    INDEX_OPTION = "INDEX_OPTION"
+    COMMODITY = "COMMODITY"
+    CRYPTO = "CRYPTO"
+
+
 class KillSwitchScope(str, Enum):
     """Kill switches stop new order entries at three widening scopes (spec: strategy/user/
     global). GLOBAL is platform-wide (SUPER_ADMIN only); TENANT and STRATEGY are scoped to the

@@ -35,6 +35,8 @@ from app.db.session import get_session, init_models
 from app.execution.order_persistence import get_order_by_idempotency_key
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
+from app.instruments.models import ContractSpec
+from app.instruments.registry import get_contract_spec, list_contract_specs
 from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
@@ -411,6 +413,24 @@ def list_available_brokers() -> Dict[str, List[str]]:
     /api/broker/{name}/authenticate - credentials are encrypted at rest, never in plaintext.
     """
     return {"brokers": available_brokers()}
+
+
+@app.get("/api/instruments", response_model=List[ContractSpec])
+def list_instruments() -> List[ContractSpec]:
+    """Reference contract specs for MCX commodity and crypto symbols (see
+    app/instruments/registry.py) - plain NSE/BSE equity & index-option symbols aren't in here,
+    since they already size correctly off the tenant's own risk settings. Public, no auth: this
+    is static reference metadata, not a live quote feed.
+    """
+    return list_contract_specs()
+
+
+@app.get("/api/instruments/{symbol}", response_model=ContractSpec)
+def get_instrument(symbol: str) -> ContractSpec:
+    spec = get_contract_spec(symbol)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"No contract spec registered for '{symbol.upper()}'")
+    return spec
 
 
 @app.get("/api/system/health")

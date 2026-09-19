@@ -7,6 +7,7 @@ from app.brokers.models import BrokerOrderResponse
 from app.core.enums import ExecutionMode, SignalDirection
 from app.core.models import RiskConfig, Signal
 from app.execution.router import LiveTradingNotConfigured, OrderRouter
+from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 
 
@@ -51,6 +52,40 @@ def test_risk_manager_rejects_when_max_trades_reached():
     state = TradingDayState(trades_today=3)
     decision = manager.validate_and_size(_sample_signal(), state)
     assert not decision.approved
+
+
+def test_risk_manager_sizes_mcx_commodity_off_its_own_lot_size():
+    # risk_per_unit = 3.0 -> raw_qty = 333.33, which is NOT a clean multiple of 100 - this is
+    # what actually distinguishes MCX lot-size flooring from the tenant's default lot_size=1.
+    signal = _sample_signal(entry=100.0, sl=97.0, rr=2.0)
+    config = RiskConfig(capital=100_000, risk_per_trade_pct=1.0)
+    manager = RiskManager(config)
+    state = TradingDayState()
+
+    without_spec = manager.validate_and_size(signal, state)
+    assert without_spec.quantity == 333  # tenant default lot_size=1, floors to a whole share
+
+    crude_oil = get_contract_spec("CRUDEOIL")
+    assert crude_oil is not None and crude_oil.lot_size == 100
+    with_spec = manager.validate_and_size(signal, TradingDayState(), contract_spec=crude_oil)
+    assert with_spec.approved
+    assert with_spec.quantity == 300  # floors to 3 whole lots of 100, not 333 individual units
+
+
+def test_risk_manager_sizes_crypto_fractionally():
+    # A BTCINR-scale signal: entry/stop ~5,000,000/4,900,000 INR, so even a modest risk budget
+    # only affords a fraction of one BTC - the entire point of `fractional=True` sizing.
+    signal = _sample_signal(entry=5_000_000.0, sl=4_900_000.0, rr=2.0)
+    config = RiskConfig(capital=100_000, risk_per_trade_pct=1.0)
+    manager = RiskManager(config)
+    state = TradingDayState()
+
+    btc = get_contract_spec("BTCINR")
+    assert btc is not None and btc.fractional
+    decision = manager.validate_and_size(signal, state, contract_spec=btc)
+    assert decision.approved
+    assert 0 < decision.quantity < 1
+    assert decision.quantity == 0.01
 
 
 def test_risk_manager_rejects_no_trade_signal():

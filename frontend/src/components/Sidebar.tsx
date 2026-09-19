@@ -10,6 +10,7 @@ export type Page =
   | "news-events"
   | "backtest"
   | "option-chain"
+  | "instruments"
   | "positions"
   | "portfolio"
   | "orders"
@@ -30,6 +31,7 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "news-events", label: "News & Events", icon: "📰" },
   { id: "backtest", label: "Backtesting", icon: "⏱" },
   { id: "option-chain", label: "Option Chain", icon: "◉" },
+  { id: "instruments", label: "Instruments", icon: "⛏" },
   { id: "positions", label: "Positions", icon: "▤" },
   { id: "portfolio", label: "Portfolio", icon: "◫" },
   { id: "orders", label: "Orders", icon: "☰" },

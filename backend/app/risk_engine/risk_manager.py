@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from app.core.models import RiskConfig, RiskDecision, Signal
+from app.instruments.models import ContractSpec
 
 
 @dataclass
@@ -24,7 +26,14 @@ class RiskManager:
     def __init__(self, config: RiskConfig) -> None:
         self.config = config
 
-    def validate_and_size(self, signal: Signal, state: TradingDayState) -> RiskDecision:
+    def validate_and_size(
+        self, signal: Signal, state: TradingDayState, contract_spec: Optional[ContractSpec] = None,
+    ) -> RiskDecision:
+        """`contract_spec` is only supplied for symbols the instrument registry recognizes
+        (MCX commodities, crypto pairs) - see app/instruments/registry.py. Every plain NSE/BSE
+        equity or index-option symbol passes None here and sizes exactly as before, off the
+        tenant's own configured `RiskConfig.lot_size`, so this stays fully backward compatible.
+        """
         reasons = []
 
         if not signal.is_tradeable:
@@ -55,8 +64,16 @@ class RiskManager:
             return RiskDecision(approved=False, reasons=["Invalid risk per unit (entry == stop loss)"])
 
         raw_qty = risk_amount / risk_per_unit
-        lots = int(raw_qty // self.config.lot_size)
-        quantity = lots * self.config.lot_size
+
+        if contract_spec is not None and contract_spec.fractional:
+            # No such thing as "one lot" of a spot crypto pair - round down to the instrument's
+            # own smallest quantity increment instead of flooring to a whole multiple of it.
+            increments = int(raw_qty / contract_spec.lot_size)
+            quantity = round(increments * contract_spec.lot_size, 8)
+        else:
+            unit = contract_spec.lot_size if contract_spec is not None else self.config.lot_size
+            lots = int(raw_qty // unit)
+            quantity = lots * unit
 
         if quantity <= 0:
             return RiskDecision(

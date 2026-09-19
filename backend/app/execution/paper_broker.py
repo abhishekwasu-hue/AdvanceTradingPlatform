@@ -29,7 +29,7 @@ class PaperBroker:
         slip = price * self.slippage_pct / 100
         return price + slip if direction == SignalDirection.LONG else price - slip
 
-    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: int) -> float:
+    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float) -> float:
         turnover = (entry_price + exit_price) * quantity
         stt = turnover * self.stt_pct / 100
         exchange = turnover * self.exchange_pct / 100
@@ -37,7 +37,7 @@ class PaperBroker:
         gst = (brokerage + exchange) * self.gst_pct / 100
         return round(stt + exchange + brokerage + gst, 2)
 
-    def open_trade(self, signal: Signal, quantity: int, timestamp: datetime) -> Trade:
+    def open_trade(self, signal: Signal, quantity: float, timestamp: datetime) -> Trade:
         fill_price = self._slip(signal.entry, signal.direction)
         return Trade(
             symbol=signal.symbol,

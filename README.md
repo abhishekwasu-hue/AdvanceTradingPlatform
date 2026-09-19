@@ -7,7 +7,7 @@ auto-executable multi-timeframe and indicator-based intraday scalping strategies
 Strategy Builder** for user-defined rule-based strategies, a risk engine with **per-user
 persisted risk settings**, a paper execution router with **manual position exit-tracking**
 (stop loss/target checks against a supplied price), a broker-agnostic `BrokerInterface` with
-real Zerodha, Upstox, and Shoonya adapters (Angel One/Fyers/Dhan registered as pluggable stubs),
+real Zerodha, Upstox, and Shoonya adapters (Angel One/Fyers/Dhan/CoinDCX registered as pluggable stubs),
 a market-structure + candlestick-pattern engine, a support/resistance zone engine (swing
 clusters, prev day/week, opening range, VWAP, pivots, Fibonacci), an option-chain intelligence
 engine (PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias), a weighted-composite signal
@@ -64,7 +64,12 @@ every filter with a label for each one that matched. A **News & Event engine** (
 Engine" in `docs/ARCHITECTURE.md`) holds structured, cited entries for RBI policy decisions, the
 Union Budget, government policy, corporate news, and other market-moving events - shared
 reference data like the fundamentals module, always user-entered and cited since there's no live
-news feed wired in, with a mandatory source citation on every entry.
+news feed wired in, with a mandatory source citation on every entry. **Multi-asset-class support**
+(see "Multi-Asset-Class Support (MCX & Crypto)" in `docs/ARCHITECTURE.md`) extends position
+sizing beyond plain NSE/BSE equity & index options: a static registry of MCX commodity and crypto
+contract specs (`GET /api/instruments`) drives fractional-quantity-aware risk sizing - a
+commodity trade floors to whole multiples of its own lot size, and a crypto trade sizes in
+fractional units instead of being floored to a meaningless whole "lot".
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -133,7 +138,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 359 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 367 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

@@ -8,6 +8,7 @@ from app.core.models import RiskConfig, Signal
 from app.db.models import OrderRecord, User
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.router import ExecutionResult, OrderRouter
+from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.risk_engine.routes import get_tenant_risk_config
@@ -49,7 +50,11 @@ async def execute_signal_for_user(
     effective_risk_config = effective_risk_config or RiskConfig()
 
     state = await build_trading_day_state(session, user)
-    order_router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=effective_risk_config)
+    contract_spec = get_contract_spec(signal.symbol)
+    order_router = OrderRouter(
+        mode=ExecutionMode.PAPER, risk_config=effective_risk_config,
+        exchange=contract_spec.exchange if contract_spec else "NSE",
+    )
     result: ExecutionResult = await order_router.execute(signal, state)
 
     order.reasons_json = json.dumps(result.reasons)

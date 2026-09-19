@@ -1003,3 +1003,65 @@ Full backend suite: 359 passing (up from 352), including new `tests/test_news_ev
 (auth required for writes but not reads, a citation being mandatory on create, full
 create/list/get/delete, delete restricted to the creator, category/symbol/since-date filtering,
 and `affected_symbols` defaulting to an empty market-wide list).
+
+## Multi-Asset-Class Support (MCX & Crypto)
+
+Extends position sizing and instrument metadata beyond plain NSE/BSE equity & index options,
+which already worked (every broker adapter's `exchange` field was always a free-form string, and
+`OrderRouter` already took an arbitrary `exchange` to route on). The actual gap was the risk
+engine: it sized every order in whole "lots" of one tenant-wide `RiskConfig.lot_size`, which is
+meaningless once one symbol's lot might be 100 barrels of crude oil and another's is a fraction
+of one Bitcoin - there is no such thing as "one lot" of a spot crypto pair.
+
+- **`app/instruments/models.py` + `registry.py`**: a `ContractSpec` (symbol, exchange,
+  `AssetClass`, `lot_size`, `tick_size`, `fractional`) and a small static registry of MCX
+  commodity contracts (GOLD, GOLDM, SILVER, SILVERM, CRUDEOIL, NATURALGAS, COPPER) and crypto
+  pairs (BTCINR, ETHINR, USDTINR_CRYPTO). These are publicly known, standard contract
+  specifications (exchange lot sizes), not live prices and not fabricated - but exchanges revise
+  them periodically, so treat this as an overridable reference default, not a live feed. Plain
+  equity/index-option symbols are deliberately **not** in this registry - they never needed to be,
+  since they already size correctly off the tenant's own risk settings; `get_contract_spec()`
+  returns `None` for them, which every caller treats as "size the default equity way", never as
+  an error.
+- **`AssetClass` enum** (`app/core/enums.py`): EQUITY, INDEX_OPTION, COMMODITY, CRYPTO.
+- **`RiskManager.validate_and_size` is now contract-spec-aware** (`contract_spec: Optional[
+  ContractSpec] = None`, backward compatible - every existing caller that never passes one gets
+  the exact same behavior as before). When a spec is supplied: a non-fractional instrument (MCX)
+  floors to whole multiples of *its own* lot size instead of the tenant's; a fractional one
+  (crypto) floors to whole multiples of its own smallest quantity increment instead, without ever
+  rounding to a whole "lot" - a $1,000 risk budget against a ₹50,00,000 BTC stop distance sizes to
+  0.01 BTC, not 0.
+- **Quantity is `float` everywhere now, not `int`** - `RiskDecision.quantity`, `Trade.quantity`,
+  `TradeRecord.quantity`/`OrderRecord.quantity` (DB), `BrokerOrderRequest`/`BrokerOrderStatus`/
+  `BrokerTradeEntry`/`BrokerPosition`/`BrokerHolding.quantity`, every broker adapter's
+  `modify_order(quantity=...)`. This was the one real blocker to fractional crypto sizing ever
+  working: the old `int` type would have silently floored 0.01 BTC to 0. A pure widening for
+  every existing equity/index-option/MCX quantity, which always was and still is a whole number.
+- **`OrderRouter.execute` and the backtest engine both look up the traded symbol's contract spec
+  automatically** (`get_contract_spec(signal.symbol)`) and pass it into `validate_and_size` - a
+  caller never has to know or care whether a symbol needs special sizing.
+- **`GET /api/instruments`** (list) and **`GET /api/instruments/{symbol}`** (lookup, 404 if
+  unregistered) expose the registry - public, no auth, since it's static reference metadata like
+  `/api/strategies`. Frontend: `frontend/src/pages/InstrumentsPage.tsx` lists every registered
+  MCX and crypto contract with its lot size, tick size, and whether it sizes fractionally.
+- **A `coindcx` broker stub** (`app/brokers/stubs.py::CoinDCXBroker`) was added alongside the
+  existing Angel One/Fyers/Dhan stubs, registered in `BROKER_ADAPTERS` - structurally wired in and
+  satisfies `BrokerInterface`, but every I/O method raises `NotImplementedError` until a real
+  adapter is written and tested against CoinDCX's (or another exchange's) actual API. No crypto
+  exchange adapter has real, tested I/O today - none of the platform's fully-implemented brokers
+  (Zerodha, Upstox, Shoonya) are crypto exchanges, and building one requires exchange-specific
+  credentials this environment has no way to test against, the same honesty constraint that kept
+  the NSE fundamentals provider "real but unverified in this sandbox" rather than faked.
+- Migration `alembic/versions/b7d4f9a3c821_widen_quantity_to_float.py` (chained after
+  `a1c9d3e7f204`) widens `trades.quantity` and `orders.quantity` from Integer to Float - verified
+  against a real Postgres instance with seeded pre-existing whole-number rows: applies, preserves
+  existing data exactly, downgrades, re-applies cleanly, zero `alembic check` drift.
+- Verified live end-to-end with Playwright: the Instruments page renders all registered MCX and
+  crypto contracts with correct lot/tick sizes, and a full equity paper-execute round trip through
+  Signals still works unchanged after the quantity-type and risk-engine changes.
+
+Full backend suite: 367 passing (up from 359), including new `tests/test_instruments_api.py`
+(registry lookups, case-insensitivity, asset-class coverage, the list/get endpoints, 404 for an
+unregistered symbol) and two new sizing tests in `tests/test_risk_and_execution.py` (MCX lot-size
+flooring differing from the tenant default, and crypto sizing to a sub-1 fractional quantity) -
+plus a `CoinDCXBroker` case added to the existing parametrized stub-adapter test.

@@ -27,7 +27,7 @@ class TradeRecordResponse(BaseModel):
     direction: str
     entry_time: str
     entry_price: float
-    quantity: int
+    quantity: float
     stop_loss: float
     target1: float
     target2: Optional[float]
@@ -224,7 +224,7 @@ class OrderResponse(BaseModel):
     strategy_id: str
     symbol: str
     direction: str
-    quantity: int
+    quantity: float
     status: str
     idempotency_key: Optional[str]
     broker_order_id: Optional[str]

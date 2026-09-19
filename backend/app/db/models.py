@@ -96,7 +96,9 @@ class TradeRecord(Base):
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
     entry_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # float, not int: a crypto fill sizes in fractional units (see app/instruments/registry.py) -
+    # every equity/index-option/MCX fill still always lands on a whole multiple of its lot size.
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
     target1: Mapped[float] = mapped_column(Float, nullable=False)
     target2: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -129,7 +131,7 @@ class OrderRecord(Base):
     strategy_id: Mapped[str] = mapped_column(String(100), nullable=False)
     symbol: Mapped[str] = mapped_column(String(50), nullable=False)
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="CREATED", index=True)
     broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)

@@ -6,6 +6,7 @@ from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
 from app.execution.paper_broker import PaperBroker
+from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
 
@@ -36,6 +37,7 @@ def run_backtest(
     broker = PaperBroker()
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    contract_spec = get_contract_spec(symbol)
 
     open_trade: Trade | None = None
     trades: list[Trade] = []
@@ -79,7 +81,7 @@ def run_backtest(
             window = {tf: frames[tf][frames[tf].index <= current_time] for tf in strategy.timeframes}
             signal = strategy.analyze(window, symbol)
             if signal.is_tradeable:
-                decision = risk_manager.validate_and_size(signal, state)
+                decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
                 if decision.approved:
                     open_trade = broker.open_trade(signal, decision.quantity, current_time)
                     state.trades_today += 1

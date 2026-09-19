@@ -7,7 +7,7 @@ from app.db.models import TradeRecord
 from app.reconciliation.models import ReconciliationItem, ReconciliationReport, ReconciliationStatus
 
 
-def _internal_signed_quantity(trade: TradeRecord) -> int:
+def _internal_signed_quantity(trade: TradeRecord) -> float:
     return trade.quantity if trade.direction == "LONG" else -trade.quantity
 
 
@@ -27,12 +27,12 @@ def reconcile_positions(
     router used going in is what's expected to come back from the broker; this doesn't attempt
     fuzzy matching across different symbol-naming conventions.
     """
-    internal_by_symbol: Dict[str, Tuple[int, List[int]]] = defaultdict(lambda: (0, []))
+    internal_by_symbol: Dict[str, Tuple[float, List[int]]] = defaultdict(lambda: (0.0, []))
     for trade in internal_open_trades:
         qty, ids = internal_by_symbol[trade.symbol]
         internal_by_symbol[trade.symbol] = (qty + _internal_signed_quantity(trade), ids + [trade.id])
 
-    broker_by_symbol: Dict[str, int] = defaultdict(int)
+    broker_by_symbol: Dict[str, float] = defaultdict(float)
     for position in broker_positions:
         if position.quantity != 0:
             broker_by_symbol[position.symbol] += position.quantity

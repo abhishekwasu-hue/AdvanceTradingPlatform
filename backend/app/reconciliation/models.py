@@ -13,8 +13,8 @@ class ReconciliationStatus(str, Enum):
 
 class ReconciliationItem(BaseModel):
     symbol: str
-    internal_net_quantity: Optional[int] = None
-    broker_net_quantity: Optional[int] = None
+    internal_net_quantity: Optional[float] = None
+    broker_net_quantity: Optional[float] = None
     status: ReconciliationStatus
     internal_trade_ids: List[int] = []
     detail: str = ""

@@ -230,7 +230,7 @@ class UpstoxBroker(BrokerInterface):
         return BrokerOrderResponse(order_id=data["order_id"], status="OPEN", raw=data)
 
     async def modify_order(
-        self, order_id: str, quantity: Optional[int] = None, price: Optional[float] = None,
+        self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
         trigger_price: Optional[float] = None, order_type: Optional[str] = None,
     ) -> BrokerOrderResponse:
         payload = {"order_id": order_id}

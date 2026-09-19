@@ -3,6 +3,7 @@ import type {
   AuditLogEntry,
   BacktestResult,
   BrokerCredentialsInput,
+  ContractSpec,
   CustomStrategyConfig,
   CustomStrategyResponse,
   EnrichedSignal,
@@ -207,4 +208,6 @@ export const api = {
 
   deleteNewsEvent: (id: number) =>
     request<void>(`/news-events/${id}`, { method: "DELETE" }),
+
+  listInstruments: () => request<ContractSpec[]>("/instruments"),
 };

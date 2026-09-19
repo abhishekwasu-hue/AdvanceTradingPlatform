@@ -13,7 +13,7 @@ from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.shoonya import ShoonyaBroker
-from app.brokers.stubs import AngelOneBroker, DhanBroker, FyersBroker
+from app.brokers.stubs import AngelOneBroker, CoinDCXBroker, DhanBroker, FyersBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 from app.core.enums import OrderSide
@@ -320,8 +320,8 @@ def test_shoonya_requires_core_credentials():
 
 # --- Registry --------------------------------------------------------------------
 
-def test_registry_lists_all_five_brokers():
-    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan"}
+def test_registry_lists_all_seven_brokers():
+    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx"}
 
 
 def test_registry_returns_correct_adapter_type():
@@ -337,9 +337,9 @@ def test_registry_raises_for_unknown_broker():
         get_broker_adapter("not_a_real_broker", BrokerCredentials())
 
 
-# --- Stub adapters (Angel One / Fyers / Dhan) --------------------------------------
+# --- Stub adapters (Angel One / Fyers / Dhan / CoinDCX) -----------------------------
 
-@pytest.mark.parametrize("cls", [AngelOneBroker, FyersBroker, DhanBroker])
+@pytest.mark.parametrize("cls", [AngelOneBroker, FyersBroker, DhanBroker, CoinDCXBroker])
 def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
     broker = cls(BrokerCredentials(api_key="k"))
     assert isinstance(broker, BrokerInterface)

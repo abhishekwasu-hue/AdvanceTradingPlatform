@@ -527,3 +527,24 @@ export function defaultNewsEvent(): NewsEvent {
     source: { source: "", source_url: null, publication_date: null, confidence: 80 },
   };
 }
+
+// --- Multi-asset-class instrument registry (MCX / Crypto) ---
+
+export type AssetClass = "EQUITY" | "INDEX_OPTION" | "COMMODITY" | "CRYPTO";
+
+export interface ContractSpec {
+  symbol: string;
+  exchange: string;
+  asset_class: AssetClass;
+  description: string;
+  lot_size: number;
+  tick_size: number;
+  fractional: boolean;
+}
+
+export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  EQUITY: "Equity",
+  INDEX_OPTION: "Index Option",
+  COMMODITY: "Commodity (MCX)",
+  CRYPTO: "Crypto",
+};

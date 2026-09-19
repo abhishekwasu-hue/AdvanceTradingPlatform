@@ -38,7 +38,7 @@ class Instrument(BaseModel):
     name: Optional[str] = None
     segment: Optional[str] = None
     instrument_type: Optional[str] = None
-    lot_size: int = 1
+    lot_size: float = 1
     tick_size: float = 0.05
     expiry: Optional[str] = None
     strike: Optional[float] = None
@@ -89,7 +89,7 @@ class BrokerOrderRequest(BaseModel):
     symbol: str
     exchange: str = "NSE"
     transaction_type: OrderSide
-    quantity: int
+    quantity: float
     order_type: str = "MARKET"
     product: str = "MIS"
     price: Optional[float] = None
@@ -109,8 +109,8 @@ class BrokerOrderStatus(BaseModel):
     order_id: str
     symbol: str
     transaction_type: OrderSide
-    quantity: int
-    filled_quantity: int = 0
+    quantity: float
+    filled_quantity: float = 0
     order_type: str
     status: str
     price: Optional[float] = None
@@ -123,7 +123,7 @@ class BrokerTradeEntry(BaseModel):
     order_id: str
     symbol: str
     transaction_type: OrderSide
-    quantity: int
+    quantity: float
     price: float
     timestamp: Optional[datetime] = None
 
@@ -132,7 +132,7 @@ class BrokerPosition(BaseModel):
     symbol: str
     exchange: str = "NSE"
     product: str = "MIS"
-    quantity: int
+    quantity: float
     average_price: float
     ltp: float = 0.0
     pnl: float = 0.0
@@ -141,7 +141,7 @@ class BrokerPosition(BaseModel):
 class BrokerHolding(BaseModel):
     symbol: str
     exchange: str = "NSE"
-    quantity: int
+    quantity: float
     average_price: float
     ltp: float = 0.0
     pnl: float = 0.0

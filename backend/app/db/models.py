@@ -27,6 +27,11 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     plan: Mapped[str] = mapped_column(String(50), nullable=False, default="free")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Authenticates inbound TradingView (and future third-party) webhook alerts, which can't
+    # carry a JWT/OAuth header - the token itself, embedded in the webhook URL, is the auth.
+    # Generated once at tenant creation (app/auth/routes.py::register); rotatable via
+    # POST /api/webhooks/tradingview/token/rotate if it ever leaks.
+    webhook_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")

@@ -264,6 +264,11 @@ export type NotificationEventType =
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL";
 
+export interface WebhookTokenResponse {
+  webhook_token: string;
+  webhook_url: string;
+}
+
 export interface NotificationEntry {
   id: number;
   event_type: NotificationEventType;

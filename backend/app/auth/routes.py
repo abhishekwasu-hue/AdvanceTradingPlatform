@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
@@ -50,7 +52,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    tenant = Tenant(name=request.email)
+    tenant = Tenant(name=request.email, webhook_token=secrets.token_urlsafe(24))
     session.add(tenant)
     await session.flush()
 

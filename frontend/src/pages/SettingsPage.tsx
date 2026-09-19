@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
-import type { BrokerCredentialsInput, StoredBrokerInfo } from "../types";
+import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
 
 const CRED_FIELDS: { key: keyof BrokerCredentialsInput; label: string }[] = [
   { key: "api_key", label: "API Key" },
@@ -24,6 +24,8 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [webhook, setWebhook] = useState<WebhookTokenResponse | null>(null);
+  const [webhookCopied, setWebhookCopied] = useState(false);
 
   function refreshStored() {
     api.listStoredBrokerCredentials().then(setStored).catch((e) => setError(String(e)));
@@ -37,8 +39,35 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (user) refreshStored();
+    if (user) {
+      refreshStored();
+      api.getWebhookToken().then(setWebhook).catch((e) => setError(String(e)));
+    }
   }, [user]);
+
+  async function handleCopyWebhookUrl() {
+    if (!webhook) return;
+    try {
+      await navigator.clipboard.writeText(new URL(webhook.webhook_url, window.location.origin).toString());
+      setWebhookCopied(true);
+      setTimeout(() => setWebhookCopied(false), 2000);
+    } catch {
+      // clipboard unavailable - the URL is still shown in the input for manual copy
+    }
+  }
+
+  async function handleRotateWebhook() {
+    setBusy(true);
+    setError(null);
+    try {
+      setWebhook(await api.rotateWebhookToken());
+      setMessage("Webhook URL rotated - update it in TradingView's alert settings.");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleStore() {
     setBusy(true);
@@ -164,6 +193,41 @@ export default function SettingsPage() {
             {busy ? "Saving…" : "Store credentials"}
           </button>
         </div>
+      </Card>
+
+      <Card title="TradingView webhook">
+        <p className="text-sm text-muted mb-3">
+          Paste this URL into a TradingView alert's "Webhook URL" field, with a JSON message body
+          of <code className="text-xs">{"{ strategy_id, symbol, direction, entry, stop_loss, target1, target2?, alert_id? }"}</code>.
+          Every alert runs through the same risk engine and kill switches as a manual paper
+          execute. The token in the URL is the only credential protecting it - rotate it if it
+          ever leaks.
+        </p>
+        {webhook && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                readOnly
+                className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono"
+                value={new URL(webhook.webhook_url, window.location.origin).toString()}
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                onClick={handleCopyWebhookUrl}
+                className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs shrink-0"
+              >
+                {webhookCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <button
+              onClick={handleRotateWebhook}
+              disabled={busy}
+              className="text-xs text-danger hover:underline disabled:opacity-50"
+            >
+              Rotate URL (invalidates the old one)
+            </button>
+          </div>
+        )}
       </Card>
     </div>
   );

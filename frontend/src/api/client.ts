@@ -13,6 +13,7 @@ import type {
   OptionChain,
   OptionChainAnalysis,
   RiskConfig,
+  WebhookTokenResponse,
   SRZone,
   Signal,
   SignalHistoryEntry,
@@ -178,4 +179,9 @@ export const api = {
 
   markAllNotificationsRead: () =>
     request<{ marked_read: number }>("/notifications/read-all", { method: "POST" }),
+
+  getWebhookToken: () => request<WebhookTokenResponse>("/webhooks/tradingview/token"),
+
+  rotateWebhookToken: () =>
+    request<WebhookTokenResponse>("/webhooks/tradingview/token/rotate", { method: "POST" }),
 };

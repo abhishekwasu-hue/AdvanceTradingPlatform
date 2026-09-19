@@ -316,6 +316,10 @@ for.
 - `GET  /api/notifications` — this tenant's in-app notification feed, most recent first (auth
   required) - see "Notification Engine" below
 - `POST /api/notifications/{id}/read` / `POST /api/notifications/read-all` — mark read (auth required)
+- `POST /api/webhooks/tradingview/{webhook_token}` — ingest a TradingView alert as a trade
+  signal, authenticated by the URL token alone - see "TradingView Webhook Ingestion" below
+- `GET  /api/webhooks/tradingview/token` / `POST /api/webhooks/tradingview/token/rotate` — view
+  or rotate this tenant's webhook URL (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -845,3 +849,56 @@ Full backend suite: 330 passing (up from 318 before this pass), including new
 daily-loss-limit escalation to CRITICAL, kill-switch rejection, exit with loss-vs-profit
 severity, both broker-auth-failure branches, emergency exit, reconciliation failure), read/
 read-all state transitions, and tenant isolation.
+
+## TradingView Webhook Ingestion
+
+An inbound TradingView "Webhook URL" alert is treated as a pre-formed trade signal - the
+strategy logic already ran in Pine Script on TradingView's side, so there are no OHLCV bars to
+re-analyze here. `app/webhooks/routes.py::tradingview_webhook` (`POST
+/api/webhooks/tradingview/{webhook_token}`) builds a `Signal` directly from the alert's
+`entry`/`stop_loss`/`target1`/`target2`/`direction` and runs it through the exact same
+kill-switch → risk-engine → paper-broker → notification pipeline a logged-in
+`/paper-execute` call uses.
+
+- **Authenticated**: TradingView's webhook alerts can't carry a JWT/OAuth header - they just
+  POST a JSON body to whatever URL you configure. Each tenant gets a unique, randomly-generated
+  `webhook_token` (`Tenant.webhook_token`, `secrets.token_urlsafe(24)`, generated at
+  registration), embedded in the URL itself; the token *is* the credential. `GET
+  /api/webhooks/tradingview/token` (JWT-authenticated) returns the current URL to paste into a
+  TradingView alert, and a Settings-page card (`frontend/src/pages/SettingsPage.tsx`) shows it
+  with a copy button; `POST .../token/rotate` invalidates the old URL and issues a new one if it
+  ever leaks.
+- **Schema-validated**: `TradingViewAlertPayload` (Pydantic) requires `strategy_id`, `symbol`,
+  `direction`, `entry`, `stop_loss`, `target1`; `direction` explicitly rejects `NO_TRADE` (an
+  alert firing is itself a trade signal, never a "no trade" one) as a 422.
+- **Duplicate-checked**: an optional `alert_id` field (recommended: TradingView's `{{time}}`
+  placeholder, or a UUID from Pine Script) becomes the same `idempotency_key` mechanism
+  `/paper-execute` already uses - a retried or duplicated webhook delivery replays the first
+  attempt's recorded outcome instead of double-executing. Without an `alert_id`, each delivery
+  executes independently (an honest limitation, not a silent risk - TradingView delivery retries
+  are rare but not impossible).
+- **Through the existing Risk → Order Engine**: refactored the shared post-signal logic (create
+  the formal order, check kill switches, run risk sizing, route to the paper broker, persist a
+  fill, notify) out of `paper_execute` into `app/execution/signal_execution.py::
+  execute_signal_for_user`, so the webhook and the console's own paper-execute path share one
+  implementation rather than two independently-maintained copies of the same state machine.
+- Since a webhook alert has no logged-in caller to attribute the resulting order to, it's
+  attributed to the tenant's earliest-created user (`_get_tenant_owner`) - unambiguous today
+  since every V1 tenant has exactly one user (no invite flow yet).
+- Migration: `alembic/versions/e5f8a2c74b16_add_tenant_webhook_token.py` backfills a unique
+  random token (`md5(random()::text || clock_timestamp()::text || id::text)` - no Postgres
+  extension dependency) for every pre-existing tenant. Verified against a real Postgres instance
+  with seeded pre-migration tenants: applies, backfills uniquely, downgrades, and re-applies
+  cleanly, zero `alembic check` drift.
+- Verified live end-to-end with Playwright against a running backend + Vite dev server: the
+  Settings page's webhook card renders the URL, rotating it changes the URL and invalidates the
+  old one, and a real `POST` to the rotated URL executed a risk-sized paper trade that appeared
+  correctly on the Positions page.
+
+Full backend suite: 340 passing (up from 330 before this pass), including new
+`tests/test_tradingview_webhook.py` (token auth, NO_TRADE rejection, a full successful
+execution with trade/order/notification side effects, risk-engine rejection, tenant kill-switch
+rejection, `alert_id` idempotent replay vs. no-dedup-without-one, tenant isolation, and token
+rotation invalidating the old URL) - the full existing suite continues passing unchanged after
+the `paper_execute` refactor, confirming `execute_signal_for_user` preserves its exact prior
+behavior.

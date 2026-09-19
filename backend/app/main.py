@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ALLOWED_ORIGINS, validate_production_config
-from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
+from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
     BacktestResult,
     OHLCVBar,
@@ -32,29 +32,29 @@ from app.custom_strategies.routes import router as custom_strategies_router
 from app.fundamentals.routes import router as fundamentals_router
 from app.db.models import CustomStrategyRecord, User
 from app.db.session import get_session, init_models
-from app.execution.order_persistence import create_order, get_order_by_idempotency_key, transition_order
+from app.execution.order_persistence import get_order_by_idempotency_key
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
-from app.kill_switch.checks import active_kill_switch_reasons, is_global_kill_switch_engaged
+from app.execution.signal_execution import execute_signal_for_user
+from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.notifications.routes import router as notifications_router
-from app.notifications.service import notify
 from app.reconciliation.routes import router as reconciliation_router
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
-from app.risk_engine.routes import get_tenant_risk_config
 from app.risk_engine.routes import router as risk_settings_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
-from app.trading.persistence import build_trading_day_state, persist_paper_trade, persist_signal_history
+from app.trading.persistence import persist_signal_history
 from app.trading.routes import router as trading_router
+from app.webhooks.routes import router as webhooks_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -91,6 +91,7 @@ app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
 app.include_router(notifications_router)
+app.include_router(webhooks_router)
 
 _default_risk_config = RiskConfig()
 
@@ -265,80 +266,26 @@ async def paper_execute(
             reasons = [f"Global kill switch engaged: {global_reason}".rstrip(": ")]
             return PaperExecuteResponse(signal=signal, executed=False, reasons=reasons)
 
-    order = None
     if user is not None:
-        order = await create_order(
+        result, order = await execute_signal_for_user(
             session, user, mode="PAPER", strategy_id=strategy_id, signal=signal,
-            idempotency_key=request.idempotency_key,
+            idempotency_key=request.idempotency_key, risk_config=request.risk_config,
         )
-        order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal generated")
+        return PaperExecuteResponse(
+            signal=signal, executed=result.executed, reasons=result.reasons, order_id=order.id,
+        )
 
-        kill_switch_reasons = await active_kill_switch_reasons(session, user.tenant_id, strategy_id)
-        if kill_switch_reasons:
-            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(kill_switch_reasons))
-            await notify(
-                session, user.tenant_id, NotificationType.REJECTION,
-                title=f"Order rejected: {signal.symbol}", message="; ".join(kill_switch_reasons),
-                severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
-            )
-            return PaperExecuteResponse(signal=signal, executed=False, reasons=kill_switch_reasons, order_id=order.id)
-
-        order = await transition_order(session, order, OrderStatus.RISK_CHECK, detail="Running risk checks")
-
-    risk_config = request.risk_config
-    if risk_config is None and user is not None:
-        risk_config = await get_tenant_risk_config(user.tenant_id, session)
-    risk_config = risk_config or _default_risk_config
-
-    # Derived fresh per request: a logged-in user's real trading-day state comes straight from
-    # their tenant's persisted trade history (see build_trading_day_state's docstring for why a
-    # process-memory counter shared across tenants/restarts would be wrong). An anonymous demo
-    # call has no history to derive from and never persists anything, so it always starts clean.
-    state = await build_trading_day_state(session, user) if user is not None else TradingDayState()
-
+    # Anonymous demo path: no order record, no persistence, no notifications - matching the
+    # console's try-it-without-an-account flow. Always starts with clean risk-engine state since
+    # there is no history to derive it from.
+    risk_config = request.risk_config or _default_risk_config
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
     try:
-        result: ExecutionResult = await router.execute(signal, state)
+        result = await router.execute(signal, TradingDayState())
     except LiveTradingNotConfigured as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    if order is not None:
-        order.reasons_json = json.dumps(result.reasons)
-        if not result.executed:
-            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(result.reasons))
-            is_daily_loss = any("daily loss limit" in r.lower() for r in result.reasons)
-            await notify(
-                session, user.tenant_id,
-                NotificationType.DAILY_LOSS_LIMIT if is_daily_loss else NotificationType.RISK_REJECTION,
-                title=f"Order rejected: {signal.symbol}", message="; ".join(result.reasons),
-                severity=NotificationSeverity.CRITICAL if is_daily_loss else NotificationSeverity.WARNING,
-                user_id=user.id, related_order_id=order.id,
-            )
-        else:
-            if result.trade is not None:
-                order.quantity = result.trade.quantity
-            order = await transition_order(session, order, OrderStatus.SUBMITTED, detail="Submitted to paper broker")
-            order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
-            order = await transition_order(session, order, OrderStatus.FILLED, detail="Paper fill")
-
-    if result.executed and result.trade is not None and user is not None:
-        trade_record = await persist_paper_trade(session, user, result.trade)
-        if order is not None:
-            order.trade_id = trade_record.id
-            order = await transition_order(
-                session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{trade_record.id})"
-            )
-        await notify(
-            session, user.tenant_id, NotificationType.ENTRY,
-            title=f"{result.trade.direction.value} entry filled: {result.trade.symbol}",
-            message="; ".join(result.reasons), severity=NotificationSeverity.INFO,
-            user_id=user.id, related_trade_id=trade_record.id, related_order_id=order.id if order is not None else None,
-        )
-
-    return PaperExecuteResponse(
-        signal=signal, executed=result.executed, reasons=result.reasons,
-        order_id=order.id if order is not None else None,
-    )
+    return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
 
 
 @app.post("/api/backtest", response_model=BacktestResult)

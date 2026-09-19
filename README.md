@@ -51,7 +51,11 @@ untracked on either side, with every mismatch logged to the audit trail. An **in
 engine** (a new Notifications tab in the console - see "Notification Engine" in
 `docs/ARCHITECTURE.md`) now surfaces entries, exits, rejections, broker disconnects/token
 expiry, risk and daily-loss-limit rejections, emergency exits, and system failures as they
-happen, each with a severity level, with read/unread state.
+happen, each with a severity level, with read/unread state. **TradingView webhook ingestion**
+(`POST /api/webhooks/tradingview/{token}` - see "TradingView Webhook Ingestion" in
+`docs/ARCHITECTURE.md`) lets a TradingView alert fire a real, risk-checked, kill-switch-aware
+paper trade through the same engine as a manual paper execute, authenticated by a per-tenant
+webhook URL shown (and rotatable) on the Settings page.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -120,7 +124,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 330 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 340 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

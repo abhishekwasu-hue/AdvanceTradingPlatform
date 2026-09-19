@@ -23,12 +23,12 @@ def _record_to_config(record: RiskSettingsRecord) -> RiskConfig:
     )
 
 
-async def get_user_risk_config(user_id: int, session: AsyncSession) -> RiskConfig | None:
-    """Used by /paper-execute to apply a logged-in user's own limits when the request doesn't
-    explicitly override risk_config. Returns None if the user has never customized anything -
-    the caller then falls back to the platform default.
+async def get_tenant_risk_config(tenant_id: int, session: AsyncSession) -> RiskConfig | None:
+    """Used by /paper-execute to apply a logged-in user's tenant-wide limits when the request
+    doesn't explicitly override risk_config. Returns None if the tenant has never customized
+    anything - the caller then falls back to the platform default.
     """
-    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.user_id == user_id))
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant_id))
     return _record_to_config(record) if record is not None else None
 
 
@@ -36,8 +36,8 @@ async def get_user_risk_config(user_id: int, session: AsyncSession) -> RiskConfi
 async def get_risk_settings(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:
-    """This user's saved risk settings, or the platform default if they haven't customized any."""
-    config = await get_user_risk_config(user.id, session)
+    """This tenant's saved risk settings, or the platform default if it hasn't customized any."""
+    config = await get_tenant_risk_config(user.tenant_id, session)
     return config if config is not None else RiskConfig()
 
 
@@ -45,10 +45,12 @@ async def get_risk_settings(
 async def update_risk_settings(
     config: RiskConfig, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:
-    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.user_id == user.id))
+    record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
     if record is None:
-        record = RiskSettingsRecord(user_id=user.id)
+        record = RiskSettingsRecord(tenant_id=user.tenant_id, updated_by=user.id)
         session.add(record)
+    else:
+        record.updated_by = user.id
 
     record.capital = config.capital
     record.risk_per_trade_pct = config.risk_per_trade_pct

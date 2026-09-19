@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import Signal
-from app.db.models import TradeRecord
+from app.db.models import TradeRecord, User
 from app.strategy_engine.registry import registry
 from app.trading.persistence import persist_paper_trade
 from tests.test_auth_api import _register, _session_factory, client
@@ -47,22 +47,25 @@ async def _register_user_and_get_id(email: str) -> tuple:
     from app.auth.security import decode_access_token
     token = _register(email)
     user_id = int(decode_access_token(token)["sub"])
-    return token, user_id
+    async with _session_factory() as session:
+        user = await session.get(User, user_id)
+        tenant_id = user.tenant_id
+    return token, user_id, tenant_id
 
 
 def test_positions_only_shows_open_trades():
-    token, user_id = asyncio.run(_register_user_and_get_id("karl@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("karl@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
 
     async def _seed():
         async with _session_factory() as session:
             now = datetime.now(timezone.utc)
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="OPEN1", strategy_id="s", direction="LONG",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="OPEN1", strategy_id="s", direction="LONG",
                 entry_time=now, entry_price=100.0, quantity=10, stop_loss=98.0, target1=104.0,
             ))
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="CLOSED1", strategy_id="s", direction="LONG",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="CLOSED1", strategy_id="s", direction="LONG",
                 entry_time=now - timedelta(minutes=5), entry_price=100.0, quantity=10, stop_loss=98.0,
                 target1=104.0, exit_time=now, exit_price=104.0, exit_reason="Target 1", pnl=40.0,
             ))
@@ -78,7 +81,7 @@ def test_positions_only_shows_open_trades():
 
 
 def test_persist_paper_trade_writes_expected_fields():
-    token, user_id = asyncio.run(_register_user_and_get_id("liam@example.com"))
+    token, user_id, _tenant_id = asyncio.run(_register_user_and_get_id("liam@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
 
     async def _persist():
@@ -86,7 +89,8 @@ def test_persist_paper_trade_writes_expected_fields():
         broker = PaperBroker()
         trade = broker.open_trade(_fake_long_signal(), quantity=250, timestamp=datetime.now(timezone.utc))
         async with _session_factory() as session:
-            await persist_paper_trade(session, user_id, trade)
+            user = await session.get(User, user_id)
+            await persist_paper_trade(session, user, trade)
 
     asyncio.run(_persist())
 
@@ -226,10 +230,10 @@ def test_authenticated_enrich_persists_signal_history(monkeypatch):
     assert isinstance(history[0]["reasons"], list) and history[0]["reasons"] == ["forced for test"]
 
 
-async def _seed_open_long(user_id: int, entry=100.0, sl=98.0, t1=104.0, t2=108.0, qty=250) -> int:
+async def _seed_open_long(user_id: int, tenant_id: int, entry=100.0, sl=98.0, t1=104.0, t2=108.0, qty=250) -> int:
     async with _session_factory() as session:
         record = TradeRecord(
-            user_id=user_id, mode="PAPER", symbol="MARKTEST", strategy_id="s", direction="LONG",
+            tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="MARKTEST", strategy_id="s", direction="LONG",
             entry_time=datetime.now(timezone.utc), entry_price=entry, quantity=qty,
             stop_loss=sl, target1=t1, target2=t2,
         )
@@ -244,9 +248,9 @@ def test_mark_price_requires_authentication():
 
 
 def test_mark_price_leaves_position_open_when_no_level_hit():
-    token, user_id = asyncio.run(_register_user_and_get_id("uma@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("uma@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
-    trade_id = asyncio.run(_seed_open_long(user_id))
+    trade_id = asyncio.run(_seed_open_long(user_id, tenant_id))
 
     response = client.post(f"/api/positions/{trade_id}/mark-price", headers=headers, json={"current_price": 101.0})
     assert response.status_code == 200
@@ -257,9 +261,9 @@ def test_mark_price_leaves_position_open_when_no_level_hit():
 
 
 def test_mark_price_closes_long_at_target1():
-    token, user_id = asyncio.run(_register_user_and_get_id("victor@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("victor@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
-    trade_id = asyncio.run(_seed_open_long(user_id))
+    trade_id = asyncio.run(_seed_open_long(user_id, tenant_id))
 
     response = client.post(f"/api/positions/{trade_id}/mark-price", headers=headers, json={"current_price": 105.0})
     assert response.status_code == 200
@@ -276,13 +280,13 @@ def test_mark_price_closes_long_at_target1():
 
 
 def test_mark_price_closes_short_at_stop_loss():
-    token, user_id = asyncio.run(_register_user_and_get_id("wendy@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("wendy@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
 
     async def _seed_short():
         async with _session_factory() as session:
             record = TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="MARKTEST", strategy_id="s", direction="SHORT",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="MARKTEST", strategy_id="s", direction="SHORT",
                 entry_time=datetime.now(timezone.utc), entry_price=100.0, quantity=250,
                 stop_loss=103.0, target1=95.0, target2=90.0,
             )
@@ -300,9 +304,9 @@ def test_mark_price_closes_short_at_stop_loss():
 
 
 def test_mark_price_rejects_other_users_position():
-    token1, user_id1 = asyncio.run(_register_user_and_get_id("xavier@example.com"))
-    token2, _ = asyncio.run(_register_user_and_get_id("yara@example.com"))
-    trade_id = asyncio.run(_seed_open_long(user_id1))
+    token1, user_id1, tenant_id1 = asyncio.run(_register_user_and_get_id("xavier@example.com"))
+    token2, _, _ = asyncio.run(_register_user_and_get_id("yara@example.com"))
+    trade_id = asyncio.run(_seed_open_long(user_id1, tenant_id1))
 
     response = client.post(
         f"/api/positions/{trade_id}/mark-price",
@@ -312,9 +316,9 @@ def test_mark_price_rejects_other_users_position():
 
 
 def test_mark_price_rejects_already_closed_position():
-    token, user_id = asyncio.run(_register_user_and_get_id("zoe@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("zoe@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
-    trade_id = asyncio.run(_seed_open_long(user_id))
+    trade_id = asyncio.run(_seed_open_long(user_id, tenant_id))
 
     first = client.post(f"/api/positions/{trade_id}/mark-price", headers=headers, json={"current_price": 105.0})
     assert first.json()["closed"] is True

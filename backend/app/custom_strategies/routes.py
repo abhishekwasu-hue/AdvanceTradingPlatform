@@ -46,7 +46,9 @@ async def create_custom_strategy(
     except (ValueError, ValidationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    record = CustomStrategyRecord(user_id=user.id, name=config.name, config_json=config.model_dump_json())
+    record = CustomStrategyRecord(
+        tenant_id=user.tenant_id, user_id=user.id, name=config.name, config_json=config.model_dump_json()
+    )
     session.add(record)
     await session.commit()
     await session.refresh(record)
@@ -59,7 +61,7 @@ async def list_custom_strategies(
 ) -> List[CustomStrategyResponse]:
     rows = await session.scalars(
         select(CustomStrategyRecord)
-        .where(CustomStrategyRecord.user_id == user.id)
+        .where(CustomStrategyRecord.tenant_id == user.tenant_id)
         .order_by(CustomStrategyRecord.created_at.desc())
     )
     return [CustomStrategyResponse.from_record(r) for r in rows]
@@ -67,7 +69,7 @@ async def list_custom_strategies(
 
 async def _get_owned_or_404(strategy_id: int, user: User, session: AsyncSession) -> CustomStrategyRecord:
     record = await session.get(CustomStrategyRecord, strategy_id)
-    if record is None or record.user_id != user.id:
+    if record is None or record.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Unknown custom strategy")
     return record
 

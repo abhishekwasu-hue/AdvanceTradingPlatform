@@ -39,7 +39,7 @@ from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
-from app.risk_engine.routes import get_user_risk_config
+from app.risk_engine.routes import get_tenant_risk_config
 from app.risk_engine.routes import router as risk_settings_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
@@ -137,7 +137,7 @@ async def list_strategies(
     if user is not None:
         rows = await session.scalars(
             select(CustomStrategyRecord)
-            .where(CustomStrategyRecord.user_id == user.id)
+            .where(CustomStrategyRecord.tenant_id == user.tenant_id)
             .order_by(CustomStrategyRecord.created_at.desc())
         )
         strategies.extend(custom_strategy_info(r) for r in rows)
@@ -202,7 +202,7 @@ async def generate_and_enrich_signal(
     enriched = enrich_signal(signal, ltf_df, option_chain=request.option_chain, swing_window=request.swing_window)
 
     if user is not None:
-        await persist_signal_history(session, user.id, enriched)
+        await persist_signal_history(session, user, enriched)
 
     return enriched
 
@@ -231,14 +231,14 @@ async def paper_execute(
 
     risk_config = request.risk_config
     if risk_config is None and user is not None:
-        risk_config = await get_user_risk_config(user.id, session)
+        risk_config = await get_tenant_risk_config(user.tenant_id, session)
     risk_config = risk_config or _default_risk_config
 
     # Derived fresh per request: a logged-in user's real trading-day state comes straight from
-    # their persisted trade history (see build_trading_day_state's docstring for why a
-    # process-memory counter shared across users/restarts would be wrong). An anonymous demo
+    # their tenant's persisted trade history (see build_trading_day_state's docstring for why a
+    # process-memory counter shared across tenants/restarts would be wrong). An anonymous demo
     # call has no history to derive from and never persists anything, so it always starts clean.
-    state = await build_trading_day_state(session, user.id) if user is not None else TradingDayState()
+    state = await build_trading_day_state(session, user) if user is not None else TradingDayState()
 
     router = OrderRouter(mode=ExecutionMode.PAPER, risk_config=risk_config)
     try:
@@ -247,7 +247,7 @@ async def paper_execute(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     if result.executed and result.trade is not None and user is not None:
-        await persist_paper_trade(session, user.id, result.trade)
+        await persist_paper_trade(session, user, result.trade)
 
     return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
 

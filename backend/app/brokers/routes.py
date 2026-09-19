@@ -30,7 +30,7 @@ async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Encrypts and stores this user's credentials for one broker. Nothing is ever stored in
+    """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
     plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
     """
     _ensure_known_broker(name)
@@ -38,15 +38,20 @@ async def store_broker_credentials(
 
     existing = await session.scalar(
         select(BrokerCredentialRecord).where(
-            BrokerCredentialRecord.user_id == user.id, BrokerCredentialRecord.broker_name == name
+            BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.broker_name == name
         )
     )
     if existing:
         existing.encrypted_payload = encrypted
+        existing.user_id = user.id
     else:
-        session.add(BrokerCredentialRecord(user_id=user.id, broker_name=name, encrypted_payload=encrypted))
+        session.add(
+            BrokerCredentialRecord(
+                tenant_id=user.tenant_id, user_id=user.id, broker_name=name, encrypted_payload=encrypted
+            )
+        )
 
-    session.add(AuditLogRecord(user_id=user.id, event="broker_credentials_stored", detail=name))
+    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_credentials_stored", detail=name))
     await session.commit()
 
 
@@ -54,7 +59,9 @@ async def store_broker_credentials(
 async def list_stored_broker_credentials(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> list[StoredBrokerInfo]:
-    records = await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.user_id == user.id))
+    records = await session.scalars(
+        select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
+    )
     return [
         StoredBrokerInfo(broker_name=r.broker_name, updated_at=r.updated_at.isoformat()) for r in records
     ]
@@ -66,12 +73,12 @@ async def delete_broker_credentials(
 ) -> None:
     existing = await session.scalar(
         select(BrokerCredentialRecord).where(
-            BrokerCredentialRecord.user_id == user.id, BrokerCredentialRecord.broker_name == name
+            BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.broker_name == name
         )
     )
     if existing:
         await session.delete(existing)
-        session.add(AuditLogRecord(user_id=user.id, event="broker_credentials_deleted", detail=name))
+        session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_credentials_deleted", detail=name))
         await session.commit()
 
 
@@ -87,7 +94,7 @@ async def authenticate_broker(
     _ensure_known_broker(name)
     record = await session.scalar(
         select(BrokerCredentialRecord).where(
-            BrokerCredentialRecord.user_id == user.id, BrokerCredentialRecord.broker_name == name
+            BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.broker_name == name
         )
     )
     if record is None:
@@ -102,10 +109,15 @@ async def authenticate_broker(
         # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
         # both mean the same thing to the caller: authentication did not succeed. Either way
         # this must come back as a clean error, never an unhandled 500, and always be audited.
-        session.add(AuditLogRecord(user_id=user.id, event="broker_authentication_failed", detail=f"{name}: {exc}"))
+        session.add(
+            AuditLogRecord(
+                tenant_id=user.tenant_id, user_id=user.id,
+                event="broker_authentication_failed", detail=f"{name}: {exc}",
+            )
+        )
         await session.commit()
         raise HTTPException(status_code=502, detail=f"Broker authentication failed: {exc}") from exc
 
-    session.add(AuditLogRecord(user_id=user.id, event="broker_authenticated", detail=name))
+    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="broker_authenticated", detail=name))
     await session.commit()
     return profile

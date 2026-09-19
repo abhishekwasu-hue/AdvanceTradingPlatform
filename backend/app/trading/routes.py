@@ -52,9 +52,10 @@ class TradeRecordResponse(BaseModel):
 async def list_trades(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> List[TradeRecordResponse]:
-    """Every persisted paper (and eventually live) trade for the logged-in user, most recent first."""
+    """Every persisted paper (and eventually live) trade for the logged-in user's tenant, most
+    recent first."""
     rows = await session.scalars(
-        select(TradeRecord).where(TradeRecord.user_id == user.id).order_by(TradeRecord.entry_time.desc())
+        select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id).order_by(TradeRecord.entry_time.desc())
     )
     return [TradeRecordResponse.from_record(r) for r in rows]
 
@@ -69,7 +70,7 @@ async def list_open_positions(
     """
     rows = await session.scalars(
         select(TradeRecord)
-        .where(TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None))
+        .where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.entry_time.desc())
     )
     return [TradeRecordResponse.from_record(r) for r in rows]
@@ -113,7 +114,7 @@ async def list_signal_history(
     """
     rows = await session.scalars(
         select(SignalHistoryRecord)
-        .where(SignalHistoryRecord.user_id == user.id)
+        .where(SignalHistoryRecord.tenant_id == user.tenant_id)
         .order_by(SignalHistoryRecord.created_at.desc())
         .limit(limit)
     )
@@ -143,7 +144,7 @@ async def mark_price(
     watching prices that don't actually exist yet.
     """
     trade = await session.get(TradeRecord, trade_id)
-    if trade is None or trade.user_id != user.id:
+    if trade is None or trade.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Unknown position")
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
@@ -172,10 +173,10 @@ async def mark_price(
 async def analytics_summary(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> AnalyticsSummary:
-    """Win rate / P&L breakdown by strategy and symbol, computed from this user's full trade
+    """Win rate / P&L breakdown by strategy and symbol, computed from this tenant's full trade
     history (GET /api/trades) - closed trades only for win-rate/profit-factor purposes.
     """
-    rows = list(await session.scalars(select(TradeRecord).where(TradeRecord.user_id == user.id)))
+    rows = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id)))
     return build_analytics_summary(rows)
 
 

@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.auth.security import create_access_token, hash_password, verify_password
-from app.db.models import AuditLogRecord, User
+from app.core.enums import UserRole
+from app.db.models import AuditLogRecord, Tenant, User
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -35,18 +36,31 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    tenant_id: int
+    role: str
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: RegisterRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+    """Every registration gets its own new tenant (spec section 5-6's isolation boundary) - there
+    is no invite-onto-an-existing-tenant flow yet, so V1 is one tenant per signup, and every
+    tenant-scoped resource this user creates is isolated from every other tenant from day one.
+    """
     existing = await session.scalar(select(User).where(User.email == request.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    user = User(email=request.email, hashed_password=hash_password(request.password))
+    tenant = Tenant(name=request.email)
+    session.add(tenant)
+    await session.flush()
+
+    user = User(
+        tenant_id=tenant.id, email=request.email, hashed_password=hash_password(request.password),
+        role=UserRole.USER.value,
+    )
     session.add(user)
     await session.flush()
-    session.add(AuditLogRecord(user_id=user.id, event="user_registered", detail=request.email))
+    session.add(AuditLogRecord(tenant_id=tenant.id, user_id=user.id, event="user_registered", detail=request.email))
     await session.commit()
 
     return TokenResponse(access_token=create_access_token(user.id, user.email))
@@ -61,11 +75,11 @@ async def login(request: LoginRequest, session: AsyncSession = Depends(get_sessi
     if user is None or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    session.add(AuditLogRecord(user_id=user.id, event="user_login", detail=""))
+    session.add(AuditLogRecord(tenant_id=user.tenant_id, user_id=user.id, event="user_login", detail=""))
     await session.commit()
     return TokenResponse(access_token=create_access_token(user.id, user.email))
 
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email)
+    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role)

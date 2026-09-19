@@ -13,14 +13,36 @@ def _utcnow() -> datetime:
 _TZ_DATETIME = DateTime(timezone=True)
 
 
+class Tenant(Base):
+    """The isolation/billing boundary for the whole platform (spec section 5-6): every
+    tenant-owned row across the schema carries a tenant_id, always derived server-side from the
+    authenticated user's own tenant - never accepted from the client - so tenants can never read
+    or write each other's data. V1 auto-creates one tenant per registration (see
+    app/auth/routes.py::register); a multi-user invite flow onto an existing tenant is future work.
+    """
+
+    __tablename__ = "tenants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    plan: Mapped[str] = mapped_column(String(50), nullable=False, default="free")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+    users: Mapped[list["User"]] = relationship(back_populates="tenant")
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="USER")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
+    tenant: Mapped["Tenant"] = relationship(back_populates="users")
     broker_credentials: Mapped[list["BrokerCredentialRecord"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -29,13 +51,15 @@ class User(Base):
 class BrokerCredentialRecord(Base):
     """Broker credentials, encrypted at rest (see app/secrets_store/encryption.py). The DB only
     ever stores ciphertext - decryption happens in memory, on demand, right before an adapter
-    is constructed.
+    is constructed. Scoped by tenant_id (a broker account belongs to the org, not to whichever
+    user happened to add it); user_id is kept only for attribution.
     """
 
     __tablename__ = "broker_credentials"
-    __table_args__ = (UniqueConstraint("user_id", "broker_name", name="uq_user_broker"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", name="uq_tenant_broker"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
     encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
@@ -59,6 +83,7 @@ class TradeRecord(Base):
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
     symbol: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -87,6 +112,7 @@ class SignalHistoryRecord(Base):
     __tablename__ = "signal_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     strategy_id: Mapped[str] = mapped_column(String(100), nullable=False)
     symbol: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -113,6 +139,7 @@ class CustomStrategyRecord(Base):
     __tablename__ = "custom_strategies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     config_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -121,17 +148,19 @@ class CustomStrategyRecord(Base):
 
 
 class RiskSettingsRecord(Base):
-    """A user's own risk parameters (position sizing, daily loss/trade-count/consecutive-loss
-    guards), persisted so paper-execute uses their configured limits by default instead of the
-    hardcoded RiskConfig() every anonymous call falls back to. One row per user.
+    """A tenant's risk parameters (position sizing, daily loss/trade-count/consecutive-loss
+    guards), persisted so paper-execute uses the org's configured limits by default instead of
+    the hardcoded RiskConfig() every anonymous call falls back to. One row per tenant (matches
+    the spec's risk_limits.scope=tenant); `updated_by` is attribution only, not the scope key.
     """
 
     __tablename__ = "risk_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
     )
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     capital: Mapped[float] = mapped_column(Float, nullable=False, default=100_000.0)
     risk_per_trade_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     max_daily_loss_pct: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)
@@ -151,6 +180,7 @@ class AuditLogRecord(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     event: Mapped[str] = mapped_column(String(100), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")

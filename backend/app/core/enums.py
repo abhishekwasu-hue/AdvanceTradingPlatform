@@ -15,6 +15,17 @@ class SignalGrade(str, Enum):
     NO_TRADE = "No Trade"
 
 
+class UserRole(str, Enum):
+    """Platform RBAC roles (spec section 5-6). SUPER_ADMIN is platform-wide (not tenant-scoped -
+    no route grants it automatically today, it's a manual DB flag for platform operators);
+    the rest are tenant-scoped. USER is the default a registration gets."""
+
+    SUPER_ADMIN = "SUPER_ADMIN"
+    USER = "USER"
+    STRATEGY_CREATOR = "STRATEGY_CREATOR"
+    SUPPORT = "SUPPORT"
+
+
 class StrategyCategory(str, Enum):
     MULTI_TIMEFRAME = "multi_timeframe"
     INDICATOR_BASED = "indicator_based"

@@ -20,29 +20,29 @@ def test_analytics_with_no_trades_is_all_zero():
 
 
 def test_analytics_aggregates_by_strategy_and_symbol():
-    token, user_id = asyncio.run(_register_user_and_get_id("fiona@example.com"))
+    token, user_id, tenant_id = asyncio.run(_register_user_and_get_id("fiona@example.com"))
     headers = {"Authorization": f"Bearer {token}"}
 
     async def _seed():
         now = datetime.now(timezone.utc)
         async with _session_factory() as session:
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="NIFTY", strategy_id="stratA", direction="LONG",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="NIFTY", strategy_id="stratA", direction="LONG",
                 entry_time=now - timedelta(minutes=10), entry_price=100.0, quantity=10,
                 stop_loss=98.0, target1=104.0, exit_time=now, exit_price=104.0, pnl=40.0, exit_reason="Target 1",
             ))
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="NIFTY", strategy_id="stratA", direction="LONG",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="NIFTY", strategy_id="stratA", direction="LONG",
                 entry_time=now - timedelta(minutes=20), entry_price=100.0, quantity=10,
                 stop_loss=98.0, target1=104.0, exit_time=now, exit_price=98.0, pnl=-20.0, exit_reason="Stop Loss",
             ))
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="BANKNIFTY", strategy_id="stratB", direction="SHORT",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="BANKNIFTY", strategy_id="stratB", direction="SHORT",
                 entry_time=now - timedelta(minutes=5), entry_price=100.0, quantity=10,
                 stop_loss=102.0, target1=96.0, exit_time=now, exit_price=96.0, pnl=30.0, exit_reason="Target 1",
             ))
             session.add(TradeRecord(
-                user_id=user_id, mode="PAPER", symbol="OPENSYM", strategy_id="stratC", direction="LONG",
+                tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="OPENSYM", strategy_id="stratC", direction="LONG",
                 entry_time=now, entry_price=100.0, quantity=10, stop_loss=98.0, target1=104.0,
             ))
             await session.commit()

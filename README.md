@@ -24,7 +24,11 @@ Report, and a composite Fundamental Score fused with the technical signal score 
 **production-hardened** in a full correctness/security review (see "Production Hardening Pass"
 in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)): a fail-fast startup check against insecure
 default secrets, configurable CORS, timing-safe login, and several real cross-tenant/exit-logic/
-broker-parsing bugs fixed with regression tests.
+broker-parsing bugs fixed with regression tests. The platform is now genuine **multi-tenant
+SaaS** (see "Multi-Tenancy + RBAC Foundation" in `docs/ARCHITECTURE.md`): a `Tenant` isolation
+boundary, `tenant_id` scoping on every shared resource (broker credentials, trades, signal
+history, custom strategies, risk settings), and RBAC roles (`SUPER_ADMIN`/`USER`/
+`STRATEGY_CREATOR`/`SUPPORT`) on every user.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -92,7 +96,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 238 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 244 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

@@ -524,3 +524,57 @@ Security/config hardening also added, all gated behind a new `ENVIRONMENT` varia
 
 Full backend suite: 238 passing (up from 221 before this pass). See individual commit messages
 for the complete list of touched files.
+
+## Multi-Tenancy + RBAC Foundation
+
+The platform moved from single-user accounts to real multi-tenant SaaS, per a newer master spec
+whose gap analysis was reconciled with what already existed rather than triggering a rebuild
+(kept the existing FastAPI/Postgres/Vite stack). A `Tenant` (`app/db/models.py::Tenant` -
+id/name/plan/status) is now the isolation boundary the spec calls for: every tenant-owned table
+carries a `tenant_id`, always derived server-side from the authenticated user's own row - never
+accepted from the client - so tenants can never read or write each other's data.
+
+- **Registration** (`app/auth/routes.py::register`) creates a brand-new `Tenant` alongside the
+  new `User` in the same transaction. There is no invite-onto-an-existing-tenant flow yet, so V1
+  is one tenant per signup; a second user can only join an existing tenant via a direct DB insert
+  today (see `tests/test_multi_tenancy.py::_add_teammate` for the shape a future invite endpoint
+  would produce). Existing pre-migration users each get backfilled into their own new tenant, so
+  behavior for pre-existing single-user data is unchanged.
+- **`User.role`** (`app/core/enums.py::UserRole` - `SUPER_ADMIN`/`USER`/`STRATEGY_CREATOR`/
+  `SUPPORT`) defaults to `USER` on registration. `app/auth/dependencies.py::require_role(...)` is
+  the RBAC dependency factory future admin/support/strategy-management routes gate behind
+  (`SUPER_ADMIN` always passes); no route uses it yet.
+- **Tenant-scoped resources** - visible/shared across every user in the same tenant, isolated
+  from every other tenant: broker credentials, trades (paper fills), signal history, custom
+  strategies. Each keeps its own `user_id` purely for attribution (who added/created it); every
+  route that used to filter by `user_id == user.id` now filters by `tenant_id == user.tenant_id`
+  (`app/brokers/routes.py`, `app/trading/routes.py`, `app/custom_strategies/routes.py` +
+  `resolver.py`, `app/trading/persistence.py`).
+- **Risk settings became tenant-scoped** (`RiskSettingsRecord`, matching the spec's
+  `risk_limits.scope=tenant`): one row per tenant instead of per user, with `updated_by`
+  (nullable, `SET NULL` on user deletion) replacing the old unique `user_id` for attribution only.
+  `app/trading/persistence.py::build_trading_day_state` (the derived-from-history risk-engine
+  state introduced in the hardening pass above) is likewise now tenant-scoped: the daily-loss/
+  trade-count/consecutive-loss budget is shared across everyone trading under one tenant, which
+  is the correct behavior once a tenant can have more than one user.
+- **Audit logs** gained a `tenant_id` column (nullable, best-effort) but the `GET /api/audit-logs`
+  endpoint deliberately stays filtered by `user_id == user.id` for now - a tenant-wide admin audit
+  view is future RBAC-gated work, not implied by adding the column.
+- **Fundamentals reference data stayed tenant-agnostic** (companies, financial periods,
+  shareholding, corporate actions, earnings calendar, sector metrics, qualitative factors): a
+  company's filed financials are the same fact regardless of which tenant is looking, matching
+  how an instrument master is shared reference data rather than tenant-owned.
+- Migration: `alembic/versions/6f1a2d9b7c31_add_multi_tenancy.py` creates `tenants`, adds
+  `role`/`tenant_id` to `users`, adds `tenant_id` to the tenant-scoped tables above, backfills
+  every existing user into its own new tenant and every owned row from its owning user's
+  `tenant_id`, and migrates `risk_settings` from per-user to per-tenant (including the
+  `user_id`→`updated_by` rename and the unique-constraint move). Verified end-to-end against a
+  real Postgres instance: applies cleanly from the previous head, backfills pre-existing rows
+  correctly, downgrades cleanly, and `alembic check` reports zero drift against the current
+  models.
+- Deferred, per explicit user direction, for later phases: the Conversational AI Strategy
+  Builder (needs a real LLM API key) and MCX Commodities/Cryptocurrency asset classes.
+
+Full backend suite: 244 passing (up from 238 before this pass), including a new
+`tests/test_multi_tenancy.py` covering tenant creation on registration, cross-tenant isolation of
+custom strategies/risk settings/broker credentials, and same-tenant sharing between two users.

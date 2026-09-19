@@ -6,6 +6,8 @@ export interface TokenResponse {
 export interface UserResponse {
   id: number;
   email: string;
+  tenant_id: number;
+  role: string;
 }
 
 export interface TradeRecord {

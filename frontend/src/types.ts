@@ -380,3 +380,90 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
     min_rr: 1.2,
   };
 }
+
+// --- Market Scanner ---
+
+export type StructureFilterType =
+  | "TREND_UPTREND"
+  | "TREND_DOWNTREND"
+  | "TREND_RANGE"
+  | "BOS_BULLISH"
+  | "BOS_BEARISH"
+  | "CHOCH_BULLISH"
+  | "CHOCH_BEARISH"
+  | "PATTERN_BULLISH"
+  | "PATTERN_BEARISH"
+  | "NEAR_SUPPORT"
+  | "NEAR_RESISTANCE";
+
+export interface StructureFilter {
+  filter_type: StructureFilterType;
+  tolerance_pct: number;
+}
+
+export type OptionFilterType = "PCR" | "BIAS_BULLISH" | "BIAS_BEARISH" | "NEAR_MAX_PAIN";
+
+export interface OptionFilter {
+  filter_type: OptionFilterType;
+  operator: ConditionOperator | null;
+  value: number | null;
+  tolerance_pct: number;
+}
+
+export interface ScannerSymbolInput {
+  symbol: string;
+  timeframe: string;
+  candles: OHLCVBar[];
+  option_chain: OptionChain | null;
+}
+
+export interface ScannerRequest {
+  symbols: ScannerSymbolInput[];
+  indicator_conditions: Condition[];
+  structure_filters: StructureFilter[];
+  option_filters: OptionFilter[];
+  swing_window: number;
+}
+
+export interface ScannerMatch {
+  symbol: string;
+  close: number;
+  matched_indicator_labels: string[];
+  matched_structure_labels: string[];
+  matched_option_labels: string[];
+}
+
+export interface ScannerResult {
+  scanned_count: number;
+  matched_count: number;
+  matches: ScannerMatch[];
+}
+
+export const STRUCTURE_FILTER_LABELS: Record<StructureFilterType, string> = {
+  TREND_UPTREND: "Trend: Uptrend",
+  TREND_DOWNTREND: "Trend: Downtrend",
+  TREND_RANGE: "Trend: Range",
+  BOS_BULLISH: "Break of Structure (Bullish)",
+  BOS_BEARISH: "Break of Structure (Bearish)",
+  CHOCH_BULLISH: "Change of Character (Bullish)",
+  CHOCH_BEARISH: "Change of Character (Bearish)",
+  PATTERN_BULLISH: "Candlestick pattern (Bullish)",
+  PATTERN_BEARISH: "Candlestick pattern (Bearish)",
+  NEAR_SUPPORT: "Near support zone",
+  NEAR_RESISTANCE: "Near resistance zone",
+};
+
+export const OPTION_FILTER_LABELS: Record<OptionFilterType, string> = {
+  PCR: "PCR threshold",
+  BIAS_BULLISH: "Option chain bias: Bullish",
+  BIAS_BEARISH: "Option chain bias: Bearish",
+  NEAR_MAX_PAIN: "Near Max Pain",
+};
+
+export function defaultStructureFilter(): StructureFilter {
+  return { filter_type: "TREND_UPTREND", tolerance_pct: 0.5 };
+}
+
+export function defaultOptionFilter(): OptionFilter {
+  return { filter_type: "PCR", operator: "GT", value: 1.2, tolerance_pct: 1.0 };
+}

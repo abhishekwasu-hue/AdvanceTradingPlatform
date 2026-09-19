@@ -25,7 +25,7 @@ const OPERATORS: { value: ConditionOperator; label: string }[] = [
 ];
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min"];
 
-function OperandEditor({ operand, onChange }: { operand: Operand; onChange: (o: Operand) => void }) {
+export function OperandEditor({ operand, onChange }: { operand: Operand; onChange: (o: Operand) => void }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <select
@@ -79,7 +79,7 @@ function OperandEditor({ operand, onChange }: { operand: Operand; onChange: (o: 
   );
 }
 
-function ConditionEditor({
+export function ConditionEditor({
   condition, onChange, onRemove,
 }: {
   condition: Condition;
@@ -106,7 +106,7 @@ function ConditionEditor({
   );
 }
 
-function ConditionListEditor({
+export function ConditionListEditor({
   title, conditions, onChange,
 }: {
   title: string;

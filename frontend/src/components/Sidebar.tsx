@@ -6,6 +6,7 @@ export type Page =
   | "strategy-builder"
   | "fundamentals"
   | "signals"
+  | "scanner"
   | "backtest"
   | "option-chain"
   | "positions"
@@ -24,6 +25,7 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "strategy-builder", label: "Strategy Builder", icon: "✎" },
   { id: "fundamentals", label: "Fundamental Analysis", icon: "🏢" },
   { id: "signals", label: "Signals", icon: "⚡" },
+  { id: "scanner", label: "Market Scanner", icon: "🔍" },
   { id: "backtest", label: "Backtesting", icon: "⏱" },
   { id: "option-chain", label: "Option Chain", icon: "◉" },
   { id: "positions", label: "Positions", icon: "▤" },

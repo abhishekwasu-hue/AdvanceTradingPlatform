@@ -55,7 +55,12 @@ happen, each with a severity level, with read/unread state. **TradingView webhoo
 (`POST /api/webhooks/tradingview/{token}` - see "TradingView Webhook Ingestion" in
 `docs/ARCHITECTURE.md`) lets a TradingView alert fire a real, risk-checked, kill-switch-aware
 paper trade through the same engine as a manual paper execute, authenticated by a per-tenant
-webhook URL shown (and rotatable) on the Settings page.
+webhook URL shown (and rotatable) on the Settings page. A **Market Scanner** (see "Market
+Scanner" in `docs/ARCHITECTURE.md`) screens a whole watchlist at once against indicator
+conditions (the same building blocks as the Strategy Builder), price-action/structure filters
+(trend, break of structure, candlestick patterns, proximity to support/resistance), and
+option-chain filters (PCR, bias, proximity to max pain), returning only the symbols that clear
+every filter with a label for each one that matched.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -124,7 +129,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 340 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 352 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

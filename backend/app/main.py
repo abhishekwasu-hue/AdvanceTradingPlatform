@@ -42,6 +42,8 @@ from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.notifications.routes import router as notifications_router
 from app.reconciliation.routes import router as reconciliation_router
+from app.scanner.engine import run_scanner
+from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
@@ -387,6 +389,17 @@ async def option_chain_greeks(request: GreeksRequest) -> StrategyGreeksResult:
         return compute_strategy_greeks(request.legs)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/scanner/run", response_model=ScannerResult)
+async def scanner_run(request: ScannerRequest) -> ScannerResult:
+    """Runs configurable indicator/price-action-structure/option-chain filters across a supplied
+    list of symbols (each with its own OHLCV candles and, optionally, option chain) and returns
+    only the ones that clear every filter. Indicator filters reuse the exact same `Condition`
+    building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
+    works with or without a logged-in caller.
+    """
+    return run_scanner(request)
 
 
 @app.get("/api/broker/available")

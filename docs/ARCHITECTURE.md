@@ -902,3 +902,53 @@ rejection, `alert_id` idempotent replay vs. no-dedup-without-one, tenant isolati
 rotation invalidating the old URL) - the full existing suite continues passing unchanged after
 the `paper_execute` refactor, confirming `execute_signal_for_user` preserves its exact prior
 behavior.
+
+## Market Scanner
+
+A watchlist screener that runs configurable filters across many symbols at once and returns
+only the ones that clear every filter - `app/scanner/engine.py::run_scanner`. It is a pure,
+stateless function (no DB model, no Alembic migration): given a `ScannerRequest` it returns a
+`ScannerResult` and nothing is persisted.
+
+- **Indicator filters reuse the Strategy Builder's own building blocks.** Rather than invent a
+  second condition DSL, `ScannerRequest.indicator_conditions` is a list of the exact same
+  `Condition`/`Operand` types `app/strategy_engine/declarative.py` already defines for the
+  no-code Strategy Builder - the same engine (`Condition.evaluate`) checks them here, and the
+  frontend reuses the same `ConditionListEditor`/`ConditionEditor`/`OperandEditor` components
+  (exported from `StrategyBuilderPage.tsx`) to edit them.
+- **Structure filters** (`StructureFilter`, `StructureFilterType`) test price-action state built
+  from each symbol's own candles: `TREND_UPTREND`/`DOWNTREND`/`RANGE` against
+  `analyze_market_structure().trend`; `BOS_BULLISH`/`BEARISH` and `CHOCH_BULLISH`/`BEARISH`
+  against the most recent `StructureEvent`; `PATTERN_BULLISH`/`BEARISH` against
+  `detect_patterns_at()` on the latest bar; `NEAR_SUPPORT`/`NEAR_RESISTANCE` against the closest
+  `SupportResistanceEngine` zone, within `tolerance_pct` of the current close.
+- **Option filters** (`OptionFilter`, `OptionFilterType`) test `analyze_option_chain()` output
+  for a symbol's *optionally* supplied `OptionChain`: `PCR` against an operator/value threshold,
+  `BIAS_BULLISH`/`BEARISH` against the chain's classified bias, `NEAR_MAX_PAIN` against distance
+  from `max_pain` within `tolerance_pct`. Consistent with the platform's "never fabricate data"
+  rule: a symbol with no option chain supplied simply never matches an option filter, rather
+  than skipping the filter or defaulting to a pass.
+- All three filter groups are AND-combined, both within a group and across groups; each check
+  short-circuits on first failure. A `ScannerMatch` records which specific filters matched
+  (`matched_indicator_labels`/`matched_structure_labels`/`matched_option_labels`, each using the
+  same human-readable `.label()` pattern the Strategy Builder uses) so the UI can show *why* a
+  symbol matched, not just that it did.
+- `POST /api/scanner/run` (`ScannerRequest` in, `ScannerResult` out) needs no authentication - it
+  is a pure function of its input, same as `/backtest`.
+- Frontend: `frontend/src/pages/ScannerPage.tsx` - a comma-separated watchlist input, the reused
+  indicator-condition editor, and add/remove list editors for structure and option filters.
+  "Run Scanner" generates deterministic sample candles per symbol (seeded from the symbol name
+  itself via `generateSampleCandles`, so every watchlist entry gets a different but reproducible
+  price path) plus, only when at least one option filter is configured, a sample option chain
+  per symbol (`generateSampleOptionChain`, tilt varied per symbol) - the same no-live-broker
+  sample-data convention every other page already follows. Results render as a card per matched
+  symbol with its matched-filter labels as badges.
+- Verified live end-to-end with Playwright against a running backend + Vite dev server: loaded
+  the Scanner page, added a structure filter and an option filter, ran a scan against a 6-symbol
+  watchlist, and confirmed the backend correctly filtered it down to matching symbols with
+  correct per-symbol matched-label badges.
+
+Full backend suite: 352 passing (up from 340), including new `tests/test_scanner.py` (indicator
+filter matching and AND-combination, every structure filter type, PCR/bias/max-pain option
+filters, an option filter correctly failing when no chain is supplied, and scanned/matched count
+reporting) and `tests/test_scanner_api.py` (the `/api/scanner/run` endpoint end-to-end).

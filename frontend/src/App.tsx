@@ -12,6 +12,7 @@ import OrdersPage from "./pages/OrdersPage";
 import PortfolioPage from "./pages/PortfolioPage";
 import PositionsPage from "./pages/PositionsPage";
 import RiskManagementPage from "./pages/RiskManagementPage";
+import ScannerPage from "./pages/ScannerPage";
 import SettingsPage from "./pages/SettingsPage";
 import SignalsPage from "./pages/SignalsPage";
 import StrategiesPage from "./pages/StrategiesPage";
@@ -31,6 +32,7 @@ export default function App() {
           {page === "strategy-builder" && <StrategyBuilderPage />}
           {page === "fundamentals" && <FundamentalsPage />}
           {page === "signals" && <SignalsPage />}
+          {page === "scanner" && <ScannerPage />}
           {page === "backtest" && <BacktestPage />}
           {page === "option-chain" && <OptionChainPage />}
           {page === "positions" && <PositionsPage />}

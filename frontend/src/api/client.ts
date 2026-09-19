@@ -13,6 +13,8 @@ import type {
   OptionChain,
   OptionChainAnalysis,
   RiskConfig,
+  ScannerRequest,
+  ScannerResult,
   WebhookTokenResponse,
   SRZone,
   Signal,
@@ -184,4 +186,7 @@ export const api = {
 
   rotateWebhookToken: () =>
     request<WebhookTokenResponse>("/webhooks/tradingview/token/rotate", { method: "POST" }),
+
+  runScanner: (scanRequest: ScannerRequest) =>
+    request<ScannerResult>("/scanner/run", { method: "POST", body: JSON.stringify(scanRequest) }),
 };

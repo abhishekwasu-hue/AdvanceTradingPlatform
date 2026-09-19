@@ -301,6 +301,11 @@ for.
 - `POST /api/kill-switch/strategy/{id}/{engage,disengage}` — stop new orders for one strategy in this tenant (auth required)
 - `POST /api/kill-switch/emergency-exit` — engage the tenant switch, cancel pending orders, close
   priced open positions, in one call (auth required) - see "Kill Switches + Emergency Exit" below
+- `PUT  /api/custom-strategies/{id}` — edit a saved strategy by appending a new immutable version
+  (auth required) - see "Strategy Version Control" below
+- `GET  /api/custom-strategies/{id}/versions` — a strategy's full version history (auth required)
+- `POST /api/custom-strategies/{id}/versions/{n}/rollback` — make an earlier version live again,
+  itself recorded as a new version (auth required)
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -672,3 +677,42 @@ without affecting another, strategy switch blocking only that strategy, global s
 every tenant and anonymous calls, emergency exit closing priced positions and skipping unpriced
 ones) and two new state-machine tests covering the widened `CANCELLED`/pre-risk-check `REJECTED`
 transitions.
+
+## Strategy Version Control
+
+Editing a saved Strategy Builder strategy no longer overwrites it in place. A new
+`StrategyVersionRecord` table (`app/db/models.py`) holds one immutable row per version, never
+updated or deleted once written; `CustomStrategyRecord` gains a `live_version_id` pointer plus
+denormalized `name`/`config_json` that always mirror whichever version is currently live, so
+every existing reader (the resolver, `/signal`/`/paper-execute`/`/backtest`, the list/get
+endpoints) needed zero changes to pick up a version change.
+
+- `app/custom_strategies/versioning.py::create_version` is the single write path every
+  create/update/rollback goes through: it archives whichever version was previously `LIVE`
+  (flips its `status`, never its `config_json`), inserts a new version row, and repoints the
+  parent record's live pointer and denormalized fields at it.
+- **Create** (`POST /api/custom-strategies`) makes version 1, `source="created"`.
+- **Update** (`PUT /api/custom-strategies/{id}`) re-validates the new config the same way create
+  does (constructs a real `DeclarativeStrategy` from it, rejecting an unrunnable rule set as a
+  422 rather than saving it), then appends a new version, `source="user_edit"`. A rejected update
+  never creates a version - the strategy keeps running on its last good config.
+- **History** (`GET /api/custom-strategies/{id}/versions`) lists every version, most recent
+  first, each with its `config`, `source`, `status`, and `created_at`.
+- **Rollback** (`POST /api/custom-strategies/{id}/versions/{n}/rollback`) makes an earlier
+  version live again by *appending* a brand-new version whose content matches the target one
+  (`source="rollback"`) - it never resurrects or mutates the old row, so the version history only
+  ever grows forward even when the live *config* goes backward.
+- All of it is tenant-scoped exactly like the rest of custom-strategy resources: a strategy's
+  versions, and the update/rollback endpoints, 404 for a caller outside its owning tenant.
+- Migration: `alembic/versions/c47d8f1e2a63_add_strategy_versions.py` backfills a version 1
+  (`source='created'`, `status='LIVE'`) for every pre-existing `custom_strategies` row from its
+  current `config_json` and points `live_version_id` at it, so nothing pre-migration changes
+  behavior. Verified against a real Postgres instance with seeded pre-migration data: applies,
+  backfills correctly, downgrades, and re-applies cleanly, with zero `alembic check` drift.
+
+Full backend suite: 278 passing (up from 271 before this pass), including new
+`tests/test_strategy_versioning.py` (version 1 on create, update archiving the old version and
+creating a new live one, a rejected update creating no version, rollback appending a matching
+version without touching the original row's content, rollback to an unknown version returning
+404, tenant isolation on versions/update/rollback, and a strategy actually executing signals
+against its current live version after an edit).

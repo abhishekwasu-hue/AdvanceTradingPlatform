@@ -180,6 +180,11 @@ class CustomStrategyRecord(Base):
     """A user-authored strategy built with the no-code Strategy Builder - a serialized
     CustomStrategyConfig (app/strategy_engine/declarative.py) that gets rehydrated into a
     DeclarativeStrategy on demand. Referenced elsewhere in the API as strategy id "custom:<id>".
+
+    `config_json`/`name` always mirror whichever `StrategyVersionRecord` is currently pinned as
+    `live_version_id` - kept denormalized here so every existing reader (the resolver, execution
+    pipeline, list/get endpoints) needs no changes to pick up a version change; the immutable
+    history itself lives in `strategy_versions`, never mutated once written.
     """
 
     __tablename__ = "custom_strategies"
@@ -189,8 +194,36 @@ class CustomStrategyRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    live_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategy_versions.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class StrategyVersionRecord(Base):
+    """One immutable snapshot of a custom strategy's config - never updated or deleted once
+    written. Editing a strategy (PUT /api/custom-strategies/{id}) or rolling it back
+    (POST .../versions/{version_number}/rollback) always appends a new version and repoints
+    `CustomStrategyRecord.live_version_id`; it never rewrites an existing row's `config_json`.
+    `status` distinguishes the currently-pinned version (LIVE) from every earlier one (ARCHIVED) -
+    bookkeeping metadata about supersession, not a mutation of the version's actual content.
+    """
+
+    __tablename__ = "strategy_versions"
+    __table_args__ = (UniqueConstraint("custom_strategy_id", "version_number", name="uq_strategy_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    custom_strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("custom_strategies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="created")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="LIVE")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
 class RiskSettingsRecord(Base):

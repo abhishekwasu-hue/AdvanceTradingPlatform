@@ -36,7 +36,10 @@ and an `idempotency_key` so a retried submission replays its original outcome in
 double-executing. **Kill switches** (global/tenant/strategy - see "Kill Switches + Emergency
 Exit" in `docs/ARCHITECTURE.md`) can block new orders at any of those three scopes, and a single
 **emergency exit** call engages the tenant switch, cancels pending orders, and closes every
-open position a current price is supplied for.
+open position a current price is supplied for. Custom strategies now have **immutable version
+control** (see "Strategy Version Control" in `docs/ARCHITECTURE.md`): every edit appends a new
+version rather than overwriting one, and a rollback appends a new version too rather than
+resurrecting an old one - full history via `GET /api/custom-strategies/{id}/versions`.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -104,7 +107,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 271 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 278 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

@@ -129,7 +129,7 @@ export function ConditionListEditor({
       </div>
       <button
         onClick={() => onChange([...conditions, defaultCondition()])}
-        className="mt-1.5 text-xs text-accent hover:underline"
+        className="mt-1.5 text-xs text-brand hover:underline"
       >
         + Add condition
       </button>
@@ -243,7 +243,7 @@ export default function StrategyBuilderPage() {
         <button
           onClick={handleParse}
           disabled={parsing || !description.trim()}
-          className="mt-2 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+          className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
         >
           {parsing ? "Parsing…" : "Parse"}
         </button>
@@ -273,7 +273,7 @@ export default function StrategyBuilderPage() {
             <button
               onClick={handleLoadParsedIntoBuilder}
               disabled={parseResult.interpreted.length === 0}
-              className="rounded border border-accent/40 text-accent hover:bg-accent/10 px-3 py-1 text-xs disabled:opacity-50"
+              className="rounded border border-brand/40 text-brand hover:bg-brand/10 px-3 py-1 text-xs disabled:opacity-50"
             >
               Load into builder below
             </button>
@@ -390,7 +390,7 @@ export default function StrategyBuilderPage() {
           <button
             onClick={handleSave}
             disabled={saving || (config.long_conditions.length === 0 && config.short_conditions.length === 0)}
-            className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save strategy"}
           </button>

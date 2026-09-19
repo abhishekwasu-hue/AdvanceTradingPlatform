@@ -106,7 +106,7 @@ export default function NotificationsPage() {
                 {!n.read && (
                   <button
                     onClick={() => markRead(n.id)}
-                    className="mt-1.5 text-[11px] text-accent hover:underline"
+                    className="mt-1.5 text-[11px] text-brand hover:underline"
                   >
                     Mark read
                   </button>

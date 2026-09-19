@@ -107,7 +107,7 @@ export default function BacktestPage() {
           <button
             onClick={runBacktest}
             disabled={!selected || loading}
-            className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Running…" : "Run Backtest"}
           </button>

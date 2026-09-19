@@ -131,7 +131,7 @@ export default function NewsEventsPage() {
                     <div className="mt-1 text-[11px] text-muted">
                       {e.event_date} · Source:{" "}
                       {e.source.source_url ? (
-                        <a href={e.source.source_url} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                        <a href={e.source.source_url} target="_blank" rel="noreferrer" className="text-brand hover:underline">
                           {e.source.source}
                         </a>
                       ) : (
@@ -251,7 +251,7 @@ export default function NewsEventsPage() {
             <button
               onClick={handleSubmit}
               disabled={submitting || !form.headline || !form.source.source}
-              className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+              className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
             >
               {submitting ? "Saving…" : "Add event"}
             </button>

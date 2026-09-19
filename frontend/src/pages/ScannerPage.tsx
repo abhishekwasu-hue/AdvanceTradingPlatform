@@ -181,7 +181,7 @@ export default function ScannerPage() {
         </div>
         <button
           onClick={() => setStructureFilters([...structureFilters, defaultStructureFilter()])}
-          className="mt-1.5 text-xs text-accent hover:underline"
+          className="mt-1.5 text-xs text-brand hover:underline"
         >
           + Add structure filter
         </button>
@@ -245,7 +245,7 @@ export default function ScannerPage() {
         </div>
         <button
           onClick={() => setOptionFilters([...optionFilters, defaultOptionFilter()])}
-          className="mt-1.5 text-xs text-accent hover:underline"
+          className="mt-1.5 text-xs text-brand hover:underline"
         >
           + Add option filter
         </button>
@@ -256,7 +256,7 @@ export default function ScannerPage() {
       <button
         onClick={handleRun}
         disabled={running}
-        className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+        className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
       >
         {running ? "Scanning…" : "Run Scanner"}
       </button>

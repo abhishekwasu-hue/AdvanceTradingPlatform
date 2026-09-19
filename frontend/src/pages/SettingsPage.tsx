@@ -139,7 +139,7 @@ export default function SettingsPage() {
                   <span className="text-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-accent hover:underline disabled:opacity-50">
+                  <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
                     Authenticate
                   </button>
                   <button onClick={() => handleDelete(s.broker_name)} className="text-xs text-danger hover:underline">
@@ -188,7 +188,7 @@ export default function SettingsPage() {
           <button
             onClick={handleStore}
             disabled={busy || !selectedBroker}
-            className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {busy ? "Saving…" : "Store credentials"}
           </button>

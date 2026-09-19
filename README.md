@@ -77,7 +77,10 @@ condition editors for review - a deterministic, rule-based parser rather than a 
 external AI (no AI-provider credentials are configured), which shows exactly what it understood
 and flags anything it didn't rather than guessing.
 
-A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
+A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) - a "modern trading
+terminal" visual design (Inter/JetBrains Mono fonts, a Lucide icon set, a brand color kept
+distinct from bullish/bearish P&L colors, a logo, grouped sidebar navigation, a top bar - see
+"Visual Design System" in `docs/ARCHITECTURE.md`) - sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
 TradingView `lightweight-charts` candlestick chart with entry/SL/target lines and
 support/resistance zones, the full "why this trade" score breakdown, and signal history),

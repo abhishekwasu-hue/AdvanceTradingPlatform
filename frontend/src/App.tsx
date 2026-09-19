@@ -1,6 +1,7 @@
+import { Bell, UserCircle2 } from "lucide-react";
 import { useState } from "react";
-import { AuthProvider } from "./auth/AuthContext";
-import Sidebar, { type Page } from "./components/Sidebar";
+import { AuthProvider, useAuth } from "./auth/AuthContext";
+import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import AccountPage from "./pages/AccountPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
@@ -21,13 +22,45 @@ import StrategiesPage from "./pages/StrategiesPage";
 import StrategyBuilderPage from "./pages/StrategyBuilderPage";
 import SystemLogsPage from "./pages/SystemLogsPage";
 
-export default function App() {
+function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
+  const { user } = useAuth();
+  const title = page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
+
+  return (
+    <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-6">
+      <h1 className="text-[15px] font-semibold text-slate-100">{title}</h1>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => onChange("notifications")}
+          title="Notifications"
+          className={`p-2 rounded-md transition-colors ${
+            page === "notifications" ? "text-brand bg-panel2" : "text-muted hover:text-slate-200 hover:bg-panel2"
+          }`}
+        >
+          <Bell size={18} />
+        </button>
+        <button
+          onClick={() => onChange("account")}
+          title="Account"
+          className={`p-2 rounded-md transition-colors ${
+            page === "account" ? "text-brand bg-panel2" : "text-muted hover:text-slate-200 hover:bg-panel2"
+          }`}
+        >
+          <UserCircle2 size={18} className={user ? "text-accent" : ""} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function AppShell() {
   const [page, setPage] = useState<Page>("dashboard");
 
   return (
-    <AuthProvider>
-      <div className="min-h-screen flex">
-        <Sidebar page={page} onChange={setPage} />
+    <div className="min-h-screen flex">
+      <Sidebar page={page} onChange={setPage} />
+      <div className="flex-1 flex flex-col min-w-0">
+        <TopBar page={page} onChange={setPage} />
         <main className="flex-1 overflow-y-auto p-6 max-w-6xl">
           {page === "dashboard" && <DashboardPage />}
           {page === "strategies" && <StrategiesPage />}
@@ -50,6 +83,14 @@ export default function App() {
           {page === "account" && <AccountPage />}
         </main>
       </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
     </AuthProvider>
   );
 }

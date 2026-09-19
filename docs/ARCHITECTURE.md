@@ -208,6 +208,55 @@ who's signed in. Everything else keeps working anonymously (the "try without an 
 from earlier phases is unchanged) — being logged in only adds persistence, per Database + Auth
 below.
 
+## Visual Design System
+
+A full visual redesign pass, requested explicitly ("basic, not production grade") rather than a
+functional one - every backend engine and API call underneath is unchanged. The console now
+reads as one deliberate "modern trading terminal" system instead of a set of ad-hoc pages:
+
+- **Fonts**: Inter (UI text) and JetBrains Mono (numbers) via Google Fonts, replacing the system
+  font stack. Every price/quantity/count in `StatTile`, the Instruments table, and the
+  `CandleChart` axes uses the mono face with tabular figures (`.font-tabular` in
+  `src/styles/index.css`) so digits never jitter horizontally as values update - the same reason
+  a real trading terminal never lets its price ticker's digits shift width.
+- **A brand color distinct from bullish/bearish semantics**: `accent` (green) and `danger` (red)
+  used to double as both "this is a positive/negative P&L or bullish/bearish signal" *and* "click
+  this button" - the same color meant two different things depending on context. `tailwind.config.js`
+  now has a separate `brand` (blue) token for every interactive primary action (buttons, active
+  nav/tab state, links, focus rings), while `accent`/`danger` stay reserved exclusively for
+  bullish/bearish and positive/negative P&L indicators across every page (`DirectionBadge`,
+  `GradeBadge`, `StatTile` tone, P&L table cells, sentiment badges) - a real fintech UI
+  convention (a buy button and a "this is bullish" tag are not the same kind of thing).
+- **A proper icon set**: `lucide-react` replaces the unicode symbols (▦ ⚙ ✎ 🔍) the sidebar and
+  pages used before - `Sidebar.tsx`'s `NAV_GROUPS` now pairs every destination with a real,
+  semantically-named icon (`Zap` for Signals, `Radar` for the Scanner, `ShieldAlert` for Risk
+  Management, etc.).
+- **A logo mark** (`src/components/Logo.tsx`, inline SVG - a geometric ascending-bars motif in
+  the brand gradient) used consistently in the sidebar header and the login/register screen,
+  replacing plain text in both places.
+- **Sidebar restructure**: flat, ungrouped nav → five labeled sections (Overview, Trade, Research,
+  Portfolio, System) so the ~18 destinations read as an organized system rather than a long list;
+  active state moved from a green bar (bullish color) to a blue one (brand color) for the same
+  reason described above; the footer account chip now shows a persistent "PAPER MODE" badge.
+- **A top bar** (`App.tsx`): a slim header showing the current page's title plus a notification
+  bell and account icon - both present throughout the whole app now, not just reachable via the
+  sidebar footer.
+- **Shared UI atoms** (`src/components/ui.tsx`): `Card`/`StatTile` gained a subtle shadow token
+  (`shadow-card` in `tailwind.config.js`) and rounder corners; `DemoDataBanner` gained an icon.
+  Since nearly every page is built from these same atoms, this one file's redesign cascades
+  visual consistency across the whole console without needing to hand-restyle each page.
+- **Login/register screen** (`AccountPage.tsx`): now a centered, branded card (logo mark, icon-
+  prefixed inputs, focus rings in the brand color) instead of a plain form - the same shell/sidebar
+  architecture is kept (logging in is optional, not a gate - anonymous use of Signals/Backtesting
+  still works, per the note above), only the card's own presentation changed.
+- Verified live end-to-end with Playwright: screenshotted the Dashboard, login screen, Signals
+  (including a generated signal's candlestick chart), Market Scanner, Instruments, and Strategy
+  Builder pages to confirm the new fonts/icons/colors render correctly and consistently, and that
+  no existing functionality (login, signal generation, filters) regressed.
+
+Full backend suite unaffected (377 passing, frontend-only change); frontend `npm run build`
+(TypeScript + Vite production bundle) passes clean.
+
 ## Database + Auth
 
 PostgreSQL (async, via SQLAlchemy 2.0 + `asyncpg`) is now real, not deferred: `app/db/models.py`

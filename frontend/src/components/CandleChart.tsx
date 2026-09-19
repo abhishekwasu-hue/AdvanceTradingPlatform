@@ -60,7 +60,11 @@ export default function CandleChart({
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       height,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#8b96a8" },
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: "#8a94a8",
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+      },
       grid: { vertLines: { color: "#1a2333" }, horzLines: { color: "#1a2333" } },
       crosshair: { mode: CrosshairMode.Normal },
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#243044" },

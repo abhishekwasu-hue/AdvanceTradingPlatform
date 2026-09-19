@@ -97,7 +97,7 @@ export default function RiskManagementPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="mt-4 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+          className="mt-4 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save risk settings"}
         </button>

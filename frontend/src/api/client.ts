@@ -8,6 +8,9 @@ import type {
   EnrichedSignal,
   MarkPriceResponse,
   MarketStructureResult,
+  NewsEvent,
+  NewsEventCategory,
+  NewsEventResponse,
   NotificationEntry,
   OHLCVBar,
   OptionChain,
@@ -189,4 +192,19 @@ export const api = {
 
   runScanner: (scanRequest: ScannerRequest) =>
     request<ScannerResult>("/scanner/run", { method: "POST", body: JSON.stringify(scanRequest) }),
+
+  listNewsEvents: (filters?: { category?: NewsEventCategory; symbol?: string; since?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.category) params.set("category", filters.category);
+    if (filters?.symbol) params.set("symbol", filters.symbol);
+    if (filters?.since) params.set("since", filters.since);
+    const qs = params.toString();
+    return request<NewsEventResponse[]>(`/news-events${qs ? `?${qs}` : ""}`);
+  },
+
+  createNewsEvent: (event: NewsEvent) =>
+    request<NewsEventResponse>("/news-events", { method: "POST", body: JSON.stringify(event) }),
+
+  deleteNewsEvent: (id: number) =>
+    request<void>(`/news-events/${id}`, { method: "DELETE" }),
 };

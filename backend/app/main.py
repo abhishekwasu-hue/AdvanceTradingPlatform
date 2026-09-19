@@ -37,6 +37,7 @@ from app.execution.router import ExecutionResult, LiveTradingNotConfigured, Orde
 from app.execution.signal_execution import execute_signal_for_user
 from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
+from app.news_events.routes import router as news_events_router
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
@@ -94,6 +95,7 @@ app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
+app.include_router(news_events_router)
 
 _default_risk_config = RiskConfig()
 

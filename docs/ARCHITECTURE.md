@@ -952,3 +952,54 @@ Full backend suite: 352 passing (up from 340), including new `tests/test_scanner
 filter matching and AND-combination, every structure filter type, PCR/bias/max-pain option
 filters, an option filter correctly failing when no chain is supplied, and scanned/matched count
 reporting) and `tests/test_scanner_api.py` (the `/api/scanner/run` endpoint end-to-end).
+
+## News & Event Engine
+
+Structured, cited entries for macro/market news that has no live feed wired in - RBI monetary
+policy decisions, Union Budget announcements, government/regulatory policy changes, broad
+corporate news, global macro events, and sector-wide developments -
+`app/news_events/{models,persistence,routes}.py`.
+
+- **Reuses the fundamentals module's citation convention rather than inventing a new one.**
+  `NewsEvent.source` is a `SourceCitation` (`app/fundamentals/models.py` - `source`, `source_url`,
+  `publication_date`, `retrieved_date`, `confidence`), the exact same model every fundamentals
+  input already carries. Unlike most fundamentals inputs, where `source` is optional, it's
+  **mandatory** here (`source: SourceCitation`, no default) - the entire point of this table is a
+  sourced claim, not a raw number a human might reasonably supply without one.
+- **Complements, not duplicates, the existing Event Impact Score engine** (task #81,
+  `app/fundamentals/engines/event_impact.py`), which scores per-company `CorporateAction` entries
+  (always tied to one `company_id`). `NewsEvent` is the broader, market-wide counterpart: category
+  is `RBI_POLICY`/`UNION_BUDGET`/`GOVT_POLICY`/`CORPORATE`/`GLOBAL_MACRO`/`SECTOR`/`OTHER`, and
+  `affected_symbols` is a plain list (empty means market-wide, e.g. an RBI repo rate decision) -
+  there's no per-company FK, since most of these events aren't about one company.
+- **Shared reference data, not tenant-private** - same pattern as the fundamentals module: reads
+  (`GET /api/news-events`, with optional `category`/`symbol`/`since` filters, and `GET
+  /api/news-events/{id}`) are open to everyone, writes (`POST /api/news-events`) require auth so
+  every entry is attributed (`created_by`). A real RBI policy decision is a fact for every tenant,
+  not a per-tenant judgement call, so it isn't scoped by `tenant_id` like trades/orders/strategies
+  are. `DELETE /api/news-events/{id}` is restricted to the user who created the entry (403 for
+  anyone else) - the platform's one narrow correction mechanism if an entry was a mistake; there
+  is no update endpoint (delete and re-add instead, keeping the CRUD surface small).
+- `affected_symbols` and `source` are stored as JSON text columns (`affected_symbols_json`,
+  `source_json`) - the same "Pydantic model round-tripped through a JSON text column" pattern
+  `CorporateActionRecord`/`EarningsCalendarEventRecord` already use for `source_json`, converted
+  by `app/news_events/persistence.py` so the ORM never leaks into the routes layer.
+- Frontend: `frontend/src/pages/NewsEventsPage.tsx` - a category/symbol filter, a card per event
+  showing its category and sentiment badges, headline, description, affected symbols, event date,
+  and its cited source (a clickable link when `source_url` is supplied), and - for logged-in users
+  - an "Add a cited event" form requiring at minimum a headline and a source name before it can be
+  submitted. A "Delete" control appears only on entries the logged-in user created.
+- Verified live end-to-end with Playwright against a running backend + Vite dev server: registered
+  a user, opened the News & Events page, submitted a cited RBI policy entry through the actual
+  form, and confirmed it rendered with its category/sentiment badges and clickable source link.
+  This surfaced one real bug, fixed during verification: the frontend's default citation object
+  explicitly sent `retrieved_date: null`, but the backend's `SourceCitation.retrieved_date` is a
+  non-optional field with a server-side `default_factory` (today's date) - an explicit `null`
+  failed Pydantic validation (422) where simply omitting the field would have let the default
+  apply. Fixed by making `retrieved_date` optional on the frontend's `SourceCitation` type and
+  removing it from `defaultNewsEvent()`'s initial value, so it's never sent on create.
+
+Full backend suite: 359 passing (up from 352), including new `tests/test_news_events_api.py`
+(auth required for writes but not reads, a citation being mandatory on create, full
+create/list/get/delete, delete restricted to the creator, category/symbol/since-date filtering,
+and `affected_symbols` defaulting to an empty market-wide list).

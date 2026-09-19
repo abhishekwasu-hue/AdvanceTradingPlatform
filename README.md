@@ -60,7 +60,11 @@ Scanner" in `docs/ARCHITECTURE.md`) screens a whole watchlist at once against in
 conditions (the same building blocks as the Strategy Builder), price-action/structure filters
 (trend, break of structure, candlestick patterns, proximity to support/resistance), and
 option-chain filters (PCR, bias, proximity to max pain), returning only the symbols that clear
-every filter with a label for each one that matched.
+every filter with a label for each one that matched. A **News & Event engine** (see "News & Event
+Engine" in `docs/ARCHITECTURE.md`) holds structured, cited entries for RBI policy decisions, the
+Union Budget, government policy, corporate news, and other market-moving events - shared
+reference data like the fundamentals module, always user-entered and cited since there's no live
+news feed wired in, with a mandatory source citation on every entry.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -129,7 +133,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 352 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 359 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

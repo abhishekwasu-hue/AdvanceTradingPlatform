@@ -467,3 +467,63 @@ export function defaultStructureFilter(): StructureFilter {
 export function defaultOptionFilter(): OptionFilter {
   return { filter_type: "PCR", operator: "GT", value: 1.2, tolerance_pct: 1.0 };
 }
+
+// --- News & Event engine ---
+
+export type NewsEventCategory =
+  | "RBI_POLICY"
+  | "UNION_BUDGET"
+  | "GOVT_POLICY"
+  | "CORPORATE"
+  | "GLOBAL_MACRO"
+  | "SECTOR"
+  | "OTHER";
+
+export type NewsSentiment = "Bullish" | "Neutral" | "Bearish";
+
+export interface SourceCitation {
+  source: string;
+  source_url: string | null;
+  publication_date: string | null;
+  // Omit on write - the backend defaults it to today's date; it is always present on read.
+  retrieved_date?: string;
+  confidence: number;
+}
+
+export interface NewsEvent {
+  category: NewsEventCategory;
+  headline: string;
+  description: string | null;
+  event_date: string;
+  affected_symbols: string[];
+  sentiment: NewsSentiment;
+  source: SourceCitation;
+}
+
+export interface NewsEventResponse extends NewsEvent {
+  id: number;
+  created_by: number | null;
+  created_at: string;
+}
+
+export const NEWS_EVENT_CATEGORY_LABELS: Record<NewsEventCategory, string> = {
+  RBI_POLICY: "RBI Policy",
+  UNION_BUDGET: "Union Budget",
+  GOVT_POLICY: "Government Policy",
+  CORPORATE: "Corporate",
+  GLOBAL_MACRO: "Global Macro",
+  SECTOR: "Sector",
+  OTHER: "Other",
+};
+
+export function defaultNewsEvent(): NewsEvent {
+  return {
+    category: "RBI_POLICY",
+    headline: "",
+    description: null,
+    event_date: new Date().toISOString().slice(0, 10),
+    affected_symbols: [],
+    sentiment: "Neutral",
+    source: { source: "", source_url: null, publication_date: null, confidence: 80 },
+  };
+}

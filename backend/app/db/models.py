@@ -495,3 +495,28 @@ class QualitativeFactorRecord(Base):
     source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class NewsEventRecord(Base):
+    """A structured, cited macro/market news entry - RBI monetary policy decisions, Union Budget
+    announcements, government/regulatory policy changes, broad corporate news, global macro
+    events, or sector-wide developments. Always user-entered and cited: there is no live news
+    feed wired in, so this is exactly as reliable as whoever entered it and the source they cite
+    - unlike the fundamentals module's optional `source`, the citation here is mandatory since
+    the whole point of this table is a sourced claim, not a raw number. Shared reference data
+    (like the fundamentals company/corporate-action tables), not tenant-private: a real RBI
+    policy decision is a fact for every tenant, not a per-tenant judgement call.
+    """
+
+    __tablename__ = "news_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    headline: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    affected_symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    sentiment: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)

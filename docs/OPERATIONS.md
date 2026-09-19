@@ -1,0 +1,158 @@
+# Operations: Disaster Recovery, Business Continuity & Data Governance
+
+Master prompt Sections 52 (DR/BCP) and 53 (Data Governance). This document is written for the
+Phase 1 scope (NSE F&O core, single-region deployment) and is honest about what already holds
+today in code versus what is a target/runbook for whoever operates the first real deployment -
+nothing here has been exercised against real production infrastructure, since none exists yet in
+this environment. Where a claim is backed by an actual test or a real tool run, it says so; where
+it's a target number or a procedure to follow once real infra exists, it says that instead.
+
+## 1. Disaster Recovery / Business Continuity
+
+### 1.1 Recovery objectives (targets, not yet measured against real infra)
+
+| Scenario | RPO (max acceptable data loss) | RTO (max acceptable downtime) |
+|---|---|---|
+| Database crash / corruption | 5 minutes (one WAL-shipping interval) | 30 minutes |
+| Application server crash | 0 (stateless - DB is the only state) | 2 minutes (restart / redeploy) |
+| Full region outage | 15 minutes (last cross-region backup) | 4 hours (restore into a new region) |
+
+These are targets for whoever stands up the first real production deployment to design backup
+frequency and failover automation against - they are not currently enforced or measured by any
+code or infrastructure in this repository, since no production deployment exists yet. Once a real
+deployment exists, add automated, periodic restore-drills (Section 50's own "disaster-simulation
+tests" category) that measure actual RPO/RTO against these targets rather than trusting them by
+assumption.
+
+### 1.2 Backups
+
+- **What must be backed up**: the Postgres database (every table in `app/db/models.py` - this is
+  the *only* stateful component; the FastAPI process itself is stateless and disposable).
+- **Target mechanism**: continuous WAL archiving plus daily full snapshots (e.g. `pg_basebackup`
+  or the managed equivalent of whichever hosting provider is used - AWS RDS/GCP Cloud SQL/etc. -
+  all support this natively; prefer the managed offering over hand-rolled `pg_dump` cron jobs).
+- **Verification, not just creation**: per Section 52's own requirement, a backup that has never
+  been restored is unverified. Schedule a periodic (at minimum monthly) automated restore of the
+  latest backup into a scratch instance, followed by a basic sanity check (row counts on
+  `tenants`/`orders`/`trades` are non-zero and roughly match the source within the backup window,
+  and `alembic check`/`verify_audit_chain` both pass against the restored copy). This is not yet
+  automated anywhere in this repo - it is the first piece of real DR tooling to build once a real
+  deployment exists to back up.
+- **Encryption**: backups must be encrypted at rest using the hosting provider's standard
+  encryption-at-rest offering (this is a hosting/infra configuration, not application code).
+
+### 1.3 Crash-recovery runbook: open positions
+
+The scenario Section 52 is most concerned with: the application crashes (or the DB connection is
+lost) while a paper/live position is open. What already exists to make this recoverable, and what
+an operator does when it happens:
+
+1. **State survives a crash by construction.** Every open position is a row in `trades` with
+   `exit_time IS NULL`; every order attempt is a row in `orders` with its full state-machine
+   history in `order_events` (`app/execution/order_state_machine.py`). Nothing about an open
+   position lives only in application memory - a crashed and restarted process can always
+   reconstruct "what's currently open" with `SELECT * FROM trades WHERE exit_time IS NULL`, which
+   is exactly what `app/reconciliation/engine.py` and `app/trading/persistence.py::
+   build_trading_day_state` already do on every request rather than trusting an in-memory cache.
+2. **On restart, before accepting new orders**: run `POST /api/reconciliation/{broker_name}` for
+   every tenant with a live broker connected (see `app/reconciliation/` - already implemented and
+   tested) to compare internally-recorded open positions against the broker's own position book.
+   Any `MISSING_AT_BROKER`/`EXTRA_AT_BROKER`/quantity-mismatch result is logged to the audit trail
+   and raised as a `SYSTEM_FAILURE` notification (already wired) - an operator resolves each one
+   by hand (typically: trust the broker's book, since it is the source of truth for what actually
+   filled) before resuming automated trading for that tenant.
+3. **If the crash happened mid-order** (state stuck in `SUBMITTED`/`PENDING`, never reaching a
+   terminal status): the order-state-machine's terminal states
+   (`app/execution/order_state_machine.py::TERMINAL_STATUSES`) don't include these, so such an
+   order is visibly "stuck" rather than silently lost - an operator's runbook step is to query for
+   orders in a non-terminal state older than a few minutes and reconcile each one against the
+   broker manually (for PAPER mode, mid-order states can simply be transitioned to `FAILED` with a
+   detail note, since nothing external ever actually happened).
+4. **Broker-side failsafe (target, not yet built)**: for real LIVE trading, an open position
+   should never depend solely on this platform staying up to be closed. Section 52's own
+   suggestion - a broker-side GTT (Good-Till-Triggered) stop-loss order placed at the same time as
+   entry - is not yet implemented (today, `app/execution/router.py`'s LIVE path places only the
+   entry order). This is a real gap for actual live-money trading and should be built before this
+   platform is trusted with LIVE mode on any broker: if the platform's own process is down, an
+   open position with no broker-side stop-loss can run past its intended risk limit with nothing
+   to stop it.
+
+### 1.4 "Platform down during market hours" runbook
+
+1. Check `GET /api/system/health` and the process/container status first - most outages are a
+   crashed process or a lost DB connection, not data loss.
+2. If the app is down but the DB is healthy: redeploy/restart the stateless app tier. No data is
+   at risk (state lives entirely in Postgres). Run the reconciliation step (1.3.2) before resuming
+   automated order placement.
+3. If the DB itself is down: fail over to a replica if one exists (see 1.5), or restore the latest
+   verified backup (1.2) into a fresh instance if not. Every tenant with an open LIVE position
+   during the outage window needs a manual broker-side check (their position is sitting on the
+   broker's book regardless of whether this platform is reachable - the broker, not this
+   platform, is the durable source of truth for a filled position).
+4. Engage the GLOBAL kill switch (`POST /api/kill-switch/global/engage` - already implemented,
+   Section 47/97 work) immediately on any outage that leaves order-placement state uncertain, so
+   no tenant's automated strategy places a new order against a system that might replay or
+   duplicate it, until reconciliation (1.3.2) confirms it's safe to resume.
+5. Post-incident: write an incident note referencing the relevant `audit_logs` rows (their hash
+   chain - see `app/audit/log.py` - makes the timeline itself tamper-evident) and the
+   `order_events`/reconciliation-report rows covering the incident window.
+
+### 1.5 Multi-AZ / high-availability readiness
+
+Not implemented today (this is a Phase 1, single-region, single-instance deployment target) but
+the application is already written not to block it later: the app tier is fully stateless (no
+in-process session state beyond the per-process rate limiter noted in `app/core/rate_limit.py`,
+which is explicitly documented there as needing a shared store like Redis before running more than
+one instance), so horizontal scaling and multi-AZ app-tier deployment is an infrastructure change,
+not an application rewrite. The database is the one component that needs real multi-AZ
+replication (a managed Postgres offering's standard multi-AZ/read-replica feature) before this
+claim extends to the data layer too.
+
+## 2. Data Governance
+
+### 2.1 Data classification
+
+| Class | Examples | Handling |
+|---|---|---|
+| **Secrets** | Broker API keys/secrets/access tokens, `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY` | Never logged, never returned in any API response body. Broker credentials are Fernet-encrypted at rest (`app/secrets_store/encryption.py`) and only ever decrypted in memory for the duration of a broker call. |
+| **PII** | User email, IP address (only ever held in-process for rate limiting, never persisted) | Email is the only PII persisted (`users.email`); no other personal identifiers (phone, PAN, address) are collected in Phase 1. |
+| **Trading data** | Strategies, signals, orders, trades, positions | Tenant-isolated (every table carries `tenant_id`); this is the platform's core business data and the primary subject of the immutable-audit-trail requirement below. |
+| **Public/reference** | Instrument contract specs, strategy definitions' non-secret fields | No special handling required. |
+
+### 2.2 Immutable audit trail
+
+Already real, not aspirational: `audit_logs` rows are hash-chained (`app/audit/log.py`,
+`verify_audit_chain`) so tampering is detectable, and `order_events`/`signal_history` rows are
+append-only by construction (nothing in the codebase ever `UPDATE`s or `DELETE`s a row in either
+table - a state change is always a new row referencing the previous state, never an edit to it).
+This satisfies Section 53's "audit_logs/order_events/signals never updated/deleted, only appended"
+requirement for the tables that exist today.
+
+### 2.3 Retention and deletion (target - not yet built)
+
+No automated retention/deletion policy exists yet. For a real deployment operating in India, the
+Digital Personal Data Protection (DPDP) Act requires a lawful basis and bounded retention for
+personal data (the `users.email` field), and Section 47's SEBI compliance requirement calls for
+**5+ year retention** of order-level trading records - these two requirements are not in tension
+(the 5-year rule applies to trading records, not to the separate, much smaller set of actual PII),
+but a real deployment needs an explicit written policy and, eventually, an account-deletion
+endpoint that removes/anonymizes `users.email` while *preserving* the trading-record tables the
+regulatory retention rule actually covers.
+
+### 2.4 Data lineage for AI/ML outputs
+
+The one AI-adjacent feature that exists today (`app/strategy_engine/nlu_parser.py`, the rule-based
+Strategy Builder chat parser - see `docs/ARCHITECTURE.md`'s own note that this is a deterministic
+parser, not an LLM) already carries lineage implicitly: every condition it produces reuses the
+exact same `Condition`/`Operand` objects the manual Strategy Builder produces, with no separate
+"AI-generated" data path to lose track of. Once a real LLM-based builder (master prompt Section 56)
+is built, it must tag every strategy version it produces with `source: ai_chat` and record which
+model/prompt version generated it, precisely so an operator can answer "which live strategies came
+from an AI suggestion, and from which model version" after the fact - this is called out here as a
+requirement for that future work, not something retrofitted onto the current regex parser (which
+has no model version to record).
+
+### 2.5 Backup encryption
+
+Covered under 1.2 above - inherits whatever the DB's own backup-encryption story is
+(cross-referenced here so this section is complete without duplicating it).

@@ -1366,3 +1366,16 @@ proxy), so this specific job needs to be watched on its first real run in GitHub
 has normal internet access) rather than being claimed as verified here. The YAML itself was
 validated to parse correctly, and the `pip-audit`/`npm audit` steps were run for real against the
 project's actual dependency files with the results described above.
+
+### Disaster recovery & data governance runbooks (Section 52/53)
+
+New `docs/OPERATIONS.md`: RPO/RTO targets, backup/restore-verification procedure, a crash-recovery
+runbook for open positions (what already makes this safe by construction - durable DB state,
+reconciliation, the order state machine's non-terminal statuses making a stuck order visible -
+versus the one real gap: no broker-side GTT stop-loss failsafe yet for LIVE mode), a "platform down
+during market hours" runbook, and a data-governance section (classification, the already-real
+immutable/hash-chained audit trail, retention/deletion targets under the DPDP Act and SEBI's 5-year
+rule, and a data-lineage requirement for the future real AI strategy builder). Written honestly as
+a mix of what's already true in code today versus target procedures for whoever stands up the
+first real production deployment - this environment has no real infrastructure to exercise these
+against, so nothing here claims to have been drilled for real.

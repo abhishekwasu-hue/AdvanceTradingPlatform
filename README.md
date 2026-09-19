@@ -69,7 +69,13 @@ news feed wired in, with a mandatory source citation on every entry. **Multi-ass
 sizing beyond plain NSE/BSE equity & index options: a static registry of MCX commodity and crypto
 contract specs (`GET /api/instruments`) drives fractional-quantity-aware risk sizing - a
 commodity trade floors to whole multiples of its own lot size, and a crypto trade sizes in
-fractional units instead of being floored to a meaningless whole "lot".
+fractional units instead of being floored to a meaningless whole "lot". A **Conversational
+Strategy Builder** (see "Conversational (Rule-Based) Strategy Builder" in
+`docs/ARCHITECTURE.md`) lets you describe a strategy in plain English (e.g. "Buy when RSI(14)
+crosses above 60 and price is above EMA 50") and get it pre-filled into the Strategy Builder's
+condition editors for review - a deterministic, rule-based parser rather than a call to an
+external AI (no AI-provider credentials are configured), which shows exactly what it understood
+and flags anything it didn't rather than guessing.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -138,7 +144,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 367 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 377 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

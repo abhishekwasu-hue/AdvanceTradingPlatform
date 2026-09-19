@@ -381,6 +381,14 @@ export function defaultCustomStrategyConfig(): CustomStrategyConfig {
   };
 }
 
+// --- Conversational (rule-based) Strategy Builder ---
+
+export interface ParseStrategyResult {
+  config: CustomStrategyConfig;
+  interpreted: string[];
+  warnings: string[];
+}
+
 // --- Market Scanner ---
 
 export type StructureFilterType =

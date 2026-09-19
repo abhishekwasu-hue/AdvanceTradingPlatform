@@ -16,6 +16,7 @@ import type {
   OHLCVBar,
   OptionChain,
   OptionChainAnalysis,
+  ParseStrategyResult,
   RiskConfig,
   ScannerRequest,
   ScannerResult,
@@ -160,6 +161,12 @@ export const api = {
 
   createCustomStrategy: (config: CustomStrategyConfig) =>
     request<CustomStrategyResponse>("/custom-strategies", { method: "POST", body: JSON.stringify(config) }),
+
+  parseStrategyDescription: (text: string, name?: string) =>
+    request<ParseStrategyResult>("/custom-strategies/parse", {
+      method: "POST",
+      body: JSON.stringify({ text, name: name ?? "Parsed Strategy" }),
+    }),
 
   listCustomStrategies: () => request<CustomStrategyResponse[]>("/custom-strategies"),
 

@@ -11,6 +11,7 @@ import {
   type CustomStrategyResponse,
   type IndicatorName,
   type Operand,
+  type ParseStrategyResult,
 } from "../types";
 
 const INDICATORS: IndicatorName[] = ["EMA", "SMA", "RSI", "ADX", "PLUS_DI", "MINUS_DI", "ATR", "SUPERTREND", "CLOSE", "OPEN", "HIGH", "LOW"];
@@ -143,6 +144,10 @@ export default function StrategyBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [parseResult, setParseResult] = useState<ParseStrategyResult | null>(null);
 
   function refresh() {
     api.listCustomStrategies().then(setSaved).catch((e) => setError(String(e)));
@@ -173,6 +178,25 @@ export default function StrategyBuilderPage() {
     refresh();
   }
 
+  async function handleParse() {
+    setParsing(true);
+    setParseError(null);
+    try {
+      const result = await api.parseStrategyDescription(description, config.name);
+      setParseResult(result);
+    } catch (e) {
+      setParseError(String(e));
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function handleLoadParsedIntoBuilder() {
+    if (!parseResult) return;
+    setConfig(parseResult.config);
+    setMessage("Loaded into the builder below - review every condition before saving.");
+  }
+
   if (authLoading) return null;
 
   if (!user) {
@@ -198,6 +222,64 @@ export default function StrategyBuilderPage() {
           through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest).
         </p>
       </div>
+
+      <Card title="Describe your strategy in plain English">
+        <p className="text-xs text-muted mb-2">
+          A deterministic, rule-based parser - not a call to an external AI (no AI-provider
+          credentials are configured). It recognizes a fixed set of phrasings (e.g. "Buy when
+          RSI(14) crosses above 60 and price is above EMA 50. Sell when RSI crosses below 40. Use
+          1.5x ATR stop loss. Target risk reward of 2. Use the 15min timeframe.") and shows you
+          exactly what it understood - and what it didn't - before anything is loaded into the
+          builder. Nothing is saved until you review it below and click "Save strategy".
+        </p>
+        <textarea
+          className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+          rows={4}
+          placeholder="Buy when RSI(14) crosses above 60 and price is above EMA 50. Sell when RSI crosses below 40..."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+        {parseError && <div className="mt-2 text-sm text-danger">{parseError}</div>}
+        <button
+          onClick={handleParse}
+          disabled={parsing || !description.trim()}
+          className="mt-2 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+        >
+          {parsing ? "Parsing…" : "Parse"}
+        </button>
+
+        {parseResult && (
+          <div className="mt-3 space-y-2">
+            {parseResult.interpreted.length > 0 && (
+              <div>
+                <div className="text-xs text-muted mb-1">Understood as:</div>
+                <ul className="space-y-0.5">
+                  {parseResult.interpreted.map((line, i) => (
+                    <li key={i} className="text-xs text-accent">✓ {line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {parseResult.warnings.length > 0 && (
+              <div>
+                <div className="text-xs text-muted mb-1">Not understood (won't be included):</div>
+                <ul className="space-y-0.5">
+                  {parseResult.warnings.map((line, i) => (
+                    <li key={i} className="text-xs text-warn">⚠ {line}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <button
+              onClick={handleLoadParsedIntoBuilder}
+              disabled={parseResult.interpreted.length === 0}
+              className="rounded border border-accent/40 text-accent hover:bg-accent/10 px-3 py-1 text-xs disabled:opacity-50"
+            >
+              Load into builder below
+            </button>
+          </div>
+        )}
+      </Card>
 
       <Card title={`Your saved strategies (${saved.length})`}>
         {saved.length === 0 ? (

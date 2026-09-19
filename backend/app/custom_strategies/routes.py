@@ -11,8 +11,26 @@ from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
 from app.db.session import get_session
 from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStrategy
+from app.strategy_engine.nlu_parser import ParseResult, parse_strategy_description
 
 router = APIRouter(prefix="/api/custom-strategies", tags=["custom-strategies"])
+
+
+class ParseStrategyRequest(BaseModel):
+    text: str
+    name: str = "Parsed Strategy"
+
+
+@router.post("/parse", response_model=ParseResult)
+async def parse_strategy_text(request: ParseStrategyRequest) -> ParseResult:
+    """Turns a plain-English strategy description into a pre-filled Strategy Builder config for
+    the user to review and edit - a deterministic, rule-based parser (see
+    app/strategy_engine/nlu_parser.py for exactly what it recognizes), not a call to an external
+    AI provider (none is configured). Pure function of its input, no persistence: the caller
+    still has to review the result and POST it to "" (create_custom_strategy) to actually save
+    it, exactly like manually building one in the condition editor.
+    """
+    return parse_strategy_description(request.text, name=request.name)
 
 
 def _validate_or_400(config: CustomStrategyConfig) -> None:

@@ -1065,3 +1065,63 @@ Full backend suite: 367 passing (up from 359), including new `tests/test_instrum
 unregistered symbol) and two new sizing tests in `tests/test_risk_and_execution.py` (MCX lot-size
 flooring differing from the tenant default, and crypto sizing to a sub-1 fractional quantity) -
 plus a `CoinDCXBroker` case added to the existing parametrized stub-adapter test.
+
+## Conversational (Rule-Based) Strategy Builder
+
+Lets a user describe a strategy in plain English and get a pre-filled Strategy Builder form to
+review and edit, instead of composing every condition by hand in the dropdown editors from
+scratch. This is a **deterministic, rule-based parser**
+(`app/strategy_engine/nlu_parser.py::parse_strategy_description`) - not a call to an external AI
+provider. No AI-provider credentials exist in this deployment, and calling a real LLM on a
+trading-strategy description sight-unseen would be exactly the kind of "present a guess as a
+fact" behavior the platform refuses to do everywhere else (see the NSE provider, the fundamentals
+module's mandatory citations, and the News & Event engine above). Instead it recognizes a fixed,
+documented set of phrasings and turns them into the exact same `Condition`/`Operand`/
+`CustomStrategyConfig` building blocks the no-code Strategy Builder already produces.
+
+- **Recognizes**: entry direction ("buy"/"go long"/"long when" vs. "sell"/"go short"/"short
+  when", with "and"-joined clauses); indicator conditions with a period as `RSI(14)`, `RSI 14`,
+  or `14 RSI`/`14-period RSI` (omitted, it defaults the same way `Operand` itself does);
+  comparisons (`crosses above`/`crosses over`, `crosses below`/`crosses under`, `>`/`above`/
+  `greater than`/`over`, `<`/`below`/`less than`/`under`, `>=`, `<=`); and risk parameters as
+  their own sentences anywhere in the text (`<N>x ATR stop loss`, `ATR period <N>`, `target risk
+  reward of <N>` with an optional `to <M>`, `minimum risk reward of <N>`, `<N>min`/`<N> minute`
+  timeframe).
+- **Never fabricates a condition it isn't confident about.** Any clause or sentence that doesn't
+  match a recognized pattern is reported back verbatim as a warning (`Could not understand
+  condition: "volume spikes"`) rather than silently dropped or guessed at - the same "tell the
+  user exactly what was and wasn't understood" honesty this platform applies to data citations.
+  `ParsedStrategyPreview` mirrors `CustomStrategyConfig` field-for-field but skips its "at least
+  one condition" validation, since an all-warnings parse is still a valid (empty) preview to show
+  the user, not a server error.
+- **`POST /api/custom-strategies/parse`** (no auth needed - a pure function of its input, same as
+  `/backtest`) takes `{text, name}` and returns `{config, interpreted, warnings}` -
+  `interpreted` is a human-readable line per thing it understood (reusing `Condition.label()`,
+  the same formatting the condition editors already display), so the user sees precisely what
+  each piece of their sentence became before it touches anything. Nothing is persisted here;
+  saving still goes through the existing `POST /api/custom-strategies` once the user is happy
+  with the (fully editable) result.
+- Frontend: a new "Describe your strategy in plain English" panel at the top of
+  `StrategyBuilderPage.tsx` - a textarea, a Parse button, an "Understood as" list and a "Not
+  understood" list, and a "Load into builder below" button that populates the exact same
+  condition-editor components (`ConditionListEditor`/`ConditionEditor`/`OperandEditor`, reused
+  from the Market Scanner work) already used to build a strategy by hand - so a parsed condition
+  is not a read-only preview, it's a fully editable starting point.
+- Verified live end-to-end with Playwright: parsed a multi-sentence description covering both
+  entry directions, all four risk parameters, and one deliberately unparseable clause; confirmed
+  the "understood"/"not understood" split rendered correctly; loaded it into the real condition
+  editors (confirmed the dropdowns were populated, not just displayed as text); and saved it
+  through the unmodified save path (`201 Created`).
+- One real bug found and fixed during development, before any test was written against it: the
+  initial sentence splitter split on every `.`, which silently corrupted decimal numbers (e.g.
+  `"1.5x ATR"` split into `"1"` and `"5x ATR"`, misparsing the multiplier as `5.0`). Fixed by only
+  splitting on a period not immediately followed by a digit - a decimal point's next character is
+  always a digit, while a sentence-ending period is always followed by whitespace or the end of
+  the text.
+
+Full backend suite: 377 passing (up from 367), including new `tests/test_nlu_parser.py` (explicit
+and default indicator periods, both period-before and period-after syntax, all four risk
+parameters across separate sentences, the decimal-number sentence-splitting edge case, an
+unrecognized clause producing a warning instead of a fabricated condition, and the `/parse`
+endpoint itself - including that it never persists anything and never errors on fully
+unparseable input).

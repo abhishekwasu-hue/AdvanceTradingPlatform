@@ -342,16 +342,19 @@ for.
 
 ## Docker Deployment
 
-`docker-compose.yml` at the repo root wires three services: `postgres` (16-alpine, a named
-volume, a `pg_isready` healthcheck), `backend` (built from `backend/Dockerfile` — Python 3.11
+`docker-compose.yml` at the repo root wires three services: `postgres` (17-alpine, a named
+volume, a `pg_isready` healthcheck), `backend` (built from `backend/Dockerfile` — Python 3.13
 slim, non-root user, a container healthcheck against `/api/system/health`, waits for Postgres
 to be healthy before starting, and its `CMD` now runs `alembic upgrade head` before starting
 `uvicorn` so the container always boots against the current tracked schema rather than relying
-on `create_all`), and `frontend` (built from `frontend/Dockerfile` — a Node build stage producing the
-Vite production bundle, served by an `nginx:alpine` stage whose `nginx.conf` reverse-proxies
-`/api/*` to the `backend` service by its compose network name and falls back to `index.html`
-for client-side routes). Copy `.env.example` to `.env` at the repo root first (Postgres
-credentials, `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY`), then:
+on `create_all`), and `frontend` (built from `frontend/Dockerfile` — a Node 24 build stage producing
+the Vite production bundle, served by an `nginx:1.27-alpine` stage whose `nginx.conf`
+reverse-proxies `/api/*` to the `backend` service by its compose network name and falls back to
+`index.html` for client-side routes). `requirements.txt`'s `numpy`/`cryptography` upper bounds
+are deliberately wide (`numpy<3.0`, `cryptography<46.0`) rather than pinned to whatever was
+current when this was written, so a fresh `pip install` doesn't get needlessly downgraded
+against newer packages already on your system. Copy `.env.example` to `.env` at the repo root
+first (Postgres credentials, `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY`), then:
 
 ```bash
 docker compose up --build

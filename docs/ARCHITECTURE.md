@@ -362,14 +362,16 @@ docker compose up --build
 # frontend: http://localhost:8080
 ```
 
-**Honesty note on verification:** `docker compose config` was run and validates the file
-cleanly (service graph, env interpolation, healthcheck syntax all resolve correctly), but this
-sandbox's network egress policy explicitly blocks Docker Hub's CDN
-(`production.cloudfront.docker.com` — confirmed via a 403 policy denial, not a transient
-error), so pulling the `python`/`node`/`postgres`/`nginx` base images and actually running
-`docker compose up` could not be exercised here. Please run it on a machine with normal Docker
-Hub access before trusting it in production — if anything doesn't build cleanly, that's a real
-bug to fix, not a sandbox artifact.
+**Verification history:** the development sandbox this was originally written in has a network
+egress policy that explicitly blocks Docker Hub's CDN, so only `docker compose config` (service
+graph, env interpolation, healthcheck syntax) could be validated there - actually pulling images
+and running `docker compose up` was untested. It has since been run for real, end to end, on a
+real machine (Windows 11 + Docker Desktop, WSL2 backend, Docker 29.8.0 / Compose v5.5.1): all
+four images pulled and built cleanly, Postgres initialized, all Alembic migrations up to the
+current head applied automatically before the backend started serving, the container healthcheck
+against `/api/system/health` passed, and the frontend was reachable at `localhost:8080` with the
+backend proxied through nginx at `/api/*` - a full, unmodified `docker compose up --build` with
+no code changes needed.
 
 ## Strategy Builder, dashboard tabs, and platform hardening
 
@@ -418,13 +420,10 @@ A full pass since the last section closed most of the previously-open gaps:
   model/migration drift; a `frontend` job runs `npm run build` (TypeScript type-check + Vite
   production bundle). Both on every push/PR.
 
-Genuinely still outstanding: Angel One/Fyers/Dhan adapters are structurally registered but still
-need their real endpoints wired in (see `app/brokers/stubs.py`) - deliberately deprioritized once
-Zerodha/Upstox/Shoonya existed. Full `docker compose up --build` execution remains unverified in
-this sandbox (its network policy blocks Docker Hub's CDN - see Docker Deployment above); `docker
-compose config` validates cleanly and the backend/CI both exercise the same Dockerfile logic
-(migrate-then-serve), but an actual build-and-run pass on a machine with normal Docker Hub access
-is still worth doing before trusting it in production.
+Genuinely still outstanding: Angel One/Fyers/Dhan/CoinDCX adapters are structurally registered but
+still need their real endpoints wired in (see `app/brokers/stubs.py`) - deliberately deprioritized
+once Zerodha/Upstox/Shoonya existed. `docker compose up --build` has since been run and verified
+end to end on a real machine (see "Docker Deployment" above).
 
 Strategies are already timeframe- and instrument-agnostic (`symbol` is just a string), so once an
 authenticated broker adapter is constructed (genuinely possible via `POST
@@ -458,8 +457,10 @@ engine-by-engine breakdown, what's deliberately out of scope) lives in
   CAUTION, or NO TRADE.
 - `app/fundamentals/providers/nse.py`: a real `NSEProvider` for NSE India's public JSON API,
   following the same `BrokerInterface` adapter pattern as the broker adapters - parsing verified
-  with mocked HTTP responses, but its live network behavior is unverified in this sandbox (same
-  network-policy block that stopped Docker Hub verification - see Docker Deployment above).
+  with mocked HTTP responses, but its live network behavior is still unverified: the development
+  sandbox's network policy blocks `nseindia.com` specifically (a separate, narrower block than
+  the since-resolved Docker Hub one - see Docker Deployment above), so this one still needs a
+  real smoke test.
 - `app/fundamentals/routes.py`: company/financial/shareholding/corporate-action/qualitative-
   factor CRUD (open reads - shared reference data; auth-required writes so contributions are
   attributed) plus per-engine analysis endpoints, a screener, and a lightweight sector-rotation

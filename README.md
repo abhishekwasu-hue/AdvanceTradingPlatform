@@ -112,11 +112,10 @@ docker compose up --build
 ```
 
 Wires four services: `postgres`, `redis` (optional caching - the API works fine without it),
-`backend` (runs `alembic upgrade head` before serving), `frontend`. Written and its config
-validated (`docker compose config`), but not build-and-run verified in this development sandbox
-— its network policy blocks Docker Hub's CDN. See "Docker Deployment" in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full note; please confirm it builds
-cleanly wherever you run it before relying on it.
+`backend` (runs `alembic upgrade head` before serving), `frontend`. Verified end to end on a real
+machine (Windows + Docker Desktop/WSL2): all images pull and build cleanly, migrations apply
+automatically, and both services come up healthy. See "Docker Deployment" in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full verification note.
 
 ### Option B: run backend and frontend directly
 

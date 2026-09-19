@@ -4,10 +4,17 @@ from app.core.enums import OrderStatus
 # -> SUBMITTED -> PENDING -> FILLED -> POSITION_OPEN on the happy path, with REJECTED/FAILED/
 # CANCELLED/PARTIAL_FILL branching off wherever a real broker or the risk engine can produce them.
 _TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
-    OrderStatus.CREATED: frozenset({OrderStatus.VALIDATING}),
-    OrderStatus.VALIDATING: frozenset({OrderStatus.RISK_CHECK}),
-    OrderStatus.RISK_CHECK: frozenset({OrderStatus.SUBMITTED, OrderStatus.REJECTED}),
-    OrderStatus.SUBMITTED: frozenset({OrderStatus.PENDING, OrderStatus.REJECTED, OrderStatus.FAILED}),
+    # CANCELLED is reachable from every non-terminal state, not just PENDING/PARTIAL_FILL: a
+    # kill-switch/emergency-exit cancel must be able to interrupt an order at any live stage,
+    # not only once it's sitting at a broker awaiting a fill.
+    OrderStatus.CREATED: frozenset({OrderStatus.VALIDATING, OrderStatus.CANCELLED}),
+    # REJECTED here covers pre-risk-check rejections (an engaged kill switch, a malformed
+    # signal) that never reach the risk engine at all.
+    OrderStatus.VALIDATING: frozenset({OrderStatus.RISK_CHECK, OrderStatus.REJECTED, OrderStatus.CANCELLED}),
+    OrderStatus.RISK_CHECK: frozenset({OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.CANCELLED}),
+    OrderStatus.SUBMITTED: frozenset({
+        OrderStatus.PENDING, OrderStatus.REJECTED, OrderStatus.FAILED, OrderStatus.CANCELLED,
+    }),
     OrderStatus.PENDING: frozenset({
         OrderStatus.FILLED, OrderStatus.PARTIAL_FILL, OrderStatus.CANCELLED,
         OrderStatus.REJECTED, OrderStatus.FAILED,

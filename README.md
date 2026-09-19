@@ -33,7 +33,10 @@ history, custom strategies, risk settings), and RBAC roles (`SUPER_ADMIN`/`USER`
 `docs/ARCHITECTURE.md`): an auditable `orders`/`order_events` ledger for every execution attempt
 (filled or rejected), enforced CREATED→...→POSITION_OPEN/REJECTED/FAILED/CANCELLED transitions,
 and an `idempotency_key` so a retried submission replays its original outcome instead of
-double-executing.
+double-executing. **Kill switches** (global/tenant/strategy - see "Kill Switches + Emergency
+Exit" in `docs/ARCHITECTURE.md`) can block new orders at any of those three scopes, and a single
+**emergency exit** call engages the tenant switch, cancels pending orders, and closes every
+open position a current price is supplied for.
 
 A Vite + React + TypeScript + Tailwind frontend console (`frontend/`) sits on top of that API —
 Dashboard, Strategy Library, **Strategy Builder** (no-code rule composer), Signals (a real
@@ -101,7 +104,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 262 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 271 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

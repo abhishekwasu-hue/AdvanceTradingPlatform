@@ -218,6 +218,30 @@ class RiskSettingsRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
+class KillSwitchRecord(Base):
+    """One row per kill-switch scope key (GLOBAL; TENANT within a tenant; STRATEGY within a
+    tenant+strategy_id), upserted on every engage/disengage rather than appended - the *current*
+    state is what execution checks on every order, and `updated_at`/`engaged_at`/`disengaged_at`
+    give enough history for "when was this last touched" without a separate event table.
+    GLOBAL rows have `tenant_id=None` (platform-wide, SUPER_ADMIN only); TENANT/STRATEGY rows are
+    always scoped to the caller's own tenant, `tenant_id` never accepted from the client.
+    """
+
+    __tablename__ = "kill_switches"
+    __table_args__ = (UniqueConstraint("tenant_id", "scope", "strategy_id", name="uq_kill_switch_scope"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    strategy_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    engaged: Mapped[bool] = mapped_column(nullable=False, default=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    engaged_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    engaged_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    disengaged_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
 class AuditLogRecord(Base):
     """Security-relevant events (register, login, credential stored, broker authenticated, ...).
     Per the platform's audit-trail requirement: every credential/auth action leaves a row here.

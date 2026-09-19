@@ -295,6 +295,12 @@ for.
 - `GET  /api/orders` — this tenant's full order ledger, every execution attempt whether it
   filled or not (auth required) - see "Order Idempotency + Formal Order State Machine" below
 - `GET  /api/orders/{id}/events` — one order's full append-only state-transition history (auth required)
+- `GET  /api/kill-switch/status` — this tenant's global/tenant/strategy kill-switch state (auth required)
+- `POST /api/kill-switch/global/{engage,disengage}` — platform-wide stop (SUPER_ADMIN only)
+- `POST /api/kill-switch/tenant/{engage,disengage}` — stop new orders for this tenant (auth required)
+- `POST /api/kill-switch/strategy/{id}/{engage,disengage}` — stop new orders for one strategy in this tenant (auth required)
+- `POST /api/kill-switch/emergency-exit` — engage the tenant switch, cancel pending orders, close
+  priced open positions, in one call (auth required) - see "Kill Switches + Emergency Exit" below
 - `GET  /api/system/health` — liveness
 
 ## Design decisions worth flagging
@@ -625,3 +631,44 @@ Full backend suite: 262 passing (up from 244 before this pass), including new
 (full lifecycle on a fill, full lifecycle on a risk rejection, idempotent replay returning the
 same order without a second trade, distinct keys each executing independently, and tenant
 isolation on both `/api/orders` and `/api/orders/{id}/events`).
+
+## Kill Switches + Emergency Exit
+
+Three widening kill-switch scopes (`app/core/enums.py::KillSwitchScope`), all backed by a single
+`KillSwitchRecord` table (`app/db/models.py`) upserted per scope key rather than appended - the
+*current* state is what execution checks on every order:
+
+- **GLOBAL** — platform-wide, `tenant_id=None`. Gated behind `require_role()` with no roles
+  listed, which (per `app/auth/dependencies.py::require_role`) means only `SUPER_ADMIN` passes -
+  reserved for a platform operator, never a tenant's own users.
+- **TENANT** — this user's own tenant only; any logged-in user of that tenant can engage/disengage
+  it (the "stop everything for my account" panic button).
+- **STRATEGY** — one strategy within this tenant only; other strategies keep trading.
+
+`app/kill_switch/checks.py::active_kill_switch_reasons` is checked inside `paper_execute`
+(`app/main.py`) right after the order reaches `VALIDATING` and before it ever reaches
+`RISK_CHECK` - a GLOBAL, TENANT, or STRATEGY switch engaged for this call's tenant/strategy
+rejects the order immediately (`VALIDATING → REJECTED`, a transition added specifically for
+pre-risk-check rejections) without ever running risk sizing or touching the paper broker. The
+anonymous (no-login) demo path has no tenant to check a TENANT/STRATEGY switch against, so it
+only checks GLOBAL (`is_global_kill_switch_engaged`) - a platform-wide incident should still
+block the try-it-without-an-account flow.
+
+**Emergency exit** (`POST /api/kill-switch/emergency-exit`) runs the full spec'd sequence in one
+call: (1) engage this tenant's kill switch so no new order can enter, (2) cancel every order
+still sitting in a non-terminal state (`CANCELLED` is now reachable from every non-terminal
+status in the state machine, not just `PENDING`/`PARTIAL_FILL` - a cancel has to be able to
+interrupt an order at any live stage), (3) close every open position a current price was
+supplied for (`prices: {symbol: price}` in the request body - there is no live broker quote feed
+wired in yet, so a position with no supplied price is left open and reported back in
+`skipped_symbols` rather than closed at a fabricated price, the same honest limitation the
+manual mark-price endpoint already has), (4) leave an `AuditLogRecord` audit trail. A real
+notification/alert delivery (email/SMS/push) is task #101 (Notification Engine) - today "alert"
+means the audit-log row plus whatever the caller does with the HTTP response.
+
+Full backend suite: 271 passing (up from 262 before this pass), including new
+`tests/test_kill_switch_api.py` (RBAC on the global switch, tenant switch blocking one tenant
+without affecting another, strategy switch blocking only that strategy, global switch blocking
+every tenant and anonymous calls, emergency exit closing priced positions and skipping unpriced
+ones) and two new state-machine tests covering the widened `CANCELLED`/pre-risk-check `REJECTED`
+transitions.

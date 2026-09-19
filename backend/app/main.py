@@ -34,6 +34,8 @@ from app.db.models import CustomStrategyRecord, User
 from app.db.session import get_session, init_models
 from app.execution.order_persistence import create_order, get_order_by_idempotency_key, transition_order
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
+from app.kill_switch.checks import active_kill_switch_reasons, is_global_kill_switch_engaged
+from app.kill_switch.routes import router as kill_switch_router
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.models import OptionChainAnalysis
 from app.price_action.candlestick_patterns import detect_patterns
@@ -82,6 +84,7 @@ app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
 app.include_router(fundamentals_router)
+app.include_router(kill_switch_router)
 
 _default_risk_config = RiskConfig()
 
@@ -248,6 +251,14 @@ async def paper_execute(
                 reasons=json.loads(existing.reasons_json), order_id=existing.id, idempotent_replay=True,
             )
 
+    if user is None:
+        # No tenant to check a TENANT/STRATEGY switch against on the anonymous demo path - only
+        # a platform-wide GLOBAL kill switch applies.
+        global_reason = await is_global_kill_switch_engaged(session)
+        if global_reason:
+            reasons = [f"Global kill switch engaged: {global_reason}".rstrip(": ")]
+            return PaperExecuteResponse(signal=signal, executed=False, reasons=reasons)
+
     order = None
     if user is not None:
         order = await create_order(
@@ -255,6 +266,12 @@ async def paper_execute(
             idempotency_key=request.idempotency_key,
         )
         order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal generated")
+
+        kill_switch_reasons = await active_kill_switch_reasons(session, user.tenant_id, strategy_id)
+        if kill_switch_reasons:
+            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(kill_switch_reasons))
+            return PaperExecuteResponse(signal=signal, executed=False, reasons=kill_switch_reasons, order_id=order.id)
+
         order = await transition_order(session, order, OrderStatus.RISK_CHECK, detail="Running risk checks")
 
     risk_config = request.risk_config

@@ -15,6 +15,16 @@ class SignalGrade(str, Enum):
     NO_TRADE = "No Trade"
 
 
+class KillSwitchScope(str, Enum):
+    """Kill switches stop new order entries at three widening scopes (spec: strategy/user/
+    global). GLOBAL is platform-wide (SUPER_ADMIN only); TENANT and STRATEGY are scoped to the
+    caller's own tenant."""
+
+    GLOBAL = "GLOBAL"
+    TENANT = "TENANT"
+    STRATEGY = "STRATEGY"
+
+
 class UserRole(str, Enum):
     """Platform RBAC roles (spec section 5-6). SUPER_ADMIN is platform-wide (not tenant-scoped -
     no route grants it automatically today, it's a manual DB flag for platform operators);

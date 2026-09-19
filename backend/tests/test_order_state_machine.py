@@ -23,6 +23,20 @@ def test_pending_can_partial_fill_then_fill_or_cancel():
     assert_valid_transition(OrderStatus.PARTIAL_FILL, OrderStatus.CANCELLED)
 
 
+def test_cancelled_is_reachable_from_every_non_terminal_state():
+    # A kill-switch/emergency-exit cancel must be able to interrupt an order at any live stage.
+    for non_terminal in (
+        OrderStatus.CREATED, OrderStatus.VALIDATING, OrderStatus.RISK_CHECK,
+        OrderStatus.SUBMITTED, OrderStatus.PENDING, OrderStatus.PARTIAL_FILL,
+    ):
+        assert_valid_transition(non_terminal, OrderStatus.CANCELLED)
+
+
+def test_validating_can_reject_before_risk_check():
+    # A pre-risk-check rejection (an engaged kill switch, a malformed signal) never reaches RISK_CHECK.
+    assert_valid_transition(OrderStatus.VALIDATING, OrderStatus.REJECTED)
+
+
 @pytest.mark.parametrize(
     "frm,to",
     [

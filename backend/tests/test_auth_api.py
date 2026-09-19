@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.auth.routes import login_rate_limit, register_rate_limit
 from app.brokers.models import BrokerProfile
 from app.db.base import Base
 from app.db.session import get_session
@@ -27,6 +28,13 @@ async def _create_tables() -> None:
 
 asyncio.run(_create_tables())
 app.dependency_overrides[get_session] = _override_get_session
+# Every request in this test suite shares the TestClient's one fake IP, so the per-IP register/
+# login rate limits (see app/core/rate_limit.py) would otherwise rate-limit the test suite itself
+# well before any real test's request count - disabled here for the whole suite by default.
+# tests/test_rate_limiting.py re-enables them (via a separate TestClient with a distinct fake IP)
+# to test the 429 behavior itself, restoring these overrides afterwards.
+app.dependency_overrides[register_rate_limit] = lambda: None
+app.dependency_overrides[login_rate_limit] = lambda: None
 
 client = TestClient(app)
 

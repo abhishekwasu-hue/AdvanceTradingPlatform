@@ -9,6 +9,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.auth.security import create_access_token, hash_password, verify_password
 from app.core.enums import UserRole
+from app.core.rate_limit import rate_limit
 from app.db.models import Tenant, User
 from app.db.session import get_session
 
@@ -19,6 +20,15 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Otherwise a missing-user response returns near-instantly while a wrong-password response
 # takes a full bcrypt round, letting an attacker enumerate registered emails by response timing.
 _DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-parity")
+
+# Module-level (not inline in the route decorator) so tests can target this exact dependency via
+# `app.dependency_overrides` - the whole point of a per-IP limiter is that a real client's IP
+# doesn't change between requests, but every request in this test suite shares the TestClient's
+# one fake IP, so leaving these active would rate-limit the test suite itself, not just an
+# attacker. See tests/test_auth_api.py, which disables both by default, and
+# tests/test_rate_limiting.py, which re-enables them to test the 429 behavior itself.
+register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60)
+login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60)
 
 
 class RegisterRequest(BaseModel):
@@ -43,7 +53,10 @@ class UserResponse(BaseModel):
     role: str
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(register_rate_limit)],
+)
 async def register(request: RegisterRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Every registration gets its own new tenant (spec section 5-6's isolation boundary) - there
     is no invite-onto-an-existing-tenant flow yet, so V1 is one tenant per signup, and every
@@ -69,7 +82,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     return TokenResponse(access_token=create_access_token(user.id, user.email))
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
 async def login(request: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     user = await session.scalar(select(User).where(User.email == request.email))
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response

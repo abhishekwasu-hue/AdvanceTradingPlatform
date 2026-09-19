@@ -1266,3 +1266,32 @@ gate on the verify endpoint, the endpoint reporting an intact chain, and - run d
 the file, since it permanently corrupts the shared test database every other test in the file and
 in `tests/test_audit_logs_api.py` reads from - that tampering with a row's `detail` after the fact
 is actually detected, at the exact row that was changed).
+
+### Per-IP rate limiting on auth endpoints (Section 48)
+
+`/api/auth/register` and `/api/auth/login` previously accepted unlimited attempts from a single
+caller - exactly the two endpoints a registration-spam or credential-stuffing/brute-force attack
+actually targets. Added `app/core/rate_limit.py::rate_limit(name, limit, window_seconds)`, a
+dependency factory wrapping a per-`(name, caller IP)` sliding-window counter, applied as
+`register_rate_limit`/`login_rate_limit` (10 requests/60s each, independent counters) in
+`app/auth/routes.py`.
+
+Documented v1 limitations rather than hidden: it's in-process (a real multi-instance deployment
+needs a shared store - Redis is already optional infra here, see `app/cache/client.py` - to hold a
+limit across instances), and it trusts `request.client.host` directly rather than an
+`X-Forwarded-For` header (trusting a client-settable header without validating it came from a
+known reverse proxy would make the limiter trivially bypassable - a real deployment behind a
+proxy should configure `request.client.host` to already be correct, e.g. Uvicorn's
+`--proxy-headers`).
+
+Both limiter dependencies are module-level names specifically so tests can target them via
+`app.dependency_overrides` - every request in the shared test suite's `TestClient` comes from the
+same fake IP, so leaving the real limiter active would rate-limit the test suite itself long
+before any individual test's request count. `tests/test_auth_api.py` disables both by default for
+the whole suite; new `tests/test_rate_limiting.py` is the one place that re-enables them (against
+separate `TestClient` instances with their own distinct fake IPs, so it can't be starved by every
+other test's shared-IP traffic) to prove the 429 behavior itself: the 11th request in a window is
+rejected, login and register are limited independently, and two different IPs are never
+cross-blocked.
+
+Full backend suite: 406 passing (up from 403).

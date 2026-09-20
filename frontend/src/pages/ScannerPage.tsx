@@ -103,8 +103,8 @@ export default function ScannerPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Market Scanner</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-indigo-400">Market Scanner</h1>
+        <p className="text-sm font-semibold text-indigo-400/60">
           Filter a watchlist by indicator conditions (same building blocks as the Strategy
           Builder), price-action structure, and option-chain signals - only symbols clearing
           every configured filter are returned.

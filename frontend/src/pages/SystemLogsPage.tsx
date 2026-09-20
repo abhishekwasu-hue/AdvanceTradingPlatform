@@ -19,7 +19,7 @@ export default function SystemLogsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">System Logs</h1>
+        <h1 className="text-xl font-extrabold text-sky-400">System Logs</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to see your account's audit trail.</p>
         </Card>
@@ -30,8 +30,8 @@ export default function SystemLogsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">System Logs</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-sky-400">System Logs</h1>
+        <p className="text-sm font-semibold text-sky-400/60">
           Your own security-relevant event history - register/login, broker credentials
           stored/deleted, broker authentication attempts. Private to your account, not a global
           admin view.

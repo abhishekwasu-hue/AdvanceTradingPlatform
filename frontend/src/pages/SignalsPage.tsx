@@ -107,8 +107,8 @@ export default function SignalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Signals</h1>
-        <p className="text-sm text-muted">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
+        <h1 className="text-xl font-extrabold text-sky-400">Signals</h1>
+        <p className="text-sm font-semibold text-sky-400/60">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
       </div>
 
       <DemoDataBanner />

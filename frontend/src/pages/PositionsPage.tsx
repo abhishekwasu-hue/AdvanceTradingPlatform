@@ -52,7 +52,7 @@ export default function PositionsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Positions</h1>
+        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to see your paper-execute positions and trade history.
@@ -69,8 +69,8 @@ export default function PositionsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Positions</h1>
-        <p className="text-sm text-muted">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
+        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
+        <p className="text-sm font-semibold text-emerald-400/60">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}

@@ -14,8 +14,8 @@ export default function StrategiesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Strategy Library</h1>
-        <p className="text-sm text-muted">Every inbuilt auto-executable scalping strategy, straight from the registry.</p>
+        <h1 className="text-xl font-extrabold text-violet-400">Strategy Library</h1>
+        <p className="text-sm font-semibold text-violet-400/60">Every inbuilt auto-executable scalping strategy, straight from the registry.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}

@@ -65,8 +65,8 @@ export default function BacktestPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Backtesting</h1>
-        <p className="text-sm text-muted">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
+        <h1 className="text-xl font-extrabold text-teal-400">Backtesting</h1>
+        <p className="text-sm font-semibold text-teal-400/60">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
       </div>
 
       <DemoDataBanner />

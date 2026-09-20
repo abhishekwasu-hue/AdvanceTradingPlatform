@@ -109,7 +109,7 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Settings</h1>
+        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to manage broker credentials.</p>
         </Card>
@@ -120,8 +120,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Settings</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
+        <p className="text-sm font-semibold text-yellow-400/60">
           Broker credentials are encrypted at rest (Fernet) and only ever decrypted in memory
           when you authenticate - never logged, never returned in plaintext by any API response.
         </p>

@@ -54,7 +54,7 @@ export default function OrdersPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Orders</h1>
+        <h1 className="text-xl font-extrabold text-orange-400">Orders</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to see your order blotter.</p>
         </Card>
@@ -65,8 +65,8 @@ export default function OrdersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Orders</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-orange-400">Orders</h1>
+        <p className="text-sm font-semibold text-orange-400/60">
           Every entry and exit fill from your paper trades, most recent first - a broker-style order blotter view.
         </p>
       </div>

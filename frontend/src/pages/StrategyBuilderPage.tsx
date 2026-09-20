@@ -202,7 +202,7 @@ export default function StrategyBuilderPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Strategy Builder</h1>
+        <h1 className="text-xl font-extrabold text-purple-400">Strategy Builder</h1>
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to build and save your own no-code strategies. A saved
@@ -216,8 +216,8 @@ export default function StrategyBuilderPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Strategy Builder</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-purple-400">Strategy Builder</h1>
+        <p className="text-sm font-semibold text-purple-400/60">
           Compose entry rules from indicators - no code. Every rule set produces a real signal
           through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest).
         </p>

@@ -36,8 +36,8 @@ export default function OptionChainPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Option Chain</h1>
-        <p className="text-sm text-muted">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
+        <h1 className="text-xl font-extrabold text-fuchsia-400">Option Chain</h1>
+        <p className="text-sm font-semibold text-fuchsia-400/60">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
       </div>
 
       <DemoDataBanner />

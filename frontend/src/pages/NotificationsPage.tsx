@@ -50,7 +50,7 @@ export default function NotificationsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Notifications</h1>
+        <h1 className="text-xl font-extrabold text-violet-400">Notifications</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to see your account's notification feed.</p>
         </Card>
@@ -64,8 +64,8 @@ export default function NotificationsPage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-100">Notifications</h1>
-          <p className="text-sm text-muted">
+          <h1 className="text-xl font-extrabold text-violet-400">Notifications</h1>
+          <p className="text-sm font-semibold text-violet-400/60">
             Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches,
             emergency exits, and system failures - shared across your account.
           </p>

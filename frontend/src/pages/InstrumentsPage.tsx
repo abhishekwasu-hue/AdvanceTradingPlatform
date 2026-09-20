@@ -24,8 +24,8 @@ export default function InstrumentsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Instruments</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-cyan-400">Instruments</h1>
+        <p className="text-sm font-semibold text-cyan-400/60">
           MCX commodity and crypto contract specs the platform knows about, beyond plain NSE/BSE
           equity & index options (which already size correctly off your Risk Management lot
           size). These are static reference contract specifications - standard MCX lot sizes and

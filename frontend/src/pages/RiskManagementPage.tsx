@@ -48,7 +48,7 @@ export default function RiskManagementPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Risk Management</h1>
+        <h1 className="text-xl font-extrabold text-red-400">Risk Management</h1>
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to configure your own risk limits. Every paper (and,
@@ -67,8 +67,8 @@ export default function RiskManagementPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Risk Management</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-red-400">Risk Management</h1>
+        <p className="text-sm font-semibold text-red-400/60">
           Position sizing and daily-loss/trade-count/consecutive-loss guards the Risk Engine
           checks before every paper-execute order. Anonymous calls always use the platform
           default; these apply only to your own logged-in orders.

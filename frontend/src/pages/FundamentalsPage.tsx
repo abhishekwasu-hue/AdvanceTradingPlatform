@@ -345,8 +345,8 @@ export default function FundamentalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Fundamental Analysis</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-amber-400">Fundamental Analysis</h1>
+        <p className="text-sm font-semibold text-amber-400/60">
           Institutional-grade company intelligence: business quality, earnings quality, valuation, DCF, red flags, SWOT,
           and a composite Fundamental Score fused with the technical Signal Score. Every input is entered and cited -
           nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet).

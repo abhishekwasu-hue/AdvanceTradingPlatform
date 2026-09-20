@@ -50,7 +50,7 @@ export default function AnalyticsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Analytics</h1>
+        <h1 className="text-xl font-extrabold text-lime-400">Analytics</h1>
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to see win rate and P&amp;L broken down by strategy and
@@ -67,8 +67,8 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Analytics</h1>
-        <p className="text-sm text-muted">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>
+        <h1 className="text-xl font-extrabold text-lime-400">Analytics</h1>
+        <p className="text-sm font-semibold text-lime-400/60">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

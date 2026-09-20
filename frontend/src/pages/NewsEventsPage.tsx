@@ -66,8 +66,8 @@ export default function NewsEventsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">News & Events</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-pink-400">News & Events</h1>
+        <p className="text-sm font-semibold text-pink-400/60">
           Structured, cited entries for RBI policy decisions, the Union Budget, government
           policy changes, corporate news, and other market-moving events. There is no live news
           feed - every entry is user-entered and must cite a source, exactly like the rest of

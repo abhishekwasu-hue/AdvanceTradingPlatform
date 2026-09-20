@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Info, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
@@ -13,16 +13,21 @@ export function Card({ title, children, className = "" }: { title?: string; chil
 }
 
 export function StatTile({
-  label, value, tone = "default",
+  label, value, tone = "default", icon: Icon,
 }: {
   label: string;
   value: ReactNode;
   tone?: "default" | "up" | "down";
+  icon?: LucideIcon;
 }) {
   const toneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : "text-slate-100";
+  const iconToneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : "text-brand";
   return (
     <div className="rounded-xl border border-border bg-panel shadow-card px-4 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted">{label}</div>
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+        {Icon && <Icon size={12} className={iconToneClass} />}
+        {label}
+      </div>
       <div className={`font-tabular text-xl font-semibold mt-0.5 ${toneClass}`}>{value}</div>
     </div>
   );

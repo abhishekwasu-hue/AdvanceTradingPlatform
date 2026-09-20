@@ -6,6 +6,15 @@ body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* A flat single-color background read as flat/lifeless against the app's card-heavy layout.
+     Two very low-opacity radial glows (brand blue top-left, accent green top-right) over the
+     base panel color add depth without competing with card borders/text contrast - fixed so it
+     doesn't shift oddly as the page scrolls. */
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
+    radial-gradient(900px 550px at 100% -5%, rgba(34, 197, 94, 0.07), transparent 55%),
+    #090c12;
+  background-attachment: fixed;
 }
 
 /* Numeric/price columns line up cleanly when every digit is the same width - the same reason a

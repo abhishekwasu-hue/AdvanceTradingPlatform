@@ -9,23 +9,27 @@ import type { StrategyInfo } from "../types";
 
 const ENGINES: {
   icon: LucideIcon;
-  tone: "brand" | "accent" | "sky";
+  tone: "brand" | "accent" | "sky" | "warn" | "violet" | "rose" | "teal";
   title: string;
   description: string;
 }[] = [
   { icon: Activity, tone: "accent", title: "Strategy Engine", description: "7 inbuilt auto-executable multi-timeframe & indicator scalpers" },
-  { icon: ShieldCheck, tone: "brand", title: "Risk Engine", description: "Position sizing, daily loss / trade-count / consecutive-loss gates" },
+  { icon: ShieldCheck, tone: "warn", title: "Risk Engine", description: "Position sizing, daily loss / trade-count / consecutive-loss gates" },
   { icon: Link2, tone: "brand", title: "Broker Abstraction", description: "One interface across every supported broker - paper trading until a real adapter is authenticated" },
   { icon: TrendingUp, tone: "sky", title: "Price Action + S/R", description: "Market structure, candlestick patterns, support/resistance zone engine" },
-  { icon: Layers, tone: "sky", title: "Option Chain Intelligence", description: "PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, directional bias" },
-  { icon: Target, tone: "accent", title: "Signal Scoring", description: "Weighted composite combining every engine above into one confidence score" },
-  { icon: History, tone: "accent", title: "Backtest Engine", description: "Event-driven simulation with realistic slippage/charges cost modelling" },
+  { icon: Layers, tone: "violet", title: "Option Chain Intelligence", description: "PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, directional bias" },
+  { icon: Target, tone: "rose", title: "Signal Scoring", description: "Weighted composite combining every engine above into one confidence score" },
+  { icon: History, tone: "teal", title: "Backtest Engine", description: "Event-driven simulation with realistic slippage/charges cost modelling" },
 ];
 
 const TONE_CLASSES: Record<string, string> = {
   brand: "bg-brand/10 text-brand border-brand/30",
   accent: "bg-accent/10 text-accent border-accent/30",
   sky: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+  warn: "bg-warn/10 text-warn border-warn/30",
+  violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+  rose: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+  teal: "bg-teal-500/10 text-teal-400 border-teal-500/30",
 };
 
 export default function DashboardPage() {
@@ -55,7 +59,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Dashboard</h1>
+        <h1 className="text-2xl font-extrabold text-slate-100">Dashboard</h1>
         <p className="text-sm text-muted">Live status of the backend engines this console talks to.</p>
       </div>
 
@@ -67,9 +71,9 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile icon={Server} label="Backend" value={healthy === null ? "…" : healthy ? "Online" : "Offline"} tone={healthy ? "up" : healthy === false ? "down" : "default"} />
-        <StatTile icon={GitMerge} label="Inbuilt Strategies" value={strategies.length || "…"} />
-        <StatTile icon={BarChart3} label="MTF Combos" value={mtf.length || "…"} />
-        <StatTile icon={Link2} label="Broker Adapters" value={brokers.length || "…"} />
+        <StatTile icon={GitMerge} label="Inbuilt Strategies" value={strategies.length || "…"} accentClass="text-violet-400" />
+        <StatTile icon={BarChart3} label="MTF Combos" value={mtf.length || "…"} accentClass="text-sky-400" />
+        <StatTile icon={Link2} label="Broker Adapters" value={brokers.length || "…"} accentClass="text-orange-400" />
       </div>
 
       <Card title="Engines wired into this console">
@@ -80,7 +84,7 @@ export default function DashboardPage() {
                 <Icon size={16} />
               </div>
               <div>
-                <div className="text-sm font-medium text-slate-100">{title}</div>
+                <div className="text-sm font-bold text-slate-100">{title}</div>
                 <div className="text-xs text-muted mt-0.5 leading-relaxed">{description}</div>
               </div>
             </div>

@@ -5,7 +5,7 @@ export function Card({ title, children, className = "" }: { title?: string; chil
   return (
     <div className={`rounded-xl border border-border bg-panel shadow-card p-4 ${className}`}>
       {title && (
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">{title}</div>
+        <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-3">{title}</div>
       )}
       {children}
     </div>
@@ -13,22 +13,27 @@ export function Card({ title, children, className = "" }: { title?: string; chil
 }
 
 export function StatTile({
-  label, value, tone = "default", icon: Icon,
+  label, value, tone = "default", icon: Icon, accentClass,
 }: {
   label: string;
   value: ReactNode;
   tone?: "default" | "up" | "down";
   icon?: LucideIcon;
+  /** Overrides the tone-based color for both the icon and the value - lets a row of stat tiles
+   * carry distinct accent colors (e.g. one per category) instead of every "default"-tone tile
+   * looking identical. Ignored when tone is "up"/"down", since that semantic (bullish/bearish)
+   * coloring always wins. */
+  accentClass?: string;
 }) {
-  const toneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : "text-slate-100";
-  const iconToneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : "text-brand";
+  const toneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : accentClass ?? "text-slate-100";
+  const iconToneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : accentClass ?? "text-brand";
   return (
     <div className="rounded-xl border border-border bg-panel shadow-card px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
         {Icon && <Icon size={12} className={iconToneClass} />}
         {label}
       </div>
-      <div className={`font-tabular text-xl font-semibold mt-0.5 ${toneClass}`}>{value}</div>
+      <div className={`font-tabular text-2xl font-extrabold mt-0.5 ${toneClass}`}>{value}</div>
     </div>
   );
 }

@@ -151,7 +151,20 @@ def _worker(monkeypatch, broker: _FakeBroker) -> TradingWorker:
     # Both the worker's adapter construction and verify_token's go through the fake broker.
     monkeypatch.setattr(tw, "build_adapter", lambda record, client=None: broker)
     monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record, client=None: broker)
+    # Every test's fake broker answers for the same symbol, so with a real Redis reachable (CI)
+    # one test's candles would be served to the next from the market-data cache. Cache off here.
+    from app.market_data import service as market_data_service
+    monkeypatch.setattr(market_data_service, "cache_get", _no_cache_get)
+    monkeypatch.setattr(market_data_service, "cache_set", _no_cache_set)
     return TradingWorker(_session_factory, cycle_seconds=60)
+
+
+async def _no_cache_get(key):
+    return None
+
+
+async def _no_cache_set(key, value, ttl_seconds):
+    return None
 
 
 def _force_signal(monkeypatch, signal_factory):

@@ -96,6 +96,20 @@ class DeploymentStatus(str, Enum):
     STOPPED = "STOPPED"
 
 
+class AlertChannelType(str, Enum):
+    """Out-of-app delivery channels for notifications (app/alerts/). In-app is always on; these
+    are the ones that reach a phone/inbox while every browser is closed."""
+
+    TELEGRAM = "TELEGRAM"
+    EMAIL = "EMAIL"
+
+
+class AlertDeliveryStatus(str, Enum):
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+
+
 class BrokerTokenStatus(str, Enum):
     """What the platform currently knows about a stored broker session token
     (BrokerCredentialRecord.token_status). Upstox/Zerodha retail access tokens expire every

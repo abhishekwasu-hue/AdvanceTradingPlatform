@@ -426,6 +426,52 @@ class NotificationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class AlertChannelRecord(Base):
+    """One out-of-app delivery channel per tenant per type (Telegram chat, SMTP mailbox). The
+    channel's secrets (bot token, SMTP password) live only in `encrypted_config`, decrypted in
+    memory at send time, never returned by the API. `min_severity` is the floor a notification
+    must reach to be queued for this channel - the default WARNING keeps routine ENTRY/EXIT chatter
+    in-app only while every TOKEN_EXPIRED / SYSTEM_FAILURE / DAILY_LOSS_LIMIT reaches a human.
+    """
+
+    __tablename__ = "alert_channels"
+    __table_args__ = (UniqueConstraint("tenant_id", "channel_type", name="uq_alert_channel_tenant_type"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    min_severity: Mapped[str] = mapped_column(String(10), nullable=False, default="WARNING")
+    encrypted_config: Mapped[str] = mapped_column(Text, nullable=False)
+    last_delivered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class AlertDeliveryRecord(Base):
+    """Outbox row: one notification x one channel. `notify()` enqueues these; the trading worker
+    drains them every cycle (app/alerts/dispatcher.py) with exponential backoff up to a fixed
+    attempt count, after which the row is FAILED with the last error kept for the operator. The
+    outbox is what makes delivery auditable ("was the 10:31 SYSTEM_FAILURE actually sent?") and
+    what keeps a slow/broken SMTP server from ever blocking the pipeline that raised the alert.
+    """
+
+    __tablename__ = "alert_deliveries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    notification_id: Mapped[int] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("alert_channels.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="PENDING", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
 class CompanyRecord(Base):
     """Reference data about a listed company - shared, not user-private (like an instrument
     master), but every write is attributed to the user who entered it since nothing here is

@@ -36,6 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
+from app.alerts.dispatcher import dispatch_pending
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_acquire_lock, cache_release_lock
 from app.core.config import WORKER_CYCLE_SECONDS
@@ -130,6 +131,13 @@ class TradingWorker:
                     await self._process_tenants(session, now, report)
                 else:
                     logger.debug("Market closed: %s", status.reason)
+                # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
+                # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
+                try:
+                    await dispatch_pending(session)
+                except Exception as exc:  # noqa: BLE001 - alerting must never break trading
+                    logger.exception("Alert dispatch failed")
+                    report.errors.append(f"alert dispatch: {exc}")
                 await self._heartbeat(session, report, int((time.monotonic() - cycle_started) * 1000))
                 return report
         finally:

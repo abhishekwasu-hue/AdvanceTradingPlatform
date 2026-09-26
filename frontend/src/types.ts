@@ -619,3 +619,36 @@ export interface WorkerStatus {
 }
 
 export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min"] as const;
+
+// --- Out-of-app alert delivery (Telegram / email) ---
+
+export type AlertChannelType = "TELEGRAM" | "EMAIL";
+
+export interface AlertChannel {
+  channel_type: AlertChannelType;
+  enabled: boolean;
+  min_severity: NotificationSeverity;
+  config: Record<string, unknown>;
+  last_delivered_at: string | null;
+  last_error: string | null;
+  updated_at: string;
+}
+
+export interface AlertChannelUpsert {
+  enabled: boolean;
+  min_severity: NotificationSeverity;
+  config: Record<string, unknown>;
+}
+
+export interface AlertDelivery {
+  id: number;
+  channel_type: AlertChannelType;
+  notification_id: number;
+  title: string;
+  severity: NotificationSeverity;
+  status: "PENDING" | "SENT" | "FAILED";
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  sent_at: string | null;
+}

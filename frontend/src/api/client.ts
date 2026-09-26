@@ -1,4 +1,7 @@
 import type {
+  AlertChannel,
+  AlertChannelUpsert,
+  AlertDelivery,
   AnalyticsSummary,
   AuditLogEntry,
   BacktestResult,
@@ -245,4 +248,18 @@ export const api = {
     request<Deployment>(`/deployments/${id}/stop`, { method: "POST", body: JSON.stringify({ reason }) }),
 
   deleteDeployment: (id: number) => request<void>(`/deployments/${id}`, { method: "DELETE" }),
+
+  // --- Alert delivery ---
+
+  listAlertChannels: () => request<AlertChannel[]>("/alert-channels"),
+
+  upsertAlertChannel: (type: string, body: AlertChannelUpsert) =>
+    request<AlertChannel>(`/alert-channels/${type}`, { method: "PUT", body: JSON.stringify(body) }),
+
+  deleteAlertChannel: (type: string) => request<void>(`/alert-channels/${type}`, { method: "DELETE" }),
+
+  testAlertChannel: (type: string) =>
+    request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),
+
+  listAlertDeliveries: (limit = 20) => request<AlertDelivery[]>(`/alert-channels/deliveries?limit=${limit}`),
 };

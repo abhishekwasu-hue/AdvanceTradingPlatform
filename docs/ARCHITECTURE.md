@@ -1546,3 +1546,35 @@ robot.
   charges, options-specific deployments (strike selection), and a Zerodha login flow equivalent
   to the Upstox OAuth one (Kite's redirect flow is structurally the same and can reuse the state
   helper).
+
+## Phase B: Business Layer
+
+### B0: Out-of-app alert delivery (Telegram + email)
+
+The autonomous worker raises CRITICAL notifications - `TOKEN_EXPIRED` at 03:31, a live fill whose
+protective stop failed, a deployment auto-paused, the daily loss limit hit - precisely when no
+browser is open to show them. `app/alerts/` gets them to a phone or inbox:
+
+* **Channels** (`alert_channels`, one per tenant per type): a Telegram bot + chat id, or an SMTP
+  mailbox. Config is Fernet-encrypted like broker credentials; the API returns a masked summary
+  (`bot_token_hint`, `password_set`) and an update that leaves a secret blank keeps the stored one.
+  `min_severity` (default WARNING) is the floor - routine ENTRY/EXIT stays in-app.
+* **Outbox** (`alert_deliveries`): `notify()` now also writes one PENDING row per matching channel
+  in the same transaction. It never touches the network, so a dead SMTP server cannot slow or
+  fail the pipeline that raised the alert.
+* **Dispatcher** (`app/alerts/dispatcher.py::dispatch_pending`): the trading worker drains due
+  rows every cycle, market open or not. Failures retry with exponential backoff (30s, 60s, 120s,
+  ...) up to 5 attempts, then the row is FAILED with the error kept; each row commits on its own
+  so one broken channel never delays another. Telegram goes through `sendMessage` with HTML
+  (escaped); email through stdlib `smtplib` in a thread (STARTTLS + optional login).
+* **API**: `GET/PUT/DELETE /api/alert-channels/{telegram|email}`, `POST .../test` (sends a probe
+  right now and returns the exact failure text), `GET /api/alert-channels/deliveries` (the outbox
+  - "was that CRITICAL actually sent?"). Writes are audited; SUPPORT is read-only.
+* **UI**: Settings -> "Alert delivery" card (both channels, floor, enable, Save / Send test /
+  Remove, recent deliveries with status and error).
+
+Verified by `tests/test_alerts.py` (enqueue by severity floor, masked secrets, secret retention on
+update, Telegram HTML payload via mocked HTTP, SMTP via a stubbed sender, backoff then FAILED,
+test-send error surfacing, worker cycle draining the outbox) and a Postgres round-trip of the
+`e3b8d1c7a942` migration. Not verified against a real Telegram bot or SMTP server from this
+environment (outbound blocked); the "Send test" button is there for exactly that first check.

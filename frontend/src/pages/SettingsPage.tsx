@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import AlertChannelsCard from "../components/AlertChannelsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
 import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
@@ -230,6 +231,8 @@ export default function SettingsPage() {
           </button>
         </div>
       </Card>
+
+      <AlertChannelsCard />
 
       <Card title="TradingView webhook">
         <p className="text-sm text-muted mb-3">

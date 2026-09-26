@@ -121,6 +121,11 @@ Every trading morning, before 09:15 IST:
    session starts. A stale heartbeat during market hours is an incident (1.6).
 3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the
    tenant's saved limits on every entry, exactly like a manual paper execute.
+4. **Have an alert channel configured** (Settings -> Alert delivery): Telegram and/or email, with
+   a floor of WARNING or CRITICAL, and press "Send test" once. Every CRITICAL the worker raises is
+   queued for delivery and sent by the worker's next cycle (retried with backoff up to 5 times;
+   the outbox on the same card shows SENT/FAILED and the error). No channel means CRITICAL alerts
+   are in-app only - i.e. invisible until someone opens the console.
 
 During the session the worker takes no new entries after 15:00 IST and flattens every open
 position at 15:15 IST (before brokers' own forced MIS square-off). After the session review

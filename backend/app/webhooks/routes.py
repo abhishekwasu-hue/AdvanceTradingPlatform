@@ -14,6 +14,7 @@ from app.core.models import Signal
 from app.db.models import Tenant, User
 from app.db.session import get_session
 from app.execution.order_persistence import get_order_by_idempotency_key
+from app.billing.service import meter
 from app.execution.signal_execution import execute_signal_for_user
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -115,6 +116,7 @@ async def tradingview_webhook(
         session, user, mode="PAPER", strategy_id=payload.strategy_id, signal=signal,
         idempotency_key=idempotency_key,
     )
+    await meter(session, user.tenant_id, "webhook_event", 1, source="tradingview", metadata={"order_id": order.id})
     return WebhookExecutionResponse(executed=result.executed, reasons=result.reasons, order_id=order.id)
 
 

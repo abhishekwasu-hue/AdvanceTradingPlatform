@@ -77,6 +77,10 @@ from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
+from app.billing.routes import admin_router as billing_admin_router, router as billing_router
+from app.billing.service import meter
+from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
+from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -134,6 +138,12 @@ app.include_router(contract_notes_router)
 app.include_router(observability_router)
 app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
+app.include_router(billing_router)
+app.include_router(billing_admin_router)
+app.include_router(marketplace_router)
+app.include_router(marketplace_admin_router)
+app.include_router(api_keys_router)
+app.include_router(public_api_router)
 
 _default_risk_config = RiskConfig()
 
@@ -356,6 +366,8 @@ async def backtest(
                           exit_rules=request.exit_rules.to_rules() if request.exit_rules else None)
     # Phase J2: a logged-in caller's run is recorded (strategy, params, data span, metrics).
     result.run_id = await record_run(session, user, BacktestBody(**request.model_dump()), result)
+    if user is not None:
+        await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
     return result
 
 

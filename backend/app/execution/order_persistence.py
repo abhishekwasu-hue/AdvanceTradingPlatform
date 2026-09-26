@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import OrderStatus
 from app.core.models import Signal
+from app.billing.service import meter
 from app.db.models import OrderEventRecord, OrderRecord, User
 from app.execution.order_state_machine import assert_valid_transition
 from app.execution.router import ExecutionResult
@@ -93,6 +94,8 @@ async def create_order(
         return existing, False
 
     session.add(OrderEventRecord(order_id=order.id, from_status=None, to_status=OrderStatus.CREATED.value, detail=""))
+    # Phase K1: every order attempt is one metered unit (usage dashboards, plan analytics).
+    await meter(session, tenant_id, "order", 1, source=mode.lower(), metadata={"strategy_id": strategy_id}, commit=False)
     await session.commit()
     await session.refresh(order)
     return order, True

@@ -2395,3 +2395,65 @@ and listed at `GET /api/backtests` / `GET /api/backtests/{id}`, so a number on a
 traceable to what produced it. The Backtest page gains exit-rule inputs, the analytics tables,
 Monte Carlo and walk-forward cards and the run history; the Autopilot form gains the same
 exit-rule inputs. Migration `a7c3e1f9b286`.
+
+## Phase K: Commercial SaaS layer
+
+### K1: Plans with prices, subscriptions, billing lifecycle, metering
+
+Master prompt V3.6-3.8, V3.14 rule 5. `app/plans/registry.py::Plan` now carries prices
+(monthly/yearly, INR), the commercial limits (LIVE strategies, backtests per month, public API
+calls per day, accounts, brokers), feature flags (`option_features`, `ai_features`,
+`marketplace_access`, `public_api`), support level and trial days; `plans/limits.py::
+feature_allowed` / `require_feature` gate features on plan **and** tenant status (a suspended
+organisation loses paid features). `app/billing/service.py` holds the lifecycle behind a
+`BillingProvider` abstraction whose first implementation is **manual** (bank transfer / UPI,
+operator records the payment; a gateway provider plugs in at the same seam):
+`subscribe` (a plan with trial days starts TRIALING and entitles at once; an invoice is raised
+payable after the trial), `record_payment` (operator/webhook: invoices PAID, ACTIVE, period
+extended), `cancel` (at period end or immediately), and the worker's daily `sweep` (trial or
+period ended → PAST_DUE with a 7-day grace and a renewal invoice; grace ended → CANCELLED,
+plan back to Free with `tenants.status_reason` recording why; cancellations falling due).
+Tables `subscriptions`, `billing_transactions` (INVOICE/PAYMENT/REFUND, never edited except
+OPEN→PAID), `usage_records` (daily buckets per metric). `meter()` is called for every order
+attempt (`create_order`), every logged-in backtest, every TradingView webhook event and every
+public API call. Endpoints `/api/billing/plans|""|subscribe|cancel|transactions|usage`,
+operator `POST /api/admin/billing/{tenant_id}/payment`. No card data ever touches the app.
+
+### K2: Strategy marketplace
+
+V3.9-3.10, V3.14 rule 8. `app/marketplace/service.py`: a creator lists one **frozen version**
+of their custom strategy (`marketplace_listings.config_json`; later edits never reach
+subscribers) with a title, description, methodology and a **saved backtest run as documented
+performance** (required to submit - the listing shows the run's symbol, timeframe, bar span,
+data source and engine version alongside the metrics, with a fixed disclaimer). Flow
+DRAFT → PENDING_REVIEW → PUBLISHED / REJECTED (with the reviewer's note back to the creator) →
+UNLISTED, reviewed by the SUPER_ADMIN (`/api/admin/marketplace/pending|{id}/publish|reject`).
+Subscribing copies the frozen config into the subscriber's own `custom_strategies` (a new
+version with source `marketplace:<id>`), so it goes through the subscriber's backtest → paper →
+live pipeline like anything they wrote; unsubscribing keeps the copy. Marketplace access is
+plan-gated (`require_feature(tenant, "marketplace_access")`), listings never expose the
+creator's internals. Frontend: the Marketplace page (discover, subscribe, publish, review queue).
+
+### K3: Public API and developer portal
+
+V3.11-3.12, V3.14 rules 9-10. `app/public_api/keys.py`: keys `atp_<prefix>_<secret>` shown
+once, stored hashed, with scopes, a per-key per-minute limiter, optional expiry, revocation,
+plan gate (`public_api`) and daily allowance (`max_api_calls_per_day`); `api_key_auth(scope)`
+is the dependency every `/api/public/v1/*` route uses, and it meters one `api_call`.
+`app/public_api/routes.py`: read endpoints (account, instruments, strategies, signals, orders,
+positions, trades, backtests, risk limits/events) and `POST /signals` which runs
+`execute_signal_for_user` in PAPER with an idempotency key (LIVE through a key is refused - it
+is bound to a broker account through deployments). `GET /api/public/v1/docs` is the
+machine-readable developer reference; `docs/PUBLIC_API.md` the human one. Keys are managed
+under Settings (OWNER only).
+
+### K4: Webhook alert channel
+
+V3.13 / section 42. `alerts/channels.py::WebhookConfig` (HTTPS URL, shared secret 16+ chars,
+optional event-type filter) joins Telegram and email; `dispatcher.send_webhook` POSTs the
+notification as JSON with `X-ATP-Event`, `X-ATP-Timestamp` and
+`X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)`, through the same outbox
+with the same retries and delivery records. Paid plans allow three channels so all of
+Telegram, email and webhook can be on. SMS/push remain out of scope (no provider decision).
+
+Migration `b8d4f2a0c397`.

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AlertChannelsCard from "../components/AlertChannelsCard";
+import ApiKeysCard from "../components/ApiKeysCard";
+import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
@@ -242,7 +244,11 @@ export default function SettingsPage() {
 
       <BrokerAccountsCard refreshKey={stored.length} />
 
+      <BillingCard />
+
       <AlertChannelsCard />
+
+      <ApiKeysCard />
 
       <Card title="TradingView webhook">
         <p className="text-sm text-muted mb-3">

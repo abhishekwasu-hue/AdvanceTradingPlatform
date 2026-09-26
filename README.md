@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Commercial layer (Phase K)
+
+- **Plans with prices and feature flags**, subscriptions with trial and grace lifecycle, invoices and
+  payments behind a billing-provider seam (manual provider first), usage metering for orders, backtests,
+  webhook events and API calls; the worker runs the daily billing sweep.
+- **Strategy marketplace**: publish one frozen version of a strategy with documented backtest performance,
+  operator review, subscribe = a copy in your own strategies (backtest → paper → live as usual).
+- **Public API** (`/api/public/v1`, `docs/PUBLIC_API.md`): scoped, hashed, rate-limited keys shown once;
+  read endpoints plus idempotent PAPER signal submission; **HMAC-signed webhook** alert channel.
+
 ## Exits and backtesting depth (Phase J)
 
 - **Dynamic exits** on deployments and backtests: trailing stop %, break-even at R, time exits;
@@ -274,7 +284,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 741 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 752 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

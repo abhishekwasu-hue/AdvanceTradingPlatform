@@ -922,7 +922,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK";
 
 export interface AlertChannel {
   channel_type: AlertChannelType;
@@ -1109,4 +1109,113 @@ export interface RiskEvent {
   status: "PASS" | "WARN" | "BLOCK";
   reason: string;
   order_id: number | null;
+}
+
+// ---- Phase K: billing, marketplace, public API ------------------------------------------------
+
+export interface PlanCatalogueEntry {
+  id: string;
+  name: string;
+  description: string;
+  price_monthly: number;
+  price_yearly: number;
+  currency: string;
+  trial_days: number;
+  [limit: string]: unknown;
+}
+
+export interface Subscription {
+  plan_id: string;
+  plan_name: string;
+  price_monthly: number;
+  price_yearly: number;
+  currency: string;
+  trial_days: number;
+  provider: string;
+  status: "NONE" | "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+  billing_cycle: "MONTHLY" | "YEARLY" | null;
+  current_period_start?: string | null;
+  current_period_end: string | null;
+  trial_end?: string | null;
+  grace_until: string | null;
+  cancel_at_period_end: boolean;
+  cancelled_at?: string | null;
+}
+
+export interface BillingTransaction {
+  id: number;
+  kind: string;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string;
+  provider_ref: string | null;
+  created_at: string;
+}
+
+export interface BillingOverview {
+  subscription: Subscription;
+  tenant_status: string;
+  status_reason: string | null;
+  limits: Record<string, unknown>;
+  metered_30d: Record<string, number>;
+  usage: Record<string, unknown>;
+}
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  rate_limit_per_minute: number;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  key?: string;
+  note?: string;
+}
+
+export interface MarketplacePerformance {
+  backtest_run_id: number;
+  symbol: string;
+  base_timeframe: string;
+  bars: number;
+  data_from: string | null;
+  data_to: string | null;
+  data_source: string;
+  engine_version: string;
+  total_trades: number | null;
+  win_rate: number | null;
+  net_pnl: number | null;
+  profit_factor: number | null;
+  max_drawdown: number | null;
+  expectancy: number | null;
+}
+
+export interface MarketplaceListing {
+  id: number;
+  title: string;
+  description: string;
+  methodology: string | null;
+  status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED" | "UNLISTED";
+  review_note: string | null;
+  version_number: number;
+  subscriber_count: number;
+  published_at: string | null;
+  created_at: string | null;
+  performance: MarketplacePerformance | null;
+  disclaimer: string;
+  custom_strategy_id: number | null;
+  config?: Record<string, unknown>;
+}
+
+export interface MarketplaceSubscription {
+  id: number;
+  listing_id: number;
+  status: string;
+  custom_strategy_id: number | null;
+  strategy_id: string | null;
+  title: string | null;
+  created_at: string | null;
 }

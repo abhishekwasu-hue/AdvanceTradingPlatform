@@ -195,6 +195,27 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   entries; open positions keep being monitored and exit normally, and the tenant can still log
   in to see them. Reactivate the same way.
 
+### 1.6a Billing routine (Phase K1)
+
+The manual billing provider means the operator closes the loop by hand:
+
+1. A tenant subscribes under *Settings → Plan & billing*; a plan with trial days entitles at
+   once and an invoice (OPEN) is raised, payable after the trial. Without a trial the tenant
+   stays on Free until the payment is recorded.
+2. When the bank transfer / UPI arrives, record it:
+   `POST /api/admin/billing/{tenant_id}/payment {"amount": 2999, "reference": "UPI/..."}`
+   (SUPER_ADMIN, MFA). Open invoices flip to PAID, the subscription becomes ACTIVE and the
+   period is extended by the billing cycle.
+3. The worker's daily sweep moves ended periods to PAST_DUE with a 7-day grace (tenant keeps
+   the plan, gets a "Payment due" notification) and, when grace runs out, back to Free with
+   `tenants.status_reason` saying why. `GET /api/admin/billing/{tenant_id}` shows the state.
+4. Refunds are recorded as REFUND transactions by the operator; nothing is ever deleted from
+   `billing_transactions`.
+
+Marketplace review (Phase K2): `GET /api/admin/marketplace/pending`, then
+`POST /api/admin/marketplace/{id}/publish|reject {"note": "..."}` - the note reaches the creator.
+Never publish a listing without an attached backtest run; the API refuses the submission anyway.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

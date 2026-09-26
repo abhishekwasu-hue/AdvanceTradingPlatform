@@ -3,7 +3,7 @@ the API, and the severity floor that decides what gets queued."""
 import json
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 
 from app.core.enums import AlertChannelType, NotificationSeverity
 from app.db.models import AlertChannelRecord
@@ -41,9 +41,28 @@ class EmailConfig(BaseModel):
     to_addresses: List[EmailStr] = Field(min_length=1, max_length=10)
 
 
-ChannelConfig = Union[TelegramConfig, EmailConfig]
+class WebhookConfig(BaseModel):
+    """Phase K4: a JSON POST to the tenant's own endpoint (their bot, Zapier, n8n, a Slack relay).
+    Every delivery is signed: `X-ATP-Signature: sha256=<hex HMAC-SHA256(secret, raw body)>` plus
+    `X-ATP-Timestamp`, so the receiver can reject forgeries and replays. `secret` is never
+    shown again after it is stored (only whether it is set)."""
 
-SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token",), AlertChannelType.EMAIL.value: ("password",)}
+    url: HttpUrl
+    secret: str = Field(min_length=16, max_length=200)
+    event_types: List[str] = Field(default_factory=list, max_length=30)   # empty = every event type
+
+    @field_validator("url")
+    @classmethod
+    def _https_only(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https" and value.host not in ("localhost", "127.0.0.1"):
+            raise ValueError("Webhook URL must use https (plain http is allowed only for localhost while testing)")
+        return value
+
+
+ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig]
+
+SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token",), AlertChannelType.EMAIL.value: ("password",),
+                 AlertChannelType.WEBHOOK.value: ("secret",)}
 
 
 def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
@@ -51,6 +70,8 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
         return TelegramConfig.model_validate(raw)
     if channel_type == AlertChannelType.EMAIL.value:
         return EmailConfig.model_validate(raw)
+    if channel_type == AlertChannelType.WEBHOOK.value:
+        return WebhookConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
 
 
@@ -86,6 +107,8 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
     if record.channel_type == AlertChannelType.TELEGRAM.value:
         token = raw.get("bot_token", "")
         return {"chat_id": raw.get("chat_id"), "bot_token_hint": f"{token[:4]}…{token[-3:]}" if len(token) > 8 else "set"}
+    if record.channel_type == AlertChannelType.WEBHOOK.value:
+        return {"url": raw.get("url"), "event_types": raw.get("event_types", []), "secret_set": bool(raw.get("secret"))}
     return {
         "smtp_host": raw.get("smtp_host"), "smtp_port": raw.get("smtp_port"), "username": raw.get("username"),
         "use_tls": raw.get("use_tls", True), "from_address": raw.get("from_address"), "to_addresses": raw.get("to_addresses", []),

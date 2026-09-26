@@ -47,6 +47,7 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
+from app.billing.service import sweep as billing_sweep
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments.master import sync_upstox
@@ -95,6 +96,7 @@ class CycleReport:
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
     retention: Optional[RetentionReport] = None
+    billing: Optional[Dict[str, int]] = None
     master_synced: Optional[Dict[str, int]] = None
     stale_skips: int = 0
     reconciled: int = 0
@@ -127,6 +129,8 @@ class TradingWorker:
         self._last_token_check: Dict[int, float] = {}
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
+        # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
+        self._last_billing_day = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
@@ -218,6 +222,18 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Retention run failed")
                         report.errors.append(f"retention: {exc}")
+                # Billing lifecycle (Phase K1): once per IST day - trial ends, periods past due,
+                # grace periods that ran out (tenant suspended), cancellations falling due.
+                if self._last_billing_day != now.astimezone(IST).date():
+                    try:
+                        report.billing = await billing_sweep(session, now)
+                        self._last_billing_day = now.astimezone(IST).date()
+                        if any(report.billing.values()):
+                            logger.info("Billing sweep: %s", report.billing)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Billing sweep failed")
+                        report.errors.append(f"billing: {exc}")
+                        self._last_billing_day = now.astimezone(IST).date()
                 await self._heartbeat(session, report, int((time.monotonic() - cycle_started) * 1000))
                 return report
         finally:

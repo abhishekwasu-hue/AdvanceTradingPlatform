@@ -42,7 +42,7 @@ PLANS: Dict[str, Plan] = {
     ),
     "pro": Plan(
         id="pro", name="Pro", max_active_deployments=10, live_trading=True, max_custom_strategies=25,
-        max_members=5, max_alert_channels=2,
+        max_members=5, max_alert_channels=3,
         description="Live trading for a small desk: up to 10 concurrent deployments and 5 team members.",
         price_monthly=2999.0, price_yearly=29990.0, max_live_strategies=5, max_backtests_per_month=500,
         max_api_calls_per_day=5000, max_accounts=3, max_brokers=2, option_features=True, ai_features=True,
@@ -50,7 +50,7 @@ PLANS: Dict[str, Plan] = {
     ),
     "business": Plan(
         id="business", name="Business", max_active_deployments=50, live_trading=True, max_custom_strategies=200,
-        max_members=25, max_alert_channels=2,
+        max_members=25, max_alert_channels=3,
         description="For prop desks and advisories: 50 concurrent deployments, 25 members, priority support.",
         price_monthly=14999.0, price_yearly=149990.0, max_live_strategies=50, max_backtests_per_month=5000,
         max_api_calls_per_day=100000, max_accounts=20, max_brokers=5, option_features=True, ai_features=True,

@@ -63,6 +63,13 @@ import type {
   RiskLimitRequest,
   ReconciliationReport,
   ReconciliationStatus,
+  ApiKey,
+  BillingOverview,
+  BillingTransaction,
+  MarketplaceListing,
+  MarketplaceSubscription,
+  PlanCatalogueEntry,
+  Subscription,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -460,6 +467,36 @@ export const api = {
 
   // --- Alert delivery ---
 
+  // ---- Phase K: billing, API keys, marketplace
+  billingPlans: () => request<PlanCatalogueEntry[]>("/billing/plans"),
+  billingOverview: () => request<BillingOverview>("/billing"),
+  billingSubscribe: (plan_id: string, billing_cycle: "MONTHLY" | "YEARLY") =>
+    request<Subscription>("/billing/subscribe", { method: "POST", body: JSON.stringify({ plan_id, billing_cycle }) }),
+  billingCancel: (immediately: boolean) =>
+    request<Subscription>("/billing/cancel", { method: "POST", body: JSON.stringify({ immediately }) }),
+  billingTransactions: () => request<BillingTransaction[]>("/billing/transactions"),
+  billingUsage: (days = 30) => request<Record<string, number>>(`/billing/usage?days=${days}`),
+  adminRecordPayment: (tenantId: number, amount: number, reference?: string) =>
+    request<Subscription>(`/admin/billing/${tenantId}/payment`, { method: "POST", body: JSON.stringify({ amount, reference }) }),
+  listApiKeys: () => request<ApiKey[]>("/api-keys"),
+  apiKeyScopes: () => request<Record<string, string>>("/api-keys/scopes"),
+  createApiKey: (body: { name: string; scopes: string[]; rate_limit_per_minute: number; expires_in_days?: number | null }) =>
+    request<ApiKey>("/api-keys", { method: "POST", body: JSON.stringify(body) }),
+  revokeApiKey: (id: number) => request<void>(`/api-keys/${id}`, { method: "DELETE" }),
+  marketplace: () => request<MarketplaceListing[]>("/marketplace"),
+  marketplaceListing: (id: number) => request<MarketplaceListing>(`/marketplace/${id}`),
+  marketplaceMine: () => request<MarketplaceListing[]>("/marketplace/listings/mine"),
+  marketplaceSubscriptions: () => request<MarketplaceSubscription[]>("/marketplace/subscriptions"),
+  marketplaceCreate: (body: { custom_strategy_id: number; title: string; description: string; methodology?: string | null; backtest_run_id?: number | null; version_number?: number | null }) =>
+    request<MarketplaceListing>("/marketplace/listings", { method: "POST", body: JSON.stringify(body) }),
+  marketplaceSubmit: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/submit`, { method: "POST" }),
+  marketplaceUnlist: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/unlist`, { method: "POST" }),
+  marketplaceSubscribe: (id: number) =>
+    request<MarketplaceSubscription & { disclaimer: string; next: string }>(`/marketplace/${id}/subscribe`, { method: "POST" }),
+  marketplaceUnsubscribe: (id: number) => request<void>(`/marketplace/${id}/unsubscribe`, { method: "POST" }),
+  adminMarketplacePending: () => request<MarketplaceListing[]>("/admin/marketplace/pending"),
+  adminMarketplaceReview: (id: number, publish: boolean, note?: string) =>
+    request<MarketplaceListing>(`/admin/marketplace/${id}/${publish ? "publish" : "reject"}`, { method: "POST", body: JSON.stringify({ note }) }),
   listAlertChannels: () => request<AlertChannel[]>("/alert-channels"),
 
   upsertAlertChannel: (type: string, body: AlertChannelUpsert) =>

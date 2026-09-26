@@ -22,7 +22,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 30 TradingView webhook | done | |
 | 31-32 backtest | done (Phase J2) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records. **Parameter optimisation** and historical option-chain backtests not built. |
 | 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis is rule-based, no LLM. |
-| 37-42 UI, versions, notifications | done | Telegram + email; **SMS/push/webhook channels missing**. |
+| 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (Phase K4); **SMS/push channels missing** (no provider decision). |
 | 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` missing. |
 
 ## Part II - non-functional (Sections 47-61)
@@ -49,9 +49,9 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V2.1-2.6 options depth | partial | See §23-25. |
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; deployments route to an account; `risk_limits` at six scopes with strictest-wins and `risk_events`. Broker-selection *rules* (capital/risk-based routing across brokers) not built - routing is explicit per deployment. |
-| V3.6-3.8 plans, billing, metering | partial | Plans and limits done; **billing provider abstraction and usage metering missing**. |
-| V3.9-3.12 marketplace, public API, developer portal | missing | |
-| V3.13 notifications | partial | |
+| V3.6-3.8 plans, billing, metering | done (Phase K1) | Priced plans with feature flags, subscriptions with trial/grace lifecycle behind a `BillingProvider` (manual provider; a gateway plugs in at the same seam), invoices/payments, usage metering (orders, backtests, webhook events, API calls). No card gateway integration yet. |
+| V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. Revenue share / creator payouts not built. |
+| V3.13 notifications | partial | Telegram, email, webhook (Phase K4). SMS/push not built. |
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
 | V4.1-4.3 AI agent, AI scanner, AI generator | missing / partial | Rule-based scanner and builder exist; no LLM, no action-state machine, no approval gate. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | missing | Greeks per leg exist; no aggregation or hierarchy. |
@@ -87,6 +87,6 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase H - options depth** - **DONE** on this branch (ARCHITECTURE.md Phase H). Was: strike-selection filters from the option chain (liquidity, OI, IV, delta), multi-leg deployments (bull put, bear call, iron condor) with max-loss/max-profit/breakeven/margin sizing and group exits, Greeks per position.
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
-- **Phase K - commercial SaaS** (V3.6-3.13): billing abstraction and metering, marketplace, public API + developer portal, SMS/push/webhook notifications.
+- **Phase K - commercial SaaS** - **DONE** on this branch (ARCHITECTURE.md Phase K, docs/PUBLIC_API.md). Was: billing abstraction and metering, marketplace, public API + developer portal, webhook notifications. SMS/push still need a provider decision.
 - **Phase L - AI layer** (§56, V4.1-4.3, V4.7): LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine (needs a model provider decision and API key handling).
 - **Continuous**: the V1 exit gate - a real Upstox account run - as soon as credentials are entered in Settings.

@@ -1,4 +1,4 @@
-import { BellRing, Mail, Send } from "lucide-react";
+import { BellRing, Mail, Send, Webhook } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -22,6 +22,7 @@ export default function AlertChannelsCard() {
   const [busy, setBusy] = useState(false);
 
   const [tg, setTg] = useState({ bot_token: "", chat_id: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
+  const [wh, setWh] = useState({ url: "", secret: "", event_types: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
   const [em, setEm] = useState({
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
@@ -32,6 +33,8 @@ export default function AlertChannelsCard() {
       setChannels(list);
       const t = list.find((c) => c.channel_type === "TELEGRAM");
       if (t) setTg((s) => ({ ...s, chat_id: String(t.config.chat_id ?? ""), min_severity: t.min_severity, enabled: t.enabled }));
+      const w = list.find((c) => c.channel_type === "WEBHOOK");
+      if (w) setWh((s) => ({ ...s, url: String(w.config.url ?? ""), event_types: ((w.config.event_types as string[]) ?? []).join(", "), min_severity: w.min_severity, enabled: w.enabled }));
       const e = list.find((c) => c.channel_type === "EMAIL");
       if (e) {
         setEm((s) => ({
@@ -93,7 +96,7 @@ export default function AlertChannelsCard() {
   }
 
   return (
-    <Card title="Alert delivery (Telegram / email)">
+    <Card title="Alert delivery (Telegram / email / webhook)">
       <p className="text-xs text-muted mb-3">
         The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
         placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
@@ -161,6 +164,36 @@ export default function AlertChannelsCard() {
             </button>
             <button disabled={busy || !stored("EMAIL")} onClick={() => test("EMAIL")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
             {stored("EMAIL") && <button disabled={busy} onClick={() => run("Email channel removed.", () => api.deleteAlertChannel("email"))} className="text-xs text-danger hover:underline">Remove</button>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2 lg:col-span-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-emerald-400"><Webhook size={14} /> Webhook (signed JSON POST)</div>
+          <div className="text-[11px]">{status("WEBHOOK")}</div>
+          <p className="text-[11px] text-muted">
+            Every event is POSTed as JSON with <code>X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)</code> and
+            <code> X-ATP-Timestamp</code>, so your receiver (a bot, n8n, Zapier, a Slack relay) can verify it came from here. HTTPS only.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <input className={`${input} col-span-2`} placeholder="https://your-endpoint.example/atp" value={wh.url} onChange={(e) => setWh({ ...wh, url: e.target.value })} />
+            <input className={input} type="password" autoComplete="off" placeholder="Shared secret, 16+ chars (blank = keep)" value={wh.secret} onChange={(e) => setWh({ ...wh, secret: e.target.value })} />
+          </div>
+          <input className={input} placeholder="Event types to send, comma separated (blank = all): ORDER_FILLED, DAILY_LOSS_LIMIT, ..." value={wh.event_types} onChange={(e) => setWh({ ...wh, event_types: e.target.value })} />
+          <div className="flex items-center gap-3 text-xs">
+            <label className="flex items-center gap-1 text-muted">floor
+              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={wh.min_severity} onChange={(e) => setWh({ ...wh, min_severity: e.target.value as NotificationSeverity })}>
+                {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={wh.enabled} onChange={(e) => setWh({ ...wh, enabled: e.target.checked })} /> enabled</label>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={busy || !wh.url} onClick={() => run("Webhook channel saved.", () => api.upsertAlertChannel("webhook", {
+              enabled: wh.enabled, min_severity: wh.min_severity,
+              config: { url: wh.url, secret: wh.secret || null, event_types: wh.event_types.split(",").map((a) => a.trim()).filter(Boolean) },
+            }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || !stored("WEBHOOK")} onClick={() => test("WEBHOOK")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("WEBHOOK") && <button disabled={busy} onClick={() => run("Webhook channel removed.", () => api.deleteAlertChannel("webhook"))} className="text-xs text-danger hover:underline">Remove</button>}
           </div>
         </div>
       </div>

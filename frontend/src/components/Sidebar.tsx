@@ -21,8 +21,7 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon,
-} from "lucide-react";
+  type LucideIcon, Store } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import Logo from "./Logo";
 
@@ -36,6 +35,7 @@ export type Page =
   | "scanner"
   | "news-events"
   | "backtest"
+  | "marketplace"
   | "option-chain"
   | "instruments"
   | "positions"
@@ -72,6 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "strategy-builder", label: "Strategy Builder", icon: Wand2 },
       { id: "deployments", label: "Autopilot", icon: Bot },
       { id: "backtest", label: "Backtesting", icon: History },
+      { id: "marketplace", label: "Marketplace", icon: Store },
     ],
   },
   {

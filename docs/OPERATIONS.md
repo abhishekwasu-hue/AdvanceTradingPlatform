@@ -216,6 +216,23 @@ Marketplace review (Phase K2): `GET /api/admin/marketplace/pending`, then
 `POST /api/admin/marketplace/{id}/publish|reject {"note": "..."}` - the note reaches the creator.
 Never publish a listing without an attached backtest run; the API refuses the submission anyway.
 
+### 1.6b AI layer routine (Phase L)
+
+- **Provider keys** are tenant data: entered under *Settings → AI provider* by an OWNER, encrypted
+  with `SECRETS_ENCRYPTION_KEY`, never in `.env`, logs or support tickets. Rotating the platform
+  key re-encrypts them with the same script as broker credentials. A tenant with no provider (or on
+  Free) runs the rule-based parser; nothing leaves the platform.
+- **Egress**: allow `api.anthropic.com` and `api.openai.com` from the API service only (the worker
+  never calls a model). Provider errors show on the Settings card (`last_error`) and in the draft's
+  status (FAILED).
+- **Proposals**: the worker raises `AI_PROPOSAL` notifications; unanswered proposals expire after 24 h.
+  A tenant asking "why did it pause?" - read `ai_actions` (rule, evidence, decided_by) and the
+  deployment's `pause_reason`, which names the proposal id. The agent never acts unapproved; if a
+  deployment paused without a decided proposal, that was the worker's own auto-pause after 5
+  consecutive failures (Phase A).
+- **Lineage** (V4 governance): `ai_strategy_drafts` keeps prompt, provider, model and raw response;
+  `custom_strategies.origin = ai:<draft>` links a live strategy back to it.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

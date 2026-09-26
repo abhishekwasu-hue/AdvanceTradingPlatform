@@ -81,6 +81,7 @@ from app.billing.routes import admin_router as billing_admin_router, router as b
 from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
+from app.ai.routes import router as ai_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -144,6 +145,7 @@ app.include_router(marketplace_router)
 app.include_router(marketplace_admin_router)
 app.include_router(api_keys_router)
 app.include_router(public_api_router)
+app.include_router(ai_router)
 
 _default_risk_config = RiskConfig()
 

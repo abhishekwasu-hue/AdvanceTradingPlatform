@@ -30,6 +30,7 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Trad
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
 from app.trading.exit_rules import ExitRules
+from app.ai.regime import parse_filter, validate_filter
 from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
@@ -169,6 +170,7 @@ class DeploymentCreateRequest(ContractRulesRequest):
     broker_account_id: Optional[int] = None
     # Phase J1: dynamic exits.
     exit_rules: Optional[ExitRulesRequest] = None
+    regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -212,6 +214,7 @@ class DeploymentResponse(BaseModel):
     stop_credit_pct: Optional[float] = None
     broker_account_id: Optional[int] = None
     exit_rules: Optional[dict] = None
+    regime_filter: Optional[List[str]] = None
     contract_rules: str = "underlying"
 
     @classmethod
@@ -231,7 +234,7 @@ class DeploymentResponse(BaseModel):
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
             broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
-            contract_rules=describe_deployment(record),
+            regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
         )
 
 
@@ -247,7 +250,18 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
     exits = ExitRules.from_json(getattr(record, "exit_rules", None))
     if exits.active:
         text += f"; exits: {exits.describe()}"
+    regimes = parse_filter(getattr(record, "regime_filter", None))
+    if regimes:
+        text += f"; only in {', '.join(r.lower().replace('_', ' ') for r in regimes)} regimes"
     return text
+
+
+def _regime_filter(request) -> List[str]:
+    values = getattr(request, "regime_filter", None) or []
+    try:
+        return validate_filter([v.upper() for v in values])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 async def _open_position_counts(session: AsyncSession, tenant_id: int) -> dict:
@@ -375,6 +389,7 @@ async def create_deployment(
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
         broker_account_id=account.id if account is not None else None,
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
+        regime_filter=",".join(_regime_filter(request)) or None,
     )
     session.add(record)
     try:

@@ -21,7 +21,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
 | 30 TradingView webhook | done | |
 | 31-32 backtest | done (Phase J2) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records. **Parameter optimisation** and historical option-chain backtests not built. |
-| 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis is rule-based, no LLM. |
+| 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis rule-based; LLM provider seam + generator with review gate added (Phase L). Scanner stays rule-based. |
 | 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (Phase K4); **SMS/push channels missing** (no provider decision). |
 | 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` missing. |
 
@@ -53,9 +53,9 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. Revenue share / creator payouts not built. |
 | V3.13 notifications | partial | Telegram, email, webhook (Phase K4). SMS/push not built. |
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
-| V4.1-4.3 AI agent, AI scanner, AI generator | missing / partial | Rule-based scanner and builder exist; no LLM, no action-state machine, no approval gate. |
+| V4.1-4.3 AI agent, AI scanner, AI generator | done / partial (Phase L) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) still rule-based. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | missing | Greeks per leg exist; no aggregation or hierarchy. |
-| V4.6-4.8 quant, regime, advanced backtesting | missing | |
+| V4.6-4.8 quant, regime, advanced backtesting | partial | Regime engine + deployment regime filter (Phase L3); Monte Carlo/walk-forward/analytics (Phase J). Parameter optimisation and factor/quant models not built. |
 | V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and the broker-uncertain block done (Phase G). |
 | V4.10 DR | partial | Restore-test sequence exists as script; RPO/RTO per tier, incident record schema missing. |
 | V4.11 monitoring | partial | Trading metrics exist; AI/billing domains n/a; severities INFO/WARNING/CRITICAL (no EMERGENCY). |
@@ -74,8 +74,8 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 12 one DSL everywhere: **done** (rule engine shared; exit-parity test).
 13 server-side tenant isolation: **done**.
 14 no hard-coded secrets: **done** (fail-fast on defaults).
-15 AI never holds broker credentials: **done** (no AI execution path exists).
-16 human approval for AI live strategies: n/a until an LLM builder exists.
+15 AI never holds broker credentials: **done** - providers receive prompt text only; the monitoring agent decides from records and executes through the ordinary services after human approval (Phase L).
+16 human approval for AI live strategies: **done** (Phase L2) - a draft becomes a strategy only through a human approve call that requires an attached backtest; `custom_strategies.origin`/`ai_approved_by` record it.
 17 partial fills explicit: **done** (F3).
 18 restart reconciles with broker before new signals: **done** (Phase G1 `TradingWorker.reconcile_on_start` before the first cycle).
 19 multi-level risk limits: **missing** (tenant level only).
@@ -88,5 +88,5 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
 - **Phase K - commercial SaaS** - **DONE** on this branch (ARCHITECTURE.md Phase K, docs/PUBLIC_API.md). Was: billing abstraction and metering, marketplace, public API + developer portal, webhook notifications. SMS/push still need a provider decision.
-- **Phase L - AI layer** (§56, V4.1-4.3, V4.7): LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine (needs a model provider decision and API key handling).
+- **Phase L - AI layer** - **DONE** on this branch (ARCHITECTURE.md Phase L). Was: LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine. Provider keys are entered per tenant on the Settings page (encrypted); Anthropic, OpenAI or the built-in rule-based fallback.
 - **Continuous**: the V1 exit gate - a real Upstox account run - as soon as credentials are entered in Settings.

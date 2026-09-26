@@ -48,6 +48,8 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tena
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
+from app.ai import monitor as ai_monitor
+from app.ai.regime import classify_regime, parse_filter, regime_blocks
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments.master import sync_upstox
@@ -97,6 +99,7 @@ class CycleReport:
     skipped_lock: bool = False
     retention: Optional[RetentionReport] = None
     billing: Optional[Dict[str, int]] = None
+    ai_proposals: int = 0
     master_synced: Optional[Dict[str, int]] = None
     stale_skips: int = 0
     reconciled: int = 0
@@ -131,6 +134,11 @@ class TradingWorker:
         self._last_retention_day = None
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
+        # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
+        # agent wants classified even without a filter (those with open positions).
+        self._regimes: Dict[int, str] = {}
+        self._regime_wanted: set = set()
+        self._last_ai_expiry_day = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
@@ -363,6 +371,23 @@ class TradingWorker:
                     report.errors.append(f"deployment {dep.id}: {exc}")
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
+        # Phase L4: the monitoring agent observes this tenant's deployments and raises proposals
+        # for a human to decide on. It never acts on its own.
+        try:
+            open_dep_ids = set(await session.scalars(select(TradeRecord.deployment_id).where(
+                TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id.is_not(None))))
+            self._regime_wanted = open_dep_ids
+            proposals = await ai_monitor.observe(session, tenant_id, deployments, now, regime_lookup=lambda d: self._regimes.get(d.id))
+            if proposals:
+                created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
+                report.ai_proposals += len(created)
+            if self._last_ai_expiry_day != now.astimezone(IST).date():
+                await ai_monitor.expire_stale(session, now)
+                self._last_ai_expiry_day = now.astimezone(IST).date()
+        except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
+            logger.exception("Monitoring agent failed for tenant %s", tenant_id)
+            report.errors.append(f"ai monitor: {exc}")
+
     async def _evaluate_deployment(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,
         adapters: Dict[str, BrokerInterface], now: datetime, entries_allowed: bool,
@@ -391,6 +416,19 @@ class TradingWorker:
             self._stale_skips += 1
             logger.warning("Deployment %s: %s", dep.id, stale)
             return False
+
+        # Phase L3: the regime filter - a deployment that only trades trends sits out ranges, and
+        # says so. Classified on the base frame the strategy is about to read.
+        allowed = parse_filter(dep.regime_filter)
+        regime = classify_regime(base) if (allowed or dep.id in self._regime_wanted) else None
+        if regime is not None:
+            self._regimes[dep.id] = regime.kind
+        if allowed:
+            blocked = regime_blocks(regime, allowed)
+            if blocked:
+                dep.last_error = blocked
+                await session.commit()
+                return False
 
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:

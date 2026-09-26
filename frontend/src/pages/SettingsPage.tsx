@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AlertChannelsCard from "../components/AlertChannelsCard";
+import AiProviderCard from "../components/AiProviderCard";
 import ApiKeysCard from "../components/ApiKeysCard";
 import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
@@ -249,6 +250,8 @@ export default function SettingsPage() {
       <AlertChannelsCard />
 
       <ApiKeysCard />
+
+      <AiProviderCard />
 
       <Card title="TradingView webhook">
         <p className="text-sm text-muted mb-3">

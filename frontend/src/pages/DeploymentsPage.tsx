@@ -98,6 +98,9 @@ export default function DeploymentsPage() {
   const [exitBreakEven, setExitBreakEven] = useState("");
   const [exitMinutes, setExitMinutes] = useState("");
   const [exitAt, setExitAt] = useState("");
+  const [regimes, setRegimes] = useState<string[]>([]);
+  const REGIME_OPTIONS = ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE", "QUIET"];
+  const toggleRegime = (r: string) => setRegimes((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
 
   function exitRules(): ExitRules | null {
     const r: ExitRules = {};
@@ -192,7 +195,7 @@ export default function DeploymentsPage() {
     try {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
-        broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), ...contractRules(),
+        broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, ...contractRules(),
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -547,6 +550,17 @@ export default function DeploymentsPage() {
               <label className="block text-xs text-muted mb-1">Flat at (HH:MM IST)</label>
               <input placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={exitAt} onChange={(e) => setExitAt(e.target.value)} />
             </div>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2">Regime filter <span className="normal-case font-normal">(optional; enter only when the market reads as one of these - none selected = any)</span></div>
+          <div className="flex flex-wrap gap-2">
+            {REGIME_OPTIONS.map((r) => (
+              <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-muted hover:text-slate-200"}`}>
+                {r.replace("_", " ").toLowerCase()}
+              </button>
+            ))}
           </div>
         </div>
 

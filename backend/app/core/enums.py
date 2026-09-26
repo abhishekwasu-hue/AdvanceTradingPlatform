@@ -32,6 +32,8 @@ class NotificationType(str, Enum):
     SYSTEM_FAILURE = "SYSTEM_FAILURE"
     # Account security: login from a new device, MFA/password changes (Phase C4).
     SECURITY = "SECURITY"
+    # Phase L4: the monitoring agent proposed an action that needs a human decision.
+    AI_PROPOSAL = "AI_PROPOSAL"
 
 
 class NotificationSeverity(str, Enum):

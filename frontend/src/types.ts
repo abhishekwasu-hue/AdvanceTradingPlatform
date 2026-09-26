@@ -710,6 +710,7 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  regime_filter?: string[] | null;
   strategy_id: string;
   symbol: string;
   exchange: string;
@@ -827,6 +828,7 @@ export interface PositionGreeks {
 }
 
 export interface DeploymentCreateRequest extends ContractRules {
+  regime_filter?: string[] | null;
   strategy_id: string;
   symbol: string;
   exchange: string;
@@ -1217,5 +1219,79 @@ export interface MarketplaceSubscription {
   custom_strategy_id: number | null;
   strategy_id: string | null;
   title: string | null;
+  created_at: string | null;
+}
+
+// ---- Phase L: AI layer -------------------------------------------------------------------------
+
+export type AiProviderName = "anthropic" | "openai" | "rule_based";
+
+export interface AiProviderConfig {
+  provider: AiProviderName;
+  model: string;
+  api_key_set: boolean;
+  enabled: boolean;
+  configured: boolean;
+  last_used_at?: string | null;
+  last_error?: string | null;
+  ai_features_allowed: boolean;
+  providers: AiProviderName[];
+  default_models: Record<string, string>;
+}
+
+export type AiDraftStatus = "DRAFT" | "FAILED" | "BACKTESTED" | "APPROVED" | "REJECTED";
+
+export interface AiStrategyDraft {
+  id: number;
+  prompt: string;
+  provider: string;
+  model: string;
+  status: AiDraftStatus;
+  config: CustomStrategyConfig | null;
+  explanation: string | null;
+  warnings: string[];
+  backtest_run_id: number | null;
+  custom_strategy_id: number | null;
+  strategy_id: string | null;
+  approved_by: number | null;
+  approved_at: string | null;
+  created_at: string | null;
+  lineage: { provider: string; model: string; prompt_chars: number; generated_at: string | null };
+  disclaimer: string;
+  raw_response?: string | null;
+}
+
+export type RegimeKind = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "VOLATILE" | "QUIET" | "UNKNOWN";
+
+export interface Regime {
+  kind: RegimeKind;
+  confidence: number;
+  adx: number | null;
+  ema_fast: number | null;
+  ema_slow: number | null;
+  ema_slope_pct: number | null;
+  atr_pct: number | null;
+  atr_ratio: number | null;
+  bars: number;
+  reasons: string[];
+}
+
+export type AiActionStatus = "PROPOSED" | "APPROVED" | "EXECUTED" | "REJECTED" | "EXPIRED" | "FAILED";
+
+export interface AiAction {
+  id: number;
+  deployment_id: number | null;
+  trade_id: number | null;
+  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY";
+  rule: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  status: AiActionStatus;
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  executed_at: string | null;
+  result: string | null;
+  expires_at: string | null;
   created_at: string | null;
 }

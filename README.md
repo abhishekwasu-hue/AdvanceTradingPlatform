@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## AI layer (Phase L)
+
+- **AI Copilot**: describe a strategy, get a draft in the Strategy Builder's rule schema with the model's
+  own caveats; it becomes a strategy only after you backtest it and approve it (lineage recorded).
+- **Provider seam**: Anthropic, OpenAI or the built-in rule-based parser; the key is entered once on the
+  Settings page and stored encrypted. The model sees prompt text only, never credentials.
+- **Regime engine** (trend / range / volatile / quiet) as an optional entry filter per deployment, and a
+  **monitoring agent** that proposes pause / exit / review actions with evidence; every action waits for
+  your approval and expires unanswered.
+
 ## Commercial layer (Phase K)
 
 - **Plans with prices and feature flags**, subscriptions with trial and grace lifecycle, invoices and
@@ -284,7 +294,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 752 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 762 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

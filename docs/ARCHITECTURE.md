@@ -2457,3 +2457,68 @@ with the same retries and delivery records. Paid plans allow three channels so a
 Telegram, email and webhook can be on. SMS/push remain out of scope (no provider decision).
 
 Migration `b8d4f2a0c397`.
+
+## Phase L: AI layer
+
+Master prompt section 56, V4.1-4.3, V4.7, safety rules 15-16. Three principles run through
+every part: the model **drafts, never decides**; every AI output goes through the same
+pipeline as a human's (backtest → paper → live, risk hierarchy, kill switches); the AI never
+holds a broker credential (a provider gets prompt text in and text out).
+
+### L1: Provider seam and tenant keys
+
+`app/ai/providers.py::LLMProvider` is one method, `complete(system, user) -> str`, with
+Anthropic (Messages API), OpenAI (Chat Completions) and a **rule-based** implementation that
+wraps the existing NLU parser - no key, no network - so every AI feature has an explainable
+fallback. The tenant's choice lives in `ai_provider_configs`: provider, model, and the API key
+Fernet-encrypted with `SECRETS_ENCRYPTION_KEY`, entered on the Settings page only (OWNER),
+never returned once stored, never read from the environment or a chat. Free-plan tenants and
+tenants without a configured provider always get the rule-based provider
+(`ai_settings.provider_for`). Provider errors (401/429/unreachable) are mapped to plain
+messages and recorded on the config row.
+
+### L2: Strategy generator behind the review gate
+
+`app/ai/generator.py` asks the provider for one JSON object in the `CustomStrategyConfig`
+contract (the no-code builder's schema: indicators, operators, ATR stop, R targets) plus an
+explanation and the model's own caveats. The answer is validated by the same pydantic model
+that guards `POST /api/custom-strategies`; an invalid answer is retried once with the error
+quoted back, then recorded as FAILED. The raw response is kept on the `ai_strategy_drafts` row
+for lineage (provider, model, prompt, time). State machine: DRAFT → BACKTESTED
+(`POST /api/ai/drafts/{id}/backtest` runs the draft through the ordinary engine and records a
+`backtest_runs` row with `strategy_id = ai_draft_<id>`) → APPROVED (`POST .../approve`, a human
+call that is refused until a backtest is attached) or REJECTED. Approval is the only way a
+draft becomes a `custom_strategies` row, stamped `origin="ai:<draft>"` and `ai_approved_by`,
+with a strategy version whose source is `ai:<draft>`; from there it is an ordinary strategy.
+
+### L3: Market regime engine
+
+`app/ai/regime.py::classify_regime` is deterministic: ADX(14) for trend strength, EMA20/EMA50
+relation and slope for direction, ATR as a share of price against its rolling median for
+volatility → TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE / QUIET (or UNKNOWN under 60
+bars), each with a confidence and the numbers behind the call. A deployment's optional
+`regime_filter` (a set of allowed regimes) is judged on the base frame right before the
+strategy runs; a blocked entry writes the regime, its confidence and the leading reasons into
+`last_error`, so the Autopilot card says exactly why it sat out. `POST /api/ai/regime`
+classifies uploaded candles; the Autopilot form offers the filter as toggles.
+
+### L4: Monitoring agent and the action-state machine
+
+`app/ai/monitor.py` observes each tenant's deployments at the end of every worker cycle from
+persisted records only (never a model call in the decision path): LOSING_STREAK (last 3 trades
+today lost), DAY_DRAWDOWN (a deployment's realised P&L today below 2% of capital),
+ERROR_STREAK (3 consecutive evaluation failures - below the worker's own auto-pause at 5, so
+the human hears first), STALE_POSITION (open > 120 min with the regime turned adverse),
+WIN_RATE_DRIFT (rolling win rate ≥ 25 points under the latest backtest). Each firing is one
+`ai_actions` row: PROPOSED → APPROVED → EXECUTED / FAILED, or REJECTED, or EXPIRED after 24
+hours; duplicates per (deployment, rule) are suppressed while one is open or was decided today.
+A proposal raises an `AI_PROPOSAL` notification (WARNING, so Telegram/email/webhook carry it).
+`POST /api/ai/actions/{id}/approve` is the human step and executes at once through the
+ordinary services (pause = the deployment's status change with an audited reason; exit = the
+position monitor's `close_position` off a usable broker session's LTP; review/reduce-risk =
+acknowledged, no automatic change). The AI Copilot page lists open proposals with their
+evidence, the decided history, the generator and the regime read; the Settings page holds
+the provider card. Migration `c9e5a3b1d4a8`.
+
+Not built (needs a product decision): AI-written scanners (V4.2) beyond the rule-based scanner,
+per-tenant model fine-tuning, and any auto-approval class - every action stays human-gated.

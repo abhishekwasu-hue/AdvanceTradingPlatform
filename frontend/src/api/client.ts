@@ -70,6 +70,10 @@ import type {
   MarketplaceSubscription,
   PlanCatalogueEntry,
   Subscription,
+  AiAction,
+  AiProviderConfig,
+  AiStrategyDraft,
+  Regime,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -467,6 +471,25 @@ export const api = {
 
   // --- Alert delivery ---
 
+  // ---- Phase L: AI layer
+  aiProvider: () => request<AiProviderConfig>("/ai/provider"),
+  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
+    request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
+  aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
+  aiGenerate: (prompt: string) => request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt }) }),
+  aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
+  aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
+  aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample") =>
+    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
+      method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }),
+    }),
+  aiApproveDraft: (id: number, name?: string) =>
+    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name }) }),
+  aiRejectDraft: (id: number, note?: string) => request<AiStrategyDraft>(`/ai/drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
+  aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
+  aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiRejectAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
   // ---- Phase K: billing, API keys, marketplace
   billingPlans: () => request<PlanCatalogueEntry[]>("/billing/plans"),
   billingOverview: () => request<BillingOverview>("/billing"),

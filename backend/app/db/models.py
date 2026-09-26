@@ -410,6 +410,9 @@ class StrategyDeploymentRecord(Base):
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True)
     # Phase J1: dynamic exit rules JSON (trailing %, break-even R, time exits) - app/trading/exit_rules.py.
     exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase L3: comma-separated regimes (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, QUIET) the
+    # deployment may enter in; NULL = any. Judged on the base frame before the strategy runs.
+    regime_filter: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
@@ -548,6 +551,10 @@ class CustomStrategyRecord(Base):
     live_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("strategy_versions.id", ondelete="SET NULL"), nullable=True
     )
+    # Phase L2: where the strategy came from ("user", "ai:<draft id>", "marketplace:<listing id>")
+    # and, for AI-generated ones, who approved it after review (safety rule 16).
+    origin: Mapped[str] = mapped_column(String(40), nullable=False, default="user")
+    ai_approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
@@ -813,6 +820,76 @@ class ApiKeyRecord(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class AiProviderConfigRecord(Base):
+    """Phase L1: one LLM provider per tenant. The API key is entered on the Settings page only,
+    stored Fernet-encrypted (like broker credentials) and never returned by the API."""
+
+    __tablename__ = "ai_provider_configs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)          # anthropic / openai / rule_based
+    model: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class AiStrategyDraftRecord(Base):
+    """Phase L2: an AI-generated strategy on its way through the review gate (master prompt
+    section 56, safety rule 16): DRAFT -> BACKTESTED (a saved run attached) -> APPROVED (a human
+    OWNER/USER saved it as a custom strategy) or REJECTED. The raw model output is kept for
+    lineage (V4 data governance)."""
+
+    __tablename__ = "ai_strategy_drafts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    raw_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="DRAFT")   # DRAFT / FAILED / BACKTESTED / APPROVED / REJECTED
+    backtest_run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id", ondelete="SET NULL"), nullable=True)
+    custom_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class AiActionRecord(Base):
+    """Phase L4: the monitoring agent's action-state machine (V4.1): the agent PROPOSES, a human
+    APPROVES or REJECTS, the system EXECUTES; unanswered proposals EXPIRE. Nothing here ever
+    places or closes a position without the approval row filled in."""
+
+    __tablename__ = "ai_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    deployment_id: Mapped[int | None] = mapped_column(ForeignKey("strategy_deployments.id", ondelete="CASCADE"), nullable=True, index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    action: Mapped[str] = mapped_column(String(24), nullable=False)          # PAUSE_DEPLOYMENT / EXIT_POSITION / REDUCE_RISK / REVIEW_STRATEGY
+    rule: Mapped[str] = mapped_column(String(40), nullable=False)            # which observation fired
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="PROPOSED", index=True)   # PROPOSED / APPROVED / EXECUTED / REJECTED / EXPIRED / FAILED
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    result: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 
 
 class KillSwitchRecord(Base):

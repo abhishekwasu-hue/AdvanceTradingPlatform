@@ -12,7 +12,7 @@ from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalH
 from app.db.session import get_session
 from app.notifications.service import notify
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
-from app.trading.exit_logic import check_exit
+from app.trading.exit_logic import check_contract_exit
 from app.trading.position_monitor import broker_for_trade, close_position
 
 router = APIRouter(prefix="/api", tags=["trading"])
@@ -148,6 +148,9 @@ async def list_signal_history(
 
 class MarkPriceRequest(BaseModel):
     current_price: float
+    # Phase F4: for an option position, the underlying's price too - the strategy's stop/targets
+    # are on it; `current_price` is the contract's premium.
+    underlying_price: Optional[float] = None
 
 
 class MarkPriceResponse(BaseModel):
@@ -174,7 +177,7 @@ async def mark_price(
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
 
-    hit = check_exit(trade, request.current_price)
+    hit = check_contract_exit(trade, request.current_price, request.underlying_price)
     if hit is None:
         return MarkPriceResponse(closed=False)
 

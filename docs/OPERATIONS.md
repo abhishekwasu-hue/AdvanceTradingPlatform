@@ -133,6 +133,14 @@ Every trading morning, before 09:15 IST:
    08:00 IST (`INSTRUMENT_SYNC_EXCHANGES`, default NSE). `GET /api/instrument-master/status`
    shows what is loaded and when; if it is stale on an F&O trading day (a download failure is on
    the worker's cycle report), a platform administrator runs `POST /api/instrument-master/sync`.
+1b. **F&O deployments (Phase F).** An option/future deployment picks its contract at signal
+   time from the master and the spot - check the Autopilot preview once the master is loaded.
+   Bought options exit on the strategy's underlying levels with the premium floor as the safety
+   net; written options carry open-ended risk until the underlying stop or the premium ceiling
+   exits, need the broker's margin calculator LIVE, and default to one lot - keep `max_lots`
+   explicit. All F&O positions are squared off at 15:15 IST like everything else, which also
+   covers expiry day. Positions show `on <underlying>: SL / T1 · premium floor` so you can see
+   both legs of the exit rule.
 2. **Check the worker.** Autopilot tab: "Trading worker: Running" and "Market: Open" once the
    session starts. A stale heartbeat during market hours is an incident (1.7).
 3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the

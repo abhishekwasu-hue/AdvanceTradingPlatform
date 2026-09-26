@@ -35,7 +35,8 @@ from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
-from app.trading.exit_logic import check_exit
+from app.trading.exit_logic import check_contract_exit
+from app.instruments.master import INDEX_EXCHANGE, underlying_of
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,12 @@ class CloseOutcome:
 def exchange_for_symbol(symbol: str) -> str:
     spec = get_contract_spec(symbol)
     return spec.exchange if spec else "NSE"
+
+
+def underlying_exchange(symbol: str) -> str:
+    """Where an underlying's own quote comes from: NSE for stocks and NIFTY indices, BSE for
+    SENSEX/BANKEX."""
+    return INDEX_EXCHANGE.get(underlying_of(symbol), "NSE")
 
 
 def exchange_for_trade(trade: TradeRecord) -> str:
@@ -194,7 +201,7 @@ async def close_position(
 
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
-    charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity)
+    charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING")
     trade.exit_price = round(realised_price, 2)
     trade.exit_time = now or datetime.now(timezone.utc)
     trade.exit_reason = reason
@@ -243,7 +250,15 @@ async def monitor_open_positions(
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))
             continue
-        hit = check_exit(trade, price)
+        underlying_price = None
+        if (trade.instrument_kind or "UNDERLYING") == "OPTION" and trade.underlying_symbol:
+            # The strategy's levels live on the underlying (Phase F4); without its quote the
+            # premium floor/ceiling still protects the position this cycle.
+            try:
+                underlying_price = await price_lookup(trade.underlying_symbol, underlying_exchange(trade.underlying_symbol))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("No underlying price for %s (trade %s): %s - premium check only", trade.underlying_symbol, trade.id, exc)
+        hit = check_contract_exit(trade, price, underlying_price)
         if hit is None:
             continue
         reason, exit_price = hit

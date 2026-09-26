@@ -214,11 +214,27 @@ npm run dev
   retention, and `scripts/backup/verify_backup.sh` rehearses a restore into a scratch database
   and checks schema, counts and the audit chain. CI runs the rehearsal on every push.
 
+## F&O Autopilot (Phase F)
+
+- **Instrument master**: Upstox's public master (equities, indices, futures, options with lot
+  sizes, expiries, strikes) synced daily pre-market; search/expiries/strikes API; admin force-sync.
+- **Contract rules on a deployment**: trade the underlying, an option (buy or write; nearest /
+  next / monthly expiry; ATM / ITM±n / OTM±n; premium stop or ceiling %; max lots) or a future.
+  The contract is resolved at signal time from the master and the spot; the Autopilot form
+  previews what each direction would trade.
+- **Execution**: bought options sized off the premium at risk in whole lots, written options
+  capped by the broker's margin requirement (never a guess) and max lots, futures on the
+  underlying's stop distance; paper fills at the contract's price; LIVE places the entry on
+  NFO/BFO with an SL-M at the premium floor/ceiling; partial fills and execution quality
+  (expected vs fill, slippage, latency) are recorded.
+- **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
+  (and still works when the index feed is down); futures exit on their own transplanted levels.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 643 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 685 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

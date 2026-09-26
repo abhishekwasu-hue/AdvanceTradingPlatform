@@ -2145,3 +2145,34 @@ below-one-lot rejection, max-lots cap, missing-quote rejection on the trail, LIV
 floor SL-M, LIVE write sell + ceiling SL-M capped by margin, LIVE write refused on unknown/
 insufficient margin, partial fill, PAPER future with transplanted levels, worker end-to-end
 and resolution failure). Not verified: real broker margin API responses (parsed defensively).
+
+### F4: Exits for derived contracts
+
+The strategy decided the trade on the underlying, so the underlying decides the exit; the
+contract only prices it. `app/trading/exit_logic.py::check_contract_exit`:
+
+* **OPTION**: `underlying_exit` applies the strategy's stop / target 2 / target 1 (same priority
+  as cash, tolerant of a strategy with no targets) to the *underlying's* price; a hit exits at
+  the contract's current price with the reason suffixed "(underlying)". Independently, the
+  premium safety net: a bought option whose premium fell to the floor (`trade.stop_loss`), or a
+  written option whose premium rose to the ceiling, exits at the contract price - and this check
+  still runs when the underlying quote is unavailable, so a dead index feed never leaves an
+  option unprotected.
+* **FUTURE / UNDERLYING**: the levels are on the contract's own price - plain `check_exit`.
+* **Monitor** (`monitor_open_positions`): for option trades it quotes both the contract (on its
+  own exchange, `exchange_for_trade`) and the underlying (`underlying_exchange`: NSE, or BSE for
+  SENSEX/BANKEX); LIVE exits go through the existing single close path, so the floor/ceiling
+  SL-M is cancelled (or recognised as already filled) before the market exit on NFO/BFO.
+  Square-off at 15:15 IST is unchanged and covers expiry day.
+* **Charges**: `PaperBroker.estimate_round_trip_costs` now has per-kind profiles (equity, option
+  premium turnover with sell-side STT, futures notional with sell-side STT) - still an estimate a
+  contract note replaces (D4).
+* **Manual check**: `POST /api/positions/{id}/mark-price` takes `underlying_price` alongside the
+  contract's `current_price` for option positions; the Positions tab shows the underlying
+  levels and the premium floor/ceiling on each derived position.
+
+Verified by `tests/test_contract_exits.py` (level priority and missing targets, bought and
+written option exits on underlying levels and on the premium net, futures/cash unchanged, cost
+profiles, underlying exchange mapping, the monitor's two quotes with P&L on the premium, the
+premium-only fallback when the underlying feed fails, LIVE exit on NFO after cancelling the stop,
+the mark-price endpoint).

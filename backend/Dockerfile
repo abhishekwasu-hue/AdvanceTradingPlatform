@@ -6,7 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # requirements first so dependency installs are cached independently of app code changes
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip is only needed to install; the running container must not install anything. Removing it
+# also removes the packages pip vendors for its own use (setuptools, msgpack, ...), which are
+# what image scanners flag as unfixable-from-requirements HIGH findings.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -m pip uninstall -y pip \
+    && rm -rf /root/.cache/pip
 
 COPY app ./app
 COPY alembic.ini .

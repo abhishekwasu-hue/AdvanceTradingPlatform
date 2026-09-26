@@ -2,7 +2,7 @@ import { LogOut, Lock, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { ROLE_LABELS, type InviteInfo } from "../types";
+import { ROLE_LABELS, type InviteInfo, type SessionInfo } from "../types";
 import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 
@@ -15,6 +15,17 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(false);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invite, setInvite] = useState<InviteInfo | null>(null);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.listSessions().then(setSessions).catch(() => setSessions([]));
+  }, [user]);
+
+  async function revoke(id: number) {
+    await api.revokeSession(id).catch((e) => setError(String(e)));
+    api.listSessions().then(setSessions).catch(() => {});
+  }
 
   // Arriving via an owner's invite link (?invite=<token>): show who invited you, ask only for a
   // password, and join their organisation instead of creating a new one.
@@ -44,12 +55,40 @@ export default function AccountPage() {
               <div className="text-sm font-medium text-slate-100">{user.email}</div>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm transition-colors"
-          >
-            <LogOut size={14} /> Log out
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm transition-colors"
+            >
+              <LogOut size={14} /> Log out
+            </button>
+            <button
+              onClick={() => api.logoutEverywhere().catch(() => {}).finally(logout)}
+              className="rounded border border-danger/40 hover:bg-danger/10 text-danger px-4 py-1.5 text-sm transition-colors"
+              title="Ends every session of your account on every device"
+            >
+              Log out everywhere
+            </button>
+          </div>
+        </Card>
+        <Card title={`Active sessions (${sessions.length})`}>
+          {sessions.length === 0 ? (
+            <div className="text-xs text-muted">No session data.</div>
+          ) : (
+            <table className="w-full text-xs">
+              <tbody>
+                {sessions.map((s) => (
+                  <tr key={s.id} className="border-t border-border">
+                    <td className="py-1.5 pr-3 text-slate-200">{s.current ? "This device" : "Other device"}</td>
+                    <td className="py-1.5 pr-3 text-muted">{s.ip_address ?? "-"}</td>
+                    <td className="py-1.5 pr-3 text-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
+                    <td className="py-1.5 pr-3 text-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
+                    <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-danger hover:underline">revoke</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Card>
         <p className="text-xs text-muted leading-relaxed">
           Broker credentials and paper trades are tied to this account. Anonymous use of Signals

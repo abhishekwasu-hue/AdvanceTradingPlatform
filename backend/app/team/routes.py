@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_owner
+from app.auth.sessions import revoke_all_sessions
 from app.core.config import FRONTEND_URL
 from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
@@ -193,7 +194,20 @@ async def remove_member(
     if not member.is_active:
         return
     member.is_active = False
+    await revoke_all_sessions(session, member.id, "removed from team")
     await write_audit_log(session, user.tenant_id, user.id, "member_removed", member.email)
+    await session.commit()
+
+
+@router.post("/members/{member_id}/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_member_everywhere(
+    member_id: int, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session),
+) -> None:
+    """Owner's "that laptop was stolen" button: ends every session of a teammate without
+    removing them - they simply log in again."""
+    member = await _member_or_404(session, user.tenant_id, member_id)
+    count = await revoke_all_sessions(session, member.id, f"revoked by owner {user.email}")
+    await write_audit_log(session, user.tenant_id, user.id, "member_sessions_revoked", f"{member.email}: {count}")
     await session.commit()
 
 

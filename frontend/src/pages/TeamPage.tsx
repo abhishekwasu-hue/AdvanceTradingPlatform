@@ -179,6 +179,9 @@ export default function TeamPage() {
                 <td className={`py-1.5 pr-3 ${m.is_active ? "text-accent" : "text-muted"}`}>{m.is_active ? "active" : "removed"}</td>
                 {isOwner && (
                   <td className="py-1.5 text-right">
+                    {m.id !== user.id && m.role !== "SUPER_ADMIN" && m.is_active && (
+                      <button disabled={busy} title="Log this member out of every device" onClick={() => act(`${m.email} logged out everywhere.`, () => api.logoutMemberEverywhere(m.id))} className="text-xs text-muted hover:text-slate-200 mr-2">log out</button>
+                    )}
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && (m.is_active
                       ? <button disabled={busy} title="Remove from team" onClick={() => act(`${m.email} removed.`, () => api.removeMember(m.id))} className="p-1 text-danger hover:bg-panel2 rounded"><UserMinus size={14} /></button>
                       : <button disabled={busy} onClick={() => act(`${m.email} reactivated.`, () => api.reactivateMember(m.id))} className="text-xs text-brand hover:underline">Reactivate</button>)}

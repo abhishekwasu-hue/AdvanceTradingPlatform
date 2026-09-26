@@ -32,9 +32,8 @@ def _user_id_and_tenant(token: str) -> tuple:
 
 
 def _add_teammate(email: str, tenant_id: int) -> str:
-    """Inserts a second user directly into an existing tenant - the shape a future invite-flow
-    endpoint would produce - to exercise same-tenant sharing without that endpoint existing yet.
-    """
+    """Inserts a second user directly into an existing tenant (the invite flow does this for
+    real - see tests/test_team_api.py) to exercise same-tenant sharing."""
     async def _create():
         async with _session_factory() as session:
             user = User(tenant_id=tenant_id, email=email, hashed_password=hash_password("S3cur3Pass!"), role="USER")
@@ -43,9 +42,11 @@ def _add_teammate(email: str, tenant_id: int) -> str:
             await session.refresh(user)
             return user.id
 
-    user_id = asyncio.run(_create())
-    from app.auth.security import create_access_token
-    return create_access_token(user_id, email)
+    asyncio.run(_create())
+    # Tokens are session-bound (Phase C1): log in for real rather than minting a bare JWT.
+    response = client.post("/api/auth/login", json={"email": email, "password": "S3cur3Pass!"})
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
 
 
 def test_register_creates_a_new_tenant_with_owner_role():

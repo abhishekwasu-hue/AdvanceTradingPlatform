@@ -56,6 +56,30 @@ class User(Base):
     )
 
 
+class UserSessionRecord(Base):
+    """One login = one session. Holds only a SHA-256 of the current refresh token; the access
+    JWT carries the session id (`sid`) so every API request can check the session is still alive
+    (not revoked, not expired) - which is what makes logout, "log out everywhere", member removal
+    and password change take effect immediately instead of when a JWT happens to expire.
+    Refresh tokens rotate on every use; presenting an already-rotated token is treated as theft
+    and revokes the whole session (see app/auth/sessions.py)."""
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    previous_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    last_used_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    revoke_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
 class TenantInviteRecord(Base):
     """An owner's invitation for someone to join their tenant with a given role. Only a SHA-256 of
     the one-time token is stored (the raw token lives in the invite link, shown to the owner once),

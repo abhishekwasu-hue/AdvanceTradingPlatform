@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import decode_access_token
 from app.core.enums import UserRole
-from app.db.models import User
+from app.db.models import User, UserSessionRecord
 from app.db.session import get_session
 
 _bearer_scheme = HTTPBearer(auto_error=True)
@@ -27,7 +27,27 @@ async def get_current_user(
     user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise unauthorized
+    # Every access token belongs to a login session; a revoked session (logout, log-out-
+    # everywhere, member removed, password changed) invalidates the token immediately.
+    if not await _session_alive(session, payload.get("sid")):
+        raise unauthorized
     return user
+
+
+async def _session_alive(session: AsyncSession, session_id) -> bool:
+    from app.auth.sessions import session_is_live
+    if session_id is None:
+        return False
+    return session_is_live(await session.get(UserSessionRecord, int(session_id)))
+
+
+def current_session_id(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> Optional[int]:
+    """The login session behind this request's token (for "this device" markers and logout)."""
+    try:
+        sid = decode_access_token(credentials.credentials).get("sid")
+        return int(sid) if sid is not None else None
+    except Exception:
+        return None
 
 
 async def get_current_user_optional(
@@ -42,7 +62,9 @@ async def get_current_user_optional(
     try:
         payload = decode_access_token(credentials.credentials)
         user = await session.get(User, int(payload["sub"]))
-        return user if user is not None and user.is_active else None
+        if user is None or not user.is_active or not await _session_alive(session, payload.get("sid")):
+            return None
+        return user
     except Exception:
         return None
 

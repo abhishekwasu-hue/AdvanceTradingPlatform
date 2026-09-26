@@ -2,18 +2,19 @@ import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user
-from app.auth.security import create_access_token, hash_password, verify_password
+from app.auth.dependencies import current_session_id, get_current_user
+from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
+from app.auth.security import hash_password, verify_password
 from app.core.enums import UserRole
 from app.core.rate_limit import rate_limit
-from app.db.models import Tenant, TenantInviteRecord, User
+from app.db.models import Tenant, TenantInviteRecord, User, UserSessionRecord
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -32,6 +33,7 @@ _DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-p
 # tests/test_rate_limiting.py, which re-enables them to test the 429 behavior itself.
 register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60)
 login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60)
+refresh_rate_limit = rate_limit("auth_refresh", limit=30, window_seconds=60)
 
 
 class RegisterRequest(BaseModel):
@@ -47,6 +49,26 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
+def _token_response(issued: IssuedTokens) -> TokenResponse:
+    return TokenResponse(access_token=issued.access_token, refresh_token=issued.refresh_token, expires_in=issued.expires_in)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class SessionResponse(BaseModel):
+    id: int
+    current: bool
+    ip_address: Optional[str]
+    user_agent: Optional[str]
+    created_at: str
+    last_used_at: str
+    expires_at: str
 
 
 class UserResponse(BaseModel):
@@ -60,7 +82,7 @@ class UserResponse(BaseModel):
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],
 )
-async def register(request: RegisterRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def register(request: RegisterRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Every registration creates a new tenant (spec section 5-6's isolation boundary) with this
     user as its OWNER. Teammates join an existing tenant through an owner's invite instead
     (app/team/routes.py + /api/auth/invite/{token}/accept), never through this endpoint.
@@ -80,13 +102,13 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
     session.add(user)
     await session.flush()
     await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
+    issued = await start_session(session, user, http_request)
     await session.commit()
-
-    return TokenResponse(access_token=create_access_token(user.id, user.email))
+    return _token_response(issued)
 
 
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
-async def login(request: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def login(request: LoginRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     user = await session.scalar(select(User).where(User.email == request.email))
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
     # time doesn't leak whether an email is registered (see _DUMMY_PASSWORD_HASH above).
@@ -95,8 +117,9 @@ async def login(request: LoginRequest, session: AsyncSession = Depends(get_sessi
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     await write_audit_log(session, user.tenant_id, user.id, "user_login")
+    issued = await start_session(session, user, http_request)
     await session.commit()
-    return TokenResponse(access_token=create_access_token(user.id, user.email))
+    return _token_response(issued)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -155,7 +178,7 @@ async def invite_info(token: str, session: AsyncSession = Depends(get_session)) 
     "/invite/{token}/accept", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],
 )
-async def accept_invite(token: str, request: AcceptInviteRequest, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def accept_invite(token: str, request: AcceptInviteRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Creates the invitee's account inside the inviting tenant with the invited role and logs
     them in. The email is fixed by the invite - the invitee only chooses a password."""
     record = await _invite_by_token(session, token)
@@ -175,5 +198,73 @@ async def accept_invite(token: str, request: AcceptInviteRequest, session: Async
     record.accepted_at = datetime.now(timezone.utc)
     record.accepted_user_id = user.id
     await write_audit_log(session, record.tenant_id, user.id, "invite_accepted", f"{record.email} as {record.role}")
+    issued = await start_session(session, user, http_request)
     await session.commit()
-    return TokenResponse(access_token=create_access_token(user.id, user.email))
+    return _token_response(issued)
+
+
+# --- Sessions (Phase C1) -------------------------------------------------------------------------
+
+@router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(refresh_rate_limit)])
+async def refresh(request: RefreshRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+    """Exchanges a refresh token for a new access + refresh pair (the old refresh token stops
+    working). Reusing an already-rotated token revokes the session: log in again."""
+    issued = await rotate_refresh_token(session, request.refresh_token, http_request)
+    if issued is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid, expired or revoked")
+    return _token_response(issued)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    if session_id is not None:
+        record = await session.get(UserSessionRecord, session_id)
+        if record is not None and record.user_id == user.id:
+            await revoke_session(session, record, "logout")
+    await write_audit_log(session, user.tenant_id, user.id, "user_logout")
+    await session.commit()
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_everywhere(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> None:
+    """Revokes every session of this user, this one included."""
+    count = await revoke_all_sessions(session, user.id, "logout everywhere")
+    await write_audit_log(session, user.tenant_id, user.id, "user_logout_all", f"{count} session(s)")
+    await session.commit()
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[SessionResponse]:
+    """This user's live sessions (devices), newest first."""
+    rows = await session.scalars(
+        select(UserSessionRecord).where(UserSessionRecord.user_id == user.id, UserSessionRecord.revoked_at.is_(None))
+        .order_by(UserSessionRecord.last_used_at.desc())
+    )
+    return [
+        SessionResponse(
+            id=r.id, current=r.id == session_id, ip_address=r.ip_address, user_agent=r.user_agent,
+            created_at=_as_utc(r.created_at).isoformat(), last_used_at=_as_utc(r.last_used_at).isoformat(),
+            expires_at=_as_utc(r.expires_at).isoformat(),
+        )
+        for r in rows if _as_utc(r.expires_at) > datetime.now(timezone.utc)
+    ]
+
+
+@router.delete("/sessions/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_one_session(
+    target_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> None:
+    record = await session.get(UserSessionRecord, target_id)
+    if record is None or record.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Unknown session")
+    await revoke_session(session, record, "revoked by user")
+    await write_audit_log(session, user.tenant_id, user.id, "session_revoked", f"#{target_id}")
+    await session.commit()

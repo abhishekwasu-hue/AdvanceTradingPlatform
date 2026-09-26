@@ -32,23 +32,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function login(email: string, password: string) {
     const response = await api.login(email, password);
-    setToken(response.access_token);
+    setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }
 
   async function acceptInvite(token: string, password: string) {
     const response = await api.acceptInvite(token, password);
-    setToken(response.access_token);
+    setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }
 
   async function register(email: string, password: string) {
     const response = await api.register(email, password);
-    setToken(response.access_token);
+    setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }
 
   function logout() {
+    // Best effort server-side revoke; the local tokens are cleared regardless.
+    api.logout().catch(() => {});
     clearToken();
     setUser(null);
   }

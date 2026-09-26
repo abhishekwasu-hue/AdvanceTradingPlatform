@@ -1,6 +1,18 @@
 export interface TokenResponse {
   access_token: string;
   token_type: string;
+  refresh_token?: string | null;
+  expires_in?: number | null;
+}
+
+export interface SessionInfo {
+  id: number;
+  current: boolean;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
 }
 
 export interface UserResponse {

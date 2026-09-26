@@ -1697,3 +1697,33 @@ things keep one busy tenant from hurting itself or anyone else:
 Verified by `tests/test_rate_budget.py` (burst then throttle at the per-second rate, per-minute
 cap, refill, per-broker limits, full delegation through the wrapper including the Upstox-specific
 conveniences, one budget per tenant in a real worker cycle, round-robin across cycles).
+
+## Phase C: Auth Hardening
+
+### C1: Login sessions and rotating refresh tokens
+
+Before this, a login produced one 24-hour JWT that nothing could revoke: a removed teammate, a
+stolen laptop or a changed password all had to wait for the token to expire. Now:
+
+* **Every login is a session** (`user_sessions`): the access JWT (15 min by default,
+  `ACCESS_TOKEN_MINUTES`) carries the session id, and `get_current_user` checks that session is
+  alive on every request. Logout, "log out everywhere", an owner logging a member out, member
+  removal (and, from C2, a password change) revoke sessions and take effect on the next request.
+  A token without a session id is refused outright.
+* **Refresh tokens rotate** (`app/auth/sessions.py`): the client holds an opaque 48-byte token
+  whose SHA-256 is the only thing stored; `POST /api/auth/refresh` returns a new pair and keeps
+  the previous hash for exactly one step. Presenting an already-rotated token means two parties
+  hold the same credential, so the session is revoked rather than guessing which is the real user
+  (the legitimate client simply logs in again). Refresh extends the session up to
+  `REFRESH_TOKEN_DAYS` (30) of inactivity; refresh is rate-limited per IP.
+* **Session management**: `GET /api/auth/sessions` (device, IP, user agent, last use, "this
+  device"), `DELETE /api/auth/sessions/{id}`, `POST /api/auth/logout`, `POST /api/auth/logout-all`,
+  and for owners `POST /api/team/members/{id}/logout-all`. The Account tab lists sessions with
+  revoke buttons and a "Log out everywhere" action; the Team tab has the owner's "log out".
+* **Frontend**: the API client stores both tokens, and on a 401 performs one single-flight
+  refresh and retries the request, so users never notice the 15-minute access token.
+
+Verified by `tests/test_sessions.py` (both tokens on register/login/invite-accept, session-less
+JWT refused, rotation, reuse detection revoking the session, logout invalidating immediately,
+logout-all, single revoke and cross-user 404, expiry, owner logout-all and removal, IP/agent
+capture, hashed storage) and a Postgres round-trip of migration `a7d3e5f1c208`.

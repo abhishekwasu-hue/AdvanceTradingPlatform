@@ -32,6 +32,7 @@ import type {
   RiskConfig,
   ScannerRequest,
   ScannerResult,
+  SessionInfo,
   WebhookTokenResponse,
   SRZone,
   Signal,
@@ -49,6 +50,7 @@ import type {
 
 const BASE = "/api";
 const TOKEN_KEY = "atp_token";
+const REFRESH_KEY = "atp_refresh";
 
 export function getToken(): string | null {
   try {
@@ -58,9 +60,18 @@ export function getToken(): string | null {
   }
 }
 
-export function setToken(token: string): void {
+export function getRefreshToken(): string | null {
+  try {
+    return localStorage.getItem(REFRESH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string, refreshToken?: string | null): void {
   try {
     localStorage.setItem(TOKEN_KEY, token);
+    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
   } catch {
     // localStorage unavailable (private mode, etc) - session just won't persist across reloads.
   }
@@ -69,14 +80,47 @@ export function setToken(token: string): void {
 export function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
   } catch {
     // ignore
   }
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Access tokens live for minutes; the refresh token (rotated on every use) keeps the session.
+// One refresh in flight at a time so a burst of 401s from parallel requests rotates once.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!response.ok) {
+          clearToken();
+          return false;
+        }
+        const body = (await response.json()) as TokenResponse;
+        setToken(body.access_token, body.refresh_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken();
-  const response = await fetch(`${BASE}${path}`, {
+  return fetch(`${BASE}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -84,6 +128,13 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response = await rawRequest(path, init);
+  if (response.status === 401 && getRefreshToken() && !path.startsWith("/auth/refresh") && !path.startsWith("/auth/login")) {
+    if (await tryRefresh()) response = await rawRequest(path, init);
+  }
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
@@ -153,6 +204,16 @@ export const api = {
     request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
   me: () => request<UserResponse>("/auth/me"),
+
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+
+  logoutEverywhere: () => request<void>("/auth/logout-all", { method: "POST" }),
+
+  listSessions: () => request<SessionInfo[]>("/auth/sessions"),
+
+  revokeSession: (id: number) => request<void>(`/auth/sessions/${id}`, { method: "DELETE" }),
+
+  logoutMemberEverywhere: (id: number) => request<void>(`/team/members/${id}/logout-all`, { method: "POST" }),
 
   listTrades: () => request<TradeRecord[]>("/trades"),
 

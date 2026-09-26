@@ -129,6 +129,10 @@ Every trading morning, before 09:15 IST:
    take no entries and PAPER ones have no candles - each deployment's row on the Autopilot tab
    says exactly that in its Note column, and a `TOKEN_EXPIRED` CRITICAL notification is raised
    once. Nothing needs to be resumed afterwards: deployments pick up on the next cycle.
+1a. **Instrument master.** The worker downloads Upstox's public instrument master once a day from
+   08:00 IST (`INSTRUMENT_SYNC_EXCHANGES`, default NSE). `GET /api/instrument-master/status`
+   shows what is loaded and when; if it is stale on an F&O trading day (a download failure is on
+   the worker's cycle report), a platform administrator runs `POST /api/instrument-master/sync`.
 2. **Check the worker.** Autopilot tab: "Trading worker: Running" and "Market: Open" once the
    session starts. A stale heartbeat during market hours is an incident (1.7).
 3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the

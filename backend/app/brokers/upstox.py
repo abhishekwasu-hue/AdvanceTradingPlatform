@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from app.instruments.master import normalise_expiry
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import (
@@ -118,12 +119,13 @@ class UpstoxBroker(BrokerInterface):
                 instrument_token=row["instrument_key"],
                 exchange=row.get("exchange", exchange),
                 tradingsymbol=row.get("trading_symbol", row.get("tradingsymbol", "")),
-                name=row.get("name"),
+                name=row.get("underlying_symbol") or row.get("name"),
                 segment=row.get("segment"),
                 instrument_type=row.get("instrument_type"),
                 lot_size=int(row.get("lot_size", 1) or 1),
                 tick_size=float(row.get("tick_size", 0.05) or 0.05),
-                expiry=row.get("expiry"),
+                # Upstox sends expiry as epoch milliseconds; the Instrument model carries ISO dates.
+                expiry=(normalise_expiry(row.get("expiry")).isoformat() if normalise_expiry(row.get("expiry")) else None),
                 strike=float(row["strike_price"]) if row.get("strike_price") else None,
             )
             for row in raw

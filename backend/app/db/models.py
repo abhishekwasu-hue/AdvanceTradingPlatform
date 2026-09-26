@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -848,3 +848,36 @@ class NewsEventRecord(Base):
     source_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class InstrumentRecord(Base):
+    """One row of a broker's instrument master (Phase F1): every tradable contract the broker
+    knows - equities, indices, futures and options - with the fields F&O routing needs (lot size,
+    expiry, strike, right, underlying). Replaced wholesale per (broker, exchange) by the daily
+    sync; platform-wide, not tenant-scoped (a NIFTY option is the same contract for everyone).
+    `underlying` is the master's own underlying name (NIFTY, BANKNIFTY, RELIANCE); index candles
+    are fetched under the index symbol (NIFTY 50), and app/instruments/master.py maps between
+    the two."""
+
+    __tablename__ = "instruments"
+    __table_args__ = (
+        UniqueConstraint("broker", "exchange", "instrument_key", name="uq_instrument_broker_key"),
+        Index("ix_instruments_lookup", "broker", "underlying", "instrument_type", "expiry", "strike"),
+        Index("ix_instruments_symbol", "broker", "exchange", "tradingsymbol"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    broker: Mapped[str] = mapped_column(String(50), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    segment: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    instrument_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    underlying: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    instrument_type: Mapped[str] = mapped_column(String(10), nullable=False)  # EQ, INDEX, FUT, CE, PE
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    strike: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tick_size: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
+    weekly: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    synced_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)

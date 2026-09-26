@@ -55,6 +55,11 @@ ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false")
 METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
 WORKER_METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9102"))
 
+# Phase F1: which Upstox public instrument masters the worker syncs daily (source exchanges;
+# NSE carries NSE_EQ/NSE_INDEX/NSE_FO, BSE carries SENSEX/BANKEX derivatives). Empty disables.
+INSTRUMENT_SYNC_EXCHANGES = [e.strip().upper() for e in os.environ.get("INSTRUMENT_SYNC_EXCHANGES", "NSE").split(",") if e.strip()]
+INSTRUMENT_SYNC_HOUR_IST = int(os.environ.get("INSTRUMENT_SYNC_HOUR_IST", "8"))
+
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))

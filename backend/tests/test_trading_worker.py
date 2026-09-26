@@ -156,6 +156,9 @@ def _worker(monkeypatch, broker: _FakeBroker) -> TradingWorker:
     from app.market_data import service as market_data_service
     monkeypatch.setattr(market_data_service, "cache_get", _no_cache_get)
     monkeypatch.setattr(market_data_service, "cache_set", _no_cache_set)
+    # The daily instrument-master download (Phase F1) needs the network; tests that want it
+    # replace this again with their own fake.
+    monkeypatch.setattr(tw, "sync_upstox", _no_master_sync)
     return TradingWorker(_session_factory, cycle_seconds=60)
 
 
@@ -164,6 +167,10 @@ async def _no_cache_get(key):
 
 
 async def _no_cache_set(key, value, ttl_seconds):
+    return None
+
+
+async def _no_master_sync(session, exchanges, client=None):
     return None
 
 

@@ -2011,3 +2011,48 @@ Verified by `tests/test_backup_scripts.py` against a real Postgres (skipped on t
 run, executed in CI after the migrations step): plain round-trip with an intact chain, encrypted
 round-trip and a wrong passphrase yielding `restore_failed`, and a tampered file refused on the
 SHA-256 check. Also rehearsed by hand in this environment against the migrated local database.
+
+
+## Phase F: F&O Autopilot
+
+The autonomous engine so far ran a strategy on a symbol and traded that same symbol, which is
+right for cash equity and impossible for an index. Phase F lets a deployment analyse an
+underlying (index or stock) and trade a derived contract - an option (bought or written) or a
+future - chosen by rules at signal time, sized in lots, and exited on the strategy's own
+underlying levels with a premium safety net.
+
+### F1: Instrument master
+
+`instruments` table (migration `a1c9e7d3b520`), platform-wide: one row per contract a broker
+knows - `broker`, `exchange` (NSE/BSE/NFO/BFO as brokers name them), `instrument_key` (the
+broker's own id, e.g. `NSE_FO|56789`), `tradingsymbol`, `underlying` (NIFTY, BANKNIFTY,
+RELIANCE), `instrument_type` (EQ/INDEX/FUT/CE/PE), `expiry`, `strike`, `lot_size`, `tick_size`,
+`weekly`, `synced_at`; indexed for the two lookups routing needs (by underlying/type/expiry/
+strike, and by tradingsymbol).
+
+* **Sources** (`app/instruments/master.py`): Upstox's public per-exchange gzip JSON - no token
+  needed, so the platform has a master before any tenant logs in; `parse_upstox_master` maps
+  segments to exchanges (`NSE_FO` -> `NFO`, `BSE_FO` -> `BFO`), derives the underlying from
+  `underlying_symbol`/`name`, and normalises expiry from epoch milliseconds. Kite-style adapter
+  dumps go through `parse_broker_instruments`. `replace_master` swaps a broker's rows for the
+  given exchanges in one transaction, so readers never see a half-synced table.
+* **Bug fixed on the way**: the Upstox adapter stored `expiry` as the raw JSON value; the real
+  master sends epoch milliseconds, which the `Instrument` model (ISO string) rejects. It now
+  goes through `normalise_expiry`, and `name` prefers `underlying_symbol`.
+* **Underlying naming**: strategies take index candles under the index symbol (`NIFTY 50`,
+  `NIFTY BANK`), the F&O master names the underlying `NIFTY`/`BANKNIFTY`; `underlying_of` and
+  `INDEX_SYMBOLS` map both ways, `derivatives_exchange` picks NFO or BFO (SENSEX/BANKEX).
+* **Daily sync**: the worker downloads `INSTRUMENT_SYNC_EXCHANGES` (default `NSE`) once per IST
+  day from `INSTRUMENT_SYNC_HOUR_IST` (08:00) so expiries and lot sizes are current before the
+  open; a failed download is reported on the cycle and retried the next day, never every minute.
+  SUPER_ADMIN can force it with `POST /api/instrument-master/sync` (audited; a download failure
+  is a 502 with the reason).
+* **API**: `GET /api/instrument-master/status|search|expiries|strikes` for the console and the
+  contract resolver (F2).
+
+Verified by `tests/test_instrument_master.py` against a synthetic Upstox-shaped master
+(`tests/master_fixture.py`: NIFTY weekly + monthly options and future, BANKNIFTY, RELIANCE
+equity and options, indices): expiry formats, segment/type/underlying mapping, atomic replace,
+lookups, API and permissions, mocked sync, worker once-a-day scheduling and failure handling.
+Not verified: the real Upstox master download (egress is blocked in this environment); the
+parser's field names follow Upstox's published JSON and the adapter's existing mapping.

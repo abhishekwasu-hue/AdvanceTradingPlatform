@@ -48,6 +48,8 @@ from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tena
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
+from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
+from app.instruments.master import sync_upstox
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.service import MarketDataService
@@ -86,6 +88,7 @@ class CycleReport:
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
     retention: Optional[RetentionReport] = None
+    master_synced: Optional[Dict[str, int]] = None
 
 
 class TradingWorker:
@@ -103,6 +106,8 @@ class TradingWorker:
         self._last_token_check: Dict[int, float] = {}
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
+        # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
+        self._last_master_sync_day = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -156,6 +161,18 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
+                # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
+                # so contracts/expiries/lot sizes are current before the 09:15 open.
+                ist_now = now.astimezone(IST)
+                if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:
+                    try:
+                        report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)
+                        self._last_master_sync_day = ist_now.date()
+                        logger.info("Instrument master synced: %s", report.master_synced)
+                    except Exception as exc:  # noqa: BLE001 - a failed download must not stop trading
+                        logger.exception("Instrument master sync failed")
+                        report.errors.append(f"instrument master: {exc}")
+                        self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not status.is_open and self._last_retention_day != now.astimezone(IST).date():

@@ -83,6 +83,32 @@ class ExecutionMode(str, Enum):
     LIVE = "LIVE"
 
 
+class DeploymentStatus(str, Enum):
+    """Lifecycle of a StrategyDeploymentRecord (app/db/models.py) - the unit of work the
+    autonomous trading worker (app/workers/trading_worker.py) picks up every cycle. Only ACTIVE
+    deployments are evaluated; PAUSED ones keep their open positions monitored but take no new
+    entries (the worker itself pauses a deployment on a broker token expiry or repeated
+    failures, recording why in `pause_reason`); STOPPED is terminal for the row.
+    """
+
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    STOPPED = "STOPPED"
+
+
+class BrokerTokenStatus(str, Enum):
+    """What the platform currently knows about a stored broker session token
+    (BrokerCredentialRecord.token_status). Upstox/Zerodha retail access tokens expire every
+    trading day, so this is the state a LIVE deployment is gated on - see
+    app/brokers/token_lifecycle.py.
+    """
+
+    UNKNOWN = "UNKNOWN"
+    VALID = "VALID"
+    EXPIRED = "EXPIRED"
+    MISSING = "MISSING"
+
+
 class OrderSide(str, Enum):
     BUY = "BUY"
     SELL = "SELL"

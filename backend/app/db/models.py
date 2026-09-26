@@ -68,6 +68,13 @@ class BrokerCredentialRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
     encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    # Broker session-token lifecycle (see app/brokers/token_lifecycle.py). Indian retail broker
+    # access tokens (Upstox, Zerodha) expire every trading day around 03:30 IST with no refresh
+    # token, so the platform tracks when the current one expires and when it last proved it
+    # works - the autonomous worker refuses LIVE entries on anything but a VALID token.
+    token_status: Mapped[str] = mapped_column(String(20), nullable=False, default="UNKNOWN")
+    token_expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
@@ -107,7 +114,96 @@ class TradeRecord(Base):
     exit_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # LIVE trades only (both stay null for PAPER): the broker's own id for the entry order and
+    # for the protective stop-loss order placed right after the fill, so the position monitor
+    # can cancel the SL when it exits on target, and reconciliation can match broker fills.
+    broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sl_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Which autonomous deployment opened this trade; null for trades entered by hand from the
+    # console or via a TradingView webhook.
+    deployment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class StrategyDeploymentRecord(Base):
+    """One "run this strategy on this symbol, in this mode, with this broker" instruction for
+    the autonomous trading worker (app/workers/trading_worker.py) - the piece that turns the
+    platform from a console someone has to click "Generate Signal" in into a system that trades
+    on its own while every browser is closed. Tenant-scoped like everything else; `created_by`
+    is attribution only.
+
+    `strategy_id` is either an inbuilt registry id or "custom:<id>" (app/custom_strategies/
+    resolver.py). `timeframe` is the base candle interval fetched from the broker (the strategy's
+    own multi-timeframe needs are met by resampling up from it - app/market_data/service.py).
+    `mode` PAPER routes fills to the paper broker; LIVE places real orders via `broker_name`, and
+    is refused unless that broker's stored token is VALID (see BrokerTokenStatus).
+
+    Only ACTIVE rows take new entries. The worker itself flips a row to PAUSED (with
+    `pause_reason`) on a token expiry or repeated cycle failures rather than silently retrying
+    forever; a person resumes it from the Deployments tab. `last_evaluated_at`/`last_signal_at`/
+    `last_error` are the operator's window into "is this thing actually running".
+    """
+
+    __tablename__ = "strategy_deployments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "strategy_id", "symbol", "mode", name="uq_deployment_tenant_strategy_symbol_mode"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    strategy_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False, default="1min")
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    broker_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE", index=True)
+    pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_signal_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class WorkerHeartbeatRecord(Base):
+    """Liveness record for each long-running background worker, upserted at the end of every
+    cycle (one row per `worker_name`). The API reads it (GET /api/system/worker-status) so the
+    Dashboard can show "worker last seen 12s ago" and so the ops runbook has a single place to
+    answer "is the engine actually running?" - a stale `last_seen_at` on a trading day is the
+    CRITICAL alert, not a quiet log line.
+    """
+
+    __tablename__ = "worker_heartbeats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    worker_name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    cycle_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_cycle_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MarketHolidayRecord(Base):
+    """Exchange trading holidays (app/market_data/calendar.py consults these plus the fixed
+    09:15-15:30 IST Mon-Fri session to decide whether the worker should evaluate at all). Shared
+    reference data, not tenant-scoped: an NSE holiday is a fact for every tenant. Seeded with the
+    NSE capital-market list for 2026 from the exchange's own circular; each following year's
+    list is added by a SUPER_ADMIN via the API once NSE publishes it (usually December).
+    """
+
+    __tablename__ = "market_holidays"
+    __table_args__ = (UniqueConstraint("exchange", "holiday_date", name="uq_market_holiday"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")
+    holiday_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
 class OrderRecord(Base):

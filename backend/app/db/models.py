@@ -38,6 +38,12 @@ class Tenant(Base):
     # Phase D1: the exchange-issued algo identifier the broker registered this tenant's algo
     # under (SEBI retail-algo framework). Prefixed onto the tag of every broker order.
     algo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Phase G1 (safety rule 8): set when a LIVE order FAILED - the broker call raised or timed
+    # out, so the platform does not know whether the broker holds the position. New LIVE entries
+    # are refused while set; a position reconciliation with zero mismatches clears it.
+    broker_uncertain_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    broker_uncertain_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")

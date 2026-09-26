@@ -10,6 +10,7 @@ import httpx
 from app.instruments.master import normalise_expiry
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -166,6 +167,29 @@ class UpstoxBroker(BrokerInterface):
         if len(data) == 1:
             return float(next(iter(data.values()))["last_price"])
         raise BrokerAPIError(f"No LTP returned for {exchange}:{symbol}")
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """Full quote for one symbol, with Upstox's `last_trade_time`/`timestamp` parsed into
+        Quote.timestamp so the staleness gate (Phase G1) can judge it."""
+        instrument = await self._resolve_instrument(symbol, exchange)
+        data = await self._request("GET", "/market-quote/quotes", params={"instrument_key": instrument.instrument_token})
+        entry = next((e for e in data.values() if e.get("instrument_token") == instrument.instrument_token), None)
+        if entry is None and len(data) == 1:
+            entry = next(iter(data.values()))
+        if entry is None:
+            raise BrokerAPIError(f"No quote returned for {exchange}:{symbol}")
+        ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
+        return Quote(symbol=symbol, ltp=float(entry.get("last_price", 0.0)), volume=entry.get("volume", 0.0) or 0.0,
+                     oi=entry.get("oi"), timestamp=ts)
+
+    async def disconnect(self) -> None:
+        """`DELETE /logout` invalidates the access token at Upstox; the local copy is dropped
+        whether or not the broker call succeeded (a token we no longer hold cannot be used)."""
+        try:
+            if self._access_token:
+                await self._request("DELETE", "/logout")
+        finally:
+            self._access_token = None
 
     async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
         """Upstox serves the current trading day only from its separate intraday endpoint - the

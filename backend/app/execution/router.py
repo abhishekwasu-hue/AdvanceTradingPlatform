@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from app.brokers.base import BrokerInterface
+from app.brokers.circuit_breaker import breaker_for, observe_call
 from app.brokers.models import BrokerOrderRequest
 from app.core.enums import ExecutionMode, SignalDirection, OrderSide
 from app.core.models import RiskConfig, Signal, Trade
@@ -114,6 +115,14 @@ class OrderRouter:
                 "and passed to OrderRouter. Use ExecutionMode.PAPER until then."
             )
 
+        # Phase G2: the broker's circuit breaker (app/brokers/circuit_breaker.py). Open means the
+        # broker has been failing across the platform: no new entry, said so on the trail. A
+        # business decision, so REJECTED - the broker was never asked.
+        breaker = breaker_for(self.broker.name)
+        if not breaker.allow_submission():
+            return ExecutionResult(executed=False, reasons=notes + [breaker.refusal_reason()])
+        records_own_calls = not getattr(self.broker, "records_circuit", False)
+
         order_request = BrokerOrderRequest(
             symbol=signal.symbol,
             exchange=self.exchange,
@@ -126,6 +135,8 @@ class OrderRouter:
         try:
             response = await self.broker.place_order(order_request)
         except Exception as exc:
+            if records_own_calls:
+                observe_call(self.broker.name, "place_order", exc)
             # A "kill broker mid-fill" disaster case (master prompt Section 50's own required
             # test category, confirmed directly: an uncaught exception here previously propagated
             # all the way up through execute_signal_for_user as an unhandled 500, leaving the
@@ -138,6 +149,8 @@ class OrderRouter:
             return ExecutionResult(
                 executed=False, reasons=[f"Broker call failed: {exc}"], system_failure=True,
             )
+        if records_own_calls:
+            observe_call(self.broker.name, "place_order", None)
         if response.status in ("REJECTED", "CANCELLED"):
             return ExecutionResult(executed=False, reasons=[f"Broker rejected order: {response.message or response.status}"])
 

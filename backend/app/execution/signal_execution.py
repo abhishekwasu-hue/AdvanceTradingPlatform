@@ -15,10 +15,11 @@ from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.core import config
-from app.observability.metrics import ORDERS
+from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
 from app.core.enums import OptionPosition
 from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
 from app.instruments.contracts import ContractRules, ResolvedContract
+from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -93,6 +94,12 @@ async def execute_signal_for_user(
             kill_switch_reasons.append("Plan does not include live trading - order refused")
         if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE and not (tenant and tenant.algo_id):
             kill_switch_reasons.append("Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)")
+        if mode == ExecutionMode.LIVE.value:
+            # Phase G1 (safety rule 8): a FAILED live order leaves the broker's book unknown; no
+            # new LIVE entry until reconciliation says the books agree. Exits are unaffected.
+            uncertain = broker_uncertain_reason(tenant)
+            if uncertain:
+                kill_switch_reasons.append(uncertain)
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -168,6 +175,11 @@ async def execute_signal_for_user(
                 # rejection notice.
                 order = await transition_order(session, order, OrderStatus.FAILED, detail="; ".join(result.reasons))
                 logger.error("Order failed - broker call raised: %s", "; ".join(result.reasons))
+                if tenant is not None and mode == ExecutionMode.LIVE.value:
+                    await mark_broker_uncertain(
+                        session, tenant, f"order {order.id} ({signal.symbol}) FAILED: {'; '.join(result.reasons)}", user_id=user.id,
+                    )
+                    await session.commit()
                 ORDERS.labels(mode=mode, status=order.status).inc()
                 await notify(
                     session, user.tenant_id, NotificationType.SYSTEM_FAILURE,
@@ -202,6 +214,8 @@ async def execute_signal_for_user(
         )
         logger.info("Order filled")
         ORDERS.labels(mode=mode, status="FILLED").inc()
+        if result.trade is not None and result.trade.entry_latency_ms is not None:
+            ORDER_ENTRY_LATENCY.labels(mode=mode).observe(result.trade.entry_latency_ms / 1000.0)
 
         if result.trade is not None:
             trade_record = await persist_trade(

@@ -33,9 +33,14 @@ BAR_TS = datetime(2026, 9, 25, 10, 29, tzinfo=IST)
 class _FakeBroker(BrokerInterface):
     name = "upstox"
 
-    def __init__(self, ltp: float = 101.0, bars: int = 200):
+    def __init__(self, ltp: float = 101.0, bars: int = 200, intraday_bars: int = 80):
         self.ltp = ltp
         self.bars = bars
+        # Today's candles run from 09:15 for this many minutes (80 -> newest bar 10:34, so cycles
+        # at OPEN_NOW and a few minutes after read as fresh). A test that runs a cycle later in the
+        # day passes more, or the Phase G1 staleness gate refuses the evaluation - exactly as it
+        # would on a real stalled feed.
+        self.intraday_bars = intraday_bars
         self.placed = []
 
     async def get_profile(self): return BrokerProfile(broker="upstox", user_id="U1")
@@ -50,7 +55,7 @@ class _FakeBroker(BrokerInterface):
     async def get_historical_data(self, symbol, exchange, interval, from_date, to_date):
         return self._bars(datetime(2026, 9, 24, 9, 15, tzinfo=IST), self.bars)
     async def get_intraday_candles(self, symbol, exchange, interval):
-        return self._bars(datetime(2026, 9, 25, 9, 15, tzinfo=IST), 75)
+        return self._bars(datetime(2026, 9, 25, 9, 15, tzinfo=IST), self.intraday_bars)
     async def get_option_chain(self, underlying, expiry=None): raise NotImplementedError
     async def place_order(self, order):
         self.placed.append(order)
@@ -353,7 +358,7 @@ async def _async(value):
 def test_no_new_entries_after_cutoff_but_monitoring_continues(monkeypatch):
     t = _tenant("w-cutoff@example.com")
     dep_id = _deploy(t)
-    worker = _worker(monkeypatch, _FakeBroker(ltp=101.0))
+    worker = _worker(monkeypatch, _FakeBroker(ltp=101.0, intraday_bars=350))  # candles through 15:04
     late_signal_ts = datetime(2026, 9, 25, 15, 4, tzinfo=IST)
     _force_signal(monkeypatch, lambda: _signal(ts=late_signal_ts))
 

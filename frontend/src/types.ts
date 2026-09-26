@@ -730,6 +730,30 @@ export interface BrokerTokenInfo {
   oauth_callback_url: string | null;
 }
 
+export interface ReconciliationStatus {
+  broker_uncertain: boolean;
+  broker_uncertain_since: string | null;
+  broker_uncertain_reason: string | null;
+  last_reconciled_at: string | null;
+  open_live_trades: number;
+}
+
+export interface ReconciliationItem {
+  symbol: string;
+  internal_net_quantity: number | null;
+  broker_net_quantity: number | null;
+  status: "MATCHED" | "QUANTITY_MISMATCH" | "MISSING_AT_BROKER" | "UNTRACKED_AT_BROKER";
+  internal_trade_ids: number[];
+  detail: string;
+}
+
+export interface ReconciliationReport {
+  broker_name: string;
+  checked_at: string;
+  items: ReconciliationItem[];
+  mismatched_count: number;
+}
+
 export interface WorkerStatus {
   worker_name: string;
   running: boolean;

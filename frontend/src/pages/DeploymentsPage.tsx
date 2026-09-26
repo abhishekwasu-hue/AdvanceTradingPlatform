@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
+import BrokerUncertainBanner from "../components/BrokerUncertainBanner";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import {
@@ -253,6 +254,7 @@ export default function DeploymentsPage() {
       )}
 
       <BrokerTokenBanner />
+      <BrokerUncertainBanner />
 
       <Card title="Deploy a strategy">
         <div className="grid sm:grid-cols-6 gap-3 items-end">

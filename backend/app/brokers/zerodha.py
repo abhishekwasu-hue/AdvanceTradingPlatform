@@ -10,6 +10,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -151,6 +152,30 @@ class ZerodhaBroker(BrokerInterface):
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
         data = await self._request("GET", "/quote/ltp", params=[("i", s) for s in symbols])
         return {symbol: entry["last_price"] for symbol, entry in data.items()}
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """Kite `/quote` for one "EXCHANGE:SYMBOL", with its `last_trade_time`/`timestamp`
+        (IST wall time, no offset) parsed into Quote.timestamp for the staleness gate."""
+        key = f"{exchange}:{symbol}"
+        data = await self._request("GET", "/quote", params=[("i", key)])
+        entry = data.get(key) or (next(iter(data.values())) if len(data) == 1 else None)
+        if entry is None:
+            raise BrokerAPIError(f"No quote returned for {key}")
+        ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
+        return Quote(symbol=symbol, ltp=float(entry["last_price"]), volume=entry.get("volume", 0.0) or 0.0,
+                     oi=entry.get("oi"), timestamp=ts)
+
+    async def disconnect(self) -> None:
+        """`DELETE /session/token` invalidates the Kite access token; the local copy is dropped
+        regardless of the broker's answer."""
+        try:
+            if self._access_token:
+                await self._request(
+                    "DELETE", "/session/token",
+                    params={"api_key": self.credentials.api_key, "access_token": self._access_token},
+                )
+        finally:
+            self._access_token = None
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         data = await self._request("GET", "/quote", params=[("i", s) for s in symbols])

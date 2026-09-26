@@ -1,0 +1,99 @@
+# Prometheus alerting rules for the SLOs in docs/SLO.md (Phase G2).
+# Load with `rule_files: [prometheus-alerts.yml]`; scrape backend:8000/metrics and worker:9102/metrics.
+# Every rule names the SLO it protects; thresholds are the SLO's own numbers.
+groups:
+  - name: atp-trading-engine
+    rules:
+      - alert: TradingWorkerStalled
+        expr: atp_worker_heartbeat_age_seconds > 180
+        for: 2m
+        labels: {severity: critical, slo: "SLO-2 engine liveness"}
+        annotations:
+          summary: "Trading worker heartbeat is {{ $value }}s old"
+          runbook: "docs/OPERATIONS.md#17-trading-worker-runbook"
+
+      - alert: TradingWorkerNeverSeen
+        expr: atp_worker_heartbeat_age_seconds == -1
+        for: 5m
+        labels: {severity: critical, slo: "SLO-2 engine liveness"}
+        annotations:
+          summary: "No trading worker heartbeat has ever been written"
+
+      - alert: WorkerCycleOverBudget
+        expr: histogram_quantile(0.99, sum(rate(atp_worker_cycle_duration_seconds_bucket[15m])) by (le)) > 60
+        for: 15m
+        labels: {severity: warning, slo: "SLO-3 cycle time"}
+        annotations:
+          summary: "p99 worker cycle takes longer than one base candle"
+
+      - alert: MarketDataStale
+        expr: increase(atp_market_data_stale_total[10m]) > 5
+        labels: {severity: critical, slo: "SLO-4 market-data freshness"}
+        annotations:
+          summary: "Signals/exits are being refused on stale market data ({{ $value }} in 10m)"
+
+  - name: atp-broker-and-orders
+    rules:
+      - alert: BrokerCircuitOpen
+        expr: atp_broker_circuit_state == 2
+        for: 1m
+        labels: {severity: critical, slo: "SLO-5 broker health"}
+        annotations:
+          summary: "Circuit breaker OPEN for broker {{ $labels.broker }} - new LIVE entries paused"
+
+      - alert: LiveOrdersFailing
+        expr: increase(atp_orders_total{mode="LIVE",status="FAILED"}[15m]) > 0
+        labels: {severity: critical, slo: "SLO-5 broker health"}
+        annotations:
+          summary: "A LIVE order FAILED (broker call raised) - tenant is now broker-uncertain"
+
+      - alert: TenantsBlockedPendingReconciliation
+        expr: atp_broker_uncertain_tenants > 0
+        for: 30m
+        labels: {severity: warning, slo: "SLO-6 reconciliation"}
+        annotations:
+          summary: "{{ $value }} tenant(s) have had LIVE entries blocked for 30 minutes - reconciliation is not passing"
+
+      - alert: SlowEntries
+        expr: histogram_quantile(0.95, sum(rate(atp_order_entry_latency_seconds_bucket{mode="LIVE"}[30m])) by (le)) > 2
+        for: 30m
+        labels: {severity: warning, slo: "SLO-7 entry latency"}
+        annotations:
+          summary: "p95 LIVE signal-to-fill latency above 2s"
+
+  - name: atp-api-and-alerts
+    rules:
+      - alert: ApiErrorBudgetBurn
+        expr: |
+          sum(rate(atp_http_requests_total{status="5xx"}[30m]))
+            / sum(rate(atp_http_requests_total[30m])) > 0.005
+        for: 10m
+        labels: {severity: critical, slo: "SLO-1 API availability"}
+        annotations:
+          summary: "More than 0.5% of API requests are 5xx over 30 minutes"
+
+      - alert: ApiLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(atp_http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 10m
+        labels: {severity: warning, slo: "SLO-1 API latency"}
+        annotations:
+          summary: "p95 API latency above 500ms"
+
+      - alert: AlertOutboxBacklog
+        expr: atp_alert_outbox_pending > 20
+        for: 10m
+        labels: {severity: warning, slo: "SLO-8 alert delivery"}
+        annotations:
+          summary: "{{ $value }} out-of-app alerts waiting to be delivered"
+
+      - alert: AlertDeliveriesFailing
+        expr: increase(atp_alert_deliveries_total{status="FAILED"}[1h]) > 0
+        labels: {severity: warning, slo: "SLO-8 alert delivery"}
+        annotations:
+          summary: "Telegram/email alert deliveries are failing"
+
+      - alert: CredentialStuffing
+        expr: atp_login_failures_15m > 50
+        labels: {severity: warning, slo: "security"}
+        annotations:
+          summary: "{{ $value }} failed logins in 15 minutes"

@@ -30,7 +30,8 @@ from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
@@ -116,6 +117,7 @@ def _stop_already_filled(trade: TradeRecord, sl_order: BrokerOrderStatus, reason
 
 async def _square_off_live(
     trade: TradeRecord, broker: BrokerInterface, reason: str, reference_price: float, outcome: CloseOutcome,
+    algo_id: Optional[str] = None,
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
     price, or None when the position could not be flattened (the trade must then stay open)."""
@@ -142,7 +144,9 @@ async def _square_off_live(
     try:
         response = await broker.place_order(BrokerOrderRequest(
             symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=trade.quantity,
-            order_type="MARKET", product="MIS", tag=f"{trade.strategy_id}:EXIT",
+            order_type="MARKET", product="MIS",
+            tag=build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
+                                max_length=getattr(broker, "max_tag_length", None) or 20),
         ))
     except Exception as exc:  # noqa: BLE001
         outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
@@ -173,7 +177,10 @@ async def close_position(
         if broker is None:
             outcome.warnings.append("LIVE position needs an authenticated broker session to exit - left open")
             return outcome
-        realised = await _square_off_live(trade, broker, reason, exit_price, outcome)
+        tenant = await session.get(Tenant, trade.tenant_id)
+        realised = await _square_off_live(
+            trade, broker, reason, exit_price, outcome, algo_id=tenant.algo_id if tenant is not None else None,
+        )
         if realised is None:
             return outcome
         realised_price = realised

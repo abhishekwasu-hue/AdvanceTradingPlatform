@@ -146,6 +146,11 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   authentication" on the Team tab so LIVE deployments and broker credentials always need a fresh
   authenticator check. Keep the backup codes somewhere safe; an owner with a lost phone and no
   backup codes needs a platform administrator to reset MFA in the database.
+* **Exchange algo id (SEBI)**: before an organisation trades LIVE, its broker registers the
+  algo with the exchange and hands back an algo id. The owner enters it on the Team tab; from
+  then on every entry, stop-loss and exit order is tagged `<algo id>-<strategy>-<leg>` at the
+  broker and the tag is stored on the order. Set `ALGO_ID_REQUIRED_FOR_LIVE=true` on the API and
+  worker once live trading is offered so an organisation cannot go LIVE without one.
 * **Locked-out teammate**: they use "Forgot password?" (a link arrives if your organisation has
   an email alert channel), or an owner issues a one-hour reset link from the Team tab and hands
   it over on a trusted channel. Either way every existing session of theirs ends.

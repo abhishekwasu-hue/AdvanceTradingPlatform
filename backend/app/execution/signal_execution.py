@@ -14,6 +14,7 @@ from app.execution.router import ExecutionResult, OrderRouter
 from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
+from app.core import config
 from app.plans.limits import live_allowed, tenant_is_active
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -61,6 +62,8 @@ async def execute_signal_for_user(
             kill_switch_reasons.append(f"Organisation is {tenant.status}: no new orders")
         if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
             kill_switch_reasons.append("Plan does not include live trading - order refused")
+        if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE and not (tenant and tenant.algo_id):
+            kill_switch_reasons.append("Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)")
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -94,10 +97,12 @@ async def execute_signal_for_user(
         order_router = OrderRouter(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
             exchange=contract_spec.exchange if contract_spec else "NSE",
+            algo_id=tenant.algo_id if tenant is not None else None,
         )
         result: ExecutionResult = await order_router.execute(signal, state)
 
         order.reasons_json = json.dumps(result.reasons)
+        order.algo_tag = result.algo_tag
         if not result.executed:
             if result.system_failure:
                 # The broker call itself errored (see OrderRouter.execute) - not a business

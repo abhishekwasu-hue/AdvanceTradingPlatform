@@ -381,6 +381,9 @@ export const api = {
   setTenantMfaPolicy: (requireMfaForLive: boolean) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ require_mfa_for_live: requireMfaForLive }) }),
 
+  setTenantAlgoId: (algoId: string) =>
+    request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ algo_id: algoId }) }),
+
   listMembers: () => request<TeamMember[]>("/team/members"),
 
   changeMemberRole: (id: number, role: string) =>

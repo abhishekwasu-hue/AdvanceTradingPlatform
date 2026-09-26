@@ -1797,3 +1797,33 @@ kill switch gated, disable rules, secret encrypted at rest) and migration `c5f1a
 Verified by `tests/test_login_protection.py` (recording, per-email lock across IPs with expiry,
 per-IP lock, MFA failures counting, new-device alert once per device, admin view) and migration
 `d6a2b9f4e158`.
+
+
+## Phase D: Compliance
+
+### D1: SEBI algo-order tagging
+
+SEBI's retail algorithmic-trading framework (circular of February 2025, in force from August
+2025) requires every order an algorithm generates to carry the algo identifier the exchange issued
+when the broker registered that algo. Brokers surface this through the free-text order `tag`
+(Zerodha, Upstox) or `remarks` (Shoonya) field.
+
+* **Tenant configuration**: `tenants.algo_id` (migration `e7b3c5d1a409`), set by an OWNER on the
+  Team tab (`PATCH /api/team/tenant {algo_id}`; 1-32 letters/digits/`-`/`_`, empty string clears,
+  every change audited as `tenant_algo_id_changed`). The platform does not register algos - the
+  broker does that with the exchange - it only makes sure the issued id reaches every order.
+* **One tag builder for every leg**: `app/execution/tagging.py::build_order_tag` composes
+  `<algo id>-<strategy>-<leg>` (legs `ENT`, `SL`, `EXIT`) inside the broker's tag limit
+  (`BrokerInterface.max_tag_length`, default 20 - Zerodha's documented alphanumeric limit),
+  stripping characters brokers reject and shortening only the strategy part: the algo id and the
+  leg are what the exchange and reconciliation key on. Entry and protective-stop orders go through
+  `OrderRouter` (which now takes `algo_id`), exit orders through the position monitor's
+  `_square_off_live`, so no broker order leaves the platform untagged.
+* **Stored on the order trail**: `orders.algo_tag` holds the exact tag sent (PAPER orders carry the
+  tag they would have had, so the trail is identical in both modes), exposed on `GET /api/orders`.
+* **Optional gate**: `ALGO_ID_REQUIRED_FOR_LIVE=true` rejects LIVE orders for tenants without an
+  algo id before any broker call (reason on the order trail, no broker interaction) - off by
+  default so PAPER-only and pre-registration deployments keep working.
+
+Verified by `tests/test_algo_tagging.py` (tag shaping and limits, router entry/SL tags, tenant
+API validation and audit, PAPER and LIVE order rows, the LIVE gate, exit-order tagging).

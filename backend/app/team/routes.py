@@ -21,6 +21,7 @@ from app.core.config import FRONTEND_URL
 from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
 from app.db.session import get_session
+from app.execution.tagging import valid_algo_id
 from app.plans.limits import check_can_add_member, limits as plan_limits, usage as plan_usage
 from app.plans.registry import get_plan
 
@@ -101,6 +102,7 @@ class TenantResponse(BaseModel):
     limits: dict
     usage: dict
     require_mfa_for_live: bool = False
+    algo_id: Optional[str] = None
 
 
 @router.get("/tenant", response_model=TenantResponse)
@@ -113,13 +115,15 @@ async def get_tenant(user: User = Depends(get_current_user), session: AsyncSessi
     return TenantResponse(
         id=tenant.id, name=tenant.name, plan=plan.id, plan_name=plan.name, plan_description=plan.description,
         status=tenant.status, members=members or 0, limits=plan_limits(plan), usage=await plan_usage(session, tenant.id),
-        require_mfa_for_live=tenant.require_mfa_for_live,
+        require_mfa_for_live=tenant.require_mfa_for_live, algo_id=tenant.algo_id,
     )
 
 
 class TenantRenameRequest(BaseModel):
     name: Optional[str] = None
     require_mfa_for_live: Optional[bool] = None
+    # Exchange-issued algo id (Phase D1); empty string clears it.
+    algo_id: Optional[str] = None
 
 
 @router.patch("/tenant", response_model=TenantResponse)
@@ -133,6 +137,12 @@ async def rename_tenant(
             raise HTTPException(status_code=400, detail="Name must be 1-255 characters")
         tenant.name = name
         await write_audit_log(session, user.tenant_id, user.id, "tenant_renamed", name)
+    if request.algo_id is not None:
+        algo_id = request.algo_id.strip()
+        if algo_id and not valid_algo_id(algo_id):
+            raise HTTPException(status_code=400, detail="Algo id must be 1-32 letters, digits, '-' or '_' (as issued by the exchange)")
+        tenant.algo_id = algo_id or None
+        await write_audit_log(session, user.tenant_id, user.id, "tenant_algo_id_changed", algo_id or "(cleared)")
     if request.require_mfa_for_live is not None:
         if request.require_mfa_for_live and not user.mfa_enabled:
             raise HTTPException(status_code=400, detail="Enable two-factor authentication on your own account before requiring it for the organisation")

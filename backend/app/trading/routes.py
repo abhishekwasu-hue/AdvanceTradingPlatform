@@ -230,6 +230,7 @@ class OrderResponse(BaseModel):
     status: str
     idempotency_key: Optional[str]
     broker_order_id: Optional[str]
+    algo_tag: Optional[str] = None
     trade_id: Optional[int]
     reasons: List[str]
     created_at: str
@@ -241,7 +242,7 @@ class OrderResponse(BaseModel):
             id=record.id, mode=record.mode, strategy_id=record.strategy_id, symbol=record.symbol,
             direction=record.direction, quantity=record.quantity, status=record.status,
             idempotency_key=record.idempotency_key, broker_order_id=record.broker_order_id,
-            trade_id=record.trade_id, reasons=json.loads(record.reasons_json),
+            algo_tag=record.algo_tag, trade_id=record.trade_id, reasons=json.loads(record.reasons_json),
             created_at=record.created_at.isoformat(), updated_at=record.updated_at.isoformat(),
         )
 

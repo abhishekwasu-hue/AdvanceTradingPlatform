@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest
 from app.core.enums import ExecutionMode, SignalDirection, OrderSide
@@ -27,9 +28,12 @@ class ExecutionResult:
     def __init__(
         self, executed: bool, reasons: list[str], trade: Optional[Trade] = None,
         broker_order_id: Optional[str] = None, system_failure: bool = False,
-        sl_order_id: Optional[str] = None, sl_failed: bool = False,
+        sl_order_id: Optional[str] = None, sl_failed: bool = False, algo_tag: Optional[str] = None,
     ) -> None:
         self.executed = executed
+        # The order tag sent to the broker for the entry leg (Phase D1), or the tag a paper order
+        # would have carried, so the order trail is identical in both modes.
+        self.algo_tag = algo_tag
         self.reasons = reasons
         self.trade = trade
         self.broker_order_id = broker_order_id
@@ -62,8 +66,10 @@ class OrderRouter:
     def __init__(
         self, mode: ExecutionMode, risk_config: RiskConfig, broker: Optional[BrokerInterface] = None,
         exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
+        algo_id: Optional[str] = None,
     ) -> None:
         self.mode = mode
+        self.algo_id = algo_id
         self.risk_manager = RiskManager(risk_config)
         self.paper_broker = PaperBroker()
         self.broker = broker
@@ -77,11 +83,14 @@ class OrderRouter:
         if not decision.approved:
             return ExecutionResult(executed=False, reasons=decision.reasons)
 
+        max_tag = getattr(self.broker, "max_tag_length", None) or 20
+        entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag)
+
         if self.mode == ExecutionMode.PAPER:
             trade = self.paper_broker.open_trade(signal, decision.quantity, datetime.now(timezone.utc))
             state.trades_today += 1
             state.open_positions += 1
-            return ExecutionResult(executed=True, reasons=["Paper order filled"], trade=trade)
+            return ExecutionResult(executed=True, reasons=["Paper order filled"], trade=trade, algo_tag=entry_tag)
 
         if self.broker is None:
             raise LiveTradingNotConfigured(
@@ -96,7 +105,7 @@ class OrderRouter:
             quantity=decision.quantity,
             order_type="MARKET",
             product=self.product,
-            tag=f"{signal.strategy_id}:{signal.grade.value}",
+            tag=entry_tag,
         )
         try:
             response = await self.broker.place_order(order_request)
@@ -138,7 +147,7 @@ class OrderRouter:
                     signal.symbol, self.exchange,
                     OrderSide.SELL if signal.direction == SignalDirection.LONG else OrderSide.BUY,
                     decision.quantity, trigger_price=signal.stop_loss, product=self.product,
-                    tag=f"{signal.strategy_id}:SL",
+                    tag=build_order_tag(strategy_id=signal.strategy_id, leg=LEG_STOP, algo_id=self.algo_id, max_length=max_tag),
                 )
                 sl_order_id = sl_response.order_id
                 reasons.append(f"Protective stop-loss placed: {sl_order_id} @ {signal.stop_loss}")
@@ -149,7 +158,7 @@ class OrderRouter:
 
         return ExecutionResult(
             executed=True, reasons=reasons, trade=trade, broker_order_id=response.order_id,
-            sl_order_id=sl_order_id, sl_failed=sl_failed,
+            sl_order_id=sl_order_id, sl_failed=sl_failed, algo_tag=entry_tag,
         )
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:

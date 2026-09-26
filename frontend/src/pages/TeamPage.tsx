@@ -27,6 +27,7 @@ export default function TeamPage() {
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [tenantName, setTenantName] = useState("");
+  const [algoId, setAlgoId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,7 +36,7 @@ export default function TeamPage() {
 
   function refresh() {
     if (!user) return;
-    api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); }).catch((e) => setError(String(e)));
+    api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); setAlgoId(t.algo_id ?? ""); }).catch((e) => setError(String(e)));
     api.listMembers().then(setMembers).catch((e) => setError(String(e)));
     if (isOwner) api.listInvites().then(setInvites).catch(() => setInvites([]));
   }
@@ -208,6 +209,22 @@ export default function TeamPage() {
               onChange={(e) => act(e.target.checked ? "Two-factor authentication is now required for live trading and broker credentials." : "Two-factor requirement removed.", () => api.setTenantMfaPolicy(e.target.checked))} />
             <span><b>Require two-factor authentication</b> for LIVE deployments, broker credentials and broker login. Members without it will be asked to enable it on the Account tab first. (Enable it on your own account before turning this on.)</span>
           </label>
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="text-xs font-semibold text-slate-200">Exchange algo id (SEBI algo tagging)</div>
+            <p className="text-xs text-muted mt-1 mb-2">
+              SEBI's retail algo framework requires every algorithmic order to carry the identifier the exchange
+              issued when your broker registered the algo. Enter it here once and every entry, stop-loss and exit
+              order this platform places is tagged <code>{(algoId || "ALGOID")}-strategy-leg</code> at the broker;
+              the tag is also stored on each order for reconciliation. Leave blank until registration is done.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm font-mono w-56" placeholder="e.g. NSE1234567" value={algoId} maxLength={32}
+                onChange={(e) => setAlgoId(e.target.value)} />
+              <button disabled={busy || algoId === (tenant.algo_id ?? "")} onClick={() => act(algoId ? "Algo id saved - new orders will carry it." : "Algo id cleared.", () => api.setTenantAlgoId(algoId))}
+                className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm disabled:opacity-50">Save</button>
+              <span className="text-xs text-muted">{tenant.algo_id ? `Current: ${tenant.algo_id}` : "Not set - orders are tagged strategy-leg only."}</span>
+            </div>
+          </div>
         </Card>
       )}
 

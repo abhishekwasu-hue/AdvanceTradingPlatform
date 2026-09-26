@@ -29,6 +29,9 @@ class BrokerInterface(ABC):
     """
 
     name: str
+    # Longest order `tag` this broker accepts (Phase D1 algo tagging shortens to fit). Zerodha
+    # documents 20 alphanumeric characters; adapters that allow more override this.
+    max_tag_length: int = 20
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...

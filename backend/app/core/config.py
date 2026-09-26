@@ -45,6 +45,11 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
 # on registration; never demoted automatically. Keep this to the people who operate the platform.
 SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMAILS", "").split(",") if e.strip()}
 
+# Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
+# (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
+# keeps working; turn on once live trading is offered to customers.
+ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
+
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))

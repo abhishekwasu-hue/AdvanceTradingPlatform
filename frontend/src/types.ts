@@ -720,6 +720,7 @@ export interface TenantInfo {
   limits: { active_deployments: number; live_trading: boolean; custom_strategies: number; members: number; alert_channels: number };
   usage: { active_deployments: number; custom_strategies: number; members: number; alert_channels: number };
   require_mfa_for_live?: boolean;
+  algo_id?: string | null;
 }
 
 export interface InviteInfo {

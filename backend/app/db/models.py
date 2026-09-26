@@ -35,6 +35,9 @@ class Tenant(Base):
     # Owner-set policy (Phase C3): LIVE deployments, broker credentials and the OAuth login
     # require the caller to have TOTP MFA enabled and verified on the current session.
     require_mfa_for_live: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # Phase D1: the exchange-issued algo identifier the broker registered this tenant's algo
+    # under (SEBI retail-algo framework). Prefixed onto the tag of every broker order.
+    algo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")
@@ -348,6 +351,9 @@ class OrderRecord(Base):
     quantity: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="CREATED", index=True)
     broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Phase D1: the exact order tag sent to the broker (algo id + strategy + leg), for
+    # reconciling this trail against the exchange's algo-order records.
+    algo_tag: Mapped[str | None] = mapped_column(String(64), nullable=True)
     trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
     signal_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")

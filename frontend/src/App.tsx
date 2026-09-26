@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import AccountPage from "./pages/AccountPage";
+import AdminPage from "./pages/AdminPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -96,6 +97,7 @@ function AppShell() {
           {page === "settings" && <SettingsPage />}
           {page === "system-logs" && <SystemLogsPage />}
           {page === "team" && <TeamPage />}
+          {page === "admin" && <AdminPage />}
           {page === "notifications" && <NotificationsPage />}
           {page === "account" && <AccountPage />}
         </main>

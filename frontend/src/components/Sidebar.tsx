@@ -16,6 +16,7 @@ import {
   ScrollText,
   Settings as SettingsIcon,
   ShieldAlert,
+  ShieldEllipsis,
   UserCircle2,
   Users,
   Wand2,
@@ -44,6 +45,7 @@ export type Page =
   | "risk-management"
   | "settings"
   | "team"
+  | "admin"
   | "system-logs"
   | "notifications"
   | "account";
@@ -102,7 +104,13 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
+// Shown only to platform administrators (SUPER_ADMIN) - see Sidebar below.
+export const ADMIN_GROUP: NavGroup = {
+  title: "Platform",
+  items: [{ id: "admin", label: "Admin Console", icon: ShieldEllipsis }],
+};
+
+export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.items);
 
 export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
   const { user, loading } = useAuth();
@@ -113,7 +121,7 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
         <Logo />
       </div>
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
-        {NAV_GROUPS.map((group) => (
+        {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
             <div className="px-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted/70">
               {group.title}

@@ -706,3 +706,60 @@ export const ROLE_LABELS: Record<TenantRole, string> = {
 };
 
 export const TRADING_ROLES: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "SUPER_ADMIN"];
+
+// --- Platform admin console (SUPER_ADMIN) ---
+
+export interface AdminPlan {
+  id: string;
+  name: string;
+  description: string;
+  limits: Record<string, number | boolean>;
+}
+
+export interface AdminTenantSummary {
+  id: number;
+  name: string;
+  plan: string;
+  status: string;
+  created_at: string;
+  owners: string[];
+  members: number;
+  active_deployments: number;
+  live_deployments: number;
+  open_positions: number;
+}
+
+export interface AdminTenantDetail extends AdminTenantSummary {
+  limits: Record<string, number | boolean>;
+  usage: Record<string, number>;
+  users: { id: number; email: string; role: string; is_active: boolean; created_at: string }[];
+  deployments: { id: number; strategy_id: string; symbol: string; mode: string; status: string; broker_name: string | null; last_evaluated_at: string | null; last_error: string | null }[];
+  brokers: { broker_name: string; token_status: string; token_expires_at: string | null }[];
+  tenant_kill_switch_engaged: boolean;
+}
+
+export interface AdminOverview {
+  tenants_total: number;
+  tenants_by_status: Record<string, number>;
+  tenants_by_plan: Record<string, number>;
+  users_total: number;
+  active_deployments: number;
+  live_deployments: number;
+  open_positions: number;
+  open_live_positions: number;
+  global_kill_switch_engaged: boolean;
+  global_kill_switch_reason: string;
+  worker_running: boolean;
+  worker_last_seen_at: string | null;
+  worker_last_error: string | null;
+}
+
+export interface PlatformAuditLog {
+  id: number;
+  tenant_id: number | null;
+  user_id: number | null;
+  user_email: string | null;
+  event: string;
+  detail: string;
+  created_at: string;
+}

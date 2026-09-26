@@ -1652,3 +1652,25 @@ them. Now they mean something:
 Verified by `tests/test_plans.py` (fallback, usage, deployment cap with pause/stop semantics, LIVE
 refused on free and allowed on pro, downgrade blocking resume, strategy/member/channel caps,
 suspended tenant read-only at the API, rejected in the pipeline, skipped by the worker).
+
+### B3: Platform admin console (SUPER_ADMIN)
+
+* **Bootstrap** (`app/admin/bootstrap.py`): `SUPER_ADMIN_EMAILS` (comma-separated) in the
+  environment. Those users are promoted at startup and on registration; nothing is ever demoted
+  automatically and no tenant-facing UI or API can grant the role.
+* **API** (`/api/admin/*`, `require_role()` = SUPER_ADMIN only): `overview` (tenants by
+  status/plan, users, active/LIVE deployments, open/LIVE positions, global kill switch, worker
+  heartbeat), `tenants` (search by name or member email; owners, members, deployments, open
+  positions per tenant), `tenants/{id}` (usage vs limits, users, brokers' token status,
+  deployments, tenant kill switch), `PATCH tenants/{id}` (plan and/or status with a reason -
+  written to the *tenant's* audit trail naming the admin, and delivered to the tenant as a
+  notification, CRITICAL on suspension), `audit-logs` (platform-wide, filterable by tenant and
+  event), `deployments` (the ops view of everything the worker is running).
+* **UI**: an "Admin Console" entry in a Platform nav group that only a SUPER_ADMIN sees:
+  overview tiles, global kill switch engage/disengage, searchable tenant table with inline plan
+  and status selects (suspension asks for a reason), a tenant detail panel, and the platform
+  audit trail.
+
+Verified by `tests/test_admin_api.py` (role gate on every endpoint, env bootstrap at register
+and at startup, cross-tenant listing/search, plan/status change audited on the tenant's trail and
+notified, validation of plan/status values, detail view contents).

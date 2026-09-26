@@ -1,4 +1,8 @@
 import type {
+  AdminOverview,
+  AdminPlan,
+  AdminTenantDetail,
+  AdminTenantSummary,
   AlertChannel,
   AlertChannelUpsert,
   AlertDelivery,
@@ -24,6 +28,7 @@ import type {
   OptionChain,
   OptionChainAnalysis,
   ParseStrategyResult,
+  PlatformAuditLog,
   RiskConfig,
   ScannerRequest,
   ScannerResult,
@@ -293,4 +298,25 @@ export const api = {
 
   acceptInvite: (token: string, password: string) =>
     request<TokenResponse>(`/auth/invite/${encodeURIComponent(token)}/accept`, { method: "POST", body: JSON.stringify({ password }) }),
+
+  // --- Platform admin ---
+
+  adminOverview: () => request<AdminOverview>("/admin/overview"),
+
+  adminPlans: () => request<AdminPlan[]>("/admin/plans"),
+
+  adminTenants: (q = "") => request<AdminTenantSummary[]>(`/admin/tenants${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+
+  adminTenant: (id: number) => request<AdminTenantDetail>(`/admin/tenants/${id}`),
+
+  adminUpdateTenant: (id: number, body: { plan?: string; status?: string; reason?: string }) =>
+    request<AdminTenantSummary>(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  adminAuditLogs: (tenantId?: number) =>
+    request<PlatformAuditLog[]>(`/admin/audit-logs${tenantId ? `?tenant_id=${tenantId}` : ""}`),
+
+  engageGlobalKillSwitch: (reason: string) =>
+    request<unknown>("/kill-switch/global/engage", { method: "POST", body: JSON.stringify({ reason }) }),
+
+  disengageGlobalKillSwitch: () => request<unknown>("/kill-switch/global/disengage", { method: "POST" }),
 };

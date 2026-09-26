@@ -143,8 +143,15 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   invite is a link valid for 48 hours, shown once, to be shared by the owner.
 * Removing a member deactivates them immediately (their session stops working on the next
   request); their trades, orders and audit rows stay. A tenant always keeps one owner.
-* Platform operators are `SUPER_ADMIN` (a DB flag, never granted through the UI); `SUPPORT`
+* Platform operators are `SUPER_ADMIN`: list their emails in `SUPER_ADMIN_EMAILS` (promoted at
+  startup and on registration; never demoted automatically). They get the Admin Console:
+  every tenant's plan/status (changes are audited on the tenant's trail and notified to it),
+  the platform audit trail, what the worker is running, and the global kill switch. `SUPPORT`
   staff placed in a tenant can see everything and change nothing.
+* **Suspending a tenant** (chargeback, abuse, KYC failure): Admin Console -> status ->
+  suspended, with a reason. Effect on the next request/cycle: every write refused, no new
+  entries; open positions keep being monitored and exit normally, and the tenant can still log
+  in to see them. Reactivate the same way.
 
 ### 1.7 Trading worker runbook
 

@@ -37,6 +37,10 @@ ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").spl
 # and proxies /api. For the split dev setup (Vite on :5173, API on :8000) set it to the Vite URL.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
 
+# Comma-separated emails that are platform administrators (SUPER_ADMIN). Promoted at startup and
+# on registration; never demoted automatically. Keep this to the people who operate the platform.
+SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMAILS", "").split(",") if e.strip()}
+
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))

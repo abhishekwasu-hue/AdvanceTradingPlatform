@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.auth.security import create_access_token, hash_password, verify_password
@@ -74,7 +75,7 @@ async def register(request: RegisterRequest, session: AsyncSession = Depends(get
 
     user = User(
         tenant_id=tenant.id, email=request.email, hashed_password=hash_password(request.password),
-        role=UserRole.OWNER.value,
+        role=UserRole.SUPER_ADMIN.value if is_configured_super_admin(request.email) else UserRole.OWNER.value,
     )
     session.add(user)
     await session.flush()

@@ -1,5 +1,4 @@
 import json
-from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,13 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
 from app.auth.dependencies import get_current_user, require_role
-from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
-from app.execution.paper_broker import PaperBroker
 from app.notifications.service import notify
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
 from app.trading.exit_logic import check_exit
+from app.trading.position_monitor import broker_for_trade, close_position
 
 router = APIRouter(prefix="/api", tags=["trading"])
 
@@ -152,32 +150,18 @@ async def mark_price(
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
 
-    outcome = check_exit(trade, request.current_price)
-    if outcome is None:
+    hit = check_exit(trade, request.current_price)
+    if hit is None:
         return MarkPriceResponse(closed=False)
 
-    reason, exit_price = outcome
-    broker = PaperBroker()
-    direction_sign = 1 if trade.direction == "LONG" else -1
-    gross_pnl = direction_sign * (exit_price - trade.entry_price) * trade.quantity
-    charges = broker.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity)
-
-    trade.exit_price = round(exit_price, 2)
-    trade.exit_time = datetime.now(timezone.utc)
-    trade.exit_reason = reason
-    trade.charges = charges
-    trade.pnl = round(gross_pnl - charges, 2)
-    await session.commit()
-
-    await notify(
-        session, user.tenant_id, NotificationType.EXIT,
-        title=f"{trade.direction} position closed: {trade.symbol}",
-        message=f"{reason} at {trade.exit_price}, P&L {trade.pnl}",
-        severity=NotificationSeverity.WARNING if trade.pnl is not None and trade.pnl < 0 else NotificationSeverity.INFO,
-        user_id=user.id, related_trade_id=trade.id,
-    )
-
-    return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=trade.exit_price, pnl=trade.pnl)
+    reason, exit_price = hit
+    # LIVE positions are squared off at the broker inside close_position (using the deployment's
+    # broker session); a LIVE trade with no usable session stays open and the 409 says so.
+    broker = await broker_for_trade(session, trade)
+    outcome = await close_position(session, trade, exit_price, reason, broker=broker, user_id=user.id)
+    if not outcome.closed:
+        raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
+    return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)
 
 
 @router.get("/analytics/summary", response_model=AnalyticsSummary)

@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends
@@ -13,9 +12,9 @@ from app.db.models import KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
 from app.execution.order_persistence import transition_order
 from app.execution.order_state_machine import TERMINAL_STATUSES
-from app.execution.paper_broker import PaperBroker
 from app.kill_switch import checks
 from app.notifications.service import notify
+from app.trading.position_monitor import broker_for_trade, close_position
 
 router = APIRouter(prefix="/api/kill-switch", tags=["kill-switch"])
 
@@ -181,7 +180,6 @@ async def emergency_exit(
             select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
         )
     )
-    broker = PaperBroker()
     closed_ids: List[int] = []
     skipped_symbols: List[str] = []
     for trade in open_trades:
@@ -189,16 +187,15 @@ async def emergency_exit(
         if price is None:
             skipped_symbols.append(trade.symbol)
             continue
-        direction_sign = 1 if trade.direction == "LONG" else -1
-        gross_pnl = direction_sign * (price - trade.entry_price) * trade.quantity
-        charges = broker.estimate_round_trip_costs(trade.entry_price, price, trade.quantity)
-        trade.exit_price = round(price, 2)
-        trade.exit_time = datetime.now(timezone.utc)
-        trade.exit_reason = "Emergency Exit"
-        trade.charges = charges
-        trade.pnl = round(gross_pnl - charges, 2)
-        closed_ids.append(trade.id)
-    await session.commit()
+        # LIVE positions are squared off at the broker inside close_position; one that can't be
+        # (no usable broker session, exit order rejected) is left open and reported, never marked
+        # closed on paper while it may still exist at the exchange.
+        broker = await broker_for_trade(session, trade)
+        outcome = await close_position(session, trade, price, "Emergency Exit", broker=broker, user_id=user.id)
+        if outcome.closed:
+            closed_ids.append(trade.id)
+        else:
+            skipped_symbols.append(f"{trade.symbol} ({'; '.join(outcome.warnings) or 'not closed'})")
 
     await write_audit_log(
         session, user.tenant_id, user.id, "emergency_exit_triggered",

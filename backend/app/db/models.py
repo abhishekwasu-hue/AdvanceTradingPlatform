@@ -56,6 +56,23 @@ class User(Base):
     )
 
 
+class PasswordResetRecord(Base):
+    """A one-hour, single-use password reset. Only the SHA-256 of the token is stored; the raw
+    token travels in the link (emailed through the tenant's own SMTP channel when one exists, or
+    handed over by the owner from the Team tab). Completing a reset revokes every session."""
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    requested_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
 class UserSessionRecord(Base):
     """One login = one session. Holds only a SHA-256 of the current refresh token; the access
     JWT carries the session id (`sid`) so every API request can check the session is still alive

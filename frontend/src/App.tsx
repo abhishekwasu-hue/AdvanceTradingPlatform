@@ -62,7 +62,7 @@ function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void })
 function initialPage(): Page {
   try {
     const params = new URLSearchParams(window.location.search);
-    if (params.has("invite")) return "account";
+    if (params.has("invite") || params.has("reset")) return "account";
     return params.has("broker") ? "settings" : "dashboard";
   } catch {
     return "dashboard";

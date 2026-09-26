@@ -1727,3 +1727,27 @@ Verified by `tests/test_sessions.py` (both tokens on register/login/invite-accep
 JWT refused, rotation, reuse detection revoking the session, logout invalidating immediately,
 logout-all, single revoke and cross-user 404, expiry, owner logout-all and removal, IP/agent
 capture, hashed storage) and a Postgres round-trip of migration `a7d3e5f1c208`.
+
+### C2: Password policy, reset and change
+
+* **Policy** (`app/auth/passwords.py`): at least 10 characters, at least two character classes,
+  not on a built-in list of the passwords that appear in every breach corpus (with the common
+  "+123"/"@123" suffix tricks stripped before comparing), not built from the user's own email.
+  Applied on registration, invite acceptance, reset and change, with a 400 that says which rule.
+  No forced rotation and no mandatory-symbol theatre: length and a blocklist are what stop
+  credential stuffing.
+* **Forgot / reset** (`password_resets`): `POST /api/auth/password/forgot` always answers 202
+  with the same text (no account enumeration) and is rate-limited per IP. When the user's
+  organisation has an email alert channel, the one-hour, single-use link is sent through it to
+  the user's own address; otherwise the owner issues one from the Team tab
+  (`POST /api/team/members/{id}/reset-link`, shown once). Only the token's SHA-256 is stored.
+  Completing a reset sets the password, burns the link, ends every session and logs the user in.
+* **Change** (`POST /api/auth/password/change`): requires the current password, applies the
+  policy, ends every *other* session and rotates the current one.
+* **UI**: "Forgot password?" on the login card, `?reset=` landing on the Account tab, and a
+  Change password card when logged in.
+
+Verified by `tests/test_passwords.py` (policy rules, register/invite enforcement, forgot with
+identical responses for known/unknown emails, emailed link through the tenant channel with a
+mocked SMTP, hint masking, single use, expiry, owner-issued link, change with wrong/same/weak
+passwords and other-session invalidation) and migration `b9e4c2d7a316` round-tripped.

@@ -141,6 +141,9 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * Registration creates an organisation (tenant) with the registering user as **Owner**. Owners
   invite teammates from the Team tab as Trader, Strategy creator or Viewer (read-only); the
   invite is a link valid for 48 hours, shown once, to be shared by the owner.
+* **Locked-out teammate**: they use "Forgot password?" (a link arrives if your organisation has
+  an email alert channel), or an owner issues a one-hour reset link from the Team tab and hands
+  it over on a trusted channel. Either way every existing session of theirs ends.
 * Removing a member deactivates them immediately (their session stops working on the next
   request); their trades, orders and audit rows stay. A tenant always keeps one owner.
 * Platform operators are `SUPER_ADMIN`: list their emails in `SUPER_ADMIN_EMAILS` (promoted at

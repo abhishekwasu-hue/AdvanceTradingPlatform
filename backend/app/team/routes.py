@@ -199,6 +199,31 @@ async def remove_member(
     await session.commit()
 
 
+class ResetLinkResponse(BaseModel):
+    reset_url: str
+    expires_at: str
+    delivered_by_email: bool
+
+
+@router.post("/members/{member_id}/reset-link", response_model=ResetLinkResponse)
+async def issue_member_reset_link(
+    member_id: int, http_request: Request, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session),
+) -> ResetLinkResponse:
+    """The owner's way to help a locked-out teammate when the organisation has no email channel:
+    a one-hour single-use reset link to hand over out of band (shown once). Also emailed when an
+    email channel exists."""
+    from app.auth.routes import _email_reset_link, _issue_reset, app_link
+    member = await _member_or_404(session, user.tenant_id, member_id)
+    if not member.is_active:
+        raise HTTPException(status_code=409, detail="Member is deactivated - reactivate them first")
+    token, record = await _issue_reset(session, member, http_request, user.id)
+    link = app_link(http_request, reset=token)
+    delivered = await _email_reset_link(session, member, link)
+    await write_audit_log(session, user.tenant_id, user.id, "password_reset_issued_by_owner", f"{member.email} ({'emailed' if delivered else 'link handed over'})")
+    await session.commit()
+    return ResetLinkResponse(reset_url=link, expires_at=_as_utc(record.expires_at).isoformat(), delivered_by_email=delivered)
+
+
 @router.post("/members/{member_id}/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_member_everywhere(
     member_id: int, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session),

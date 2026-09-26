@@ -207,6 +207,23 @@ export const api = {
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
+  forgotPassword: (email: string) =>
+    request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetInfo: (token: string) =>
+    request<{ email_hint: string; valid: boolean; reason: string | null }>(`/auth/password/reset/${encodeURIComponent(token)}`),
+
+  resetPassword: (token: string, password: string) =>
+    request<TokenResponse>(`/auth/password/reset/${encodeURIComponent(token)}`, { method: "POST", body: JSON.stringify({ password }) }),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<TokenResponse>("/auth/password/change", {
+      method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+
+  issueMemberResetLink: (id: number) =>
+    request<{ reset_url: string; expires_at: string; delivered_by_email: boolean }>(`/team/members/${id}/reset-link`, { method: "POST" }),
+
   logoutEverywhere: () => request<void>("/auth/logout-all", { method: "POST" }),
 
   listSessions: () => request<SessionInfo[]>("/auth/sessions"),

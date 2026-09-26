@@ -220,6 +220,35 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
+#### Phase G safety gates in the worker
+
+* **Stale market data** - a deployment whose `last_error` reads `Skipped: market data stale: ...`
+  was not evaluated because the newest candle is more than `MARKET_DATA_MAX_STALE_BARS` (3) bars
+  behind the clock. Check the broker's data feed / your own clock; the deployment trades again on
+  the first fresh cycle, nothing to reset. Exits: a quote older than `QUOTE_MAX_STALE_SECONDS`
+  (120) is refused for that cycle (`Price unavailable: ... quote stale ...` in the logs); LIVE
+  positions keep their broker-side stop meanwhile.
+* **Broker uncertain** (red banner on the Autopilot page, `GET /api/reconciliation/status`) - a
+  LIVE order FAILED (the broker call raised or timed out), so the platform does not know what the
+  broker holds. New LIVE entries for that organisation are refused until a reconciliation comes
+  back with zero mismatches. The worker reconciles every cycle by itself; if the flag persists,
+  the CRITICAL notification names the mismatch (`UNTRACKED_AT_BROKER X` = a position at the
+  broker the platform has no record of; `MISSING_AT_BROKER X` = the reverse). Square off or
+  record the difference at the broker / on the Positions page, then press **Reconcile** or wait
+  one cycle. Never clear the flag by editing the database.
+* **Reconciliation on start** - every worker start reconciles each tenant with an open LIVE trade
+  before the first cycle (`Start-up reconciliation:` log lines). A tenant with no usable broker
+  session at that moment is skipped with a warning and picked up by the per-cycle run once they
+  log in.
+* **Circuit open** (`atp_broker_circuit_state{broker} == 2`, `dependencies` health `degraded`) -
+  more than half the calls to that broker failed in the last minute. New LIVE entries to that
+  broker are paused for every tenant for two minutes, then one probe entry is tried. Exits still
+  go through. Nothing to do unless it stays open: then the broker is down, and the question is
+  whether to flatten LIVE positions by hand at the broker's own terminal.
+* **Ending a broker session on purpose** - `POST /api/broker/{name}/disconnect` revokes today's
+  token at the broker and marks it EXPIRED; LIVE deployments stop until the next login. Use it
+  when a token may have leaked or when handing a machine over.
+
 ### 1.7a Monitoring (Phase E1)
 
 * **Scrape targets**: `backend:8000/metrics` (send `Authorization: Bearer $METRICS_TOKEN` when
@@ -236,7 +265,13 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   * API latency: `histogram_quantile(0.95, sum(rate(atp_http_request_duration_seconds_bucket[5m])) by (le, route)) > 1`.
 * **Health probes**: `GET /api/system/health` (liveness), `GET /api/system/ready` (readiness,
   database only), `GET /api/system/health/deep` (operator detail; `degraded` names the component).
+  Phase G3 adds the master-prompt spellings `GET /api/system/health/live|ready|dependencies`;
+  `dependencies` is `deep` plus every broker circuit breaker's state and the number of
+  organisations with LIVE entries blocked pending reconciliation.
   The Docker `HEALTHCHECK` uses liveness on purpose - a stale worker must not restart the API.
+* **SLOs and alert rules** (Phase G2): `docs/SLO.md` states nine objectives and the metric behind
+  each; `scripts/monitoring/prometheus-alerts.yml` is the matching Prometheus rule file (load it
+  with `rule_files`). The PromQL sketches above are superseded by that file.
 * **Finding one request in the logs**: every response carries `X-Request-ID`; ask the user for
   it (browser dev tools, or the error toast) and grep the API logs for `request_id=<id>`.
 

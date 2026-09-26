@@ -230,11 +230,25 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Safety and reliability closure (Phase G)
+
+- **Staleness gate**: no signal on a candle feed more than 3 bars behind the clock, no exit
+  decision on a quote older than 2 minutes - the deployment says why it skipped.
+- **Broker-uncertain flag**: a FAILED live order blocks new LIVE entries for that organisation
+  until position reconciliation against the broker passes; the worker reconciles every cycle
+  while blocked and on start-up before its first cycle. Exits keep running.
+- **Circuit breaker**: a broker whose calls are failing (timeouts, 5xx, 429) has new LIVE
+  entries paused platform-wide for two minutes, then probed; independent of the kill switch.
+- **SLOs** (`docs/SLO.md`) with the metrics behind them and Prometheus alert rules
+  (`scripts/monitoring/prometheus-alerts.yml`); `/api/system/health/live|ready|dependencies`.
+- **Broker disconnect** from Settings-level API (revokes today's token at the broker) and
+  disclaimers on every backtest, signal, score and generated-strategy screen.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 685 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 707 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

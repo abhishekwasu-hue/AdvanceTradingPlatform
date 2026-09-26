@@ -10,11 +10,11 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER. Email verification missing. |
-| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` / `exit_position()` / `subscribe_market_data()` from V3.14 and §8 not on the interface. Tokens Fernet-encrypted with one app key, not envelope-encrypted per tenant (§48). |
-| 10 market data | partial | Candles/LTP via broker REST with Redis cache; **no staleness detection** (`data_age > threshold -> block`), no websocket feed. |
+| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` added (Phase G3); `exit_position()` / `subscribe_market_data()` from V3.14 and §8 still not on the interface. Tokens Fernet-encrypted with one app key, not envelope-encrypted per tenant (§48). |
+| 10 market data | partial | Candles/LTP via broker REST with Redis cache; staleness gate on candles and quotes (Phase G1); no websocket feed. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; DSL schema not formally versioned (§55). |
-| 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done / partial | Order state machine, idempotency, reconciliation exist. Risk checks missing from §17: **data fresh**, **broker connected** (only token validity), **margin available** for buys, **instrument/expiry validity**. `PARTIAL_FILL` handled on the trade (F3) but not as an order status. |
+| 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done / partial | Order state machine, idempotency, reconciliation exist. §17 checks: data fresh (Phase G1) and broker healthy (Phase G2 circuit) done; **margin available** for buys and **instrument/expiry validity** still missing. `PARTIAL_FILL` handled on the trade (F3) but not as an order status. |
 | 23-25 options engine, strategies, Greeks | partial | Single-leg options (Phase F). **Strike-selection pipeline filters (liquidity, OI, IV, delta) missing**; **multi-leg strategies (bull put, bear call, iron condor) missing**; Greeks engine exists per leg. |
 | 26-27 paper, live | done | Same pipeline; configurable slippage; execution delay/bid-ask simulation not modelled. |
 | 28 kill switches, emergency exit | done | Global/tenant/strategy + emergency exit. |
@@ -29,12 +29,12 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 | Section | Status | Gaps |
 | --- | --- | --- |
-| 47 compliance | partial | Algo tagging, retention, exports, erasure done. **Disclaimers on backtest/AI/score screens missing**; advisory-vs-execution classification is a business decision. |
-| 48 security | partial | Rate limits, hash-chained audit, sessions/MFA, scanning done. **Secret manager + per-tenant envelope encryption, least-privilege DB roles, pentest, broker-call circuit breakers missing.** |
-| 49 reliability | partial | Structured logs, metrics, heartbeat, deep health done. **Circuit breaker on broker error rate, written SLOs, chaos tests, staleness alert missing.** Heartbeat alert wiring is the operator's (Prometheus rule given). |
+| 47 compliance | partial | Algo tagging, retention, exports, erasure done. Disclaimers on backtest/signal/score/AI screens (Phase G3); advisory-vs-execution classification is a business decision. |
+| 48 security | partial | Rate limits, hash-chained audit, sessions/MFA, scanning done. **Secret manager + per-tenant envelope encryption, least-privilege DB roles, pentest missing.** Broker-call circuit breaker done (Phase G2). |
+| 49 reliability | partial | Structured logs, metrics, heartbeat, deep health done. Circuit breaker, written SLOs (docs/SLO.md) and staleness gate/alert done (Phase G). **Chaos tests missing.** Heartbeat alert wiring is the operator's (Prometheus rule given). |
 | 50 testing | partial | Unit, golden path, fuzz, idempotency, disaster simulation, exit parity done. **Load/latency tests, full backtest-vs-paper parity run, staging env, model-drift gate missing.** |
 | 51 CI/CD | partial | Pipeline with scans done. **Staging environment, IaC, feature flags, blue-green, migration hour guard missing.** |
-| 52 DR | partial | Daily verified backups (E3), runbooks done. **PITR/WAL, broker-side GTT backstop, numeric RPO/RTO per data class, restart-reconcile-before-signals missing.** |
+| 52 DR | partial | Daily verified backups (E3), runbooks done. Restart-reconcile-before-signals done (Phase G1). **PITR/WAL, broker-side GTT backstop, numeric RPO/RTO per data class missing.** |
 | 53 governance | partial | Retention, erasure, audit immutability done. AI/ML lineage only for what exists. |
 | 54 performance | missing | No stated SLO numbers or load measurements. |
 | 55 docs | partial | Architecture/operations/README, OpenAPI. **ADRs and a versioned DSL reference missing.** |
@@ -52,11 +52,11 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V3.6-3.8 plans, billing, metering | partial | Plans and limits done; **billing provider abstraction and usage metering missing**. |
 | V3.9-3.12 marketplace, public API, developer portal | missing | |
 | V3.13 notifications | partial | |
-| V3.14 rule 2 `get_balance/disconnect` | missing | |
+| V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
 | V4.1-4.3 AI agent, AI scanner, AI generator | missing / partial | Rule-based scanner and builder exist; no LLM, no action-state machine, no approval gate. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | missing | Greeks per leg exist; no aggregation or hierarchy. |
 | V4.6-4.8 quant, regime, advanced backtesting | missing | |
-| V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and failure rules (broker uncertain -> block new live orders) missing. |
+| V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and the broker-uncertain block done (Phase G). |
 | V4.10 DR | partial | Restore-test sequence exists as script; RPO/RTO per tier, incident record schema missing. |
 | V4.11 monitoring | partial | Trading metrics exist; AI/billing domains n/a; severities INFO/WARNING/CRITICAL (no EMERGENCY). |
 | V4.12 security scopes | missing | Roles, not fine-grained scopes. |
@@ -67,8 +67,8 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 ## Consolidated safety rules - where each stands
 
 1-6 (signal ≠ order, AI ≠ order, scanner ≠ order, backtest ≠ proof, every live order through risk, kill switch unbypassable): **done** by construction (one execution path, kill switches checked before risk).
-7 stale/uncertain data fails safe: **missing** (no candle/LTP age check before a signal).
-8 broker-state uncertainty blocks new live orders until reconciled: **missing** (a FAILED order raises CRITICAL but does not block the tenant's next LIVE entry).
+7 stale/uncertain data fails safe: **done** (Phase G1 staleness gate on candles before signals and on quote age before exits).
+8 broker-state uncertainty blocks new live orders until reconciled: **done** (Phase G1 tenant flag; worker reconciles every cycle while flagged).
 9-10 duplicate protection, idempotency: **done**.
 11 critical actions audited: **done**.
 12 one DSL everywhere: **done** (rule engine shared; exit-parity test).
@@ -77,13 +77,13 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 15 AI never holds broker credentials: **done** (no AI execution path exists).
 16 human approval for AI live strategies: n/a until an LLM builder exists.
 17 partial fills explicit: **done** (F3).
-18 restart reconciles with broker before new signals: **partial** (reconciliation engine exists, not run automatically on worker start).
+18 restart reconciles with broker before new signals: **done** (Phase G1 `TradingWorker.reconcile_on_start` before the first cycle).
 19 multi-level risk limits: **missing** (tenant level only).
 20 no module silently changes another's risk config: **done**.
 
 ## Proposed next phases (recommendation order)
 
-- **Phase G - safety and reliability closure** (small, high value, closes rules 7, 8, 18 and §17/§49 gaps): market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.
+- **Phase G - safety and reliability closure** - **DONE** on this branch (ARCHITECTURE.md Phase G, docs/SLO.md). Was: market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.
 - **Phase H - options depth** (§23-25, V2.1-2.6): strike-selection filters from the option chain (liquidity, OI, IV, delta), multi-leg deployments (bull put, bear call, iron condor) with max-loss/max-profit/breakeven/margin sizing and per-leg exits, Greeks per position.
 - **Phase I - risk hierarchy and accounts** (V3.1-3.5, V4.5): `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** (§29, §31, V2.10, V4.8): trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.

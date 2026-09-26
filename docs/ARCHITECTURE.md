@@ -2176,3 +2176,91 @@ written option exits on underlying levels and on the premium net, futures/cash u
 profiles, underlying exchange mapping, the monitor's two quotes with P&L on the premium, the
 premium-only fallback when the underlying feed fails, LIVE exit on NFO after cancelling the stop,
 the mark-price endpoint).
+
+## Phase G: Safety and reliability closure
+
+The revised master prompt's consolidated safety rules 7, 8 and 18 and sections 17 and 49, plus the
+V4.9 health spellings, V3.14 rule 2 and the section 47 disclaimers. Small modules, each closing
+one gap `docs/MASTER_PROMPT_GAP_ANALYSIS.md` named; `docs/SLO.md` states what they protect.
+
+### G1: Staleness gate, broker-uncertain flag, reconciliation on start
+
+**Staleness gate** (`app/market_data/freshness.py`). Two checks, both returning a human-readable
+reason or None:
+
+* `candle_staleness(last_bar_ts, timeframe, now)`: the newest bar of the deployment's base
+  timeframe may be at most `(MARKET_DATA_MAX_STALE_BARS + 1) * timeframe` old (default 3 missed
+  bars: a 1-minute feed more than 4 minutes behind the clock). The worker runs it in
+  `_evaluate_deployment` after the history check and *before* `strategy.analyze`; a stale feed
+  sets `last_error = "Skipped: market data stale: newest 1min bar is N min old (...)"`, counts on
+  `atp_market_data_stale_total{kind="candles"}` and `CycleReport.stale_skips`, and evaluates
+  nothing. The next fresh cycle trades normally.
+* `quote_is_stale(quote_ts, now)`: `MarketDataService.get_ltp` now asks the broker for a full
+  quote first (`BrokerInterface.get_quote_for_symbol`, implemented for Upstox and Kite with their
+  `last_trade_time`/`timestamp` parsed by `app/brokers/timestamps.py`) and raises
+  `StaleMarketDataError` when the exchange timestamp is older than `QUOTE_MAX_STALE_SECONDS`
+  (120). The position monitor already treats any price failure as "no decision this cycle", so a
+  stale quote leaves the position as it is, with the reason in the outcome's warnings. Brokers
+  whose LTP endpoint carries no timestamp are accepted as real-time (nothing to judge by).
+
+**Broker-uncertain flag** (`app/reconciliation/service.py`, `tenants.broker_uncertain_since /
+broker_uncertain_reason / last_reconciled_at`, migration `d4f0b8c6e953`). When a LIVE order ends
+FAILED - the broker call raised or timed out, so nobody knows whether the broker holds the
+position - `execute_signal_for_user` calls `mark_broker_uncertain`. From then on:
+
+* every new LIVE entry for that organisation is refused - inside `execute_signal_for_user`
+  (REJECTED, reason "Broker state uncertain since ... - LIVE entries blocked until position
+  reconciliation passes"), so the console, webhooks and the worker all hit the same wall; the
+  worker additionally skips one step earlier and writes the reason on the deployment;
+* exits are untouched (open risk is still real);
+* the worker runs `run_reconciliation` for the tenant *every cycle* while flagged. Zero
+  mismatches clears the flag (`broker_uncertain_cleared` audit row) and the same cycle may trade;
+  mismatches keep it, with one CRITICAL notification naming them.
+
+`run_reconciliation` is the one implementation behind the on-demand `POST
+/api/reconciliation/{broker}`, the worker's per-cycle run and the start-up run. It compares LIVE
+trades only (PAPER positions never exist at the broker), writes the same audit rows as before,
+stamps `last_reconciled_at`, and updates the flag. `GET /api/reconciliation/status` exposes the
+state; the Autopilot page shows a red banner with a "Reconcile" button while flagged.
+
+**Reconciliation on start** (`TradingWorker.reconcile_on_start`, safety rule 18). Before the
+first cycle, every tenant holding an open LIVE trade is reconciled against the broker(s) its
+deployments trade through (falling back to every stored broker for console-entered trades). A
+mismatch flags the tenant and raises the CRITICAL notification; a clean run clears a stale flag.
+A failure here never stops the worker from starting - the flag is the protection, not the
+process exit.
+
+### G2: Circuit breaker and SLOs
+
+`app/brokers/circuit_breaker.py`: one `CircuitBreaker` per broker name per process. Every call
+through `RateLimitedBroker` (what the worker uses) reports its outcome via `observe_call`;
+`OrderRouter` reports its own `place_order` when handed an unwrapped adapter. Only health failures
+count - timeouts, connection errors, 5xx, 429, malformed payloads; a business 4xx (margin,
+invalid instrument, expired token) is the broker working and moves nothing. More than
+`BROKER_CIRCUIT_FAILURE_RATIO` (0.5) of the last `BROKER_CIRCUIT_WINDOW_SECONDS` (60) of calls
+failing, after at least `BROKER_CIRCUIT_MIN_CALLS` (5), opens the breaker for
+`BROKER_CIRCUIT_OPEN_SECONDS` (120); then HALF_OPEN admits one probe entry, whose outcome closes
+or re-opens it.
+
+`OrderRouter.execute` checks `breaker.allow_submission()` before a LIVE entry and returns a
+REJECTED result with the breaker's reason while it is open - platform-wide, every tenant, because
+the broker is the shared dependency. Exits, cancels and protective stops are never refused. The
+kill switch is a person's decision and stays independent; either alone stops entries. Metrics:
+`atp_broker_calls_total{broker,method,outcome}`, `atp_broker_circuit_state{broker}` (0/1/2),
+`atp_broker_circuit_rejections_total`, plus `atp_order_entry_latency_seconds{mode}` for SLO-7.
+
+`docs/SLO.md` lists nine objectives with the metric that measures each and the alert that guards
+it; `scripts/monitoring/prometheus-alerts.yml` holds those alerts as Prometheus rules.
+
+### G3: Health aliases, broker disconnect, disclaimers
+
+* `GET /api/system/health/live | ready | dependencies` (V4.9). `dependencies` is `health/deep`
+  plus every breaker's snapshot and the count of broker-uncertain tenants; an open breaker makes
+  it `degraded`.
+* `BrokerInterface.get_balance()` (alias of `get_margins`) and `disconnect()` (default: forget
+  the token; Upstox `DELETE /logout`, Kite `DELETE /session/token`). `POST
+  /api/broker/{name}/disconnect` revokes today's session on purpose: broker logout, access token
+  removed from the encrypted payload, status EXPIRED, audit row `broker_disconnected`. Key and
+  secret stay, so the next login needs no re-entry.
+* `Disclaimer` component (`frontend/src/components/ui.tsx`) on the Backtest, Signals, Scanner,
+  Fundamentals and Strategy Builder pages, each naming what that page's numbers are not.

@@ -14,6 +14,7 @@ from app.auth.dependencies import current_session_id, ensure_live_step_up, get_c
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.token_lifecycle import (
+    build_adapter,
     OAUTH_BROKERS,
     build_upstox_authorization_url,
     create_oauth_state,
@@ -30,7 +31,7 @@ from app.core.enums import BrokerTokenStatus, NotificationSeverity, Notification
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
-from app.secrets_store.encryption import encrypt_text
+from app.secrets_store.encryption import decrypt_text, encrypt_text
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,35 @@ async def delete_broker_credentials(
         await session.delete(existing)
         await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_deleted", name)
         await session.commit()
+
+
+@router.post("/{name}/disconnect", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_broker(
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+) -> None:
+    """Phase G3 (V3.14 rule 2): end today's broker session on purpose - invalidate the access
+    token at the broker (Upstox `DELETE /logout`, Kite `DELETE /session/token`) and mark it
+    EXPIRED here, so LIVE deployments stop until someone logs in again. The API key/secret stay
+    stored; only the session token is gone. Audited. A broker that refuses the logout call still
+    ends up EXPIRED locally - the platform will not use a token it has tried to revoke."""
+    record = await get_credential_record(session, user.tenant_id, name)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
+    detail = "token revoked at broker"
+    try:
+        adapter = build_adapter(record)
+        if adapter.access_token:
+            await adapter.disconnect()
+    except Exception as exc:  # noqa: BLE001 - local revocation is what matters
+        logger.warning("Broker %s logout call failed for tenant %s: %s", name, user.tenant_id, exc)
+        detail = f"broker logout call failed ({type(exc).__name__}); token marked expired locally"
+    payload = json.loads(decrypt_text(record.encrypted_payload))
+    payload.pop("access_token", None)
+    record.encrypted_payload = encrypt_text(json.dumps(payload))
+    record.token_status = BrokerTokenStatus.EXPIRED.value
+    record.token_expires_at = None
+    await write_audit_log(session, user.tenant_id, user.id, "broker_disconnected", f"{name}: {detail}")
+    await session.commit()
 
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile)

@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import CandleChart, { directionMarker, type PriceLineSpec } from "../components/CandleChart";
 import SignalCard from "../components/SignalCard";
-import { Card, DemoDataBanner } from "../components/ui";
+import { Card, DemoDataBanner, Disclaimer } from "../components/ui";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
 
@@ -112,6 +112,7 @@ export default function SignalsPage() {
       </div>
 
       <DemoDataBanner />
+      <Disclaimer kind="signals" />
 
       <Card>
         <div className="grid sm:grid-cols-5 gap-3 items-end">

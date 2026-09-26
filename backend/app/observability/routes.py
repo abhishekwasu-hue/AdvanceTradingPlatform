@@ -13,12 +13,13 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
 from app.core.config import WORKER_CYCLE_SECONDS
-from app.db.models import WorkerHeartbeatRecord
+from app.brokers.circuit_breaker import all_breakers
+from app.db.models import Tenant, WorkerHeartbeatRecord
 from app.db.session import get_session
 from app.market_data.calendar import market_session_status
 from app.observability.metrics import refresh_db_gauges, render
@@ -102,11 +103,37 @@ async def deep_health(response: Response, session: AsyncSession = Depends(get_se
 
 
 @router.get("/api/system/ready")
+@router.get("/api/system/health/ready")
 async def ready(response: Response, session: AsyncSession = Depends(get_session)) -> Dict[str, str]:
-    """Readiness for an orchestrator: only the database matters for serving requests."""
+    """Readiness for an orchestrator: only the database matters for serving requests.
+    `/api/system/health/ready` is the master-prompt (V4.9) spelling of the same probe."""
     db = await _check_db(session)
     response.status_code = 200 if db["status"] == "ok" else 503
     return {"status": "ready" if db["status"] == "ok" else "not_ready"}
+
+
+@router.get("/api/system/health/live")
+async def live() -> Dict[str, str]:
+    """Liveness (V4.9 spelling): the process answers. Same contract as `/api/system/health`."""
+    return {"status": "ok"}
+
+
+@router.get("/api/system/health/dependencies")
+async def dependencies(response: Response, session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
+    """Every external dependency and safety gate in one view (V4.9): the deep health checks plus
+    the per-broker circuit breakers (Phase G2) and how many organisations currently have LIVE
+    entries blocked pending reconciliation (Phase G1). Same status code rules as /health/deep."""
+    body = await deep_health(response, session)
+    body["checks"]["broker_circuits"] = {name: b.snapshot() for name, b in all_breakers().items()}
+    try:
+        body["checks"]["broker_uncertain_tenants"] = int(
+            await session.scalar(select(func.count()).select_from(Tenant).where(Tenant.broker_uncertain_since.is_not(None))) or 0
+        )
+    except Exception:  # noqa: BLE001 - database down is already reported above
+        body["checks"]["broker_uncertain_tenants"] = None
+    if body["status"] == "ok" and any(b.state.value != "CLOSED" for b in all_breakers().values()):
+        body["status"] = "degraded"
+    return body
 
 
 @router.get("/metrics", include_in_schema=False)

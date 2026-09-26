@@ -77,6 +77,33 @@ export function DemoDataBanner() {
   );
 }
 
+/**
+ * Master prompt section 47: every screen that shows simulated results, model-generated content
+ * or a score carries the same plain statement of what it is not. `kind` picks the sentence that
+ * names the specific thing on that page; the second sentence is common to all of them.
+ */
+export function Disclaimer({ kind }: { kind: "backtest" | "signals" | "ai" | "score" }) {
+  const lead = {
+    backtest:
+      "Backtest results are simulated on historical data with modelled costs and fills. They do not predict future results; live fills, slippage and liquidity will differ.",
+    signals:
+      "Signals, grades and scores are rule-based decision support computed from price data. They are not investment advice and carry no assurance of profit.",
+    ai:
+      "Strategies produced by the builder or parser are generated from your description and must be reviewed and backtested before any deployment. Generated rules can be wrong.",
+    score:
+      "Scores and ratings summarise the inputs entered; they are analytical aids, not recommendations to buy, sell or hold any security.",
+  }[kind];
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-border bg-panel2/60 px-3 py-2 text-[11px] text-muted">
+      <Info size={13} className="shrink-0 mt-0.5" />
+      <span>
+        {lead} Trading in equities and derivatives involves substantial risk of loss and is not suitable for
+        every investor. You remain responsible for every order placed from your account.
+      </span>
+    </div>
+  );
+}
+
 export function ProgressBar({ pct }: { pct: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color = clamped >= 80 ? "bg-accent" : clamped >= 60 ? "bg-warn" : "bg-danger";

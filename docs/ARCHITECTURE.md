@@ -2264,3 +2264,54 @@ it; `scripts/monitoring/prometheus-alerts.yml` holds those alerts as Prometheus 
   secret stay, so the next login needs no re-entry.
 * `Disclaimer` component (`frontend/src/components/ui.tsx`) on the Backtest, Signals, Scanner,
   Fundamentals and Strategy Builder pages, each naming what that page's numbers are not.
+
+## Phase H: Options depth
+
+Master prompt sections 23-25 and V2.1-2.6: the strike-selection pipeline and the V1 option
+structures (bull put spread, bear call spread, iron condor), on top of Phase F's single leg.
+
+### H1: Strike-selection pipeline
+
+`app/instruments/strike_selection.py`. A deployment may carry `strike_filters` (JSON):
+`min_oi`, `min_volume`, `max_spread_pct` (bid/ask over mid), `min_iv_pct`/`max_iv_pct`,
+`target_delta` with `delta_tolerance`, `min_premium`/`max_premium`, `search_steps`. With filters
+active, `resolve_contract` no longer trusts the rule strike: it fetches the live option chain
+through the tenant's broker (`chain_provider`, built by the worker from the market-data adapter),
+judges every listed strike within `search_steps` of the rule strike (`candidate_for` computes
+spread %, IV from the chain or solved from the premium, delta from the broker or Black-Scholes),
+and picks the passing strike nearest the target delta (or nearest the rule strike). The verdicts
+travel on `ResolvedContract.selection` / `selection_notes`, so the preview shows why 24450 beat
+24500 and the order's reasons carry the same sentence. No chain, an empty chain, or nothing
+passing is a `ContractResolutionError` recorded on the deployment - a configured filter is
+never silently skipped. Upstox chain parsing now keeps bid/ask, IV, delta, OI change and spot.
+
+### H2: Multi-leg structures
+
+`app/instruments/spreads.py` resolves a structure from the same rules: the short leg at the rule
+strike (ATM/OTM n) for the sold right, the wing `spread_width` listed steps further out; the
+condor does both sides with the shorts `strike_offset` steps OTM. Direction discipline: a bull
+put only on LONG, a bear call only on SHORT, the condor on either; a mismatch is a recorded
+"not entered on a SHORT signal", never the mirror structure. `structure_metrics` gives net
+credit, max profit, max loss (width - credit), breakevens and the group exit levels
+(`target_credit_pct` of the credit captured, `stop_credit_pct` of the credit lost).
+
+`app/execution/multileg.py::execute_structure` is the group counterpart of the single-leg
+pipeline: the same entry refusals (`entry_refusals`, now shared), one OrderRecord per leg under
+`<key>:L<i>`, quotes for every leg, the risk engine's day checks, lots sized off **max loss**
+(risk per trade / max loss per lot, capped by `max_lots` and LIVE by the broker's margin for the
+short legs), then paper fills at the quoted premiums or LIVE placement *wings first, shorts
+second*. A failed leg after another filled is unwound with market orders, every order ends
+FAILED, the tenant is flagged broker-uncertain (Phase G1) and a CRITICAL notification names the
+leg. Trades share `leg_group_id`, carry `leg_role`, `option_strategy` and the group's metrics in
+`group_meta`.
+
+Exits (`position_monitor._monitor_group`): the legs are judged together on the spread's value
+(cost to close = shorts' premiums minus wings'): value <= target, value >= stop, or the
+underlying through a short strike; a missing leg quote means no decision this cycle. Closing
+buys the shorts back first, then sells the wings; each leg books its own P&L. `GET
+/api/positions/greeks` computes per-leg and per-group Greeks from live premiums (IV solved
+from the last price) and the underlying's spot; the Positions page shows them on demand.
+
+The Autopilot form gains a Structure selector, wing width, target/stop credit %, a strike-filter
+panel, and previews legs with credit, max loss and breakeven when a broker session can quote
+them. Migration `e5a1c9d7f064`.

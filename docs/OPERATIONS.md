@@ -220,6 +220,21 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
+#### Phase H: option structures and strike filters
+
+* A deployment with **strike filters** whose `last_error` reads `Contract not resolved: No CE
+  strike within N steps ... passes (...)` found no liquid enough strike in the live chain that
+  cycle - by design. Loosen the filters or widen `search_steps`; nothing is traded meanwhile.
+  `Option chain ... unavailable` means the broker's chain endpoint failed: check the session.
+* A **spread/condor** shows on the Positions page as two or four legs sharing a group badge
+  (credit, max loss, exit levels). They are closed together by the worker; closing one leg by
+  hand at the broker leaves the others naked - if you must intervene, close the *short* legs
+  first, then run reconciliation. `Structure not built: ... not entered on a SHORT signal` on
+  a bull put deployment is normal: the strategy leaned the wrong way that bar.
+* A LIVE structure that reads `Structure failed: ... unwound N filled leg(s)` had a leg fail
+  mid-placement; the filled wing was sold back, and the tenant is broker-uncertain until
+  reconciliation passes (see the Phase G notes below).
+
 #### Phase G safety gates in the worker
 
 * **Stale market data** - a deployment whose `last_error` reads `Skipped: market data stale: ...`

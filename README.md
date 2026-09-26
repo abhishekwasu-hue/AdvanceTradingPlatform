@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Options depth (Phase H)
+
+- **Strike-selection pipeline**: liquidity (OI, volume, bid/ask spread), IV band, target delta
+  and premium band filters on a deployment, judged against the live option chain at signal
+  time; the chosen strike's rationale is shown in the preview and kept on the order.
+- **Multi-leg structures**: bull put spread, bear call spread and iron condor deployments,
+  sized in lots off max loss (and the broker's margin when LIVE), placed wings first, closed as
+  one position on the credit target/stop or a short-strike breach; per-leg and per-structure
+  Greeks from live premiums on the Positions page.
+
 ## Safety and reliability closure (Phase G)
 
 - **Staleness gate**: no signal on a candle feed more than 3 bars behind the clock, no exit
@@ -248,7 +258,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 707 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 723 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

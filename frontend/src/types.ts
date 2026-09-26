@@ -996,3 +996,48 @@ export interface PlatformAuditLog {
   detail: string;
   created_at: string;
 }
+
+// Phase I1: risk hierarchy
+export type RiskScope = "GLOBAL" | "TENANT" | "USER" | "ACCOUNT" | "STRATEGY" | "INSTRUMENT";
+export type RiskLimitType =
+  | "MAX_DAILY_LOSS" | "MAX_STRATEGY_LOSS" | "MAX_LOSS_PER_TRADE" | "MAX_ORDER_VALUE"
+  | "MAX_POSITION_QUANTITY" | "MAX_OPEN_POSITIONS" | "MAX_TRADES_PER_DAY" | "MAX_CAPITAL_ALLOCATION_PCT";
+
+export interface RiskLimit {
+  id: number;
+  tenant_id: number | null;
+  scope: RiskScope;
+  scope_id: string;
+  limit_type: RiskLimitType;
+  limit_value: number;
+  enabled: boolean;
+  note: string | null;
+  created_by: number | null;
+  updated_at: string | null;
+}
+
+export interface RiskLimitRequest {
+  scope: RiskScope;
+  scope_id?: string;
+  limit_type: RiskLimitType;
+  limit_value: number;
+  enabled?: boolean;
+  note?: string | null;
+}
+
+export interface RiskEvent {
+  id: number;
+  created_at: string | null;
+  strategy_id: string | null;
+  symbol: string | null;
+  account_id: number | null;
+  rule_type: RiskLimitType;
+  scope: RiskScope;
+  current_value: number;
+  limit_value: number;
+  severity: string;
+  action: string;
+  status: "PASS" | "WARN" | "BLOCK";
+  reason: string;
+  order_id: number | null;
+}

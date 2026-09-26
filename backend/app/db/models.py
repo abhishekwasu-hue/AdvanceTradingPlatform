@@ -188,12 +188,15 @@ class BrokerCredentialRecord(Base):
     """
 
     __tablename__ = "broker_credentials"
-    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", name="uq_tenant_broker"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", "account_label", name="uq_tenant_broker_label"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Phase I2: several accounts at the same broker are several credential rows, told apart by
+    # this label ("primary" is the one every existing caller means).
+    account_label: Mapped[str] = mapped_column(String(50), nullable=False, default="primary")
     encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
     # Broker session-token lifecycle (see app/brokers/token_lifecycle.py). Indian retail broker
     # access tokens (Upstox, Zerodha) expire every trading day around 03:30 IST with no refresh
@@ -396,6 +399,8 @@ class StrategyDeploymentRecord(Base):
     spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Phase I2: route this deployment's LIVE orders to one broker account (NULL = the broker's default).
+    broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
@@ -585,6 +590,81 @@ class RiskSettingsRecord(Base):
     max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class RiskLimitRecord(Base):
+    """Phase I1 (V3.4 / V4.5): one configurable limit at one scope. Limits of the same type at
+    different scopes are all evaluated for an order and the strictest applies. GLOBAL rows have
+    tenant_id NULL and are set by SUPER_ADMIN; every other scope belongs to a tenant."""
+
+    __tablename__ = "risk_limits"
+    __table_args__ = (UniqueConstraint("tenant_id", "scope", "scope_id", "limit_type", name="uq_risk_limit_scope"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    scope: Mapped[str] = mapped_column(String(12), nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")   # "" for GLOBAL/TENANT
+    limit_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    limit_value: Mapped[float] = mapped_column(Float, nullable=False)
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class RiskEventRecord(Base):
+    """Append-only record of every risk-hierarchy check (V4.5 risk_event fields): what was
+    measured, against which limit, and what the engine did about it. Never updated or deleted
+    (retention policy: NEVER_DELETED alongside audit logs)."""
+
+    __tablename__ = "risk_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    strategy_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rule_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rule_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope: Mapped[str] = mapped_column(String(12), nullable=False)
+    current_value: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_value: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False)     # INFO / WARNING / CRITICAL
+    action: Mapped[str] = mapped_column(String(20), nullable=False)       # RiskAction
+    status: Mapped[str] = mapped_column(String(10), nullable=False)       # PASS / WARN / BLOCK
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BrokerAccountRecord(Base):
+    """Phase I2 (V3.14 rule 3): one trading account at a broker - the credential it authenticates
+    with, the broker's own identifier, and the last synced balance/margin/P&L. Deployments may
+    route to a specific account; a disabled account refuses new LIVE entries."""
+
+    __tablename__ = "broker_accounts"
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", "account_label", name="uq_broker_account_label"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    credential_id: Mapped[int | None] = mapped_column(ForeignKey("broker_credentials.id", ondelete="SET NULL"), nullable=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    account_label: Mapped[str] = mapped_column(String(50), nullable=False, default="primary")
+    broker_account_identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")   # ACTIVE / DISABLED
+    is_default: Mapped[bool] = mapped_column(nullable=False, default=False)
+    available_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    used_margin: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_sync_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 

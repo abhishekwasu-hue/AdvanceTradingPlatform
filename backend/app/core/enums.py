@@ -54,6 +54,36 @@ class AssetClass(str, Enum):
     CRYPTO = "CRYPTO"
 
 
+class RiskScope(str, Enum):
+    """Phase I1 / V4.5: where a risk limit applies. Evaluated together; the strictest wins."""
+    GLOBAL = "GLOBAL"          # platform-wide, SUPER_ADMIN
+    TENANT = "TENANT"
+    USER = "USER"              # scope_id = user id
+    ACCOUNT = "ACCOUNT"        # scope_id = broker account id
+    STRATEGY = "STRATEGY"      # scope_id = strategy id
+    INSTRUMENT = "INSTRUMENT"  # scope_id = symbol
+
+
+class RiskLimitType(str, Enum):
+    MAX_DAILY_LOSS = "MAX_DAILY_LOSS"                    # currency, realised today
+    MAX_STRATEGY_LOSS = "MAX_STRATEGY_LOSS"              # currency, realised today per strategy
+    MAX_LOSS_PER_TRADE = "MAX_LOSS_PER_TRADE"            # currency at the stop
+    MAX_ORDER_VALUE = "MAX_ORDER_VALUE"                  # currency, entry x quantity
+    MAX_POSITION_QUANTITY = "MAX_POSITION_QUANTITY"      # units per order
+    MAX_OPEN_POSITIONS = "MAX_OPEN_POSITIONS"            # count
+    MAX_TRADES_PER_DAY = "MAX_TRADES_PER_DAY"            # count
+    MAX_CAPITAL_ALLOCATION_PCT = "MAX_CAPITAL_ALLOCATION_PCT"  # % of capital in one order
+
+
+class RiskAction(str, Enum):
+    ALLOW = "ALLOW"
+    WARN = "WARN"
+    BLOCK_ORDER = "BLOCK_ORDER"
+    STOP_STRATEGY = "STOP_STRATEGY"
+    EXIT_POSITION = "EXIT_POSITION"
+    GLOBAL_KILL = "GLOBAL_KILL"
+
+
 class KillSwitchScope(str, Enum):
     """Kill switches stop new order entries at three widening scopes (spec: strategy/user/
     global). GLOBAL is platform-wide (SUPER_ADMIN only); TENANT and STRATEGY are scoped to the

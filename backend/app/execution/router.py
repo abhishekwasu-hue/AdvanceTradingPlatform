@@ -81,9 +81,12 @@ class OrderRouter:
 
     async def execute(
         self, signal: Signal, state: TradingDayState, *, contract_spec=None, max_quantity: Optional[float] = None,
+        pre_place_check=None,
     ) -> ExecutionResult:
         """`contract_spec` overrides the registry lookup (Phase F3: a resolved option/future
-        carries its own lot size); `max_quantity` caps the risk-based size (max lots, margin)."""
+        carries its own lot size); `max_quantity` caps the risk-based size (max lots, margin).
+        `pre_place_check(quantity)` (Phase I1) is awaited after sizing and before any fill or
+        broker call; it returns (allowed, reasons, notes) from the risk hierarchy."""
         contract_spec = contract_spec or get_contract_spec(signal.symbol)
         decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
         if not decision.approved:
@@ -96,6 +99,11 @@ class OrderRouter:
                 return ExecutionResult(executed=False, reasons=[f"Position cap ({max_quantity:g}) is below one lot ({unit:g})"])
             notes.append(f"Size capped from {decision.quantity:g} to {capped:g} by the deployment/margin limit")
             decision.quantity = capped
+        if pre_place_check is not None:
+            allowed, reasons, hierarchy_notes = await pre_place_check(decision.quantity)
+            notes.extend(hierarchy_notes)
+            if not allowed:
+                return ExecutionResult(executed=False, reasons=notes + reasons)
         started = time.perf_counter()
 
         max_tag = getattr(self.broker, "max_tag_length", None) or 20

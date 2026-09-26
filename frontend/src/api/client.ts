@@ -53,6 +53,9 @@ import type {
   UserResponse,
   WorkerStatus,
   PositionGreeks,
+  RiskEvent,
+  RiskLimit,
+  RiskLimitRequest,
   ReconciliationReport,
   ReconciliationStatus,
 } from "../types";
@@ -320,6 +323,18 @@ export const api = {
     }),
 
   getRiskSettings: () => request<RiskConfig>("/risk-settings"),
+
+  listRiskLimits: () => request<RiskLimit[]>("/risk/limits"),
+  upsertRiskLimit: (body: RiskLimitRequest) => request<RiskLimit>("/risk/limits", { method: "PUT", body: JSON.stringify(body) }),
+  deleteRiskLimit: (id: number) => request<void>(`/risk/limits/${id}`, { method: "DELETE" }),
+  listRiskEvents: (params?: { strategy_id?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.strategy_id) q.set("strategy_id", params.strategy_id);
+    if (params?.status) q.set("status", params.status);
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<RiskEvent[]>(`/risk/events${qs ? `?${qs}` : ""}`);
+  },
 
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),

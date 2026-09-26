@@ -21,6 +21,7 @@ from app.execution.contract_execution import ContractExecutionError, build_order
 from app.instruments.contracts import ContractRules, ResolvedContract
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
+from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
@@ -52,7 +53,7 @@ async def execute_signal_for_user(
     idempotency_key: Optional[str] = None, risk_config: Optional[RiskConfig] = None,
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
-    quote_broker: Optional[BrokerInterface] = None,
+    quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -168,7 +169,19 @@ async def execute_signal_for_user(
             exchange=contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE"),
             algo_id=tenant.algo_id if tenant is not None else None,
         )
-        result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity)
+        async def hierarchy_check(quantity: float):
+            # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->
+            # STRATEGY -> INSTRUMENT), strictest wins, each check recorded as a risk event.
+            ctx = RiskContext(
+                tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=signal.symbol, quantity=quantity,
+                entry=signal.entry, stop_loss=signal.stop_loss, capital=effective_risk_config.capital, mode=mode,
+                order_id=order.id, account_id=account_id,
+            )
+            verdict = await evaluate_hierarchy(session, ctx, user=user)
+            return verdict.allowed, verdict.reasons, verdict.notes
+
+        result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
+                                                            pre_place_check=hierarchy_check)
         if plan is not None:
             result.reasons = plan.notes + result.reasons
 

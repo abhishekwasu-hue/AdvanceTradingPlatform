@@ -47,6 +47,7 @@ from app.instruments.spreads import ResolvedStructure, StructureMetrics, structu
 from app.notifications.service import notify
 from app.observability.metrics import ORDERS
 from app.reconciliation.service import mark_broker_uncertain
+from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine.risk_manager import RiskManager
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -78,7 +79,7 @@ async def execute_structure(
     session: AsyncSession, user: User, *, mode: str, strategy_id: str, signal: Signal, structure: ResolvedStructure,
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],
     idempotency_key: str, broker: Optional[BrokerInterface] = None, quote_broker: Optional[BrokerInterface] = None,
-    deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None,
+    deployment_id: Optional[int] = None, risk_config: Optional[RiskConfig] = None, account_id: Optional[int] = None,
 ) -> StructureResult:
     started = time.perf_counter()
     tenant = await session.get(Tenant, user.tenant_id)
@@ -169,6 +170,19 @@ async def execute_structure(
         lots = min(lots, cap)
     quantity = lots * lot
     notes.append(f"{lots} lot(s) x {lot} = {quantity} per leg")
+
+    # Phase I1: the risk hierarchy, with the structure's max loss per unit as the risk per unit
+    # and the short legs' premium as the order value.
+    verdict = await evaluate_hierarchy(session, RiskContext(
+        tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=structure.underlying_symbol, quantity=quantity,
+        entry=metrics.net_credit, stop_loss=None, capital=cfg.capital, mode=mode, order_id=orders[0].id, account_id=account_id,
+        risk_per_unit=metrics.max_loss,
+    ), user=user)
+    notes.extend(verdict.notes)
+    if not verdict.allowed:
+        reasons = notes + verdict.reasons
+        await _reject_all(session, orders, reasons)
+        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
 
     for order in orders:
         order.quantity = quantity

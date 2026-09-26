@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import RiskLimitsCard from "../components/RiskLimitsCard";
 import { Card } from "../components/ui";
 import type { RiskConfig } from "../types";
 
@@ -102,6 +103,8 @@ export default function RiskManagementPage() {
           {saving ? "Saving…" : "Save risk settings"}
         </button>
       </Card>
+
+      <RiskLimitsCard canEdit={user?.role === "OWNER" || user?.role === "SUPER_ADMIN"} />
     </div>
   );
 }

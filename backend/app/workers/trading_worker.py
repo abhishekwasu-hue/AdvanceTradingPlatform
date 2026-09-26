@@ -332,6 +332,13 @@ class TradingWorker:
             await session.commit()
             return False
 
+        if (dep.instrument_kind or "UNDERLYING") != "UNDERLYING":
+            # Phase F3 wires option/future execution; until then a derived-contract deployment
+            # must never fall through to trading the underlying (an index cannot be bought).
+            dep.last_error = "Option/future execution is not enabled in this build - no trade taken"
+            await session.commit()
+            return False
+
         broker = None
         if dep.mode == ExecutionMode.LIVE.value:
             broker = adapters.get(dep.broker_name or "")

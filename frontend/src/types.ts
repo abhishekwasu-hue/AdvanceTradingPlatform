@@ -643,15 +643,65 @@ export interface Deployment {
   created_by: number | null;
   created_at: string;
   updated_at: string;
+  instrument_kind: InstrumentKind;
+  option_position: OptionPosition | null;
+  expiry_rule: ExpiryRule | null;
+  strike_rule: StrikeRule | null;
+  strike_offset: number;
+  premium_stop_pct: number | null;
+  max_lots: number | null;
+  contract_rules: string;
 }
 
-export interface DeploymentCreateRequest {
+export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
+export type OptionPosition = "BUY" | "WRITE";
+export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY";
+export type StrikeRule = "ATM" | "ITM" | "OTM";
+
+export interface ContractRules {
+  instrument_kind: InstrumentKind;
+  option_position?: OptionPosition | null;
+  expiry_rule?: ExpiryRule | null;
+  strike_rule?: StrikeRule | null;
+  strike_offset?: number;
+  premium_stop_pct?: number | null;
+  max_lots?: number | null;
+}
+
+export interface DeploymentCreateRequest extends ContractRules {
   strategy_id: string;
   symbol: string;
   exchange: string;
   timeframe: string;
   mode: ExecutionMode;
   broker_name?: string | null;
+}
+
+export interface ResolvedContract {
+  kind: InstrumentKind;
+  underlying: string;
+  underlying_symbol: string;
+  tradingsymbol: string;
+  exchange: string;
+  instrument_key: string;
+  lot_size: number;
+  tick_size: number;
+  expiry: string;
+  strike: number | null;
+  right: "CE" | "PE" | null;
+  entry_side: "BUY" | "SELL";
+  trade_direction: "LONG" | "SHORT";
+  position: OptionPosition | null;
+}
+
+export interface ContractPreview {
+  symbol: string;
+  kind: InstrumentKind;
+  rules?: string;
+  note?: string;
+  spot?: number | null;
+  spot_source?: "supplied" | "broker" | null;
+  contracts?: Record<"LONG" | "SHORT", ResolvedContract | { error: string }>;
 }
 
 export type BrokerTokenStatus = "UNKNOWN" | "VALID" | "EXPIRED" | "MISSING";

@@ -320,7 +320,8 @@ class StrategyDeploymentRecord(Base):
 
     __tablename__ = "strategy_deployments"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "strategy_id", "symbol", "mode", name="uq_deployment_tenant_strategy_symbol_mode"),
+        UniqueConstraint("tenant_id", "strategy_id", "symbol", "mode", "instrument_kind",
+                         name="uq_deployment_tenant_strategy_symbol_mode_kind"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -337,6 +338,18 @@ class StrategyDeploymentRecord(Base):
     last_signal_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Phase F2: what to trade when the strategy signals on `symbol`. UNDERLYING keeps the original
+    # behaviour; OPTION/FUTURE resolve a contract from the instrument master at signal time using
+    # the rules below (app/instruments/contracts.py).
+    instrument_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="UNDERLYING")
+    option_position: Mapped[str | None] = mapped_column(String(6), nullable=True)   # BUY / WRITE
+    expiry_rule: Mapped[str | None] = mapped_column(String(10), nullable=True)      # NEAREST / NEXT / MONTHLY
+    strike_rule: Mapped[str | None] = mapped_column(String(6), nullable=True)       # ATM / ITM / OTM
+    strike_offset: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Bought option: exit when the premium falls this % below entry (safety net under the
+    # underlying-level stop). Written option: exit when the premium rises this % above entry.
+    premium_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_lots: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

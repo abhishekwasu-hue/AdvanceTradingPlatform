@@ -1,4 +1,6 @@
 import type {
+  ContractPreview,
+  ContractRules,
   ContractNoteIngest,
   ContractNoteSummary,
   AdminOverview,
@@ -397,6 +399,9 @@ export const api = {
 
   createDeployment: (body: DeploymentCreateRequest) =>
     request<Deployment>("/deployments", { method: "POST", body: JSON.stringify(body) }),
+
+  previewContract: (body: ContractRules & { symbol: string; spot?: number | null }) =>
+    request<ContractPreview>("/deployments/preview-contract", { method: "POST", body: JSON.stringify(body) }),
 
   pauseDeployment: (id: number, reason = "") =>
     request<Deployment>(`/deployments/${id}/pause`, { method: "POST", body: JSON.stringify({ reason }) }),

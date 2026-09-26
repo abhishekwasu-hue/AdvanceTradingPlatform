@@ -7,13 +7,21 @@ import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import {
   BASE_TIMEFRAMES,
+  type ContractPreview,
   type CustomStrategyResponse,
   type Deployment,
   type ExecutionMode,
+  type ExpiryRule,
+  type InstrumentKind,
+  type OptionPosition,
+  type StrikeRule,
   type StoredBrokerInfo,
   type StrategyInfo,
   type WorkerStatus,
 } from "../types";
+
+// Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
+const INDEX_SYMBOLS = new Set(["NIFTY 50", "NIFTY", "NIFTY BANK", "BANKNIFTY", "NIFTY FIN SERVICE", "FINNIFTY", "NIFTY MID SELECT", "MIDCPNIFTY", "NIFTY NEXT 50", "SENSEX", "BANKEX"]);
 
 function StatusBadge({ status }: { status: Deployment["status"] }) {
   const cls =
@@ -62,6 +70,37 @@ export default function DeploymentsPage() {
   const [brokerName, setBrokerName] = useState<string>("");
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
+  // Phase F2: what to trade when the strategy signals on the symbol.
+  const [kind, setKind] = useState<InstrumentKind>("OPTION");  // the default symbol is an index
+  const [position, setPosition] = useState<OptionPosition>("BUY");
+  const [expiryRule, setExpiryRule] = useState<ExpiryRule>("NEAREST");
+  const [strikeRule, setStrikeRule] = useState<StrikeRule>("ATM");
+  const [strikeOffset, setStrikeOffset] = useState(1);
+  const [premiumStop, setPremiumStop] = useState<string>("");
+  const [maxLots, setMaxLots] = useState<string>("");
+  const [spot, setSpot] = useState<string>("");
+  const [preview, setPreview] = useState<ContractPreview | null>(null);
+
+  function contractRules() {
+    if (kind === "UNDERLYING") return { instrument_kind: kind as InstrumentKind };
+    if (kind === "FUTURE") return { instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule, max_lots: maxLots ? Number(maxLots) : null };
+    return {
+      instrument_kind: kind as InstrumentKind, option_position: position, expiry_rule: expiryRule, strike_rule: strikeRule,
+      strike_offset: strikeRule === "ATM" ? 0 : strikeOffset, premium_stop_pct: premiumStop ? Number(premiumStop) : null,
+      max_lots: maxLots ? Number(maxLots) : null,
+    };
+  }
+
+  async function runPreview() {
+    setBusy(true); setError(null);
+    try {
+      setPreview(await api.previewContract({ ...contractRules(), symbol, spot: spot ? Number(spot) : null }));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
 
   function refresh() {
@@ -106,7 +145,7 @@ export default function DeploymentsPage() {
     setMessage(null);
     try {
       const created = await api.createDeployment({
-        strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
+        strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null, ...contractRules(),
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -233,7 +272,12 @@ export default function DeploymentsPage() {
           </div>
           <div>
             <label className="block text-xs text-muted mb-1">Symbol</label>
-            <input className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+            <input className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={symbol} onChange={(e) => {
+              const next = e.target.value;
+              setSymbol(next);
+              setPreview(null);
+              if (INDEX_SYMBOLS.has(next.trim().toUpperCase()) && kind === "UNDERLYING") setKind("OPTION");
+            }} />
           </div>
           <div>
             <label className="block text-xs text-muted mb-1">Exchange</label>
@@ -252,6 +296,96 @@ export default function DeploymentsPage() {
               {brokers.map((b) => <option key={b.broker_name} value={b.broker_name} className="capitalize">{b.broker_name}</option>)}
             </select>
           </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
+          <div className="grid sm:grid-cols-6 gap-3 items-end">
+            <div>
+              <label className="block text-xs text-muted mb-1">Trade as</label>
+              <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={kind} onChange={(e) => { setKind(e.target.value as InstrumentKind); setPreview(null); }}>
+                <option value="UNDERLYING">Underlying (cash)</option>
+                <option value="OPTION">Option</option>
+                <option value="FUTURE">Future</option>
+              </select>
+            </div>
+            {kind === "OPTION" && (
+              <div>
+                <label className="block text-xs text-muted mb-1">Position</label>
+                <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => { setPosition(e.target.value as OptionPosition); setPreview(null); }}>
+                  <option value="BUY">Buy (LONG→CE, SHORT→PE)</option>
+                  <option value="WRITE">Write (LONG→sell PE, SHORT→sell CE)</option>
+                </select>
+              </div>
+            )}
+            {kind !== "UNDERLYING" && (
+              <div>
+                <label className="block text-xs text-muted mb-1">Expiry</label>
+                <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => { setExpiryRule(e.target.value as ExpiryRule); setPreview(null); }}>
+                  <option value="NEAREST">Nearest</option>
+                  <option value="NEXT">Next</option>
+                  <option value="MONTHLY">Monthly</option>
+                </select>
+              </div>
+            )}
+            {kind === "OPTION" && (
+              <>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Strike</label>
+                  <div className="flex gap-1">
+                    <select className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => { setStrikeRule(e.target.value as StrikeRule); setPreview(null); }}>
+                      <option value="ATM">ATM</option>
+                      <option value="ITM">ITM</option>
+                      <option value="OTM">OTM</option>
+                    </select>
+                    {strikeRule !== "ATM" && (
+                      <input type="number" min={1} max={10} className="w-14 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeOffset} onChange={(e) => setStrikeOffset(Number(e.target.value))} title="strike steps" />
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %</label>
+                  <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
+                </div>
+              </>
+            )}
+            {kind !== "UNDERLYING" && (
+              <div>
+                <label className="block text-xs text-muted mb-1">Max lots</label>
+                <input type="number" min={1} max={500} placeholder="risk-based" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
+              </div>
+            )}
+          </div>
+          {kind !== "UNDERLYING" && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted">
+                {kind === "OPTION"
+                  ? "The strategy signals on the underlying; at signal time the contract is picked from the instrument master and the spot. Exits follow the strategy's underlying levels, with the premium " + (position === "BUY" ? "stop" : "ceiling") + " as a safety net."
+                  : "The strategy signals on the underlying; the future of the chosen expiry is traded in the signal's direction."}
+              </span>
+              {kind === "OPTION" && (
+                <input type="number" placeholder="spot (optional)" className="w-36 rounded bg-panel2 border border-border px-2 py-1 text-xs" value={spot} onChange={(e) => setSpot(e.target.value)} />
+              )}
+              <button disabled={busy || !symbol} onClick={runPreview} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 disabled:opacity-50">Preview contract</button>
+            </div>
+          )}
+          {preview && preview.contracts && (
+            <div className="mt-2 grid sm:grid-cols-2 gap-2 text-xs">
+              {(["LONG", "SHORT"] as const).map((dir) => {
+                const c = preview.contracts![dir];
+                return (
+                  <div key={dir} className="rounded border border-border bg-panel2/60 p-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted">{dir} signal → {"error" in c ? "unresolved" : `${c.entry_side} ${c.tradingsymbol}`}</div>
+                    {"error" in c ? (
+                      <div className="text-warn mt-1">{c.error}</div>
+                    ) : (
+                      <div className="text-slate-300 mt-1">{c.exchange} · expiry {c.expiry}{c.strike ? ` · strike ${c.strike}` : ""}{c.right ? ` ${c.right}` : ""} · lot {c.lot_size}</div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="sm:col-span-2 text-[11px] text-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -291,7 +425,8 @@ export default function DeploymentsPage() {
               <AlertTriangle size={16} /> This will place real orders with real money.
             </div>
             <ul className="text-xs text-slate-300 list-disc pl-5 space-y-1">
-              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours.</li>
+              <li><b>{strategyId}</b> on <b>{symbol}</b> ({exchange}) via <b className="capitalize">{brokerName || "your stored broker"}</b>, every minute during market hours{kind !== "UNDERLYING" ? <> - trading <b>{kind === "OPTION" ? `${position === "BUY" ? "bought" : "written"} options` : "futures"}</b> on it</> : ""}.</li>
+              {kind === "OPTION" && position === "WRITE" && <li className="text-rose-300">Written options have open-ended risk until the underlying stop or the premium ceiling exits; margin is blocked at the broker.</li>}
               <li>Every entry passes your Risk Management limits and kill switches; a broker-side stop-loss is placed with each fill.</li>
               <li>You can pause or stop it here at any time; Emergency Exit (Risk Management) flattens everything.</li>
             </ul>
@@ -350,7 +485,7 @@ export default function DeploymentsPage() {
                   <tr key={d.id} className="border-t border-border align-top">
                     <td className="py-1.5 pr-3 text-muted">{d.id}</td>
                     <td className="py-1.5 pr-3 font-medium text-slate-200">{d.strategy_id}<div className="text-[10px] text-muted">{d.timeframe} base</div></td>
-                    <td className="py-1.5 pr-3 text-slate-200">{d.symbol}<div className="text-[10px] text-muted">{d.exchange}</div></td>
+                    <td className="py-1.5 pr-3 text-slate-200">{d.symbol}<div className="text-[10px] text-muted">{d.exchange}{d.instrument_kind !== "UNDERLYING" ? ` · ${d.contract_rules}` : ""}</div></td>
                     <td className="py-1.5 pr-3"><ModeBadge mode={d.mode} /></td>
                     <td className="py-1.5 pr-3 capitalize text-slate-300">{d.broker_name ?? "-"}</td>
                     <td className="py-1.5 pr-3"><StatusBadge status={d.status} /></td>

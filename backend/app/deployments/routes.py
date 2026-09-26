@@ -19,10 +19,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.registry import available_brokers
-from app.brokers.token_lifecycle import get_credential_record, token_is_usable
-from app.core.enums import DeploymentStatus, ExecutionMode
+from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
+from app.market_data.calendar import IST
+from datetime import datetime
+from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, SignalDirection, StrikeRule
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.instruments import master as instrument_master
+from app.instruments.contracts import (
+    DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
+)
 from app.db.session import get_session
 from app.plans.limits import check_can_add_deployment, load_tenant
 
@@ -47,13 +53,60 @@ def _timeframe_minutes(label: str) -> Optional[int]:
     return value * {"min": 1, "h": 60, "d": 24 * 60}[unit]
 
 
-class DeploymentCreateRequest(BaseModel):
+class ContractRulesRequest(BaseModel):
+    """Phase F2: what to trade when the strategy signals on `symbol`. Defaults reproduce the
+    original behaviour (trade the underlying itself)."""
+    instrument_kind: InstrumentKind = InstrumentKind.UNDERLYING
+    option_position: Optional[OptionPosition] = None
+    expiry_rule: Optional[ExpiryRule] = None
+    strike_rule: Optional[StrikeRule] = None
+    strike_offset: int = Field(default=0, ge=0, le=10)
+    premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
+    max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+
+    def normalised(self) -> "ContractRulesRequest":
+        """Fills the defaults the kind implies and rejects rules that make no sense for it."""
+        data = self.model_dump()
+        if self.instrument_kind == InstrumentKind.UNDERLYING:
+            if any(data[k] for k in ("option_position", "expiry_rule", "strike_rule", "premium_stop_pct")) or self.strike_offset:
+                raise HTTPException(status_code=400, detail="Option/future rules only apply when instrument_kind is OPTION or FUTURE")
+            return self
+        data["expiry_rule"] = self.expiry_rule or ExpiryRule.NEAREST
+        if self.instrument_kind == InstrumentKind.FUTURE:
+            if self.option_position or self.strike_rule or self.strike_offset or self.premium_stop_pct is not None:
+                raise HTTPException(status_code=400, detail="Futures take only an expiry rule (and max_lots)")
+            return ContractRulesRequest(**data)
+        position = self.option_position or OptionPosition.BUY
+        data["option_position"] = position
+        data["strike_rule"] = self.strike_rule or StrikeRule.ATM
+        if data["strike_rule"] == StrikeRule.ATM and self.strike_offset:
+            raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
+        if data["strike_rule"] != StrikeRule.ATM and not self.strike_offset:
+            data["strike_offset"] = 1
+        if self.premium_stop_pct is None:
+            data["premium_stop_pct"] = DEFAULT_PREMIUM_STOP_PCT[position]
+        return ContractRulesRequest(**data)
+
+    def to_rules(self) -> ContractRules:
+        return ContractRules(
+            kind=self.instrument_kind, position=self.option_position, expiry_rule=self.expiry_rule or ExpiryRule.NEAREST,
+            strike_rule=self.strike_rule or StrikeRule.ATM, strike_offset=self.strike_offset,
+            premium_stop_pct=self.premium_stop_pct, max_lots=self.max_lots,
+        )
+
+
+class DeploymentCreateRequest(ContractRulesRequest):
     strategy_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=50)
     exchange: str = Field(default="NSE", min_length=1, max_length=20)
     timeframe: str = Field(default="1min", description="Base candle interval fetched from the broker")
     mode: ExecutionMode = ExecutionMode.PAPER
     broker_name: Optional[str] = None
+
+
+class ContractPreviewRequest(ContractRulesRequest):
+    symbol: str = Field(min_length=1, max_length=50)
+    spot: Optional[float] = Field(default=None, gt=0, description="Underlying price to pick the strike from; looked up from the broker when omitted")
 
 
 class DeploymentActionRequest(BaseModel):
@@ -78,6 +131,14 @@ class DeploymentResponse(BaseModel):
     created_by: Optional[int]
     created_at: str
     updated_at: str
+    instrument_kind: str = "UNDERLYING"
+    option_position: Optional[str] = None
+    expiry_rule: Optional[str] = None
+    strike_rule: Optional[str] = None
+    strike_offset: int = 0
+    premium_stop_pct: Optional[float] = None
+    max_lots: Optional[int] = None
+    contract_rules: str = "underlying"
 
     @classmethod
     def from_record(cls, record: StrategyDeploymentRecord, open_positions: int = 0) -> "DeploymentResponse":
@@ -89,6 +150,10 @@ class DeploymentResponse(BaseModel):
             last_signal_at=iso(record.last_signal_at), last_error=record.last_error,
             consecutive_failures=record.consecutive_failures or 0, open_positions=open_positions,
             created_by=record.created_by, created_at=iso(record.created_at) or "", updated_at=iso(record.updated_at) or "",
+            instrument_kind=record.instrument_kind or "UNDERLYING", option_position=record.option_position,
+            expiry_rule=record.expiry_rule, strike_rule=record.strike_rule, strike_offset=record.strike_offset or 0,
+            premium_stop_pct=record.premium_stop_pct, max_lots=record.max_lots,
+            contract_rules=describe_rules(ContractRules.from_deployment(record)),
         )
 
 
@@ -146,8 +211,27 @@ async def create_deployment(
                        f"pick a base that divides every strategy timeframe ({', '.join(strategy.timeframes)})",
             )
 
+    rules = request.normalised()
+    symbol = request.symbol.upper().strip()
+
     tenant = await load_tenant(session, user.tenant_id)
     await check_can_add_deployment(session, tenant, live=request.mode == ExecutionMode.LIVE)
+
+    # Phase F2: an index has no cash leg - it is traded through its options or future - and a
+    # derived-contract deployment needs the underlying's contracts in the master to resolve from.
+    if rules.instrument_kind == InstrumentKind.UNDERLYING and instrument_master.underlying_of(symbol) in instrument_master.INDEX_SYMBOLS:
+        raise HTTPException(status_code=400, detail=f"{symbol} is an index - trade it through an OPTION or FUTURE deployment")
+    if rules.instrument_kind != InstrumentKind.UNDERLYING:
+        underlying = instrument_master.underlying_of(symbol)
+        listed = await instrument_master.expiries(
+            session, underlying, instrument_type="FUT" if rules.instrument_kind == InstrumentKind.FUTURE else "CE",
+        )
+        if not listed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"No {underlying} {'futures' if rules.instrument_kind == InstrumentKind.FUTURE else 'options'} in the instrument master - "
+                       f"sync it (Admin Console) or check the symbol",
+            )
 
     broker_name = request.broker_name
     if broker_name is not None and broker_name not in available_brokers():
@@ -175,9 +259,14 @@ async def create_deployment(
             raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}'")
 
     record = StrategyDeploymentRecord(
-        tenant_id=user.tenant_id, strategy_id=request.strategy_id, symbol=request.symbol.upper().strip(),
+        tenant_id=user.tenant_id, strategy_id=request.strategy_id, symbol=symbol,
         exchange=request.exchange.upper(), timeframe=request.timeframe, mode=request.mode.value,
         broker_name=broker_name, status=DeploymentStatus.ACTIVE.value, created_by=user.id,
+        instrument_kind=rules.instrument_kind.value,
+        option_position=rules.option_position.value if rules.option_position else None,
+        expiry_rule=rules.expiry_rule.value if rules.expiry_rule else None,
+        strike_rule=rules.strike_rule.value if rules.strike_rule else None,
+        strike_offset=rules.strike_offset, premium_stop_pct=rules.premium_stop_pct, max_lots=rules.max_lots,
     )
     session.add(record)
     try:
@@ -185,16 +274,59 @@ async def create_deployment(
     except IntegrityError as exc:
         await session.rollback()
         raise HTTPException(
-            status_code=409, detail="A deployment of this strategy on this symbol in this mode already exists",
+            status_code=409, detail="A deployment of this strategy on this symbol in this mode (and instrument kind) already exists",
         ) from exc
     await write_audit_log(
         session, user.tenant_id, user.id, "deployment_created",
-        f"#{record.id} {record.strategy_id} {record.symbol} {record.mode} via {broker_name}",
+        f"#{record.id} {record.strategy_id} {record.symbol} {record.mode} via {broker_name} ({describe_rules(rules.to_rules())})",
     )
     await session.commit()
     await session.refresh(record)
     logger.info("Deployment %s created: %s %s %s", record.id, record.strategy_id, record.symbol, record.mode)
     return DeploymentResponse.from_record(record)
+
+
+@router.post("/preview-contract")
+async def preview_contract(
+    request: ContractPreviewRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> dict:
+    """What the rules would trade right now, for both signal directions - the Autopilot form
+    shows this before a deployment is created. Uses the supplied spot, else the tenant's broker
+    LTP when a usable session exists; with neither, says so."""
+    rules = request.normalised()
+    if rules.instrument_kind == InstrumentKind.UNDERLYING:
+        return {"symbol": request.symbol.upper().strip(), "kind": "UNDERLYING", "note": "Trades the symbol itself"}
+    spot = request.spot
+    spot_source = "supplied" if spot else None
+    if spot is None and rules.instrument_kind == InstrumentKind.OPTION:
+        spot = await _spot_from_broker(session, user.tenant_id, request.symbol)
+        spot_source = "broker" if spot else None
+    today = datetime.now(IST).date()
+    out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()),
+           "spot": spot, "spot_source": spot_source, "contracts": {}}
+    for direction in (SignalDirection.LONG, SignalDirection.SHORT):
+        try:
+            resolved = await resolve_contract(session, request.symbol, rules.to_rules(), direction, spot=spot, today=today)
+            out["contracts"][direction.value] = resolved.as_dict()
+        except ContractResolutionError as exc:
+            out["contracts"][direction.value] = {"error": str(exc)}
+    return out
+
+
+async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str) -> Optional[float]:
+    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+    usable = [r for r in stored if token_is_usable(r)]
+    if not usable:
+        return None
+    try:
+        adapter = build_adapter(usable[0])
+        underlying = instrument_master.underlying_of(symbol)
+        candle_symbol = instrument_master.INDEX_SYMBOLS.get(underlying, symbol.upper().strip())
+        exchange = instrument_master.INDEX_EXCHANGE.get(underlying, "NSE")
+        return float(await adapter.get_ltp_for_symbol(candle_symbol, exchange))
+    except Exception as exc:  # noqa: BLE001 - a preview must not 500 on a broker hiccup
+        logger.warning("Spot lookup for %s failed: %s", symbol, exc)
+        return None
 
 
 @router.get("", response_model=List[DeploymentResponse])

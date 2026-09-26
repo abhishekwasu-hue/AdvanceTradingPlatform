@@ -2056,3 +2056,43 @@ equity and options, indices): expiry formats, segment/type/underlying mapping, a
 lookups, API and permissions, mocked sync, worker once-a-day scheduling and failure handling.
 Not verified: the real Upstox master download (egress is blocked in this environment); the
 parser's field names follow Upstox's published JSON and the adapter's existing mapping.
+
+### F2: Contract rules on deployments
+
+A deployment now says *what to trade* when its strategy signals on `symbol` (migration
+`b2d8f6a4c731`): `instrument_kind` UNDERLYING (the original behaviour, cash equity), OPTION or
+FUTURE, with rules resolved at signal time rather than a contract fixed at creation - a
+deployment created on Monday trades Thursday's at-the-money strike on Thursday.
+
+* **Rules** (`ContractRulesRequest.normalised` fills defaults and rejects nonsense):
+  `option_position` BUY (LONG -> buy CE, SHORT -> buy PE; loss capped at the premium) or WRITE
+  (LONG -> sell PE, SHORT -> sell CE; premium received, margin blocked, open-ended risk until the
+  underlying stop or the premium ceiling); `expiry_rule` NEAREST / NEXT / MONTHLY; `strike_rule`
+  ATM / ITM / OTM with `strike_offset` listed steps (ITM for a CE is below spot, for a PE above);
+  `premium_stop_pct` - for a bought option the premium floor below entry (default 30%), for a
+  written one the ceiling above entry (default 50%) - the safety net under the strategy's
+  underlying-level exits (F4); `max_lots` caps risk-based sizing (F3). Futures take only an
+  expiry rule. Uniqueness is now (tenant, strategy, symbol, mode, kind), so the same strategy can
+  run an option and a future deployment on one underlying.
+* **Guards**: an index (`NIFTY 50`, `NIFTY BANK`, ...) cannot be deployed as UNDERLYING (400 with
+  the fix); a derived-contract deployment needs the underlying's contracts in the instrument
+  master (409 pointing at the sync). Plan checks run first, so a free tenant still sees 402.
+* **Resolver** (`app/instruments/contracts.py`): `select_expiry` (expiry day counts as available;
+  MONTHLY = last expiry of the nearest month with one), `select_strike` (nearest listed strike,
+  ties to the lower; ITM/OTM stepped along the listed strikes and clamped), `option_right`, and
+  `resolve_contract(session, symbol, rules, direction, spot, today)` returning a
+  `ResolvedContract` (tradingsymbol, exchange NFO/BFO, broker instrument key, lot size, expiry,
+  strike, right, the entry order side and the trade direction used for P&L). Every failure is a
+  `ContractResolutionError` with the reason, which the worker records on the deployment.
+* **Preview**: `POST /api/deployments/preview-contract` resolves both directions for the given
+  rules using a supplied spot or the tenant's broker LTP, and says why when it cannot. The
+  Autopilot form has the rule controls (position, expiry, strike/offset, premium stop, max lots),
+  the preview card, switches to OPTION when an index symbol is typed, and the deployments table
+  shows each deployment's rule summary; the LIVE confirmation names written options' risk.
+* **Safety in this build**: until F3 wires execution, the worker records "not enabled" on an
+  OPTION/FUTURE deployment and takes no trade - it never falls through to trading the index.
+
+Verified by `tests/test_contract_rules.py` (right by position, expiry and strike rules incl.
+ties/clamping, resolution of bought/written options and futures for index and stock underlyings,
+explicit errors, request validation and defaults, uniqueness across kinds, master-presence guard,
+preview endpoint, the worker guard).

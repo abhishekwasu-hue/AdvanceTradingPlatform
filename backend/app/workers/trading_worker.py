@@ -30,13 +30,14 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, time as dtime, timezone
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_acquire_lock, cache_release_lock
 from app.core.config import WORKER_CYCLE_SECONDS
@@ -65,6 +66,10 @@ SQUARE_OFF_AT = dtime(15, 15)
 MAX_CONSECUTIVE_FAILURES = 5
 # How often a VALID token is re-proven against the broker.
 TOKEN_RECHECK_SECONDS = 300
+# Fairness: no tenant may consume more than this share of a cycle evaluating entries. Deployments
+# that don't get their turn are picked up first next cycle (round-robin), so a tenant with many
+# deployments is slowed, never starved - and never starves the others.
+MAX_TENANT_SHARE_OF_CYCLE = 0.5
 
 
 @dataclass
@@ -84,7 +89,7 @@ class TradingWorker:
     def __init__(
         self, session_factory: async_sessionmaker, *, cycle_seconds: int = WORKER_CYCLE_SECONDS,
         market_data_factory: Callable[[BrokerInterface], MarketDataService] = MarketDataService,
-        worker_name: str = WORKER_NAME,
+        worker_name: str = WORKER_NAME, max_seconds_per_tenant: Optional[float] = None,
     ) -> None:
         self.session_factory = session_factory
         self.cycle_seconds = cycle_seconds
@@ -93,6 +98,13 @@ class TradingWorker:
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
         self._stop = asyncio.Event()
         self._last_token_check: Dict[int, float] = {}
+        # One API rate budget per (tenant, broker): tenants use their own API keys, so their
+        # broker limits are their own too (app/brokers/rate_budget.py).
+        self._budgets: Dict[Tuple[int, str], RateBudget] = {}
+        self._tenant_cursor: Dict[int, int] = {}
+        self.max_seconds_per_tenant = (
+            max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
+        )
 
     # --- lifecycle --------------------------------------------------------------------------
 
@@ -206,6 +218,7 @@ class TradingWorker:
             report.positions_closed += sum(1 for o in outcomes if o.closed)
 
         entries_allowed = now_ist.time() < NO_NEW_ENTRIES_AFTER
+        tenant_started = time.monotonic()
         tenant = await session.get(Tenant, tenant_id)
         if tenant is not None and not tenant_is_active(tenant):
             # Exits above still ran (a suspended org's open risk is still real); no new entries.
@@ -213,9 +226,20 @@ class TradingWorker:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
             await session.commit()
             return
-        for dep in deployments:
-            if dep.status != DeploymentStatus.ACTIVE.value:
-                continue
+        active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
+        # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
+        # stopped rather than re-evaluating the same first few deployments forever.
+        start = self._tenant_cursor.get(tenant_id, 0) % max(1, len(active))
+        ordered = active[start:] + active[:start]
+        evaluated = 0
+        for dep in ordered:
+            if evaluated > 0 and (time.monotonic() - tenant_started) > self.max_seconds_per_tenant:
+                logger.warning(
+                    "Tenant %s used its cycle time budget after %d/%d deployments - the rest go first next cycle",
+                    tenant_id, evaluated, len(ordered),
+                )
+                break
+            evaluated += 1
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
@@ -231,6 +255,7 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - recorded on the deployment, never fatal
                     await self._record_failure(session, dep, exc, user.id)
                     report.errors.append(f"deployment {dep.id}: {exc}")
+        self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
     async def _evaluate_deployment(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,
@@ -331,7 +356,14 @@ class TradingWorker:
                 return None
         if not token_is_usable(record, now):
             return None
-        return build_adapter(record)
+        return self._rate_limited(tenant_id, broker_name, build_adapter(record))
+
+    def _rate_limited(self, tenant_id: int, broker_name: str, adapter: BrokerInterface) -> BrokerInterface:
+        key = (tenant_id, broker_name)
+        budget = self._budgets.get(key)
+        if budget is None:
+            budget = self._budgets[key] = RateBudget(limits_for(broker_name))
+        return RateLimitedBroker(adapter, budget)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

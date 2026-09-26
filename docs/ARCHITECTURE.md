@@ -1674,3 +1674,26 @@ suspended tenant read-only at the API, rejected in the pipeline, skipped by the 
 Verified by `tests/test_admin_api.py` (role gate on every endpoint, env bootstrap at register
 and at startup, cross-tenant listing/search, plan/status change audited on the tenant's trail and
 notified, validation of plan/status values, detail view contents).
+
+### B4: Per-tenant broker rate budgets and cycle fairness
+
+One worker serves every tenant, and each tenant trades on its own broker API key with its own
+published rate limits (Upstox ~25 req/s and 250/min; Kite 3 req/s on quotes/historical). Two
+things keep one busy tenant from hurting itself or anyone else:
+
+* **`RateLimitedBroker`** (`app/brokers/rate_budget.py`): every adapter the worker hands to the
+  market-data service and the execution pipeline is wrapped so each call first draws a token from
+  that tenant's `RateBudget` - a per-second bucket (with a small burst) *and* a per-minute
+  bucket, set to roughly a third of the broker's allowance (`BROKER_RATE_LIMITS`) to leave room
+  for the tenant's own manual use of the same key. Order placement and cancellation are
+  throttled too, deliberately: an exit order that provokes a 429 is worse than one delayed by
+  200ms. Budgets are keyed by (tenant, broker) and never shared.
+* **Cycle-time fairness**: a tenant may spend at most half a cycle (`MAX_TENANT_SHARE_OF_CYCLE`)
+  evaluating entries; deployments that did not get their turn go first next cycle (a per-tenant
+  round-robin cursor). A tenant with forty deployments on a slow broker is slowed, never starved,
+  and never starves the tenants after it. Exits (the position sweep) run before this budget and
+  are never cut short.
+
+Verified by `tests/test_rate_budget.py` (burst then throttle at the per-second rate, per-minute
+cap, refill, per-broker limits, full delegation through the wrapper including the Upstox-specific
+conveniences, one budget per tenant in a real worker cycle, round-robin across cycles).

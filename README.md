@@ -157,11 +157,28 @@ npm run dev
    continuous exit monitoring, and a full square-off at 15:15 IST. The Dashboard shows its
    heartbeat. Details: `docs/ARCHITECTURE.md` (Phase A) and `docs/OPERATIONS.md` (daily routine).
 
+## Running it as a business (Phase B)
+
+- **Team**: registration creates an organisation with you as Owner. Invite traders, strategy
+  creators and read-only viewers from the Team tab (48-hour single-use links). Removing someone
+  cuts their access immediately and keeps their history.
+- **Plans**: Free is paper-only with 2 deployments and 1 member; Pro and Business unlock LIVE,
+  more deployments, members and alert channels (`backend/app/plans/registry.py`). Limits are
+  enforced where they would be exceeded, with a message that says which and what to do.
+- **Alerts on your phone**: Settings -> Alert delivery (Telegram bot or SMTP). Every CRITICAL the
+  worker raises - broker session expired, stop-loss could not be placed, deployment auto-paused,
+  daily loss limit - is queued and delivered with retries; the outbox shows what was sent.
+- **Platform admin**: put operator emails in `SUPER_ADMIN_EMAILS` to get the Admin Console:
+  every tenant, plan/status changes (audited on the tenant's trail and notified to it), the
+  platform audit trail, what the worker is running, and the global kill switch.
+- **Fair sharing**: each tenant's broker calls run under its own rate budget and each tenant gets
+  a bounded share of every worker cycle, so one busy account cannot starve the others.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 521 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 572 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

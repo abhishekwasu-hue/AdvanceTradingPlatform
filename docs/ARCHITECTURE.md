@@ -1578,3 +1578,47 @@ update, Telegram HTML payload via mocked HTTP, SMTP via a stubbed sender, backof
 test-send error surfacing, worker cycle draining the outbox) and a Postgres round-trip of the
 `e3b8d1c7a942` migration. Not verified against a real Telegram bot or SMTP server from this
 environment (outbound blocked); the "Send test" button is there for exactly that first check.
+
+### B1: Multi-user tenants (team, roles, invitations)
+
+Until now one signup was one tenant with one user. A business account needs an owner, several
+traders, someone who only builds strategies, and someone from finance who must see everything and
+touch nothing. `app/team/` and the auth additions provide that:
+
+* **Roles** (`UserRole`): `OWNER` (registration creates one; manages the team and everything a
+  trader can), `USER` (trader), `STRATEGY_CREATOR`, `VIEWER` (tenant read-only), `SUPPORT`
+  (platform support staff, read-only), `SUPER_ADMIN` (platform-wide). Two shared gates in
+  `app/auth/dependencies.py` - `require_trader` (OWNER/USER/STRATEGY_CREATOR) on every endpoint
+  that places, configures or stops trading or touches broker/alert credentials, and
+  `require_owner` on team management. Reads stay on `get_current_user`, so a VIEWER's console is
+  fully populated and every write button returns 403.
+* **Invitations** (`tenant_invites`): an owner creates one for an email + role and gets a link
+  (`FRONTEND_URL?invite=<token>`) to share; only a SHA-256 of the token is stored, links expire
+  after 48h, are single-use, and re-inviting an email revokes the previous link. The invitee
+  lands on the Account tab, sees who invited them and as what, chooses a password, and joins
+  *that* tenant (`POST /api/auth/invite/{token}/accept`, rate-limited like register). OWNER is
+  never an invitable role - a leaked link cannot mint an owner; owners are promoted from existing
+  members.
+* **Membership** (`/api/team/members`): role changes and removal are owner-only and audited.
+  Removal deactivates (`users.is_active = false`) rather than deletes, so trades, orders and audit
+  rows stay attributed; the removed user's existing JWT stops working on the next request and
+  login is refused. A tenant always keeps at least one active owner (the last owner cannot be
+  demoted or removed, and cannot remove themselves).
+* **Per-user notification read state** (`notification_reads`): one teammate reading a CRITICAL
+  alert no longer clears it for the others; `read-all` marks only the caller's copy.
+* **Acting user for headless paths**: TradingView webhooks and the worker attribute orders to the
+  deployment's creator when active, else the tenant's earliest active OWNER.
+* **Migration `f4c2a9e1b753`** adds the tables and `users.is_active`, promotes each existing
+  tenant's first USER to OWNER (every pre-existing tenant is single-user, so this is exactly its
+  owner) and carries old `notifications.read_at` marks over as that user's read rows.
+* **UI**: Team tab (System group) with invite creation + copyable link, pending invites, member
+  list with role select / remove / reactivate, organisation rename; role badge in the sidebar;
+  Account tab handles `?invite=`.
+
+Verified by `tests/test_team_api.py` (owner on registration, invite -> accept into the same
+tenant with the invited role, hashed single-use expiring tokens, re-invite replacing, revoke,
+owner-only management, last-owner protection, removal killing tokens and logins immediately,
+VIEWER refused on eight write endpoints, per-user read state, webhook attribution) and a Postgres
+round-trip of the migration. Invite links are shared by the owner (copy button) - emailing them
+automatically is deliberately left for when the platform has its own transactional email sender
+(the per-tenant alert SMTP channel is the tenant's mailbox, not the platform's).

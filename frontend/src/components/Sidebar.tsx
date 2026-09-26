@@ -17,6 +17,7 @@ import {
   Settings as SettingsIcon,
   ShieldAlert,
   UserCircle2,
+  Users,
   Wand2,
   Zap,
   type LucideIcon,
@@ -42,6 +43,7 @@ export type Page =
   | "analytics"
   | "risk-management"
   | "settings"
+  | "team"
   | "system-logs"
   | "notifications"
   | "account";
@@ -93,6 +95,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "System",
     items: [
       { id: "settings", label: "Settings", icon: SettingsIcon },
+      { id: "team", label: "Team", icon: Users },
       { id: "system-logs", label: "System Logs", icon: ScrollText },
       { id: "notifications", label: "Notifications", icon: Bell },
     ],
@@ -146,8 +149,15 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
           <UserCircle2 size={18} className={user ? "text-accent" : "text-muted"} />
           <span className="truncate">{loading ? "…" : user ? user.email : "Not signed in - click to log in"}</span>
         </div>
-        <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-[10px] font-medium text-warn">
-          PAPER MODE
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {user && (
+            <span className="inline-flex items-center rounded-full bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+              {user.role.replace("_", " ")}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1 rounded-full bg-warn/10 border border-warn/30 px-2 py-0.5 text-[10px] font-medium text-warn">
+            PAPER MODE
+          </span>
         </div>
       </button>
     </aside>

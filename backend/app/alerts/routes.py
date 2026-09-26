@@ -9,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_secrets, parse_config
 from app.alerts.dispatcher import send_via_channel
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role
-from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType, UserRole
+from app.auth.dependencies import get_current_user, require_trader
+from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord, User
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/alert-channels", tags=["alerts"])
 
-can_manage = require_role(UserRole.USER, UserRole.STRATEGY_CREATOR)
+can_manage = require_trader
 
 
 class AlertChannelResponse(BaseModel):

@@ -17,10 +17,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_trader
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import get_credential_record, token_is_usable
-from app.core.enums import DeploymentStatus, ExecutionMode, UserRole
+from app.core.enums import DeploymentStatus, ExecutionMode
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.db.session import get_session
@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/deployments", tags=["deployments"])
 
-# Roles allowed to change what the platform trades. SUPPORT is read-only by design; SUPER_ADMIN
-# always passes require_role.
-can_manage = require_role(UserRole.USER, UserRole.STRATEGY_CREATOR)
+# Roles allowed to change what the platform trades: OWNER/USER/STRATEGY_CREATOR. VIEWER and
+# SUPPORT are read-only by design; SUPER_ADMIN always passes.
+can_manage = require_trader
 
 SUPPORTED_BASE_TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min")
 

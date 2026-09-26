@@ -5,7 +5,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
 from app.custom_strategies import versioning
 from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
@@ -82,7 +82,7 @@ class StrategyVersionResponse(BaseModel):
 @router.post("", response_model=CustomStrategyResponse, status_code=201)
 async def create_custom_strategy(
     config: CustomStrategyConfig,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_trader),
     session: AsyncSession = Depends(get_session),
 ) -> CustomStrategyResponse:
     """Saves a new strategy for this tenant, as immutable version 1 - see PUT/rollback below for
@@ -128,7 +128,7 @@ async def get_custom_strategy(
 
 @router.delete("/{strategy_id}", status_code=204)
 async def delete_custom_strategy(
-    strategy_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    strategy_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> None:
     record = await _get_owned_or_404(strategy_id, user, session)
     await session.delete(record)
@@ -138,7 +138,7 @@ async def delete_custom_strategy(
 @router.put("/{strategy_id}", response_model=CustomStrategyResponse)
 async def update_custom_strategy(
     strategy_id: int, config: CustomStrategyConfig,
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> CustomStrategyResponse:
     """Edits a strategy by appending a new immutable version and repointing the live pointer at
     it - the previous version's config_json is never touched, only its `status` (LIVE ->
@@ -164,7 +164,7 @@ async def list_strategy_versions(
 @router.post("/{strategy_id}/versions/{version_number}/rollback", response_model=CustomStrategyResponse)
 async def rollback_strategy_version(
     strategy_id: int, version_number: int,
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> CustomStrategyResponse:
     """Makes an earlier version live again - by appending a brand-new version whose content
     matches the target one (source="rollback"), never by resurrecting or mutating the old row.

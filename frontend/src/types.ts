@@ -652,3 +652,53 @@ export interface AlertDelivery {
   created_at: string;
   sent_at: string | null;
 }
+
+// --- Team (multi-user tenants) ---
+
+export type TenantRole = "OWNER" | "USER" | "STRATEGY_CREATOR" | "VIEWER" | "SUPPORT" | "SUPER_ADMIN";
+
+export interface TeamMember {
+  id: number;
+  email: string;
+  role: TenantRole;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TeamInvite {
+  id: number;
+  email: string;
+  role: TenantRole;
+  expires_at: string;
+  accepted_at: string | null;
+  invited_by: number | null;
+  invite_url?: string | null;
+}
+
+export interface TenantInfo {
+  id: number;
+  name: string;
+  plan: string;
+  status: string;
+  members: number;
+}
+
+export interface InviteInfo {
+  email: string;
+  role: TenantRole;
+  tenant_name: string;
+  expires_at: string;
+  valid: boolean;
+  reason: string | null;
+}
+
+export const ROLE_LABELS: Record<TenantRole, string> = {
+  OWNER: "Owner",
+  USER: "Trader",
+  STRATEGY_CREATOR: "Strategy creator",
+  VIEWER: "Viewer (read-only)",
+  SUPPORT: "Support (read-only)",
+  SUPER_ADMIN: "Platform admin",
+};
+
+export const TRADING_ROLES: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "SUPER_ADMIN"];

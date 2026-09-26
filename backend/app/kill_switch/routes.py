@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_role, require_trader
 from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationType, OrderStatus
 from app.db.models import KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
@@ -94,7 +94,7 @@ async def disengage_global(
 
 @router.post("/tenant/engage", response_model=KillSwitchStateResponse)
 async def engage_tenant(
-    request: KillSwitchRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    request: KillSwitchRequest, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     """Blocks every new order for this user's own tenant - the "stop everything for my account"
     panic button, available to any logged-in user of that tenant."""
@@ -106,7 +106,7 @@ async def engage_tenant(
 
 @router.post("/tenant/disengage", response_model=KillSwitchStateResponse)
 async def disengage_tenant(
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.TENANT, user.tenant_id)
     await write_audit_log(session, user.tenant_id, user.id, "kill_switch_tenant_disengaged")
@@ -117,7 +117,7 @@ async def disengage_tenant(
 @router.post("/strategy/{strategy_id}/engage", response_model=KillSwitchStateResponse)
 async def engage_strategy(
     strategy_id: str, request: KillSwitchRequest,
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     """Blocks new orders for one strategy within this tenant only - other strategies keep trading."""
     record = await checks.engage(session, KillSwitchScope.STRATEGY, user.tenant_id, user, request.reason, strategy_id)
@@ -130,7 +130,7 @@ async def engage_strategy(
 
 @router.post("/strategy/{strategy_id}/disengage", response_model=KillSwitchStateResponse)
 async def disengage_strategy(
-    strategy_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    strategy_id: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.STRATEGY, user.tenant_id, strategy_id)
     await write_audit_log(session, user.tenant_id, user.id, "kill_switch_strategy_disengaged", strategy_id)
@@ -155,7 +155,7 @@ class EmergencyExitResponse(BaseModel):
 
 @router.post("/emergency-exit", response_model=EmergencyExitResponse)
 async def emergency_exit(
-    request: EmergencyExitRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    request: EmergencyExitRequest, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> EmergencyExitResponse:
     """The full emergency-stop sequence for this tenant: (1) engage the tenant kill switch so no
     new order can enter, (2) cancel every order still in a non-terminal state, (3) close every

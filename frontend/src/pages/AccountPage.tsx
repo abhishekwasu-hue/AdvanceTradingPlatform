@@ -1,16 +1,35 @@
 import { LogOut, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { ROLE_LABELS, type InviteInfo } from "../types";
 import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 
 export default function AccountPage() {
-  const { user, login, register, logout } = useAuth();
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const { user, login, register, acceptInvite, logout } = useAuth();
+  const [mode, setMode] = useState<"login" | "register" | "invite">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [invite, setInvite] = useState<InviteInfo | null>(null);
+
+  // Arriving via an owner's invite link (?invite=<token>): show who invited you, ask only for a
+  // password, and join their organisation instead of creating a new one.
+  useEffect(() => {
+    try {
+      const token = new URLSearchParams(window.location.search).get("invite");
+      if (!token) return;
+      setInviteToken(token);
+      setMode("invite");
+      api.inviteInfo(token).then((info) => { setInvite(info); setEmail(info.email); }).catch((e) => setError(String(e)));
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch {
+      // no URL API - ordinary login
+    }
+  }, []);
 
   if (user) {
     return (
@@ -48,6 +67,8 @@ export default function AccountPage() {
     try {
       if (mode === "login") {
         await login(email, password);
+      } else if (mode === "invite" && inviteToken) {
+        await acceptInvite(inviteToken, password);
       } else {
         await register(email, password);
       }
@@ -64,10 +85,18 @@ export default function AccountPage() {
         <LogoMark size={44} />
         <div>
           <h1 className="text-lg font-semibold text-slate-100">
-            {mode === "login" ? "Welcome back" : "Create your account"}
+            {mode === "login" ? "Welcome back" : mode === "invite" ? "Join your team" : "Create your account"}
           </h1>
           <p className="text-xs text-muted mt-0.5">
-            {mode === "login" ? "Log in to your paper-trading console" : "Start building and running strategies"}
+            {mode === "login"
+              ? "Log in to your trading console"
+              : mode === "invite"
+                ? invite
+                  ? invite.valid
+                    ? `You were invited to ${invite.tenant_name} as ${ROLE_LABELS[invite.role] ?? invite.role}. Choose a password to join.`
+                    : invite.reason ?? "This invitation is no longer valid."
+                  : "Checking your invitation…"
+                : "Start building and running strategies"}
           </p>
         </div>
       </div>
@@ -80,7 +109,8 @@ export default function AccountPage() {
               <input
                 type="email"
                 required
-                className="w-full rounded bg-panel2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
+                readOnly={mode === "invite"}
+                className="w-full rounded bg-panel2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors read-only:text-muted"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -103,10 +133,10 @@ export default function AccountPage() {
           {error && <div className="text-xs text-danger">{error}</div>}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (mode === "invite" && !(invite && invite.valid))}
             className="w-full rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
           >
-            {loading ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+            {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "invite" ? "Join team" : "Create account"}
           </button>
         </form>
         <button

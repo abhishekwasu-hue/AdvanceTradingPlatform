@@ -118,7 +118,7 @@ Every trading morning, before 09:15 IST:
    says exactly that in its Note column, and a `TOKEN_EXPIRED` CRITICAL notification is raised
    once. Nothing needs to be resumed afterwards: deployments pick up on the next cycle.
 2. **Check the worker.** Autopilot tab: "Trading worker: Running" and "Market: Open" once the
-   session starts. A stale heartbeat during market hours is an incident (1.6).
+   session starts. A stale heartbeat during market hours is an incident (1.7).
 3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the
    tenant's saved limits on every entry, exactly like a manual paper execute.
 4. **Have an alert channel configured** (Settings -> Alert delivery): Telegram and/or email, with
@@ -136,7 +136,17 @@ first real session as a PAPER deployment with real Upstox credentials entered in
 it for a full day (candles arriving, signals evaluated, exits firing, square-off at 15:15), and
 only then create a LIVE deployment - starting with the smallest lot the risk settings allow.
 
-### 1.6 Trading worker runbook
+### 1.6 Team and access
+
+* Registration creates an organisation (tenant) with the registering user as **Owner**. Owners
+  invite teammates from the Team tab as Trader, Strategy creator or Viewer (read-only); the
+  invite is a link valid for 48 hours, shown once, to be shared by the owner.
+* Removing a member deactivates them immediately (their session stops working on the next
+  request); their trades, orders and audit rows stay. A tenant always keeps one owner.
+* Platform operators are `SUPER_ADMIN` (a DB flag, never granted through the UI); `SUPPORT`
+  staff placed in a tenant can see everything and change nothing.
+
+### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`
   from `backend/` with the same `.env` as the API). It is safe to restart at any time: all state
@@ -161,14 +171,14 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
-### 1.7 Multi-AZ / high-availability readiness
+### 1.8 Multi-AZ / high-availability readiness
 
 Not implemented today (this is a Phase 1, single-region, single-instance deployment target) but
 the application is already written not to block it later: the app tier is fully stateless (no
 in-process session state beyond the per-process rate limiter noted in `app/core/rate_limit.py`,
 which is explicitly documented there as needing a shared store like Redis before running more than
 one instance), so horizontal scaling and multi-AZ app-tier deployment is an infrastructure change,
-not an application rewrite. The trading worker is a single active instance by design (1.6); a
+not an application rewrite. The trading worker is a single active instance by design (1.7); a
 standby replica is safe only with Redis providing the cycle lock. The database is the one component that needs real multi-AZ
 replication (a managed Postgres offering's standard multi-AZ/read-replica feature) before this
 claim extends to the data layer too.

@@ -22,6 +22,7 @@ import SignalsPage from "./pages/SignalsPage";
 import StrategiesPage from "./pages/StrategiesPage";
 import StrategyBuilderPage from "./pages/StrategyBuilderPage";
 import SystemLogsPage from "./pages/SystemLogsPage";
+import TeamPage from "./pages/TeamPage";
 
 function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
   const { user } = useAuth();
@@ -59,7 +60,9 @@ function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void })
  * `&error=...`) in the query string - open straight onto Settings so the outcome is visible. */
 function initialPage(): Page {
   try {
-    return new URLSearchParams(window.location.search).has("broker") ? "settings" : "dashboard";
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("invite")) return "account";
+    return params.has("broker") ? "settings" : "dashboard";
   } catch {
     return "dashboard";
   }
@@ -92,6 +95,7 @@ function AppShell() {
           {page === "risk-management" && <RiskManagementPage />}
           {page === "settings" && <SettingsPage />}
           {page === "system-logs" && <SystemLogsPage />}
+          {page === "team" && <TeamPage />}
           {page === "notifications" && <NotificationsPage />}
           {page === "account" && <AccountPage />}
         </main>

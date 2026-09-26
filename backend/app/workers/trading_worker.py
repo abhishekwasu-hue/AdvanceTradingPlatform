@@ -288,9 +288,17 @@ class TradingWorker:
         creator_ids = [d.created_by for d in deployments if d.created_by is not None]
         if creator_ids:
             user = await session.get(User, creator_ids[0])
-            if user is not None and user.tenant_id == tenant_id:
+            if user is not None and user.tenant_id == tenant_id and user.is_active:
                 return user
-        return await session.scalar(select(User).where(User.tenant_id == tenant_id).order_by(User.id).limit(1))
+        owner = await session.scalar(
+            select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True), User.role == "OWNER")
+            .order_by(User.id).limit(1)
+        )
+        if owner is not None:
+            return owner
+        return await session.scalar(
+            select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id).limit(1)
+        )
 
     async def _usable_adapter(
         self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime,

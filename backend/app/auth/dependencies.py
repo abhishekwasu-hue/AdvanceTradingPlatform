@@ -25,7 +25,7 @@ async def get_current_user(
         raise unauthorized from exc
 
     user = await session.get(User, user_id)
-    if user is None:
+    if user is None or not user.is_active:
         raise unauthorized
     return user
 
@@ -41,7 +41,8 @@ async def get_current_user_optional(
         return None
     try:
         payload = decode_access_token(credentials.credentials)
-        return await session.get(User, int(payload["sub"]))
+        user = await session.get(User, int(payload["sub"]))
+        return user if user is not None and user.is_active else None
     except Exception:
         return None
 
@@ -49,8 +50,8 @@ async def get_current_user_optional(
 def require_role(*allowed: UserRole) -> Callable[[User], User]:
     """Dependency factory for RBAC-gated routes: `Depends(require_role(UserRole.SUPER_ADMIN))`.
     SUPER_ADMIN always passes, regardless of which roles are listed, since it's the platform-wide
-    role above every tenant-scoped one. No route uses this yet - it's the hook future
-    admin/support/strategy-management endpoints wire into.
+    role above every tenant-scoped one. `require_role()` with no roles is therefore
+    "SUPER_ADMIN only".
     """
 
     def _check(user: User = Depends(get_current_user)) -> User:
@@ -59,3 +60,13 @@ def require_role(*allowed: UserRole) -> Callable[[User], User]:
         return user
 
     return _check
+
+
+# The two tenant-side gates every write endpoint uses. Reads stay on get_current_user, so a
+# VIEWER (or platform SUPPORT staff) sees everything and changes nothing.
+TRADING_ROLES = (UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
+
+# Anything that places, configures or stops trading, or touches broker/alert credentials.
+require_trader = require_role(*TRADING_ROLES)
+# Team management (invites, roles, removing members): the tenant's owner(s) only.
+require_owner = require_role(UserRole.OWNER)

@@ -64,6 +64,7 @@ from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
 from app.deployments.routes import router as deployments_router
 from app.alerts.routes import router as alerts_router
+from app.team.routes import router as team_router
 from app.market_data.routes import router as market_holidays_router
 
 @asynccontextmanager
@@ -107,6 +108,7 @@ app.include_router(news_events_router)
 app.include_router(workers_router)
 app.include_router(deployments_router)
 app.include_router(alerts_router)
+app.include_router(team_router)
 app.include_router(market_holidays_router)
 
 _default_risk_config = RiskConfig()

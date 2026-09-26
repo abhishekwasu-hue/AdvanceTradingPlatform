@@ -45,12 +45,49 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="USER")
+    # Deactivated (removed from the team) users keep their rows for attribution/audit history
+    # but can no longer log in or use an existing token - see get_current_user.
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")
     broker_credentials: Mapped[list["BrokerCredentialRecord"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class TenantInviteRecord(Base):
+    """An owner's invitation for someone to join their tenant with a given role. Only a SHA-256 of
+    the one-time token is stored (the raw token lives in the invite link, shown to the owner once),
+    so a DB read cannot mint a usable invite. Expires 48h after creation; accepting sets
+    `accepted_at` and creates the User."""
+
+    __tablename__ = "tenant_invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="USER")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    invited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    accepted_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class NotificationReadRecord(Base):
+    """Per-user read marker for a tenant-shared notification: one teammate reading an alert must
+    not clear it for everyone else. Replaces the single `notifications.read_at` column (kept for
+    history) now that a tenant can have more than one user."""
+
+    __tablename__ = "notification_reads"
+    __table_args__ = (UniqueConstraint("notification_id", "user_id", name="uq_notification_read_user"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    notification_id: Mapped[int] = mapped_column(ForeignKey("notifications.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    read_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
 class BrokerCredentialRecord(Base):

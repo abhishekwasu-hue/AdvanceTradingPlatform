@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.token_lifecycle import (
@@ -83,7 +83,7 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
 @router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> None:
     """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
     plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
@@ -137,7 +137,7 @@ async def list_broker_token_status(
 
 @router.delete("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_broker_credentials(
-    name: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> None:
     existing = await get_credential_record(session, user.tenant_id, name)
     if existing:
@@ -148,7 +148,7 @@ async def delete_broker_credentials(
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile)
 async def authenticate_broker(
-    name: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> BrokerProfile:
     """Loads this tenant's stored (encrypted) credentials for `name`, decrypts them in memory,
     and performs a real login against that broker. Success marks the stored token VALID until the
@@ -211,7 +211,7 @@ class OAuthStartResponse(BaseModel):
 
 @router.get("/upstox/oauth/start", response_model=OAuthStartResponse)
 async def upstox_oauth_start(
-    request: Request, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> OAuthStartResponse:
     record = await get_credential_record(session, user.tenant_id, "upstox")
     if record is None:

@@ -13,6 +13,7 @@ import type {
   CustomStrategyConfig,
   CustomStrategyResponse,
   EnrichedSignal,
+  InviteInfo,
   MarkPriceResponse,
   MarketStructureResult,
   NewsEvent,
@@ -32,6 +33,9 @@ import type {
   SignalHistoryEntry,
   StoredBrokerInfo,
   StrategyInfo,
+  TeamInvite,
+  TeamMember,
+  TenantInfo,
   TokenResponse,
   TradeRecord,
   UserResponse,
@@ -262,4 +266,31 @@ export const api = {
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),
 
   listAlertDeliveries: (limit = 20) => request<AlertDelivery[]>(`/alert-channels/deliveries?limit=${limit}`),
+
+  // --- Team ---
+
+  getTenant: () => request<TenantInfo>("/team/tenant"),
+
+  renameTenant: (name: string) => request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ name }) }),
+
+  listMembers: () => request<TeamMember[]>("/team/members"),
+
+  changeMemberRole: (id: number, role: string) =>
+    request<TeamMember>(`/team/members/${id}`, { method: "PATCH", body: JSON.stringify({ role }) }),
+
+  removeMember: (id: number) => request<void>(`/team/members/${id}`, { method: "DELETE" }),
+
+  reactivateMember: (id: number) => request<TeamMember>(`/team/members/${id}/reactivate`, { method: "POST" }),
+
+  listInvites: () => request<TeamInvite[]>("/team/invites"),
+
+  createInvite: (email: string, role: string) =>
+    request<TeamInvite>("/team/invites", { method: "POST", body: JSON.stringify({ email, role }) }),
+
+  revokeInvite: (id: number) => request<void>(`/team/invites/${id}`, { method: "DELETE" }),
+
+  inviteInfo: (token: string) => request<InviteInfo>(`/auth/invite/${encodeURIComponent(token)}`),
+
+  acceptInvite: (token: string, password: string) =>
+    request<TokenResponse>(`/auth/invite/${encodeURIComponent(token)}/accept`, { method: "POST", body: JSON.stringify({ password }) }),
 };

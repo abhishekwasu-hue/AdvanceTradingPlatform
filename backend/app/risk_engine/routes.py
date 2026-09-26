@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import RiskConfig
 from app.db.models import RiskSettingsRecord, User
 from app.db.session import get_session
@@ -43,7 +43,7 @@ async def get_risk_settings(
 
 @router.put("", response_model=RiskConfig)
 async def update_risk_settings(
-    config: RiskConfig, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    config: RiskConfig, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:
     record = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == user.tenant_id))
     if record is None:

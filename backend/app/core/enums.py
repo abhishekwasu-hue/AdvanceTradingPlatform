@@ -63,14 +63,18 @@ class KillSwitchScope(str, Enum):
 
 
 class UserRole(str, Enum):
-    """Platform RBAC roles (spec section 5-6). SUPER_ADMIN is platform-wide (not tenant-scoped -
-    no route grants it automatically today, it's a manual DB flag for platform operators);
-    the rest are tenant-scoped. USER is the default a registration gets."""
+    """Platform RBAC roles (spec section 5-6). SUPER_ADMIN is platform-wide (a manual DB flag for
+    platform operators); the rest are tenant-scoped. A registration creates the tenant's OWNER;
+    the owner invites teammates as USER (trader), STRATEGY_CREATOR or VIEWER (read-only).
+    SUPPORT is platform support staff: read-only inside any tenant they are placed in.
+    See app/auth/dependencies.py::require_trader / require_owner for the gates."""
 
     SUPER_ADMIN = "SUPER_ADMIN"
+    OWNER = "OWNER"
     USER = "USER"
     STRATEGY_CREATOR = "STRATEGY_CREATOR"
     SUPPORT = "SUPPORT"
+    VIEWER = "VIEWER"
 
 
 class StrategyCategory(str, Enum):

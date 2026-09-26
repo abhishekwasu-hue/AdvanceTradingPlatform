@@ -8,8 +8,8 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
-from app.core.enums import OrderStatus, SignalDirection, SignalGrade
+from app.auth.dependencies import get_current_user, require_trader
+from app.core.enums import UserRole, OrderStatus, SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import Tenant, User
 from app.db.session import get_session
@@ -57,12 +57,18 @@ class WebhookTokenResponse(BaseModel):
 
 
 async def _get_tenant_owner(session: AsyncSession, tenant_id: int) -> User:
-    """Webhook alerts have no logged-in caller to attribute an order to - the tenant's
-    earliest-created user stands in as the acting user for audit/notification purposes. Every V1
-    tenant has exactly one user (no invite flow yet - see the Multi-Tenancy Foundation notes on
-    this same limitation), so this is unambiguous today.
+    """Webhook alerts have no logged-in caller to attribute an order to - the tenant's OWNER
+    (earliest one if several; earliest active user if none) stands in as the acting user for
+    audit/notification purposes.
     """
-    user = await session.scalar(select(User).where(User.tenant_id == tenant_id).order_by(User.id.asc()))
+    user = await session.scalar(
+        select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True), User.role == UserRole.OWNER.value)
+        .order_by(User.id.asc())
+    )
+    if user is None:
+        user = await session.scalar(
+            select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id.asc())
+        )
     if user is None:
         raise HTTPException(status_code=500, detail="Tenant has no user to attribute this order to")
     return user
@@ -126,7 +132,7 @@ async def get_webhook_token(
 
 @router.post("/tradingview/token/rotate", response_model=WebhookTokenResponse)
 async def rotate_webhook_token(
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> WebhookTokenResponse:
     """Invalidates the old webhook URL and issues a new one - use if the old URL ever leaks
     (it's the sole credential protecting this endpoint)."""

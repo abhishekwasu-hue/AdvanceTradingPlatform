@@ -48,10 +48,10 @@ def _add_teammate(email: str, tenant_id: int) -> str:
     return create_access_token(user_id, email)
 
 
-def test_register_creates_a_new_tenant_with_default_role():
+def test_register_creates_a_new_tenant_with_owner_role():
     token = _register("tenant_a_owner@example.com")
     me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
-    assert me["role"] == "USER"
+    assert me["role"] == "OWNER"  # a registration creates the tenant and owns it (Phase B1)
     assert isinstance(me["tenant_id"], int)
 
 

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
-from app.auth.dependencies import get_current_user, require_role
+from app.auth.dependencies import get_current_user, require_role, require_trader
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
@@ -136,7 +136,7 @@ class MarkPriceResponse(BaseModel):
 @router.post("/positions/{trade_id}/mark-price", response_model=MarkPriceResponse)
 async def mark_price(
     trade_id: int, request: MarkPriceRequest,
-    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> MarkPriceResponse:
     """Checks a supplied current price against this open position's stop loss/targets and closes
     it if hit. There's no live broker market-data stream yet, so this is the honest replacement

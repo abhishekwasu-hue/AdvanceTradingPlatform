@@ -245,7 +245,58 @@ class TradeRecord(Base):
     deployment_id: Mapped[int | None] = mapped_column(
         ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
+    # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
+    # exchange closed us at the stop, else the market exit), so contract-note legs can be
+    # matched to both sides of the trade.
+    exit_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Where `charges` came from: ESTIMATED (the platform's NSE cost model at close time) or
+    # CONTRACT_NOTE (the broker's actual charges, applied from an uploaded contract note).
+    charges_source: Mapped[str] = mapped_column(String(20), nullable=False, default="ESTIMATED")
+    contract_note_id: Mapped[int | None] = mapped_column(
+        ForeignKey("contract_notes.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class ContractNoteRecord(Base):
+    """One uploaded broker contract note / tradebook file (Phase D4): who uploaded it, its
+    SHA-256 (so the same file is recognised and the upload is evidence), and how many of its
+    legs matched trades. The parsed legs live in ContractNoteLineRecord."""
+
+    __tablename__ = "contract_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    note_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched_lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trades_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    uploaded_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class ContractNoteLineRecord(Base):
+    """One leg (fill) from a contract note, as parsed, with the trade it was matched to."""
+
+    __tablename__ = "contract_note_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contract_note_id: Mapped[int] = mapped_column(ForeignKey("contract_notes.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True, index=True)
+    trade_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    order_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    breakdown_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    match_method: Mapped[str] = mapped_column(String(20), nullable=False, default="UNMATCHED")
 
 
 class StrategyDeploymentRecord(Base):

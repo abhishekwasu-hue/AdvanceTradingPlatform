@@ -146,6 +146,11 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   authentication" on the Team tab so LIVE deployments and broker credentials always need a fresh
   authenticator check. Keep the backup codes somewhere safe; an owner with a lost phone and no
   backup codes needs a platform administrator to reset MFA in the database.
+* **Contract notes**: after each LIVE trading day, download the broker's contract note /
+  tradebook CSV and upload it on the Positions tab (Preview, then Apply). Trades then show the
+  broker's actual charges (`actual`) instead of the platform estimate (`est.`), and the file, its
+  SHA-256 and every matched leg are kept for audit. Unmatched legs are listed - a leg that should
+  have matched usually means the order id column was not in the export.
 * **Exchange algo id (SEBI)**: before an organisation trades LIVE, its broker registers the
   algo with the exchange and hands back an algo id. The owner enters it on the Team tab; from
   then on every entry, stop-loss and exit order is tagged `<algo id>-<strategy>-<leg>` at the

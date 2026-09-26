@@ -1,4 +1,6 @@
 import type {
+  ContractNoteIngest,
+  ContractNoteSummary,
   AdminOverview,
   AdminPlan,
   AdminTenantDetail,
@@ -288,6 +290,23 @@ export const api = {
   listTrades: () => request<TradeRecord[]>("/trades"),
 
   listPositions: () => request<TradeRecord[]>("/positions"),
+
+  listContractNotes: () => request<ContractNoteSummary[]>("/contract-notes"),
+
+  uploadContractNote: async (file: File, brokerName: string, apply: boolean): Promise<ContractNoteIngest> => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("broker_name", brokerName);
+    form.append("apply", apply ? "true" : "false");
+    // No JSON content type: the browser sets the multipart boundary itself.
+    const token = getToken();
+    let response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (response.status === 401 && getRefreshToken() && (await tryRefresh())) {
+      response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: { Authorization: `Bearer ${getToken()}` } });
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+    return response.json() as Promise<ContractNoteIngest>;
+  },
 
   markPrice: (tradeId: number, currentPrice: number) =>
     request<MarkPriceResponse>(`/positions/${tradeId}/mark-price`, {

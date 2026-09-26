@@ -60,6 +60,35 @@ export interface TradeRecord {
   exit_reason: string | null;
   pnl: number | null;
   charges: number;
+  charges_source?: "ESTIMATED" | "CONTRACT_NOTE" | string;
+  broker_order_id?: string | null;
+  exit_order_id?: string | null;
+}
+
+export interface ContractNoteSummary {
+  id: number;
+  broker_name: string;
+  filename: string;
+  sha256: string;
+  note_date: string | null;
+  line_count: number;
+  matched_lines: number;
+  trades_updated: number;
+  total_charges: number;
+  uploaded_at: string;
+}
+
+export interface ContractNoteIngest {
+  note_id: number | null;
+  filename: string;
+  sha256: string;
+  lines: number;
+  matched: number;
+  applied: boolean;
+  total_charges: number;
+  trades_updated: { trade_id: number; symbol: string; old_charges: number; new_charges: number; old_pnl: number | null; new_pnl: number | null; legs: number }[];
+  unmatched: { row: number; symbol: string; side: string; quantity: number; price: number; order_id: string | null; date: string | null; charges: number }[];
+  warnings: string[];
 }
 
 export interface OHLCVBar {

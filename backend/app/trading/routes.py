@@ -35,6 +35,9 @@ class TradeRecordResponse(BaseModel):
     exit_reason: Optional[str]
     pnl: Optional[float]
     charges: float
+    charges_source: str = "ESTIMATED"
+    broker_order_id: Optional[str] = None
+    exit_order_id: Optional[str] = None
 
     @classmethod
     def from_record(cls, record: TradeRecord) -> "TradeRecordResponse":
@@ -45,7 +48,8 @@ class TradeRecordResponse(BaseModel):
             target1=record.target1, target2=record.target2,
             exit_time=record.exit_time.isoformat() if record.exit_time else None,
             exit_price=record.exit_price, exit_reason=record.exit_reason, pnl=record.pnl,
-            charges=record.charges,
+            charges=record.charges, charges_source=record.charges_source or "ESTIMATED",
+            broker_order_id=record.broker_order_id, exit_order_id=record.exit_order_id,
         )
 
 

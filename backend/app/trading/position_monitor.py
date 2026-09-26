@@ -193,7 +193,10 @@ async def close_position(
     trade.exit_time = now or datetime.now(timezone.utc)
     trade.exit_reason = reason
     trade.charges = charges
+    trade.charges_source = "ESTIMATED"
     trade.pnl = round(gross_pnl - charges, 2)
+    if outcome.broker_exit_order_id:
+        trade.exit_order_id = outcome.broker_exit_order_id
     await session.commit()
 
     outcome.closed = True

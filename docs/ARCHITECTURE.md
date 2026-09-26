@@ -1887,3 +1887,41 @@ two regimes, checked by tests.
 Verified by `tests/test_retention.py` (policy floor and parsing, rule/never-deleted disjointness,
 old-vs-fresh deletion per table with regulatory tables untouched, audit row and idempotency,
 disabled policy, batch bound, worker once-a-day scheduling, admin endpoints, erasure semantics).
+
+### D4: Contract-note ingestion (actual charges)
+
+`trades.charges` and `pnl` at close time come from the platform's NSE cost model
+(`PaperBroker.estimate_round_trip_costs`) - an estimate. The broker's contract note is the truth,
+and the books an auditor compares against. Phase D4 lets a trader or owner upload the broker's
+contract note / tradebook CSV and replaces the estimate with the broker's own numbers.
+
+* **Parser** (`app/contract_notes/parser.py`): broker-agnostic. Each field has a set of accepted
+  header aliases (symbol/tradingsymbol/scrip, side/trade_type/buy-sell, qty, price/rate,
+  order_id/order no, date in several formats) and charges come either from a total column or from
+  any subset of components (brokerage, STT, exchange transaction charges, GST, SEBI fee, stamp
+  duty, clearing), summed per leg and kept as a breakdown. Delimiters are sniffed; a header that
+  lacks symbol/side/quantity/price is rejected with the header seen and the accepted names, so
+  a wrong export fails loudly instead of matching nothing.
+* **Matching** (`service.match_legs`): by broker order id first - exact, against the trade's
+  `broker_order_id`, `sl_order_id` and the new `exit_order_id` (the position monitor now records
+  the closing order's id) - then, for legs without an id or PAPER-era trades, by symbol + side +
+  quantity + IST session date, one leg per side per trade. A leg is used at most once; unmatched
+  legs are reported, never guessed.
+* **Applying**: matched legs' charges become the trade's `charges`, P&L is recomputed as gross
+  minus actual charges, `charges_source` flips from `ESTIMATED` to `CONTRACT_NOTE` and the trade
+  points at the note. The upload itself is stored (`contract_notes`: uploader, filename, SHA-256,
+  note date, counts) with every parsed leg and its match (`contract_note_lines`), and audited as
+  `contract_note_ingested`. The same file (same SHA-256) is refused with 409; a corrected file for
+  the same day simply re-matches and overwrites. `apply=false` is a dry run with the same shape.
+  Migration `f8c4d6e2b510`.
+* **API/UI**: `POST /api/contract-notes` (multipart, traders and owners), `GET /api/contract-notes`
+  and `/{id}` (tenant-scoped). The Positions tab has a "Contract notes" card (preview → apply,
+  per-trade estimate → actual table, unmatched legs, upload history) and the trade table shows
+  each trade's charges with an `est.`/`actual` marker.
+
+Verified by `tests/test_contract_notes.py` (component vs total charges, aliases, delimiters and
+date formats, header rejection, order-id-first matching with fill fallback, dry run vs apply,
+trade fields and audit row, duplicate refusal, unmatched legs leaving trades untouched, bad-file
+errors, tenant isolation). Not verified: a real broker's export - the alias table is built from
+the column names Zerodha/Upstox tradebook exports are known to use, and the parser's error names
+the header it saw so a new broker's format can be added from one failed upload.

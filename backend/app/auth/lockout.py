@@ -13,6 +13,7 @@ from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.observability.metrics import LOGIN_ATTEMPTS
 from app.db.models import LoginEventRecord, User
 
 LOCKOUT_WINDOW_MINUTES = 15
@@ -43,6 +44,7 @@ async def record_login_event(
     )
     session.add(record)
     await session.flush()
+    LOGIN_ATTEMPTS.labels(success=str(success).lower(), reason=reason[:40]).inc()
     return record
 
 

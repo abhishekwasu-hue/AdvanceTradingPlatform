@@ -15,6 +15,7 @@ from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.core import config
+from app.observability.metrics import ORDERS
 from app.plans.limits import live_allowed, tenant_is_active
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -70,6 +71,7 @@ async def execute_signal_for_user(
                 session, order, OrderStatus.REJECTED, detail="; ".join(kill_switch_reasons)
             )
             logger.warning("Order rejected by kill switch: %s", "; ".join(kill_switch_reasons))
+            ORDERS.labels(mode=mode, status=order.status).inc()
             await notify(
                 session, user.tenant_id, NotificationType.REJECTION,
                 title=f"Order rejected: {signal.symbol}", message="; ".join(kill_switch_reasons),
@@ -90,6 +92,7 @@ async def execute_signal_for_user(
             order.reasons_json = json.dumps([reason])
             order = await transition_order(session, order, OrderStatus.REJECTED, detail=reason)
             logger.error("LIVE order rejected - no broker adapter supplied")
+            ORDERS.labels(mode=mode, status=order.status).inc()
             return ExecutionResult(executed=False, reasons=[reason]), order
 
         state = await build_trading_day_state(session, user)
@@ -112,6 +115,7 @@ async def execute_signal_for_user(
                 # rejection notice.
                 order = await transition_order(session, order, OrderStatus.FAILED, detail="; ".join(result.reasons))
                 logger.error("Order failed - broker call raised: %s", "; ".join(result.reasons))
+                ORDERS.labels(mode=mode, status=order.status).inc()
                 await notify(
                     session, user.tenant_id, NotificationType.SYSTEM_FAILURE,
                     title=f"Order failed: {signal.symbol}", message="; ".join(result.reasons),
@@ -122,6 +126,7 @@ async def execute_signal_for_user(
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(result.reasons))
             is_daily_loss = any("daily loss limit" in r.lower() for r in result.reasons)
             logger.warning("Order rejected by risk engine: %s", "; ".join(result.reasons))
+            ORDERS.labels(mode=mode, status=order.status).inc()
             await notify(
                 session, user.tenant_id,
                 NotificationType.DAILY_LOSS_LIMIT if is_daily_loss else NotificationType.RISK_REJECTION,
@@ -143,6 +148,7 @@ async def execute_signal_for_user(
             detail="Paper fill" if execution_mode == ExecutionMode.PAPER else f"Live fill {result.broker_order_id}",
         )
         logger.info("Order filled")
+        ORDERS.labels(mode=mode, status="FILLED").inc()
 
         if result.trade is not None:
             trade_record = await persist_trade(

@@ -52,7 +52,7 @@ import type {
   WorkerStatus,
 } from "../types";
 
-const BASE = "/api";
+const BASE = "/api/v1";
 const TOKEN_KEY = "atp_token";
 const REFRESH_KEY = "atp_refresh";
 

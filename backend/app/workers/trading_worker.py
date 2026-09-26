@@ -47,6 +47,7 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
+from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.service import MarketDataService
@@ -163,6 +164,9 @@ class TradingWorker:
                         self._last_retention_day = now.astimezone(IST).date()
                         if report.retention.total:
                             logger.info("Retention deleted %s", report.retention.deleted)
+                            for table, count in report.retention.deleted.items():
+                                if count:
+                                    RETENTION_DELETED.labels(table=table).inc(count)
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Retention run failed")
                         report.errors.append(f"retention: {exc}")
@@ -437,6 +441,8 @@ class TradingWorker:
         record.last_cycle_ms = cycle_ms
         record.last_error = "; ".join(report.errors)[:2000] if report.errors else None
         await session.commit()
+        observe_cycle(market_open=report.market_open, seconds=cycle_ms / 1000, signals=report.signals_executed,
+                      closes=report.positions_closed, errors=len(report.errors))
 
 
 async def main() -> None:
@@ -444,6 +450,11 @@ async def main() -> None:
     from app.db.session import _session_factory  # the app's own engine/pool configuration
 
     worker = TradingWorker(_session_factory)
+    from app.core.config import WORKER_METRICS_PORT
+    if WORKER_METRICS_PORT > 0:
+        from prometheus_client import start_http_server
+        start_http_server(WORKER_METRICS_PORT)  # Phase E1: GET /metrics for this process
+        logger.info("Worker metrics on :%s/metrics", WORKER_METRICS_PORT)
     loop = asyncio.get_running_loop()
     try:
         import signal

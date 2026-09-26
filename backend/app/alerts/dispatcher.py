@@ -17,6 +17,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.observability.metrics import ALERT_DELIVERIES
 from app.alerts.channels import EmailConfig, TelegramConfig, decrypt_config, severity_reaches
 from app.core.enums import AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -168,6 +169,7 @@ async def dispatch_pending(
             channel.last_error = delivery.last_error
             if delivery.attempts >= MAX_ATTEMPTS:
                 delivery.status = AlertDeliveryStatus.FAILED.value
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status="FAILED").inc()
                 logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, delivery.attempts, exc)
             else:
                 delivery.next_attempt_at = now + timedelta(seconds=BASE_BACKOFF_SECONDS * (2 ** (delivery.attempts - 1)))
@@ -176,6 +178,7 @@ async def dispatch_pending(
         else:
             delivery.attempts += 1
             delivery.status = AlertDeliveryStatus.SENT.value
+            ALERT_DELIVERIES.labels(channel=channel.channel_type, status="SENT").inc()
             delivery.sent_at = now
             delivery.last_error = None
             channel.last_delivered_at = now

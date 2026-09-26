@@ -35,6 +35,8 @@ services:
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
       REDIS_URL: redis://redis:6379/0
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      ALGO_ID_REQUIRED_FOR_LIVE: ${ALGO_ID_REQUIRED_FOR_LIVE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +65,10 @@ services:
       RETENTION_ALERT_DELIVERIES_DAYS: ${RETENTION_ALERT_DELIVERIES_DAYS:-90}
       RETENTION_NOTIFICATIONS_DAYS: ${RETENTION_NOTIFICATIONS_DAYS:-180}
       RETENTION_SESSIONS_DAYS: ${RETENTION_SESSIONS_DAYS:-30}
+      WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9102}
+    # Prometheus scrapes the worker's own metrics here; not published to the host by default.
+    expose:
+      - "9102"
     depends_on:
       postgres:
         condition: service_healthy

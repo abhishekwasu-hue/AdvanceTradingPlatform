@@ -68,6 +68,8 @@ from app.team.routes import router as team_router
 from app.admin.routes import router as admin_router
 from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
+from app.observability.middleware import ObservabilityMiddleware
+from app.observability.routes import router as observability_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
@@ -94,6 +96,9 @@ app = FastAPI(
 # any origin for zero-config local dev; set ALLOWED_ORIGINS (comma-separated) to your real
 # frontend domain(s) in production - validate_production_config() refuses to boot with the "*"
 # default when ENVIRONMENT=production.
+# Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
+# wraps it and its headers are still applied to the rewritten request.
+app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -119,6 +124,7 @@ app.include_router(team_router)
 app.include_router(admin_router)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
+app.include_router(observability_router)
 app.include_router(market_holidays_router)
 
 _default_risk_config = RiskConfig()

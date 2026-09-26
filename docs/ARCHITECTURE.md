@@ -1925,3 +1925,59 @@ trade fields and audit row, duplicate refusal, unmatched legs leaving trades unt
 errors, tenant isolation). Not verified: a real broker's export - the alias table is built from
 the column names Zerodha/Upstox tradebook exports are known to use, and the parser's error names
 the header it saw so a new broker's format can be added from one failed upload.
+
+
+## Phase E: Operations
+
+### E1: Metrics and structured health
+
+`app/observability/metrics.py` holds one Prometheus registry per process. Series come in two kinds:
+
+* **Incremented where things happen** (process-local): `atp_http_requests_total` and
+  `atp_http_request_duration_seconds` by method, *route template* and status class (templates,
+  never raw paths, so ids do not explode the label space); `atp_orders_total{mode,status}` at
+  every terminal point of `execute_signal_for_user`; `atp_login_attempts_total{success,reason}`;
+  `atp_alert_deliveries_total{channel,status}`; and on the worker `atp_worker_cycles_total`,
+  `atp_worker_cycle_duration_seconds`, `atp_worker_signals_executed_total`,
+  `atp_worker_positions_closed_total`, `atp_worker_errors_total`,
+  `atp_worker_last_cycle_timestamp_seconds`, `atp_retention_rows_deleted_total{table}`.
+* **Refreshed from the database at scrape time** (platform state, the ones to alert on):
+  `atp_active_deployments{mode}`, `atp_open_positions{mode}`, `atp_alert_outbox_pending`,
+  `atp_worker_heartbeat_age_seconds` (-1 = never), `atp_login_failures_15m`.
+
+Exposure: `GET /metrics` on the API - outside `/api`, so the nginx front never proxies it to
+browsers; `METRICS_TOKEN` makes it bearer-protected. The worker serves its own registry with
+`prometheus_client.start_http_server` on `WORKER_METRICS_PORT` (9102, `expose`d in compose, not
+published). A `prometheus.yml` therefore has two targets: `backend:8000/metrics` (with the token)
+and `worker:9102/metrics`.
+
+Health (`app/observability/routes.py`): `GET /api/system/health` stays the trivial liveness
+probe; `GET /api/system/ready` is readiness (database round-trip, 503 otherwise) for an
+orchestrator; `GET /api/system/health/deep` is the operator view - database latency, Redis
+(optional: `disabled`/`unreachable` degrade, never fail), migrations (`alembic_version` vs the
+shipped scripts' head; `unknown` when the table or scripts are absent), worker heartbeat age
+against three cycles with the market calendar (`stale_market_open` is the "engine is down"
+signal; `stale` overnight is normal). Overall `ok` / `degraded` (200) / `down` (503, database).
+
+### E2: Request correlation and API versioning
+
+`app/observability/middleware.py::ObservabilityMiddleware` is a pure-ASGI middleware (no
+`BaseHTTPMiddleware`, so streaming exports are untouched) doing three things per request:
+
+* **Request id**: honours an inbound `X-Request-ID` (sanitised to `[A-Za-z0-9._:-]`, 64 chars)
+  or mints a UUID4, binds it into the structured log context for the whole request (every log
+  line the request produces carries `request_id=`) and echoes it in the response, so a
+  user-reported failure is one grep away.
+* **`/api/v1` alias**: `/api/v1/...` is the canonical public path and is rewritten to the
+  routers' `/api/...` before routing, so every route exists under both without duplicating
+  routers. API responses carry `X-API-Version: 1`; a request on the unversioned alias also gets
+  `Deprecation: true` and `Link: </api/v1/...>; rel="successor-version"` (RFC 8594 style), so
+  integrators can find the canonical path. The alias is not scheduled for removal - the
+  TradingView webhook URLs and the Upstox OAuth callback registered at brokers use it and must
+  keep working. `/api/v2` is a 404, not a silent alias. The frontend client now uses `/api/v1`.
+* **HTTP metrics** (E1) from the route template after the app has routed.
+
+Verified by `tests/test_observability.py` (metric families and labels, template-not-path
+cardinality, token gate, orders counter on a LIVE fill, deep health components and worker
+freshness, readiness, request-id echo/mint/sanitise, v1 alias parity for GET/POST/query strings
+with version and deprecation headers, v2 404, non-API paths without version headers).

@@ -196,6 +196,26 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
+### 1.7a Monitoring (Phase E1)
+
+* **Scrape targets**: `backend:8000/metrics` (send `Authorization: Bearer $METRICS_TOKEN` when
+  set) and `worker:9102/metrics`. Both are Prometheus text format; the worker one is only
+  reachable on the compose network.
+* **Alerts worth having** (PromQL sketches):
+  * engine down on a trading day: `atp_worker_heartbeat_age_seconds > 3 * 60` while
+    `/api/system/health/deep` reports `market_open: true` (or use the worker's own
+    `time() - atp_worker_last_cycle_timestamp_seconds`);
+  * broker/API trouble: `increase(atp_orders_total{status="FAILED"}[15m]) > 0`;
+  * alerts not leaving the building: `atp_alert_outbox_pending > 20` for 10 minutes, or
+    `increase(atp_alert_deliveries_total{status="FAILED"}[1h]) > 0`;
+  * credential stuffing: `atp_login_failures_15m > 50`;
+  * API latency: `histogram_quantile(0.95, sum(rate(atp_http_request_duration_seconds_bucket[5m])) by (le, route)) > 1`.
+* **Health probes**: `GET /api/system/health` (liveness), `GET /api/system/ready` (readiness,
+  database only), `GET /api/system/health/deep` (operator detail; `degraded` names the component).
+  The Docker `HEALTHCHECK` uses liveness on purpose - a stale worker must not restart the API.
+* **Finding one request in the logs**: every response carries `X-Request-ID`; ask the user for
+  it (browser dev tools, or the error toast) and grep the API logs for `request_id=<id>`.
+
 ### 1.8 Multi-AZ / high-availability readiness
 
 Not implemented today (this is a Phase 1, single-region, single-instance deployment target) but

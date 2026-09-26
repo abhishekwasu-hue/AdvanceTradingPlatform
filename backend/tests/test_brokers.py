@@ -388,3 +388,40 @@ def test_upstox_intraday_candles_use_intraday_endpoint_and_sort_ascending():
     bars = run(broker.get_intraday_candles("RELIANCE", "NSE", "1min"))
     assert [b.open for b in bars] == [100, 101]
     assert bars[0].timestamp.isoformat() == "2026-09-25T09:15:00+05:30"
+
+
+def test_place_stop_loss_order_default_is_slm_on_given_side():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(parse_qs(request.content.decode()))
+        return httpx.Response(200, json={"status": "success", "data": {"order_id": "SL-1"}})
+
+    creds = BrokerCredentials(api_key="key123", access_token="tok456")
+    broker = ZerodhaBroker(creds, client=_mock_client(handler, ZerodhaBroker.BASE_URL))
+    response = run(broker.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 10, trigger_price=2450.0, tag="sl"))
+
+    assert response.order_id == "SL-1"
+    assert captured["order_type"] == ["SL-M"]
+    assert captured["transaction_type"] == ["SELL"]
+    assert captured["trigger_price"] == ["2450.0"]
+    assert captured["quantity"] == ["10.0"]
+
+
+def test_shoonya_maps_slm_to_noren_sl_mkt_with_trigger():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess", "actid": "FA1"})
+        captured.update(json.loads(parse_qs(request.content.decode())["jData"][0]))
+        return httpx.Response(200, json={"stat": "Ok", "norenordno": "N1"})
+
+    creds = BrokerCredentials(client_id="FA1", api_secret="pw", api_key="ak", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+    run(broker.place_stop_loss_order("RELIANCE-EQ", "NSE", OrderSide.SELL, 5, trigger_price=99.5))
+
+    assert captured["prctyp"] == "SL-MKT"
+    assert captured["trgprc"] == "99.5"
+    assert captured["trantype"] == "S"

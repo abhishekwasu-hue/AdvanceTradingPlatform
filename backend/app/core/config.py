@@ -32,6 +32,11 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # ENVIRONMENT=production.
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
 
+# Where a browser is sent back to after a broker OAuth login round-trip (Upstox). Defaults to
+# "/" - a same-origin redirect, correct for the docker-compose setup where nginx serves the UI
+# and proxies /api. For the split dev setup (Vite on :5173, API on :8000) set it to the Vite URL.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
+
 # The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
 # (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable
 # since the "right" rate drifts with the rate cycle and reasonable people disagree on which

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bell,
+  Bot,
   Boxes,
   Briefcase,
   Building2,
@@ -27,6 +28,7 @@ export type Page =
   | "dashboard"
   | "strategies"
   | "strategy-builder"
+  | "deployments"
   | "fundamentals"
   | "signals"
   | "scanner"
@@ -64,6 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "scanner", label: "Market Scanner", icon: Radar },
       { id: "strategies", label: "Strategy Library", icon: ListTree },
       { id: "strategy-builder", label: "Strategy Builder", icon: Wand2 },
+      { id: "deployments", label: "Autopilot", icon: Bot },
       { id: "backtest", label: "Backtesting", icon: History },
     ],
   },

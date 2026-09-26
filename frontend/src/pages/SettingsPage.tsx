@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
 import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
 
@@ -26,6 +27,7 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [webhook, setWebhook] = useState<WebhookTokenResponse | null>(null);
   const [webhookCopied, setWebhookCopied] = useState(false);
+  const [oauthOutcome, setOauthOutcome] = useState<{ ok: boolean; text: string } | null>(null);
 
   function refreshStored() {
     api.listStoredBrokerCredentials().then(setStored).catch((e) => setError(String(e)));
@@ -44,6 +46,24 @@ export default function SettingsPage() {
       api.getWebhookToken().then(setWebhook).catch((e) => setError(String(e)));
     }
   }, [user]);
+
+  // Landing back here after the Upstox OAuth round-trip: the callback redirects to the app root
+  // with the outcome in the query string. Show it once, then clean the URL.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("broker")) return;
+      const broker = params.get("broker") ?? "broker";
+      if (params.get("connected") === "1") {
+        setOauthOutcome({ ok: true, text: `Logged in to ${broker} - session token stored (encrypted) and marked valid for today.` });
+      } else if (params.get("error")) {
+        setOauthOutcome({ ok: false, text: `${broker} login did not complete: ${params.get("error")}` });
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch {
+      // URL APIs unavailable - nothing to show
+    }
+  }, []);
 
   async function handleCopyWebhookUrl() {
     if (!webhook) return;
@@ -126,6 +146,22 @@ export default function SettingsPage() {
           when you authenticate - never logged, never returned in plaintext by any API response.
         </p>
       </div>
+
+      {oauthOutcome && (
+        <div className={`rounded-lg border px-3 py-2 text-sm ${oauthOutcome.ok ? "border-accent/40 bg-accent/10 text-accent" : "border-danger/40 bg-danger/10 text-danger"}`}>
+          {oauthOutcome.text}
+        </div>
+      )}
+
+      <Card title="Broker session health">
+        <p className="text-xs text-muted mb-3">
+          Broker access tokens expire every trading morning (Upstox 03:30 IST, Kite 06:00 IST) and
+          cannot be refreshed automatically - log in again each day before the market opens, or
+          LIVE deployments stay on hold. For Upstox the button below completes the login in your
+          browser and stores the new token for you.
+        </p>
+        <BrokerTokenBanner key={stored.length} />
+      </Card>
 
       <Card title={`Connected brokers (${stored.length})`}>
         {stored.length === 0 ? (

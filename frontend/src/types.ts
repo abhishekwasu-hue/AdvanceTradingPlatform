@@ -556,3 +556,66 @@ export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
   COMMODITY: "Commodity (MCX)",
   CRYPTO: "Crypto",
 };
+
+// --- Autonomous trading core: deployments, broker token health, worker heartbeat ---
+
+export type DeploymentStatus = "ACTIVE" | "PAUSED" | "STOPPED";
+export type ExecutionMode = "PAPER" | "LIVE";
+
+export interface Deployment {
+  id: number;
+  strategy_id: string;
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  mode: ExecutionMode;
+  broker_name: string | null;
+  status: DeploymentStatus;
+  pause_reason: string | null;
+  last_evaluated_at: string | null;
+  last_signal_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  open_positions: number;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeploymentCreateRequest {
+  strategy_id: string;
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  mode: ExecutionMode;
+  broker_name?: string | null;
+}
+
+export type BrokerTokenStatus = "UNKNOWN" | "VALID" | "EXPIRED" | "MISSING";
+
+export interface BrokerTokenInfo {
+  broker_name: string;
+  token_status: BrokerTokenStatus;
+  token_expires_at: string | null;
+  last_verified_at: string | null;
+  needs_login: boolean;
+  oauth_supported: boolean;
+  oauth_callback_url: string | null;
+}
+
+export interface WorkerStatus {
+  worker_name: string;
+  running: boolean;
+  healthy: boolean;
+  last_seen_at: string | null;
+  seconds_since_heartbeat: number | null;
+  cycle_count: number;
+  last_cycle_ms: number | null;
+  last_error: string | null;
+  cycle_seconds: number;
+  market_open: boolean;
+  market_status: string;
+  next_market_open: string | null;
+}
+
+export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min"] as const;

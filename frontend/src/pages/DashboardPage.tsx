@@ -1,11 +1,12 @@
 import {
-  Activity, BarChart3, GitMerge, History, Layers, Link2, Server, ShieldCheck, Target, TrendingUp,
+  Activity, BarChart3, Bot, GitMerge, History, Layers, Link2, Server, ShieldCheck, Target, TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
-import type { StrategyInfo } from "../types";
+import type { StrategyInfo, WorkerStatus } from "../types";
 
 const ENGINES: {
   icon: LucideIcon;
@@ -20,6 +21,7 @@ const ENGINES: {
   { icon: Layers, tone: "violet", title: "Option Chain Intelligence", description: "PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, directional bias" },
   { icon: Target, tone: "rose", title: "Signal Scoring", description: "Weighted composite combining every engine above into one confidence score" },
   { icon: History, tone: "teal", title: "Backtest Engine", description: "Event-driven simulation with realistic slippage/charges cost modelling" },
+  { icon: Bot, tone: "accent", title: "Autopilot Worker", description: "Background service trading deployed strategies every minute on live broker candles - independent of any browser" },
 ];
 
 const TONE_CLASSES: Record<string, string> = {
@@ -33,10 +35,23 @@ const TONE_CLASSES: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [brokers, setBrokers] = useState<string[]>([]);
   const [healthy, setHealthy] = useState<boolean | null>(null);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setWorker(null);
+      return;
+    }
+    const load = () => api.workerStatus().then(setWorker).catch(() => setWorker(null));
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
+  }, [user]);
 
   useEffect(() => {
     Promise.all([api.listStrategies(), api.availableBrokers(), api.health()])
@@ -69,12 +84,26 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <StatTile icon={Server} label="Backend" value={healthy === null ? "…" : healthy ? "Online" : "Offline"} tone={healthy ? "up" : healthy === false ? "down" : "default"} />
+        <StatTile
+          icon={Bot} label="Autopilot"
+          value={!user ? "Log in" : worker === null ? "…" : worker.running ? (worker.market_open ? "Trading" : "Idle") : "Stopped"}
+          tone={!user || worker === null ? "default" : worker.running ? "up" : "down"}
+          accentClass="text-slate-400"
+        />
         <StatTile icon={GitMerge} label="Inbuilt Strategies" value={strategies.length || "…"} accentClass="text-violet-400" />
         <StatTile icon={BarChart3} label="MTF Combos" value={mtf.length || "…"} accentClass="text-sky-400" />
         <StatTile icon={Link2} label="Broker Adapters" value={brokers.length || "…"} accentClass="text-orange-400" />
       </div>
+
+      {user && worker && (
+        <div className={`rounded-lg border px-3 py-2 text-xs ${worker.running ? "border-border bg-panel2 text-muted" : "border-danger/40 bg-danger/10 text-danger"}`}>
+          {worker.running
+            ? `Worker heartbeat ${worker.seconds_since_heartbeat}s ago · ${worker.cycle_count} cycles · ${worker.market_status}`
+            : "No trading-worker heartbeat - deployed strategies are not being evaluated. Start the worker service (docs/OPERATIONS.md)."}
+        </div>
+      )}
 
       <Card title="Engines wired into this console">
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">

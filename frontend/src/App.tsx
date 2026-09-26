@@ -6,6 +6,7 @@ import AccountPage from "./pages/AccountPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
 import DashboardPage from "./pages/DashboardPage";
+import DeploymentsPage from "./pages/DeploymentsPage";
 import FundamentalsPage from "./pages/FundamentalsPage";
 import InstrumentsPage from "./pages/InstrumentsPage";
 import NewsEventsPage from "./pages/NewsEventsPage";
@@ -53,8 +54,19 @@ function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void })
   );
 }
 
+/** A broker OAuth round-trip (Settings -> "Login to Upstox" -> Upstox -> /api/broker/upstox/
+ * oauth/callback) lands the browser back on the app root with `?broker=...&connected=1` (or
+ * `&error=...`) in the query string - open straight onto Settings so the outcome is visible. */
+function initialPage(): Page {
+  try {
+    return new URLSearchParams(window.location.search).has("broker") ? "settings" : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
+
 function AppShell() {
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>(initialPage);
 
   return (
     <div className="min-h-screen flex">
@@ -65,6 +77,7 @@ function AppShell() {
           {page === "dashboard" && <DashboardPage />}
           {page === "strategies" && <StrategiesPage />}
           {page === "strategy-builder" && <StrategyBuilderPage />}
+          {page === "deployments" && <DeploymentsPage />}
           {page === "fundamentals" && <FundamentalsPage />}
           {page === "signals" && <SignalsPage />}
           {page === "scanner" && <ScannerPage />}

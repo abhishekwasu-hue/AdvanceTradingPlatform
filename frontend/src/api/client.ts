@@ -3,6 +3,9 @@ import type {
   AuditLogEntry,
   BacktestResult,
   BrokerCredentialsInput,
+  BrokerTokenInfo,
+  Deployment,
+  DeploymentCreateRequest,
   ContractSpec,
   CustomStrategyConfig,
   CustomStrategyResponse,
@@ -29,6 +32,7 @@ import type {
   TokenResponse,
   TradeRecord,
   UserResponse,
+  WorkerStatus,
 } from "../types";
 
 const BASE = "/api";
@@ -217,4 +221,28 @@ export const api = {
     request<void>(`/news-events/${id}`, { method: "DELETE" }),
 
   listInstruments: () => request<ContractSpec[]>("/instruments"),
+
+  // --- Autonomous trading core ---
+
+  brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
+
+  upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
+
+  workerStatus: () => request<WorkerStatus>("/system/worker-status"),
+
+  listDeployments: (includeStopped = false) =>
+    request<Deployment[]>(`/deployments${includeStopped ? "?include_stopped=true" : ""}`),
+
+  createDeployment: (body: DeploymentCreateRequest) =>
+    request<Deployment>("/deployments", { method: "POST", body: JSON.stringify(body) }),
+
+  pauseDeployment: (id: number, reason = "") =>
+    request<Deployment>(`/deployments/${id}/pause`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  resumeDeployment: (id: number) => request<Deployment>(`/deployments/${id}/resume`, { method: "POST" }),
+
+  stopDeployment: (id: number, reason = "") =>
+    request<Deployment>(`/deployments/${id}/stop`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  deleteDeployment: (id: number) => request<void>(`/deployments/${id}`, { method: "DELETE" }),
 };

@@ -43,7 +43,8 @@ from app.core.config import WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, NotificationSeverity, NotificationType
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User, WorkerHeartbeatRecord
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
+from app.plans.limits import live_allowed, tenant_is_active
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.service import MarketDataService
@@ -205,8 +206,19 @@ class TradingWorker:
             report.positions_closed += sum(1 for o in outcomes if o.closed)
 
         entries_allowed = now_ist.time() < NO_NEW_ENTRIES_AFTER
+        tenant = await session.get(Tenant, tenant_id)
+        if tenant is not None and not tenant_is_active(tenant):
+            # Exits above still ran (a suspended org's open risk is still real); no new entries.
+            for dep in deployments:
+                dep.last_error = f"Organisation is {tenant.status}: no new entries"
+            await session.commit()
+            return
         for dep in deployments:
             if dep.status != DeploymentStatus.ACTIVE.value:
+                continue
+            if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+                dep.last_error = "Plan does not include live trading - LIVE entries skipped"
+                await session.commit()
                 continue
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
                 try:

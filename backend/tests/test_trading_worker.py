@@ -68,6 +68,19 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _upgrade_plan(tenant_id: int, plan: str = "business") -> None:
+    """Free tenants are paper-only with one member (Phase B2); these tests exercise LIVE, teams
+    and multiple channels, which are Pro/Business features."""
+    from app.db.models import Tenant
+
+    async def go():
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            tenant.plan = plan
+            await session.commit()
+    asyncio.run(go())
+
+
 def _stop_all_deployments() -> None:
     """The worker is platform-wide: it evaluates every tenant's ACTIVE deployment in one cycle.
     Each test starts by stopping whatever earlier tests left behind so its counts are exact."""
@@ -84,6 +97,7 @@ def _tenant(email: str, *, token_status="VALID", with_credentials=True) -> Dict:
     token = _register(email)
     headers = {"Authorization": f"Bearer {token}"}
     me = client.get("/api/auth/me", headers=headers).json()
+    _upgrade_plan(me["tenant_id"])
     if with_credentials:
         client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
 

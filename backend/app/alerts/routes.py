@@ -13,6 +13,7 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord, User
 from app.db.session import get_session
+from app.plans.limits import check_can_add_alert_channel, load_tenant
 
 router = APIRouter(prefix="/api/alert-channels", tags=["alerts"])
 
@@ -103,6 +104,7 @@ async def upsert_alert_channel(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if record is None:
+        await check_can_add_alert_channel(session, await load_tenant(session, user.tenant_id))
         record = AlertChannelRecord(tenant_id=user.tenant_id, channel_type=kind, created_by=user.id, encrypted_config=encrypt_config(config))
         session.add(record)
         event = "alert_channel_created"

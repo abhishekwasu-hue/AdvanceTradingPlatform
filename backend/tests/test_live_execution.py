@@ -76,6 +76,19 @@ def _router(broker, **kwargs) -> OrderRouter:
     return router
 
 
+def _upgrade_plan(tenant_id: int, plan: str = "business") -> None:
+    """Free tenants are paper-only with one member (Phase B2); these tests exercise LIVE, teams
+    and multiple channels, which are Pro/Business features."""
+    from app.db.models import Tenant
+
+    async def go():
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            tenant.plan = plan
+            await session.commit()
+    asyncio.run(go())
+
+
 def test_live_fill_uses_broker_average_price_and_places_opposite_side_stop():
     broker = _LiveBroker(fill_price=100.35)
     result = asyncio.run(_router(broker).execute(_signal(), TradingDayState()))
@@ -138,7 +151,9 @@ def _user(email: str) -> User:
         async with _session_factory() as session:
             return await session.scalar(select(User).where(User.email == email))
 
-    return asyncio.run(load())
+    user = asyncio.run(load())
+    _upgrade_plan(user.tenant_id, "pro")
+    return user
 
 
 def _execute(user: User, broker, **kwargs):

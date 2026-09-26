@@ -10,6 +10,7 @@ from app.custom_strategies import versioning
 from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
 from app.db.session import get_session
+from app.plans.limits import check_can_add_custom_strategy, load_tenant
 from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStrategy
 from app.strategy_engine.nlu_parser import ParseResult, parse_strategy_description
 
@@ -88,6 +89,7 @@ async def create_custom_strategy(
     """Saves a new strategy for this tenant, as immutable version 1 - see PUT/rollback below for
     how later edits are versioned rather than overwritten."""
     _validate_or_400(config)
+    await check_can_add_custom_strategy(session, await load_tenant(session, user.tenant_id))
 
     record = CustomStrategyRecord(
         tenant_id=user.tenant_id, user_id=user.id, name=config.name, config_json=config.model_dump_json()

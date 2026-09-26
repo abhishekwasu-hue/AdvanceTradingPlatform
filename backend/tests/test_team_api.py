@@ -16,9 +16,24 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _upgrade_plan(tenant_id: int, plan: str = "business") -> None:
+    """Free tenants are paper-only with one member (Phase B2); these tests exercise LIVE, teams
+    and multiple channels, which are Pro/Business features."""
+    from app.db.models import Tenant
+
+    async def go():
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            tenant.plan = plan
+            await session.commit()
+    asyncio.run(go())
+
+
 def _owner(email: str):
     headers = {"Authorization": f"Bearer {_register(email)}"}
-    return headers, client.get("/api/auth/me", headers=headers).json()
+    me = client.get("/api/auth/me", headers=headers).json()
+    _upgrade_plan(me["tenant_id"])
+    return headers, me
 
 
 def _invite(headers, email, role="USER"):

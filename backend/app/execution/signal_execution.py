@@ -8,12 +8,13 @@ from app.brokers.base import BrokerInterface
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
-from app.db.models import OrderRecord, User
+from app.db.models import OrderRecord, Tenant, User
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
 from app.execution.router import ExecutionResult, OrderRouter
 from app.instruments.registry import get_contract_spec
 from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
+from app.plans.limits import live_allowed, tenant_is_active
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
@@ -55,6 +56,11 @@ async def execute_signal_for_user(
         order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal received")
 
         kill_switch_reasons = await active_kill_switch_reasons(session, user.tenant_id, strategy_id)
+        tenant = await session.get(Tenant, user.tenant_id)
+        if tenant is not None and not tenant_is_active(tenant):
+            kill_switch_reasons.append(f"Organisation is {tenant.status}: no new orders")
+        if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+            kill_switch_reasons.append("Plan does not include live trading - order refused")
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(

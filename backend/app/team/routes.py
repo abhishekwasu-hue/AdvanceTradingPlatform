@@ -20,6 +20,8 @@ from app.core.config import FRONTEND_URL
 from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
 from app.db.session import get_session
+from app.plans.limits import check_can_add_member, limits as plan_limits, usage as plan_usage
+from app.plans.registry import get_plan
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 
@@ -91,15 +93,25 @@ class TenantResponse(BaseModel):
     id: int
     name: str
     plan: str
+    plan_name: str
+    plan_description: str
     status: str
     members: int
+    limits: dict
+    usage: dict
 
 
 @router.get("/tenant", response_model=TenantResponse)
 async def get_tenant(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> TenantResponse:
+    """The organisation, its plan and how much of each plan limit is in use - the numbers the
+    402 errors elsewhere refer to."""
     tenant = await session.get(Tenant, user.tenant_id)
+    plan = get_plan(tenant.plan)
     members = await session.scalar(select(func.count()).select_from(User).where(User.tenant_id == user.tenant_id, User.is_active.is_(True)))
-    return TenantResponse(id=tenant.id, name=tenant.name, plan=tenant.plan, status=tenant.status, members=members or 0)
+    return TenantResponse(
+        id=tenant.id, name=tenant.name, plan=plan.id, plan_name=plan.name, plan_description=plan.description,
+        status=tenant.status, members=members or 0, limits=plan_limits(plan), usage=await plan_usage(session, tenant.id),
+    )
 
 
 class TenantRenameRequest(BaseModel):
@@ -217,6 +229,7 @@ async def create_invite(
     if request.role not in INVITABLE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invite role must be one of {[r.value for r in INVITABLE_ROLES]}")
     email = request.email.lower()
+    await check_can_add_member(session, await session.get(Tenant, user.tenant_id))
     existing_user = await session.scalar(select(User).where(User.email == email))
     if existing_user is not None:
         detail = "That email already belongs to your team" if existing_user.tenant_id == user.tenant_id else "That email is already registered on the platform"

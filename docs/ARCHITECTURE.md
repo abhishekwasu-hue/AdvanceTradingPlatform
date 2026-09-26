@@ -1622,3 +1622,33 @@ VIEWER refused on eight write endpoints, per-user read state, webhook attributio
 round-trip of the migration. Invite links are shared by the owner (copy button) - emailing them
 automatically is deliberately left for when the platform has its own transactional email sender
 (the per-tenant alert SMTP channel is the tenant's mailbox, not the platform's).
+
+### B2: Plans, limits and tenant status
+
+`Tenant.plan` and `Tenant.status` existed since the multi-tenancy foundation but nothing read
+them. Now they mean something:
+
+* **Plan catalogue in code** (`app/plans/registry.py`): `free` (2 active deployments, paper only,
+  3 custom strategies, 1 member, 1 alert channel), `pro` (10 / LIVE / 25 / 5 / 2), `business`
+  (50 / LIVE / 200 / 25 / 2). Plans are code, not rows, because their limits are business rules
+  that change with releases and deserve review; an unknown plan id resolves to `free`, so a DB
+  typo can only restrict, never unlock live trading.
+* **Enforcement where the limit would be exceeded** (`app/plans/limits.py`, HTTP 402 with a
+  message naming the limit, the usage and what to do): deployment create (slot + LIVE
+  entitlement) and resume (LIVE entitlement only - a PAUSED row already holds its slot), custom
+  strategy create, invite create (active members + open invites), alert channel create (updates
+  are always allowed). STOPPED deployments free their slot.
+* **Suspension** (`status = suspended`): `require_trader`/`require_owner` now also refuse a
+  suspended organisation (403), so every trading and configuration write stops while reads keep
+  working - its people can still see positions and history. Belt and braces, the execution
+  pipeline REJECTs any order for a suspended tenant (webhooks included), and the worker keeps
+  monitoring exits but takes no entries, recording why on each deployment.
+* **Entitlement re-checked at fire time**: a LIVE deployment on a tenant whose plan was later
+  downgraded is skipped by the worker (and refused by the pipeline) - a plan change takes effect
+  on the next cycle, not the next deployment.
+* `GET /api/team/tenant` returns plan, limits and usage; the Team tab shows usage-vs-limit bars
+  and whether live trading is included. Changing plan/status is a SUPER_ADMIN action (B3).
+
+Verified by `tests/test_plans.py` (fallback, usage, deployment cap with pause/stop semantics, LIVE
+refused on free and allowed on pro, downgrade blocking resume, strategy/member/channel caps,
+suspended tenant read-only at the API, rejected in the pipeline, skipped by the worker).

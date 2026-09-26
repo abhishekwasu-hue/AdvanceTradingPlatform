@@ -679,8 +679,12 @@ export interface TenantInfo {
   id: number;
   name: string;
   plan: string;
+  plan_name: string;
+  plan_description: string;
   status: string;
   members: number;
+  limits: { active_deployments: number; live_trading: boolean; custom_strategies: number; members: number; alert_channels: number };
+  usage: { active_deployments: number; custom_strategies: number; members: number; alert_channels: number };
 }
 
 export interface InviteInfo {

@@ -24,6 +24,7 @@ from app.core.enums import DeploymentStatus, ExecutionMode
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.db.session import get_session
+from app.plans.limits import check_can_add_deployment, load_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,9 @@ async def create_deployment(
                        f"pick a base that divides every strategy timeframe ({', '.join(strategy.timeframes)})",
             )
 
+    tenant = await load_tenant(session, user.tenant_id)
+    await check_can_add_deployment(session, tenant, live=request.mode == ExecutionMode.LIVE)
+
     broker_name = request.broker_name
     if broker_name is not None and broker_name not in available_brokers():
         raise HTTPException(status_code=404, detail=f"Unknown broker '{broker_name}'")
@@ -237,6 +241,8 @@ async def resume_deployment(
     record = await _get_owned_or_404(deployment_id, user, session)
     if record.status == DeploymentStatus.STOPPED.value:
         raise HTTPException(status_code=409, detail="A stopped deployment cannot be resumed - create a new one")
+    # A PAUSED row already counts against the plan, so only the LIVE entitlement is re-checked.
+    await check_can_add_deployment(session, await load_tenant(session, user.tenant_id), live=record.mode == ExecutionMode.LIVE.value, adding=False)
     if record.mode == ExecutionMode.LIVE.value and record.broker_name:
         await _require_usable_broker(session, user.tenant_id, record.broker_name)
     record.status = DeploymentStatus.ACTIVE.value

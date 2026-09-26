@@ -198,7 +198,30 @@ export default function TeamPage() {
               <input className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
             </div>
             <button disabled={busy || !tenantName.trim() || tenantName === tenant.name} onClick={() => act("Organisation renamed.", () => api.renameTenant(tenantName))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm disabled:opacity-50">Rename</button>
-            <div className="text-xs text-muted">Plan: <span className="text-slate-200 font-semibold">{tenant.plan}</span> · Status: <span className="text-slate-200 font-semibold">{tenant.status}</span></div>
+            <div className="text-xs text-muted">Status: <span className={`font-semibold ${tenant.status === "active" ? "text-accent" : "text-danger"}`}>{tenant.status}</span></div>
+          </div>
+        </Card>
+      )}
+
+      {tenant && (
+        <Card title={`Plan: ${tenant.plan_name}`}>
+          <p className="text-xs text-muted mb-3">{tenant.plan_description}</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            {([
+              ["Active deployments", tenant.usage.active_deployments, tenant.limits.active_deployments],
+              ["Custom strategies", tenant.usage.custom_strategies, tenant.limits.custom_strategies],
+              ["Team members (incl. invites)", tenant.usage.members, tenant.limits.members],
+              ["Alert channels", tenant.usage.alert_channels, tenant.limits.alert_channels],
+            ] as [string, number, number][]).map(([label, used, max]) => (
+              <div key={label} className="rounded-lg border border-border bg-panel2/40 p-3">
+                <div className="text-muted">{label}</div>
+                <div className={`font-tabular text-lg font-extrabold ${used >= max ? "text-warn" : "text-slate-100"}`}>{used} <span className="text-muted text-xs font-semibold">/ {max}</span></div>
+                <div className="h-1.5 w-full rounded-full bg-panel2 overflow-hidden mt-1"><div className={`h-1.5 rounded-full ${used >= max ? "bg-warn" : "bg-brand"}`} style={{ width: `${Math.min(100, (used / Math.max(1, max)) * 100)}%` }} /></div>
+              </div>
+            ))}
+          </div>
+          <div className={`mt-3 text-xs font-semibold ${tenant.limits.live_trading ? "text-accent" : "text-warn"}`}>
+            {tenant.limits.live_trading ? "Live trading included." : "Paper trading only on this plan - LIVE deployments need Pro or Business. Contact support to upgrade."}
           </div>
         </Card>
       )}

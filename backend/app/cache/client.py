@@ -32,3 +32,24 @@ async def cache_set(key: str, value: str, ttl_seconds: int) -> None:
         await _get_client().set(key, value, ex=ttl_seconds)
     except Exception:
         pass
+
+
+async def cache_acquire_lock(key: str, holder: str, ttl_seconds: int) -> bool:
+    """Best-effort distributed lock (SET NX EX). Returns True when this holder now owns the lock
+    - or when Redis is unreachable: the lock exists to stop *two* worker replicas double-trading
+    when someone scales the service, and a Redis outage must not stop the *one* replica that is
+    running. Deployments with more than one worker replica therefore require Redis."""
+    try:
+        return bool(await _get_client().set(key, holder, nx=True, ex=ttl_seconds))
+    except Exception:
+        return True
+
+
+async def cache_release_lock(key: str, holder: str) -> None:
+    """Releases the lock only if this holder still owns it (never someone else's fresh lock)."""
+    try:
+        client = _get_client()
+        if await client.get(key) == holder:
+            await client.delete(key)
+    except Exception:
+        pass

@@ -43,6 +43,29 @@ services:
     ports:
       - "8000:8000"
 
+  # The autonomous trading engine - same image as the API, different entrypoint. Runs (and
+  # trades) independently of the API and of any browser; restart it, not the API, if it wedges.
+  # Exactly one replica unless Redis is reachable (its lock is what stops two replicas trading).
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.workers.trading_worker"]
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      REDIS_URL: redis://redis:6379/0
+      WORKER_CYCLE_SECONDS: ${WORKER_CYCLE_SECONDS:-60}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

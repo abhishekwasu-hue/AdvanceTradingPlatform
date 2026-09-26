@@ -37,6 +37,10 @@ ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").spl
 # and proxies /api. For the split dev setup (Vite on :5173, API on :8000) set it to the Vite URL.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
 
+# Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
+# 1-minute base candle; anything shorter mostly re-reads the same cached candles.
+WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+
 # The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
 # (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable
 # since the "right" rate drifts with the rate cycle and reasonable people disagree on which

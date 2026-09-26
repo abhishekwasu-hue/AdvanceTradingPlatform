@@ -66,7 +66,11 @@ class RiskConfig(BaseModel):
 
 class RiskDecision(BaseModel):
     approved: bool
-    quantity: int = 0
+    # float, not int: a crypto position sizes in fractional units (e.g. 0.0043 BTC) - see
+    # app/instruments/registry.py and RiskManager.validate_and_size's `contract_spec` parameter.
+    # Every non-fractional instrument (equity, index options, MCX) still always lands on a whole
+    # multiple of its lot size; this only widens the type, it doesn't change equity behavior.
+    quantity: float = 0.0
     reasons: List[str] = Field(default_factory=list)
 
 
@@ -76,7 +80,7 @@ class Trade(BaseModel):
     direction: SignalDirection
     entry_time: datetime
     entry_price: float
-    quantity: int
+    quantity: float
     stop_loss: float
     target1: float
     target2: Optional[float] = None

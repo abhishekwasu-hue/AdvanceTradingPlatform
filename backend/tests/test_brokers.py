@@ -13,7 +13,7 @@ from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.shoonya import ShoonyaBroker
-from app.brokers.stubs import AngelOneBroker, DhanBroker, FyersBroker
+from app.brokers.stubs import AngelOneBroker, CoinDCXBroker, DhanBroker, FyersBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 from app.core.enums import OrderSide
@@ -320,8 +320,8 @@ def test_shoonya_requires_core_credentials():
 
 # --- Registry --------------------------------------------------------------------
 
-def test_registry_lists_all_five_brokers():
-    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan"}
+def test_registry_lists_all_seven_brokers():
+    assert set(available_brokers()) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx"}
 
 
 def test_registry_returns_correct_adapter_type():
@@ -337,11 +337,91 @@ def test_registry_raises_for_unknown_broker():
         get_broker_adapter("not_a_real_broker", BrokerCredentials())
 
 
-# --- Stub adapters (Angel One / Fyers / Dhan) --------------------------------------
+# --- Stub adapters (Angel One / Fyers / Dhan / CoinDCX) -----------------------------
 
-@pytest.mark.parametrize("cls", [AngelOneBroker, FyersBroker, DhanBroker])
+@pytest.mark.parametrize("cls", [AngelOneBroker, FyersBroker, DhanBroker, CoinDCXBroker])
 def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
     broker = cls(BrokerCredentials(api_key="k"))
     assert isinstance(broker, BrokerInterface)
     with pytest.raises(NotImplementedError):
         run(broker.get_profile())
+
+
+def test_upstox_get_ltp_for_symbol_resolves_instrument_key_and_reads_by_token():
+    """Upstox wants an instrument_key in the request but keys its LTP *response* by
+    "NSE_EQ:RELIANCE", so the plain-symbol helper must match on the entry's instrument_token
+    rather than assume the response is keyed by what was asked for."""
+    instrument_master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_EQ|INE002A01018", "exchange": "NSE", "trading_symbol": "RELIANCE", "instrument_type": "EQ"},
+    ]).encode())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=instrument_master)
+        assert request.url.path == "/v2/market-quote/ltp"
+        assert parse_qs(request.url.query.decode())["instrument_key"] == ["NSE_EQ|INE002A01018"]
+        return httpx.Response(200, json={"status": "success", "data": {
+            "NSE_EQ:RELIANCE": {"last_price": 2501.25, "instrument_token": "NSE_EQ|INE002A01018"},
+        }})
+
+    creds = BrokerCredentials(api_key="clientid", access_token="tok789")
+    broker = UpstoxBroker(creds, client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    assert run(broker.get_ltp_for_symbol("RELIANCE", "NSE")) == 2501.25
+
+
+def test_upstox_intraday_candles_use_intraday_endpoint_and_sort_ascending():
+    instrument_master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_EQ|INE002A01018", "exchange": "NSE", "trading_symbol": "RELIANCE", "instrument_type": "EQ"},
+    ]).encode())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=instrument_master)
+        assert request.url.path == "/v2/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
+        return httpx.Response(200, json={"status": "success", "data": {"candles": [
+            ["2026-09-25T09:16:00+05:30", 101, 102, 100, 101.5, 20, 0],
+            ["2026-09-25T09:15:00+05:30", 100, 101, 99, 100.5, 10, 0],
+        ]}})
+
+    creds = BrokerCredentials(api_key="clientid", access_token="tok789")
+    broker = UpstoxBroker(creds, client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    bars = run(broker.get_intraday_candles("RELIANCE", "NSE", "1min"))
+    assert [b.open for b in bars] == [100, 101]
+    assert bars[0].timestamp.isoformat() == "2026-09-25T09:15:00+05:30"
+
+
+def test_place_stop_loss_order_default_is_slm_on_given_side():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(parse_qs(request.content.decode()))
+        return httpx.Response(200, json={"status": "success", "data": {"order_id": "SL-1"}})
+
+    creds = BrokerCredentials(api_key="key123", access_token="tok456")
+    broker = ZerodhaBroker(creds, client=_mock_client(handler, ZerodhaBroker.BASE_URL))
+    response = run(broker.place_stop_loss_order("RELIANCE", "NSE", OrderSide.SELL, 10, trigger_price=2450.0, tag="sl"))
+
+    assert response.order_id == "SL-1"
+    assert captured["order_type"] == ["SL-M"]
+    assert captured["transaction_type"] == ["SELL"]
+    assert captured["trigger_price"] == ["2450.0"]
+    assert captured["quantity"] == ["10.0"]
+
+
+def test_shoonya_maps_slm_to_noren_sl_mkt_with_trigger():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess", "actid": "FA1"})
+        captured.update(json.loads(parse_qs(request.content.decode())["jData"][0]))
+        return httpx.Response(200, json={"stat": "Ok", "norenordno": "N1"})
+
+    creds = BrokerCredentials(client_id="FA1", api_secret="pw", api_key="ak", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+    run(broker.place_stop_loss_order("RELIANCE-EQ", "NSE", OrderSide.SELL, 5, trigger_price=99.5))
+
+    assert captured["prctyp"] == "SL-MKT"
+    assert captured["trgprc"] == "99.5"
+    assert captured["trantype"] == "S"

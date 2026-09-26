@@ -36,8 +36,8 @@ export default function OptionChainPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Option Chain</h1>
-        <p className="text-sm text-muted">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
+        <h1 className="text-xl font-extrabold text-fuchsia-400">Option Chain</h1>
+        <p className="text-sm font-semibold text-fuchsia-400/60">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
       </div>
 
       <DemoDataBanner />
@@ -76,7 +76,7 @@ export default function OptionChainPage() {
           <button
             onClick={analyze}
             disabled={loading}
-            className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Analyzing…" : "Analyze Chain"}
           </button>

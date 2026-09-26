@@ -1,6 +1,11 @@
+from datetime import date
+
+import pytest
+
 from app.brokers.models import OptionChain, OptionChainRow
 from app.option_chain.analysis import analyze_option_chain, compute_max_pain
-from app.option_chain.models import Moneyness, OIActivity, OptionChainBias
+from app.option_chain.greeks import BSInputs, black_scholes
+from app.option_chain.models import Moneyness, OIActivity, OptionChainBias, OptionType
 
 
 def test_compute_max_pain_finds_minimum_payout_strike():
@@ -121,3 +126,32 @@ def test_call_resistance_and_put_support_strikes_ranked_by_oi():
     result = analyze_option_chain(_chain(rows), top_n=1)
     assert result.call_resistance_strikes == [110]
     assert result.put_support_strikes == [100]
+
+
+def test_greeks_solved_from_real_quoted_ltp_when_chain_has_enough_data():
+    as_of = date(2098, 12, 1)
+    known_price = black_scholes(
+        BSInputs(110.0, 110.0, 45 / 365.0, 0.07, 0.22, OptionType.CALL)
+    ).theoretical_price
+    rows = [OptionChainRow(strike=110, call_oi=20, call_ltp=known_price, put_oi=20, put_ltp=5.0)]
+    chain = OptionChain(underlying="NIFTY", expiry="2099-01-15", underlying_ltp=110.0, rows=rows)
+
+    result = analyze_option_chain(chain, as_of=as_of)
+    strike = result.strikes[0]
+    assert strike.call_greeks is not None
+    assert strike.call_greeks.implied_volatility == pytest.approx(0.22, abs=1e-3)
+    assert strike.call_greeks.delta > 0
+
+
+def test_greeks_none_when_expiry_or_underlying_ltp_missing():
+    rows = [OptionChainRow(strike=100, call_oi=20, call_ltp=5.0)]
+    chain_no_expiry = OptionChain(underlying="NIFTY", expiry="", underlying_ltp=100.0, rows=rows)
+    result = analyze_option_chain(chain_no_expiry)
+    assert result.strikes[0].call_greeks is None
+
+
+def test_greeks_none_for_unpriced_strikes():
+    # No call_ltp/call_iv supplied at all - never fabricate Greeks from nothing.
+    result = analyze_option_chain(_chain([OptionChainRow(strike=110, call_oi=20, put_oi=20)]))
+    assert result.strikes[0].call_greeks is None
+    assert result.strikes[0].put_greeks is None

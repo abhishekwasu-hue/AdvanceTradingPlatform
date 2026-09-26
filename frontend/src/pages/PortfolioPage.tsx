@@ -49,7 +49,7 @@ export default function PortfolioPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Portfolio</h1>
+        <h1 className="text-xl font-extrabold text-rose-400">Portfolio</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to see your portfolio overview.</p>
         </Card>
@@ -60,8 +60,8 @@ export default function PortfolioPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Portfolio</h1>
-        <p className="text-sm text-muted">Capital deployed across open positions and cumulative realized P&amp;L.</p>
+        <h1 className="text-xl font-extrabold text-rose-400">Portfolio</h1>
+        <p className="text-sm font-semibold text-rose-400/60">Capital deployed across open positions and cumulative realized P&amp;L.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}

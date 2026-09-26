@@ -107,8 +107,8 @@ export default function SignalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Signals</h1>
-        <p className="text-sm text-muted">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
+        <h1 className="text-xl font-extrabold text-sky-400">Signals</h1>
+        <p className="text-sm font-semibold text-sky-400/60">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
       </div>
 
       <DemoDataBanner />
@@ -159,7 +159,7 @@ export default function SignalsPage() {
             <button
               onClick={handleGenerate}
               disabled={!selected || loading}
-              className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+              className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
             >
               {loading ? "Generating…" : "Generate Signal"}
             </button>

@@ -71,7 +71,7 @@ class _StubBrokerAdapter(BrokerInterface):
         raise self._not_implemented("place_order")
 
     async def modify_order(
-        self, order_id: str, quantity: Optional[int] = None, price: Optional[float] = None,
+        self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
         trigger_price: Optional[float] = None, order_type: Optional[str] = None,
     ) -> BrokerOrderResponse:
         raise self._not_implemented("modify_order")
@@ -108,3 +108,15 @@ class FyersBroker(_StubBrokerAdapter):
 class DhanBroker(_StubBrokerAdapter):
     name = "dhan"
     docs_url = "https://dhanhq.co/docs/v2/"
+
+
+class CoinDCXBroker(_StubBrokerAdapter):
+    """A structural placeholder for crypto trading (see app/instruments/registry.py for the
+    CRYPTO contract specs this would eventually route orders for). CoinDCX is one of the larger
+    INR crypto exchanges with a documented public API; unlike the equity brokers above, no crypto
+    exchange adapter has real, tested I/O yet - wire one in here (or swap in a different exchange
+    entirely) before enabling CRYPTO in ExecutionMode.LIVE.
+    """
+
+    name = "coindcx"
+    docs_url = "https://docs.coindcx.com/"

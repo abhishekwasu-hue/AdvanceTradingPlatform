@@ -6,8 +6,10 @@ from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
 from app.execution.paper_broker import PaperBroker
+from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
+from app.trading.exit_logic import determine_exit_price
 
 __all__ = ["resample_ohlc", "run_backtest"]
 
@@ -36,6 +38,7 @@ def run_backtest(
     broker = PaperBroker()
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
+    contract_spec = get_contract_spec(symbol)
 
     open_trade: Trade | None = None
     trades: list[Trade] = []
@@ -47,25 +50,14 @@ def run_backtest(
         current_time = primary_df.index[i]
 
         if open_trade is not None:
-            is_long = open_trade.direction == SignalDirection.LONG
-            hit_sl = bar["low"] <= open_trade.stop_loss if is_long else bar["high"] >= open_trade.stop_loss
-            # Priority matches the live/paper exit logic (app/trading/exit_logic.py::check_exit):
-            # stop loss first, then target2 (the more ambitious level), then target1.
-            hit_target2 = open_trade.target2 is not None and (
-                bar["high"] >= open_trade.target2 if is_long else bar["low"] <= open_trade.target2
+            direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
+            outcome = determine_exit_price(
+                direction, open_trade.stop_loss, open_trade.target1, open_trade.target2,
+                bar["low"], bar["high"],
             )
-            hit_target1 = bar["high"] >= open_trade.target1 if is_long else bar["low"] <= open_trade.target1
 
-            exit_price = None
-            reason = ""
-            if hit_sl:
-                exit_price, reason = open_trade.stop_loss, "Stop Loss"
-            elif hit_target2:
-                exit_price, reason = open_trade.target2, "Target 2"
-            elif hit_target1:
-                exit_price, reason = open_trade.target1, "Target 1"
-
-            if exit_price is not None:
+            if outcome is not None:
+                reason, exit_price = outcome
                 closed = broker.close_trade(open_trade, exit_price, current_time, reason)
                 trades.append(closed)
                 equity += closed.pnl
@@ -79,7 +71,7 @@ def run_backtest(
             window = {tf: frames[tf][frames[tf].index <= current_time] for tf in strategy.timeframes}
             signal = strategy.analyze(window, symbol)
             if signal.is_tradeable:
-                decision = risk_manager.validate_and_size(signal, state)
+                decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
                 if decision.approved:
                     open_trade = broker.open_trade(signal, decision.quantity, current_time)
                     state.trades_today += 1

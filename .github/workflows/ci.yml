@@ -60,6 +60,16 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         run: alembic check
 
+      - name: Backup rehearsal (pg_dump -> restore into scratch DB -> verify, Phase E3)
+        env:
+          DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
+        run: python -m pytest tests/test_backup_scripts.py -q -rs
+
+      - name: Audit Python dependencies for known vulnerabilities (pip-audit)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -79,3 +89,38 @@ jobs:
 
       - name: Type-check + production build
         run: npm run build
+
+      - name: Audit production dependencies for known vulnerabilities (npm audit)
+        run: npm audit --omit=dev
+
+      - name: Audit all dependencies including dev-only (report only, does not fail the build)
+        if: always()
+        run: npm audit || true
+
+  container-scan:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t atp-backend:ci ./backend
+
+      - name: Build frontend image
+        run: docker build -t atp-frontend:ci ./frontend
+
+      - name: Scan backend image for OS/dependency vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: atp-backend:ci
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan frontend image for OS/dependency vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: atp-frontend:ci
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true

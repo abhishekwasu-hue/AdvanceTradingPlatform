@@ -28,10 +28,11 @@ def custom_strategy_info(record: CustomStrategyRecord) -> StrategyInfo:
 
 
 async def load_custom_strategy(strategy_id: str, user: Optional[User], session: AsyncSession) -> DeclarativeStrategy:
-    """Loads and rehydrates a user's saved custom strategy. Raises PermissionError if no user is
-    authenticated, and KeyError if the id doesn't exist or belongs to someone else - both cases
-    look identical from the outside (a bare 404-worthy KeyError) except PermissionError maps to
-    403, since a custom strategy's config is private to its owner.
+    """Loads and rehydrates a saved custom strategy belonging to the caller's tenant. Raises
+    PermissionError if no user is authenticated, and KeyError if the id doesn't exist or belongs
+    to a different tenant - both cases look identical from the outside (a bare 404-worthy
+    KeyError) except PermissionError maps to 403, since a custom strategy's config is private to
+    its owning tenant.
     """
     if user is None:
         raise PermissionError("Custom strategies require authentication")
@@ -43,7 +44,7 @@ async def load_custom_strategy(strategy_id: str, user: Optional[User], session: 
         raise KeyError(f"Unknown strategy id: {strategy_id}") from exc
 
     record = await session.get(CustomStrategyRecord, record_id)
-    if record is None or record.user_id != user.id:
+    if record is None or record.tenant_id != user.tenant_id:
         raise KeyError(f"Unknown strategy id: {strategy_id}")
 
     config = CustomStrategyConfig.model_validate_json(record.config_json)

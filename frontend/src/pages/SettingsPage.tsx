@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import AlertChannelsCard from "../components/AlertChannelsCard";
+import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
-import type { BrokerCredentialsInput, StoredBrokerInfo } from "../types";
+import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
 
 const CRED_FIELDS: { key: keyof BrokerCredentialsInput; label: string }[] = [
   { key: "api_key", label: "API Key" },
@@ -24,6 +26,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [webhook, setWebhook] = useState<WebhookTokenResponse | null>(null);
+  const [webhookCopied, setWebhookCopied] = useState(false);
+  const [oauthOutcome, setOauthOutcome] = useState<{ ok: boolean; text: string } | null>(null);
 
   function refreshStored() {
     api.listStoredBrokerCredentials().then(setStored).catch((e) => setError(String(e)));
@@ -37,8 +42,53 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (user) refreshStored();
+    if (user) {
+      refreshStored();
+      api.getWebhookToken().then(setWebhook).catch((e) => setError(String(e)));
+    }
   }, [user]);
+
+  // Landing back here after the Upstox OAuth round-trip: the callback redirects to the app root
+  // with the outcome in the query string. Show it once, then clean the URL.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("broker")) return;
+      const broker = params.get("broker") ?? "broker";
+      if (params.get("connected") === "1") {
+        setOauthOutcome({ ok: true, text: `Logged in to ${broker} - session token stored (encrypted) and marked valid for today.` });
+      } else if (params.get("error")) {
+        setOauthOutcome({ ok: false, text: `${broker} login did not complete: ${params.get("error")}` });
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+    } catch {
+      // URL APIs unavailable - nothing to show
+    }
+  }, []);
+
+  async function handleCopyWebhookUrl() {
+    if (!webhook) return;
+    try {
+      await navigator.clipboard.writeText(new URL(webhook.webhook_url, window.location.origin).toString());
+      setWebhookCopied(true);
+      setTimeout(() => setWebhookCopied(false), 2000);
+    } catch {
+      // clipboard unavailable - the URL is still shown in the input for manual copy
+    }
+  }
+
+  async function handleRotateWebhook() {
+    setBusy(true);
+    setError(null);
+    try {
+      setWebhook(await api.rotateWebhookToken());
+      setMessage("Webhook URL rotated - update it in TradingView's alert settings.");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleStore() {
     setBusy(true);
@@ -80,7 +130,7 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Settings</h1>
+        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to manage broker credentials.</p>
         </Card>
@@ -91,12 +141,28 @@ export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Settings</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
+        <p className="text-sm font-semibold text-yellow-400/60">
           Broker credentials are encrypted at rest (Fernet) and only ever decrypted in memory
           when you authenticate - never logged, never returned in plaintext by any API response.
         </p>
       </div>
+
+      {oauthOutcome && (
+        <div className={`rounded-lg border px-3 py-2 text-sm ${oauthOutcome.ok ? "border-accent/40 bg-accent/10 text-accent" : "border-danger/40 bg-danger/10 text-danger"}`}>
+          {oauthOutcome.text}
+        </div>
+      )}
+
+      <Card title="Broker session health">
+        <p className="text-xs text-muted mb-3">
+          Broker access tokens expire every trading morning (Upstox 03:30 IST, Kite 06:00 IST) and
+          cannot be refreshed automatically - log in again each day before the market opens, or
+          LIVE deployments stay on hold. For Upstox the button below completes the login in your
+          browser and stores the new token for you.
+        </p>
+        <BrokerTokenBanner key={stored.length} />
+      </Card>
 
       <Card title={`Connected brokers (${stored.length})`}>
         {stored.length === 0 ? (
@@ -110,7 +176,7 @@ export default function SettingsPage() {
                   <span className="text-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-accent hover:underline disabled:opacity-50">
+                  <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
                     Authenticate
                   </button>
                   <button onClick={() => handleDelete(s.broker_name)} className="text-xs text-danger hover:underline">
@@ -159,11 +225,48 @@ export default function SettingsPage() {
           <button
             onClick={handleStore}
             disabled={busy || !selectedBroker}
-            className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {busy ? "Saving…" : "Store credentials"}
           </button>
         </div>
+      </Card>
+
+      <AlertChannelsCard />
+
+      <Card title="TradingView webhook">
+        <p className="text-sm text-muted mb-3">
+          Paste this URL into a TradingView alert's "Webhook URL" field, with a JSON message body
+          of <code className="text-xs">{"{ strategy_id, symbol, direction, entry, stop_loss, target1, target2?, alert_id? }"}</code>.
+          Every alert runs through the same risk engine and kill switches as a manual paper
+          execute. The token in the URL is the only credential protecting it - rotate it if it
+          ever leaks.
+        </p>
+        {webhook && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <input
+                readOnly
+                className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono"
+                value={new URL(webhook.webhook_url, window.location.origin).toString()}
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                onClick={handleCopyWebhookUrl}
+                className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs shrink-0"
+              >
+                {webhookCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <button
+              onClick={handleRotateWebhook}
+              disabled={busy}
+              className="text-xs text-danger hover:underline disabled:opacity-50"
+            >
+              Rotate URL (invalidates the old one)
+            </button>
+          </div>
+        )}
       </Card>
     </div>
   );

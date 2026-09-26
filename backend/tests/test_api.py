@@ -90,7 +90,7 @@ def test_available_brokers_endpoint():
     response = client.get("/api/broker/available")
     assert response.status_code == 200
     brokers = response.json()["brokers"]
-    assert set(brokers) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan"}
+    assert set(brokers) == {"zerodha", "upstox", "shoonya", "angel_one", "fyers", "dhan", "coindcx"}
 
 
 def _candles_payload(prices):

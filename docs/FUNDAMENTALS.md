@@ -101,11 +101,10 @@ exists instead of a fabricated one).
 JSON API (the same endpoints community tools like `nsepython`/`jugaad-data` use) - written
 following the exact `BrokerInterface` adapter pattern already established for brokers, and its
 parsing logic is verified against realistic mocked HTTP responses
-(`tests/test_nse_provider.py`). **Its live network behavior is unverified**: this sandbox's
-network policy blocks `nseindia.com` entirely (confirmed via a direct 403 policy denial, the
-same class of block that stopped Docker Hub verification - see "Docker Deployment" in
-`docs/ARCHITECTURE.md`). Smoke-test it against the real site, and expect to adjust endpoint
-paths/headers, before relying on it - NSE does not publish a stable, versioned API contract.
+(`tests/test_nse_provider.py`). **Its live network behavior is unverified**: the development
+sandbox's network policy blocks `nseindia.com` entirely (confirmed via a direct 403 policy
+denial). Smoke-test it against the real site, and expect to adjust endpoint paths/headers, before
+relying on it - NSE does not publish a stable, versioned API contract.
 
 ## What's still out of scope (deliberately deferred, not silently dropped)
 

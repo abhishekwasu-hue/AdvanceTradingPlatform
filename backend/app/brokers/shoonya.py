@@ -30,6 +30,9 @@ SHOONYA_INTERVAL_MINUTES = {
 }
 
 PRODUCT_MAP = {"MIS": "I", "CNC": "C", "NRML": "M"}
+# Platform order types -> NorenApi `prctyp` codes. SL-M (stop-loss market) is what the autonomous
+# worker places as the protective stop after a live fill (BrokerInterface.place_stop_loss_order).
+ORDER_TYPE_MAP = {"MARKET": "MKT", "LIMIT": "LMT", "SL": "SL-LMT", "SL-M": "SL-MKT"}
 
 
 class ShoonyaBroker(BrokerInterface):
@@ -220,13 +223,14 @@ class ShoonyaBroker(BrokerInterface):
             "qty": str(order.quantity), "prc": str(order.price or 0),
             "prd": PRODUCT_MAP.get(order.product, "I"),
             "trantype": "B" if order.transaction_type == OrderSide.BUY else "S",
-            "prctyp": "MKT" if order.order_type == "MARKET" else "LMT",
+            "prctyp": ORDER_TYPE_MAP.get(order.order_type, "LMT"),
+            "trgprc": str(order.trigger_price or 0),
             "ret": order.validity, "remarks": order.tag or "",
         })
         return BrokerOrderResponse(order_id=body["norenordno"], status="OPEN", raw=body)
 
     async def modify_order(
-        self, order_id: str, quantity: Optional[int] = None, price: Optional[float] = None,
+        self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
         trigger_price: Optional[float] = None, order_type: Optional[str] = None,
     ) -> BrokerOrderResponse:
         payload = {"uid": self._uid, "norenordno": order_id}
@@ -235,7 +239,9 @@ class ShoonyaBroker(BrokerInterface):
         if price is not None:
             payload["prc"] = str(price)
         if order_type is not None:
-            payload["prctyp"] = "MKT" if order_type == "MARKET" else "LMT"
+            payload["prctyp"] = ORDER_TYPE_MAP.get(order_type, "LMT")
+        if trigger_price is not None:
+            payload["trgprc"] = str(trigger_price)
         body = await self._post("/ModifyOrder", payload)
         return BrokerOrderResponse(order_id=body["norenordno"], status="MODIFIED", raw=body)
 

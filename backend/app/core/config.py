@@ -15,7 +15,11 @@ DATABASE_URL = os.environ.get(
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_JWT_SECRET)
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_MINUTES = 60 * 24
+# Access tokens are short-lived on purpose (Phase C1): a stolen one is useful for minutes, and
+# revocation (logout, removed member, password change) is checked against the session row on
+# every request anyway. The browser silently refreshes with the long-lived, rotating refresh token.
+JWT_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_MINUTES", "15"))
+REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 
 # Fernet key for encrypting broker credentials at rest. Must be set via env in any real
 # deployment - a process-local fallback is generated here only so the app still runs for local
@@ -31,6 +35,35 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 # config - see validate_production_config(), which refuses to start with this default set in
 # ENVIRONMENT=production.
 ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+
+# Where a browser is sent back to after a broker OAuth login round-trip (Upstox). Defaults to
+# "/" - a same-origin redirect, correct for the docker-compose setup where nginx serves the UI
+# and proxies /api. For the split dev setup (Vite on :5173, API on :8000) set it to the Vite URL.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "/")
+
+# Comma-separated emails that are platform administrators (SUPER_ADMIN). Promoted at startup and
+# on registration; never demoted automatically. Keep this to the people who operate the platform.
+SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMAILS", "").split(",") if e.strip()}
+
+# Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
+# (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
+# keeps working; turn on once live trading is offered to customers.
+ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
+
+# Phase E1: observability. METRICS_TOKEN protects GET /metrics on the API (empty = open, fine
+# behind a private network); WORKER_METRICS_PORT serves the worker's own metrics (0 = off).
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+WORKER_METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9102"))
+
+# Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
+# 1-minute base candle; anything shorter mostly re-reads the same cached candles.
+WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
+
+# The risk-free rate used to discount option payoffs in the Black-Scholes Greeks engine
+# (app/option_chain/greeks.py) - approximates the short-term Indian G-Sec/repo yield. Configurable
+# since the "right" rate drifts with the rate cycle and reasonable people disagree on which
+# tenor to use; the default is a reasonable long-run approximation, not a live rate feed.
+RISK_FREE_RATE = float(os.environ.get("RISK_FREE_RATE", "0.07"))
 
 
 def validate_production_config() -> None:

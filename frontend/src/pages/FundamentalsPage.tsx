@@ -345,8 +345,8 @@ export default function FundamentalsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Fundamental Analysis</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-xl font-extrabold text-amber-400">Fundamental Analysis</h1>
+        <p className="text-sm font-semibold text-amber-400/60">
           Institutional-grade company intelligence: business quality, earnings quality, valuation, DCF, red flags, SWOT,
           and a composite Fundamental Score fused with the technical Signal Score. Every input is entered and cited -
           nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet).
@@ -389,7 +389,7 @@ export default function FundamentalsPage() {
               value={newCompany.industry} onChange={(e) => setNewCompany({ ...newCompany, industry: e.target.value })} />
             <input type="number" placeholder="Promoter holding %" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.promoter_holding_pct ?? ""} onChange={(e) => setNewCompany({ ...newCompany, promoter_holding_pct: Number(e.target.value) })} />
-            <button onClick={handleCreateCompany} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+            <button onClick={handleCreateCompany} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
               Save Company
             </button>
           </div>
@@ -406,7 +406,7 @@ export default function FundamentalsPage() {
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-3 py-2 text-sm ${tab === t ? "text-accent border-b-2 border-accent" : "text-muted hover:text-slate-200"}`}
+                className={`px-3 py-2 text-sm ${tab === t ? "text-brand border-b-2 border-brand" : "text-muted hover:text-slate-200"}`}
               >
                 {t}
               </button>
@@ -496,7 +496,7 @@ export default function FundamentalsPage() {
                   <input type="number" placeholder="Interest Expense" className="rounded bg-panel2 border border-border px-2 py-1.5"
                     value={newPeriod.interest_expense ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, interest_expense: Number(e.target.value) })} />
                 </div>
-                <button onClick={handleAddPeriod} disabled={!user} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                <button onClick={handleAddPeriod} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                   Save Period
                 </button>
               </Card>
@@ -505,7 +505,7 @@ export default function FundamentalsPage() {
 
           {tab === "Analysis" && (
             <div className="space-y-4">
-              <button onClick={loadAnalysis} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+              <button onClick={loadAnalysis} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                 Run Analysis
               </button>
               {analysisError && <div className="text-sm text-danger">{analysisError}</div>}
@@ -614,7 +614,7 @@ export default function FundamentalsPage() {
                     <input type="number" className="w-32 rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
                       value={marketPrice} onChange={(e) => setMarketPrice(Number(e.target.value))} />
                   </div>
-                  <button onClick={handleValuation} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                  <button onClick={handleValuation} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                     Compute Valuation
                   </button>
                 </div>
@@ -646,7 +646,7 @@ export default function FundamentalsPage() {
                   <input type="number" placeholder="Shares Outstanding" className="rounded bg-panel2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.shares_outstanding} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, shares_outstanding: Number(e.target.value) })} />
                 </div>
-                <button onClick={handleDcf} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleDcf} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Run DCF
                 </button>
                 {dcf && (
@@ -704,7 +704,7 @@ export default function FundamentalsPage() {
                   <div><label className="block text-xs text-muted mb-1">Management Quality (0-100)</label>
                     <input type="number" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={managementScore} onChange={(e) => setManagementScore(Number(e.target.value))} /></div>
                 </div>
-                <button onClick={handleScore} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleScore} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Compute Fundamental Score
                 </button>
               </Card>
@@ -736,7 +736,7 @@ export default function FundamentalsPage() {
                     <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={technicalDirection} onChange={(e) => setTechnicalDirection(e.target.value as typeof technicalDirection)}>
                       <option value="LONG">LONG</option><option value="SHORT">SHORT</option><option value="NO_TRADE">NO_TRADE</option>
                     </select></div>
-                  <button onClick={handleFusion} disabled={!score} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  <button onClick={handleFusion} disabled={!score} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                     Compute Final Bias
                   </button>
                 </div>
@@ -752,7 +752,7 @@ export default function FundamentalsPage() {
 
           {tab === "Intelligence Card" && (
             <Card title="One-Page Company Intelligence Card">
-              <button onClick={handleCard} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+              <button onClick={handleCard} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                 Generate Card
               </button>
               {card && (
@@ -778,7 +778,7 @@ export default function FundamentalsPage() {
                   <input placeholder="Min 3Y Revenue CAGR %" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.min_revenue_cagr_3y_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_revenue_cagr_3y_pct: e.target.value })} />
                   <input placeholder="Min Promoter Holding %" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.min_promoter_holding_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_promoter_holding_pct: e.target.value })} />
                 </div>
-                <button onClick={handleScreener} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleScreener} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Run Screener
                 </button>
                 {screenerError && <div className="mt-2 text-sm text-danger">{screenerError}</div>}
@@ -851,7 +851,7 @@ export default function FundamentalsPage() {
                   <input placeholder="Description" className="rounded bg-panel2 border border-border px-2 py-1.5 sm:col-span-2"
                     value={newCalendarEvent.description ?? ""} onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, description: e.target.value })} />
                 </div>
-                <button onClick={handleAddCalendarEvent} disabled={!user} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                <button onClick={handleAddCalendarEvent} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                   Add Event
                 </button>
               </Card>
@@ -867,7 +867,7 @@ export default function FundamentalsPage() {
               </Card>
 
               <Card title="Pre-Earnings Analysis">
-                <button onClick={handlePreEarnings} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handlePreEarnings} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Analyze Nearest Upcoming Results
                 </button>
                 {preEarningsError && <div className="text-sm text-danger">{preEarningsError}</div>}
@@ -884,7 +884,7 @@ export default function FundamentalsPage() {
               </Card>
 
               <Card title="Post-Earnings Analysis">
-                <button onClick={handlePostEarnings} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handlePostEarnings} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Analyze Most Recent Past Results
                 </button>
                 {postEarningsError && <div className="text-sm text-danger">{postEarningsError}</div>}
@@ -944,7 +944,7 @@ export default function FundamentalsPage() {
                       {Object.keys(sectorMetricSpecs).map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
                     </select>
                   </div>
-                  <button onClick={handleSectorSpecificAnalysis} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                  <button onClick={handleSectorSpecificAnalysis} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                     Analyze
                   </button>
                 </div>
@@ -999,7 +999,7 @@ export default function FundamentalsPage() {
                   </select>
                   <input type="number" placeholder="Value" className="rounded bg-panel2 border border-border px-2 py-1.5"
                     value={newSectorMetric.value} onChange={(e) => setNewSectorMetric({ ...newSectorMetric, value: Number(e.target.value) })} />
-                  <button onClick={handleAddSectorMetric} disabled={!user || !newSectorMetric.metric_code || !newSectorMetric.period_label} className="rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  <button onClick={handleAddSectorMetric} disabled={!user || !newSectorMetric.metric_code || !newSectorMetric.period_label} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                     Add Metric
                   </button>
                 </div>
@@ -1038,7 +1038,7 @@ export default function FundamentalsPage() {
               </Card>
 
               <Card title="Final Company Report">
-                <button onClick={handleGenerateReport} className="mb-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleGenerateReport} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
                   Generate Final Report
                 </button>
                 {finalReport && (
@@ -1110,7 +1110,7 @@ function QualitativeFactorForm({ symbol, disabled, onSaved }: { symbol: string; 
         <input placeholder="Note / citation" className="rounded bg-panel2 border border-border px-2 py-1.5"
           value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
-      <button onClick={handleSave} disabled={disabled || saving || !label} className="mt-3 rounded bg-accent/90 hover:bg-accent text-slate-900 font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+      <button onClick={handleSave} disabled={disabled || saving || !label} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
         {saving ? "Saving…" : "Save Factor"}
       </button>
     </Card>

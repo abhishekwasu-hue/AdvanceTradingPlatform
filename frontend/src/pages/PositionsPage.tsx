@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import ContractNoteCard from "../components/ContractNoteCard";
 import { Card, DirectionBadge, StatTile } from "../components/ui";
 import type { TradeRecord } from "../types";
 
@@ -52,7 +53,7 @@ export default function PositionsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold text-slate-100">Positions</h1>
+        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to see your paper-execute positions and trade history.
@@ -69,8 +70,8 @@ export default function PositionsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-100">Positions</h1>
-        <p className="text-sm text-muted">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
+        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
+        <p className="text-sm font-semibold text-emerald-400/60">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}
@@ -123,6 +124,8 @@ export default function PositionsPage() {
       <Card title="Trade history">
         <TradeTable rows={trades} emptyMessage="No trades yet." />
       </Card>
+
+      {user.role !== "VIEWER" && <ContractNoteCard onApplied={() => { refresh(); }} />}
     </div>
   );
 }
@@ -145,6 +148,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
             <th className="py-1 pr-3">Target 1</th>
             <th className="py-1 pr-3">Exit</th>
             <th className="py-1 pr-3">P&amp;L</th>
+            <th className="py-1 pr-3">Charges</th>
           </tr>
         </thead>
         <tbody>
@@ -162,6 +166,9 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
               <td className="py-1 pr-3">{r.exit_price?.toFixed(2) ?? "-"}</td>
               <td className={`py-1 pr-3 ${(r.pnl ?? 0) >= 0 ? "text-accent" : "text-danger"}`}>
                 {r.pnl?.toFixed(2) ?? "-"}
+              </td>
+              <td className="py-1 pr-3 text-muted" title={r.charges_source === "CONTRACT_NOTE" ? "Broker's actual charges from an uploaded contract note" : "Platform estimate (NSE cost model)"}>
+                {r.charges.toFixed(2)} <span className={`text-[10px] uppercase ${r.charges_source === "CONTRACT_NOTE" ? "text-accent" : "text-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
               </td>
             </tr>
           ))}

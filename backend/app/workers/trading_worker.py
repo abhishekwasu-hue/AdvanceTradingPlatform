@@ -41,7 +41,7 @@ from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_acquire_lock, cache_release_lock
 from app.core.config import WORKER_CYCLE_SECONDS
-from app.core.enums import DeploymentStatus, ExecutionMode, NotificationSeverity, NotificationType
+from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
@@ -51,6 +51,8 @@ from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments.master import sync_upstox
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
+from app.instruments.spreads import resolve_structure
+from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.freshness import candle_staleness
@@ -384,6 +386,10 @@ class TradingWorker:
 
         contract = None
         rules = ContractRules.from_deployment(dep)
+        structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
+        if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
+            # Phase H2: a multi-leg structure - resolved and executed as one position.
+            return await self._evaluate_structure(session, dep, user, market_data, adapters, now, signal, signal_ts, rules, structure_kind, frames)
         if rules.derived:
             # Phase F3: pick the option/future from the master at signal time, off the latest
             # underlying close. A rule that cannot be satisfied is recorded, never traded around.
@@ -430,6 +436,51 @@ class TradingWorker:
         dep.consecutive_failures = 0
         await session.commit()
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
+        return result.executed
+
+    async def _evaluate_structure(
+        self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,
+        adapters: Dict[str, BrokerInterface], now: datetime, signal, signal_ts, rules: ContractRules,
+        structure_kind: OptionStrategy, frames,
+    ) -> bool:
+        base = frames.get(dep.timeframe)
+        if base is None:
+            base = next(iter(frames.values()))
+        spot = float(base["close"].iloc[-1]) if len(base) else None
+        try:
+            structure = await resolve_structure(
+                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker),
+            )
+        except ContractResolutionError as exc:
+            dep.last_error = f"Structure not built: {exc}"
+            dep.last_signal_at = signal_ts if "not entered on" in str(exc) else dep.last_signal_at
+            await session.commit()
+            logger.warning("Deployment %s: %s", dep.id, exc)
+            return False
+        broker = None
+        if dep.mode == ExecutionMode.LIVE.value:
+            broker = adapters.get(dep.broker_name or "")
+            if broker is None:
+                dep.last_error = f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
+                await session.commit()
+                return False
+            uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
+            if uncertain:
+                dep.last_error = f"LIVE entry skipped: {uncertain}"
+                await session.commit()
+                return False
+        result = await execute_structure(
+            session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, structure=structure, rules=rules,
+            target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
+            idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
+            deployment_id=dep.id,
+        )
+        dep.last_signal_at = signal_ts
+        dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
+        dep.consecutive_failures = 0
+        await session.commit()
+        logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
         return result.executed
 
     async def reconcile_on_start(self) -> int:

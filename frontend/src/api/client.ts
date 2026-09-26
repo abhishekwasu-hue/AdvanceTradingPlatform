@@ -52,6 +52,7 @@ import type {
   TradeRecord,
   UserResponse,
   WorkerStatus,
+  PositionGreeks,
   ReconciliationReport,
   ReconciliationStatus,
 } from "../types";
@@ -393,6 +394,8 @@ export const api = {
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
   upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
+
+  positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
 
   reconciliationStatus: () => request<ReconciliationStatus>("/reconciliation/status"),
   runReconciliation: (brokerName: string) =>

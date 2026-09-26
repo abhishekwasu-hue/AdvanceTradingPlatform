@@ -27,6 +27,26 @@ from app.trading.persistence import build_trading_day_state, persist_trade
 logger = logging.getLogger(__name__)
 
 
+async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant_id: int, mode: str, strategy_id: str) -> list:
+    """Every reason a *new entry* must be refused before any sizing or routing: kill switches,
+    a suspended organisation, plan limits, the SEBI algo id and the broker-uncertain flag
+    (safety rule 8). Shared by the single-leg pipeline and the multi-leg executor (Phase H2)."""
+    reasons = await active_kill_switch_reasons(session, tenant_id, strategy_id)
+    if tenant is not None and not tenant_is_active(tenant):
+        reasons.append(f"Organisation is {tenant.status}: no new orders")
+    if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
+        reasons.append("Plan does not include live trading - order refused")
+    if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE and not (tenant and tenant.algo_id):
+        reasons.append("Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)")
+    if mode == ExecutionMode.LIVE.value:
+        # Phase G1 (safety rule 8): a FAILED live order leaves the broker's book unknown; no
+        # new LIVE entry until reconciliation says the books agree. Exits are unaffected.
+        uncertain = broker_uncertain_reason(tenant)
+        if uncertain:
+            reasons.append(uncertain)
+    return reasons
+
+
 async def execute_signal_for_user(
     session: AsyncSession, user: User, *, mode: str, strategy_id: str, signal: Signal,
     idempotency_key: Optional[str] = None, risk_config: Optional[RiskConfig] = None,
@@ -86,20 +106,8 @@ async def execute_signal_for_user(
         logger.info("Order created (%s, %s)", signal.direction.value, mode)
         order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal received")
 
-        kill_switch_reasons = await active_kill_switch_reasons(session, user.tenant_id, strategy_id)
         tenant = await session.get(Tenant, user.tenant_id)
-        if tenant is not None and not tenant_is_active(tenant):
-            kill_switch_reasons.append(f"Organisation is {tenant.status}: no new orders")
-        if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
-            kill_switch_reasons.append("Plan does not include live trading - order refused")
-        if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE and not (tenant and tenant.algo_id):
-            kill_switch_reasons.append("Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)")
-        if mode == ExecutionMode.LIVE.value:
-            # Phase G1 (safety rule 8): a FAILED live order leaves the broker's book unknown; no
-            # new LIVE entry until reconciliation says the books agree. Exits are unaffected.
-            uncertain = broker_uncertain_reason(tenant)
-            if uncertain:
-                kill_switch_reasons.append(uncertain)
+        kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id)
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(

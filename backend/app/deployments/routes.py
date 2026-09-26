@@ -23,11 +23,13 @@ from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.market_data.calendar import IST
 from datetime import datetime
-from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, SignalDirection, StrikeRule
+from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
+from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics
+from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
 )
@@ -83,6 +85,11 @@ class ContractRulesRequest(BaseModel):
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
     max_lots: Optional[int] = Field(default=None, ge=1, le=500)
     strike_filters: Optional[StrikeFiltersRequest] = None
+    # Phase H2: multi-leg structures. SINGLE keeps the Phase F single leg.
+    option_strategy: OptionStrategy = OptionStrategy.SINGLE
+    spread_width: int = Field(default=2, ge=1, le=20, description="wing distance in listed strike steps")
+    target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, description="take profit at this % of the credit captured")
+    stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, description="stop when the loss reaches this % of the credit")
 
     def normalised(self) -> "ContractRulesRequest":
         """Fills the defaults the kind implies and rejects rules that make no sense for it."""
@@ -93,6 +100,12 @@ class ContractRulesRequest(BaseModel):
             return self
         if self.strike_filters is not None and self.instrument_kind != InstrumentKind.OPTION:
             raise HTTPException(status_code=400, detail="Strike filters only apply to OPTION deployments")
+        if self.option_strategy != OptionStrategy.SINGLE and self.instrument_kind != InstrumentKind.OPTION:
+            raise HTTPException(status_code=400, detail="Multi-leg structures only apply to OPTION deployments")
+        if self.option_strategy == OptionStrategy.SINGLE and (self.target_credit_pct is not None or self.stop_credit_pct is not None):
+            raise HTTPException(status_code=400, detail="target/stop credit % only apply to spreads and condors")
+        if self.option_strategy != OptionStrategy.SINGLE and self.premium_stop_pct is not None:
+            raise HTTPException(status_code=400, detail="A spread is exited on its net credit (target/stop credit %), not a premium stop")
         if self.strike_filters is not None and self.strike_filters.min_iv_pct is not None and self.strike_filters.max_iv_pct is not None \
                 and self.strike_filters.min_iv_pct > self.strike_filters.max_iv_pct:
             raise HTTPException(status_code=400, detail="min_iv_pct must not exceed max_iv_pct")
@@ -104,16 +117,21 @@ class ContractRulesRequest(BaseModel):
             if self.option_position or self.strike_rule or self.strike_offset or self.premium_stop_pct is not None:
                 raise HTTPException(status_code=400, detail="Futures take only an expiry rule (and max_lots)")
             return ContractRulesRequest(**data)
-        position = self.option_position or OptionPosition.BUY
+        position = self.option_position or (OptionPosition.WRITE if self.option_strategy != OptionStrategy.SINGLE else OptionPosition.BUY)
+        if self.option_strategy != OptionStrategy.SINGLE:
+            position = OptionPosition.WRITE  # the structure sells its short legs; the wings are bought
         data["option_position"] = position
         data["strike_rule"] = self.strike_rule or StrikeRule.ATM
         if data["strike_rule"] == StrikeRule.ATM and self.strike_offset:
             raise HTTPException(status_code=400, detail="strike_offset only applies to ITM/OTM strikes")
         if data["strike_rule"] != StrikeRule.ATM and not self.strike_offset:
             data["strike_offset"] = 1
-        if self.premium_stop_pct is None:
+        if self.premium_stop_pct is None and self.option_strategy == OptionStrategy.SINGLE:
             data["premium_stop_pct"] = DEFAULT_PREMIUM_STOP_PCT[position]
         return ContractRulesRequest(**data)
+
+    def structure_description(self) -> str:
+        return describe_structure(self.option_strategy, self.spread_width, self.to_rules())
 
     def to_rules(self) -> ContractRules:
         return ContractRules(
@@ -171,6 +189,10 @@ class DeploymentResponse(BaseModel):
     premium_stop_pct: Optional[float] = None
     max_lots: Optional[int] = None
     strike_filters: Optional[dict] = None
+    option_strategy: str = "SINGLE"
+    spread_width: int = 2
+    target_credit_pct: Optional[float] = None
+    stop_credit_pct: Optional[float] = None
     contract_rules: str = "underlying"
 
     @classmethod
@@ -187,8 +209,21 @@ class DeploymentResponse(BaseModel):
             expiry_rule=record.expiry_rule, strike_rule=record.strike_rule, strike_offset=record.strike_offset or 0,
             premium_stop_pct=record.premium_stop_pct, max_lots=record.max_lots,
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
-            contract_rules=describe_rules(ContractRules.from_deployment(record)),
+            option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
+            target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
+            contract_rules=describe_deployment(record),
         )
+
+
+def describe_deployment(record: StrategyDeploymentRecord) -> str:
+    rules = ContractRules.from_deployment(record)
+    strategy = OptionStrategy(record.option_strategy or "SINGLE")
+    if rules.kind == InstrumentKind.OPTION and strategy != OptionStrategy.SINGLE:
+        text = describe_structure(strategy, record.spread_width or 2, rules)
+        if rules.strike_filters.active:
+            text += f", filters: {rules.strike_filters.describe()}"
+        return text
+    return describe_rules(rules)
 
 
 async def _open_position_counts(session: AsyncSession, tenant_id: int) -> dict:
@@ -302,6 +337,8 @@ async def create_deployment(
         strike_rule=rules.strike_rule.value if rules.strike_rule else None,
         strike_offset=rules.strike_offset, premium_stop_pct=rules.premium_stop_pct, max_lots=rules.max_lots,
         strike_filters=rules.filters_json(),
+        option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
+        target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
     )
     session.add(record)
     try:
@@ -313,7 +350,7 @@ async def create_deployment(
         ) from exc
     await write_audit_log(
         session, user.tenant_id, user.id, "deployment_created",
-        f"#{record.id} {record.strategy_id} {record.symbol} {record.mode} via {broker_name} ({describe_rules(rules.to_rules())})",
+        f"#{record.id} {record.strategy_id} {record.symbol} {record.mode} via {broker_name} ({describe_deployment(record)})",
     )
     await session.commit()
     await session.refresh(record)
@@ -340,11 +377,36 @@ async def preview_contract(
     out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()),
            "spot": spot, "spot_source": spot_source, "contracts": {}}
     chain_provider = None
-    if rules.strike_filters is not None:
+    adapter = None
+    if rules.strike_filters is not None or rules.option_strategy != OptionStrategy.SINGLE:
         adapter = await _usable_adapter(session, user.tenant_id)
         if adapter is not None:
             async def chain_provider(underlying_symbol: str, expiry):  # noqa: E306
                 return await adapter.get_option_chain(underlying_symbol, expiry)
+    if rules.instrument_kind == InstrumentKind.OPTION and rules.option_strategy != OptionStrategy.SINGLE:
+        out["rules"] = rules.structure_description()
+        out["structures"] = {}
+        for direction in (SignalDirection.LONG, SignalDirection.SHORT):
+            try:
+                structure = await resolve_structure(
+                    session, request.symbol, rules.to_rules(), rules.option_strategy, direction,
+                    spread_width=rules.spread_width, spot=spot, today=today, chain_provider=chain_provider,
+                )
+            except ContractResolutionError as exc:
+                out["structures"][direction.value] = {"error": str(exc)}
+                continue
+            entry = structure.as_dict()
+            if adapter is not None:
+                try:
+                    premiums = {leg.contract.tradingsymbol: await contract_ltp(adapter, leg.contract) for leg in structure.legs}
+                    entry["metrics"] = structure_metrics(structure, premiums, target_credit_pct=rules.target_credit_pct,
+                                                         stop_credit_pct=rules.stop_credit_pct).as_dict()
+                except Exception as exc:  # noqa: BLE001 - premiums are a bonus in a preview
+                    entry["metrics_error"] = str(exc)
+            else:
+                entry["metrics_error"] = "No usable broker session to quote the legs - log in from Settings to see credit, max loss and breakeven"
+            out["structures"][direction.value] = entry
+        return out
     for direction in (SignalDirection.LONG, SignalDirection.SHORT):
         try:
             resolved = await resolve_contract(session, request.symbol, rules.to_rules(), direction, spot=spot, today=today,

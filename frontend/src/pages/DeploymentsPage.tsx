@@ -9,12 +9,15 @@ import { Card, StatTile } from "../components/ui";
 import {
   BASE_TIMEFRAMES,
   type ContractPreview,
+  type ContractRules,
   type CustomStrategyResponse,
   type Deployment,
   type ExecutionMode,
   type ExpiryRule,
   type InstrumentKind,
   type OptionPosition,
+  type OptionStrategy,
+  type StrikeFilters,
   type StrikeRule,
   type StoredBrokerInfo,
   type StrategyInfo,
@@ -81,14 +84,38 @@ export default function DeploymentsPage() {
   const [maxLots, setMaxLots] = useState<string>("");
   const [spot, setSpot] = useState<string>("");
   const [preview, setPreview] = useState<ContractPreview | null>(null);
+  // Phase H: multi-leg structure and chain-based strike filters.
+  const [structure, setStructure] = useState<OptionStrategy>("SINGLE");
+  const [spreadWidth, setSpreadWidth] = useState(2);
+  const [targetCredit, setTargetCredit] = useState<string>("");
+  const [stopCredit, setStopCredit] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({});
 
-  function contractRules() {
+  function strikeFilters(): StrikeFilters | null {
+    const out: Record<string, number> = {};
+    let any = false;
+    ["min_oi", "min_volume", "max_spread_pct", "min_iv_pct", "max_iv_pct", "target_delta", "min_premium", "max_premium"].forEach((k) => {
+      if (filters[k] !== undefined && filters[k] !== "") { out[k] = Number(filters[k]); any = true; }
+    });
+    if (filters.search_steps) out.search_steps = Number(filters.search_steps);
+    return any ? (out as StrikeFilters) : null;
+  }
+
+  function contractRules(): ContractRules {
     if (kind === "UNDERLYING") return { instrument_kind: kind as InstrumentKind };
     if (kind === "FUTURE") return { instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule, max_lots: maxLots ? Number(maxLots) : null };
+    const base: ContractRules = {
+      instrument_kind: kind as InstrumentKind, expiry_rule: expiryRule, strike_rule: strikeRule,
+      strike_offset: strikeRule === "ATM" ? 0 : strikeOffset, max_lots: maxLots ? Number(maxLots) : null,
+      strike_filters: strikeFilters(), option_strategy: structure,
+    };
+    if (structure === "SINGLE") {
+      return { ...base, option_position: position, premium_stop_pct: premiumStop ? Number(premiumStop) : null };
+    }
     return {
-      instrument_kind: kind as InstrumentKind, option_position: position, expiry_rule: expiryRule, strike_rule: strikeRule,
-      strike_offset: strikeRule === "ATM" ? 0 : strikeOffset, premium_stop_pct: premiumStop ? Number(premiumStop) : null,
-      max_lots: maxLots ? Number(maxLots) : null,
+      ...base, spread_width: spreadWidth,
+      target_credit_pct: targetCredit ? Number(targetCredit) : null, stop_credit_pct: stopCredit ? Number(stopCredit) : null,
     };
   }
 
@@ -312,6 +339,17 @@ export default function DeploymentsPage() {
             </div>
             {kind === "OPTION" && (
               <div>
+                <label className="block text-xs text-muted mb-1">Structure</label>
+                <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={structure} onChange={(e) => { setStructure(e.target.value as OptionStrategy); setPreview(null); }}>
+                  <option value="SINGLE">Single option</option>
+                  <option value="BULL_PUT_SPREAD">Bull put spread (LONG)</option>
+                  <option value="BEAR_CALL_SPREAD">Bear call spread (SHORT)</option>
+                  <option value="IRON_CONDOR">Iron condor (either)</option>
+                </select>
+              </div>
+            )}
+            {kind === "OPTION" && structure === "SINGLE" && (
+              <div>
                 <label className="block text-xs text-muted mb-1">Position</label>
                 <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => { setPosition(e.target.value as OptionPosition); setPreview(null); }}>
                   <option value="BUY">Buy (LONG→CE, SHORT→PE)</option>
@@ -344,10 +382,26 @@ export default function DeploymentsPage() {
                     )}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %</label>
-                  <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
-                </div>
+                {structure === "SINGLE" ? (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Premium {position === "BUY" ? "stop" : "ceiling"} %</label>
+                    <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-muted mb-1">Wing width (steps)</label>
+                      <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted mb-1">Target / stop (% of credit)</label>
+                      <div className="flex gap-1">
+                        <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} title="take profit once this % of the credit is captured" />
+                        <input type="number" min={10} max={500} placeholder="100" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} title="stop when the loss reaches this % of the credit" />
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
             {kind !== "UNDERLYING" && (
@@ -357,11 +411,36 @@ export default function DeploymentsPage() {
               </div>
             )}
           </div>
+          {kind === "OPTION" && (
+            <div className="mt-2 text-xs">
+              <button onClick={() => setShowFilters(!showFilters)} className="text-sky-400 hover:underline">
+                {showFilters ? "Hide" : "Show"} strike filters {strikeFilters() ? "(active)" : ""}
+              </button>
+              {showFilters && (
+                <div className="mt-2 grid sm:grid-cols-4 gap-2">
+                  {([["min_oi", "Min OI"], ["min_volume", "Min volume"], ["max_spread_pct", "Max bid/ask spread %"], ["target_delta", "Target |delta| (0-1)"],
+                     ["min_iv_pct", "Min IV %"], ["max_iv_pct", "Max IV %"], ["min_premium", "Min premium"], ["max_premium", "Max premium"]] as const).map(([k, label]) => (
+                    <div key={k}>
+                      <label className="block text-[10px] text-muted mb-0.5">{label}</label>
+                      <input type="number" step="any" className="w-full rounded bg-panel2 border border-border px-2 py-1 text-xs" value={filters[k] ?? ""}
+                        onChange={(e) => { setFilters({ ...filters, [k]: e.target.value }); setPreview(null); }} />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-4 text-[11px] text-muted">
+                    Applied at signal time to the live option chain around the rule strike: strikes failing liquidity, IV, delta or premium bounds are skipped;
+                    with a target delta the passing strike nearest that delta wins. If the chain cannot be checked the trade is refused, never guessed.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {kind !== "UNDERLYING" && (
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-muted">
                 {kind === "OPTION"
-                  ? "The strategy signals on the underlying; at signal time the contract is picked from the instrument master and the spot. Exits follow the strategy's underlying levels, with the premium " + (position === "BUY" ? "stop" : "ceiling") + " as a safety net."
+                  ? structure === "SINGLE"
+                    ? "The strategy signals on the underlying; at signal time the contract is picked from the instrument master and the spot. Exits follow the strategy's underlying levels, with the premium " + (position === "BUY" ? "stop" : "ceiling") + " as a safety net."
+                    : "A defined-risk credit structure sold at signal time: short leg at the rule strike, protective wing(s) the chosen width away. Sized in lots off max loss; closed as one position on the credit target/stop, a short-strike breach, or square-off."
                   : "The strategy signals on the underlying; the future of the chosen expiry is traded in the signal's direction."}
               </span>
               {kind === "OPTION" && (
@@ -381,6 +460,33 @@ export default function DeploymentsPage() {
                       <div className="text-warn mt-1">{c.error}</div>
                     ) : (
                       <div className="text-slate-300 mt-1">{c.exchange} · expiry {c.expiry}{c.strike ? ` · strike ${c.strike}` : ""}{c.right ? ` ${c.right}` : ""} · lot {c.lot_size}</div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="sm:col-span-2 text-[11px] text-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
+            </div>
+          )}
+          {preview && preview.structures && (
+            <div className="mt-2 grid sm:grid-cols-2 gap-2 text-xs">
+              {(["LONG", "SHORT"] as const).map((dir) => {
+                const st = preview.structures![dir];
+                return (
+                  <div key={dir} className="rounded border border-border bg-panel2/60 p-2">
+                    <div className="text-[10px] uppercase tracking-wide text-muted">{dir} signal → {"error" in st ? "no structure" : st.strategy.replace(/_/g, " ").toLowerCase()}</div>
+                    {"error" in st ? (
+                      <div className="text-warn mt-1">{st.error}</div>
+                    ) : (
+                      <div className="mt-1 space-y-0.5 text-slate-300">
+                        {st.legs.map((l) => <div key={l.tradingsymbol}>{l.side} {l.tradingsymbol} <span className="text-muted">({l.role.toLowerCase()} leg)</span></div>)}
+                        <div className="text-muted">expiry {st.expiry} · lot {st.lot_size} · {st.width_points} pts wide</div>
+                        {st.metrics ? (
+                          <div className="text-[11px] mt-1">
+                            credit <span className="text-accent">{st.metrics.net_credit}</span>/unit · max loss <span className="text-danger">{st.metrics.max_loss}</span>/unit ({(st.metrics.max_loss * st.lot_size).toLocaleString()}/lot)
+                            · breakeven {st.metrics.breakevens.join(" / ")} · exit at value ≤ {st.metrics.target_value} or ≥ {st.metrics.stop_value}
+                          </div>
+                        ) : st.metrics_error ? <div className="text-warn text-[11px] mt-1">{st.metrics_error}</div> : null}
+                      </div>
                     )}
                   </div>
                 );

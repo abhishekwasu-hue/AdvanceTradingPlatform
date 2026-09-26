@@ -77,6 +77,10 @@ export interface TradeRecord {
   charges_source?: "ESTIMATED" | "CONTRACT_NOTE" | string;
   broker_order_id?: string | null;
   exit_order_id?: string | null;
+  leg_group_id?: string | null;
+  leg_role?: string | null;
+  option_strategy?: string | null;
+  group_meta?: StructureMetrics & { lots?: number; quantity?: number } | null;
 }
 
 export interface ContractNoteSummary {
@@ -665,12 +669,32 @@ export interface Deployment {
   premium_stop_pct: number | null;
   max_lots: number | null;
   contract_rules: string;
+  strike_filters?: StrikeFilters | null;
+  option_strategy?: OptionStrategy;
+  spread_width?: number;
+  target_credit_pct?: number | null;
+  stop_credit_pct?: number | null;
 }
 
 export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
 export type OptionPosition = "BUY" | "WRITE";
 export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY";
 export type StrikeRule = "ATM" | "ITM" | "OTM";
+
+export type OptionStrategy = "SINGLE" | "BULL_PUT_SPREAD" | "BEAR_CALL_SPREAD" | "IRON_CONDOR";
+
+export interface StrikeFilters {
+  min_oi?: number | null;
+  min_volume?: number | null;
+  max_spread_pct?: number | null;
+  min_iv_pct?: number | null;
+  max_iv_pct?: number | null;
+  target_delta?: number | null;
+  delta_tolerance?: number;
+  min_premium?: number | null;
+  max_premium?: number | null;
+  search_steps?: number;
+}
 
 export interface ContractRules {
   instrument_kind: InstrumentKind;
@@ -680,6 +704,59 @@ export interface ContractRules {
   strike_offset?: number;
   premium_stop_pct?: number | null;
   max_lots?: number | null;
+  strike_filters?: StrikeFilters | null;
+  option_strategy?: OptionStrategy;
+  spread_width?: number;
+  target_credit_pct?: number | null;
+  stop_credit_pct?: number | null;
+}
+
+export interface StrikeCandidate {
+  strike: number;
+  ltp: number | null;
+  oi: number | null;
+  volume: number | null;
+  spread_pct: number | null;
+  iv_pct: number | null;
+  delta: number | null;
+  passes: boolean;
+  reasons: string[];
+}
+
+export interface StructureMetrics {
+  net_credit: number;
+  max_profit: number;
+  max_loss: number;
+  breakevens: number[];
+  target_value: number;
+  stop_value: number;
+  short_strikes: Record<string, number>;
+  legs: { role: string; side: string; tradingsymbol: string; strike: number | null; right: string | null; premium: number }[];
+}
+
+export interface StructurePreview {
+  strategy: OptionStrategy;
+  underlying_symbol: string;
+  lot_size: number;
+  expiry: string;
+  width_points: number;
+  notes: string[];
+  legs: (ResolvedContract & { role: string; side: string })[];
+  metrics?: StructureMetrics;
+  metrics_error?: string;
+}
+
+export interface PositionGreeks {
+  as_of: string;
+  spot: Record<string, number>;
+  legs: {
+    trade_id: number; symbol: string; leg_group_id: string | null; leg_role: string | null; option_strategy: string | null;
+    quantity: number; premium: number; implied_volatility: number; delta: number; gamma: number; theta: number; vega: number;
+    position_delta: number; position_gamma: number; position_theta: number; position_vega: number;
+  }[];
+  groups: { leg_group_id: string | null; legs: number; net_delta: number; net_gamma: number; net_theta: number; net_vega: number }[];
+  net: { net_delta: number; net_gamma: number; net_theta: number; net_vega: number };
+  skipped: { trade_id: number; reason: string }[];
 }
 
 export interface DeploymentCreateRequest extends ContractRules {
@@ -706,6 +783,8 @@ export interface ResolvedContract {
   entry_side: "BUY" | "SELL";
   trade_direction: "LONG" | "SHORT";
   position: OptionPosition | null;
+  selection_notes?: string[];
+  selection?: { strike: number; rule_strike: number; notes: string[]; candidates: StrikeCandidate[] } | null;
 }
 
 export interface ContractPreview {
@@ -716,6 +795,7 @@ export interface ContractPreview {
   spot?: number | null;
   spot_source?: "supplied" | "broker" | null;
   contracts?: Record<"LONG" | "SHORT", ResolvedContract | { error: string }>;
+  structures?: Record<"LONG" | "SHORT", StructurePreview | { error: string }>;
 }
 
 export type BrokerTokenStatus = "UNKNOWN" | "VALID" | "EXPIRED" | "MISSING";

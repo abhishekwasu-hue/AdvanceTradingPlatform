@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AlertChannelsCard from "../components/AlertChannelsCard";
+import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
 import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
@@ -23,6 +24,7 @@ export default function SettingsPage() {
   const [stored, setStored] = useState<StoredBrokerInfo[]>([]);
   const [selectedBroker, setSelectedBroker] = useState("");
   const [credentials, setCredentials] = useState<BrokerCredentialsInput>({});
+  const [accountLabel, setAccountLabel] = useState("primary");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,8 +97,8 @@ export default function SettingsPage() {
     setError(null);
     setMessage(null);
     try {
-      await api.storeBrokerCredentials(selectedBroker, credentials);
-      setMessage(`Credentials for ${selectedBroker} stored (encrypted at rest).`);
+      await api.storeBrokerCredentials(selectedBroker, credentials, accountLabel || "primary");
+      setMessage(`Credentials for ${selectedBroker} (${accountLabel || "primary"}) stored (encrypted at rest).`);
       setCredentials({});
       refreshStored();
     } catch (e) {
@@ -120,8 +122,8 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDelete(name: string) {
-    await api.deleteBrokerCredentials(name);
+  async function handleDelete(name: string, label = "primary") {
+    await api.deleteBrokerCredentials(name, label);
     refreshStored();
   }
 
@@ -170,16 +172,17 @@ export default function SettingsPage() {
         ) : (
           <div className="space-y-1.5">
             {stored.map((s) => (
-              <div key={s.broker_name} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
+              <div key={`${s.broker_name}/${s.account_label ?? "primary"}`} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
                 <div>
                   <span className="font-medium text-slate-200 capitalize">{s.broker_name}</span>{" "}
+                  <span className="text-xs text-muted">/ {s.account_label ?? "primary"}</span>{" "}
                   <span className="text-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
                     Authenticate
                   </button>
-                  <button onClick={() => handleDelete(s.broker_name)} className="text-xs text-danger hover:underline">
+                  <button onClick={() => handleDelete(s.broker_name, s.account_label ?? "primary")} className="text-xs text-danger hover:underline">
                     Remove
                   </button>
                 </div>
@@ -202,6 +205,11 @@ export default function SettingsPage() {
                 <option key={b} value={b} className="capitalize">{b}</option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-muted mb-1">Account label <span className="text-muted/70">(a second account at the same broker gets its own label)</span></label>
+            <input className="w-full sm:w-64 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={accountLabel} onChange={(e) => setAccountLabel(e.target.value)} placeholder="primary" />
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3">
@@ -231,6 +239,8 @@ export default function SettingsPage() {
           </button>
         </div>
       </Card>
+
+      <BrokerAccountsCard refreshKey={stored.length} />
 
       <AlertChannelsCard />
 

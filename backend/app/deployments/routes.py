@@ -21,6 +21,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
+from app.accounts.service import get_account
 from app.market_data.calendar import IST
 from datetime import datetime
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
@@ -152,6 +153,8 @@ class DeploymentCreateRequest(ContractRulesRequest):
     timeframe: str = Field(default="1min", description="Base candle interval fetched from the broker")
     mode: ExecutionMode = ExecutionMode.PAPER
     broker_name: Optional[str] = None
+    # Phase I2: route LIVE orders to one broker account (None = the broker's default account).
+    broker_account_id: Optional[int] = None
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -193,6 +196,7 @@ class DeploymentResponse(BaseModel):
     spread_width: int = 2
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
+    broker_account_id: Optional[int] = None
     contract_rules: str = "underlying"
 
     @classmethod
@@ -211,7 +215,7 @@ class DeploymentResponse(BaseModel):
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
-            contract_rules=describe_deployment(record),
+            broker_account_id=record.broker_account_id, contract_rules=describe_deployment(record),
         )
 
 
@@ -242,8 +246,8 @@ async def _get_owned_or_404(deployment_id: int, user: User, session: AsyncSessio
     return record
 
 
-async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_name: str) -> BrokerCredentialRecord:
-    record = await get_credential_record(session, tenant_id, broker_name)
+async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_name: str, account_label: str = "primary") -> BrokerCredentialRecord:
+    record = await get_credential_record(session, tenant_id, broker_name, account_label)
     if record is None:
         raise HTTPException(status_code=409, detail=f"No stored credentials for broker '{broker_name}' - add them in Settings first")
     if not token_is_usable(record):
@@ -306,10 +310,20 @@ async def create_deployment(
     if broker_name is not None and broker_name not in available_brokers():
         raise HTTPException(status_code=404, detail=f"Unknown broker '{broker_name}'")
 
+    account = None
+    if request.broker_account_id is not None:
+        account = await get_account(session, user.tenant_id, request.broker_account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="No such broker account")
+        if broker_name and account.broker_name != broker_name:
+            raise HTTPException(status_code=400, detail=f"Account #{account.id} belongs to {account.broker_name}, not {broker_name}")
+        broker_name = account.broker_name
     if request.mode == ExecutionMode.LIVE:
         if not broker_name:
             raise HTTPException(status_code=400, detail="LIVE deployments must name the broker to trade through")
-        await _require_usable_broker(session, user.tenant_id, broker_name)
+        if account is not None and account.status != "ACTIVE":
+            raise HTTPException(status_code=409, detail=f"Broker account #{account.id} is {account.status} - enable it before deploying LIVE to it")
+        await _require_usable_broker(session, user.tenant_id, broker_name, account.account_label if account is not None else "primary")
     else:
         # PAPER still needs a market-data source. Fall back to the tenant's only stored broker.
         if broker_name is None:
@@ -339,6 +353,7 @@ async def create_deployment(
         strike_filters=rules.filters_json(),
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
+        broker_account_id=account.id if account is not None else None,
     )
     session.add(record)
     try:

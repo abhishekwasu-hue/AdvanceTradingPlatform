@@ -8,6 +8,7 @@ import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import {
   BASE_TIMEFRAMES,
+  type BrokerAccount,
   type ContractPreview,
   type ContractRules,
   type CustomStrategyResponse,
@@ -72,6 +73,8 @@ export default function DeploymentsPage() {
   const [timeframe, setTimeframe] = useState<string>("1min");
   const [mode, setMode] = useState<ExecutionMode>("PAPER");
   const [brokerName, setBrokerName] = useState<string>("");
+  const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
+  const [accountId, setAccountId] = useState<string>("");
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
   // Phase F2: what to trade when the strategy signals on the symbol.
@@ -152,6 +155,7 @@ export default function DeploymentsPage() {
       setBrokers(b);
       if (b.length === 1) setBrokerName(b[0].broker_name);
     }).catch(() => {});
+    api.listAccounts().then(setAccounts).catch(() => setAccounts([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -173,7 +177,8 @@ export default function DeploymentsPage() {
     setMessage(null);
     try {
       const created = await api.createDeployment({
-        strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null, ...contractRules(),
+        strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
+        broker_account_id: accountId ? Number(accountId) : null, ...contractRules(),
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -322,10 +327,23 @@ export default function DeploymentsPage() {
             <label className="block text-xs text-muted mb-1">Broker</label>
             <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm capitalize" value={brokerName} onChange={(e) => setBrokerName(e.target.value)}>
               <option value="">{brokers.length === 1 ? `auto (${brokers[0].broker_name})` : "select…"}</option>
-              {brokers.map((b) => <option key={b.broker_name} value={b.broker_name} className="capitalize">{b.broker_name}</option>)}
+              {Array.from(new Set(brokers.map((b) => b.broker_name))).map((b) => <option key={b} value={b} className="capitalize">{b}</option>)}
             </select>
           </div>
         </div>
+        {mode === "LIVE" && accounts.filter((a) => !brokerName || a.broker_name === brokerName).length > 1 && (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span className="text-muted">Account</span>
+            <select className="rounded bg-panel2 border border-border px-2 py-1 text-xs" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+              <option value="">default account</option>
+              {accounts.filter((a) => !brokerName || a.broker_name === brokerName).map((a) => (
+                <option key={a.id} value={a.id} disabled={a.status !== "ACTIVE"}>
+                  #{a.id} {a.display_name ?? `${a.broker_name} ${a.account_label}`}{a.is_default ? " ★" : ""}{a.status !== "ACTIVE" ? " (disabled)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
           <div className="grid sm:grid-cols-6 gap-3 items-end">

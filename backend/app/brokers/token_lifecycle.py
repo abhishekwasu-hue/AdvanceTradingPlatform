@@ -92,11 +92,14 @@ def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncCl
 
 
 async def get_credential_record(
-    session: AsyncSession, tenant_id: int, broker_name: str
+    session: AsyncSession, tenant_id: int, broker_name: str, account_label: str = "primary",
 ) -> Optional[BrokerCredentialRecord]:
+    """One broker credential row. Phase I2: several accounts at the same broker are several rows
+    told apart by `account_label`; callers that predate accounts mean the primary one."""
     return await session.scalar(
         select(BrokerCredentialRecord).where(
-            BrokerCredentialRecord.tenant_id == tenant_id, BrokerCredentialRecord.broker_name == broker_name
+            BrokerCredentialRecord.tenant_id == tenant_id, BrokerCredentialRecord.broker_name == broker_name,
+            BrokerCredentialRecord.account_label == (account_label or "primary"),
         )
     )
 

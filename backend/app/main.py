@@ -46,6 +46,7 @@ from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.notifications.routes import router as notifications_router
 from app.reconciliation.routes import router as reconciliation_router
+from app.accounts.routes import router as accounts_router
 from app.scanner.engine import run_scanner
 from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
@@ -117,6 +118,7 @@ app.include_router(risk_hierarchy_router)
 app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
+app.include_router(accounts_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)

@@ -59,6 +59,7 @@ from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
+from app.accounts.service import routing_for_deployment
 from app.notifications.service import notify
 from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
 
@@ -97,6 +98,10 @@ class CycleReport:
     master_synced: Optional[Dict[str, int]] = None
     stale_skips: int = 0
     reconciled: int = 0
+
+
+def _adapter_key(broker_name: str, account_label: str) -> str:
+    return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
 
 
 def _chain_provider(broker: BrokerInterface):
@@ -246,19 +251,29 @@ class TradingWorker:
             logger.warning("Tenant %s has deployments but no user to act as - skipping", tenant_id)
             return
 
-        # One adapter per broker the tenant trades through, only when its token is proven.
+        # One adapter per (broker, account) the tenant trades through, only when its token is
+        # proven. Keys are "<broker>" for the primary account and "<broker>@<label>" otherwise
+        # (Phase I2); `_adapter_key` maps a deployment to its key.
         adapters: Dict[str, BrokerInterface] = {}
-        broker_names = {d.broker_name for d in deployments if d.broker_name}
-        if not broker_names:
+        routes: Dict[int, tuple] = {}   # deployment id -> (account, label)
+        keys = set()
+        for dep in deployments:
+            if not dep.broker_name:
+                continue
+            account, label = await routing_for_deployment(session, tenant_id, dep.broker_name, dep.broker_account_id)
+            routes[dep.id] = (account, label)
+            keys.add((dep.broker_name, label))
+        if not keys:
             # PAPER deployments still need a market-data source: any stored broker will do.
             records = list(await session.scalars(
                 select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
             ))
-            broker_names = {r.broker_name for r in records}
-        for name in broker_names:
-            adapter = await self._usable_adapter(session, tenant_id, name, user.id, now)
+            keys = {(r.broker_name, r.account_label or "primary") for r in records}
+        for name, label in keys:
+            adapter = await self._usable_adapter(session, tenant_id, name, user.id, now, account_label=label)
             if adapter is not None:
-                adapters[name] = adapter
+                adapters[_adapter_key(name, label)] = adapter
+        self._routes = routes
 
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
@@ -272,8 +287,9 @@ class TradingWorker:
 
         # Exits before entries.
         now_ist = now.astimezone(IST)
-        live_broker = next((a for n, a in adapters.items() if n in {d.broker_name for d in deployments if d.mode == "LIVE"}), None)
-        live_broker_name = next((n for n, a in adapters.items() if a is live_broker), None)
+        live_keys = {_adapter_key(d.broker_name, routes.get(d.id, (None, "primary"))[1]) for d in deployments if d.mode == "LIVE" and d.broker_name}
+        live_broker = next((a for n, a in adapters.items() if n in live_keys), None)
+        live_broker_name = next((n.split("@")[0] for n, a in adapters.items() if a is live_broker), None)
 
         # Phase G1: while the tenant is flagged "broker uncertain", reconcile every cycle so the
         # LIVE block lifts on its own the moment the books agree (and stays while they do not).
@@ -408,28 +424,19 @@ class TradingWorker:
                 logger.warning("Deployment %s: %s", dep.id, exc)
                 return False
 
-        broker = None
-        if dep.mode == ExecutionMode.LIVE.value:
-            broker = adapters.get(dep.broker_name or "")
-            if broker is None:
-                dep.last_error = f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
-                await session.commit()
-                logger.warning("Deployment %s LIVE entry skipped: token not usable", dep.id)
-                return False
-            uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
-            if uncertain:
-                # Safety rule 8: execute_signal_for_user would refuse this too (as a REJECTED
-                # order per signal bar); the worker stops one step earlier and says why.
-                dep.last_error = f"LIVE entry skipped: {uncertain}"
-                await session.commit()
-                logger.warning("Deployment %s LIVE entry skipped: broker uncertain", dep.id)
-                return False
+        broker, account_id, skip = await self._live_broker_for(session, dep, adapters)
+        if skip:
+            dep.last_error = skip
+            await session.commit()
+            logger.warning("Deployment %s LIVE entry skipped: %s", dep.id, skip)
+            return False
 
         idempotency_key = f"deployment:{dep.id}:{signal_ts.isoformat()}"
         result, order = await execute_signal_for_user(
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
+            account_id=account_id,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -458,23 +465,16 @@ class TradingWorker:
             await session.commit()
             logger.warning("Deployment %s: %s", dep.id, exc)
             return False
-        broker = None
-        if dep.mode == ExecutionMode.LIVE.value:
-            broker = adapters.get(dep.broker_name or "")
-            if broker is None:
-                dep.last_error = f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
-                await session.commit()
-                return False
-            uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
-            if uncertain:
-                dep.last_error = f"LIVE entry skipped: {uncertain}"
-                await session.commit()
-                return False
+        broker, account_id, skip = await self._live_broker_for(session, dep, adapters)
+        if skip:
+            dep.last_error = skip
+            await session.commit()
+            return False
         result = await execute_structure(
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, structure=structure, rules=rules,
             target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
             idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
-            deployment_id=dep.id,
+            deployment_id=dep.id, account_id=account_id,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -482,6 +482,26 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
         return result.executed
+
+    async def _live_broker_for(self, session: AsyncSession, dep: StrategyDeploymentRecord, adapters: Dict[str, BrokerInterface]):
+        """(broker adapter, account id, skip reason) for a deployment's entry. PAPER: no broker.
+        LIVE: the adapter of the routed account, refused when the account is DISABLED, the
+        session is not usable, or the tenant is broker-uncertain (safety rule 8)."""
+        account, label = getattr(self, "_routes", {}).get(dep.id, (None, "primary"))
+        account_id = account.id if account is not None else None
+        if dep.mode != ExecutionMode.LIVE.value:
+            return None, account_id, None
+        if account is not None and account.status != "ACTIVE":
+            return None, account_id, f"LIVE entry skipped: broker account #{account.id} ({account.broker_name}/{account.account_label}) is {account.status}"
+        broker = adapters.get(_adapter_key(dep.broker_name or "", label))
+        if broker is None:
+            return None, account_id, f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
+        uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
+        if uncertain:
+            # execute_signal_for_user would refuse this too (as a REJECTED order per signal
+            # bar); the worker stops one step earlier and says why.
+            return None, account_id, f"LIVE entry skipped: {uncertain}"
+        return broker, account_id, None
 
     async def reconcile_on_start(self) -> int:
         """Reconcile every tenant holding an open LIVE trade against that trade's broker before
@@ -549,9 +569,9 @@ class TradingWorker:
         )
 
     async def _usable_adapter(
-        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime,
+        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime, account_label: str = "primary",
     ) -> Optional[BrokerInterface]:
-        record = await get_credential_record(session, tenant_id, broker_name)
+        record = await get_credential_record(session, tenant_id, broker_name, account_label)
         if record is None:
             return None
         last_check = self._last_token_check.get(record.id, 0.0)
@@ -567,13 +587,13 @@ class TradingWorker:
                 return None
         if not token_is_usable(record, now):
             return None
-        return self._rate_limited(tenant_id, broker_name, build_adapter(record))
+        return self._rate_limited(tenant_id, f"{broker_name}@{account_label}", build_adapter(record))
 
-    def _rate_limited(self, tenant_id: int, broker_name: str, adapter: BrokerInterface) -> BrokerInterface:
-        key = (tenant_id, broker_name)
+    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+        key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
-            budget = self._budgets[key] = RateBudget(limits_for(broker_name))
+            budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
         return RateLimitedBroker(adapter, budget)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:

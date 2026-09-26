@@ -390,6 +390,26 @@ export interface MarkPriceResponse {
 export interface StoredBrokerInfo {
   broker_name: string;
   updated_at: string;
+  account_label?: string;
+}
+
+// Phase I2: broker accounts
+export interface BrokerAccount {
+  id: number;
+  broker_name: string;
+  account_label: string;
+  broker_account_identifier: string | null;
+  display_name: string | null;
+  status: "ACTIVE" | "DISABLED";
+  is_default: boolean;
+  available_balance: number | null;
+  used_margin: number | null;
+  realized_pnl: number | null;
+  unrealized_pnl: number | null;
+  last_sync_at: string | null;
+  last_sync_error: string | null;
+  token_status: string | null;
+  created_at: string | null;
 }
 
 export interface BrokerCredentialsInput {
@@ -766,6 +786,7 @@ export interface DeploymentCreateRequest extends ContractRules {
   timeframe: string;
   mode: ExecutionMode;
   broker_name?: string | null;
+  broker_account_id?: number | null;
 }
 
 export interface ResolvedContract {

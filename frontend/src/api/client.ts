@@ -52,6 +52,7 @@ import type {
   TradeRecord,
   UserResponse,
   WorkerStatus,
+  BrokerAccount,
   PositionGreeks,
   RiskEvent,
   RiskLimit,
@@ -361,11 +362,16 @@ export const api = {
 
   listStoredBrokerCredentials: () => request<StoredBrokerInfo[]>("/broker/credentials"),
 
-  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput) =>
-    request<void>(`/broker/${name}/credentials`, { method: "POST", body: JSON.stringify(credentials) }),
+  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
 
-  deleteBrokerCredentials: (name: string) =>
-    request<void>(`/broker/${name}/credentials`, { method: "DELETE" }),
+  listAccounts: () => request<BrokerAccount[]>("/accounts"),
+  syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
+  setAccountStatus: (id: number, enabled: boolean) => request<BrokerAccount>(`/accounts/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
+  setDefaultAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/default`, { method: "POST" }),
+
+  deleteBrokerCredentials: (name: string, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "DELETE" }),
 
   authenticateBroker: (name: string) =>
     request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),

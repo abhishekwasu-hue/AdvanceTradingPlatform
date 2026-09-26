@@ -62,6 +62,8 @@ from app.trading.persistence import persist_signal_history
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
+from app.deployments.routes import router as deployments_router
+from app.market_data.routes import router as market_holidays_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -102,6 +104,8 @@ app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)
 app.include_router(workers_router)
+app.include_router(deployments_router)
+app.include_router(market_holidays_router)
 
 _default_risk_config = RiskConfig()
 

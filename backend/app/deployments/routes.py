@@ -6,6 +6,7 @@ PAPER still needs *some* stored broker for market data, and the base timeframe m
 build every timeframe the strategy consumes - because the worker acting on a half-configured
 deployment would only discover the problem at 09:15 with real money on the line.
 """
+import json
 import logging
 import re
 from typing import List, Optional
@@ -26,6 +27,7 @@ from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, Instrume
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.instruments import master as instrument_master
+from app.instruments.strike_selection import StrikeFilters
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
 )
@@ -53,6 +55,23 @@ def _timeframe_minutes(label: str) -> Optional[int]:
     return value * {"min": 1, "h": 60, "d": 24 * 60}[unit]
 
 
+class StrikeFiltersRequest(BaseModel):
+    """Phase H1: option-chain filters applied around the rule strike at resolution time."""
+    min_oi: Optional[float] = Field(default=None, ge=0)
+    min_volume: Optional[float] = Field(default=None, ge=0)
+    max_spread_pct: Optional[float] = Field(default=None, gt=0, le=100)
+    min_iv_pct: Optional[float] = Field(default=None, ge=0, le=500)
+    max_iv_pct: Optional[float] = Field(default=None, ge=0, le=500)
+    target_delta: Optional[float] = Field(default=None, gt=0, lt=1)
+    delta_tolerance: float = Field(default=0.10, gt=0, le=0.5)
+    min_premium: Optional[float] = Field(default=None, ge=0)
+    max_premium: Optional[float] = Field(default=None, gt=0)
+    search_steps: int = Field(default=5, ge=1, le=20)
+
+    def to_filters(self) -> StrikeFilters:
+        return StrikeFilters(**self.model_dump())
+
+
 class ContractRulesRequest(BaseModel):
     """Phase F2: what to trade when the strategy signals on `symbol`. Defaults reproduce the
     original behaviour (trade the underlying itself)."""
@@ -63,14 +82,23 @@ class ContractRulesRequest(BaseModel):
     strike_offset: int = Field(default=0, ge=0, le=10)
     premium_stop_pct: Optional[float] = Field(default=None, ge=5, le=95)
     max_lots: Optional[int] = Field(default=None, ge=1, le=500)
+    strike_filters: Optional[StrikeFiltersRequest] = None
 
     def normalised(self) -> "ContractRulesRequest":
         """Fills the defaults the kind implies and rejects rules that make no sense for it."""
         data = self.model_dump()
         if self.instrument_kind == InstrumentKind.UNDERLYING:
-            if any(data[k] for k in ("option_position", "expiry_rule", "strike_rule", "premium_stop_pct")) or self.strike_offset:
+            if any(data[k] for k in ("option_position", "expiry_rule", "strike_rule", "premium_stop_pct")) or self.strike_offset or self.strike_filters:
                 raise HTTPException(status_code=400, detail="Option/future rules only apply when instrument_kind is OPTION or FUTURE")
             return self
+        if self.strike_filters is not None and self.instrument_kind != InstrumentKind.OPTION:
+            raise HTTPException(status_code=400, detail="Strike filters only apply to OPTION deployments")
+        if self.strike_filters is not None and self.strike_filters.min_iv_pct is not None and self.strike_filters.max_iv_pct is not None \
+                and self.strike_filters.min_iv_pct > self.strike_filters.max_iv_pct:
+            raise HTTPException(status_code=400, detail="min_iv_pct must not exceed max_iv_pct")
+        if self.strike_filters is not None and self.strike_filters.min_premium is not None and self.strike_filters.max_premium is not None \
+                and self.strike_filters.min_premium > self.strike_filters.max_premium:
+            raise HTTPException(status_code=400, detail="min_premium must not exceed max_premium")
         data["expiry_rule"] = self.expiry_rule or ExpiryRule.NEAREST
         if self.instrument_kind == InstrumentKind.FUTURE:
             if self.option_position or self.strike_rule or self.strike_offset or self.premium_stop_pct is not None:
@@ -92,7 +120,11 @@ class ContractRulesRequest(BaseModel):
             kind=self.instrument_kind, position=self.option_position, expiry_rule=self.expiry_rule or ExpiryRule.NEAREST,
             strike_rule=self.strike_rule or StrikeRule.ATM, strike_offset=self.strike_offset,
             premium_stop_pct=self.premium_stop_pct, max_lots=self.max_lots,
+            strike_filters=self.strike_filters.to_filters() if self.strike_filters else StrikeFilters(),
         )
+
+    def filters_json(self) -> Optional[str]:
+        return self.strike_filters.to_filters().to_json() if self.strike_filters else None
 
 
 class DeploymentCreateRequest(ContractRulesRequest):
@@ -138,6 +170,7 @@ class DeploymentResponse(BaseModel):
     strike_offset: int = 0
     premium_stop_pct: Optional[float] = None
     max_lots: Optional[int] = None
+    strike_filters: Optional[dict] = None
     contract_rules: str = "underlying"
 
     @classmethod
@@ -153,6 +186,7 @@ class DeploymentResponse(BaseModel):
             instrument_kind=record.instrument_kind or "UNDERLYING", option_position=record.option_position,
             expiry_rule=record.expiry_rule, strike_rule=record.strike_rule, strike_offset=record.strike_offset or 0,
             premium_stop_pct=record.premium_stop_pct, max_lots=record.max_lots,
+            strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
             contract_rules=describe_rules(ContractRules.from_deployment(record)),
         )
 
@@ -267,6 +301,7 @@ async def create_deployment(
         expiry_rule=rules.expiry_rule.value if rules.expiry_rule else None,
         strike_rule=rules.strike_rule.value if rules.strike_rule else None,
         strike_offset=rules.strike_offset, premium_stop_pct=rules.premium_stop_pct, max_lots=rules.max_lots,
+        strike_filters=rules.filters_json(),
     )
     session.add(record)
     try:
@@ -304,13 +339,26 @@ async def preview_contract(
     today = datetime.now(IST).date()
     out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()),
            "spot": spot, "spot_source": spot_source, "contracts": {}}
+    chain_provider = None
+    if rules.strike_filters is not None:
+        adapter = await _usable_adapter(session, user.tenant_id)
+        if adapter is not None:
+            async def chain_provider(underlying_symbol: str, expiry):  # noqa: E306
+                return await adapter.get_option_chain(underlying_symbol, expiry)
     for direction in (SignalDirection.LONG, SignalDirection.SHORT):
         try:
-            resolved = await resolve_contract(session, request.symbol, rules.to_rules(), direction, spot=spot, today=today)
+            resolved = await resolve_contract(session, request.symbol, rules.to_rules(), direction, spot=spot, today=today,
+                                              chain_provider=chain_provider)
             out["contracts"][direction.value] = resolved.as_dict()
         except ContractResolutionError as exc:
             out["contracts"][direction.value] = {"error": str(exc)}
     return out
+
+
+async def _usable_adapter(session: AsyncSession, tenant_id: int):
+    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+    usable = [r for r in stored if token_is_usable(r)]
+    return build_adapter(usable[0]) if usable else None
 
 
 async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str) -> Optional[float]:

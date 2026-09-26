@@ -82,6 +82,7 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
         "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
     }
     notes = [f"{contract.entry_side.value} {contract.tradingsymbol} (lot {contract.lot_size}) for {signal.direction.value} {contract.underlying_symbol} @ {signal.entry}"]
+    notes.extend(contract.selection_notes)  # Phase H1: why this strike
     max_quantity = rules.max_lots * contract.lot_size if rules.max_lots else None
 
     if contract.kind == InstrumentKind.FUTURE:

@@ -97,6 +97,14 @@ class CycleReport:
     reconciled: int = 0
 
 
+def _chain_provider(broker: BrokerInterface):
+    """Phase H1: the option chain the strike filters are judged against - the tenant's own
+    broker session, fetched only when a deployment actually carries filters."""
+    async def provider(underlying_symbol: str, expiry):
+        return await broker.get_option_chain(underlying_symbol, expiry)
+    return provider
+
+
 class TradingWorker:
     def __init__(
         self, session_factory: async_sessionmaker, *, cycle_seconds: int = WORKER_CYCLE_SECONDS,
@@ -386,6 +394,7 @@ class TradingWorker:
             try:
                 contract = await resolve_contract(
                     session, dep.symbol, rules, signal.direction, spot=spot, today=now.astimezone(IST).date(),
+                    chain_provider=_chain_provider(market_data.broker),
                 )
             except ContractResolutionError as exc:
                 dep.last_error = f"Contract not resolved: {exc}"

@@ -258,18 +258,27 @@ class UpstoxBroker(BrokerInterface):
 
         rows = []
         for entry in data:
-            call = entry.get("call_options", {}).get("market_data", {})
-            put = entry.get("put_options", {}).get("market_data", {})
+            call = entry.get("call_options", {}).get("market_data", {}) or {}
+            put = entry.get("put_options", {}).get("market_data", {}) or {}
+            call_greeks = entry.get("call_options", {}).get("option_greeks", {}) or {}
+            put_greeks = entry.get("put_options", {}).get("option_greeks", {}) or {}
             rows.append(
                 OptionChainRow(
                     strike=entry["strike_price"],
                     call_oi=call.get("oi"), call_ltp=call.get("ltp"), call_volume=call.get("volume"),
+                    call_change_oi=(call.get("oi") - call.get("prev_oi")) if call.get("oi") is not None and call.get("prev_oi") is not None else None,
+                    call_bid=call.get("bid_price"), call_ask=call.get("ask_price"),
+                    call_iv=call_greeks.get("iv"), call_delta=call_greeks.get("delta"),
                     put_oi=put.get("oi"), put_ltp=put.get("ltp"), put_volume=put.get("volume"),
+                    put_change_oi=(put.get("oi") - put.get("prev_oi")) if put.get("oi") is not None and put.get("prev_oi") is not None else None,
+                    put_bid=put.get("bid_price"), put_ask=put.get("ask_price"),
+                    put_iv=put_greeks.get("iv"), put_delta=put_greeks.get("delta"),
                 )
             )
         return OptionChain(
             underlying=underlying,
             expiry=expiry.isoformat() if expiry else (data[0].get("expiry", "") if data else ""),
+            underlying_ltp=next((e.get("underlying_spot_price") for e in data if e.get("underlying_spot_price")), None),
             rows=sorted(rows, key=lambda r: r.strike),
         )
 

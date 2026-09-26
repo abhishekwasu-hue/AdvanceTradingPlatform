@@ -13,15 +13,17 @@ Rules
 * strike: ATM = nearest listed strike to spot; ITM/OTM = `offset` listed steps in/out of the
   money for that right (CE in-the-money is below spot, PE in-the-money is above).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Optional, Sequence
+from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OrderSide, SignalDirection, StrikeRule
 from app.db.models import InstrumentRecord, StrategyDeploymentRecord
+from app.brokers.models import OptionChain
 from app.instruments import master
+from app.instruments.strike_selection import SelectionResult, StrikeFilters, StrikeSelectionError, select_strike_with_chain
 
 DEFAULT_PREMIUM_STOP_PCT = {OptionPosition.BUY: 30.0, OptionPosition.WRITE: 50.0}
 
@@ -40,6 +42,8 @@ class ContractRules:
     strike_offset: int = 0
     premium_stop_pct: Optional[float] = None
     max_lots: Optional[int] = None
+    # Phase H1: chain-based filters around the rule strike (None/inactive = rule strike only).
+    strike_filters: StrikeFilters = StrikeFilters()
 
     @classmethod
     def from_deployment(cls, dep: StrategyDeploymentRecord) -> "ContractRules":
@@ -52,6 +56,7 @@ class ContractRules:
             strike_offset=dep.strike_offset or 0,
             premium_stop_pct=dep.premium_stop_pct if dep.premium_stop_pct is not None else (DEFAULT_PREMIUM_STOP_PCT.get(position) if position else None),
             max_lots=dep.max_lots,
+            strike_filters=StrikeFilters.from_json(getattr(dep, "strike_filters", None)),
         )
 
     @property
@@ -75,6 +80,9 @@ class ResolvedContract:
     entry_side: OrderSide           # broker order side for the entry leg
     trade_direction: SignalDirection  # LONG for bought options/long futures, SHORT for written options/short futures
     position: Optional[OptionPosition]
+    # Phase H1: why this strike (chain filters), for the preview and the order trail.
+    selection_notes: Tuple[str, ...] = ()
+    selection: Optional[dict] = None
 
     def as_dict(self) -> dict:
         return {
@@ -83,6 +91,7 @@ class ResolvedContract:
             "lot_size": self.lot_size, "tick_size": self.tick_size, "expiry": self.expiry.isoformat(),
             "strike": self.strike, "right": self.right, "entry_side": self.entry_side.value,
             "trade_direction": self.trade_direction.value, "position": self.position.value if self.position else None,
+            "selection_notes": list(self.selection_notes), "selection": self.selection,
         }
 
 
@@ -119,11 +128,19 @@ def select_strike(strikes: Sequence[float], spot: float, right: str, rule: Strik
     return listed[index]
 
 
+ChainProvider = Callable[[str, date], Awaitable[OptionChain]]
+
+
 async def resolve_contract(
     session: AsyncSession, symbol: str, rules: ContractRules, direction: SignalDirection, *,
     spot: Optional[float], today: date, broker: str = master.UPSTOX_BROKER,
+    chain_provider: Optional[ChainProvider] = None,
 ) -> ResolvedContract:
-    """`symbol` is the deployment's (underlying) symbol - an index name like NIFTY 50 or a stock."""
+    """`symbol` is the deployment's (underlying) symbol - an index name like NIFTY 50 or a stock.
+
+    `chain_provider(underlying_symbol, expiry)` fetches the live option chain; it is required
+    when the rules carry active strike filters (Phase H1) - without it, or when the chain cannot
+    be fetched, resolution fails rather than trading an unchecked strike."""
     if not rules.derived:
         raise ContractResolutionError("Deployment trades the underlying itself - nothing to resolve")
     if direction not in (SignalDirection.LONG, SignalDirection.SHORT):
@@ -156,13 +173,39 @@ async def resolve_contract(
     strike = select_strike(strikes, spot, right, rules.strike_rule, rules.strike_offset)
     if strike is None:
         raise ContractResolutionError(f"No {underlying} {right} strikes for {expiry}")
+    selection: Optional[SelectionResult] = None
+    if rules.strike_filters.active:
+        selection = await _apply_strike_filters(strikes, strike, right, rules.strike_filters, underlying_symbol, expiry,
+                                                spot, today, chain_provider)
+        strike = selection.strike
     record = await master.find_option(session, underlying, expiry, strike, right, broker=broker)
     if record is None:
         raise ContractResolutionError(f"{underlying} {int(strike)} {right} {expiry} missing from the instrument master")
     buying = position == OptionPosition.BUY
-    return _resolved(rules, record, underlying, underlying_symbol, right=right,
-                     entry_side=OrderSide.BUY if buying else OrderSide.SELL,
-                     trade_direction=SignalDirection.LONG if buying else SignalDirection.SHORT)
+    resolved = _resolved(rules, record, underlying, underlying_symbol, right=right,
+                         entry_side=OrderSide.BUY if buying else OrderSide.SELL,
+                         trade_direction=SignalDirection.LONG if buying else SignalDirection.SHORT)
+    if selection is not None:
+        resolved = ResolvedContract(**{**resolved.__dict__, "selection_notes": tuple(selection.notes), "selection": selection.as_dict()})
+    return resolved
+
+
+async def _apply_strike_filters(
+    strikes: Sequence[float], rule_strike: float, right: str, filters: StrikeFilters, underlying_symbol: str,
+    expiry: date, spot: float, today: date, chain_provider: Optional[ChainProvider],
+) -> SelectionResult:
+    if chain_provider is None:
+        raise ContractResolutionError(f"Strike filters ({filters.describe()}) need the option chain, and no broker session can fetch it")
+    try:
+        chain = await chain_provider(underlying_symbol, expiry)
+    except Exception as exc:  # noqa: BLE001 - the reason goes on the deployment
+        raise ContractResolutionError(f"Option chain for {underlying_symbol} {expiry} unavailable: {exc}") from exc
+    if not chain.rows:
+        raise ContractResolutionError(f"Option chain for {underlying_symbol} {expiry} is empty")
+    try:
+        return select_strike_with_chain(strikes, rule_strike, right, chain, filters, spot=spot, expiry=expiry, as_of=today)
+    except StrikeSelectionError as exc:
+        raise ContractResolutionError(str(exc)) from exc
 
 
 def _resolved(rules: ContractRules, record: InstrumentRecord, underlying: str, underlying_symbol: str, *,
@@ -182,4 +225,5 @@ def describe_rules(rules: ContractRules) -> str:
         return f"future, {rules.expiry_rule.value.lower()} expiry"
     strike = rules.strike_rule.value if rules.strike_rule == StrikeRule.ATM else f"{rules.strike_rule.value}{rules.strike_offset}"
     stop = f", premium stop {rules.premium_stop_pct:g}%" if rules.premium_stop_pct else ""
-    return f"{(rules.position or OptionPosition.BUY).value.lower()} option, {rules.expiry_rule.value.lower()} expiry, {strike}{stop}"
+    filters = f", filters: {rules.strike_filters.describe()}" if rules.strike_filters.active else ""
+    return f"{(rules.position or OptionPosition.BUY).value.lower()} option, {rules.expiry_rule.value.lower()} expiry, {strike}{stop}{filters}"

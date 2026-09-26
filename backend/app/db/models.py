@@ -283,6 +283,13 @@ class TradeRecord(Base):
     expected_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     slippage: Mapped[float | None] = mapped_column(Float, nullable=True)   # fill - expected, signed against the trade
     entry_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Phase H2: legs of one multi-leg structure share a leg_group_id; leg_role SHORT/LONG says
+    # which side of the spread the leg is; group_meta (JSON) carries the structure's net credit,
+    # max loss/profit, breakevens and the group exit levels every leg is judged by together.
+    leg_group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    leg_role: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    option_strategy: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    group_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -378,6 +385,17 @@ class StrategyDeploymentRecord(Base):
     # underlying-level stop). Written option: exit when the premium rises this % above entry.
     premium_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_lots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Phase H1: JSON strike-selection filters applied to the option chain at resolution time
+    # (min OI/volume, max spread %, IV band, target delta, premium band) - see
+    # app/instruments/strike_selection.py. NULL = rule strike only.
+    strike_filters: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase H2: multi-leg structure (OptionStrategy), wing width in strike steps, and the
+    # credit-based exit levels for spreads (take profit at target_credit_pct of the credit
+    # captured; stop when the loss reaches stop_credit_pct of the credit).
+    option_strategy: Mapped[str] = mapped_column(String(20), nullable=False, default="SINGLE")
+    spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

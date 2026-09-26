@@ -303,6 +303,16 @@ class ExpiryRule(str, Enum):
     MONTHLY = "MONTHLY"   # the last expiry of the nearest month that has one
 
 
+class OptionStrategy(str, Enum):
+    """Phase H2: what an OPTION deployment builds at signal time. SINGLE is the Phase F single
+    leg; the spreads are defined-risk structures sold in the signal's direction (bull put on
+    LONG, bear call on SHORT) and the iron condor sells both sides on either signal."""
+    SINGLE = "SINGLE"
+    BULL_PUT_SPREAD = "BULL_PUT_SPREAD"
+    BEAR_CALL_SPREAD = "BEAR_CALL_SPREAD"
+    IRON_CONDOR = "IRON_CONDOR"
+
+
 class StrikeRule(str, Enum):
     ATM = "ATM"
     ITM = "ITM"   # `strike_offset` steps in the money

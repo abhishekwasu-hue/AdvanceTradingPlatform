@@ -333,8 +333,8 @@ def test_worker_trades_option_deployment_end_to_end(monkeypatch):
     broker = Broker()
     # The fake candles close at 100.5 - override the resolver's spot with the worker's own frames
     # is what production does; here the master's strikes start at 24000, so spot must be in range.
-    monkeypatch.setattr(tw, "resolve_contract", lambda session, symbol, rules, direction, *, spot, today, broker="upstox":
-                        resolve_contract(session, symbol, rules, direction, spot=24512.0, today=TODAY, broker=broker))
+    monkeypatch.setattr(tw, "resolve_contract", lambda session, symbol, rules, direction, *, spot, today, broker="upstox", **kw:
+                        resolve_contract(session, symbol, rules, direction, spot=24512.0, today=TODAY, broker=broker, **kw))
     worker = _worker(monkeypatch, broker)
     # A generous tenant risk config so one lot is affordable.
     from app.risk_engine import routes as risk_routes

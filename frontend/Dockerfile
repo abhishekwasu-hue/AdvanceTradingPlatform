@@ -5,9 +5,11 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.28-alpine
-# Pull the Alpine branch's current security fixes (openssl, musl, zlib, libxml2, libpng, ...):
-# the nginx image is rebuilt only periodically, and the container scan gates on fixed CVEs.
+# Mainline rather than the 1.28 stable line: the official image installs nginx.org's own apk
+# with a pinned version, so Alpine's backported nginx security revisions (the ones the image
+# scanner gates on) never apply to it; mainline carries those fixes at source. Everything else
+# in the image is Alpine's and is brought to the branch's current fixes by apk upgrade.
+FROM nginx:alpine
 RUN apk upgrade --no-cache
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

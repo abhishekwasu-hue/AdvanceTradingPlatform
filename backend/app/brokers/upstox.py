@@ -131,9 +131,53 @@ class UpstoxBroker(BrokerInterface):
         self._instruments_cache[exchange] = (time.monotonic(), instruments)
         return instruments
 
+    async def _resolve_instrument(self, symbol: str, exchange: str) -> Instrument:
+        """Plain trading symbol -> the Upstox instrument (with its "NSE_EQ|INE002A01018"-style
+        instrument_key) via the cached instrument master. A symbol that already looks like an
+        instrument key is passed through untouched."""
+        if "|" in symbol:
+            return Instrument(instrument_token=symbol, exchange=exchange, tradingsymbol=symbol)
+        instruments = await self.get_instruments(exchange)
+        match = next((i for i in instruments if i.tradingsymbol == symbol), None)
+        if match is None:
+            raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in Upstox instrument master")
+        return match
+
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
+        """`symbols` are Upstox instrument keys. Upstox keys its LTP response by
+        "EXCHANGE_SEGMENT:TRADINGSYMBOL" (not by the instrument key that was asked for), so the
+        result is keyed as the response keys it."""
         data = await self._request("GET", "/market-quote/ltp", params={"instrument_key": ",".join(symbols)})
         return {symbol: entry["last_price"] for symbol, entry in data.items()}
+
+    async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
+        instrument = await self._resolve_instrument(symbol, exchange)
+        data = await self._request(
+            "GET", "/market-quote/ltp", params={"instrument_key": instrument.instrument_token}
+        )
+        for entry in data.values():
+            if entry.get("instrument_token") == instrument.instrument_token:
+                return float(entry["last_price"])
+        if len(data) == 1:
+            return float(next(iter(data.values()))["last_price"])
+        raise BrokerAPIError(f"No LTP returned for {exchange}:{symbol}")
+
+    async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
+        """Upstox serves the current trading day only from its separate intraday endpoint - the
+        historical endpoint (get_historical_data) returns nothing for today. Only 1minute and
+        30minute intervals exist there; everything else is resampled up by the market-data
+        service from 1-minute bars."""
+        upstox_interval = UPSTOX_INTERVAL_MAP.get(interval, interval)
+        instrument = await self._resolve_instrument(symbol, exchange)
+        data = await self._request(
+            "GET", f"/historical-candle/intraday/{instrument.instrument_token}/{upstox_interval}"
+        )
+        bars = [
+            OHLCVBar(timestamp=c[0], open=c[1], high=c[2], low=c[3], close=c[4], volume=c[5] if len(c) > 5 else 0.0)
+            for c in data.get("candles", [])
+        ]
+        # Upstox returns newest-first; every consumer here expects ascending time.
+        return sorted(bars, key=lambda b: b.timestamp)
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         data = await self._request("GET", "/market-quote/quotes", params={"instrument_key": ",".join(symbols)})

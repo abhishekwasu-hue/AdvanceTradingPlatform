@@ -345,3 +345,46 @@ def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
     assert isinstance(broker, BrokerInterface)
     with pytest.raises(NotImplementedError):
         run(broker.get_profile())
+
+
+def test_upstox_get_ltp_for_symbol_resolves_instrument_key_and_reads_by_token():
+    """Upstox wants an instrument_key in the request but keys its LTP *response* by
+    "NSE_EQ:RELIANCE", so the plain-symbol helper must match on the entry's instrument_token
+    rather than assume the response is keyed by what was asked for."""
+    instrument_master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_EQ|INE002A01018", "exchange": "NSE", "trading_symbol": "RELIANCE", "instrument_type": "EQ"},
+    ]).encode())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=instrument_master)
+        assert request.url.path == "/v2/market-quote/ltp"
+        assert parse_qs(request.url.query.decode())["instrument_key"] == ["NSE_EQ|INE002A01018"]
+        return httpx.Response(200, json={"status": "success", "data": {
+            "NSE_EQ:RELIANCE": {"last_price": 2501.25, "instrument_token": "NSE_EQ|INE002A01018"},
+        }})
+
+    creds = BrokerCredentials(api_key="clientid", access_token="tok789")
+    broker = UpstoxBroker(creds, client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    assert run(broker.get_ltp_for_symbol("RELIANCE", "NSE")) == 2501.25
+
+
+def test_upstox_intraday_candles_use_intraday_endpoint_and_sort_ascending():
+    instrument_master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_EQ|INE002A01018", "exchange": "NSE", "trading_symbol": "RELIANCE", "instrument_type": "EQ"},
+    ]).encode())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=instrument_master)
+        assert request.url.path == "/v2/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
+        return httpx.Response(200, json={"status": "success", "data": {"candles": [
+            ["2026-09-25T09:16:00+05:30", 101, 102, 100, 101.5, 20, 0],
+            ["2026-09-25T09:15:00+05:30", 100, 101, 99, 100.5, 10, 0],
+        ]}})
+
+    creds = BrokerCredentials(api_key="clientid", access_token="tok789")
+    broker = UpstoxBroker(creds, client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    bars = run(broker.get_intraday_candles("RELIANCE", "NSE", "1min"))
+    assert [b.open for b in bars] == [100, 101]
+    assert bars[0].timestamp.isoformat() == "2026-09-25T09:15:00+05:30"

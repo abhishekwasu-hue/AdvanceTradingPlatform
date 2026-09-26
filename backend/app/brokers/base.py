@@ -78,3 +78,31 @@ class BrokerInterface(ABC):
 
     @abstractmethod
     async def get_margins(self) -> MarginInfo: ...
+
+    # --- Non-abstract conveniences the autonomous worker relies on --------------------------
+    # Each has a sensible default in terms of the abstract methods above, so existing adapters
+    # keep working unchanged; an adapter overrides one only where its API needs something
+    # different (Upstox: instrument-key symbols and a separate intraday candle endpoint).
+
+    async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
+        """Last traded price for one plain trading symbol (RELIANCE, NIFTY 50, ...). `get_ltp`
+        takes each broker's own quote-identifier format, which differs per broker; this is the
+        broker-neutral form the position monitor uses. Default: the Kite-style "EXCHANGE:SYMBOL"
+        key most Indian broker quote APIs accept."""
+        key = f"{exchange}:{symbol}"
+        prices = await self.get_ltp([key])
+        if key in prices:
+            return float(prices[key])
+        if symbol in prices:
+            return float(prices[symbol])
+        if len(prices) == 1:
+            return float(next(iter(prices.values())))
+        raise KeyError(f"No LTP returned for {key}")
+
+    async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
+        """Today's candles so far. Default: the historical endpoint with a from/to of today, which
+        is how Kite-style APIs serve the current day. Brokers that split "today" out into a
+        separate endpoint (Upstox) override this."""
+        now = datetime.now()
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return await self.get_historical_data(symbol, exchange, interval, start_of_day, now)

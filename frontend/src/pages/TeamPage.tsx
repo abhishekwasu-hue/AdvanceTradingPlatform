@@ -203,6 +203,11 @@ export default function TeamPage() {
             <button disabled={busy || !tenantName.trim() || tenantName === tenant.name} onClick={() => act("Organisation renamed.", () => api.renameTenant(tenantName))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm disabled:opacity-50">Rename</button>
             <div className="text-xs text-muted">Status: <span className={`font-semibold ${tenant.status === "active" ? "text-accent" : "text-danger"}`}>{tenant.status}</span></div>
           </div>
+          <label className="mt-3 flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={Boolean(tenant.require_mfa_for_live)} disabled={busy}
+              onChange={(e) => act(e.target.checked ? "Two-factor authentication is now required for live trading and broker credentials." : "Two-factor requirement removed.", () => api.setTenantMfaPolicy(e.target.checked))} />
+            <span><b>Require two-factor authentication</b> for LIVE deployments, broker credentials and broker login. Members without it will be asked to enable it on the Account tab first. (Enable it on your own account before turning this on.)</span>
+          </label>
         </Card>
       )}
 

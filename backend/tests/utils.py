@@ -39,3 +39,17 @@ def noisy_uptrend(
     wave = amplitude * np.sin(2 * np.pi * idx / period)
     noise = rng.normal(0, 0.15, n)
     return list(start + drift + wave + noise)
+
+
+def enable_mfa(headers: dict) -> str:
+    """Enrols and confirms TOTP for the logged-in user behind `headers` (the current session ends
+    up MFA-verified). Returns the base32 secret so tests can mint further codes."""
+    import pyotp
+    from tests.test_auth_api import client
+
+    enrolled = client.post("/api/auth/mfa/enrol", headers=headers)
+    assert enrolled.status_code == 200, enrolled.text
+    secret = enrolled.json()["secret"]
+    confirmed = client.post("/api/auth/mfa/confirm", headers=headers, json={"code": pyotp.TOTP(secret).now()})
+    assert confirmed.status_code == 200, confirmed.text
+    return secret

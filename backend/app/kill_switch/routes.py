@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_role, require_trader
+from app.auth.dependencies import get_current_user, require_mfa_session, require_role, require_trader
 from app.core.enums import KillSwitchScope, NotificationSeverity, NotificationType, OrderStatus
 from app.db.models import KillSwitchRecord, OrderRecord, TradeRecord, User
 from app.db.session import get_session
@@ -72,7 +72,7 @@ class KillSwitchRequest(BaseModel):
 async def engage_global(
     request: KillSwitchRequest,
     user: User = Depends(require_role()),  # SUPER_ADMIN only - require_role() with no roles listed
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session), _: User = Depends(require_mfa_session),
 ) -> KillSwitchStateResponse:
     """Platform-wide emergency stop. Blocks every new order across every tenant until
     disengaged - reserved for a platform operator, never something a tenant's own users can flip."""
@@ -85,6 +85,7 @@ async def engage_global(
 @router.post("/global/disengage", response_model=KillSwitchStateResponse)
 async def disengage_global(
     user: User = Depends(require_role()), session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_mfa_session),
 ) -> KillSwitchStateResponse:
     record = await checks.disengage(session, KillSwitchScope.GLOBAL, None)
     await write_audit_log(session, None, user.id, "kill_switch_global_disengaged")

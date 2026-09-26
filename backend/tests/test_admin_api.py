@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.admin import bootstrap
 from app.db.models import Tenant, User
 from tests.test_auth_api import _register, _session_factory, client
+from tests.utils import enable_mfa
 
 
 def _run(coro):
@@ -27,6 +28,7 @@ def _admin(email: str):
             user.role = "SUPER_ADMIN"
             await session.commit()
     _run(promote())
+    enable_mfa(headers)  # platform administrators must use MFA (Phase C3)
     return headers, me
 
 
@@ -49,6 +51,8 @@ def test_configured_super_admin_email_is_promoted_on_register_and_at_startup(mon
 
     headers = {"Authorization": f"Bearer {_register('ops@example.com')}"}
     assert client.get("/api/auth/me", headers=headers).json()["role"] == "SUPER_ADMIN"
+    assert client.get("/api/admin/overview", headers=headers).status_code == 403  # until MFA is on
+    enable_mfa(headers)
     assert client.get("/api/admin/overview", headers=headers).status_code == 200
 
     async def role_of(user_id):

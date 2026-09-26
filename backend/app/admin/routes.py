@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import require_role
+from app.auth.dependencies import require_mfa_session, require_role
 from app.core.config import WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, KillSwitchScope, NotificationSeverity, NotificationType
 from app.db.models import (
@@ -21,7 +21,8 @@ from app.notifications.service import notify
 from app.plans.limits import TENANT_ACTIVE, TENANT_SUSPENDED, limits as plan_limits, usage as plan_usage
 from app.plans.registry import PLANS, get_plan
 
-router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_role())])
+# SUPER_ADMIN only, and the session must have passed a TOTP check (platform admins must use MFA).
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
 
 TENANT_STATUSES = (TENANT_ACTIVE, TENANT_SUSPENDED)
 

@@ -97,3 +97,37 @@ TRADING_ROLES = (UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
 require_trader = require_role(*TRADING_ROLES, active_tenant=True)
 # Team management (invites, roles, removing members): the tenant's owner(s) only.
 require_owner = require_role(UserRole.OWNER, active_tenant=True)
+
+
+class MfaRequired(HTTPException):
+    """403 with a machine-readable code so the UI can open the TOTP prompt and retry."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(status_code=status.HTTP_403_FORBIDDEN, detail=detail, headers={"X-Step-Up": "mfa"})
+
+
+async def ensure_mfa_session(session: AsyncSession, user: User, session_id: Optional[int], why: str) -> None:
+    """Raises unless the user has MFA enabled *and* this session passed a TOTP check."""
+    if not user.mfa_enabled:
+        raise MfaRequired(f"{why} requires two-factor authentication - enable it from the Account tab first")
+    record = await session.get(UserSessionRecord, session_id) if session_id is not None else None
+    if record is None or record.mfa_verified_at is None:
+        raise MfaRequired(f"{why} requires a fresh two-factor check on this session - enter your authenticator code")
+
+
+async def require_mfa_session(
+    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    """Unconditional step-up: the admin console and platform-wide switches."""
+    await ensure_mfa_session(session, user, session_id, "This action")
+    return user
+
+
+async def ensure_live_step_up(session: AsyncSession, user: User, session_id: Optional[int], why: str) -> None:
+    """Conditional step-up: only when the tenant's owner turned on `require_mfa_for_live`
+    (SUPER_ADMIN is always held to it)."""
+    from app.db.models import Tenant
+    tenant = await session.get(Tenant, user.tenant_id)
+    if user.role == UserRole.SUPER_ADMIN.value or (tenant is not None and tenant.require_mfa_for_live):
+        await ensure_mfa_session(session, user, session_id, why)

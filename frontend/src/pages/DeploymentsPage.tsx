@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
+import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { Card, StatTile } from "../components/ui";
 import {
   BASE_TIMEFRAMES,
@@ -61,6 +62,7 @@ export default function DeploymentsPage() {
   const [brokerName, setBrokerName] = useState<string>("");
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
+  const [stepUp, setStepUp] = useState<{ reason: string; retry: () => Promise<unknown> } | null>(null);
 
   function refresh() {
     if (!user) return;
@@ -111,7 +113,8 @@ export default function DeploymentsPage() {
       setLiveTyped("");
       refresh();
     } catch (e) {
-      setError(String(e));
+      if (isStepUpError(e)) setStepUp({ reason: String(e).replace(/^Error: 403[^:]*: /, ""), retry: submit });
+      else setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -134,7 +137,8 @@ export default function DeploymentsPage() {
       setMessage(label);
       refresh();
     } catch (e) {
-      setError(String(e));
+      if (isStepUpError(e)) setStepUp({ reason: String(e).replace(/^Error: 403[^:]*: /, ""), retry: () => act(label, fn) });
+      else setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -203,6 +207,10 @@ export default function DeploymentsPage() {
           {worker.next_market_open && ` - next session opens ${ist(worker.next_market_open)}`}.
           The worker is idle until then.
         </div>
+      )}
+
+      {stepUp && (
+        <StepUpDialog reason={stepUp.reason} onCancel={() => setStepUp(null)} onVerified={() => { const r = stepUp.retry; setStepUp(null); void r(); }} />
       )}
 
       <BrokerTokenBanner />

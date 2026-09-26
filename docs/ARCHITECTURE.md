@@ -1751,3 +1751,30 @@ Verified by `tests/test_passwords.py` (policy rules, register/invite enforcement
 identical responses for known/unknown emails, emailed link through the tenant channel with a
 mocked SMTP, hint masking, single use, expiry, owner-issued link, change with wrong/same/weak
 passwords and other-session invalidation) and migration `b9e4c2d7a316` round-tripped.
+
+### C3: TOTP two-factor authentication
+
+* **Enrolment** (`app/auth/mfa.py`, pyotp / RFC 6238): `POST /api/auth/mfa/enrol` returns a
+  secret and `otpauth://` URI (the Account tab renders a QR and the manual key);
+  `POST /api/auth/mfa/confirm` turns MFA on only once a code from the app verifies, and returns
+  eight backup codes exactly once. The secret is Fernet-encrypted at rest; backup codes are stored
+  as SHA-256 hashes and consumed on use; both can be regenerated with a current code.
+* **Two-step login**: with MFA on, `/login` answers `mfa_required` plus a five-minute,
+  purpose-bound challenge token instead of a session; `POST /api/auth/mfa/verify` with a TOTP or
+  backup code starts the session, marked `mfa_verified_at`. Failed codes are audited and
+  rate-limited.
+* **Step-up**: `POST /api/auth/mfa/step-up` verifies the *current* session (for one that logged in
+  before MFA was enabled). The backend refuses step-up-protected actions with a 403 carrying
+  `X-Step-Up: mfa`; the UI opens a code prompt and retries.
+* **Where it is required**: always for the admin console and the global kill switch (platform
+  administrators cannot disable MFA); and, when the owner turns on the tenant policy
+  `require_mfa_for_live` (Team tab - the owner must have MFA themselves first), for creating or
+  resuming LIVE deployments, storing broker credentials and starting the broker OAuth login. PAPER
+  is never gated.
+* **Disable** needs the password *and* a current code, so neither a stolen session nor a stolen
+  password alone can switch the second factor off.
+
+Verified by `tests/test_mfa.py` (enrol/confirm, two-step login incl. wrong codes and a forged
+challenge, backup codes single-use and regeneration, the LIVE/broker step-up under the tenant
+policy with the `X-Step-Up` signal, members without MFA told to enable it, admin console and global
+kill switch gated, disable rules, secret encrypted at rest) and migration `c5f1a8d3e927`.

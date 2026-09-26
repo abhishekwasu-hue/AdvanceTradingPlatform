@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.auth.routes import login_rate_limit, register_rate_limit
+from app.auth.routes import forgot_rate_limit, login_rate_limit, mfa_rate_limit, refresh_rate_limit, register_rate_limit
 from app.brokers.models import BrokerProfile
 from app.db.base import Base
 from app.db.session import get_session
@@ -35,6 +35,9 @@ app.dependency_overrides[get_session] = _override_get_session
 # to test the 429 behavior itself, restoring these overrides afterwards.
 app.dependency_overrides[register_rate_limit] = lambda: None
 app.dependency_overrides[login_rate_limit] = lambda: None
+app.dependency_overrides[refresh_rate_limit] = lambda: None
+app.dependency_overrides[forgot_rate_limit] = lambda: None
+app.dependency_overrides[mfa_rate_limit] = lambda: None
 
 client = TestClient(app)
 

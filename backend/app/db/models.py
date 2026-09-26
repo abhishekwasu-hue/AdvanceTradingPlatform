@@ -32,6 +32,9 @@ class Tenant(Base):
     # Generated once at tenant creation (app/auth/routes.py::register); rotatable via
     # POST /api/webhooks/tradingview/token/rotate if it ever leaks.
     webhook_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # Owner-set policy (Phase C3): LIVE deployments, broker credentials and the OAuth login
+    # require the caller to have TOTP MFA enabled and verified on the current session.
+    require_mfa_for_live: Mapped[bool] = mapped_column(nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")
@@ -48,12 +51,29 @@ class User(Base):
     # Deactivated (removed from the team) users keep their rows for attribution/audit history
     # but can no longer log in or use an existing token - see get_current_user.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # TOTP MFA (app/auth/mfa.py). The secret is Fernet-encrypted; a pending (not yet confirmed)
+    # enrolment has a secret but mfa_enabled = False.
+    mfa_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mfa_enabled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")
     broker_credentials: Mapped[list["BrokerCredentialRecord"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+
+
+class MfaBackupCodeRecord(Base):
+    """One-time recovery codes for a user who lost their authenticator. Hash only; consumed on use."""
+
+    __tablename__ = "mfa_backup_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
 class PasswordResetRecord(Base):
@@ -95,6 +115,8 @@ class UserSessionRecord(Base):
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     revoke_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set when this session completed a TOTP/backup-code check (at login or by step-up).
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
 class TenantInviteRecord(Base):

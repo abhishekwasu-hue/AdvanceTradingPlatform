@@ -20,6 +20,7 @@ import type {
   InviteInfo,
   MarkPriceResponse,
   MarketStructureResult,
+  MfaStatus,
   NewsEvent,
   NewsEventCategory,
   NewsEventResponse,
@@ -207,6 +208,24 @@ export const api = {
 
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 
+  mfaVerifyLogin: (mfaToken: string, code: string) =>
+    request<TokenResponse>("/auth/mfa/verify", { method: "POST", body: JSON.stringify({ mfa_token: mfaToken, code }) }),
+
+  mfaStatus: () => request<MfaStatus>("/auth/mfa/status"),
+
+  mfaEnrol: () => request<{ secret: string; otpauth_uri: string }>("/auth/mfa/enrol", { method: "POST" }),
+
+  mfaConfirm: (code: string) =>
+    request<{ backup_codes: string[] }>("/auth/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) }),
+
+  mfaStepUp: (code: string) => request<void>("/auth/mfa/step-up", { method: "POST", body: JSON.stringify({ code }) }),
+
+  mfaRegenerateBackupCodes: (code: string) =>
+    request<{ backup_codes: string[] }>("/auth/mfa/backup-codes", { method: "POST", body: JSON.stringify({ code }) }),
+
+  mfaDisable: (password: string, code: string) =>
+    request<void>("/auth/mfa/disable", { method: "POST", body: JSON.stringify({ password, code }) }),
+
   forgotPassword: (email: string) =>
     request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
 
@@ -355,6 +374,9 @@ export const api = {
   getTenant: () => request<TenantInfo>("/team/tenant"),
 
   renameTenant: (name: string) => request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ name }) }),
+
+  setTenantMfaPolicy: (requireMfaForLive: boolean) =>
+    request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ require_mfa_for_live: requireMfaForLive }) }),
 
   listMembers: () => request<TeamMember[]>("/team/members"),
 

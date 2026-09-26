@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_trader
+from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import get_credential_record, token_is_usable
 from app.core.enums import DeploymentStatus, ExecutionMode
@@ -123,7 +123,10 @@ async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_n
 @router.post("", response_model=DeploymentResponse, status_code=status.HTTP_201_CREATED)
 async def create_deployment(
     request: DeploymentCreateRequest, user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> DeploymentResponse:
+    if request.mode == ExecutionMode.LIVE:
+        await ensure_live_step_up(session, user, session_id, "Creating a LIVE deployment")
     try:
         strategy = await resolve_strategy(request.strategy_id, user, session)
     except PermissionError as exc:
@@ -237,8 +240,11 @@ async def pause_deployment(
 @router.post("/{deployment_id}/resume", response_model=DeploymentResponse)
 async def resume_deployment(
     deployment_id: int, user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> DeploymentResponse:
     record = await _get_owned_or_404(deployment_id, user, session)
+    if record.mode == ExecutionMode.LIVE.value:
+        await ensure_live_step_up(session, user, session_id, "Resuming a LIVE deployment")
     if record.status == DeploymentStatus.STOPPED.value:
         raise HTTPException(status_code=409, detail="A stopped deployment cannot be resumed - create a new one")
     # A PAUSED row already counts against the plan, so only the LIVE entitlement is re-checked.

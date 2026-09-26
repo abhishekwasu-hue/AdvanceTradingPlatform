@@ -48,13 +48,16 @@ class IssuedTokens:
         self.expires_in = JWT_EXPIRE_MINUTES * 60
 
 
-async def start_session(session: AsyncSession, user: User, request: Optional[Request] = None) -> IssuedTokens:
+async def start_session(
+    session: AsyncSession, user: User, request: Optional[Request] = None, *, mfa_verified: bool = False,
+) -> IssuedTokens:
     """Creates the session row and issues both tokens. Does not commit."""
     refresh_token = secrets.token_urlsafe(48)
     ip, agent = client_info(request)
     record = UserSessionRecord(
         user_id=user.id, tenant_id=user.tenant_id, refresh_token_hash=hash_refresh_token(refresh_token),
         ip_address=ip, user_agent=agent, expires_at=_utcnow() + timedelta(days=REFRESH_TOKEN_DAYS),
+        mfa_verified_at=_utcnow() if mfa_verified else None,
     )
     session.add(record)
     await session.flush()

@@ -124,6 +124,8 @@ def test_global_kill_switch_blocks_every_tenant_including_anonymous(monkeypatch)
             await session.commit()
 
     asyncio.run(_promote_to_super_admin())
+    from tests.utils import enable_mfa
+    enable_mfa(admin_headers)  # the global switch needs an MFA-verified admin session (Phase C3)
 
     engaged = client.post("/api/kill-switch/global/engage", headers=admin_headers, json={"reason": "platform incident"})
     assert engaged.status_code == 200

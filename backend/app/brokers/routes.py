@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_trader
+from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.token_lifecycle import (
@@ -84,7 +84,9 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> None:
+    await ensure_live_step_up(session, user, session_id, "Storing broker credentials")
     """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
     plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
     Storing resets the token status to UNKNOWN - a pasted access token is unproven until
@@ -212,7 +214,9 @@ class OAuthStartResponse(BaseModel):
 @router.get("/upstox/oauth/start", response_model=OAuthStartResponse)
 async def upstox_oauth_start(
     request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id),
 ) -> OAuthStartResponse:
+    await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
     record = await get_credential_record(session, user.tenant_id, "upstox")
     if record is None:
         raise HTTPException(status_code=404, detail="Store your Upstox API key/secret in Settings first")

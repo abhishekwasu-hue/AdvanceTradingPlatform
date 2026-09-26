@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, get_current_user
+from app.auth import mfa
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
 from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
 from app.auth.security import hash_password, verify_password
@@ -55,10 +56,14 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    # Either a full token pair, or - when the account has MFA on - `mfa_required` with a short
+    # challenge token to present to /auth/mfa/verify together with the authenticator code.
+    access_token: str = ""
     token_type: str = "bearer"
     refresh_token: Optional[str] = None
     expires_in: Optional[int] = None
+    mfa_required: bool = False
+    mfa_token: Optional[str] = None
 
 
 def _token_response(issued: IssuedTokens) -> TokenResponse:
@@ -84,6 +89,7 @@ class UserResponse(BaseModel):
     email: str
     tenant_id: int
     role: str
+    mfa_enabled: bool = False
 
 
 @router.post(
@@ -125,6 +131,12 @@ async def login(request: LoginRequest, http_request: Request, session: AsyncSess
     if user is None or not password_ok or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
+    if user.mfa_enabled:
+        # Password is right; the session only starts once the authenticator code checks out.
+        await write_audit_log(session, user.tenant_id, user.id, "user_login_mfa_challenge")
+        await session.commit()
+        return TokenResponse(mfa_required=True, mfa_token=mfa.create_mfa_token(user.id))
+
     await write_audit_log(session, user.tenant_id, user.id, "user_login")
     issued = await start_session(session, user, http_request)
     await session.commit()
@@ -133,7 +145,7 @@ async def login(request: LoginRequest, http_request: Request, session: AsyncSess
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role)
+    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role, mfa_enabled=user.mfa_enabled)
 
 
 # --- Invitations (public: the invitee is not logged in yet) ------------------------------------
@@ -443,3 +455,175 @@ async def change_password(
     issued = await start_session(session, user, http_request)
     await session.commit()
     return _token_response(issued)
+
+
+# --- Two-factor authentication (Phase C3) --------------------------------------------------------
+
+mfa_rate_limit = rate_limit("auth_mfa", limit=10, window_seconds=60)
+
+
+class MfaVerifyRequest(BaseModel):
+    mfa_token: str
+    code: str = Field(min_length=6, max_length=16)
+
+
+class MfaCodeRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=16)
+
+
+class MfaDisableRequest(BaseModel):
+    password: str
+    code: str = Field(min_length=6, max_length=16)
+
+
+class MfaEnrolResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class MfaBackupCodesResponse(BaseModel):
+    backup_codes: list[str]
+
+
+class MfaStatusResponse(BaseModel):
+    enabled: bool
+    enabled_at: Optional[str]
+    pending_enrolment: bool
+    backup_codes_remaining: int
+    session_verified: bool
+    required_for_live: bool
+
+
+@router.post("/mfa/verify", response_model=TokenResponse, dependencies=[Depends(mfa_rate_limit)])
+async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+    """Second login step: the challenge token from /login plus a TOTP or backup code."""
+    user_id = mfa.parse_mfa_token(request.mfa_token)
+    user = await session.get(User, user_id) if user_id is not None else None
+    if user is None or not user.is_active or not user.mfa_enabled:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Login challenge is invalid or expired - start again")
+    ok, method = await mfa.verify_code(session, user, request.code)
+    if not ok:
+        await write_audit_log(session, user.tenant_id, user.id, "mfa_login_failed")
+        await session.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
+    await write_audit_log(session, user.tenant_id, user.id, "user_login", f"mfa:{method}")
+    issued = await start_session(session, user, http_request, mfa_verified=True)
+    await session.commit()
+    return _token_response(issued)
+
+
+@router.get("/mfa/status", response_model=MfaStatusResponse)
+async def mfa_status(
+    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> MfaStatusResponse:
+    current = await session.get(UserSessionRecord, session_id) if session_id is not None else None
+    tenant = await session.get(Tenant, user.tenant_id)
+    return MfaStatusResponse(
+        enabled=user.mfa_enabled, enabled_at=_as_utc(user.mfa_enabled_at).isoformat() if user.mfa_enabled_at else None,
+        pending_enrolment=bool(user.mfa_secret_encrypted) and not user.mfa_enabled,
+        backup_codes_remaining=await mfa.backup_codes_remaining(session, user.id) if user.mfa_enabled else 0,
+        session_verified=bool(current and current.mfa_verified_at),
+        required_for_live=bool(tenant and tenant.require_mfa_for_live) or user.role == UserRole.SUPER_ADMIN.value,
+    )
+
+
+@router.post("/mfa/enrol", response_model=MfaEnrolResponse)
+async def mfa_enrol(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> MfaEnrolResponse:
+    """Starts (or restarts) enrolment: a new secret to add to an authenticator app. Nothing is
+    enforced until /mfa/confirm proves the app produces the right codes."""
+    if user.mfa_enabled:
+        raise HTTPException(status_code=409, detail="Two-factor authentication is already enabled - disable it first to re-enrol")
+    secret = mfa.generate_secret()
+    mfa.store_secret(user, secret)
+    await session.commit()
+    return MfaEnrolResponse(secret=secret, otpauth_uri=mfa.provisioning_uri(secret, user.email))
+
+
+@router.post("/mfa/confirm", response_model=MfaBackupCodesResponse)
+async def mfa_confirm(
+    request: MfaCodeRequest, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> MfaBackupCodesResponse:
+    """Turns MFA on once a code from the freshly enrolled app verifies. Returns the backup codes
+    - the only time they are ever shown."""
+    if user.mfa_enabled:
+        raise HTTPException(status_code=409, detail="Two-factor authentication is already enabled")
+    secret = mfa.load_secret(user)
+    if not secret:
+        raise HTTPException(status_code=400, detail="Start enrolment first")
+    if not mfa.verify_totp(secret, request.code):
+        raise HTTPException(status_code=400, detail="That code did not match - check the app's clock and try the next code")
+    user.mfa_enabled = True
+    user.mfa_enabled_at = datetime.now(timezone.utc)
+    codes = await mfa.issue_backup_codes(session, user)
+    if session_id is not None:
+        current = await session.get(UserSessionRecord, session_id)
+        if current is not None:
+            current.mfa_verified_at = datetime.now(timezone.utc)
+    await write_audit_log(session, user.tenant_id, user.id, "mfa_enabled")
+    await session.commit()
+    return MfaBackupCodesResponse(backup_codes=codes)
+
+
+@router.post("/mfa/step-up", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit)])
+async def mfa_step_up(
+    request: MfaCodeRequest, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Marks the current session as two-factor verified (for a session that logged in before
+    MFA was enabled, or after a refresh on a device that never entered a code)."""
+    if not user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
+    ok, method = await mfa.verify_code(session, user, request.code)
+    if not ok:
+        await write_audit_log(session, user.tenant_id, user.id, "mfa_step_up_failed")
+        await session.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
+    current = await session.get(UserSessionRecord, session_id) if session_id is not None else None
+    if current is None:
+        raise HTTPException(status_code=400, detail="No login session to verify")
+    current.mfa_verified_at = datetime.now(timezone.utc)
+    await write_audit_log(session, user.tenant_id, user.id, "mfa_step_up", method)
+    await session.commit()
+
+
+@router.post("/mfa/backup-codes", response_model=MfaBackupCodesResponse, dependencies=[Depends(mfa_rate_limit)])
+async def mfa_regenerate_backup_codes(
+    request: MfaCodeRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> MfaBackupCodesResponse:
+    if not user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
+    secret = mfa.load_secret(user)
+    if not secret or not mfa.verify_totp(secret, request.code):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
+    codes = await mfa.issue_backup_codes(session, user)
+    await write_audit_log(session, user.tenant_id, user.id, "mfa_backup_codes_regenerated")
+    await session.commit()
+    return MfaBackupCodesResponse(backup_codes=codes)
+
+
+@router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(mfa_rate_limit)])
+async def mfa_disable(
+    request: MfaDisableRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> None:
+    """Needs the password *and* a current code, so neither a stolen session nor a stolen
+    password alone can switch the second factor off."""
+    if not user.mfa_enabled:
+        raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
+    if not verify_password(request.password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Password is incorrect")
+    ok, _ = await mfa.verify_code(session, user, request.code)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
+    if user.role == UserRole.SUPER_ADMIN.value:
+        raise HTTPException(status_code=409, detail="Platform administrators must keep two-factor authentication on")
+    user.mfa_enabled = False
+    user.mfa_secret_encrypted = None
+    user.mfa_enabled_at = None
+    await mfa.issue_backup_codes(session, user)  # replaces the set...
+    from app.db.models import MfaBackupCodeRecord
+    for record in await session.scalars(select(MfaBackupCodeRecord).where(MfaBackupCodeRecord.user_id == user.id)):
+        await session.delete(record)  # ...then removes it entirely
+    await write_audit_log(session, user.tenant_id, user.id, "mfa_disabled")
+    await session.commit()

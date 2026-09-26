@@ -3,6 +3,17 @@ export interface TokenResponse {
   token_type: string;
   refresh_token?: string | null;
   expires_in?: number | null;
+  mfa_required?: boolean;
+  mfa_token?: string | null;
+}
+
+export interface MfaStatus {
+  enabled: boolean;
+  enabled_at: string | null;
+  pending_enrolment: boolean;
+  backup_codes_remaining: number;
+  session_verified: boolean;
+  required_for_live: boolean;
 }
 
 export interface SessionInfo {
@@ -20,6 +31,7 @@ export interface UserResponse {
   email: string;
   tenant_id: number;
   role: string;
+  mfa_enabled?: boolean;
 }
 
 export interface TradeRecord {
@@ -697,6 +709,7 @@ export interface TenantInfo {
   members: number;
   limits: { active_deployments: number; live_trading: boolean; custom_strategies: number; members: number; alert_channels: number };
   usage: { active_deployments: number; custom_strategies: number; members: number; alert_channels: number };
+  require_mfa_for_live?: boolean;
 }
 
 export interface InviteInfo {

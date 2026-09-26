@@ -141,6 +141,11 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * Registration creates an organisation (tenant) with the registering user as **Owner**. Owners
   invite teammates from the Team tab as Trader, Strategy creator or Viewer (read-only); the
   invite is a link valid for 48 hours, shown once, to be shared by the owner.
+* **Two-factor authentication**: every platform administrator must enable it (Account tab) before
+  the Admin Console or global kill switch will respond. Owners should turn on "Require two-factor
+  authentication" on the Team tab so LIVE deployments and broker credentials always need a fresh
+  authenticator check. Keep the backup codes somewhere safe; an owner with a lost phone and no
+  backup codes needs a platform administrator to reset MFA in the database.
 * **Locked-out teammate**: they use "Forgot password?" (a link arrives if your organisation has
   an email alert channel), or an owner issues a one-hour reset link from the Team tab and hands
   it over on a trusted channel. Either way every existing session of theirs ends.

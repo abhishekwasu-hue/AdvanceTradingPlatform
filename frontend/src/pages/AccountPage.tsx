@@ -2,13 +2,17 @@ import { LogOut, Lock, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, setToken } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { ROLE_LABELS, type InviteInfo, type SessionInfo } from "../types";
+import { ROLE_LABELS, type InviteInfo, type MfaStatus, type SessionInfo } from "../types";
+import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 
 export default function AccountPage() {
-  const { user, login, register, acceptInvite, resetPassword, logout } = useAuth();
-  const [mode, setMode] = useState<"login" | "register" | "invite" | "forgot" | "reset">("login");
+  const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout } = useAuth();
+  const [mode, setMode] = useState<"login" | "register" | "invite" | "forgot" | "reset" | "mfa">("login");
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaStatus, setMfaStatus] = useState<MfaStatus | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [resetHint, setResetHint] = useState<{ email_hint: string; valid: boolean; reason: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -26,6 +30,7 @@ export default function AccountPage() {
   useEffect(() => {
     if (!user) return;
     api.listSessions().then(setSessions).catch(() => setSessions([]));
+    api.mfaStatus().then(setMfaStatus).catch(() => setMfaStatus(null));
   }, [user]);
 
   async function revoke(id: number) {
@@ -85,6 +90,7 @@ export default function AccountPage() {
             </button>
           </div>
         </Card>
+        <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
         <Card title="Change password">
           <form
             className="space-y-2"
@@ -145,7 +151,13 @@ export default function AccountPage() {
     setLoading(true);
     try {
       if (mode === "login") {
-        await login(email, password);
+        const challenge = await login(email, password);
+        if (challenge) {
+          setMfaToken(challenge);
+          setMode("mfa");
+        }
+      } else if (mode === "mfa" && mfaToken) {
+        await completeMfaLogin(mfaToken, mfaCode);
       } else if (mode === "invite" && inviteToken) {
         await acceptInvite(inviteToken, password);
       } else if (mode === "reset" && resetToken) {
@@ -169,11 +181,13 @@ export default function AccountPage() {
         <LogoMark size={44} />
         <div>
           <h1 className="text-lg font-semibold text-slate-100">
-            {mode === "login" ? "Welcome back" : mode === "invite" ? "Join your team" : mode === "forgot" ? "Forgot your password?" : mode === "reset" ? "Choose a new password" : "Create your account"}
+            {mode === "login" ? "Welcome back" : mode === "mfa" ? "Two-factor check" : mode === "invite" ? "Join your team" : mode === "forgot" ? "Forgot your password?" : mode === "reset" ? "Choose a new password" : "Create your account"}
           </h1>
           <p className="text-xs text-muted mt-0.5">
             {mode === "login"
               ? "Log in to your trading console"
+              : mode === "mfa"
+                ? "Enter the 6-digit code from your authenticator app, or one of your backup codes."
               : mode === "forgot"
                 ? "Enter your email. If your organisation has an email channel you get a link; otherwise ask your owner for one."
                 : mode === "reset"
@@ -192,7 +206,20 @@ export default function AccountPage() {
       </div>
       <Card className="shadow-card">
         <form onSubmit={handleSubmit} className="space-y-3">
-          {mode !== "reset" && (
+          {mode === "mfa" && (
+            <div>
+              <label className="block text-xs text-muted mb-1">Authenticator code</label>
+              <input
+                autoFocus
+                required
+                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-1 focus:ring-brand"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
+                placeholder="123 456"
+              />
+            </div>
+          )}
+          {mode !== "reset" && mode !== "mfa" && (
           <div>
             <label className="block text-xs text-muted mb-1">Email</label>
             <div className="relative">
@@ -209,7 +236,7 @@ export default function AccountPage() {
           </div>
           )}
           {notice && <div className="text-xs text-accent">{notice}</div>}
-          {mode !== "forgot" && (
+          {mode !== "forgot" && mode !== "mfa" && (
           <div>
             <label className="block text-xs text-muted mb-1">{mode === "reset" ? "New password" : "Password"}</label>
             <div className="relative">
@@ -231,7 +258,7 @@ export default function AccountPage() {
             disabled={loading || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
             className="w-full rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
           >
-            {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
+            {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
           </button>
         </form>
         <div className="mt-3 flex flex-wrap gap-3">

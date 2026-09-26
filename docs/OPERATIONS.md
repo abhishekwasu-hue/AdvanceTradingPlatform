@@ -220,6 +220,20 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
+#### Phase I: risk limits and broker accounts
+
+* A deployment whose `last_error` names a risk limit (`MAX_ORDER_VALUE (tenant): order value
+  ... exceeds limit ...`) was refused by the risk hierarchy; the Risk page's event log shows the
+  measured value against every limit that applied. A `Strategy stopped` or `Daily loss limit
+  reached` CRITICAL notification means a loss limit engaged a kill switch: review, then
+  disengage it from the Risk page only once the cause is understood - the limit will trip again
+  otherwise.
+* Broker accounts (Settings): **Sync** pulls balance, margin and P&L through that account's own
+  session; a `DISABLED` account refuses new LIVE entries (deployments say
+  `broker account #N ... is DISABLED`); ★ marks the default account a deployment on that broker
+  uses when it names none. A second account at the same broker is a second credential with its
+  own label, and its token expires and is renewed independently of the first.
+
 #### Phase H: option structures and strike filters
 
 * A deployment with **strike filters** whose `last_error` reads `Contract not resolved: No CE

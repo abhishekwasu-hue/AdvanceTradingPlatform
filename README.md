@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Risk hierarchy and accounts (Phase I)
+
+- **Risk limits at every scope** (organisation, user, broker account, strategy, instrument; platform-wide for the operator):
+  eight limit types checked together on every order with the strictest winning, each check logged as a risk event,
+  loss-limit breaches engaging the matching kill switch automatically.
+- **Broker accounts**: several accounts per broker (labelled credentials), balance/margin/P&L sync, enable/disable,
+  default routing, deployments routed to a named account.
+
 ## Options depth (Phase H)
 
 - **Strike-selection pipeline**: liquidity (OI, volume, bid/ask spread), IV band, target delta
@@ -258,7 +266,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 723 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 732 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

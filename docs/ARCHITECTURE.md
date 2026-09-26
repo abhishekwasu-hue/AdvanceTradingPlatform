@@ -2315,3 +2315,46 @@ from the last price) and the underlying's spot; the Positions page shows them on
 The Autopilot form gains a Structure selector, wing width, target/stop credit %, a strike-filter
 panel, and previews legs with credit, max loss and breakeven when a broker session can quote
 them. Migration `e5a1c9d7f064`.
+
+## Phase I: Risk hierarchy and broker accounts
+
+### I1: Risk hierarchy
+
+Master prompt V3.4 / V4.5 and the section 17 check list. `risk_limits` rows carry one
+`limit_type` at one scope - GLOBAL (platform, SUPER_ADMIN), TENANT, USER, ACCOUNT, STRATEGY or
+INSTRUMENT (`scope_id` = user id / account id / strategy id / symbol) - and
+`app/risk_engine/hierarchy.py::evaluate` checks an order against every limit that applies to
+it, keeping the smallest of each type ("strictest wins"). Eight types: MAX_DAILY_LOSS and
+MAX_STRATEGY_LOSS (realised today, currency), MAX_LOSS_PER_TRADE (at the stop; for a structure
+its max loss), MAX_ORDER_VALUE, MAX_POSITION_QUANTITY, MAX_OPEN_POSITIONS, MAX_TRADES_PER_DAY,
+MAX_CAPITAL_ALLOCATION_PCT.
+
+The evaluator runs after sizing and before any fill or broker call: `OrderRouter.execute`
+awaits `pre_place_check(quantity)` (the closure `execute_signal_for_user` builds), and
+`execute_structure` calls it with the structure's max loss. Every check is a `risk_events` row
+(PASS, WARN at 80% of the limit, BLOCK) carrying the measured value, the limit, the scope and
+the order id, so the log answers both "why was this refused" and "how close are we". Breaches
+also act: MAX_STRATEGY_LOSS engages the strategy kill switch, a TENANT/GLOBAL MAX_DAILY_LOSS
+engages the tenant kill switch - idempotent, audited, with a CRITICAL notification - so the
+next signal is refused at the door. A failure to read or measure a limit blocks the order
+(fail safe). API under `/api/risk/limits|events|evaluate`; the Risk page shows limits and the
+event log. `risk_events` is in the never-deleted set.
+
+### I2: Broker accounts
+
+V3.14 rule 3 and V3.1-3.5 routing. `broker_credentials.account_label` (default `primary`,
+unique per tenant/broker/label) lets one broker hold several accounts as several credential
+rows; `broker_accounts` is the account behind each credential: broker identifier, display
+name, ACTIVE/DISABLED, default flag, and the last synced balance, used margin, realised and
+unrealised P&L (`app/accounts/service.py::sync_account`, from `get_balance`, `get_profile`
+and `get_positions`). Accounts are created when credentials are stored (and lazily for
+credentials that predate the table). API: `GET /api/accounts`, `POST /api/accounts/{id}/sync`,
+`.../enable|disable|default`, `PATCH /api/accounts/{id}`; credential endpoints take an
+`account_label` query parameter.
+
+Routing: a deployment may name `broker_account_id`; otherwise the broker's default account
+applies. The worker builds one adapter per (broker, label) and, per deployment, resolves the
+route (`_live_broker_for`): a DISABLED account, a missing session or a broker-uncertain tenant
+each record their reason and skip the entry. The account id is passed into execution so
+ACCOUNT-scope risk limits apply. Settings shows the accounts card; the Autopilot form offers
+the broker's accounts for LIVE deployments.

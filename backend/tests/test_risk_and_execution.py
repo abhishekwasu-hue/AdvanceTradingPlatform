@@ -158,8 +158,15 @@ def test_order_router_places_live_order_through_broker():
 
     assert result.executed
     assert result.broker_order_id == "FAKE-1"
-    assert len(broker.placed_orders) == 1
+    # Entry market order, then the protective SL-M on the opposite side at the signal's stop.
+    assert len(broker.placed_orders) == 2
     assert broker.placed_orders[0].quantity == 500
+    assert broker.placed_orders[0].order_type == "MARKET"
+    assert broker.placed_orders[1].order_type == "SL-M"
+    assert broker.placed_orders[1].transaction_type != broker.placed_orders[0].transaction_type
+    assert broker.placed_orders[1].trigger_price == _sample_signal().stop_loss
+    assert result.sl_order_id == "FAKE-1"
+    assert result.trade is not None and result.trade.quantity == 500
     assert state.trades_today == 1
 
 

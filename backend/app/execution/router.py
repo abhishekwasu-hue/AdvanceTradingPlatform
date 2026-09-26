@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -8,6 +10,8 @@ from app.core.models import RiskConfig, Signal, Trade
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
+
+logger = logging.getLogger(__name__)
 
 
 class LiveTradingNotConfigured(RuntimeError):
@@ -23,11 +27,17 @@ class ExecutionResult:
     def __init__(
         self, executed: bool, reasons: list[str], trade: Optional[Trade] = None,
         broker_order_id: Optional[str] = None, system_failure: bool = False,
+        sl_order_id: Optional[str] = None, sl_failed: bool = False,
     ) -> None:
         self.executed = executed
         self.reasons = reasons
         self.trade = trade
         self.broker_order_id = broker_order_id
+        # LIVE only: the broker-side protective stop-loss order placed right after the fill, and
+        # whether placing it failed (position is then open *without* a broker-side stop - the
+        # position monitor still enforces the software stop, but the operator must be told).
+        self.sl_order_id = sl_order_id
+        self.sl_failed = sl_failed
         # Distinguishes "the broker was reachable and explicitly declined this order" (a business
         # rejection - REJECTED) from "the broker call itself errored/timed out, so this platform
         # never got a real answer" (a system failure - FAILED) - see OrderRouter.execute's broker
@@ -44,9 +54,14 @@ class OrderRouter:
     safety rule that live trading must never bypass risk validation or run without a real broker.
     """
 
+    # How long to wait for a live market order's fill to show in the order book before falling
+    # back to the signal's entry price as the provisional fill (reconciliation corrects it).
+    fill_poll_attempts = 3
+    fill_poll_delay_seconds = 0.5
+
     def __init__(
         self, mode: ExecutionMode, risk_config: RiskConfig, broker: Optional[BrokerInterface] = None,
-        exchange: str = "NSE", product: str = "MIS",
+        exchange: str = "NSE", product: str = "MIS", place_protective_stop: bool = True,
     ) -> None:
         self.mode = mode
         self.risk_manager = RiskManager(risk_config)
@@ -54,6 +69,7 @@ class OrderRouter:
         self.broker = broker
         self.exchange = exchange
         self.product = product
+        self.place_protective_stop = place_protective_stop
 
     async def execute(self, signal: Signal, state: TradingDayState) -> ExecutionResult:
         contract_spec = get_contract_spec(signal.symbol)
@@ -102,7 +118,55 @@ class OrderRouter:
 
         state.trades_today += 1
         state.open_positions += 1
-        return ExecutionResult(
-            executed=True, reasons=[f"Live order placed via {self.broker.name}: {response.order_id}"],
-            broker_order_id=response.order_id,
+        reasons = [f"Live order placed via {self.broker.name}: {response.order_id}"]
+
+        fill_price = await self._resolve_fill_price(response.order_id, fallback=signal.entry)
+        trade = Trade(
+            symbol=signal.symbol, strategy_id=signal.strategy_id, direction=signal.direction,
+            entry_time=datetime.now(timezone.utc), entry_price=round(fill_price, 2), quantity=decision.quantity,
+            stop_loss=signal.stop_loss, target1=signal.target1, target2=signal.target2,
         )
+
+        sl_order_id: Optional[str] = None
+        sl_failed = False
+        if self.place_protective_stop:
+            # The broker-side stop is the platform's safety net for the case this process dies
+            # (or loses connectivity) while a live position is open: the exchange then still
+            # closes it at the stop. Placed as SL-M on the opposite side at the signal's stop.
+            try:
+                sl_response = await self.broker.place_stop_loss_order(
+                    signal.symbol, self.exchange,
+                    OrderSide.SELL if signal.direction == SignalDirection.LONG else OrderSide.BUY,
+                    decision.quantity, trigger_price=signal.stop_loss, product=self.product,
+                    tag=f"{signal.strategy_id}:SL",
+                )
+                sl_order_id = sl_response.order_id
+                reasons.append(f"Protective stop-loss placed: {sl_order_id} @ {signal.stop_loss}")
+            except Exception as exc:  # noqa: BLE001 - a failed stop must never undo a real fill
+                sl_failed = True
+                reasons.append(f"WARNING: protective stop-loss order failed ({exc}) - software stop only")
+                logger.error("Protective SL placement failed for %s after live fill %s: %s", signal.symbol, response.order_id, exc)
+
+        return ExecutionResult(
+            executed=True, reasons=reasons, trade=trade, broker_order_id=response.order_id,
+            sl_order_id=sl_order_id, sl_failed=sl_failed,
+        )
+
+    async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:
+        """Reads the actual average fill price from the broker's order book, briefly retrying
+        while a just-placed market order is still pending. Any broker that can't answer (or an
+        order still unfilled after the retries) falls back to the signal entry, and the position
+        reconciliation engine corrects the recorded entry against the broker's own book later."""
+        for attempt in range(self.fill_poll_attempts):
+            try:
+                book = await self.broker.get_order_book()
+            except Exception as exc:  # noqa: BLE001 - informational path, never fatal
+                logger.debug("Order book unavailable for fill price lookup (%s); using signal entry", exc)
+                return fallback
+            match = next((o for o in book if o.order_id == order_id), None)
+            if match is not None and match.average_price and match.filled_quantity > 0:
+                return float(match.average_price)
+            if attempt < self.fill_poll_attempts - 1:
+                await asyncio.sleep(self.fill_poll_delay_seconds)
+        logger.info("Fill price for %s not yet in order book; recording signal entry provisionally", order_id)
+        return fallback

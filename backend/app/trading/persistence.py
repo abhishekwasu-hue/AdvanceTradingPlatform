@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,15 +40,23 @@ async def persist_signal_history(session: AsyncSession, user: User, enriched: En
     return record
 
 
-async def persist_paper_trade(session: AsyncSession, user: User, trade: Trade) -> TradeRecord:
-    """Writes a filled paper trade to this tenant's history, attributed to the user who executed
-    it. Only called when a real logged-in user executed the trade - anonymous /paper-execute
-    calls stay in-memory only, per the console's "try it without an account" demo flow.
+async def persist_trade(
+    session: AsyncSession, user: User, trade: Trade, *, mode: str = "PAPER",
+    broker_order_id: Optional[str] = None, sl_order_id: Optional[str] = None, deployment_id: Optional[int] = None,
+) -> TradeRecord:
+    """Writes a filled trade (paper or live) to this tenant's history, attributed to the user who
+    executed it. Only called for a real logged-in user or a deployment acting on the tenant's
+    behalf - anonymous /paper-execute calls stay in-memory only, per the console's "try it
+    without an account" demo flow. LIVE fills carry the broker's entry and stop-loss order ids so
+    the position monitor can cancel the stop on a target exit and reconciliation can match fills.
     """
     record = TradeRecord(
         tenant_id=user.tenant_id,
         user_id=user.id,
-        mode="PAPER",
+        mode=mode,
+        broker_order_id=broker_order_id,
+        sl_order_id=sl_order_id,
+        deployment_id=deployment_id,
         symbol=trade.symbol,
         strategy_id=trade.strategy_id,
         direction=trade.direction.value,
@@ -63,6 +72,10 @@ async def persist_paper_trade(session: AsyncSession, user: User, trade: Trade) -
     await session.commit()
     await session.refresh(record)
     return record
+
+
+async def persist_paper_trade(session: AsyncSession, user: User, trade: Trade) -> TradeRecord:
+    return await persist_trade(session, user, trade, mode="PAPER")
 
 
 async def build_trading_day_state(session: AsyncSession, user: User) -> TradingDayState:

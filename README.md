@@ -188,11 +188,38 @@ npm run dev
 - **Login protection**: every attempt is recorded (System Logs tab), ten failures lock the
   account for fifteen minutes, and a login from a new device raises a security notification.
 
+## Compliance (Phase D)
+
+- **SEBI algo tagging**: the owner enters the exchange-issued algo id on the Team tab; every
+  entry, stop-loss and exit order is tagged `<algo id>-<strategy>-<leg>` at the broker and the
+  tag is stored on the order. `ALGO_ID_REQUIRED_FOR_LIVE=true` refuses LIVE without one.
+- **Exports**: System Logs (owners) and the Admin Console download CSV/JSON of the audit trail
+  (with chain hashes and verdict), orders, trades and login attempts for a date range, each with
+  its SHA-256; the export itself is on the audit chain.
+- **Retention**: login attempts, alert deliveries, notifications, dead sessions and spent tokens
+  age out on a configurable schedule run by the worker; orders, trades, signals and audit logs
+  are never deleted (five-year rule). Owners can erase a removed teammate's personal data while
+  keeping their trading records attributed to an anonymous id.
+- **Contract notes**: upload the broker's tradebook CSV on the Positions tab and closed trades
+  switch from estimated to the broker's actual charges and P&L, matched by order id.
+
+## Operations (Phase E)
+
+- **Metrics**: Prometheus at `/metrics` on the API (optional `METRICS_TOKEN`) and on the worker
+  (`:9102`); health at `/api/system/health` (liveness), `/api/system/ready`, and
+  `/api/system/health/deep` (database, Redis, migrations, worker freshness).
+- **Request ids and `/api/v1`**: every response carries `X-Request-ID` for log correlation; the
+  API is served at `/api/v1` with `/api` kept as an alias that announces its successor.
+- **Backups**: the compose `backup` service dumps the database daily (optionally encrypted) with
+  retention, and `scripts/backup/verify_backup.sh` rehearses a restore into a scratch database
+  and checks schema, counts and the audit chain. CI runs the rehearsal on every push.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 601 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 643 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+                # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend
 npm run build   # type-checks + production build

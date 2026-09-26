@@ -60,6 +60,11 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         run: alembic check
 
+      - name: Backup rehearsal (pg_dump -> restore into scratch DB -> verify, Phase E3)
+        env:
+          DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
+        run: python -m pytest tests/test_backup_scripts.py -q -rs
+
       - name: Audit Python dependencies for known vulnerabilities (pip-audit)
         run: |
           pip install pip-audit

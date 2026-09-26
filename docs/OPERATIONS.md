@@ -24,22 +24,34 @@ deployment exists, add automated, periodic restore-drills (Section 50's own "dis
 tests" category) that measure actual RPO/RTO against these targets rather than trusting them by
 assumption.
 
-### 1.2 Backups
+### 1.2 Backups (Phase E3 - in force)
 
-- **What must be backed up**: the Postgres database (every table in `app/db/models.py` - this is
-  the *only* stateful component; the FastAPI process itself is stateless and disposable).
-- **Target mechanism**: continuous WAL archiving plus daily full snapshots (e.g. `pg_basebackup`
-  or the managed equivalent of whichever hosting provider is used - AWS RDS/GCP Cloud SQL/etc. -
-  all support this natively; prefer the managed offering over hand-rolled `pg_dump` cron jobs).
-- **Verification, not just creation**: per Section 52's own requirement, a backup that has never
-  been restored is unverified. Schedule a periodic (at minimum monthly) automated restore of the
-  latest backup into a scratch instance, followed by a basic sanity check (row counts on
-  `tenants`/`orders`/`trades` are non-zero and roughly match the source within the backup window,
-  and `alembic check`/`verify_audit_chain` both pass against the restored copy). This is not yet
-  automated anywhere in this repo - it is the first piece of real DR tooling to build once a real
-  deployment exists to back up.
-- **Encryption**: backups must be encrypted at rest using the hosting provider's standard
-  encryption-at-rest offering (this is a hosting/infra configuration, not application code).
+- **What is backed up**: the Postgres database - the only stateful component (every table in
+  `app/db/models.py`; the API and worker are stateless). Redis holds only caches and the worker
+  lock and is not backed up.
+- **How**: the compose `backup` service (`scripts/backup/run_scheduled.sh`) takes a
+  `pg_dump --format=custom` of the whole database every `BACKUP_INTERVAL_SECONDS` (daily) into the
+  `backups` volume, writes a SHA-256 sidecar and a `latest` pointer, and updates `LAST_BACKUP_OK`.
+  With `BACKUP_ENCRYPTION_PASSPHRASE` set every dump is AES-256 encrypted (`openssl enc -pbkdf2`);
+  keep that passphrase somewhere other than the server. Retention keeps `BACKUP_RETENTION_DAYS`
+  (14) of files and never fewer than `BACKUP_KEEP_MIN` (7). Copy the volume off the host
+  (object storage, another machine) - a backup on the same disk as the database is not a backup.
+- **Monitoring**: alert when `LAST_BACKUP_OK` is older than 26 hours (the script never touches it
+  on failure); the service logs `backup FAILED` and retries at the next interval.
+- **Verification, not just creation**: `scripts/backup/verify_backup.sh [file|latest]` restores
+  the backup into a fresh scratch database, checks `alembic_version` matches the source, that
+  `tenants`/`orders`/`trades`/`audit_logs` counts are within the source's, re-verifies the audit
+  hash chain in the copy (`python -m app.audit.verify_chain`), drops the scratch database and
+  prints a one-line JSON report with `status: ok`. Run it monthly and keep the report:
+  `docker compose run --rm backup sh /scripts/verify_backup.sh latest`. CI runs the same
+  rehearsal on every push (`tests/test_backup_scripts.py`), including the encrypted and tampered
+  cases.
+- **Restore for real**: `scripts/backup/restore.sh <file|latest>` (asks you to type the database
+  name; `RESTORE_CONFIRM=yes` for scripts) replaces the configured database with the backup, then
+  start the API (`alembic upgrade head` runs on start and is a no-op for a same-version dump) and
+  follow 1.3 for open positions. Point-in-time recovery between daily dumps is not provided: for
+  that, add WAL archiving or use a managed Postgres with PITR, and keep these dumps as the
+  provider-independent copy.
 
 ### 1.3 Crash-recovery runbook: open positions
 
@@ -302,5 +314,8 @@ has no model version to record).
 
 ### 2.5 Backup encryption
 
-Covered under 1.2 above - inherits whatever the DB's own backup-encryption story is
-(cross-referenced here so this section is complete without duplicating it).
+Set `BACKUP_ENCRYPTION_PASSPHRASE` (section 1.2): dumps are then AES-256-CBC encrypted with a
+PBKDF2-derived key before they touch disk, and `restore.sh`/`verify_backup.sh` require the same
+passphrase (a wrong one fails the restore, it does not produce a plausible-looking database). The
+passphrase is the one secret that must survive losing the server - store it with the same care as
+`SECRETS_ENCRYPTION_KEY`, and rehearse a restore with it at least once a quarter.

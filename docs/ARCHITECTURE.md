@@ -1981,3 +1981,33 @@ Verified by `tests/test_observability.py` (metric families and labels, template-
 cardinality, token gate, orders counter on a LIVE fill, deep health components and worker
 freshness, readiness, request-id echo/mint/sanitise, v1 alias parity for GET/POST/query strings
 with version and deprecation headers, v2 404, non-API paths without version headers).
+
+### E3: Backups you can restore
+
+`scripts/backup/` (POSIX sh, so it runs in the `postgres:*-alpine` image with nothing installed):
+
+* `backup.sh` - `pg_dump --format=custom --compress=6` of the configured database (`DATABASE_URL`
+  in the app's own SQLAlchemy form is accepted and normalised, or libpq `PG*` variables), optional
+  AES-256 encryption with `openssl enc -pbkdf2` when `BACKUP_ENCRYPTION_PASSPHRASE` is set,
+  SHA-256 sidecar, `latest` symlink, `LAST_BACKUP_OK` marker (untouched on failure, so its age is
+  the alert), then retention (older than `BACKUP_RETENTION_DAYS`, never below `BACKUP_KEEP_MIN`).
+* `restore.sh <file|latest> [target-url]` - verifies the sidecar, decrypts when needed, asks for
+  the database name (or `RESTORE_CONFIRM=yes`), `pg_restore --clean --if-exists --no-owner`.
+* `verify_backup.sh [file|latest]` - the rehearsal: creates `<db>_verify_<ts>`, restores into it,
+  compares `alembic_version`, checks `tenants`/`orders`/`trades`/`audit_logs` counts are not above
+  the source's, runs `python -m app.audit.verify_chain` (new CLI over `verify_audit_chain`) against
+  the copy, drops the scratch database, prints one JSON line and exits non-zero unless `status`
+  is `ok`. The first failure names the status (`restore_failed`, `schema_mismatch`,
+  `table_missing`, `count_mismatch`, `audit_chain_broken`); later checks only add notes.
+* `run_scheduled.sh` - the compose `backup` service entrypoint: a loop, not cron, so a crash
+  restarts with the container.
+
+Design choices: logical dumps rather than `pg_basebackup`/WAL because they are provider-independent,
+restorable into any Postgres of the same or newer major, and small enough to copy off-host daily;
+the doc says plainly that point-in-time recovery needs WAL archiving or a managed offering on top.
+The compose service pins the same Postgres major as the database so `pg_dump`/`pg_restore` match.
+
+Verified by `tests/test_backup_scripts.py` against a real Postgres (skipped on the SQLite-only
+run, executed in CI after the migrations step): plain round-trip with an intact chain, encrypted
+round-trip and a wrong passphrase yielding `restore_failed`, and a tampered file refused on the
+SHA-256 check. Also rehearsed by hand in this environment against the migrated local database.

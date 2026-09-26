@@ -41,18 +41,27 @@ from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_acquire_lock, cache_release_lock
 from app.core.config import WORKER_CYCLE_SECONDS
-from app.core.enums import DeploymentStatus, ExecutionMode, NotificationSeverity, NotificationType
+from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
+from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
+from app.instruments.master import sync_upstox
+from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
+from app.instruments.spreads import resolve_structure
+from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
+from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
+from app.observability.metrics import MARKET_DATA_STALE
+from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
+from app.accounts.service import routing_for_deployment
 from app.notifications.service import notify
-from app.trading.position_monitor import close_position, exchange_for_symbol, monitor_open_positions
+from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +95,21 @@ class CycleReport:
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
     retention: Optional[RetentionReport] = None
+    master_synced: Optional[Dict[str, int]] = None
+    stale_skips: int = 0
+    reconciled: int = 0
+
+
+def _adapter_key(broker_name: str, account_label: str) -> str:
+    return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
+
+
+def _chain_provider(broker: BrokerInterface):
+    """Phase H1: the option chain the strike filters are judged against - the tenant's own
+    broker session, fetched only when a deployment actually carries filters."""
+    async def provider(underlying_symbol: str, expiry):
+        return await broker.get_option_chain(underlying_symbol, expiry)
+    return provider
 
 
 class TradingWorker:
@@ -103,10 +127,13 @@ class TradingWorker:
         self._last_token_check: Dict[int, float] = {}
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
+        # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
+        self._last_master_sync_day = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
         self._tenant_cursor: Dict[int, int] = {}
+        self._stale_skips = 0
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -118,6 +145,13 @@ class TradingWorker:
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
+        # Safety rule 18: before the first cycle, every tenant with an open LIVE position is
+        # reconciled against its broker. Whatever happened while this process was down (a fill
+        # after a crash, a manual exit at the broker) is known before anything new is traded.
+        try:
+            await self.reconcile_on_start()
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.exception("Start-up reconciliation failed")
         while not self._stop.is_set():
             started = time.monotonic()
             try:
@@ -146,7 +180,9 @@ class TradingWorker:
                 status = await market_session_status(session, now)
                 report = CycleReport(started_at=now, market_open=status.is_open, session_reason=status.reason)
                 if status.is_open:
+                    self._stale_skips = 0
                     await self._process_tenants(session, now, report)
+                    report.stale_skips = self._stale_skips
                 else:
                     logger.debug("Market closed: %s", status.reason)
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
@@ -156,6 +192,18 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
+                # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
+                # so contracts/expiries/lot sizes are current before the 09:15 open.
+                ist_now = now.astimezone(IST)
+                if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:
+                    try:
+                        report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)
+                        self._last_master_sync_day = ist_now.date()
+                        logger.info("Instrument master synced: %s", report.master_synced)
+                    except Exception as exc:  # noqa: BLE001 - a failed download must not stop trading
+                        logger.exception("Instrument master sync failed")
+                        report.errors.append(f"instrument master: {exc}")
+                        self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not status.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -203,19 +251,29 @@ class TradingWorker:
             logger.warning("Tenant %s has deployments but no user to act as - skipping", tenant_id)
             return
 
-        # One adapter per broker the tenant trades through, only when its token is proven.
+        # One adapter per (broker, account) the tenant trades through, only when its token is
+        # proven. Keys are "<broker>" for the primary account and "<broker>@<label>" otherwise
+        # (Phase I2); `_adapter_key` maps a deployment to its key.
         adapters: Dict[str, BrokerInterface] = {}
-        broker_names = {d.broker_name for d in deployments if d.broker_name}
-        if not broker_names:
+        routes: Dict[int, tuple] = {}   # deployment id -> (account, label)
+        keys = set()
+        for dep in deployments:
+            if not dep.broker_name:
+                continue
+            account, label = await routing_for_deployment(session, tenant_id, dep.broker_name, dep.broker_account_id)
+            routes[dep.id] = (account, label)
+            keys.add((dep.broker_name, label))
+        if not keys:
             # PAPER deployments still need a market-data source: any stored broker will do.
             records = list(await session.scalars(
                 select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
             ))
-            broker_names = {r.broker_name for r in records}
-        for name in broker_names:
-            adapter = await self._usable_adapter(session, tenant_id, name, user.id, now)
+            keys = {(r.broker_name, r.account_label or "primary") for r in records}
+        for name, label in keys:
+            adapter = await self._usable_adapter(session, tenant_id, name, user.id, now, account_label=label)
             if adapter is not None:
-                adapters[name] = adapter
+                adapters[_adapter_key(name, label)] = adapter
+        self._routes = routes
 
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
@@ -229,7 +287,20 @@ class TradingWorker:
 
         # Exits before entries.
         now_ist = now.astimezone(IST)
-        live_broker = next((a for n, a in adapters.items() if n in {d.broker_name for d in deployments if d.mode == "LIVE"}), None)
+        live_keys = {_adapter_key(d.broker_name, routes.get(d.id, (None, "primary"))[1]) for d in deployments if d.mode == "LIVE" and d.broker_name}
+        live_broker = next((a for n, a in adapters.items() if n in live_keys), None)
+        live_broker_name = next((n.split("@")[0] for n, a in adapters.items() if a is live_broker), None)
+
+        # Phase G1: while the tenant is flagged "broker uncertain", reconcile every cycle so the
+        # LIVE block lifts on its own the moment the books agree (and stays while they do not).
+        tenant_row = await session.get(Tenant, tenant_id)
+        if tenant_row is not None and tenant_row.broker_uncertain_since is not None and live_broker is not None:
+            try:
+                await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
+                                         user_id=user.id, source="worker")
+                report.reconciled += 1
+            except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
+                logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
         if now_ist.time() >= SQUARE_OFF_AT:
             report.positions_closed += await self._square_off_all(session, tenant_id, market_data, live_broker, user.id)
         else:
@@ -291,6 +362,20 @@ class TradingWorker:
             await session.commit()
             return False
 
+        # Phase G1 (safety rule 7): no signal on a candle feed that has fallen behind the clock.
+        base = frames.get(dep.timeframe)
+        if base is None:
+            base = next(iter(frames.values()))
+        last_bar = base.index[-1].to_pydatetime() if len(base) else None
+        stale = candle_staleness(last_bar, dep.timeframe, now)
+        if stale is not None:
+            dep.last_error = f"Skipped: {stale}"
+            await session.commit()
+            MARKET_DATA_STALE.labels(kind="candles").inc()
+            self._stale_skips += 1
+            logger.warning("Deployment %s: %s", dep.id, stale)
+            return False
+
         signal = strategy.analyze(frames, dep.symbol)
         if not signal.is_tradeable:
             dep.last_error = None
@@ -315,19 +400,43 @@ class TradingWorker:
             await session.commit()
             return False
 
-        broker = None
-        if dep.mode == ExecutionMode.LIVE.value:
-            broker = adapters.get(dep.broker_name or "")
-            if broker is None:
-                dep.last_error = f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
+        contract = None
+        rules = ContractRules.from_deployment(dep)
+        structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
+        if rules.kind == InstrumentKind.OPTION and structure_kind != OptionStrategy.SINGLE:
+            # Phase H2: a multi-leg structure - resolved and executed as one position.
+            return await self._evaluate_structure(session, dep, user, market_data, adapters, now, signal, signal_ts, rules, structure_kind, frames)
+        if rules.derived:
+            # Phase F3: pick the option/future from the master at signal time, off the latest
+            # underlying close. A rule that cannot be satisfied is recorded, never traded around.
+            base = frames.get(dep.timeframe)
+            if base is None:
+                base = next(iter(frames.values()))
+            spot = float(base["close"].iloc[-1]) if len(base) else None
+            try:
+                contract = await resolve_contract(
+                    session, dep.symbol, rules, signal.direction, spot=spot, today=now.astimezone(IST).date(),
+                    chain_provider=_chain_provider(market_data.broker),
+                )
+            except ContractResolutionError as exc:
+                dep.last_error = f"Contract not resolved: {exc}"
                 await session.commit()
-                logger.warning("Deployment %s LIVE entry skipped: token not usable", dep.id)
+                logger.warning("Deployment %s: %s", dep.id, exc)
                 return False
+
+        broker, account_id, skip = await self._live_broker_for(session, dep, adapters)
+        if skip:
+            dep.last_error = skip
+            await session.commit()
+            logger.warning("Deployment %s LIVE entry skipped: %s", dep.id, skip)
+            return False
 
         idempotency_key = f"deployment:{dep.id}:{signal_ts.isoformat()}"
         result, order = await execute_signal_for_user(
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
+            contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
+            account_id=account_id,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -335,6 +444,109 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
         return result.executed
+
+    async def _evaluate_structure(
+        self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,
+        adapters: Dict[str, BrokerInterface], now: datetime, signal, signal_ts, rules: ContractRules,
+        structure_kind: OptionStrategy, frames,
+    ) -> bool:
+        base = frames.get(dep.timeframe)
+        if base is None:
+            base = next(iter(frames.values()))
+        spot = float(base["close"].iloc[-1]) if len(base) else None
+        try:
+            structure = await resolve_structure(
+                session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
+                spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker),
+            )
+        except ContractResolutionError as exc:
+            dep.last_error = f"Structure not built: {exc}"
+            dep.last_signal_at = signal_ts if "not entered on" in str(exc) else dep.last_signal_at
+            await session.commit()
+            logger.warning("Deployment %s: %s", dep.id, exc)
+            return False
+        broker, account_id, skip = await self._live_broker_for(session, dep, adapters)
+        if skip:
+            dep.last_error = skip
+            await session.commit()
+            return False
+        result = await execute_structure(
+            session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal, structure=structure, rules=rules,
+            target_credit_pct=dep.target_credit_pct, stop_credit_pct=dep.stop_credit_pct,
+            idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", broker=broker, quote_broker=market_data.broker,
+            deployment_id=dep.id, account_id=account_id,
+        )
+        dep.last_signal_at = signal_ts
+        dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
+        dep.consecutive_failures = 0
+        await session.commit()
+        logger.info("Deployment %s %s -> executed=%s", dep.id, structure_kind.value, result.executed)
+        return result.executed
+
+    async def _live_broker_for(self, session: AsyncSession, dep: StrategyDeploymentRecord, adapters: Dict[str, BrokerInterface]):
+        """(broker adapter, account id, skip reason) for a deployment's entry. PAPER: no broker.
+        LIVE: the adapter of the routed account, refused when the account is DISABLED, the
+        session is not usable, or the tenant is broker-uncertain (safety rule 8)."""
+        account, label = getattr(self, "_routes", {}).get(dep.id, (None, "primary"))
+        account_id = account.id if account is not None else None
+        if dep.mode != ExecutionMode.LIVE.value:
+            return None, account_id, None
+        if account is not None and account.status != "ACTIVE":
+            return None, account_id, f"LIVE entry skipped: broker account #{account.id} ({account.broker_name}/{account.account_label}) is {account.status}"
+        broker = adapters.get(_adapter_key(dep.broker_name or "", label))
+        if broker is None:
+            return None, account_id, f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
+        uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
+        if uncertain:
+            # execute_signal_for_user would refuse this too (as a REJECTED order per signal
+            # bar); the worker stops one step earlier and says why.
+            return None, account_id, f"LIVE entry skipped: {uncertain}"
+        return broker, account_id, None
+
+    async def reconcile_on_start(self) -> int:
+        """Reconcile every tenant holding an open LIVE trade against that trade's broker before
+        the first cycle (safety rule 18). A mismatch flags the tenant (LIVE entries blocked) and
+        raises a CRITICAL notification; a clean run clears any stale flag. Returns tenants checked."""
+        checked = 0
+        now = datetime.now(timezone.utc)
+        async with self.session_factory() as session:
+            live_trades = list(await session.scalars(
+                select(TradeRecord).where(TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value)
+            ))
+            by_tenant: Dict[int, List[TradeRecord]] = {}
+            for trade in live_trades:
+                by_tenant.setdefault(trade.tenant_id, []).append(trade)
+            for tenant_id, trades in by_tenant.items():
+                tenant = await session.get(Tenant, tenant_id)
+                if tenant is None:
+                    continue
+                # A trade records its deployment, the deployment its broker; a trade opened from
+                # the console has neither, so fall back to every broker the tenant has stored.
+                dep_ids = {t.deployment_id for t in trades if t.deployment_id is not None}
+                broker_names = set()
+                if dep_ids:
+                    deps = await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.id.in_(dep_ids)))
+                    broker_names = {d.broker_name for d in deps if d.broker_name}
+                if not broker_names:
+                    records = await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id))
+                    broker_names = {r.broker_name for r in records}
+                user = await self._acting_user(session, tenant_id, [])
+                if user is None or not broker_names:
+                    logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no broker/user to check with", tenant_id)
+                    continue
+                for broker_name in sorted(broker_names):
+                    adapter = await self._usable_adapter(session, tenant_id, broker_name, user.id, now)
+                    if adapter is None:
+                        logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no usable %s session",
+                                       tenant_id, broker_name)
+                        continue
+                    try:
+                        report = await run_reconciliation(session, tenant, broker_name, adapter, user_id=user.id, source="startup")
+                        logger.info("Start-up reconciliation: tenant %s %s -> %d mismatch(es)", tenant_id, broker_name, report.mismatched_count)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("Start-up reconciliation: tenant %s %s failed: %s", tenant_id, broker_name, exc)
+                    checked += 1
+        return checked
 
     # --- helpers -----------------------------------------------------------------------------
 
@@ -357,9 +569,9 @@ class TradingWorker:
         )
 
     async def _usable_adapter(
-        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime,
+        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime, account_label: str = "primary",
     ) -> Optional[BrokerInterface]:
-        record = await get_credential_record(session, tenant_id, broker_name)
+        record = await get_credential_record(session, tenant_id, broker_name, account_label)
         if record is None:
             return None
         last_check = self._last_token_check.get(record.id, 0.0)
@@ -375,13 +587,13 @@ class TradingWorker:
                 return None
         if not token_is_usable(record, now):
             return None
-        return self._rate_limited(tenant_id, broker_name, build_adapter(record))
+        return self._rate_limited(tenant_id, f"{broker_name}@{account_label}", build_adapter(record))
 
-    def _rate_limited(self, tenant_id: int, broker_name: str, adapter: BrokerInterface) -> BrokerInterface:
-        key = (tenant_id, broker_name)
+    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+        key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
-            budget = self._budgets[key] = RateBudget(limits_for(broker_name))
+            budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
         return RateLimitedBroker(adapter, budget)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
@@ -403,7 +615,7 @@ class TradingWorker:
         closed = 0
         for trade in open_trades:
             try:
-                price = await market_data.get_ltp(trade.symbol, exchange_for_symbol(trade.symbol))
+                price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue

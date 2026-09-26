@@ -95,6 +95,31 @@ class BrokerInterface(ABC):
     # keep working unchanged; an adapter overrides one only where its API needs something
     # different (Upstox: instrument-key symbols and a separate intraday candle endpoint).
 
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Margin the broker would block for `order` (Phase F3: sizing written options). None
+        when the broker does not expose a margin calculator - the caller then refuses to write
+        rather than guess."""
+        return None
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """Full quote for one plain trading symbol *with the exchange's own timestamp* when the
+        broker provides one (Phase G1 staleness gate: an exit decision is refused on a quote
+        older than QUOTE_MAX_STALE_SECONDS). Default None: the broker's LTP endpoint carries no
+        timestamp, the price is accepted as real-time and only its availability is checked."""
+        return None
+
+    async def get_balance(self) -> MarginInfo:
+        """Free funds and margin (V3.14 rule 2: every adapter answers "how much can I trade").
+        Alias of `get_margins` so callers have one obvious name; adapters override when their
+        funds endpoint differs from their margin endpoint."""
+        return await self.get_margins()
+
+    async def disconnect(self) -> None:
+        """Invalidate this session token at the broker (Upstox `DELETE /logout`, Kite
+        `DELETE /session/token`) and forget it locally. Default: forget only - the adapter has no
+        server-side logout - so a caller can always call this and then drop the adapter."""
+        self._access_token = None  # type: ignore[attr-defined]
+
     async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
         """Last traded price for one plain trading symbol (RELIANCE, NIFTY 50, ...). `get_ltp`
         takes each broker's own quote-identifier format, which differs per broker; this is the

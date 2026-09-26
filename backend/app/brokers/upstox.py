@@ -1,4 +1,5 @@
 import gzip
+import logging
 import json
 import time
 from datetime import date, datetime
@@ -6,8 +7,10 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from app.instruments.master import normalise_expiry
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -38,6 +41,8 @@ INSTRUMENTS_URL_TEMPLATE = "https://assets.upstox.com/market-quote/instruments/e
 # needless latency per request, so each adapter instance caches it per exchange for a while.
 _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
+
+logger = logging.getLogger(__name__)
 
 class UpstoxBroker(BrokerInterface):
     """Upstox API v2 adapter.
@@ -118,12 +123,13 @@ class UpstoxBroker(BrokerInterface):
                 instrument_token=row["instrument_key"],
                 exchange=row.get("exchange", exchange),
                 tradingsymbol=row.get("trading_symbol", row.get("tradingsymbol", "")),
-                name=row.get("name"),
+                name=row.get("underlying_symbol") or row.get("name"),
                 segment=row.get("segment"),
                 instrument_type=row.get("instrument_type"),
                 lot_size=int(row.get("lot_size", 1) or 1),
                 tick_size=float(row.get("tick_size", 0.05) or 0.05),
-                expiry=row.get("expiry"),
+                # Upstox sends expiry as epoch milliseconds; the Instrument model carries ISO dates.
+                expiry=(normalise_expiry(row.get("expiry")).isoformat() if normalise_expiry(row.get("expiry")) else None),
                 strike=float(row["strike_price"]) if row.get("strike_price") else None,
             )
             for row in raw
@@ -161,6 +167,29 @@ class UpstoxBroker(BrokerInterface):
         if len(data) == 1:
             return float(next(iter(data.values()))["last_price"])
         raise BrokerAPIError(f"No LTP returned for {exchange}:{symbol}")
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """Full quote for one symbol, with Upstox's `last_trade_time`/`timestamp` parsed into
+        Quote.timestamp so the staleness gate (Phase G1) can judge it."""
+        instrument = await self._resolve_instrument(symbol, exchange)
+        data = await self._request("GET", "/market-quote/quotes", params={"instrument_key": instrument.instrument_token})
+        entry = next((e for e in data.values() if e.get("instrument_token") == instrument.instrument_token), None)
+        if entry is None and len(data) == 1:
+            entry = next(iter(data.values()))
+        if entry is None:
+            raise BrokerAPIError(f"No quote returned for {exchange}:{symbol}")
+        ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
+        return Quote(symbol=symbol, ltp=float(entry.get("last_price", 0.0)), volume=entry.get("volume", 0.0) or 0.0,
+                     oi=entry.get("oi"), timestamp=ts)
+
+    async def disconnect(self) -> None:
+        """`DELETE /logout` invalidates the access token at Upstox; the local copy is dropped
+        whether or not the broker call succeeded (a token we no longer hold cannot be used)."""
+        try:
+            if self._access_token:
+                await self._request("DELETE", "/logout")
+        finally:
+            self._access_token = None
 
     async def get_intraday_candles(self, symbol: str, exchange: str, interval: str) -> List[OHLCVBar]:
         """Upstox serves the current trading day only from its separate intraday endpoint - the
@@ -229,18 +258,27 @@ class UpstoxBroker(BrokerInterface):
 
         rows = []
         for entry in data:
-            call = entry.get("call_options", {}).get("market_data", {})
-            put = entry.get("put_options", {}).get("market_data", {})
+            call = entry.get("call_options", {}).get("market_data", {}) or {}
+            put = entry.get("put_options", {}).get("market_data", {}) or {}
+            call_greeks = entry.get("call_options", {}).get("option_greeks", {}) or {}
+            put_greeks = entry.get("put_options", {}).get("option_greeks", {}) or {}
             rows.append(
                 OptionChainRow(
                     strike=entry["strike_price"],
                     call_oi=call.get("oi"), call_ltp=call.get("ltp"), call_volume=call.get("volume"),
+                    call_change_oi=(call.get("oi") - call.get("prev_oi")) if call.get("oi") is not None and call.get("prev_oi") is not None else None,
+                    call_bid=call.get("bid_price"), call_ask=call.get("ask_price"),
+                    call_iv=call_greeks.get("iv"), call_delta=call_greeks.get("delta"),
                     put_oi=put.get("oi"), put_ltp=put.get("ltp"), put_volume=put.get("volume"),
+                    put_change_oi=(put.get("oi") - put.get("prev_oi")) if put.get("oi") is not None and put.get("prev_oi") is not None else None,
+                    put_bid=put.get("bid_price"), put_ask=put.get("ask_price"),
+                    put_iv=put_greeks.get("iv"), put_delta=put_greeks.get("delta"),
                 )
             )
         return OptionChain(
             underlying=underlying,
             expiry=expiry.isoformat() if expiry else (data[0].get("expiry", "") if data else ""),
+            underlying_ltp=next((e.get("underlying_spot_price") for e in data if e.get("underlying_spot_price")), None),
             rows=sorted(rows, key=lambda r: r.strike),
         )
 
@@ -330,6 +368,27 @@ class UpstoxBroker(BrokerInterface):
             )
             for h in data
         ]
+
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Upstox margin calculator (`POST /charges/margin`): the total margin for the given
+        legs. Parsed defensively - the response has carried `required_margin`, `final_margin` and
+        per-instrument `total_margin` across versions."""
+        instrument = await self._resolve_instrument(order.symbol, order.exchange)
+        payload = {"instruments": [{
+            "instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
+            "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D",
+        }]}
+        try:
+            data = await self._request("POST", "/charges/margin", json=payload)
+        except Exception as exc:  # noqa: BLE001 - unknown margin is reported as None, never raised
+            logger.warning("Upstox margin calculator failed for %s: %s", order.symbol, exc)
+            return None
+        for key in ("required_margin", "final_margin"):
+            if isinstance(data.get(key), (int, float)):
+                return float(data[key])
+        legs = data.get("margins") or []
+        total = sum(float(leg.get("total_margin") or 0) for leg in legs if isinstance(leg, dict))
+        return total or None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/get-funds-and-margin")

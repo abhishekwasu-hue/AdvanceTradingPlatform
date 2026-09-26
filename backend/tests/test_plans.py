@@ -89,10 +89,11 @@ def test_free_plan_caps_active_deployments_and_stopped_ones_free_a_slot():
 def test_free_plan_refuses_live_and_pro_allows_it():
     headers, me = _owner("plan-live@example.com")
     _store_broker(headers)
-    refused = _deploy(headers, "NIFTY 50", mode="LIVE")
+    # A stock: since Phase F2 an index can only be deployed through its options or future.
+    refused = _deploy(headers, "RELIANCE", mode="LIVE")
     assert refused.status_code == 402 and "paper trading only" in refused.json()["detail"]
     _set_tenant(me["tenant_id"], plan="pro")
-    assert _deploy(headers, "NIFTY 50", mode="LIVE").status_code == 201
+    assert _deploy(headers, "RELIANCE", mode="LIVE").status_code == 201
 
 
 def test_downgrade_blocks_resuming_a_paused_live_deployment():

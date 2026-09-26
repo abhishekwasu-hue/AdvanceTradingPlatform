@@ -76,6 +76,10 @@ class OptionChainRow(BaseModel):
     put_iv: Optional[float] = None
     put_bid: Optional[float] = None
     put_ask: Optional[float] = None
+    # Broker-supplied Greeks where the API sends them (Upstox option chain does); otherwise the
+    # strike-selection pipeline computes delta from IV / price itself.
+    call_delta: Optional[float] = None
+    put_delta: Optional[float] = None
 
 
 class OptionChain(BaseModel):

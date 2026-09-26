@@ -1,4 +1,6 @@
 import type {
+  ContractPreview,
+  ContractRules,
   ContractNoteIngest,
   ContractNoteSummary,
   AdminOverview,
@@ -50,6 +52,13 @@ import type {
   TradeRecord,
   UserResponse,
   WorkerStatus,
+  BrokerAccount,
+  PositionGreeks,
+  RiskEvent,
+  RiskLimit,
+  RiskLimitRequest,
+  ReconciliationReport,
+  ReconciliationStatus,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -316,6 +325,18 @@ export const api = {
 
   getRiskSettings: () => request<RiskConfig>("/risk-settings"),
 
+  listRiskLimits: () => request<RiskLimit[]>("/risk/limits"),
+  upsertRiskLimit: (body: RiskLimitRequest) => request<RiskLimit>("/risk/limits", { method: "PUT", body: JSON.stringify(body) }),
+  deleteRiskLimit: (id: number) => request<void>(`/risk/limits/${id}`, { method: "DELETE" }),
+  listRiskEvents: (params?: { strategy_id?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.strategy_id) q.set("strategy_id", params.strategy_id);
+    if (params?.status) q.set("status", params.status);
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<RiskEvent[]>(`/risk/events${qs ? `?${qs}` : ""}`);
+  },
+
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
 
@@ -341,11 +362,16 @@ export const api = {
 
   listStoredBrokerCredentials: () => request<StoredBrokerInfo[]>("/broker/credentials"),
 
-  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput) =>
-    request<void>(`/broker/${name}/credentials`, { method: "POST", body: JSON.stringify(credentials) }),
+  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
 
-  deleteBrokerCredentials: (name: string) =>
-    request<void>(`/broker/${name}/credentials`, { method: "DELETE" }),
+  listAccounts: () => request<BrokerAccount[]>("/accounts"),
+  syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
+  setAccountStatus: (id: number, enabled: boolean) => request<BrokerAccount>(`/accounts/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
+  setDefaultAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/default`, { method: "POST" }),
+
+  deleteBrokerCredentials: (name: string, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "DELETE" }),
 
   authenticateBroker: (name: string) =>
     request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
@@ -390,6 +416,12 @@ export const api = {
 
   upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
 
+  positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
+
+  reconciliationStatus: () => request<ReconciliationStatus>("/reconciliation/status"),
+  runReconciliation: (brokerName: string) =>
+    request<ReconciliationReport>(`/reconciliation/${brokerName}`, { method: "POST" }),
+
   workerStatus: () => request<WorkerStatus>("/system/worker-status"),
 
   listDeployments: (includeStopped = false) =>
@@ -397,6 +429,9 @@ export const api = {
 
   createDeployment: (body: DeploymentCreateRequest) =>
     request<Deployment>("/deployments", { method: "POST", body: JSON.stringify(body) }),
+
+  previewContract: (body: ContractRules & { symbol: string; spot?: number | null }) =>
+    request<ContractPreview>("/deployments/preview-contract", { method: "POST", body: JSON.stringify(body) }),
 
   pauseDeployment: (id: number, reason = "") =>
     request<Deployment>(`/deployments/${id}/pause`, { method: "POST", body: JSON.stringify({ reason }) }),

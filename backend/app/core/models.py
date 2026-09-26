@@ -82,13 +82,18 @@ class Trade(BaseModel):
     entry_price: float
     quantity: float
     stop_loss: float
-    target1: float
+    # None only for derived-contract trades (Phase F3), whose targets are on the underlying.
+    target1: Optional[float] = None
     target2: Optional[float] = None
     exit_time: Optional[datetime] = None
     exit_price: Optional[float] = None
     exit_reason: Optional[str] = None
     pnl: Optional[float] = None
     charges: float = 0.0
+    # Execution quality (master prompt V4.14): what the signal expected vs what filled, and how
+    # long the entry took. None for backtest trades.
+    expected_price: Optional[float] = None
+    entry_latency_ms: Optional[int] = None
 
 
 class BacktestResult(BaseModel):

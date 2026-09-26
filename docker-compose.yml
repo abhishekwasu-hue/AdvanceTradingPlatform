@@ -66,6 +66,7 @@ services:
       RETENTION_NOTIFICATIONS_DAYS: ${RETENTION_NOTIFICATIONS_DAYS:-180}
       RETENTION_SESSIONS_DAYS: ${RETENTION_SESSIONS_DAYS:-30}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9102}
+      INSTRUMENT_SYNC_EXCHANGES: ${INSTRUMENT_SYNC_EXCHANGES:-NSE}
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"

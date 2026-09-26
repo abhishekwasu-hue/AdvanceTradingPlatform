@@ -12,7 +12,7 @@ from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalH
 from app.db.session import get_session
 from app.notifications.service import notify
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
-from app.trading.exit_logic import check_exit
+from app.trading.exit_logic import check_contract_exit
 from app.trading.position_monitor import broker_for_trade, close_position
 
 router = APIRouter(prefix="/api", tags=["trading"])
@@ -28,7 +28,7 @@ class TradeRecordResponse(BaseModel):
     entry_price: float
     quantity: float
     stop_loss: float
-    target1: float
+    target1: Optional[float]
     target2: Optional[float]
     exit_time: Optional[str]
     exit_price: Optional[float]
@@ -38,6 +38,25 @@ class TradeRecordResponse(BaseModel):
     charges_source: str = "ESTIMATED"
     broker_order_id: Optional[str] = None
     exit_order_id: Optional[str] = None
+    instrument_kind: str = "UNDERLYING"
+    exchange: Optional[str] = None
+    lot_size: Optional[int] = None
+    expiry: Optional[str] = None
+    option_position: Optional[str] = None
+    premium_stop_pct: Optional[float] = None
+    underlying_symbol: Optional[str] = None
+    underlying_direction: Optional[str] = None
+    underlying_stop_loss: Optional[float] = None
+    underlying_target1: Optional[float] = None
+    underlying_target2: Optional[float] = None
+    expected_price: Optional[float] = None
+    slippage: Optional[float] = None
+    entry_latency_ms: Optional[int] = None
+    # Phase H2: multi-leg grouping.
+    leg_group_id: Optional[str] = None
+    leg_role: Optional[str] = None
+    option_strategy: Optional[str] = None
+    group_meta: Optional[dict] = None
 
     @classmethod
     def from_record(cls, record: TradeRecord) -> "TradeRecordResponse":
@@ -50,6 +69,14 @@ class TradeRecordResponse(BaseModel):
             exit_price=record.exit_price, exit_reason=record.exit_reason, pnl=record.pnl,
             charges=record.charges, charges_source=record.charges_source or "ESTIMATED",
             broker_order_id=record.broker_order_id, exit_order_id=record.exit_order_id,
+            instrument_kind=record.instrument_kind or "UNDERLYING", exchange=record.exchange, lot_size=record.lot_size,
+            expiry=record.expiry.isoformat() if record.expiry else None, option_position=record.option_position,
+            premium_stop_pct=record.premium_stop_pct, underlying_symbol=record.underlying_symbol,
+            underlying_direction=record.underlying_direction, underlying_stop_loss=record.underlying_stop_loss,
+            underlying_target1=record.underlying_target1, underlying_target2=record.underlying_target2,
+            expected_price=record.expected_price, slippage=record.slippage, entry_latency_ms=record.entry_latency_ms,
+            leg_group_id=record.leg_group_id, leg_role=record.leg_role, option_strategy=record.option_strategy,
+            group_meta=json.loads(record.group_meta) if record.group_meta else None,
         )
 
 
@@ -79,6 +106,106 @@ async def list_open_positions(
         .order_by(TradeRecord.entry_time.desc())
     )
     return [TradeRecordResponse.from_record(r) for r in rows]
+
+
+class PositionGreeksResponse(BaseModel):
+    """Phase H2 / master prompt section 25: Greeks per open option leg and per structure, from
+    live premiums (IV solved from each leg's last price) and the underlying's spot."""
+    as_of: str
+    spot: dict
+    legs: List[dict]
+    groups: List[dict]
+    net: dict
+    skipped: List[dict]
+
+
+@router.get("/positions/greeks", response_model=PositionGreeksResponse)
+async def open_position_greeks(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> PositionGreeksResponse:
+    from datetime import date, datetime, timezone
+    from app.brokers.token_lifecycle import build_adapter, token_is_usable
+    from app.db.models import BrokerCredentialRecord
+    from app.execution.contract_execution import ContractExecutionError
+    from app.instruments import master as instrument_master
+    from app.option_chain.leg_greeks import compute_strategy_greeks
+    from app.option_chain.models import OptionLegInput, OptionType
+
+    rows = list(await session.scalars(
+        select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None),
+                                  TradeRecord.instrument_kind == "OPTION").order_by(TradeRecord.id)
+    ))
+    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+    usable = [r for r in stored if token_is_usable(r)]
+    if rows and not usable:
+        raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in from Settings)")
+    adapter = build_adapter(usable[0]) if usable else None
+    today = date.today().isoformat()
+    spots: dict = {}
+    legs_out: List[dict] = []
+    skipped: List[dict] = []
+    inputs_by_group: dict = {}
+    for trade in rows:
+        if not trade.expiry or trade.underlying_symbol is None:
+            skipped.append({"trade_id": trade.id, "reason": "no expiry/underlying on the trade"})
+            continue
+        strike = _strike_of(trade.symbol)
+        right = "CE" if trade.symbol.rstrip().endswith("CE") or " CE " in trade.symbol else ("PE" if "PE" in trade.symbol else None)
+        if strike is None or right is None:
+            skipped.append({"trade_id": trade.id, "reason": f"cannot read strike/right from {trade.symbol}"})
+            continue
+        try:
+            if trade.underlying_symbol not in spots:
+                underlying = instrument_master.underlying_of(trade.underlying_symbol)
+                exchange = instrument_master.INDEX_EXCHANGE.get(underlying, "NSE")
+                spots[trade.underlying_symbol] = float(await adapter.get_ltp_for_symbol(trade.underlying_symbol, exchange))
+            attempts = [trade.instrument_key] if trade.instrument_key and "|" in trade.instrument_key else []
+            attempts.append(trade.symbol)
+            premium = None
+            for symbol in attempts:
+                try:
+                    premium = float(await adapter.get_ltp_for_symbol(symbol, trade.exchange or "NFO"))
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+            if premium is None or premium <= 0:
+                raise ContractExecutionError("no premium quote")
+        except Exception as exc:  # noqa: BLE001
+            skipped.append({"trade_id": trade.id, "reason": f"quote unavailable: {exc}"})
+            continue
+        signed_qty = int(trade.quantity) if trade.direction == "LONG" else -int(trade.quantity)
+        leg_input = OptionLegInput(strike=strike, option_type=OptionType.CALL if right == "CE" else OptionType.PUT, quantity=signed_qty,
+                                   underlying_ltp=spots[trade.underlying_symbol], expiry=trade.expiry.isoformat(), option_ltp=premium, as_of=today)
+        try:
+            result = compute_strategy_greeks([leg_input]).legs[0]
+        except Exception as exc:  # noqa: BLE001 - a premium below intrinsic cannot be solved
+            skipped.append({"trade_id": trade.id, "reason": f"IV not solvable from premium {premium}: {exc}"})
+            continue
+        legs_out.append({"trade_id": trade.id, "symbol": trade.symbol, "leg_group_id": trade.leg_group_id, "leg_role": trade.leg_role,
+                         "option_strategy": trade.option_strategy, "quantity": signed_qty, "premium": premium,
+                         "implied_volatility": round(result.greeks.implied_volatility, 4), "delta": round(result.greeks.delta, 4),
+                         "gamma": round(result.greeks.gamma, 6), "theta": round(result.greeks.theta, 4), "vega": round(result.greeks.vega, 4),
+                         "position_delta": round(result.position_delta, 2), "position_gamma": round(result.position_gamma, 4),
+                         "position_theta": round(result.position_theta, 2), "position_vega": round(result.position_vega, 2)})
+        inputs_by_group.setdefault(trade.leg_group_id or f"single:{trade.id}", []).append(leg_input)
+    groups = []
+    for group_id, inputs in inputs_by_group.items():
+        g = compute_strategy_greeks(inputs)
+        groups.append({"leg_group_id": None if group_id.startswith("single:") else group_id, "legs": len(inputs),
+                       "net_delta": round(g.net_delta, 2), "net_gamma": round(g.net_gamma, 4), "net_theta": round(g.net_theta, 2), "net_vega": round(g.net_vega, 2)})
+    net = {"net_delta": round(sum(g["net_delta"] for g in groups), 2), "net_gamma": round(sum(g["net_gamma"] for g in groups), 4),
+           "net_theta": round(sum(g["net_theta"] for g in groups), 2), "net_vega": round(sum(g["net_vega"] for g in groups), 2)}
+    return PositionGreeksResponse(as_of=datetime.now(timezone.utc).isoformat(), spot=spots, legs=legs_out, groups=groups, net=net, skipped=skipped)
+
+
+def _strike_of(tradingsymbol: str) -> Optional[float]:
+    """'NIFTY 24500 CE 01 OCT 26' / 'NIFTY26O0124500CE' -> 24500."""
+    import re
+    m = re.search(r"\b(\d{3,6}(?:\.\d+)?)\s*(?:CE|PE)\b", tradingsymbol)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"(\d{3,6}(?:\.\d+)?)(?:CE|PE)$", tradingsymbol.replace(" ", ""))
+    return float(m.group(1)) if m else None
 
 
 class SignalHistoryResponse(BaseModel):
@@ -128,6 +255,9 @@ async def list_signal_history(
 
 class MarkPriceRequest(BaseModel):
     current_price: float
+    # Phase F4: for an option position, the underlying's price too - the strategy's stop/targets
+    # are on it; `current_price` is the contract's premium.
+    underlying_price: Optional[float] = None
 
 
 class MarkPriceResponse(BaseModel):
@@ -154,7 +284,7 @@ async def mark_price(
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
 
-    hit = check_exit(trade, request.current_price)
+    hit = check_contract_exit(trade, request.current_price, request.underlying_price)
     if hit is None:
         return MarkPriceResponse(closed=False)
 

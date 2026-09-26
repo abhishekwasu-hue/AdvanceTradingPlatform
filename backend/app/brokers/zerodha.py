@@ -1,4 +1,5 @@
 import csv
+import logging
 import hashlib
 import io
 import time
@@ -9,6 +10,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -43,6 +45,8 @@ KITE_INTERVAL_MAP = {
 # request, so each adapter instance caches it for a while.
 _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
+
+logger = logging.getLogger(__name__)
 
 class ZerodhaBroker(BrokerInterface):
     """Kite Connect (Zerodha) adapter. Reference implementation for the BrokerInterface.
@@ -148,6 +152,30 @@ class ZerodhaBroker(BrokerInterface):
     async def get_ltp(self, symbols: List[str]) -> Dict[str, float]:
         data = await self._request("GET", "/quote/ltp", params=[("i", s) for s in symbols])
         return {symbol: entry["last_price"] for symbol, entry in data.items()}
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """Kite `/quote` for one "EXCHANGE:SYMBOL", with its `last_trade_time`/`timestamp`
+        (IST wall time, no offset) parsed into Quote.timestamp for the staleness gate."""
+        key = f"{exchange}:{symbol}"
+        data = await self._request("GET", "/quote", params=[("i", key)])
+        entry = data.get(key) or (next(iter(data.values())) if len(data) == 1 else None)
+        if entry is None:
+            raise BrokerAPIError(f"No quote returned for {key}")
+        ts = parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))
+        return Quote(symbol=symbol, ltp=float(entry["last_price"]), volume=entry.get("volume", 0.0) or 0.0,
+                     oi=entry.get("oi"), timestamp=ts)
+
+    async def disconnect(self) -> None:
+        """`DELETE /session/token` invalidates the Kite access token; the local copy is dropped
+        regardless of the broker's answer."""
+        try:
+            if self._access_token:
+                await self._request(
+                    "DELETE", "/session/token",
+                    params={"api_key": self.credentials.api_key, "access_token": self._access_token},
+                )
+        finally:
+            self._access_token = None
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         data = await self._request("GET", "/quote", params=[("i", s) for s in symbols])
@@ -313,6 +341,23 @@ class ZerodhaBroker(BrokerInterface):
             )
             for h in data
         ]
+
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Kite's order-margin calculator (`POST /margins/orders`): one entry per leg with `total`."""
+        payload = [{
+            "exchange": order.exchange, "tradingsymbol": order.symbol, "transaction_type": order.transaction_type.value,
+            "variety": "regular", "product": order.product, "order_type": order.order_type, "quantity": int(order.quantity),
+            "price": order.price or 0, "trigger_price": order.trigger_price or 0,
+        }]
+        try:
+            data = await self._request("POST", "/margins/orders", json=payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Kite margin calculator failed for %s: %s", order.symbol, exc)
+            return None
+        legs = data if isinstance(data, list) else data.get("data", data)
+        if isinstance(legs, list) and legs and isinstance(legs[0], dict) and legs[0].get("total") is not None:
+            return float(legs[0]["total"])
+        return None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/margins")

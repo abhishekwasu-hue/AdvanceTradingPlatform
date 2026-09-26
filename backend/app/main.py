@@ -46,6 +46,7 @@ from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.notifications.routes import router as notifications_router
 from app.reconciliation.routes import router as reconciliation_router
+from app.accounts.routes import router as accounts_router
 from app.scanner.engine import run_scanner
 from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
@@ -53,6 +54,7 @@ from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
 from app.risk_engine.routes import router as risk_settings_router
+from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
@@ -70,6 +72,7 @@ from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
+from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
@@ -111,9 +114,11 @@ app.include_router(broker_router)
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
+app.include_router(risk_hierarchy_router)
 app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
+app.include_router(accounts_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)
@@ -125,6 +130,7 @@ app.include_router(admin_router)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
+app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 
 _default_risk_config = RiskConfig()

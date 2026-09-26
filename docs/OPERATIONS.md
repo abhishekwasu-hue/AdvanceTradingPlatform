@@ -129,6 +129,18 @@ Every trading morning, before 09:15 IST:
    take no entries and PAPER ones have no candles - each deployment's row on the Autopilot tab
    says exactly that in its Note column, and a `TOKEN_EXPIRED` CRITICAL notification is raised
    once. Nothing needs to be resumed afterwards: deployments pick up on the next cycle.
+1a. **Instrument master.** The worker downloads Upstox's public instrument master once a day from
+   08:00 IST (`INSTRUMENT_SYNC_EXCHANGES`, default NSE). `GET /api/instrument-master/status`
+   shows what is loaded and when; if it is stale on an F&O trading day (a download failure is on
+   the worker's cycle report), a platform administrator runs `POST /api/instrument-master/sync`.
+1b. **F&O deployments (Phase F).** An option/future deployment picks its contract at signal
+   time from the master and the spot - check the Autopilot preview once the master is loaded.
+   Bought options exit on the strategy's underlying levels with the premium floor as the safety
+   net; written options carry open-ended risk until the underlying stop or the premium ceiling
+   exits, need the broker's margin calculator LIVE, and default to one lot - keep `max_lots`
+   explicit. All F&O positions are squared off at 15:15 IST like everything else, which also
+   covers expiry day. Positions show `on <underlying>: SL / T1 · premium floor` so you can see
+   both legs of the exit rule.
 2. **Check the worker.** Autopilot tab: "Trading worker: Running" and "Market: Open" once the
    session starts. A stale heartbeat during market hours is an incident (1.7).
 3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the
@@ -208,6 +220,64 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 * **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
   60-second candle cache; longer delays exits.
 
+#### Phase I: risk limits and broker accounts
+
+* A deployment whose `last_error` names a risk limit (`MAX_ORDER_VALUE (tenant): order value
+  ... exceeds limit ...`) was refused by the risk hierarchy; the Risk page's event log shows the
+  measured value against every limit that applied. A `Strategy stopped` or `Daily loss limit
+  reached` CRITICAL notification means a loss limit engaged a kill switch: review, then
+  disengage it from the Risk page only once the cause is understood - the limit will trip again
+  otherwise.
+* Broker accounts (Settings): **Sync** pulls balance, margin and P&L through that account's own
+  session; a `DISABLED` account refuses new LIVE entries (deployments say
+  `broker account #N ... is DISABLED`); ★ marks the default account a deployment on that broker
+  uses when it names none. A second account at the same broker is a second credential with its
+  own label, and its token expires and is renewed independently of the first.
+
+#### Phase H: option structures and strike filters
+
+* A deployment with **strike filters** whose `last_error` reads `Contract not resolved: No CE
+  strike within N steps ... passes (...)` found no liquid enough strike in the live chain that
+  cycle - by design. Loosen the filters or widen `search_steps`; nothing is traded meanwhile.
+  `Option chain ... unavailable` means the broker's chain endpoint failed: check the session.
+* A **spread/condor** shows on the Positions page as two or four legs sharing a group badge
+  (credit, max loss, exit levels). They are closed together by the worker; closing one leg by
+  hand at the broker leaves the others naked - if you must intervene, close the *short* legs
+  first, then run reconciliation. `Structure not built: ... not entered on a SHORT signal` on
+  a bull put deployment is normal: the strategy leaned the wrong way that bar.
+* A LIVE structure that reads `Structure failed: ... unwound N filled leg(s)` had a leg fail
+  mid-placement; the filled wing was sold back, and the tenant is broker-uncertain until
+  reconciliation passes (see the Phase G notes below).
+
+#### Phase G safety gates in the worker
+
+* **Stale market data** - a deployment whose `last_error` reads `Skipped: market data stale: ...`
+  was not evaluated because the newest candle is more than `MARKET_DATA_MAX_STALE_BARS` (3) bars
+  behind the clock. Check the broker's data feed / your own clock; the deployment trades again on
+  the first fresh cycle, nothing to reset. Exits: a quote older than `QUOTE_MAX_STALE_SECONDS`
+  (120) is refused for that cycle (`Price unavailable: ... quote stale ...` in the logs); LIVE
+  positions keep their broker-side stop meanwhile.
+* **Broker uncertain** (red banner on the Autopilot page, `GET /api/reconciliation/status`) - a
+  LIVE order FAILED (the broker call raised or timed out), so the platform does not know what the
+  broker holds. New LIVE entries for that organisation are refused until a reconciliation comes
+  back with zero mismatches. The worker reconciles every cycle by itself; if the flag persists,
+  the CRITICAL notification names the mismatch (`UNTRACKED_AT_BROKER X` = a position at the
+  broker the platform has no record of; `MISSING_AT_BROKER X` = the reverse). Square off or
+  record the difference at the broker / on the Positions page, then press **Reconcile** or wait
+  one cycle. Never clear the flag by editing the database.
+* **Reconciliation on start** - every worker start reconciles each tenant with an open LIVE trade
+  before the first cycle (`Start-up reconciliation:` log lines). A tenant with no usable broker
+  session at that moment is skipped with a warning and picked up by the per-cycle run once they
+  log in.
+* **Circuit open** (`atp_broker_circuit_state{broker} == 2`, `dependencies` health `degraded`) -
+  more than half the calls to that broker failed in the last minute. New LIVE entries to that
+  broker are paused for every tenant for two minutes, then one probe entry is tried. Exits still
+  go through. Nothing to do unless it stays open: then the broker is down, and the question is
+  whether to flatten LIVE positions by hand at the broker's own terminal.
+* **Ending a broker session on purpose** - `POST /api/broker/{name}/disconnect` revokes today's
+  token at the broker and marks it EXPIRED; LIVE deployments stop until the next login. Use it
+  when a token may have leaked or when handing a machine over.
+
 ### 1.7a Monitoring (Phase E1)
 
 * **Scrape targets**: `backend:8000/metrics` (send `Authorization: Bearer $METRICS_TOKEN` when
@@ -224,7 +294,13 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
   * API latency: `histogram_quantile(0.95, sum(rate(atp_http_request_duration_seconds_bucket[5m])) by (le, route)) > 1`.
 * **Health probes**: `GET /api/system/health` (liveness), `GET /api/system/ready` (readiness,
   database only), `GET /api/system/health/deep` (operator detail; `degraded` names the component).
+  Phase G3 adds the master-prompt spellings `GET /api/system/health/live|ready|dependencies`;
+  `dependencies` is `deep` plus every broker circuit breaker's state and the number of
+  organisations with LIVE entries blocked pending reconciliation.
   The Docker `HEALTHCHECK` uses liveness on purpose - a stale worker must not restart the API.
+* **SLOs and alert rules** (Phase G2): `docs/SLO.md` states nine objectives and the metric behind
+  each; `scripts/monitoring/prometheus-alerts.yml` is the matching Prometheus rule file (load it
+  with `rule_files`). The PromQL sketches above are superseded by that file.
 * **Finding one request in the logs**: every response carries `X-Request-ID`; ask the user for
   it (browser dev tools, or the error toast) and grep the API logs for `request_id=<id>`.
 

@@ -54,6 +54,36 @@ class AssetClass(str, Enum):
     CRYPTO = "CRYPTO"
 
 
+class RiskScope(str, Enum):
+    """Phase I1 / V4.5: where a risk limit applies. Evaluated together; the strictest wins."""
+    GLOBAL = "GLOBAL"          # platform-wide, SUPER_ADMIN
+    TENANT = "TENANT"
+    USER = "USER"              # scope_id = user id
+    ACCOUNT = "ACCOUNT"        # scope_id = broker account id
+    STRATEGY = "STRATEGY"      # scope_id = strategy id
+    INSTRUMENT = "INSTRUMENT"  # scope_id = symbol
+
+
+class RiskLimitType(str, Enum):
+    MAX_DAILY_LOSS = "MAX_DAILY_LOSS"                    # currency, realised today
+    MAX_STRATEGY_LOSS = "MAX_STRATEGY_LOSS"              # currency, realised today per strategy
+    MAX_LOSS_PER_TRADE = "MAX_LOSS_PER_TRADE"            # currency at the stop
+    MAX_ORDER_VALUE = "MAX_ORDER_VALUE"                  # currency, entry x quantity
+    MAX_POSITION_QUANTITY = "MAX_POSITION_QUANTITY"      # units per order
+    MAX_OPEN_POSITIONS = "MAX_OPEN_POSITIONS"            # count
+    MAX_TRADES_PER_DAY = "MAX_TRADES_PER_DAY"            # count
+    MAX_CAPITAL_ALLOCATION_PCT = "MAX_CAPITAL_ALLOCATION_PCT"  # % of capital in one order
+
+
+class RiskAction(str, Enum):
+    ALLOW = "ALLOW"
+    WARN = "WARN"
+    BLOCK_ORDER = "BLOCK_ORDER"
+    STOP_STRATEGY = "STOP_STRATEGY"
+    EXIT_POSITION = "EXIT_POSITION"
+    GLOBAL_KILL = "GLOBAL_KILL"
+
+
 class KillSwitchScope(str, Enum):
     """Kill switches stop new order entries at three widening scopes (spec: strategy/user/
     global). GLOBAL is platform-wide (SUPER_ADMIN only); TENANT and STRATEGY are scoped to the
@@ -276,3 +306,44 @@ def grade_from_score(score: int) -> SignalGrade:
     if score >= 60:
         return SignalGrade.WEAK
     return SignalGrade.NO_TRADE
+
+
+class InstrumentKind(str, Enum):
+    """What a deployment trades when its strategy signals on the underlying (Phase F2):
+    the underlying itself (cash equity - the original behaviour), an option on it, or its
+    future. Indices can only be traded through OPTION or FUTURE."""
+
+    UNDERLYING = "UNDERLYING"
+    OPTION = "OPTION"
+    FUTURE = "FUTURE"
+
+
+class OptionPosition(str, Enum):
+    """BUY: LONG signal buys a CE, SHORT buys a PE (loss capped at the premium).
+    WRITE: LONG signal sells a PE, SHORT sells a CE (premium received, margin blocked, loss open-
+    ended until the underlying-level stop or the premium ceiling exits)."""
+
+    BUY = "BUY"
+    WRITE = "WRITE"
+
+
+class ExpiryRule(str, Enum):
+    NEAREST = "NEAREST"   # first expiry on/after today (weekly where the underlying has weeklies)
+    NEXT = "NEXT"         # the one after that
+    MONTHLY = "MONTHLY"   # the last expiry of the nearest month that has one
+
+
+class OptionStrategy(str, Enum):
+    """Phase H2: what an OPTION deployment builds at signal time. SINGLE is the Phase F single
+    leg; the spreads are defined-risk structures sold in the signal's direction (bull put on
+    LONG, bear call on SHORT) and the iron condor sells both sides on either signal."""
+    SINGLE = "SINGLE"
+    BULL_PUT_SPREAD = "BULL_PUT_SPREAD"
+    BEAR_CALL_SPREAD = "BEAR_CALL_SPREAD"
+    IRON_CONDOR = "IRON_CONDOR"
+
+
+class StrikeRule(str, Enum):
+    ATM = "ATM"
+    ITM = "ITM"   # `strike_offset` steps in the money
+    OTM = "OTM"   # `strike_offset` steps out of the money

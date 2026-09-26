@@ -24,6 +24,8 @@ from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
 from app.market_data.calendar import IST, MARKET_OPEN
+from app.market_data.freshness import StaleMarketDataError, quote_is_stale
+from app.observability.metrics import MARKET_DATA_STALE
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,16 @@ class MarketDataService:
             return {}
         return build_frames(bars, base_timeframe, timeframes)
 
-    async def get_ltp(self, symbol: str, exchange: str = "NSE") -> float:
-        # Deliberately uncached: an exit decision on a 60s-old price is a real stop-loss slip.
-        return await self.broker.get_ltp_for_symbol(symbol, exchange)
+    async def get_ltp(self, symbol: str, exchange: str = "NSE", now: Optional[datetime] = None) -> float:
+        """Current price for an exit decision. Deliberately uncached: an exit decision on a 60s-old
+        price is a real stop-loss slip. When the broker can attach the exchange's own timestamp
+        (get_quote_for_symbol) the quote must also be younger than QUOTE_MAX_STALE_SECONDS, or
+        StaleMarketDataError is raised and the caller makes no decision this cycle (Phase G1)."""
+        quote = await self.broker.get_quote_for_symbol(symbol, exchange)
+        if quote is None:
+            return await self.broker.get_ltp_for_symbol(symbol, exchange)
+        reason = quote_is_stale(quote.timestamp, now or datetime.now(timezone.utc))
+        if reason is not None:
+            MARKET_DATA_STALE.labels(kind="quote").inc()
+            raise StaleMarketDataError(f"{exchange}:{symbol} {reason}")
+        return float(quote.ltp)

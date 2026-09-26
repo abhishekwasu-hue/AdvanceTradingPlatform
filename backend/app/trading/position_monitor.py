@@ -18,10 +18,11 @@ Charges on LIVE trades are the same NSE-intraday estimate paper trading uses; th
 contract note is the authoritative figure and reconciliation is where that gets trued up.
 """
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, List, Optional
+from typing import Dict, Awaitable, Callable, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +36,8 @@ from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
-from app.trading.exit_logic import check_exit
+from app.trading.exit_logic import check_contract_exit
+from app.instruments.master import INDEX_EXCHANGE, underlying_of
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,18 @@ class CloseOutcome:
 def exchange_for_symbol(symbol: str) -> str:
     spec = get_contract_spec(symbol)
     return spec.exchange if spec else "NSE"
+
+
+def underlying_exchange(symbol: str) -> str:
+    """Where an underlying's own quote comes from: NSE for stocks and NIFTY indices, BSE for
+    SENSEX/BANKEX."""
+    return INDEX_EXCHANGE.get(underlying_of(symbol), "NSE")
+
+
+def exchange_for_trade(trade: TradeRecord) -> str:
+    """Derived-contract trades (Phase F3) carry their own exchange (NFO/BFO); older rows fall
+    back to the symbol registry."""
+    return trade.exchange or exchange_for_symbol(trade.symbol)
 
 
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:
@@ -121,7 +135,7 @@ async def _square_off_live(
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
     price, or None when the position could not be flattened (the trade must then stay open)."""
-    exchange = exchange_for_symbol(trade.symbol)
+    exchange = exchange_for_trade(trade)
     exit_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
 
     if trade.sl_order_id:
@@ -188,7 +202,7 @@ async def close_position(
 
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
-    charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity)
+    charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING")
     trade.exit_price = round(realised_price, 2)
     trade.exit_time = now or datetime.now(timezone.utc)
     trade.exit_reason = reason
@@ -217,6 +231,63 @@ async def close_position(
     return outcome
 
 
+def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_price: Optional[float]) -> Optional[str]:
+    """Why a multi-leg group should close now, or None. `prices` maps trade id -> leg price.
+    The group's value is what it costs to close it: buy the shorts back, sell the wings."""
+    meta = json.loads(legs[0].group_meta or "{}")
+    value = sum(prices[l.id] if l.leg_role == "SHORT" else -prices[l.id] for l in legs)
+    stop_value = meta.get("stop_value")
+    target_value = meta.get("target_value")
+    if stop_value is not None and value >= stop_value:
+        return f"Spread stop (value {value:.2f} >= {stop_value:g})"
+    if target_value is not None and value <= target_value:
+        return f"Spread target (value {value:.2f} <= {target_value:g})"
+    if underlying_price is not None:
+        for right, strike in (meta.get("short_strikes") or {}).items():
+            if right == "PE" and underlying_price <= strike:
+                return f"Short {int(strike)} PE breached (underlying {underlying_price:.2f})"
+            if right == "CE" and underlying_price >= strike:
+                return f"Short {int(strike)} CE breached (underlying {underlying_price:.2f})"
+    return None
+
+
+async def _monitor_group(
+    session: AsyncSession, legs: List[TradeRecord], price_lookup: PriceLookup, *,
+    broker: Optional[BrokerInterface], user_id: Optional[int],
+) -> List[CloseOutcome]:
+    prices: Dict[int, float] = {}
+    for leg in legs:
+        try:
+            prices[leg.id] = await price_lookup(leg.symbol, exchange_for_trade(leg))
+        except Exception as exc:  # noqa: BLE001 - no decision on a group with a missing leg price
+            logger.warning("No price for leg %s of group %s: %s", leg.symbol, leg.leg_group_id, exc)
+            return [CloseOutcome(trade_id=l.id, closed=False, warnings=[f"Price unavailable for {leg.symbol}: {exc}"]) for l in legs]
+    underlying_price = None
+    if legs[0].underlying_symbol:
+        try:
+            underlying_price = await price_lookup(legs[0].underlying_symbol, underlying_exchange(legs[0].underlying_symbol))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("No underlying price for group %s: %s - value checks only", legs[0].leg_group_id, exc)
+    reason = group_exit(legs, prices, underlying_price)
+    if reason is None:
+        return []
+    return await close_group(session, legs, prices, reason, broker=broker, user_id=user_id)
+
+
+async def close_group(
+    session: AsyncSession, legs: List[TradeRecord], prices: Dict[int, float], reason: str, *,
+    broker: Optional[BrokerInterface], user_id: Optional[int],
+) -> List[CloseOutcome]:
+    """Shorts first (risk off), then the wings. Each leg books its own P&L."""
+    outcomes: List[CloseOutcome] = []
+    for leg in sorted(legs, key=lambda l: 0 if l.leg_role == "SHORT" else 1):
+        leg_broker = broker if leg.mode == ExecutionMode.LIVE.value else None
+        if leg.mode == ExecutionMode.LIVE.value and leg_broker is None:
+            leg_broker = await broker_for_trade(session, leg)
+        outcomes.append(await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id))
+    return outcomes
+
+
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None,
@@ -230,14 +301,31 @@ async def monitor_open_positions(
         .order_by(TradeRecord.id)
     ))
     outcomes: List[CloseOutcome] = []
+    # Phase H2: legs of one structure are judged together, never one by one.
+    groups: Dict[str, List[TradeRecord]] = {}
     for trade in open_trades:
+        if trade.leg_group_id:
+            groups.setdefault(trade.leg_group_id, []).append(trade)
+    for group_id, legs in groups.items():
+        outcomes.extend(await _monitor_group(session, legs, price_lookup, broker=broker, user_id=user_id))
+    for trade in open_trades:
+        if trade.leg_group_id:
+            continue
         try:
-            price = await price_lookup(trade.symbol, exchange_for_symbol(trade.symbol))
+            price = await price_lookup(trade.symbol, exchange_for_trade(trade))
         except Exception as exc:  # noqa: BLE001 - one bad quote must not stop the sweep
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))
             continue
-        hit = check_exit(trade, price)
+        underlying_price = None
+        if (trade.instrument_kind or "UNDERLYING") == "OPTION" and trade.underlying_symbol:
+            # The strategy's levels live on the underlying (Phase F4); without its quote the
+            # premium floor/ceiling still protects the position this cycle.
+            try:
+                underlying_price = await price_lookup(trade.underlying_symbol, underlying_exchange(trade.underlying_symbol))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("No underlying price for %s (trade %s): %s - premium check only", trade.underlying_symbol, trade.id, exc)
+        hit = check_contract_exit(trade, price, underlying_price)
         if hit is None:
             continue
         reason, exit_price = hit

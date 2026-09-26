@@ -214,11 +214,59 @@ npm run dev
   retention, and `scripts/backup/verify_backup.sh` rehearses a restore into a scratch database
   and checks schema, counts and the audit chain. CI runs the rehearsal on every push.
 
+## F&O Autopilot (Phase F)
+
+- **Instrument master**: Upstox's public master (equities, indices, futures, options with lot
+  sizes, expiries, strikes) synced daily pre-market; search/expiries/strikes API; admin force-sync.
+- **Contract rules on a deployment**: trade the underlying, an option (buy or write; nearest /
+  next / monthly expiry; ATM / ITM±n / OTM±n; premium stop or ceiling %; max lots) or a future.
+  The contract is resolved at signal time from the master and the spot; the Autopilot form
+  previews what each direction would trade.
+- **Execution**: bought options sized off the premium at risk in whole lots, written options
+  capped by the broker's margin requirement (never a guess) and max lots, futures on the
+  underlying's stop distance; paper fills at the contract's price; LIVE places the entry on
+  NFO/BFO with an SL-M at the premium floor/ceiling; partial fills and execution quality
+  (expected vs fill, slippage, latency) are recorded.
+- **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
+  (and still works when the index feed is down); futures exit on their own transplanted levels.
+
+## Risk hierarchy and accounts (Phase I)
+
+- **Risk limits at every scope** (organisation, user, broker account, strategy, instrument; platform-wide for the operator):
+  eight limit types checked together on every order with the strictest winning, each check logged as a risk event,
+  loss-limit breaches engaging the matching kill switch automatically.
+- **Broker accounts**: several accounts per broker (labelled credentials), balance/margin/P&L sync, enable/disable,
+  default routing, deployments routed to a named account.
+
+## Options depth (Phase H)
+
+- **Strike-selection pipeline**: liquidity (OI, volume, bid/ask spread), IV band, target delta
+  and premium band filters on a deployment, judged against the live option chain at signal
+  time; the chosen strike's rationale is shown in the preview and kept on the order.
+- **Multi-leg structures**: bull put spread, bear call spread and iron condor deployments,
+  sized in lots off max loss (and the broker's margin when LIVE), placed wings first, closed as
+  one position on the credit target/stop or a short-strike breach; per-leg and per-structure
+  Greeks from live premiums on the Positions page.
+
+## Safety and reliability closure (Phase G)
+
+- **Staleness gate**: no signal on a candle feed more than 3 bars behind the clock, no exit
+  decision on a quote older than 2 minutes - the deployment says why it skipped.
+- **Broker-uncertain flag**: a FAILED live order blocks new LIVE entries for that organisation
+  until position reconciliation against the broker passes; the worker reconciles every cycle
+  while blocked and on start-up before its first cycle. Exits keep running.
+- **Circuit breaker**: a broker whose calls are failing (timeouts, 5xx, 429) has new LIVE
+  entries paused platform-wide for two minutes, then probed; independent of the kill switch.
+- **SLOs** (`docs/SLO.md`) with the metrics behind them and Prometheus alert rules
+  (`scripts/monitoring/prometheus-alerts.yml`); `/api/system/health/live|ready|dependencies`.
+- **Broker disconnect** from Settings-level API (revokes today's token at the broker) and
+  disclaimers on every backtest, signal, score and generated-strategy screen.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 643 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 732 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

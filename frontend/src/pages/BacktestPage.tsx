@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
 import EquityCurveChart from "../components/EquityCurveChart";
-import { Card, DemoDataBanner, StatTile } from "../components/ui";
+import { Card, DemoDataBanner, StatTile, Disclaimer } from "../components/ui";
 import type { BacktestResult, OHLCVBar, StrategyInfo } from "../types";
 import { generateSampleCandles } from "../utils/sampleData";
 
@@ -70,6 +70,7 @@ export default function BacktestPage() {
       </div>
 
       <DemoDataBanner />
+      <Disclaimer kind="backtest" />
 
       <Card>
         <div className="grid sm:grid-cols-4 gap-3 items-end">

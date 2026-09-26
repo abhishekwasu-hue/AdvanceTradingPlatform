@@ -55,6 +55,28 @@ ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false")
 METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
 WORKER_METRICS_PORT = int(os.environ.get("WORKER_METRICS_PORT", "9102"))
 
+# Phase F1: which Upstox public instrument masters the worker syncs daily (source exchanges;
+# NSE carries NSE_EQ/NSE_INDEX/NSE_FO, BSE carries SENSEX/BANKEX derivatives). Empty disables.
+INSTRUMENT_SYNC_EXCHANGES = [e.strip().upper() for e in os.environ.get("INSTRUMENT_SYNC_EXCHANGES", "NSE").split(",") if e.strip()]
+INSTRUMENT_SYNC_HOUR_IST = int(os.environ.get("INSTRUMENT_SYNC_HOUR_IST", "8"))
+
+# Phase G1: market-data staleness gate (safety rule 7). No signal is evaluated when the newest
+# base candle is more than MARKET_DATA_MAX_STALE_BARS bars behind the clock, and no exit decision
+# is taken on a broker quote whose exchange timestamp is older than QUOTE_MAX_STALE_SECONDS.
+# 0 disables either check (not recommended outside tests).
+MARKET_DATA_MAX_STALE_BARS = int(os.environ.get("MARKET_DATA_MAX_STALE_BARS", "3"))
+QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
+
+# Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
+# than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS
+# failed (timeouts, 5xx, 429 - not business 4xx), after at least BROKER_CIRCUIT_MIN_CALLS, new
+# LIVE entries to that broker are refused platform-wide for BROKER_CIRCUIT_OPEN_SECONDS, then one
+# probe entry is allowed. Exits are never refused.
+BROKER_CIRCUIT_WINDOW_SECONDS = float(os.environ.get("BROKER_CIRCUIT_WINDOW_SECONDS", "60"))
+BROKER_CIRCUIT_MIN_CALLS = int(os.environ.get("BROKER_CIRCUIT_MIN_CALLS", "5"))
+BROKER_CIRCUIT_FAILURE_RATIO = float(os.environ.get("BROKER_CIRCUIT_FAILURE_RATIO", "0.5"))
+BROKER_CIRCUIT_OPEN_SECONDS = float(os.environ.get("BROKER_CIRCUIT_OPEN_SECONDS", "120"))
+
 # Autonomous trading worker (app/workers/trading_worker.py) cadence in seconds. 60 matches the
 # 1-minute base candle; anything shorter mostly re-reads the same cached candles.
 WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))

@@ -16,6 +16,15 @@ export interface MfaStatus {
   required_for_live: boolean;
 }
 
+export interface LoginEvent {
+  id: number;
+  success: boolean;
+  reason: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
 export interface SessionInfo {
   id: number;
   current: boolean;
@@ -284,7 +293,8 @@ export type NotificationEventType =
   | "RISK_REJECTION"
   | "DAILY_LOSS_LIMIT"
   | "EMERGENCY_EXIT"
-  | "SYSTEM_FAILURE";
+  | "SYSTEM_FAILURE"
+  | "SECURITY";
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL";
 

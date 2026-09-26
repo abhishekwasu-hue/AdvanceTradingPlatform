@@ -13,8 +13,8 @@ from app.auth.dependencies import require_mfa_session, require_role
 from app.core.config import WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, KillSwitchScope, NotificationSeverity, NotificationType
 from app.db.models import (
-    AuditLogRecord, BrokerCredentialRecord, KillSwitchRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User,
-    WorkerHeartbeatRecord,
+    AuditLogRecord, BrokerCredentialRecord, KillSwitchRecord, LoginEventRecord, StrategyDeploymentRecord, Tenant,
+    TradeRecord, User, WorkerHeartbeatRecord,
 )
 from app.db.session import get_session
 from app.notifications.service import notify
@@ -272,3 +272,20 @@ async def platform_deployments(status_filter: Optional[str] = None, limit: int =
         "mode": d.mode, "status": d.status, "broker_name": d.broker_name, "last_evaluated_at": _iso(d.last_evaluated_at),
         "last_signal_at": _iso(d.last_signal_at), "last_error": d.last_error, "consecutive_failures": d.consecutive_failures,
     } for d, name in rows]
+
+
+@router.get("/login-events")
+async def platform_login_events(
+    email: Optional[str] = None, failures_only: bool = False, limit: int = 200, session: AsyncSession = Depends(get_session),
+) -> List[Dict[str, object]]:
+    """Platform-wide login attempts - the view for spotting a credential-stuffing run."""
+    query = select(LoginEventRecord)
+    if email:
+        query = query.where(LoginEventRecord.email.like(f"%{email.lower()}%"))
+    if failures_only:
+        query = query.where(LoginEventRecord.success.is_(False))
+    rows = await session.scalars(query.order_by(LoginEventRecord.id.desc()).limit(limit))
+    return [{
+        "id": r.id, "email": r.email, "tenant_id": r.tenant_id, "success": r.success, "reason": r.reason,
+        "ip_address": r.ip_address, "user_agent": r.user_agent, "created_at": r.created_at.isoformat(),
+    } for r in rows]

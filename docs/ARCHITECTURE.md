@@ -1778,3 +1778,22 @@ Verified by `tests/test_mfa.py` (enrol/confirm, two-step login incl. wrong codes
 challenge, backup codes single-use and regeneration, the LIVE/broker step-up under the tenant
 policy with the `X-Step-Up` signal, members without MFA told to enable it, admin console and global
 kill switch gated, disable rules, secret encrypted at rest) and migration `c5f1a8d3e927`.
+
+### C4: Login protection
+
+* **Every attempt is recorded** (`login_events`: email, user when known, success, reason, IP,
+  user agent). Unknown emails are recorded too so per-IP counting sees them; only the user's own
+  history is shown to them (System Logs tab), and platform admins get a platform-wide view
+  (`/api/admin/login-events`) for spotting a credential-stuffing run.
+* **Lockout** (`app/auth/lockout.py`): ten failures for an email in fifteen minutes lock that
+  account (423, from any IP, even with the right password) and fifty failures from one IP lock
+  that IP; both lift when the failures age out of the window. Failed MFA codes count. Computed from
+  the table, so it holds across instances and restarts, unlike the in-process request limiter.
+* **New-device alert**: a successful login from an IP + user agent the user has never logged in
+  from before raises a WARNING `SECURITY` notification (delivered through the tenant's alert
+  channels if the floor allows) telling them to log out everywhere and change the password if it
+  was not them. Registration itself is not counted as a device.
+
+Verified by `tests/test_login_protection.py` (recording, per-email lock across IPs with expiry,
+per-IP lock, MFA failures counting, new-device alert once per device, admin view) and migration
+`d6a2b9f4e158`.

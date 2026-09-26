@@ -11,12 +11,17 @@ from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, get_current_user
 from app.auth import mfa
+from app.auth.lockout import HISTORY_LIMIT, is_new_device, lock_reason, record_login_event
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
 from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
 from app.auth.security import hash_password, verify_password
 from app.core.enums import UserRole
 from app.core.rate_limit import rate_limit
-from app.db.models import AlertChannelRecord, PasswordResetRecord, Tenant, TenantInviteRecord, User, UserSessionRecord
+from app.db.models import (
+    AlertChannelRecord, LoginEventRecord, PasswordResetRecord, Tenant, TenantInviteRecord, User, UserSessionRecord,
+)
+from app.notifications.service import notify
+from app.core.enums import NotificationSeverity, NotificationType
 from app.db.session import get_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -124,11 +129,21 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
 
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
 async def login(request: LoginRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
-    user = await session.scalar(select(User).where(User.email == request.email))
+    email = request.email.lower()
+    locked = await lock_reason(session, email, http_request)
+    if locked:
+        await record_login_event(session, email=email, user=None, success=False, reason="locked", request=http_request)
+        await session.commit()
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=locked)
+
+    user = await session.scalar(select(User).where(User.email == email))
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
     # time doesn't leak whether an email is registered (see _DUMMY_PASSWORD_HASH above).
     password_ok = verify_password(request.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
     if user is None or not password_ok or not user.is_active:
+        reason = "unknown_email" if user is None else "inactive" if not user.is_active else "bad_password"
+        await record_login_event(session, email=email, user=user, success=False, reason=reason, request=http_request)
+        await session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     if user.mfa_enabled:
@@ -137,9 +152,25 @@ async def login(request: LoginRequest, http_request: Request, session: AsyncSess
         await session.commit()
         return TokenResponse(mfa_required=True, mfa_token=mfa.create_mfa_token(user.id))
 
-    await write_audit_log(session, user.tenant_id, user.id, "user_login")
-    issued = await start_session(session, user, http_request)
+    return await _complete_login(session, user, http_request, "password")
+
+
+async def _complete_login(session: AsyncSession, user: User, http_request: Request, method: str) -> TokenResponse:
+    """Shared tail of a successful login (password-only, or after the MFA step): new-device
+    alert, login event, audit, session."""
+    new_device = await is_new_device(session, user, http_request)
+    await record_login_event(session, email=user.email, user=user, success=True, reason=method, request=http_request)
+    await write_audit_log(session, user.tenant_id, user.id, "user_login", method)
+    issued = await start_session(session, user, http_request, mfa_verified=method.startswith("mfa"))
     await session.commit()
+    if new_device:
+        ip = http_request.client.host if http_request.client else "unknown"
+        agent = (http_request.headers.get("user-agent") or "unknown browser")[:120]
+        await notify(
+            session, user.tenant_id, NotificationType.SECURITY, title=f"New device login: {user.email}",
+            message=f"Logged in from {ip} ({agent}). If this was not you, log out everywhere and change your password "
+                    "from the Account tab.", severity=NotificationSeverity.WARNING, user_id=user.id,
+        )
     return _token_response(issued)
 
 
@@ -501,15 +532,16 @@ async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, ses
     user = await session.get(User, user_id) if user_id is not None else None
     if user is None or not user.is_active or not user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Login challenge is invalid or expired - start again")
+    locked = await lock_reason(session, user.email, http_request)
+    if locked:
+        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=locked)
     ok, method = await mfa.verify_code(session, user, request.code)
     if not ok:
+        await record_login_event(session, email=user.email, user=user, success=False, reason="mfa_failed", request=http_request)
         await write_audit_log(session, user.tenant_id, user.id, "mfa_login_failed")
         await session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
-    await write_audit_log(session, user.tenant_id, user.id, "user_login", f"mfa:{method}")
-    issued = await start_session(session, user, http_request, mfa_verified=True)
-    await session.commit()
-    return _token_response(issued)
+    return await _complete_login(session, user, http_request, f"mfa:{method}")
 
 
 @router.get("/mfa/status", response_model=MfaStatusResponse)
@@ -627,3 +659,28 @@ async def mfa_disable(
         await session.delete(record)  # ...then removes it entirely
     await write_audit_log(session, user.tenant_id, user.id, "mfa_disabled")
     await session.commit()
+
+
+# --- Login history (Phase C4) ------------------------------------------------------------------
+
+class LoginEventResponse(BaseModel):
+    id: int
+    success: bool
+    reason: str
+    ip_address: Optional[str]
+    user_agent: Optional[str]
+    created_at: str
+
+
+@router.get("/login-history", response_model=list[LoginEventResponse])
+async def login_history(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> list[LoginEventResponse]:
+    """The last attempts to log in as *you* - successes and failures alike, with where from."""
+    rows = await session.scalars(
+        select(LoginEventRecord).where(LoginEventRecord.email == user.email.lower())
+        .order_by(LoginEventRecord.id.desc()).limit(HISTORY_LIMIT)
+    )
+    return [
+        LoginEventResponse(id=r.id, success=r.success, reason=r.reason, ip_address=r.ip_address, user_agent=r.user_agent,
+                           created_at=_as_utc(r.created_at).isoformat())
+        for r in rows
+    ]

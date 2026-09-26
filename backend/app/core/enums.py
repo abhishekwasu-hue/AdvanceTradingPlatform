@@ -30,6 +30,8 @@ class NotificationType(str, Enum):
     DAILY_LOSS_LIMIT = "DAILY_LOSS_LIMIT"
     EMERGENCY_EXIT = "EMERGENCY_EXIT"
     SYSTEM_FAILURE = "SYSTEM_FAILURE"
+    # Account security: login from a new device, MFA/password changes (Phase C4).
+    SECURITY = "SECURITY"
 
 
 class NotificationSeverity(str, Enum):

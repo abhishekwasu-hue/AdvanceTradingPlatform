@@ -64,6 +64,24 @@ class User(Base):
     )
 
 
+class LoginEventRecord(Base):
+    """Every login attempt, successful or not (app/auth/lockout.py). `user_id` is null when the
+    email is unknown - the attempt is still recorded so per-IP lockout can count it. This is the
+    user's own "who logged in as me" history and the input to lockout and new-device detection."""
+
+    __tablename__ = "login_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    success: Mapped[bool] = mapped_column(nullable=False, default=False)
+    reason: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
 class MfaBackupCodeRecord(Base):
     """One-time recovery codes for a user who lost their authenticator. Hash only; consumed on use."""
 

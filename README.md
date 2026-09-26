@@ -174,11 +174,25 @@ npm run dev
 - **Fair sharing**: each tenant's broker calls run under its own rate budget and each tenant gets
   a bounded share of every worker cycle, so one busy account cannot starve the others.
 
+## Account security (Phase C)
+
+- **Sessions**: short-lived access tokens with a rotating refresh token; see and revoke your
+  devices on the Account tab, "Log out everywhere" in one click. Removing a member, changing a
+  password or resetting it ends the affected sessions immediately.
+- **Passwords**: 10+ characters, no breach-list passwords, no email-derived ones. "Forgot
+  password?" emails a one-hour link through your organisation's email channel, or an owner
+  issues one from the Team tab.
+- **Two-factor authentication** (TOTP: Google Authenticator, Authy, 1Password): QR enrolment,
+  backup codes, two-step login. Required for platform administrators and, when the owner turns
+  the policy on, for LIVE deployments and broker credentials.
+- **Login protection**: every attempt is recorded (System Logs tab), ten failures lock the
+  account for fifteen minutes, and a login from a new device raises a security notification.
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 572 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 601 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

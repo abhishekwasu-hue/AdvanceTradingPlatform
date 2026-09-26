@@ -18,6 +18,7 @@ import type {
   CustomStrategyResponse,
   EnrichedSignal,
   InviteInfo,
+  LoginEvent,
   MarkPriceResponse,
   MarketStructureResult,
   MfaStatus,
@@ -246,6 +247,8 @@ export const api = {
   logoutEverywhere: () => request<void>("/auth/logout-all", { method: "POST" }),
 
   listSessions: () => request<SessionInfo[]>("/auth/sessions"),
+
+  loginHistory: () => request<LoginEvent[]>("/auth/login-history"),
 
   revokeSession: (id: number) => request<void>(`/auth/sessions/${id}`, { method: "DELETE" }),
 

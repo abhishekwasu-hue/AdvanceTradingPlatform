@@ -1827,3 +1827,30 @@ when the broker registered that algo. Brokers surface this through the free-text
 
 Verified by `tests/test_algo_tagging.py` (tag shaping and limits, router entry/SL tags, tenant
 API validation and audit, PAPER and LIVE order rows, the LIVE gate, exit-order tagging).
+
+### D2: Compliance exports
+
+Auditors and regulators ask for records as files for a date range, and want to be able to
+show later that the file is the one the platform produced. `app/exports/service.py` builds CSV or
+JSON exports of four datasets - `audit-logs` (with each row's `prev_hash`/`hash`), `orders`
+(every attempt with status, broker id and algo tag), `trades` and `login-events` - for an
+inclusive UTC date range, capped at 50,000 rows (the manifest says when it was truncated).
+
+* **Scopes**: `GET /api/exports/{dataset}` is the organisation's own trail and is OWNER-only
+  (not the caller's rows but the tenant's, which is what the responsible person is asked for);
+  `GET /api/admin/exports/{dataset}` is platform-wide for SUPER_ADMIN with a verified MFA
+  session, narrowed with `tenant_id` when needed. Tenant scoping is applied server-side from the
+  caller's tenant, as everywhere else.
+* **Evidence properties**: the response carries `X-Content-SHA256` of the exact bytes,
+  `X-Export-Rows`, and for the audit dataset `X-Audit-Chain-Intact` (the platform re-verifies its
+  own chain at export time); the same facts sit in a manifest (JSON: `manifest` object; CSV:
+  trailing `# key=value` comment lines, so the file stays a plain CSV) together with the hash
+  recipe, so the chain can be re-verified offline. Every export writes an `export_generated`
+  audit row (dataset, range, rows, SHA-256): who pulled what is on the same chain.
+* **UI**: an export card on System Logs (owners) and on the Admin Console (platform or the
+  selected tenant) downloads the file through the authenticated API client and shows the
+  filename, row count, chain verdict and SHA-256 of what was just downloaded.
+
+Verified by `tests/test_exports.py` (CSV/JSON shape and manifest, SHA-256 header, chain verdict,
+export audit row, date range and validation, owner-only and tenant isolation, admin platform vs
+tenant scope, algo tag column).

@@ -223,6 +223,14 @@ table - a state change is always a new row referencing the previous state, never
 This satisfies Section 53's "audit_logs/order_events/signals never updated/deleted, only appended"
 requirement for the tables that exist today.
 
+**Handing records to an auditor or regulator.** Owners use the export card on System Logs
+(their organisation), platform administrators the one on the Admin Console (platform-wide or one
+tenant). Pick the date range, download CSV or JSON, and record the SHA-256 the UI shows (it is
+also in the `X-Content-SHA256` header and the `export_generated` audit row). The audit-log export
+includes every row's `prev_hash`/`hash` and the chain verdict at export time; the recipient can
+recompute `sha256(prev_hash|tenant_id|user_id|event|detail|created_at)` per row to verify it
+offline. Exports above 50,000 rows are truncated (the manifest says so) - narrow the range.
+
 ### 2.3 Retention and deletion (target - not yet built)
 
 No automated retention/deletion policy exists yet. For a real deployment operating in India, the

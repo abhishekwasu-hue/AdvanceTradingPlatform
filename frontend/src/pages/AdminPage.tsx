@@ -2,6 +2,7 @@ import { Bot, Building2, OctagonX, ScrollText, ShieldEllipsis, Users } from "luc
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, PlatformAuditLog } from "../types";
 
@@ -170,6 +171,8 @@ export default function AdminPage() {
           <button onClick={() => { setSelected(null); api.adminAuditLogs().then(setLogs).catch(() => {}); }} className="mt-3 text-xs text-muted hover:text-slate-200">close</button>
         </Card>
       )}
+
+      <ExportCard scope="platform" tenantId={selected?.id} />
 
       <Card title={selected ? `Audit trail: tenant #${selected.id}` : "Platform audit trail (latest 200)"}>
         <div className="overflow-x-auto">

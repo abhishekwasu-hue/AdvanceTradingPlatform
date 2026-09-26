@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import ExportCard from "../components/ExportCard";
 import { Card } from "../components/ui";
 import type { AuditLogEntry, LoginEvent } from "../types";
 
@@ -41,6 +42,8 @@ export default function SystemLogsPage() {
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}
+
+      {user.role === "OWNER" && <ExportCard scope="tenant" />}
 
       <Card title={`Login history (${logins.length})`}>
         <p className="text-xs text-muted mb-2">

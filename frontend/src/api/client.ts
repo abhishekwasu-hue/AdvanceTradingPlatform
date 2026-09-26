@@ -145,7 +145,38 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type ExportDataset = "audit-logs" | "orders" | "trades" | "login-events";
+
+export interface ExportDownload { blob: Blob; filename: string; sha256: string; rows: string; chainIntact?: string }
+
+/** Authenticated file download for the compliance exports (Phase D2): same token and silent
+ *  refresh as `request`, but returns the body as a Blob plus the integrity headers. */
+async function downloadExport(
+  dataset: ExportDataset, format: "csv" | "json",
+  opts: { from?: string; to?: string; scope: "tenant" | "platform"; tenantId?: number },
+): Promise<ExportDownload> {
+  const params = new URLSearchParams({ format });
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
+  if (opts.scope === "platform" && opts.tenantId) params.set("tenant_id", String(opts.tenantId));
+  const path = `${opts.scope === "platform" ? "/admin/exports" : "/exports"}/${dataset}?${params.toString()}`;
+  let response = await rawRequest(path);
+  if (response.status === 401 && getRefreshToken() && (await tryRefresh())) response = await rawRequest(path);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return {
+    blob: await response.blob(),
+    filename: match?.[1] ?? `${dataset}.${format}`,
+    sha256: response.headers.get("x-content-sha256") ?? "",
+    rows: response.headers.get("x-export-rows") ?? "?",
+    chainIntact: response.headers.get("x-audit-chain-intact") ?? undefined,
+  };
+}
+
 export const api = {
+  downloadExport,
+
   health: () => request<{ status: string }>("/system/health"),
 
   listStrategies: () => request<StrategyInfo[]>("/strategies"),

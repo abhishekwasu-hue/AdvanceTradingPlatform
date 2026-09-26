@@ -114,8 +114,9 @@ docker compose up --build
 # frontend: http://localhost:8080
 ```
 
-Wires four services: `postgres`, `redis` (optional caching - the API works fine without it),
-`backend` (runs `alembic upgrade head` before serving), `frontend`. Verified end to end on a real
+Wires five services: `postgres`, `redis` (optional caching; also the trading worker's replica
+lock), `backend` (runs `alembic upgrade head` before serving), `worker` (the autonomous trading
+engine - same image, `python -m app.workers.trading_worker`), `frontend`. Verified end to end on a real
 machine (Windows + Docker Desktop/WSL2): all images pull and build cleanly, migrations apply
 automatically, and both services come up healthy. See "Docker Deployment" in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full verification note.
@@ -135,6 +136,9 @@ alembic upgrade head   # applies the tracked schema migrations (see docs/ARCHITE
 uvicorn app.main:app --reload
 # API docs at http://localhost:8000/docs
 
+# trading worker (separate terminal, same .env) - evaluates deployed strategies every minute
+python -m app.workers.trading_worker
+
 # frontend (separate terminal)
 cd frontend
 npm install
@@ -142,11 +146,22 @@ npm run dev
 # console at http://localhost:5173
 ```
 
+## Autopilot: trading without a browser open
+
+1. Settings -> store your broker API key/secret (encrypted at rest; never put them in `.env` or
+   a chat) and, for Upstox, click **Login to Upstox** each trading morning - tokens expire daily.
+2. Autopilot tab -> pick a strategy (inbuilt or one you built), a symbol, PAPER or LIVE ->
+   Deploy. LIVE asks you to type `LIVE` and needs a `VALID` broker session.
+3. The `worker` service does the rest every minute during NSE hours: live candles, the same risk
+   engine and kill switches as a manual execute, a broker-side stop-loss on every live fill,
+   continuous exit monitoring, and a full square-off at 15:15 IST. The Dashboard shows its
+   heartbeat. Details: `docs/ARCHITECTURE.md` (Phase A) and `docs/OPERATIONS.md` (daily routine).
+
 ## Run the tests
 
 ```bash
 cd backend
-pytest -q       # 377 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 521 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
 
 cd frontend
 npm run build   # type-checks + production build

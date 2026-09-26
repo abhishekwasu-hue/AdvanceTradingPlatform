@@ -17,16 +17,19 @@ backend/
     indicators/       # EMA, SMA, RSI, ATR, ADX/+DI/-DI, Supertrend (pandas/numpy, no TA-Lib dep)
     strategy_engine/   # BaseStrategy, inbuilt multi-timeframe + indicator-based strategies, registry
     risk_engine/       # position sizing, daily loss / trade-count / consecutive-loss gates
-    brokers/            # BrokerInterface, domain models, Zerodha/Upstox/Shoonya adapters, stubs, registry, routes
+    brokers/            # BrokerInterface, adapters, registry, routes, daily token lifecycle + Upstox OAuth
     auth/                # register/login (JWT), password hashing, get_current_user dependency
     db/                  # SQLAlchemy async engine/session, User/BrokerCredential/TradeRecord/AuditLog models
     secrets_store/        # Fernet encryption for broker credentials at rest
-    trading/              # persists paper-execute fills per user; GET /api/trades, /api/positions
+    trading/              # trade persistence, exit logic, position monitor (one close path, paper + live)
     price_action/       # swing detection, market structure (HH/HL/LH/LL, BOS/CHoCH), candlestick patterns
     support_resistance/ # zone engine: swing clusters, prev day/week, opening range, VWAP, pivots, Fibonacci
     option_chain/       # PCR, Max Pain, ATM/ITM/OTM, OI buildup/unwinding, bias classification
     signal_scoring/     # weighted composite score combining every analysis engine (the "why this trade" layer)
-    execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper/live gate)
+    execution/         # PaperBroker (simulated fills + costs), OrderRouter (paper + live fills, protective SL-M)
+    market_data/       # broker candles (Redis-cached, resampled) + LTP, NSE session/holiday calendar
+    workers/           # the autonomous trading worker (separate process) + worker heartbeat endpoint
+    deployments/       # /api/deployments - what each tenant runs autonomously, in which mode
     backtest/          # event-driven backtest engine with HTF resampling
     main.py            # FastAPI app exposing strategies/signals/paper-execute/backtest/brokers/price-action
   tests/               # pytest coverage for every layer above
@@ -1418,10 +1421,9 @@ calls out as missing, each confirmed directly (not just reasoned about) before b
   New `tests/test_disaster_simulation.py` covers a broker exception, a broker timeout specifically,
   confirms an ordinary broker rejection is *not* misclassified as a system failure, and confirms
   the new state transition is narrowly scoped (RISK_CHECK still can't jump straight to
-  POSITION_OPEN). LIVE mode is not yet wired into the shared `execute_signal_for_user` pipeline
-  (only reachable by constructing `OrderRouter` directly, same as the pre-existing LIVE tests in
-  `tests/test_risk_and_execution.py`) - this fix and its tests operate at that same level, ready
-  for whenever LIVE gets wired into the shared pipeline (see Task A / Upstox sandbox testing).
+  POSITION_OPEN). At the time of this fix LIVE mode was not yet wired into the shared
+  `execute_signal_for_user` pipeline; it is now (Phase A4 below), and this behaviour carries over
+  unchanged: a broker exception mid-placement still ends as FAILED + SYSTEM_FAILURE.
 
 `hypothesis>=6.100,<7.0` added to `requirements.txt` for the two fuzz test files above - `pip-audit`
 re-checked clean with it installed.
@@ -1440,3 +1442,107 @@ rule, and a data-lineage requirement for the future real AI strategy builder). W
 a mix of what's already true in code today versus target procedures for whoever stands up the
 first real production deployment - this environment has no real infrastructure to exercise these
 against, so nothing here claims to have been drilled for real.
+
+## Phase A: Autonomous Trading Core
+
+Until this phase the platform was a console: every signal, paper fill and position check
+happened because someone clicked a button in a browser, on client-supplied candles, and LIVE mode
+was reachable only by constructing `OrderRouter` by hand in a test. A business-grade platform has
+to trade *on its own*, on *real* market data, for *every* tenant, while every browser is closed -
+and it has to stay safe when a token expires at 03:30, a broker call times out mid-fill, or the
+process dies with a live position open. Phase A is that core, built in nine committed parts:
+
+| Part | What landed | Where |
+|------|-------------|-------|
+| A1 | Schema: `strategy_deployments`, `worker_heartbeats`, `market_holidays` (seeded with NSE circular CMTR71775 for 2026), token lifecycle columns on `broker_credentials`, `broker_order_id`/`sl_order_id`/`deployment_id` on `trades` | `alembic/versions/d2a7c9e4f581_*`, `app/db/models.py` |
+| A2 | Broker-backed market data (recent history + today's intraday, 60s Redis cache shared across tenants, resampled to every strategy timeframe anchored at 09:15) and the IST session calendar | `app/market_data/service.py`, `app/market_data/calendar.py`, `BrokerInterface.get_intraday_candles/get_ltp_for_symbol`, Upstox overrides |
+| A3 | Daily token lifecycle (VALID/EXPIRED/UNKNOWN with expiry at each broker's cut-off), `verify_token` against the broker, Upstox OAuth start/callback, `GET /api/broker/token-status`, `place_stop_loss_order` (SL-M) | `app/brokers/token_lifecycle.py`, `app/brokers/routes.py`, `app/brokers/base.py` |
+| A4 | LIVE through the shared pipeline: real fill price from the order book, protective SL-M placed on every live fill, ids persisted on the trade, LIVE-without-broker REJECTED on the order trail | `app/execution/router.py`, `app/execution/signal_execution.py`, `app/trading/persistence.py` |
+| A5 | One close path for paper and live (`close_position`), broker square-off that never double-exits a stop that already fired, tenant-wide open-position sweep; mark-price and emergency-exit now route through it | `app/trading/position_monitor.py` |
+| A6 | The worker process: session gate, token gate, exits before entries, 15:00 entry cut-off, 15:15 square-off, one entry per signal bar, auto-pause on repeated failures, Redis replica lock, heartbeat | `app/workers/trading_worker.py`, `app/workers/routes.py`, `docker-compose.yml` (`worker`) |
+| A7 | Deployments API (strict creation, pause/resume/stop/delete, audited, SUPPORT read-only) and market-holidays admin API | `app/deployments/routes.py`, `app/market_data/routes.py` |
+| A8 | Autopilot tab, broker session banner with one-click Upstox login, LIVE confirmation, Settings session-health card, Dashboard heartbeat | `frontend/src/pages/DeploymentsPage.tsx`, `components/BrokerTokenBanner.tsx` |
+
+### One worker cycle (every `WORKER_CYCLE_SECONDS`, default 60)
+
+```
+acquire Redis lock (fail-open)                     app/cache/client.py::cache_acquire_lock
+market_session_status(now)                         app/market_data/calendar.py
+  closed -> heartbeat only
+for each tenant with ACTIVE/PAUSED deployments:
+  acting user = deployment creator (or first tenant user)
+  for each broker the tenant needs: verify_token   app/brokers/token_lifecycle.py  (TOKEN_EXPIRED alert on rejection)
+  no usable broker -> record last_error on every deployment, skip tenant (auto-resumes after re-login)
+  MarketDataService(broker)
+  >= 15:15 IST ? square off every open position   app/trading/position_monitor.py::close_position
+              : monitor_open_positions (LTP -> check_exit -> close_position)
+  for each ACTIVE deployment:
+    resolve_strategy -> get_frames (cached candles, resampled) -> has_enough_history?
+    strategy.analyze -> NO_TRADE? done
+    same signal bar as last time? / open position for this deployment? / after 15:00? -> skip
+    LIVE with no usable token -> skip with reason
+    execute_signal_for_user(mode, broker, deployment_id, idempotency_key="deployment:<id>:<bar ts>")
+    failure -> consecutive_failures++, PAUSED + SYSTEM_FAILURE after 5
+heartbeat row (cycle_count, last_cycle_ms, last_error)  -> GET /api/system/worker-status
+release lock
+```
+
+Everything a deployment does goes through the *same* `execute_signal_for_user` the console's
+paper-execute and the TradingView webhook use: kill switches, the tenant's saved risk limits,
+the order state machine, idempotency, notifications. There is no second execution path for the
+robot.
+
+### Design decisions worth flagging
+
+* **Worker is its own process, never a thread in the API.** The previous single-user bot this
+  platform replaces ran its engine inside the Streamlit UI process; a browser tab closing stopped
+  trading. Here the API can restart, scale, or be down entirely and the worker keeps trading;
+  `worker_heartbeats` is how anyone (dashboard, ops alerting) knows it is alive.
+* **Tokens are a first-class state, not a string.** Indian retail brokers issue a daily-expiring
+  token and no refresh token. `token_status`/`token_expires_at` plus `verify_token` make "is the
+  session good right now" a fact the LIVE gate checks, and a rejection raises one CRITICAL
+  `TOKEN_EXPIRED` notification (not one per cycle). Upstox's login is driven end-to-end through
+  OAuth (`/oauth/start` -> Upstox dialog -> `/oauth/callback`, bound to the tenant by a signed
+  10-minute state) so the daily routine is one click, not copying a code out of an address bar.
+* **Paper still needs a broker.** Paper deployments consume real broker candles, so a tenant with
+  no stored broker cannot deploy even in PAPER - by design: paper trading on synthetic candles
+  proves nothing about the strategy.
+* **Broker-side stop with every live fill.** `place_stop_loss_order` (SL-M, opposite side, at the
+  signal's stop) closes the gap `docs/OPERATIONS.md` 1.3.4 used to flag. A failed stop never
+  undoes the real fill; it raises CRITICAL and the software stop still applies. On exit the
+  monitor checks whether that stop already fired before placing anything, because a second exit
+  order against an already-flat position would open a reverse one.
+* **Intraday discipline is enforced, not advised.** No entries after 15:00 IST, everything
+  flattened at 15:15 IST (before brokers' own forced MIS square-off), weekends and the
+  `market_holidays` table are closed days. Muhurat/special sessions are deliberately not traded.
+* **Exact fills where the broker tells us, honest fallbacks where it doesn't.** Entry and exit
+  prices come from the broker order book's `average_price` when available (short retry while a
+  market order is pending) and fall back to the signal level otherwise; reconciliation is where
+  the fallback gets corrected. Live charges are the same NSE-intraday estimate paper uses until
+  the contract note is ingested.
+* **One replica unless Redis is present.** The cycle lock fails open when Redis is unreachable so
+  a Redis outage never stops the one worker that is running; two replicas without Redis *would*
+  double-trade, which `docs/OPERATIONS.md` states plainly.
+* **Timestamps persisted in UTC.** SQLite (the test DB) drops tzinfo; storing an IST-aware
+  `last_signal_at` there read back as a UTC wall time 5.5h in the future and suppressed the next
+  entry. Found by the worker tests, fixed by normalising before every write.
+
+### What is and is not verified
+
+* All of the above is covered by tests against the in-memory DB with fake brokers
+  (`tests/test_market_calendar.py`, `test_market_data_service.py`, `test_token_lifecycle.py`,
+  `test_live_execution.py`, `test_position_monitor.py`, `test_trading_worker.py`,
+  `test_deployments_api.py`, plus Upstox adapter tests in `test_brokers.py`); the A1 migration
+  was round-tripped (upgrade, `alembic check`, downgrade, upgrade) on a real Postgres; one real
+  worker cycle ran against Postgres and wrote its heartbeat; the frontend was type-checked, built,
+  and screenshot-verified against the running API. Full suite: 521 passing.
+* **Not yet verified against a real Upstox account.** The Upstox intraday/LTP/order-book/OAuth
+  calls follow the public v2 API documentation and are exercised only through mocked HTTP. The
+  first real run must be a PAPER deployment with real Upstox credentials entered in Settings
+  (never in chat or `.env`), watched for a full session, before any LIVE deployment - see
+  `docs/OPERATIONS.md` 1.5.
+* Not built in this phase (tracked for later phases): tenant plans/seat limits, email/SMS
+  delivery for the CRITICAL alerts the worker raises, contract-note ingestion for exact live
+  charges, options-specific deployments (strike selection), and a Zerodha login flow equivalent
+  to the Upstox OAuth one (Kite's redirect flow is structurally the same and can reuse the state
+  helper).

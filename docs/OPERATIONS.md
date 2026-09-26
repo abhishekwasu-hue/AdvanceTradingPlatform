@@ -68,19 +68,28 @@ an operator does when it happens:
    orders in a non-terminal state older than a few minutes and reconcile each one against the
    broker manually (for PAPER mode, mid-order states can simply be transitioned to `FAILED` with a
    detail note, since nothing external ever actually happened).
-4. **Broker-side failsafe (target, not yet built)**: for real LIVE trading, an open position
-   should never depend solely on this platform staying up to be closed. Section 52's own
-   suggestion - a broker-side GTT (Good-Till-Triggered) stop-loss order placed at the same time as
-   entry - is not yet implemented (today, `app/execution/router.py`'s LIVE path places only the
-   entry order). This is a real gap for actual live-money trading and should be built before this
-   platform is trusted with LIVE mode on any broker: if the platform's own process is down, an
-   open position with no broker-side stop-loss can run past its intended risk limit with nothing
-   to stop it.
+4. **Broker-side failsafe (built - Phase A4)**: an open LIVE position never depends solely on
+   this platform staying up to be closed. Every live fill is immediately followed by a stop-loss
+   market order (`SL-M`, opposite side, at the signal's stop - `BrokerInterface.place_stop_loss_
+   order`), and its broker order id is stored as `trades.sl_order_id`. If the platform's process
+   is down, the exchange still closes the position at the stop. If placing that stop fails the
+   fill is kept (it is real) and a CRITICAL `SYSTEM_FAILURE` notification says so - the operator
+   places a manual stop at the broker as backup. On exit, `app/trading/position_monitor.py`
+   checks whether the stop already fired before placing anything else.
+5. **Deployments after a restart**: nothing needs re-arming. `strategy_deployments` rows are
+   durable; the worker picks every ACTIVE one up on its next cycle, and the position sweep covers
+   every open trade for the tenant whether or not its deployment is still ACTIVE. A deployment the
+   worker auto-PAUSED (5 consecutive failures) stays paused until someone resumes it from the
+   Autopilot tab - deliberately, so a restart never silently re-enables something that was
+   failing.
 
 ### 1.4 "Platform down during market hours" runbook
 
-1. Check `GET /api/system/health` and the process/container status first - most outages are a
-   crashed process or a lost DB connection, not data loss.
+1. Check `GET /api/system/health` (API), `GET /api/system/worker-status` (trading worker
+   heartbeat - `running=false` means no heartbeat for 3 cycles) and the process/container status
+   first - most outages are a crashed process or a lost DB connection, not data loss. The API and
+   the worker are separate processes: the console being down does not stop trading, and the
+   worker being down does not stop the console (the Dashboard/Autopilot tab show a red banner).
 2. If the app is down but the DB is healthy: redeploy/restart the stateless app tier. No data is
    at risk (state lives entirely in Postgres). Run the reconciliation step (1.3.2) before resuming
    automated order placement.
@@ -97,14 +106,65 @@ an operator does when it happens:
    chain - see `app/audit/log.py` - makes the timeline itself tamper-evident) and the
    `order_events`/reconciliation-report rows covering the incident window.
 
-### 1.5 Multi-AZ / high-availability readiness
+### 1.5 Daily operating routine (autonomous trading)
+
+Every trading morning, before 09:15 IST:
+
+1. **Log in to the broker.** Broker tokens expire daily (Upstox 03:30 IST, Kite/Shoonya 06:00
+   IST) with no refresh token. Settings -> Broker session health -> **Login to Upstox** completes
+   the OAuth round-trip and stores the new token (encrypted); for other brokers paste the day's
+   token and click Authenticate. The banner must read `VALID`. Until it does, LIVE deployments
+   take no entries and PAPER ones have no candles - each deployment's row on the Autopilot tab
+   says exactly that in its Note column, and a `TOKEN_EXPIRED` CRITICAL notification is raised
+   once. Nothing needs to be resumed afterwards: deployments pick up on the next cycle.
+2. **Check the worker.** Autopilot tab: "Trading worker: Running" and "Market: Open" once the
+   session starts. A stale heartbeat during market hours is an incident (1.6).
+3. **Check risk limits and kill switches** (Risk Management tab) - the worker enforces the
+   tenant's saved limits on every entry, exactly like a manual paper execute.
+
+During the session the worker takes no new entries after 15:00 IST and flattens every open
+position at 15:15 IST (before brokers' own forced MIS square-off). After the session review
+Positions/Orders/Notifications; a `SYSTEM_FAILURE` notification always needs a human look.
+
+**First real run:** the Upstox integration has only been exercised against mocked HTTP. Run the
+first real session as a PAPER deployment with real Upstox credentials entered in Settings, watch
+it for a full day (candles arriving, signals evaluated, exits firing, square-off at 15:15), and
+only then create a LIVE deployment - starting with the smallest lot the risk settings allow.
+
+### 1.6 Trading worker runbook
+
+* **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`
+  from `backend/` with the same `.env` as the API). It is safe to restart at any time: all state
+  is in Postgres, positions keep their broker-side stops, and the next cycle resumes monitoring.
+* **Heartbeat stale (`running=false`) during market hours:** restart the worker first, then check
+  its logs (`docker compose logs worker`) - a cycle that crashes is logged with a full traceback
+  and the worker loop itself survives it, so a *stopped* heartbeat normally means the container
+  is gone, not a bug in a cycle. Open positions are still protected by their broker-side stops
+  meanwhile; if the worker cannot be brought back before 15:15 IST, square off by hand at the
+  broker or via Emergency Exit (Risk Management tab) with current prices.
+* **`last_error` on the heartbeat / a deployment:** per-tenant and per-deployment failures never
+  stop the cycle; they are recorded on the row the Autopilot tab shows. A deployment auto-pauses
+  after 5 consecutive failures with a CRITICAL notification - fix the cause (usually an unknown
+  symbol at the broker or an expired token) and Resume.
+* **Replicas:** run exactly one worker unless Redis is reachable. The cycle lock
+  (`atp:trading_worker:lock`) is a Redis `SET NX`; with Redis down it fails open so the single
+  worker keeps going, which also means two workers without Redis would trade every deployment
+  twice.
+* **Holidays:** the worker treats weekends and the `market_holidays` table as closed. Add next
+  year's NSE list (published each December) via `POST /api/market-holidays` as a SUPER_ADMIN
+  before January, or the worker will try to trade on Republic Day.
+* **Cadence:** `WORKER_CYCLE_SECONDS` (default 60, one base candle). Shorter mostly re-reads the
+  60-second candle cache; longer delays exits.
+
+### 1.7 Multi-AZ / high-availability readiness
 
 Not implemented today (this is a Phase 1, single-region, single-instance deployment target) but
 the application is already written not to block it later: the app tier is fully stateless (no
 in-process session state beyond the per-process rate limiter noted in `app/core/rate_limit.py`,
 which is explicitly documented there as needing a shared store like Redis before running more than
 one instance), so horizontal scaling and multi-AZ app-tier deployment is an infrastructure change,
-not an application rewrite. The database is the one component that needs real multi-AZ
+not an application rewrite. The trading worker is a single active instance by design (1.6); a
+standby replica is safe only with Redis providing the cycle lock. The database is the one component that needs real multi-AZ
 replication (a managed Postgres offering's standard multi-AZ/read-replica feature) before this
 claim extends to the data layer too.
 

@@ -110,7 +110,7 @@ jobs:
         run: docker build -t atp-frontend:ci ./frontend
 
       - name: Scan backend image for OS/dependency vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: atp-backend:ci
           severity: "CRITICAL,HIGH"
@@ -118,7 +118,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Scan frontend image for OS/dependency vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: atp-frontend:ci
           severity: "CRITICAL,HIGH"

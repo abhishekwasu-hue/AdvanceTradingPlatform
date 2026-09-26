@@ -36,6 +36,7 @@ from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
+from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.trading.exit_logic import check_contract_exit
 from app.instruments.master import INDEX_EXCHANGE, underlying_of
 
@@ -288,6 +289,38 @@ async def close_group(
     return outcomes
 
 
+async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, price: float, *, broker: Optional[BrokerInterface]) -> Optional[str]:
+    """Run the trade's ExitRules against the current price. Persists a tightened stop and the
+    best price; LIVE, moves the broker-side SL-M trigger too (a failed modify keeps the software
+    stop and says so). Returns a time-exit reason when one fired."""
+    rules = ExitRules.from_json(trade.exit_rules)
+    if not rules.active:
+        return None
+    update = apply_exit_rules(
+        rules, direction=trade.direction, entry_price=trade.entry_price,
+        initial_stop=trade.initial_stop_loss if trade.initial_stop_loss is not None else trade.stop_loss,
+        current_stop=trade.stop_loss, best_price=trade.best_price, high=price, low=price,
+        entry_time=trade.entry_time, now=datetime.now(timezone.utc),
+    )
+    changed = update.best_price != trade.best_price or update.stop_changed
+    trade.best_price = update.best_price
+    if update.stop_changed:
+        old_stop = trade.stop_loss
+        trade.stop_loss = update.stop_loss
+        logger.info("Trade %s stop %s -> %s (%s)", trade.id, old_stop, update.stop_loss, update.stop_reason)
+        live_broker = broker
+        if trade.mode == ExecutionMode.LIVE.value and live_broker is None:
+            live_broker = await broker_for_trade(session, trade)
+        if trade.mode == ExecutionMode.LIVE.value and trade.sl_order_id and live_broker is not None:
+            try:
+                await live_broker.modify_order(trade.sl_order_id, trigger_price=update.stop_loss)
+            except Exception as exc:  # noqa: BLE001 - the software stop still applies
+                logger.warning("Could not move broker stop %s for trade %s: %s", trade.sl_order_id, trade.id, exc)
+    if changed:
+        await session.commit()
+    return update.time_exit_reason
+
+
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None,
@@ -317,6 +350,16 @@ async def monitor_open_positions(
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))
             continue
+        # Phase J1: dynamic exits - tighten the stop (trailing / break-even) or close on time,
+        # with the same rule code the backtest engine runs.
+        if trade.exit_rules:
+            time_reason = await _apply_trade_exit_rules(session, trade, price, broker=broker)
+            if time_reason is not None:
+                trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
+                if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
+                    trade_broker = await broker_for_trade(session, trade)
+                outcomes.append(await close_position(session, trade, price, time_reason, broker=trade_broker, user_id=user_id))
+                continue
         underlying_price = None
         if (trade.instrument_kind or "UNDERLYING") == "OPTION" and trade.underlying_symbol:
             # The strategy's levels live on the underlying (Phase F4); without its quote the

@@ -52,7 +52,11 @@ import type {
   TradeRecord,
   UserResponse,
   WorkerStatus,
+  BacktestRunSummary,
   BrokerAccount,
+  ExitRules,
+  MonteCarloResult,
+  WalkForwardResult,
   PositionGreeks,
   RiskEvent,
   RiskLimit,
@@ -215,11 +219,22 @@ export const api = {
       { method: "POST", body: JSON.stringify({ symbol, candles }) },
     ),
 
-  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[]) =>
+  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample") =>
     request<BacktestResult>("/backtest", {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, data_source: dataSource }),
     }),
+  backtestMonteCarlo: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, runs = 1000) =>
+    request<{ monte_carlo: MonteCarloResult }>(`/backtest/monte-carlo?runs=${runs}`, {
+      method: "POST",
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+    }),
+  backtestWalkForward: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, folds = 4) =>
+    request<WalkForwardResult>(`/backtest/walk-forward?folds=${folds}`, {
+      method: "POST",
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+    }),
+  listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
 
   priceActionStructure: (symbol: string, candles: OHLCVBar[]) =>
     request<MarketStructureResult>("/price-action/structure", {

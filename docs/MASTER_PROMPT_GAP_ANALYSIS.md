@@ -18,9 +18,9 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 23-25 options engine, strategies, Greeks | done (Phase F + H) | Strike-selection pipeline with liquidity/OI/IV/delta/premium filters (H1); bull put, bear call, iron condor with max-loss sizing and group exits (H2); Greeks per leg and per structure on open positions. Future structures (straddle, strangle, ratio, calendar, butterfly, custom builder) not built. |
 | 26-27 paper, live | done | Same pipeline; configurable slippage; execution delay/bid-ask simulation not modelled. |
 | 28 kill switches, emergency exit | done | Global/tenant/strategy + emergency exit. |
-| 29 SL/target engine | partial | Fixed levels from the strategy, premium floor/ceiling (F4). **Trailing SL, break-even, time-based exit, ATR-based SL missing.** |
+| 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
 | 30 TradingView webhook | done | |
-| 31-32 backtest | partial | Engine + UI; **no walk-forward, Monte Carlo, parameter optimisation, or V2.10 analytics views**. |
+| 31-32 backtest | done (Phase J2) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records. **Parameter optimisation** and historical option-chain backtests not built. |
 | 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis is rule-based, no LLM. |
 | 37-42 UI, versions, notifications | done | Telegram + email; **SMS/push/webhook channels missing**. |
 | 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` missing. |
@@ -47,7 +47,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | --- | --- | --- |
 | V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. |
 | V2.1-2.6 options depth | partial | See §23-25. |
-| V2.10 analytics views | missing | Strategy comparison, monthly heatmap, time-of-day, exit and slippage analysis (slippage now recorded per trade). |
+| V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; deployments route to an account; `risk_limits` at six scopes with strictest-wins and `risk_events`. Broker-selection *rules* (capital/risk-based routing across brokers) not built - routing is explicit per deployment. |
 | V3.6-3.8 plans, billing, metering | partial | Plans and limits done; **billing provider abstraction and usage metering missing**. |
 | V3.9-3.12 marketplace, public API, developer portal | missing | |
@@ -86,7 +86,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase G - safety and reliability closure** - **DONE** on this branch (ARCHITECTURE.md Phase G, docs/SLO.md). Was: market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.
 - **Phase H - options depth** - **DONE** on this branch (ARCHITECTURE.md Phase H). Was: strike-selection filters from the option chain (liquidity, OI, IV, delta), multi-leg deployments (bull put, bear call, iron condor) with max-loss/max-profit/breakeven/margin sizing and group exits, Greeks per position.
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
-- **Phase J - exits and backtesting depth** (§29, §31, V2.10, V4.8): trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
+- **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
 - **Phase K - commercial SaaS** (V3.6-3.13): billing abstraction and metering, marketplace, public API + developer portal, SMS/push/webhook notifications.
 - **Phase L - AI layer** (§56, V4.1-4.3, V4.7): LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine (needs a model provider decision and API key handling).
 - **Continuous**: the V1 exit gate - a real Upstox account run - as soon as credentials are entered in Settings.

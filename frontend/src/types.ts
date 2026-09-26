@@ -197,6 +197,51 @@ export interface BacktestResult {
   expectancy: number;
   trades: Trade[];
   equity_curve: number[];
+  analytics?: BacktestAnalytics | null;
+  exit_rules?: string | null;
+  run_id?: number | null;
+}
+
+export interface ExitRules {
+  trailing_stop_pct?: number | null;
+  break_even_at_r?: number | null;
+  time_exit_minutes?: number | null;
+  time_exit_at?: string | null;
+}
+
+export interface AnalyticsBucket { key: string; trades: number; pnl: number; win_rate: number; avg_pnl: number }
+
+export interface BacktestAnalytics {
+  monthly: AnalyticsBucket[];
+  day_of_week: AnalyticsBucket[];
+  hour_of_day: AnalyticsBucket[];
+  exit_reasons: AnalyticsBucket[];
+  direction: AnalyticsBucket[];
+  holding_minutes: { avg: number | null; max: number | null; min: number | null };
+  slippage: { avg_per_unit: number | null; trades_with_data: number };
+  costs: { total_charges: number; gross_pnl: number; charges_pct_of_gross: number | null };
+  streaks: { max_consecutive_wins: number; max_consecutive_losses: number };
+  ratios: { cagr_pct: number | null; sharpe: number | null; sortino: number | null; calmar: number | null; period_days?: number };
+  drawdown_curve: number[];
+}
+
+export interface BacktestRunSummary {
+  id: number; strategy_id: string; symbol: string; base_timeframe: string; params: Record<string, unknown> | null;
+  exit_rules: ExitRules | null; data_source: string; bars: number; data_from: string | null; data_to: string | null;
+  engine_version: string; created_at: string | null; total_trades: number | null; net_pnl: number | null;
+  win_rate: number | null; max_drawdown: number | null; profit_factor: number | null;
+}
+
+export interface MonteCarloResult {
+  runs: number; trades: number; note?: string;
+  final_pnl?: { p5: number; p25: number; p50: number; p75: number; p95: number; mean: number };
+  max_drawdown?: { p50: number; p95: number; worst: number; original: number };
+  probability_of_loss_pct?: number; probability_dd_exceeds_original_pct?: number; risk_of_ruin_pct?: number;
+}
+
+export interface WalkForwardResult {
+  folds: number; note?: string; profitable_windows?: number; consistency_pct?: number; mean_window_pnl?: number; window_pnl_range?: number;
+  windows: { window: number; from: string; to: string; bars: number; trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; max_drawdown: number; expectancy: number }[];
 }
 
 export type Moneyness = "ITM" | "ATM" | "OTM";
@@ -694,6 +739,8 @@ export interface Deployment {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  exit_rules?: ExitRules | null;
+  broker_account_id?: number | null;
 }
 
 export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
@@ -787,6 +834,7 @@ export interface DeploymentCreateRequest extends ContractRules {
   mode: ExecutionMode;
   broker_name?: string | null;
   broker_account_id?: number | null;
+  exit_rules?: ExitRules | null;
 }
 
 export interface ResolvedContract {

@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Exits and backtesting depth (Phase J)
+
+- **Dynamic exits** on deployments and backtests: trailing stop %, break-even at R, time exits;
+  one implementation for backtest, paper and live (LIVE moves the broker-side stop).
+- **Backtest analytics**: monthly, day-of-week and hour-of-day performance, exit-reason and
+  direction breakdowns, holding times, slippage and cost share, streaks, CAGR/Sharpe/Sortino/Calmar,
+  drawdown curve; **Monte Carlo** and **walk-forward** robustness checks; every logged-in run recorded.
+
 ## Risk hierarchy and accounts (Phase I)
 
 - **Risk limits at every scope** (organisation, user, broker account, strategy, instrument; platform-wide for the operator):
@@ -266,7 +274,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 732 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 741 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

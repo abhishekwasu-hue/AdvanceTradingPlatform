@@ -2358,3 +2358,40 @@ route (`_live_broker_for`): a DISABLED account, a missing session or a broker-un
 each record their reason and skip the entry. The account id is passed into execution so
 ACCOUNT-scope risk limits apply. Settings shows the accounts card; the Autopilot form offers
 the broker's accounts for LIVE deployments.
+
+## Phase J: Exits and backtesting depth
+
+### J1: Dynamic exit rules
+
+Master prompt section 29. `app/trading/exit_rules.py::ExitRules` (JSON on the deployment and
+on each trade it opens) carries `trailing_stop_pct`, `break_even_at_r`, `time_exit_minutes`
+and `time_exit_at` (IST). `apply_exit_rules` is one pure function of the trade's state and the
+latest bar or quote: it returns a stop that only ever tightens (break-even once the trade is
+`R` multiples in profit, a trailing stop off the best price once in profit), the new best
+price, and a time-exit reason when one fired. The backtest engine applies it per bar (judging
+the bar against the stop tightened on the *previous* bar) and the position monitor applies it
+per cycle on the current price, persisting `best_price` / `stop_loss` (the original stop stays
+in `initial_stop_loss`) and, LIVE, moving the broker-side SL-M trigger with `modify_order`
+(a failed modify keeps the software stop and is logged). One rule implementation for backtest,
+paper and live - section 13's "same logic everywhere" for exits.
+
+### J2: Backtest analytics, robustness and run records
+
+Sections 31-32, V2.10, V4.8. `app/backtest/analytics.py::build_analytics` derives the report
+views from the closed trades and the equity curve: monthly P&L, day-of-week and hour-of-day
+performance, exit-reason breakdown, direction split, holding-time stats, slippage summary
+(entry vs the signal's expected price), cost share, streaks, ratio metrics (CAGR, Sharpe,
+Sortino, Calmar where the sample allows) and the drawdown curve; `BacktestResult.analytics`
+carries it. `app/backtest/robustness.py` adds **Monte Carlo** (resample the trade P&Ls with
+replacement, report percentiles of final P&L and max drawdown, probability of loss, probability
+the drawdown exceeds the original) and **walk-forward** (the same parameters on consecutive
+windows, per-window metrics and a consistency score; no per-window re-optimisation, which would
+be a new strategy version). Endpoints `POST /api/backtest/monte-carlo` and
+`/api/backtest/walk-forward`.
+
+Every backtest a logged-in user runs is recorded (`backtest_runs`: strategy, params, exit
+rules, data source label, bar count and span, engine version, headline metrics and analytics)
+and listed at `GET /api/backtests` / `GET /api/backtests/{id}`, so a number on a screen is
+traceable to what produced it. The Backtest page gains exit-rule inputs, the analytics tables,
+Monte Carlo and walk-forward cards and the run history; the Autopilot form gains the same
+exit-rule inputs. Migration `a7c3e1f9b286`.

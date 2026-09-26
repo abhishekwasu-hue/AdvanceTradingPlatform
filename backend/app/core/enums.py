@@ -138,6 +138,7 @@ class AlertChannelType(str, Enum):
 
     TELEGRAM = "TELEGRAM"
     EMAIL = "EMAIL"
+    WEBHOOK = "WEBHOOK"   # Phase K4: HMAC-signed JSON POST to the tenant's own endpoint
 
 
 class AlertDeliveryStatus(str, Enum):

@@ -44,7 +44,7 @@ async def persist_signal_history(session: AsyncSession, user: User, enriched: En
 async def persist_trade(
     session: AsyncSession, user: User, trade: Trade, *, mode: str = "PAPER",
     broker_order_id: Optional[str] = None, sl_order_id: Optional[str] = None, deployment_id: Optional[int] = None,
-    contract_meta: Optional[dict] = None,
+    contract_meta: Optional[dict] = None, exit_rules: Optional[str] = None,
 ) -> TradeRecord:
     """Writes a filled trade (paper or live) to this tenant's history, attributed to the user who
     executed it. Only called for a real logged-in user or a deployment acting on the tenant's
@@ -79,6 +79,9 @@ async def persist_trade(
     for key, value in (contract_meta or {}).items():
         if hasattr(record, key):
             setattr(record, key, value)
+    record.initial_stop_loss = trade.stop_loss  # Phase J1: the stop the rules tighten from
+    if exit_rules:
+        record.exit_rules = exit_rules
     session.add(record)
     await session.commit()
     await session.refresh(record)

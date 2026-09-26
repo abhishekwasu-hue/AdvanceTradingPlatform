@@ -24,6 +24,7 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.engine import run_backtest
+from app.backtest.routes import BacktestBody, ExitRulesBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -119,6 +120,7 @@ app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
 app.include_router(accounts_router)
+app.include_router(backtest_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)
@@ -158,6 +160,9 @@ class BacktestRequest(BaseModel):
     candles: List[OHLCVBar]
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
+    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
+    exit_rules: Optional[ExitRulesBody] = None
+    data_source: str = "uploaded"
 
 
 class PaperExecuteResponse(BaseModel):
@@ -347,7 +352,11 @@ async def backtest(
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
-    return run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config)
+    result = run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config,
+                          exit_rules=request.exit_rules.to_rules() if request.exit_rules else None)
+    # Phase J2: a logged-in caller's run is recorded (strategy, params, data span, metrics).
+    result.run_id = await record_run(session, user, BacktestBody(**request.model_dump()), result)
+    return result
 
 
 @app.post("/api/price-action/structure", response_model=MarketStructureResult)

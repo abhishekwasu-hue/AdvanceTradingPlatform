@@ -436,7 +436,7 @@ class TradingWorker:
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
-            account_id=account_id,
+            account_id=account_id, exit_rules=dep.exit_rules,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]

@@ -44,6 +44,8 @@ class Tenant(Base):
     broker_uncertain_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     broker_uncertain_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Phase K: why the status is what it is ("billing: grace expired", "admin: ...").
+    status_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     users: Mapped[list["User"]] = relationship(back_populates="tenant")
@@ -293,6 +295,11 @@ class TradeRecord(Base):
     leg_role: Mapped[str | None] = mapped_column(String(6), nullable=True)
     option_strategy: Mapped[str | None] = mapped_column(String(20), nullable=True)
     group_meta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase J1: the exit rules this trade runs under, its initial stop (the stop_loss column moves
+    # as rules tighten it) and the best price seen so far (trailing high-water mark).
+    exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    initial_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    best_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -401,6 +408,8 @@ class StrategyDeploymentRecord(Base):
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Phase I2: route this deployment's LIVE orders to one broker account (NULL = the broker's default).
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Phase J1: dynamic exit rules JSON (trailing %, break-even R, time exits) - app/trading/exit_rules.py.
+    exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
@@ -666,6 +675,144 @@ class BrokerAccountRecord(Base):
     last_sync_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class BacktestRunRecord(Base):
+    """Phase J2 (V4.8, section 41): one backtest a logged-in user ran - the strategy, its
+    parameters, the data it saw (source label, bar count, span) and the headline metrics - so a
+    result on a screen can always be traced to what produced it."""
+
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    strategy_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    base_timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_source: Mapped[str] = mapped_column(String(30), nullable=False, default="uploaded")
+    bars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    data_from: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    data_to: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    engine_version: Mapped[str] = mapped_column(String(20), nullable=False, default="1")
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class SubscriptionRecord(Base):
+    """Phase K1 (V3.6-3.8): why a tenant is on its plan. One per tenant; `tenants.plan` mirrors
+    the entitlement so every existing limit check keeps reading one column."""
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    plan_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    billing_cycle: Mapped[str] = mapped_column(String(10), nullable=False, default="MONTHLY")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="TRIALING")   # TRIALING / ACTIVE / PAST_DUE / CANCELLED
+    provider: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
+    provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    trial_end: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    grace_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(nullable=False, default=False)
+    cancelled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class BillingTransactionRecord(Base):
+    """Phase K1 (section 43 billing_transactions): invoices, payments, refunds, failed payments."""
+
+    __tablename__ = "billing_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)      # INVOICE / PAYMENT / REFUND / FAILED_PAYMENT
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    status: Mapped[str] = mapped_column(String(10), nullable=False)    # OPEN / PAID / VOID / FAILED
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class UsageRecord(Base):
+    """Phase K1 (V3.14 rule 7): metered usage per tenant, daily buckets."""
+
+    __tablename__ = "usage_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    metric: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    period_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, index=True)
+    period_end: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="api")
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class MarketplaceListingRecord(Base):
+    """Phase K2 (V3.9-3.10): a strategy version a creator offers to other tenants. Publishing goes
+    through review; the documented performance is a saved backtest run, never a promise."""
+
+    __tablename__ = "marketplace_listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # creator
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    custom_strategy_id: Mapped[int] = mapped_column(ForeignKey("custom_strategies.id", ondelete="CASCADE"), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)     # frozen copy of the published version
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    methodology: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backtest_run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id", ondelete="SET NULL"), nullable=True)
+    performance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")   # DRAFT / PENDING_REVIEW / PUBLISHED / REJECTED / UNLISTED
+    review_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    subscriber_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    published_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class MarketplaceSubscriptionRecord(Base):
+    __tablename__ = "marketplace_subscriptions"
+    __table_args__ = (UniqueConstraint("listing_id", "tenant_id", name="uq_marketplace_subscriber"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("marketplace_listings.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # subscriber
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    custom_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)  # the subscriber's copy
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class ApiKeyRecord(Base):
+    """Phase K3 (V3.11-3.12): a public API key. The secret is shown once and stored hashed."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    scopes: Mapped[str] = mapped_column(String(500), nullable=False, default="")   # comma-separated
+    rate_limit_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
 class KillSwitchRecord(Base):

@@ -29,6 +29,7 @@ from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
+from app.trading.exit_rules import ExitRules
 from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
@@ -73,6 +74,17 @@ class StrikeFiltersRequest(BaseModel):
 
     def to_filters(self) -> StrikeFilters:
         return StrikeFilters(**self.model_dump())
+
+
+class ExitRulesRequest(BaseModel):
+    """Phase J1: dynamic exits applied by the position monitor (and the backtest engine)."""
+    trailing_stop_pct: Optional[float] = Field(default=None, gt=0, le=50)
+    break_even_at_r: Optional[float] = Field(default=None, gt=0, le=10)
+    time_exit_minutes: Optional[int] = Field(default=None, ge=1, le=375)
+    time_exit_at: Optional[str] = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    def to_rules(self) -> ExitRules:
+        return ExitRules(**self.model_dump())
 
 
 class ContractRulesRequest(BaseModel):
@@ -155,6 +167,8 @@ class DeploymentCreateRequest(ContractRulesRequest):
     broker_name: Optional[str] = None
     # Phase I2: route LIVE orders to one broker account (None = the broker's default account).
     broker_account_id: Optional[int] = None
+    # Phase J1: dynamic exits.
+    exit_rules: Optional[ExitRulesRequest] = None
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -197,6 +211,7 @@ class DeploymentResponse(BaseModel):
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
     broker_account_id: Optional[int] = None
+    exit_rules: Optional[dict] = None
     contract_rules: str = "underlying"
 
     @classmethod
@@ -215,7 +230,8 @@ class DeploymentResponse(BaseModel):
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
-            broker_account_id=record.broker_account_id, contract_rules=describe_deployment(record),
+            broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
+            contract_rules=describe_deployment(record),
         )
 
 
@@ -226,8 +242,12 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
         text = describe_structure(strategy, record.spread_width or 2, rules)
         if rules.strike_filters.active:
             text += f", filters: {rules.strike_filters.describe()}"
-        return text
-    return describe_rules(rules)
+    else:
+        text = describe_rules(rules)
+    exits = ExitRules.from_json(getattr(record, "exit_rules", None))
+    if exits.active:
+        text += f"; exits: {exits.describe()}"
+    return text
 
 
 async def _open_position_counts(session: AsyncSession, tenant_id: int) -> dict:
@@ -354,6 +374,7 @@ async def create_deployment(
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
         broker_account_id=account.id if account is not None else None,
+        exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
     )
     session.add(record)
     try:

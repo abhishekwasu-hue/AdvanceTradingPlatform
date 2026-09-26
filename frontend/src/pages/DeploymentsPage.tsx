@@ -14,6 +14,7 @@ import {
   type CustomStrategyResponse,
   type Deployment,
   type ExecutionMode,
+  type ExitRules,
   type ExpiryRule,
   type InstrumentKind,
   type OptionPosition,
@@ -93,6 +94,19 @@ export default function DeploymentsPage() {
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
+  const [exitTrail, setExitTrail] = useState("");
+  const [exitBreakEven, setExitBreakEven] = useState("");
+  const [exitMinutes, setExitMinutes] = useState("");
+  const [exitAt, setExitAt] = useState("");
+
+  function exitRules(): ExitRules | null {
+    const r: ExitRules = {};
+    if (exitTrail) r.trailing_stop_pct = Number(exitTrail);
+    if (exitBreakEven) r.break_even_at_r = Number(exitBreakEven);
+    if (exitMinutes) r.time_exit_minutes = Number(exitMinutes);
+    if (exitAt) r.time_exit_at = exitAt;
+    return Object.keys(r).length ? r : null;
+  }
   const [filters, setFilters] = useState<Record<string, string>>({});
 
   function strikeFilters(): StrikeFilters | null {
@@ -178,7 +192,7 @@ export default function DeploymentsPage() {
     try {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
-        broker_account_id: accountId ? Number(accountId) : null, ...contractRules(),
+        broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), ...contractRules(),
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -512,6 +526,28 @@ export default function DeploymentsPage() {
               <div className="sm:col-span-2 text-[11px] text-muted">{preview.rules}{preview.spot ? ` · spot ${preview.spot} (${preview.spot_source})` : ""}</div>
             </div>
           )}
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2">Dynamic exits <span className="normal-case font-normal">(optional; the strategy's stop and targets still apply)</span></div>
+          <div className="grid sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1">Trailing stop %</label>
+              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={exitTrail} onChange={(e) => setExitTrail(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Break-even at R</label>
+              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={exitBreakEven} onChange={(e) => setExitBreakEven(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Time exit (minutes)</label>
+              <input type="number" min={1} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={exitMinutes} onChange={(e) => setExitMinutes(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Flat at (HH:MM IST)</label>
+              <input placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={exitAt} onChange={(e) => setExitAt(e.target.value)} />
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-4">

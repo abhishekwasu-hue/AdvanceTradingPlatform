@@ -113,3 +113,7 @@ class BacktestResult(BaseModel):
     expectancy: float = 0.0
     trades: List[Trade] = Field(default_factory=list)
     equity_curve: List[float] = Field(default_factory=list)
+    # Phase J2: analytics views (monthly, day/hour, exit reasons, streaks, ratios, drawdown curve).
+    analytics: Optional[Dict[str, Any]] = None
+    exit_rules: Optional[str] = None
+    run_id: Optional[int] = None

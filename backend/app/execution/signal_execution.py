@@ -53,7 +53,7 @@ async def execute_signal_for_user(
     idempotency_key: Optional[str] = None, risk_config: Optional[RiskConfig] = None,
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
-    quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None,
+    quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -242,7 +242,7 @@ async def execute_signal_for_user(
             trade_record = await persist_trade(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
-                contract_meta=plan.meta if plan is not None else None,
+                contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules,
             )
             order.trade_id = trade_record.id
             update_log_context(trade_id=trade_record.id)

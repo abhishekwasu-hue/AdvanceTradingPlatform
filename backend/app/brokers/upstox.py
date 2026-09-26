@@ -1,4 +1,5 @@
 import gzip
+import logging
 import json
 import time
 from datetime import date, datetime
@@ -39,6 +40,8 @@ INSTRUMENTS_URL_TEMPLATE = "https://assets.upstox.com/market-quote/instruments/e
 # needless latency per request, so each adapter instance caches it per exchange for a while.
 _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
+
+logger = logging.getLogger(__name__)
 
 class UpstoxBroker(BrokerInterface):
     """Upstox API v2 adapter.
@@ -332,6 +335,27 @@ class UpstoxBroker(BrokerInterface):
             )
             for h in data
         ]
+
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Upstox margin calculator (`POST /charges/margin`): the total margin for the given
+        legs. Parsed defensively - the response has carried `required_margin`, `final_margin` and
+        per-instrument `total_margin` across versions."""
+        instrument = await self._resolve_instrument(order.symbol, order.exchange)
+        payload = {"instruments": [{
+            "instrument_key": instrument.instrument_token, "quantity": int(order.quantity),
+            "transaction_type": order.transaction_type.value, "product": "I" if order.product == "MIS" else "D",
+        }]}
+        try:
+            data = await self._request("POST", "/charges/margin", json=payload)
+        except Exception as exc:  # noqa: BLE001 - unknown margin is reported as None, never raised
+            logger.warning("Upstox margin calculator failed for %s: %s", order.symbol, exc)
+            return None
+        for key in ("required_margin", "final_margin"):
+            if isinstance(data.get(key), (int, float)):
+                return float(data[key])
+        legs = data.get("margins") or []
+        total = sum(float(leg.get("total_margin") or 0) for leg in legs if isinstance(leg, dict))
+        return total or None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/get-funds-and-margin")

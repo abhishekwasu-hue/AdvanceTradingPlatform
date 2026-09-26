@@ -169,23 +169,3 @@ def test_preview_contract_endpoint():
 
     plain = client.post("/api/deployments/preview-contract", headers=headers, json={"symbol": "RELIANCE"}).json()
     assert plain["kind"] == "UNDERLYING"
-
-
-def test_worker_refuses_derived_contract_until_execution_is_wired(monkeypatch):
-    """Guard for the window between F2 and F3: an option deployment must not trade the index."""
-    from app.db.models import StrategyDeploymentRecord
-    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
-    t = _tenant("rules-worker@example.com")
-    dep_id = _deploy(t, symbol="NIFTY 50")
-
-    async def mark():
-        async with _session_factory() as session:
-            dep = await session.get(StrategyDeploymentRecord, dep_id)
-            dep.instrument_kind, dep.option_position = "OPTION", "BUY"
-            await session.commit()
-    _run(mark())
-    worker = _worker(monkeypatch, _FakeBroker())
-    _force_signal(monkeypatch, _signal)
-    report = _run(worker.run_cycle(now=OPEN_NOW))
-    assert report.signals_executed == 0 and _trades(t["tenant_id"]) == []
-    assert "not enabled" in _get(StrategyDeploymentRecord, dep_id).last_error

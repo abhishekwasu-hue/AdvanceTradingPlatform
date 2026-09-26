@@ -2096,3 +2096,52 @@ Verified by `tests/test_contract_rules.py` (right by position, expiry and strike
 ties/clamping, resolution of bought/written options and futures for index and stock underlyings,
 explicit errors, request validation and defaults, uniqueness across kinds, master-presence guard,
 preview endpoint, the worker guard).
+
+### F3: Executing on the derived contract
+
+`app/execution/contract_execution.py` turns "LONG NIFTY 50 at 24512, stop 24460" plus the
+resolved contract into an *order signal* on the contract, so the risk engine, paper broker, live
+router and order trail keep working on one `Signal` shape:
+
+* **Bought option**: entry = current premium (`contract_ltp`, by broker instrument key first,
+  tradingsymbol second), stop = premium floor (`premium_stop_pct` below), direction LONG. Risk
+  per unit is the premium at risk, so the risk engine's `risk_amount / risk_per_unit` sizes lots
+  off it exactly as it sizes shares off a stop distance, in whole lots of the master's lot size
+  (a `ContractSpec` built from the resolved contract overrides the registry lookup). A small
+  account gets the existing "below one lot" rejection with its reason on the order trail.
+* **Written option**: entry = premium received, stop = premium ceiling above, direction SHORT
+  (P&L falls as the premium rises). Capped by `max_lots` (one lot when unset) and, LIVE, by
+  `written_lot_cap`: the broker's own margin requirement for one lot (`get_order_margin`, new on
+  `BrokerInterface`, implemented for Upstox `/charges/margin` and Kite `/margins/orders`)
+  against 80% of available margin. An unknown requirement or insufficient margin is a REJECTED
+  order with the reason - never a guess.
+* **Future**: entry = the future's price; the underlying's stop and target distances are
+  transplanted onto it; direction as signalled. Exits then work exactly as for cash (F4).
+* **Same pipeline**: `execute_signal_for_user(..., contract, rules, quote_broker)` builds the plan
+  before the order row is created (so the trail's symbol is the contract from its first event),
+  rejects on a missing quote, applies the size cap in `OrderRouter.execute(max_quantity=...)`, and
+  the existing LIVE path places the entry on NFO/BFO and an SL-M on the opposite side at the
+  premium floor/ceiling (or the transplanted future stop). PAPER fills at the contract's own
+  price with the usual slippage model, not at the underlying's.
+* **Trade record** (migration `c3e9a7b5d842`): `symbol` is the contract; `stop_loss` is on the
+  contract; `target1` is now nullable (an option has no target on its own price); the strategy's
+  levels are kept as `underlying_symbol`/`underlying_direction`/`underlying_stop_loss`/
+  `underlying_target1`/`underlying_target2` for the monitor (F4); plus `instrument_kind`,
+  `exchange`, `instrument_key`, `lot_size`, `expiry`, `option_position`, `premium_stop_pct`.
+  `exchange_for_trade` gives the monitor and square-off the right exchange for the quote and
+  the exit order.
+* **From the new master prompt** (V4.14 execution quality, safety rule 17): every trade records
+  `expected_price` (the signal's price), `slippage` (signed against the trade) and
+  `entry_latency_ms`; a LIVE entry that fills partially records the position and sizes the
+  protective stop to the *filled* quantity, with the partial fill spelled out on the trail (the
+  order book is read once for both price and quantity).
+* **Worker**: an OPTION/FUTURE deployment resolves its contract at signal time off the latest
+  underlying close; a rule that cannot be satisfied is recorded on the deployment and no trade
+  is taken. The F2 guard is gone.
+
+Verified by `tests/test_contract_execution.py` (order plans for buy/write/future, quote
+fallbacks and failure, margin cap arithmetic and refusals, PAPER buy sizing and stored fields,
+below-one-lot rejection, max-lots cap, missing-quote rejection on the trail, LIVE buy entry +
+floor SL-M, LIVE write sell + ceiling SL-M capped by margin, LIVE write refused on unknown/
+insufficient margin, partial fill, PAPER future with transplanted levels, worker end-to-end
+and resolution failure). Not verified: real broker margin API responses (parsed defensively).

@@ -95,6 +95,12 @@ class BrokerInterface(ABC):
     # keep working unchanged; an adapter overrides one only where its API needs something
     # different (Upstox: instrument-key symbols and a separate intraday candle endpoint).
 
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Margin the broker would block for `order` (Phase F3: sizing written options). None
+        when the broker does not expose a margin calculator - the caller then refuses to write
+        rather than guess."""
+        return None
+
     async def get_ltp_for_symbol(self, symbol: str, exchange: str = "NSE") -> float:
         """Last traded price for one plain trading symbol (RELIANCE, NIFTY 50, ...). `get_ltp`
         takes each broker's own quote-identifier format, which differs per broker; this is the

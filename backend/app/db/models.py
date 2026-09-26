@@ -228,7 +228,9 @@ class TradeRecord(Base):
     # every equity/index-option/MCX fill still always lands on a whole multiple of its lot size.
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
-    target1: Mapped[float] = mapped_column(Float, nullable=False)
+    # Nullable since Phase F3: a bought/written option has no target on its own price - the
+    # strategy's targets are on the underlying (underlying_target1/2 below).
+    target1: Mapped[float | None] = mapped_column(Float, nullable=True)
     target2: Mapped[float | None] = mapped_column(Float, nullable=True)
     exit_time: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -255,6 +257,26 @@ class TradeRecord(Base):
     contract_note_id: Mapped[int | None] = mapped_column(
         ForeignKey("contract_notes.id", ondelete="SET NULL"), nullable=True
     )
+    # Phase F3: derived-contract trades. `symbol` is the contract actually held (an option or
+    # future tradingsymbol) and stop_loss/target* are on that contract's price; the strategy's own
+    # levels live on the underlying, so the position monitor watches `underlying_symbol` against
+    # them (F4) and uses the contract price only for P&L and the premium floor/ceiling.
+    instrument_kind: Mapped[str] = mapped_column(String(12), nullable=False, default="UNDERLYING")
+    exchange: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    instrument_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lot_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    option_position: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    premium_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    underlying_symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    underlying_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    underlying_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    underlying_target1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    underlying_target2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Execution quality (master prompt V4.14): signal price vs fill, and entry latency.
+    expected_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slippage: Mapped[float | None] = mapped_column(Float, nullable=True)   # fill - expected, signed against the trade
+    entry_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 

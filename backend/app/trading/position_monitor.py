@@ -64,6 +64,12 @@ def exchange_for_symbol(symbol: str) -> str:
     return spec.exchange if spec else "NSE"
 
 
+def exchange_for_trade(trade: TradeRecord) -> str:
+    """Derived-contract trades (Phase F3) carry their own exchange (NFO/BFO); older rows fall
+    back to the symbol registry."""
+    return trade.exchange or exchange_for_symbol(trade.symbol)
+
+
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:
     """The authenticated adapter that can square off this LIVE trade: the broker its deployment
     trades through, or - for a trade entered by hand - the tenant's single stored broker. None
@@ -121,7 +127,7 @@ async def _square_off_live(
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
     price, or None when the position could not be flattened (the trade must then stay open)."""
-    exchange = exchange_for_symbol(trade.symbol)
+    exchange = exchange_for_trade(trade)
     exit_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
 
     if trade.sl_order_id:
@@ -232,7 +238,7 @@ async def monitor_open_positions(
     outcomes: List[CloseOutcome] = []
     for trade in open_trades:
         try:
-            price = await price_lookup(trade.symbol, exchange_for_symbol(trade.symbol))
+            price = await price_lookup(trade.symbol, exchange_for_trade(trade))
         except Exception as exc:  # noqa: BLE001 - one bad quote must not stop the sweep
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))

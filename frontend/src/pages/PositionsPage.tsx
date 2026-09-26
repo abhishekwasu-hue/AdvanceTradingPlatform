@@ -95,8 +95,17 @@ export default function PositionsPage() {
                   <DirectionBadge direction={p.direction as "LONG" | "SHORT"} />
                   <span className="text-muted text-xs">{p.strategy_id}</span>
                   <span className="text-xs text-muted">Entry {p.entry_price.toFixed(2)} × {p.quantity}</span>
-                  <span className="text-xs text-danger">SL {p.stop_loss.toFixed(2)}</span>
-                  <span className="text-xs text-accent">T1 {p.target1.toFixed(2)}</span>
+                  {p.instrument_kind && p.instrument_kind !== "UNDERLYING" && p.underlying_symbol ? (
+                    <span className="text-xs text-muted">
+                      on {p.underlying_direction} {p.underlying_symbol}: SL {p.underlying_stop_loss?.toFixed(2) ?? "-"} / T1 {p.underlying_target1?.toFixed(2) ?? "-"}
+                      {p.instrument_kind === "OPTION" ? ` · premium ${p.option_position === "WRITE" ? "ceiling" : "floor"} ${p.stop_loss.toFixed(2)}` : ` · stop ${p.stop_loss.toFixed(2)}`}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-xs text-danger">SL {p.stop_loss.toFixed(2)}</span>
+                      <span className="text-xs text-accent">T1 {p.target1?.toFixed(2) ?? "-"}</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-muted">No live price feed yet - check manually:</span>
@@ -154,7 +163,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-t border-border">
-              <td className="py-1 pr-3 font-medium text-slate-200">{r.symbol}</td>
+              <td className="py-1 pr-3 font-medium text-slate-200">{r.symbol}{r.instrument_kind && r.instrument_kind !== "UNDERLYING" && <div className="text-[10px] text-muted">{r.option_position === "WRITE" ? "written" : r.instrument_kind.toLowerCase()} · lot {r.lot_size ?? "?"} · on {r.underlying_symbol}</div>}</td>
               <td className="py-1 pr-3 text-muted">{r.strategy_id}</td>
               <td className="py-1 pr-3">
                 <DirectionBadge direction={r.direction as "LONG" | "SHORT"} />
@@ -162,7 +171,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
               <td className="py-1 pr-3">{r.entry_price.toFixed(2)}</td>
               <td className="py-1 pr-3">{r.quantity}</td>
               <td className="py-1 pr-3 text-danger">{r.stop_loss.toFixed(2)}</td>
-              <td className="py-1 pr-3 text-accent">{r.target1.toFixed(2)}</td>
+              <td className="py-1 pr-3 text-accent">{r.target1?.toFixed(2) ?? (r.underlying_target1 != null ? `${r.underlying_target1.toFixed(2)} (${r.underlying_symbol})` : "-")}</td>
               <td className="py-1 pr-3">{r.exit_price?.toFixed(2) ?? "-"}</td>
               <td className={`py-1 pr-3 ${(r.pnl ?? 0) >= 0 ? "text-accent" : "text-danger"}`}>
                 {r.pnl?.toFixed(2) ?? "-"}

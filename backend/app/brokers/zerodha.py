@@ -1,4 +1,5 @@
 import csv
+import logging
 import hashlib
 import io
 import time
@@ -43,6 +44,8 @@ KITE_INTERVAL_MAP = {
 # request, so each adapter instance caches it for a while.
 _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
+
+logger = logging.getLogger(__name__)
 
 class ZerodhaBroker(BrokerInterface):
     """Kite Connect (Zerodha) adapter. Reference implementation for the BrokerInterface.
@@ -313,6 +316,23 @@ class ZerodhaBroker(BrokerInterface):
             )
             for h in data
         ]
+
+    async def get_order_margin(self, order: BrokerOrderRequest) -> Optional[float]:
+        """Kite's order-margin calculator (`POST /margins/orders`): one entry per leg with `total`."""
+        payload = [{
+            "exchange": order.exchange, "tradingsymbol": order.symbol, "transaction_type": order.transaction_type.value,
+            "variety": "regular", "product": order.product, "order_type": order.order_type, "quantity": int(order.quantity),
+            "price": order.price or 0, "trigger_price": order.trigger_price or 0,
+        }]
+        try:
+            data = await self._request("POST", "/margins/orders", json=payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Kite margin calculator failed for %s: %s", order.symbol, exc)
+            return None
+        legs = data if isinstance(data, list) else data.get("data", data)
+        if isinstance(legs, list) and legs and isinstance(legs[0], dict) and legs[0].get("total") is not None:
+            return float(legs[0]["total"])
+        return None
 
     async def get_margins(self) -> MarginInfo:
         data = await self._request("GET", "/user/margins")

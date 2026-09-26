@@ -28,7 +28,7 @@ class TradeRecordResponse(BaseModel):
     entry_price: float
     quantity: float
     stop_loss: float
-    target1: float
+    target1: Optional[float]
     target2: Optional[float]
     exit_time: Optional[str]
     exit_price: Optional[float]
@@ -38,6 +38,20 @@ class TradeRecordResponse(BaseModel):
     charges_source: str = "ESTIMATED"
     broker_order_id: Optional[str] = None
     exit_order_id: Optional[str] = None
+    instrument_kind: str = "UNDERLYING"
+    exchange: Optional[str] = None
+    lot_size: Optional[int] = None
+    expiry: Optional[str] = None
+    option_position: Optional[str] = None
+    premium_stop_pct: Optional[float] = None
+    underlying_symbol: Optional[str] = None
+    underlying_direction: Optional[str] = None
+    underlying_stop_loss: Optional[float] = None
+    underlying_target1: Optional[float] = None
+    underlying_target2: Optional[float] = None
+    expected_price: Optional[float] = None
+    slippage: Optional[float] = None
+    entry_latency_ms: Optional[int] = None
 
     @classmethod
     def from_record(cls, record: TradeRecord) -> "TradeRecordResponse":
@@ -50,6 +64,12 @@ class TradeRecordResponse(BaseModel):
             exit_price=record.exit_price, exit_reason=record.exit_reason, pnl=record.pnl,
             charges=record.charges, charges_source=record.charges_source or "ESTIMATED",
             broker_order_id=record.broker_order_id, exit_order_id=record.exit_order_id,
+            instrument_kind=record.instrument_kind or "UNDERLYING", exchange=record.exchange, lot_size=record.lot_size,
+            expiry=record.expiry.isoformat() if record.expiry else None, option_position=record.option_position,
+            premium_stop_pct=record.premium_stop_pct, underlying_symbol=record.underlying_symbol,
+            underlying_direction=record.underlying_direction, underlying_stop_loss=record.underlying_stop_loss,
+            underlying_target1=record.underlying_target1, underlying_target2=record.underlying_target2,
+            expected_price=record.expected_price, slippage=record.slippage, entry_latency_ms=record.entry_latency_ms,
         )
 
 

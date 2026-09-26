@@ -76,7 +76,9 @@ def _trade_row(r: TradeRecord, email: Optional[str]) -> Dict[str, Any]:
         "entry_time": _iso(r.entry_time), "entry_price": r.entry_price, "stop_loss": r.stop_loss,
         "target1": r.target1, "target2": r.target2, "exit_time": _iso(r.exit_time), "exit_price": r.exit_price,
         "exit_reason": r.exit_reason, "pnl": r.pnl, "charges": r.charges, "broker_order_id": r.broker_order_id,
-        "sl_order_id": r.sl_order_id, "deployment_id": r.deployment_id,
+        "sl_order_id": r.sl_order_id, "deployment_id": r.deployment_id, "instrument_kind": r.instrument_kind,
+        "exchange": r.exchange, "lot_size": r.lot_size, "underlying_symbol": r.underlying_symbol,
+        "expected_price": r.expected_price, "slippage": r.slippage, "entry_latency_ms": r.entry_latency_ms,
     }
 
 
@@ -103,7 +105,8 @@ DATASETS: Dict[str, Dataset] = {
         "trades", TradeRecord,
         ("id", "tenant_id", "user_id", "user_email", "mode", "strategy_id", "symbol", "direction", "quantity",
          "entry_time", "entry_price", "stop_loss", "target1", "target2", "exit_time", "exit_price", "exit_reason",
-         "pnl", "charges", "broker_order_id", "sl_order_id", "deployment_id"),
+         "pnl", "charges", "broker_order_id", "sl_order_id", "deployment_id", "instrument_kind", "exchange", "lot_size",
+         "underlying_symbol", "expected_price", "slippage", "entry_latency_ms"),
         _trade_row, TradeRecord.tenant_id, TradeRecord.entry_time,
     ),
     "login-events": Dataset(

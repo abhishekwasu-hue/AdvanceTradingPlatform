@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -77,20 +78,35 @@ class OrderRouter:
         self.product = product
         self.place_protective_stop = place_protective_stop
 
-    async def execute(self, signal: Signal, state: TradingDayState) -> ExecutionResult:
-        contract_spec = get_contract_spec(signal.symbol)
+    async def execute(
+        self, signal: Signal, state: TradingDayState, *, contract_spec=None, max_quantity: Optional[float] = None,
+    ) -> ExecutionResult:
+        """`contract_spec` overrides the registry lookup (Phase F3: a resolved option/future
+        carries its own lot size); `max_quantity` caps the risk-based size (max lots, margin)."""
+        contract_spec = contract_spec or get_contract_spec(signal.symbol)
         decision = self.risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
         if not decision.approved:
             return ExecutionResult(executed=False, reasons=decision.reasons)
+        notes: list[str] = []
+        if max_quantity is not None and decision.quantity > max_quantity:
+            unit = contract_spec.lot_size if contract_spec is not None else 1
+            capped = int(max_quantity // unit) * unit if unit else max_quantity
+            if capped <= 0:
+                return ExecutionResult(executed=False, reasons=[f"Position cap ({max_quantity:g}) is below one lot ({unit:g})"])
+            notes.append(f"Size capped from {decision.quantity:g} to {capped:g} by the deployment/margin limit")
+            decision.quantity = capped
+        started = time.perf_counter()
 
         max_tag = getattr(self.broker, "max_tag_length", None) or 20
         entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag)
 
         if self.mode == ExecutionMode.PAPER:
             trade = self.paper_broker.open_trade(signal, decision.quantity, datetime.now(timezone.utc))
+            trade.expected_price = signal.entry
+            trade.entry_latency_ms = int((time.perf_counter() - started) * 1000)
             state.trades_today += 1
             state.open_positions += 1
-            return ExecutionResult(executed=True, reasons=["Paper order filled"], trade=trade, algo_tag=entry_tag)
+            return ExecutionResult(executed=True, reasons=notes + ["Paper order filled"], trade=trade, algo_tag=entry_tag)
 
         if self.broker is None:
             raise LiveTradingNotConfigured(
@@ -127,13 +143,23 @@ class OrderRouter:
 
         state.trades_today += 1
         state.open_positions += 1
-        reasons = [f"Live order placed via {self.broker.name}: {response.order_id}"]
+        reasons = notes + [f"Live order placed via {self.broker.name}: {response.order_id}"]
 
-        fill_price = await self._resolve_fill_price(response.order_id, fallback=signal.entry)
+        fill_price, filled_quantity = await self._resolve_fill(response.order_id, fallback=signal.entry)
+        if filled_quantity <= 0:
+            # Nothing filled yet (or the broker cannot tell us): keep the requested size - the
+            # reconciliation engine corrects it against the broker's book - but say so.
+            filled_quantity = decision.quantity
+            reasons.append("Fill quantity not confirmed by the order book - recorded as requested; reconciliation will correct")
+        elif filled_quantity < decision.quantity:
+            # Partial fill (safety rule 17): the position is the filled part, never the requested one.
+            reasons.append(f"Partial fill: {filled_quantity:g} of {decision.quantity:g} - position and stop sized to the filled quantity")
+            decision.quantity = filled_quantity
         trade = Trade(
             symbol=signal.symbol, strategy_id=signal.strategy_id, direction=signal.direction,
             entry_time=datetime.now(timezone.utc), entry_price=round(fill_price, 2), quantity=decision.quantity,
             stop_loss=signal.stop_loss, target1=signal.target1, target2=signal.target2,
+            expected_price=signal.entry, entry_latency_ms=int((time.perf_counter() - started) * 1000),
         )
 
         sl_order_id: Optional[str] = None
@@ -162,7 +188,11 @@ class OrderRouter:
         )
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:
-        """Reads the actual average fill price from the broker's order book, briefly retrying
+        price, _ = await self._resolve_fill(order_id, fallback)
+        return price
+
+    async def _resolve_fill(self, order_id: str, fallback: float) -> tuple[float, float]:
+        """Reads the actual average fill price and filled quantity from the broker's order book, briefly retrying
         while a just-placed market order is still pending. Any broker that can't answer (or an
         order still unfilled after the retries) falls back to the signal entry, and the position
         reconciliation engine corrects the recorded entry against the broker's own book later."""
@@ -171,11 +201,11 @@ class OrderRouter:
                 book = await self.broker.get_order_book()
             except Exception as exc:  # noqa: BLE001 - informational path, never fatal
                 logger.debug("Order book unavailable for fill price lookup (%s); using signal entry", exc)
-                return fallback
+                return fallback, 0.0
             match = next((o for o in book if o.order_id == order_id), None)
             if match is not None and match.average_price and match.filled_quantity > 0:
-                return float(match.average_price)
+                return float(match.average_price), float(match.filled_quantity)
             if attempt < self.fill_poll_attempts - 1:
                 await asyncio.sleep(self.fill_poll_delay_seconds)
         logger.info("Fill price for %s not yet in order book; recording signal entry provisionally", order_id)
-        return fallback
+        return fallback, 0.0

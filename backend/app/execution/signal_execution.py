@@ -16,6 +16,9 @@ from app.kill_switch.checks import active_kill_switch_reasons
 from app.notifications.service import notify
 from app.core import config
 from app.observability.metrics import ORDERS
+from app.core.enums import OptionPosition
+from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
+from app.instruments.contracts import ContractRules, ResolvedContract
 from app.plans.limits import live_allowed, tenant_is_active
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -27,6 +30,8 @@ async def execute_signal_for_user(
     session: AsyncSession, user: User, *, mode: str, strategy_id: str, signal: Signal,
     idempotency_key: Optional[str] = None, risk_config: Optional[RiskConfig] = None,
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
+    contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
+    quote_broker: Optional[BrokerInterface] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -37,9 +42,32 @@ async def execute_signal_for_user(
     caller. A LIVE request without a broker is REJECTED on the order trail rather than raised:
     the worker's token gate normally prevents it, but if it ever happens it must be visible.
     """
+    # Phase F3: when the deployment trades a derived contract, the order goes on the contract
+    # (premium/future price levels) while the strategy's levels stay on the underlying. The order
+    # signal is built up front so the order trail's symbol is the contract from the first event;
+    # a missing quote is recorded as a REJECTED order below, never raised.
+    underlying_signal = signal
+    plan = None
+    plan_error: Optional[str] = None
+    contract_spec = None
+    max_quantity: Optional[float] = None
+    if contract is not None:
+        price_source = quote_broker or broker
+        try:
+            if price_source is None:
+                raise ContractExecutionError("No broker session to quote the contract from")
+            ltp = await contract_ltp(price_source, contract)
+            plan = build_order_plan(underlying_signal, contract, rules or ContractRules(kind=contract.kind, position=contract.position), ltp)
+            signal = plan.order_signal
+            contract_spec = plan.contract_spec
+            max_quantity = plan.max_quantity
+        except ContractExecutionError as exc:
+            plan_error = str(exc)
+            signal = underlying_signal.model_copy(update={"symbol": contract.tradingsymbol, "direction": contract.trade_direction})
+
     with bind_log_context(
         tenant_id=user.tenant_id, strategy_id=strategy_id,
-        signal_ref=f"{signal.symbol}@{signal.timestamp.isoformat()}",
+        signal_ref=f"{underlying_signal.symbol}@{underlying_signal.timestamp.isoformat()}",
     ):
         order, was_newly_created = await create_order(
             session, user, mode=mode, strategy_id=strategy_id, signal=signal, idempotency_key=idempotency_key,
@@ -79,6 +107,13 @@ async def execute_signal_for_user(
             )
             return ExecutionResult(executed=False, reasons=kill_switch_reasons), order
 
+        if plan_error is not None:
+            order.reasons_json = json.dumps([plan_error])
+            order = await transition_order(session, order, OrderStatus.REJECTED, detail=plan_error)
+            logger.warning("Order rejected - contract not executable: %s", plan_error)
+            ORDERS.labels(mode=mode, status=order.status).inc()
+            return ExecutionResult(executed=False, reasons=[plan_error]), order
+
         order = await transition_order(session, order, OrderStatus.RISK_CHECK, detail="Running risk checks")
 
         effective_risk_config = risk_config
@@ -95,14 +130,32 @@ async def execute_signal_for_user(
             ORDERS.labels(mode=mode, status=order.status).inc()
             return ExecutionResult(executed=False, reasons=[reason]), order
 
+        if contract is not None and execution_mode == ExecutionMode.LIVE and contract.position == OptionPosition.WRITE:
+            # Writing needs the broker's margin number; an unknown requirement is a refusal.
+            try:
+                cap_lots, note = await written_lot_cap(broker, contract)
+            except ContractExecutionError as exc:
+                reason = str(exc)
+                order.reasons_json = json.dumps([reason])
+                order = await transition_order(session, order, OrderStatus.REJECTED, detail=reason)
+                ORDERS.labels(mode=mode, status=order.status).inc()
+                return ExecutionResult(executed=False, reasons=[reason]), order
+            cap_quantity = cap_lots * contract.lot_size
+            max_quantity = cap_quantity if max_quantity is None else min(max_quantity, cap_quantity)
+            if plan is not None:
+                plan.notes.append(note)
+
         state = await build_trading_day_state(session, user)
-        contract_spec = get_contract_spec(signal.symbol)
+        if contract_spec is None:
+            contract_spec = get_contract_spec(signal.symbol)
         order_router = OrderRouter(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
-            exchange=contract_spec.exchange if contract_spec else "NSE",
+            exchange=contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE"),
             algo_id=tenant.algo_id if tenant is not None else None,
         )
-        result: ExecutionResult = await order_router.execute(signal, state)
+        result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity)
+        if plan is not None:
+            result.reasons = plan.notes + result.reasons
 
         order.reasons_json = json.dumps(result.reasons)
         order.algo_tag = result.algo_tag
@@ -154,6 +207,7 @@ async def execute_signal_for_user(
             trade_record = await persist_trade(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
+                contract_meta=plan.meta if plan is not None else None,
             )
             order.trade_id = trade_record.id
             update_log_context(trade_id=trade_record.id)

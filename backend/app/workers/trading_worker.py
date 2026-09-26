@@ -50,11 +50,12 @@ from app.retention.service import RetentionReport, run_retention
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments.master import sync_upstox
+from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.service import MarketDataService
 from app.notifications.service import notify
-from app.trading.position_monitor import close_position, exchange_for_symbol, monitor_open_positions
+from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
 
 logger = logging.getLogger(__name__)
 
@@ -332,12 +333,24 @@ class TradingWorker:
             await session.commit()
             return False
 
-        if (dep.instrument_kind or "UNDERLYING") != "UNDERLYING":
-            # Phase F3 wires option/future execution; until then a derived-contract deployment
-            # must never fall through to trading the underlying (an index cannot be bought).
-            dep.last_error = "Option/future execution is not enabled in this build - no trade taken"
-            await session.commit()
-            return False
+        contract = None
+        rules = ContractRules.from_deployment(dep)
+        if rules.derived:
+            # Phase F3: pick the option/future from the master at signal time, off the latest
+            # underlying close. A rule that cannot be satisfied is recorded, never traded around.
+            base = frames.get(dep.timeframe)
+            if base is None:
+                base = next(iter(frames.values()))
+            spot = float(base["close"].iloc[-1]) if len(base) else None
+            try:
+                contract = await resolve_contract(
+                    session, dep.symbol, rules, signal.direction, spot=spot, today=now.astimezone(IST).date(),
+                )
+            except ContractResolutionError as exc:
+                dep.last_error = f"Contract not resolved: {exc}"
+                await session.commit()
+                logger.warning("Deployment %s: %s", dep.id, exc)
+                return False
 
         broker = None
         if dep.mode == ExecutionMode.LIVE.value:
@@ -352,6 +365,7 @@ class TradingWorker:
         result, order = await execute_signal_for_user(
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
+            contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -427,7 +441,7 @@ class TradingWorker:
         closed = 0
         for trade in open_trades:
             try:
-                price = await market_data.get_ltp(trade.symbol, exchange_for_symbol(trade.symbol))
+                price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue

@@ -185,7 +185,16 @@ export default function TeamPage() {
                     )}
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && (m.is_active
                       ? <button disabled={busy} title="Remove from team" onClick={() => act(`${m.email} removed.`, () => api.removeMember(m.id))} className="p-1 text-danger hover:bg-panel2 rounded"><UserMinus size={14} /></button>
-                      : <button disabled={busy} onClick={() => act(`${m.email} reactivated.`, () => api.reactivateMember(m.id))} className="text-xs text-brand hover:underline">Reactivate</button>)}
+                      : <span className="flex items-center gap-2">
+                          <button disabled={busy} onClick={() => act(`${m.email} reactivated.`, () => api.reactivateMember(m.id))} className="text-xs text-brand hover:underline">Reactivate</button>
+                          {!m.email.endsWith("@erased.invalid") && (
+                            <button disabled={busy} title="Erase personal data (irreversible)" onClick={() => {
+                              if (window.confirm(`Erase ${m.email}'s personal data? Their trades, orders and audit rows stay under an anonymous id; email, password and MFA are removed. This cannot be undone.`)) {
+                                act("Personal data erased.", () => api.eraseMember(m.id, "erased by owner"));
+                              }
+                            }} className="text-xs text-danger hover:underline">Erase data</button>
+                          )}
+                        </span>)}
                   </td>
                 )}
               </tr>

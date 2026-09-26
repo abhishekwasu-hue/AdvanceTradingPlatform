@@ -424,6 +424,9 @@ export const api = {
 
   reactivateMember: (id: number) => request<TeamMember>(`/team/members/${id}/reactivate`, { method: "POST" }),
 
+  eraseMember: (id: number, reason: string) =>
+    request<void>(`/team/members/${id}/erase`, { method: "POST", body: JSON.stringify({ reason }) }),
+
   listInvites: () => request<TeamInvite[]>("/team/invites"),
 
   createInvite: (email: string, role: string) =>

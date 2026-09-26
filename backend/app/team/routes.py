@@ -22,6 +22,7 @@ from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
 from app.db.session import get_session
 from app.execution.tagging import valid_algo_id
+from app.retention.service import erase_user
 from app.plans.limits import check_can_add_member, limits as plan_limits, usage as plan_usage
 from app.plans.registry import get_plan
 
@@ -215,6 +216,31 @@ async def remove_member(
     member.is_active = False
     await revoke_all_sessions(session, member.id, "removed from team")
     await write_audit_log(session, user.tenant_id, user.id, "member_removed", member.email)
+    await session.commit()
+
+
+class EraseRequest(BaseModel):
+    reason: str = ""
+
+
+@router.post("/members/{member_id}/erase", status_code=status.HTTP_204_NO_CONTENT)
+async def erase_member(
+    member_id: int, request: EraseRequest, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session),
+) -> None:
+    """Personal-data erasure for a former teammate (DPDP, Phase D3): the account is kept as an
+    anonymous id so orders, trades and audit rows stay attributed for the regulatory retention
+    period, but email, password, MFA and login-attempt emails are replaced with inert values and
+    every session ends. Irreversible; the member must already be deactivated."""
+    member = await _member_or_404(session, user.tenant_id, member_id)
+    if member.id == user.id:
+        raise HTTPException(status_code=409, detail="You cannot erase your own account from here")
+    if member.role == UserRole.SUPER_ADMIN.value:
+        raise HTTPException(status_code=403, detail="Platform administrators are managed outside the tenant")
+    if member.is_active:
+        raise HTTPException(status_code=409, detail="Remove the member first, then erase their personal data")
+    if member.email.endswith("@erased.invalid"):
+        return
+    await erase_user(session, member, actor_id=user.id, reason=request.reason)
     await session.commit()
 
 

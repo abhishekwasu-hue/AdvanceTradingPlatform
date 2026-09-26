@@ -46,6 +46,7 @@ from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
+from app.retention.service import RetentionReport, run_retention
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, market_session_status
 from app.market_data.service import MarketDataService
@@ -83,6 +84,7 @@ class CycleReport:
     positions_closed: int = 0
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
+    retention: Optional[RetentionReport] = None
 
 
 class TradingWorker:
@@ -98,6 +100,8 @@ class TradingWorker:
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
         self._stop = asyncio.Event()
         self._last_token_check: Dict[int, float] = {}
+        # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
+        self._last_retention_day = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -151,6 +155,17 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
+                # Data retention (Phase D3): once per IST day, outside market hours so it never
+                # competes with order flow for the database.
+                if not status.is_open and self._last_retention_day != now.astimezone(IST).date():
+                    try:
+                        report.retention = await run_retention(session, now)
+                        self._last_retention_day = now.astimezone(IST).date()
+                        if report.retention.total:
+                            logger.info("Retention deleted %s", report.retention.deleted)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Retention run failed")
+                        report.errors.append(f"retention: {exc}")
                 await self._heartbeat(session, report, int((time.monotonic() - cycle_started) * 1000))
                 return report
         finally:

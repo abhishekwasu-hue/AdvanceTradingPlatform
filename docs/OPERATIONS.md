@@ -231,16 +231,36 @@ includes every row's `prev_hash`/`hash` and the chain verdict at export time; th
 recompute `sha256(prev_hash|tenant_id|user_id|event|detail|created_at)` per row to verify it
 offline. Exports above 50,000 rows are truncated (the manifest says so) - narrow the range.
 
-### 2.3 Retention and deletion (target - not yet built)
+### 2.3 Retention and deletion (Phase D3 - in force)
 
-No automated retention/deletion policy exists yet. For a real deployment operating in India, the
-Digital Personal Data Protection (DPDP) Act requires a lawful basis and bounded retention for
-personal data (the `users.email` field), and Section 47's SEBI compliance requirement calls for
-**5+ year retention** of order-level trading records - these two requirements are not in tension
-(the 5-year rule applies to trading records, not to the separate, much smaller set of actual PII),
-but a real deployment needs an explicit written policy and, eventually, an account-deletion
-endpoint that removes/anonymizes `users.email` while *preserving* the trading-record tables the
-regulatory retention rule actually covers.
+Two regimes, both enforced by `app/retention/` and the trading worker:
+
+| Data | Retention | Why |
+| --- | --- | --- |
+| Orders, order events, trades, signal history, strategy versions, audit logs | **Never deleted** by the platform | SEBI requires order-level trading records for at least five years; the audit trail is hash-chained |
+| Users, tenants | Never deleted; personal data erasable | Trading records must stay attributed to a stable id |
+| Login attempts (IP, user agent) | 365 days (`RETENTION_LOGIN_EVENTS_DAYS`) | Security forensics; personal data under the DPDP Act |
+| Alert deliveries (sent/failed) | 90 days (`RETENTION_ALERT_DELIVERIES_DAYS`) | Operational |
+| In-app notifications | 180 days (`RETENTION_NOTIFICATIONS_DAYS`) | Operational |
+| Sessions | 30 days after expiry/revocation (`RETENTION_SESSIONS_DAYS`) | Security forensics |
+| Password resets / invites | 7 / 30 days after expiry or use | Spent tokens |
+
+The worker runs one retention batch per IST day while the market is closed and writes a
+`retention_run` audit row with the counts; the Admin Console API (`GET /api/admin/retention`)
+shows the policy, what is eligible right now and the last run, and `POST /api/admin/retention/run`
+runs a batch on demand. Values under 7 days are raised to 7; `RETENTION_ENABLED=false` turns the
+job off without removing the policy.
+
+**Right to erasure (DPDP).** When a teammate leaves, the owner removes them (Team tab) and,
+once any dispute window has passed, uses "Erase data": email, password and MFA are replaced with
+inert values, every session ends, and the email on their login attempts is rewritten. Their
+trades, orders and audit rows stay under the anonymous id `erased-<id>@erased.invalid`. Audit
+rows written *before* the erasure that quote the email are left as they are - they are part of
+the hash chain and cannot be edited - and this is the documented trade-off between erasure and an
+immutable trail. Erasure is irreversible and audited (`user_erased`, by user id).
+
+Still manual: whole-tenant offboarding (export the tenant's records first - section 2.2 - then
+erase each member; the tenant row and its trading records remain for the retention period).
 
 ### 2.4 Data lineage for AI/ML outputs
 

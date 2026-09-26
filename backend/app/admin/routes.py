@@ -20,6 +20,8 @@ from app.db.session import get_session
 from app.notifications.service import notify
 from app.plans.limits import TENANT_ACTIVE, TENANT_SUSPENDED, limits as plan_limits, usage as plan_usage
 from app.plans.registry import PLANS, get_plan
+from app.retention.policy import load_policy
+from app.retention.service import preview_retention, run_retention
 
 # SUPER_ADMIN only, and the session must have passed a TOTP check (platform admins must use MFA).
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_role()), Depends(require_mfa_session)])
@@ -289,3 +291,26 @@ async def platform_login_events(
         "id": r.id, "email": r.email, "tenant_id": r.tenant_id, "success": r.success, "reason": r.reason,
         "ip_address": r.ip_address, "user_agent": r.user_agent, "created_at": r.created_at.isoformat(),
     } for r in rows]
+
+
+@router.get("/retention")
+async def retention_status(session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
+    """The retention policy in force, how many rows are currently past it (a dry run), and the
+    last run recorded on the audit trail (Phase D3)."""
+    preview = await preview_retention(session)
+    last = await session.scalar(
+        select(AuditLogRecord).where(AuditLogRecord.event == "retention_run").order_by(AuditLogRecord.id.desc()).limit(1)
+    )
+    return {
+        "policy": load_policy().as_dict(), "eligible_now": preview.deleted,
+        "last_run": {"at": last.created_at.isoformat(), "detail": last.detail} if last else None,
+    }
+
+
+@router.post("/retention/run")
+async def retention_run_now(user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
+    """Runs one retention batch immediately (the worker does this daily on its own)."""
+    report = await run_retention(session)
+    await write_audit_log(session, user.tenant_id, user.id, "retention_run_requested", f"by {user.email}: {report.deleted}")
+    await session.commit()
+    return {"deleted": report.deleted, "errors": report.errors, "total": report.total}

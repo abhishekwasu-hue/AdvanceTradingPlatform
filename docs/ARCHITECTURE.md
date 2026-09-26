@@ -1854,3 +1854,36 @@ inclusive UTC date range, capped at 50,000 rows (the manifest says when it was t
 Verified by `tests/test_exports.py` (CSV/JSON shape and manifest, SHA-256 header, chain verdict,
 export audit row, date range and validation, owner-only and tenant isolation, admin platform vs
 tenant scope, algo tag column).
+
+### D3: Data retention and personal-data erasure
+
+The written policy (docs/OPERATIONS.md section 2.3) is now code in `app/retention/policy.py`:
+two regimes, checked by tests.
+
+* **Never deleted** (`NEVER_DELETED`): `audit_logs`, `orders`, `order_events`, `trades`,
+  `signal_history`, `custom_strategies`, `strategy_versions`, `users`, `tenants`,
+  `market_holidays` - the regulatory trading record (SEBI five-year rule) plus the identity rows
+  it is attributed to. `tests/test_retention.py` asserts the rule set never names one of them.
+* **Bounded** (env-configurable, floor 7 days): login attempts (365), delivered/failed alert
+  rows (90), in-app notifications (180; read markers and delivery rows cascade), sessions 30 days
+  after expiry or revocation, spent password resets (7) and invites (30). Predicates only ever
+  match *finished* rows (a live session or pending delivery is never eligible).
+* **Runner** (`app/retention/service.py::run_retention`): one bounded batch per table per run
+  (`RETENTION_BATCH_SIZE`, default 5000) so a first run over a backlog never holds a long
+  transaction; a per-table failure is reported and does not stop the others; a run that deleted
+  anything writes one `retention_run` audit row with the counts. `preview_retention` is the same
+  query as a dry run. The trading worker calls it once per IST day when the market is closed
+  (`CycleReport.retention`), so it never competes with order flow; SUPER_ADMIN can inspect
+  policy, eligible counts and the last run at `GET /api/admin/retention` and trigger a batch with
+  `POST /api/admin/retention/run` (both audited).
+* **Erasure** (`erase_user`, `POST /api/team/members/{id}/erase`, owner-only, member must already
+  be removed): the DPDP-style right to erasure without breaking attribution. The `users` row
+  stays as an anonymous id (`erased-<id>@erased.invalid`, an impossible password hash, MFA and
+  backup codes gone, every session revoked, pending resets deleted) and the email on that user's
+  login attempts is rewritten; an audit row records the user id, not the email. Earlier audit
+  rows that quote the email remain - they are hash-chained and cannot be edited - which the
+  policy documents as the accepted trade-off between erasure and an immutable trail.
+
+Verified by `tests/test_retention.py` (policy floor and parsing, rule/never-deleted disjointness,
+old-vs-fresh deletion per table with regulatory tables untouched, audit row and idempotency,
+disabled policy, batch bound, worker once-a-day scheduling, admin endpoints, erasure semantics).

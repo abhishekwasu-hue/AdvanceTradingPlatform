@@ -33,7 +33,7 @@ _STANDING = {"OPEN", "PENDING", "TRIGGER PENDING", "TRIGGER_PENDING", "PUT ORDER
 _FILLED = {"COMPLETE", "COMPLETED", "FILLED", "TRADED", "EXECUTED"}
 ALERT_COOLDOWN_SECONDS = 1800
 
-_last_failure_alert: Dict[int, float] = {}
+_last_failure_alert: Dict[int, float] = {}   # trade id -> monotonic time of the last CRITICAL; absent = never alerted
 
 
 async def verify_protective_stops(
@@ -83,8 +83,8 @@ async def verify_protective_stops(
         except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
             counts["failed"] += 1
             logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
-            last = _last_failure_alert.get(trade.id, 0.0)
-            if time.monotonic() - last > ALERT_COOLDOWN_SECONDS:
+            last = _last_failure_alert.get(trade.id)
+            if last is None or time.monotonic() - last > ALERT_COOLDOWN_SECONDS:
                 _last_failure_alert[trade.id] = time.monotonic()
                 await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"No broker-side stop on {trade.symbol}",
                              message=f"Position #{trade.id} has no standing protective stop and re-placing it failed: {exc}. "

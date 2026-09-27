@@ -76,6 +76,9 @@ class _FnoBroker(BrokerInterface):
         return book
 
     async def get_order_margin(self, order):
+        # Like a real calculator: a BUY blocks the premium, a SELL the broker's SPAN+exposure.
+        if order.transaction_type == OrderSide.BUY:
+            return self.premium * order.quantity
         return self.margin_per_lot
 
     async def get_margins(self):

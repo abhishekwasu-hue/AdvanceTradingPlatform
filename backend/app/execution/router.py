@@ -31,8 +31,13 @@ class ExecutionResult:
         self, executed: bool, reasons: list[str], trade: Optional[Trade] = None,
         broker_order_id: Optional[str] = None, system_failure: bool = False,
         sl_order_id: Optional[str] = None, sl_failed: bool = False, algo_tag: Optional[str] = None,
+        partial_fill: bool = False, requested_quantity: Optional[float] = None,
     ) -> None:
         self.executed = executed
+        # Phase Q: the broker filled less than was sent (safety rule 17). `requested_quantity`
+        # is what the risk engine sized; `trade.quantity` is what filled.
+        self.partial_fill = partial_fill
+        self.requested_quantity = requested_quantity
         # The order tag sent to the broker for the entry leg (Phase D1), or the tag a paper order
         # would have carried, so the order trail is identical in both modes.
         self.algo_tag = algo_tag
@@ -166,6 +171,8 @@ class OrderRouter:
         state.open_positions += 1
         reasons = notes + [f"Live order placed via {self.broker.name}: {response.order_id}"]
 
+        requested_quantity = decision.quantity
+        partial_fill = False
         fill_price, filled_quantity = await self._resolve_fill(response.order_id, fallback=signal.entry)
         if filled_quantity <= 0:
             # Nothing filled yet (or the broker cannot tell us): keep the requested size - the
@@ -176,6 +183,7 @@ class OrderRouter:
             # Partial fill (safety rule 17): the position is the filled part, never the requested one.
             reasons.append(f"Partial fill: {filled_quantity:g} of {decision.quantity:g} - position and stop sized to the filled quantity")
             decision.quantity = filled_quantity
+            partial_fill = True
         trade = Trade(
             symbol=signal.symbol, strategy_id=signal.strategy_id, direction=signal.direction,
             entry_time=datetime.now(timezone.utc), entry_price=round(fill_price, 2), quantity=decision.quantity,
@@ -206,6 +214,7 @@ class OrderRouter:
         return ExecutionResult(
             executed=True, reasons=reasons, trade=trade, broker_order_id=response.order_id,
             sl_order_id=sl_order_id, sl_failed=sl_failed, algo_tag=entry_tag,
+            partial_fill=partial_fill, requested_quantity=requested_quantity,
         )
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:

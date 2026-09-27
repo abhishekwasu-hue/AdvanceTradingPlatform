@@ -77,7 +77,7 @@ from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
-from app.billing.routes import admin_router as billing_admin_router, router as billing_router
+from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
@@ -141,6 +141,7 @@ app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 app.include_router(billing_router)
 app.include_router(billing_admin_router)
+app.include_router(billing_webhook_router)
 app.include_router(marketplace_router)
 app.include_router(marketplace_admin_router)
 app.include_router(api_keys_router)

@@ -2419,6 +2419,23 @@ attempt (`create_order`), every logged-in backtest, every TradingView webhook ev
 public API call. Endpoints `/api/billing/plans|""|subscribe|cancel|transactions|usage`,
 operator `POST /api/admin/billing/{tenant_id}/payment`. No card data ever touches the app.
 
+#### K1b: Razorpay gateway
+
+`app/billing/razorpay.py::RazorpayProvider` implements the seam against Razorpay Subscriptions:
+our (plan, cycle) is mirrored once as a Razorpay Plan (`billing_gateway_plans`, re-created when
+a price changes since gateway plans are immutable); `create_subscription` creates the gateway
+subscription with `start_at` at the trial end and returns the hosted checkout link, stored on
+`subscriptions.checkout_url` and shown on the Billing card; `change_plan` PATCHes the gateway
+subscription (`schedule_change_at: now`); `cancel` passes `cancel_at_cycle_end`. Webhooks land at
+`POST /api/billing/webhooks/razorpay`: HMAC-SHA256 over the raw body with the webhook secret,
+de-duplicated on `X-Razorpay-Event-Id` via `billing_webhook_events`, and applied through the same
+service calls the operator uses (`subscription.charged` → `record_payment`, itself idempotent on
+the payment id; `payment.failed` → FAILED_PAYMENT + notice; `subscription.halted` → PAST_DUE with
+grace; `subscription.cancelled|completed` → cancelled, Free). The provider is chosen from
+`BILLING_PROVIDER` at first use (`set_provider` swaps it in tests); missing keys fall back to
+manual with a warning. Gateway credentials are platform secrets in the environment, never tenant
+data. Migration `d0f6b4c2e5a9`.
+
 ### K2: Strategy marketplace
 
 V3.9-3.10, V3.14 rule 8. `app/marketplace/service.py`: a creator lists one **frozen version**
@@ -2468,7 +2485,10 @@ holds a broker credential (a provider gets prompt text in and text out).
 ### L1: Provider seam and tenant keys
 
 `app/ai/providers.py::LLMProvider` is one method, `complete(system, user) -> str`, with
-Anthropic (Messages API), OpenAI (Chat Completions) and a **rule-based** implementation that
+Anthropic (the official `anthropic` SDK: `claude-opus-5` by default, adaptive thinking, effort
+`medium`, `fallbacks="default"` so a safety-classifier decline is re-run on Anthropic's
+recommended substitute; a surviving refusal is a ProviderError, never an empty draft), OpenAI
+(Chat Completions over httpx) and a **rule-based** implementation that
 wraps the existing NLU parser - no key, no network - so every AI feature has an explainable
 fallback. The tenant's choice lives in `ai_provider_configs`: provider, model, and the API key
 Fernet-encrypted with `SECRETS_ENCRYPTION_KEY`, entered on the Settings page only (OWNER),

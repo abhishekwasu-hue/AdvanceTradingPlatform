@@ -45,6 +45,11 @@ export default function BillingCard() {
           {sub.trial_end && sub.status === "TRIALING" && <span className="text-amber-400 text-xs">trial ends {new Date(sub.trial_end).toLocaleDateString()}</span>}
           {sub.grace_until && <span className="text-danger text-xs">grace until {new Date(sub.grace_until).toLocaleDateString()} - pay to avoid suspension</span>}
           {sub.cancel_at_period_end && <span className="text-muted text-xs">cancels at period end</span>}
+          {sub.checkout_url && sub.status !== "CANCELLED" && (
+            <a href={sub.checkout_url} target="_blank" rel="noreferrer" className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs">
+              {sub.status === "ACTIVE" ? "Manage autopay" : "Pay / set up autopay"}
+            </a>
+          )}
           {overview?.status_reason && <span className="text-danger text-xs">{overview.status_reason}</span>}
         </div>
       )}
@@ -84,7 +89,9 @@ export default function BillingCard() {
         {isOwner && sub && sub.status !== "NONE" && sub.status !== "CANCELLED" && !sub.cancel_at_period_end && (
           <button disabled={busy} onClick={() => run("Subscription will end at the period end (deployments keep running until then).", () => api.billingCancel(false))} className="text-danger hover:underline">Cancel at period end</button>
         )}
-        <span className="text-muted">Payments: bank transfer / UPI to the operator; the plan activates once the payment is recorded. No card details are ever collected here.</span>
+        <span className="text-muted">{sub?.provider === "razorpay"
+          ? "Payments through Razorpay (UPI autopay, cards, netbanking) on Razorpay's own page; the plan activates when the charge is confirmed. Card details never touch this server."
+          : "Payments: bank transfer / UPI to the operator; the plan activates once the payment is recorded. No card details are ever collected here."}</span>
       </div>
 
       {Object.keys(usage).length > 0 && (

@@ -197,7 +197,33 @@ only then create a LIVE deployment - starting with the smallest lot the risk set
 
 ### 1.6a Billing routine (Phase K1)
 
-The manual billing provider means the operator closes the loop by hand:
+Two providers sit behind the same seam. **Razorpay** (recommended for launch) collects
+automatically; **manual** means the operator records bank/UPI payments by hand.
+
+**Razorpay setup (once):**
+
+1. In the Razorpay dashboard create API keys (*Settings → API Keys*; use test-mode keys first) and
+   a webhook (*Settings → Webhooks*) pointing at `https://<api-host>/api/billing/webhooks/razorpay`
+   with the events `subscription.charged`, `subscription.activated`, `subscription.halted`,
+   `subscription.cancelled`, `subscription.completed`, `payment.failed`. Note the webhook secret.
+2. Set `BILLING_PROVIDER=razorpay`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`,
+   `RAZORPAY_WEBHOOK_SECRET` on the **backend** service only (the worker never talks to the
+   gateway). These are the operator's platform secrets, not tenant data - never in Settings.
+3. Our plans are mirrored as Razorpay Plans lazily (`billing_gateway_plans`); a price change
+   creates a new Razorpay plan automatically. Existing manual subscriptions move to the gateway
+   on their next plan change.
+4. Flow: a tenant chooses a plan → a Razorpay Subscription is created (first charge deferred to
+   the trial end) and the hosted checkout link appears on the Billing card as **Pay / set up
+   autopay** → the tenant authorises the mandate on Razorpay's page → each cycle's charge arrives
+   as `subscription.charged` and books the payment (idempotent on the payment id and on the
+   webhook event id) → `payment.failed` / `subscription.halted` raise notices and start the grace
+   period → `subscription.cancelled` drops the tenant to Free.
+5. Every delivery is in `billing_webhook_events` (event id, type, payload, result). A rejected
+   signature is a 400 and is not recorded; an unknown event is recorded as `ignored`.
+   `GET /api/admin/billing/{tenant_id}` still shows the full state; the manual payment endpoint
+   still works for a bank transfer that bypasses the gateway.
+
+**Manual provider** - the operator closes the loop by hand:
 
 1. A tenant subscribes under *Settings → Plan & billing*; a plan with trial days entitles at
    once and an invoice (OPEN) is raised, payable after the trial. Without a trial the tenant
@@ -219,7 +245,9 @@ Never publish a listing without an attached backtest run; the API refuses the su
 ### 1.6b AI layer routine (Phase L)
 
 - **Provider keys** are tenant data: entered under *Settings → AI provider* by an OWNER, encrypted
-  with `SECRETS_ENCRYPTION_KEY`, never in `.env`, logs or support tickets. Rotating the platform
+  with `SECRETS_ENCRYPTION_KEY`, never in `.env`, logs or support tickets. The recommended provider
+  is Claude (Anthropic) through the official SDK, default model `claude-opus-5` with adaptive
+  thinking and Anthropic's default refusal fallbacks; the Settings card pre-selects it. Rotating the platform
   key re-encrypts them with the same script as broker credentials. A tenant with no provider (or on
   Free) runs the rule-based parser; nothing leaves the platform.
 - **Egress**: allow `api.anthropic.com` and `api.openai.com` from the API service only (the worker

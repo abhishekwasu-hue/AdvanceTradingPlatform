@@ -234,8 +234,8 @@ npm run dev
 
 - **AI Copilot**: describe a strategy, get a draft in the Strategy Builder's rule schema with the model's
   own caveats; it becomes a strategy only after you backtest it and approve it (lineage recorded).
-- **Provider seam**: Anthropic, OpenAI or the built-in rule-based parser; the key is entered once on the
-  Settings page and stored encrypted. The model sees prompt text only, never credentials.
+- **Provider seam**: Claude (Anthropic SDK, `claude-opus-5`, recommended), OpenAI, or the built-in rule-based parser;
+  the key is entered once on the Settings page and stored encrypted. The model sees prompt text only, never credentials.
 - **Regime engine** (trend / range / volatile / quiet) as an optional entry filter per deployment, and a
   **monitoring agent** that proposes pause / exit / review actions with evidence; every action waits for
   your approval and expires unanswered.
@@ -243,8 +243,8 @@ npm run dev
 ## Commercial layer (Phase K)
 
 - **Plans with prices and feature flags**, subscriptions with trial and grace lifecycle, invoices and
-  payments behind a billing-provider seam (manual provider first), usage metering for orders, backtests,
-  webhook events and API calls; the worker runs the daily billing sweep.
+  payments behind a billing-provider seam: **Razorpay** (hosted checkout, autopay, signed webhooks) or manual;
+  usage metering for orders, backtests, webhook events and API calls; the worker runs the daily billing sweep.
 - **Strategy marketplace**: publish one frozen version of a strategy with documented backtest performance,
   operator review, subscribe = a copy in your own strategies (backtest → paper → live as usual).
 - **Public API** (`/api/public/v1`, `docs/PUBLIC_API.md`): scoped, hashed, rate-limited keys shown once;
@@ -294,7 +294,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 762 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 768 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

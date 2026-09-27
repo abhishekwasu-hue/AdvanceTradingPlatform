@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
-import { ROLE_LABELS, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
+import { ROLE_LABELS, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
@@ -31,6 +31,8 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [catalogue, setCatalogue] = useState<ScopeCatalogueEntry[]>([]);
+  const [scopeEdit, setScopeEdit] = useState<MemberScopes | null>(null);
 
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
 
@@ -39,6 +41,22 @@ export default function TeamPage() {
     api.getTenant().then((t) => { setTenant(t); setTenantName(t.name); setAlgoId(t.algo_id ?? ""); }).catch((e) => setError(String(e)));
     api.listMembers().then(setMembers).catch((e) => setError(String(e)));
     if (isOwner) api.listInvites().then(setInvites).catch(() => setInvites([]));
+    if (isOwner && catalogue.length === 0) api.scopeCatalogue().then(setCatalogue).catch(() => {});
+  }
+
+  function toggleScope(scope: string) {
+    if (!scopeEdit) return;
+    const roleHas = catalogue.find((c) => c.scope === scope)?.roles.includes(scopeEdit.role) ?? false;
+    const deny = new Set(scopeEdit.overrides.deny);
+    const grant = new Set(scopeEdit.overrides.grant);
+    const effective = scopeEdit.scopes.includes(scope);
+    if (effective) {
+      // turning off: a role-held scope gets denied, a granted one loses its grant
+      if (roleHas) deny.add(scope); else grant.delete(scope);
+    } else if (roleHas) deny.delete(scope); else grant.add(scope);
+    const scopes = catalogue.map((c) => c.scope).filter((s) => (c(s) || grant.has(s)) && !deny.has(s));
+    function c(s: string) { return catalogue.find((x) => x.scope === s)?.roles.includes(scopeEdit!.role) ?? false; }
+    setScopeEdit({ ...scopeEdit, scopes, overrides: { deny: [...deny].sort(), grant: [...grant].sort() } });
   }
 
   useEffect(refresh, [user]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -183,6 +201,9 @@ export default function TeamPage() {
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && m.is_active && (
                       <button disabled={busy} title="Log this member out of every device" onClick={() => act(`${m.email} logged out everywhere.`, () => api.logoutMemberEverywhere(m.id))} className="text-xs text-muted hover:text-slate-200 mr-2">log out</button>
                     )}
+                    {m.role !== "SUPER_ADMIN" && m.is_active && (
+                      <button disabled={busy} title="Fine-grained permissions on top of the role" onClick={() => api.memberScopes(m.id).then(setScopeEdit).catch((e) => setError(String(e)))} className="text-xs text-muted hover:text-slate-200 mr-2">permissions</button>
+                    )}
                     {m.role !== "SUPER_ADMIN" && m.is_active && (m.trading_disabled_reason
                       ? <button disabled={busy} onClick={() => act(`${m.email} can trade again.`, () => api.enableMemberTrading(m.id))} className="text-xs text-brand hover:underline mr-2">enable trading</button>
                       : <button disabled={busy} title="Stop this member opening new positions (exits and reading stay allowed)" onClick={() => { const reason = window.prompt("Reason (shown to the member)"); if (reason && reason.length >= 3) void act(`${m.email}: trading disabled.`, () => api.disableMemberTrading(m.id, reason)); }} className="text-xs text-amber-400 hover:underline mr-2">disable trading</button>)}
@@ -204,6 +225,27 @@ export default function TeamPage() {
             ))}
           </tbody>
         </table>
+        {scopeEdit && (
+          <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3 text-xs">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-bold text-sm">Permissions for {members.find((m) => m.id === scopeEdit.id)?.email ?? `#${scopeEdit.id}`} <span className="text-muted font-normal">({ROLE_LABELS[scopeEdit.role as TenantRole] ?? scopeEdit.role})</span></div>
+              <button onClick={() => setScopeEdit(null)} className="text-muted hover:text-slate-200">close</button>
+            </div>
+            <p className="text-muted mb-2">Unticking a permission the role normally has denies it for this member; ticking one the role lacks grants it (within what you hold yourself). Exits are never gated.</p>
+            <div className="grid sm:grid-cols-2 gap-1.5">
+              {catalogue.filter((c) => c.scope !== "admin:platform").map((c) => (
+                <label key={c.scope} className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={scopeEdit.scopes.includes(c.scope)} onChange={() => toggleScope(c.scope)} />
+                  <span><span className="font-mono text-slate-200">{c.scope}</span> <span className="text-muted">- {c.description}</span></span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button disabled={busy} onClick={() => act("Permissions saved.", () => api.setMemberScopes(scopeEdit.id, scopeEdit.overrides.deny, scopeEdit.overrides.grant).then(setScopeEdit))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1">Save</button>
+              <button disabled={busy} onClick={() => act("Overrides cleared.", () => api.setMemberScopes(scopeEdit.id, [], []).then(setScopeEdit))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1">Reset to role</button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {isOwner && tenant && (

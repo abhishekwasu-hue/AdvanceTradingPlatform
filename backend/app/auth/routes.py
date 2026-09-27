@@ -23,6 +23,9 @@ from app.db.models import (
 from app.notifications.service import notify
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.session import get_session
+from app.secrets_store.envelope import ensure_tenant_key
+from app.auth import verification
+from app.platform.controls import flag_enabled
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -95,6 +98,14 @@ class UserResponse(BaseModel):
     tenant_id: int
     role: str
     mfa_enabled: bool = False
+    email_verified: bool = False
+    scopes: list[str] = []
+
+
+def _user_response(user: User) -> UserResponse:
+    from app.auth.scopes import scopes_for
+    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role, mfa_enabled=user.mfa_enabled,
+                        email_verified=user.email_verified_at is not None, scopes=scopes_for(user))
 
 
 @router.post(
@@ -106,6 +117,8 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
     user as its OWNER. Teammates join an existing tenant through an owner's invite instead
     (app/team/routes.py + /api/auth/invite/{token}/accept), never through this endpoint.
     """
+    if not await flag_enabled(session, "self_signup"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Self sign-up is disabled - ask an existing organisation for an invite")
     existing = await session.scalar(select(User).where(User.email == request.email))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -114,6 +127,7 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
     tenant = Tenant(name=request.email, webhook_token=secrets.token_urlsafe(24))
     session.add(tenant)
     await session.flush()
+    await ensure_tenant_key(session, tenant.id)  # Phase N1: every tenant gets its own data key
 
     user = User(
         tenant_id=tenant.id, email=request.email, hashed_password=hash_password(request.password),
@@ -122,6 +136,7 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
     session.add(user)
     await session.flush()
     await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
+    await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
     issued = await start_session(session, user, http_request)
     await session.commit()
     return _token_response(issued)
@@ -176,7 +191,37 @@ async def _complete_login(session: AsyncSession, user: User, http_request: Reque
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, role=user.role, mfa_enabled=user.mfa_enabled)
+    return _user_response(user)
+
+
+# --- Phase N3: email verification -----------------------------------------------------------------
+
+verify_rate_limit = rate_limit("auth_verify_email", limit=5, window_seconds=300)
+
+
+@router.post("/verify-email/resend", dependencies=[Depends(verify_rate_limit)])
+async def resend_verification(http_request: Request, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    if user.email_verified_at is not None:
+        return {"sent": False, "already_verified": True}
+    result = await verification.send_link(session, user, http_request)
+    await session.commit()
+    return {**result, "already_verified": False}
+
+
+@router.post("/verify-email/{token}", response_model=UserResponse, dependencies=[Depends(verify_rate_limit)])
+async def verify_email(token: str, session: AsyncSession = Depends(get_session)) -> UserResponse:
+    """Public: the link works whether or not the user is logged in on this device."""
+    user = await verification.verify(session, token)
+    await write_audit_log(session, user.tenant_id, user.id, "email_verified", user.email)
+    await session.commit()
+    return _user_response(user)
+
+
+@router.get("/scopes")
+async def scope_catalogue(user: User = Depends(get_current_user)) -> list:
+    """Phase N2: every scope, what it allows and which roles hold it by default."""
+    from app.auth.scopes import catalogue
+    return catalogue()
 
 
 # --- Invitations (public: the invitee is not logged in yet) ------------------------------------
@@ -248,6 +293,7 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     )
     session.add(user)
     await session.flush()
+    verification.mark_verified(user)  # Phase N3: the invite link itself proved the inbox
     record.accepted_at = datetime.now(timezone.utc)
     record.accepted_user_id = user.id
     await write_audit_log(session, record.tenant_id, user.id, "invite_accepted", f"{record.email} as {record.role}")
@@ -390,7 +436,13 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
         AlertChannelRecord.tenant_id == user.tenant_id, AlertChannelRecord.channel_type == "EMAIL", AlertChannelRecord.enabled.is_(True),
     ))
     if channel is None:
-        return False
+        from app.notifications import mailer
+        return await mailer.send(
+            user.email, "Reset your Advance Trading Platform password",
+            f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
+            f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
+            "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
+        )
     try:
         config = decrypt_config(channel).model_copy(update={"to_addresses": [user.email]})
         await send_email(

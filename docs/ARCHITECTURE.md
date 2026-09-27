@@ -2598,3 +2598,59 @@ Still open after Phase M (all need a product/provider decision, not code alone):
 channels, fine-grained API scopes replacing roles (V4.12), per-tenant envelope encryption and a
 secret manager (§48), multi-currency and FIU/TDS (§57-61), a websocket market-data feed, and the
 V1 exit gate - a real Upstox run with the operator's credentials.
+
+## Phase N: Security and platform hardening
+
+### N1: Per-tenant envelope encryption (section 48, ADR 0008)
+
+`tenant_keys` holds one random Fernet data key per tenant, wrapped by the master key from
+`SECRETS_ENCRYPTION_KEY`. `encrypt_text(plaintext, tenant_id)` writes `t1:<tenant_id>:<token>`
+under the tenant key; `decrypt_text` reads both that and the legacy master-key format, so nothing
+had to be migrated on deploy. Keys are unwrapped into an in-process ring by
+`envelope.ensure_tenant_key` at every entry point that may decrypt: `get_current_user`, the
+public-API key auth, the TradingView webhook, the worker per tenant, the alert dispatcher per
+channel, registration, and `warm_all` at API start-up. A cold ring never fails a write (it falls
+back to the master format with a warning); a cold decrypt raises an actionable error.
+`scripts/reencrypt_secrets.py status|reencrypt|rotate-master` moves legacy rows to tenant keys
+and re-wraps all keys after a master change (idempotent; O(tenants), no credential row touched).
+`GET /api/system/encryption` (admin) reports the migration state.
+
+### N2: Fine-grained scopes (V4.12, ADR 0009)
+
+`app/auth/scopes.py`: a catalogue of scopes, a role -> default-scopes matrix, and per-member
+overrides in `users.scope_overrides` (`{"deny": [...], "grant": [...]}`) set by the tenant OWNER
+through `PUT /api/team/members/{id}/scopes` (grants capped at the owner's own scopes; unknown
+scopes and `admin:platform` rejected; an owner cannot drop their own `team:manage`).
+`require_role(..., scope=...)` makes `require_trader` check `trading:write` and `require_owner`
+check `team:manage`; LIVE creation/resume checks `trading:live`; credential storage checks
+`brokers:write`. Denials return 403 with `X-Missing-Scope`. `/api/auth/me` returns the effective
+scopes; `/api/auth/scopes` returns the catalogue. Exits are never scope-gated.
+
+### N3: Email verification
+
+`users.email_verified_at` + `email_verifications` (24-hour single-use tokens, SHA-256 stored).
+Registration issues a link through the platform mailer (`app/notifications/mailer.py`,
+`PLATFORM_SMTP_*`; when unconfigured the link is logged and the resend endpoint says so). Invite
+acceptance counts as verified (the invite reached that inbox); a platform admin can stamp a user
+(`POST /api/team/members/{id}/verify-email`). With `EMAIL_VERIFICATION_REQUIRED=true`, LIVE
+deployments and broker credential storage return 403 with `X-Step-Up: email` until verified;
+PAPER and exits are untouched. Users created before Phase N were backfilled as verified. The
+password-reset mailer now falls back to the platform mailer when the tenant has no EMAIL channel.
+
+### N4: Feature flags and the migration-hour guard (section 51)
+
+Feature flags live in `platform_controls` under `feature_flags` with kill-flag semantics: a
+feature is on unless turned off, optionally keeping an allow-list of tenant ids (staged rollout).
+Flags: `ai_copilot`, `marketplace`, `public_api`, `backtest_optimizer`, `live_trading`,
+`self_signup`. `require_flag` returns 503 with `X-Feature-Disabled`; `GET /api/system/features`
+tells the UI what is on for the caller's tenant; admins manage them at
+`GET/PUT /api/admin/controls/flags[/{name}]`. `scripts/migrate_guard.py` wraps
+`alembic upgrade head` in the container entrypoint: nothing pending -> start; pending and NSE
+session closed -> migrate; pending and session open -> refuse (exit 3) unless `--force` /
+`MIGRATION_FORCE=1`.
+
+### N5: ADRs and the DSL reference (section 55)
+
+`docs/adr/` records the ten decisions that shape the platform; `docs/STRATEGY_DSL.md` is the
+versioned reference for `CustomStrategyConfig`.
+

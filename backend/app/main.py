@@ -85,6 +85,7 @@ from app.ai.routes import router as ai_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
 from app.incidents.routes import router as incidents_router
+from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -93,6 +94,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_models()
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
+        await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
     yield
 
 

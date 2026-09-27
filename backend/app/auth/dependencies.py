@@ -31,7 +31,15 @@ async def get_current_user(
     # everywhere, member removed, password changed) invalidates the token immediately.
     if not await _session_alive(session, payload.get("sid")):
         raise unauthorized
+    await _warm_tenant_key(session, user.tenant_id)
     return user
+
+
+async def _warm_tenant_key(session: AsyncSession, tenant_id: int) -> None:
+    """Phase N1: make the tenant's data key available to the sync encrypt/decrypt helpers for
+    the rest of this request (a dict lookup once cached)."""
+    from app.secrets_store.envelope import ensure_tenant_key
+    await ensure_tenant_key(session, tenant_id)
 
 
 async def _session_alive(session: AsyncSession, session_id) -> bool:
@@ -64,12 +72,13 @@ async def get_current_user_optional(
         user = await session.get(User, int(payload["sub"]))
         if user is None or not user.is_active or not await _session_alive(session, payload.get("sid")):
             return None
+        await _warm_tenant_key(session, user.tenant_id)
         return user
     except Exception:
         return None
 
 
-def require_role(*allowed: UserRole, active_tenant: bool = False) -> Callable[..., User]:
+def require_role(*allowed: UserRole, active_tenant: bool = False, scope: Optional[str] = None) -> Callable[..., User]:
     """Dependency factory for RBAC-gated routes: `Depends(require_role(UserRole.SUPER_ADMIN))`.
     SUPER_ADMIN always passes, regardless of which roles are listed, since it's the platform-wide
     role above every tenant-scoped one. `require_role()` with no roles is therefore
@@ -79,6 +88,11 @@ def require_role(*allowed: UserRole, active_tenant: bool = False) -> Callable[..
     async def _check(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> User:
         if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in allowed}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for this action")
+        if scope is not None:
+            # Phase N2: a per-member scope denial (users.scope_overrides) bites even when the role allows.
+            from app.auth.scopes import has_scope, scope_denied
+            if not has_scope(user, scope):
+                raise scope_denied(user, scope)
         if active_tenant and user.role != UserRole.SUPER_ADMIN.value:
             # A suspended organisation keeps read access (its people can still see their positions
             # and history) but every trading/configuration write is refused (app/plans/limits.py).
@@ -94,9 +108,9 @@ def require_role(*allowed: UserRole, active_tenant: bool = False) -> Callable[..
 TRADING_ROLES = (UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
 
 # Anything that places, configures or stops trading, or touches broker/alert credentials.
-require_trader = require_role(*TRADING_ROLES, active_tenant=True)
+require_trader = require_role(*TRADING_ROLES, active_tenant=True, scope="trading:write")
 # Team management (invites, roles, removing members): the tenant's owner(s) only.
-require_owner = require_role(UserRole.OWNER, active_tenant=True)
+require_owner = require_role(UserRole.OWNER, active_tenant=True, scope="team:manage")
 
 
 class MfaRequired(HTTPException):

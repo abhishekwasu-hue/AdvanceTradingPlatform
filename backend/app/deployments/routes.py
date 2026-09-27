@@ -292,12 +292,25 @@ async def _require_usable_broker(session: AsyncSession, tenant_id: int, broker_n
     return record
 
 
+async def _live_gates(session: AsyncSession, user: User, why: str) -> None:
+    """Phase N: LIVE needs the `trading:live` scope, the `live_trading` feature flag and (when the
+    operator requires it) a verified email. Exits and PAPER are untouched."""
+    from app.auth.scopes import has_scope, scope_denied
+    from app.auth.verification import ensure_verified
+    from app.platform.controls import require_flag
+    if not has_scope(user, "trading:live"):
+        raise scope_denied(user, "trading:live")
+    await require_flag(session, "live_trading", user.tenant_id)
+    ensure_verified(user, why)
+
+
 @router.post("", response_model=DeploymentResponse, status_code=status.HTTP_201_CREATED)
 async def create_deployment(
     request: DeploymentCreateRequest, user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
     session_id: Optional[int] = Depends(current_session_id),
 ) -> DeploymentResponse:
     if request.mode == ExecutionMode.LIVE:
+        await _live_gates(session, user, "Creating a LIVE deployment")
         await ensure_live_step_up(session, user, session_id, "Creating a LIVE deployment")
     try:
         strategy = await resolve_strategy(request.strategy_id, user, session)
@@ -537,6 +550,7 @@ async def resume_deployment(
 ) -> DeploymentResponse:
     record = await _get_owned_or_404(deployment_id, user, session)
     if record.mode == ExecutionMode.LIVE.value:
+        await _live_gates(session, user, "Resuming a LIVE deployment")
         await ensure_live_step_up(session, user, session_id, "Resuming a LIVE deployment")
     if record.status == DeploymentStatus.STOPPED.value:
         raise HTTPException(status_code=409, detail="A stopped deployment cannot be resumed - create a new one")

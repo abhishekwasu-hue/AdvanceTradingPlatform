@@ -65,6 +65,13 @@ class User(Base):
     # Phase M / V4.13: an OWNER or platform admin can stop one member from opening new positions
     # without deactivating the account (they can still watch, exit and report).
     trading_disabled_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Phase N3: set when the address was confirmed through the emailed link (or by a platform
+    # admin). LIVE deployments and broker credential storage require it when
+    # EMAIL_VERIFICATION_REQUIRED is on. Users created before Phase N were backfilled as verified.
+    email_verified_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Phase N2 / V4.12: fine-grained scope overrides on top of the role matrix, as JSON
+    # {"deny": ["trading:live", ...], "grant": [...]} set by the tenant OWNER (app/auth/scopes.py).
+    scope_overrides: Mapped[str | None] = mapped_column(Text, nullable=True)
     # TOTP MFA (app/auth/mfa.py). The secret is Fernet-encrypted; a pending (not yet confirmed)
     # enrolment has a secret but mfa_enabled = False.
     mfa_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
@@ -931,6 +938,34 @@ class AiActionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class TenantKeyRecord(Base):
+    """Phase N1 / section 48: one Fernet data key per tenant, stored wrapped by the master key
+    (`SECRETS_ENCRYPTION_KEY`). Secrets written as `t1:<tenant_id>:<token>` decrypt only with this
+    key; rotating the master re-wraps these rows and touches no credential (app/secrets_store/envelope.py)."""
+
+    __tablename__ = "tenant_keys"
+
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
+    wrapped_key: Mapped[str] = mapped_column(Text, nullable=False)
+    key_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    rotated_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class EmailVerificationRecord(Base):
+    """Phase N3: a 24-hour, single-use email verification token (SHA-256 stored, raw token in
+    the link). Verifying stamps `users.email_verified_at`."""
+
+    __tablename__ = "email_verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
 class PlatformControlRecord(Base):

@@ -10,10 +10,10 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER. Email verification missing. |
-| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) and `subscribe_market_data()` (raises until an adapter streams) added (Phase M). Tokens Fernet-encrypted with one app key, not envelope-encrypted per tenant (§48). |
+| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) and `subscribe_market_data()` (raises until an adapter streams) added (Phase M). Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
 | 10 market data | partial | Candles/LTP via broker REST with Redis cache; staleness gate on candles and quotes (Phase G1); no websocket feed. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
-| 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; DSL schema not formally versioned (§55). |
+| 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; versioned reference `docs/STRATEGY_DSL.md` (Phase N5). |
 | 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done / partial | Order state machine, idempotency, reconciliation exist. §17 checks: data fresh (Phase G1) and broker healthy (Phase G2 circuit) done; **margin available** for buys and **instrument/expiry validity** still missing. `PARTIAL_FILL` handled on the trade (F3) but not as an order status. |
 | 23-25 options engine, strategies, Greeks | done (Phase F + H) | Strike-selection pipeline with liquidity/OI/IV/delta/premium filters (H1); bull put, bear call, iron condor with max-loss sizing and group exits (H2); Greeks per leg and per structure on open positions. Future structures (straddle, strangle, ratio, calendar, butterfly, custom builder) not built. |
 | 26-27 paper, live | done | Same pipeline; configurable slippage; execution delay/bid-ask simulation not modelled. |
@@ -30,14 +30,14 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Gaps |
 | --- | --- | --- |
 | 47 compliance | partial | Algo tagging, retention, exports, erasure done. Disclaimers on backtest/signal/score/AI screens (Phase G3); advisory-vs-execution classification is a business decision. |
-| 48 security | partial | Rate limits, hash-chained audit, sessions/MFA, scanning done. **Secret manager + per-tenant envelope encryption, least-privilege DB roles, pentest missing.** Broker-call circuit breaker done (Phase G2). |
+| 48 security | mostly done | Rate limits, hash-chained audit, sessions/MFA, scanning, circuit breaker (G2), per-tenant envelope encryption with master rotation and a secret-manager-agnostic master (Phase N1), email verification (N3). **Least-privilege DB roles and an external pentest remain.** |
 | 49 reliability | partial | Structured logs, metrics, heartbeat, deep health done. Circuit breaker, written SLOs (docs/SLO.md) and staleness gate/alert done (Phase G). **Chaos tests missing.** Heartbeat alert wiring is the operator's (Prometheus rule given). |
 | 50 testing | partial | Unit, golden path, fuzz, idempotency, disaster simulation, exit parity done. **Load/latency tests, full backtest-vs-paper parity run, staging env, model-drift gate missing.** |
-| 51 CI/CD | partial | Pipeline with scans done. **Staging environment, IaC, feature flags, blue-green, migration hour guard missing.** |
+| 51 CI/CD | partial | Pipeline with scans done; feature flags with tenant allow-lists and the migration-hour guard (Phase N4). **Staging environment, IaC, blue-green remain infra tasks.** |
 | 52 DR | partial | Daily verified backups (E3), runbooks done. Restart-reconcile-before-signals done (Phase G1). **PITR/WAL, broker-side GTT backstop, numeric RPO/RTO per data class missing.** |
 | 53 governance | partial | Retention, erasure, audit immutability done. AI/ML lineage only for what exists. |
 | 54 performance | missing | No stated SLO numbers or load measurements. |
-| 55 docs | partial | Architecture/operations/README, OpenAPI. **ADRs and a versioned DSL reference missing.** |
+| 55 docs | done | Architecture/operations/README, OpenAPI, ten ADRs (`docs/adr/`) and the versioned DSL reference (Phase N5). |
 | 56 conversational builder | partial | Rule-based chat-to-strategy exists; **no LLM, no Dynamic Condition Type Pipeline / review gate**. |
 | 57-61 global, multi-asset, brokers, performance engineering | partial | MCX/crypto contract specs and sizing; **no multi-currency, per-exchange sessions, FIU/TDS module, hot-path split**. |
 
@@ -59,7 +59,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and the broker-uncertain block done (Phase G). |
 | V4.10 DR | partial | Restore-test script; RPO/RTO targets table in OPERATIONS; incident records with measured data-loss/downtime and audit range (Phase M4). PITR/WAL still an infra task. |
 | V4.11 monitoring | partial | Trading metrics; severities INFO/WARNING/CRITICAL/EMERGENCY (Phase M3); AI/billing metrics not exported. |
-| V4.12 security scopes | missing | Roles, not fine-grained scopes. |
+| V4.12 security scopes | done (Phase N2) | Scope catalogue over roles, per-member deny/grant by the owner, enforced at the trading/team/LIVE/credential gates; `/api/auth/me` exposes effective scopes. |
 | V4.13 enterprise admin | done (Phase M1) | Tenant/plan/status, kill switch, retention, exports, maintenance mode, broker disable, per-user trading disable, incidents. |
 | V4.14 trade journal | done (Phase M3) | Strategy, deployment, execution quality, charges source, regime at entry, notes, tags. |
 | V4.15 performance intelligence | done (Phase M3) | Analytics by strategy/symbol; live-vs-backtest degradation status per strategy (`GET /api/analytics/degradation`). |
@@ -88,6 +88,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
 - **Phase K - commercial SaaS** - **DONE** on this branch (ARCHITECTURE.md Phase K, docs/PUBLIC_API.md). Was: billing abstraction and metering, marketplace, public API + developer portal, webhook notifications. SMS/push still need a provider decision.
+- **Phase N - security and platform hardening** - **DONE** (ARCHITECTURE.md Phase N): per-tenant envelope encryption + rotation tooling, fine-grained scopes, email verification + platform mailer, feature flags, migration-hour guard, ADRs, DSL reference.
 - **Phase M - gap closure** - **DONE** (ARCHITECTURE.md Phase M): maintenance mode, broker disable, per-user trading disable, portfolio engine + PORTFOLIO/DEPLOYMENT scopes, trade journal, EMERGENCY severity, degradation baselines, incidents, `exit_position`, parameter optimisation.
 - **Phase L - AI layer** - **DONE** on this branch (ARCHITECTURE.md Phase L). Was: LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine. Provider keys are entered per tenant on the Settings page (encrypted); Anthropic, OpenAI or the built-in rule-based fallback.
 - **Continuous**: the V1 exit gate - a real Upstox account run - as soon as credentials are entered in Settings.

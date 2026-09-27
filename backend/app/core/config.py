@@ -106,11 +106,25 @@ def validate_production_config() -> None:
         )
     if ALLOWED_ORIGINS == ["*"]:
         problems.append("ALLOWED_ORIGINS is \"*\" - set it to your real frontend origin(s) in production.")
+    if os.environ.get("EMAIL_VERIFICATION_REQUIRED", "").strip().lower() in {"1", "true", "yes"} and not os.environ.get("PLATFORM_SMTP_HOST", "").strip():
+        problems.append("EMAIL_VERIFICATION_REQUIRED is on but PLATFORM_SMTP_HOST is unset - nobody could ever verify.")
 
     if problems:
         raise RuntimeError(
             "Refusing to start with ENVIRONMENT=production and insecure configuration:\n- " + "\n- ".join(problems)
         )
+
+# --- Platform mailer + email verification (Phase N3) --------------------------------------------
+# The platform's own SMTP account, used for account emails (verification links, and password
+# resets when the tenant has no EMAIL alert channel yet). Unset = links are logged, not sent.
+PLATFORM_SMTP_HOST = os.environ.get("PLATFORM_SMTP_HOST", "").strip()
+PLATFORM_SMTP_PORT = int(os.environ.get("PLATFORM_SMTP_PORT", "587"))
+PLATFORM_SMTP_USERNAME = os.environ.get("PLATFORM_SMTP_USERNAME", "")
+PLATFORM_SMTP_PASSWORD = os.environ.get("PLATFORM_SMTP_PASSWORD", "")
+PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
+PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
+# When on, LIVE deployments and broker credential storage require a verified email address.
+EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
 
 # --- Billing gateway (Phase K1b) ----------------------------------------------------------
 # "manual" = the operator records bank/UPI payments; "razorpay" = Razorpay Subscriptions with

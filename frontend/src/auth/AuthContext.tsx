@@ -13,6 +13,8 @@ interface AuthState {
   acceptInvite: (token: string, password: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Re-reads /auth/me (after email verification, scope changes, ...). */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -54,6 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
+  async function refreshUser() {
+    try {
+      setUser(await api.me());
+    } catch {
+      // token gone - the next request handles it
+    }
+  }
+
   async function resetPassword(token: string, password: string) {
     const response = await api.resetPassword(token, password);
     setToken(response.access_token, response.refresh_token);
@@ -73,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, login, completeMfaLogin, register, logout, acceptInvite, resetPassword, refreshUser }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

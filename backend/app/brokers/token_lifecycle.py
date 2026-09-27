@@ -112,7 +112,7 @@ def store_access_token(record: BrokerCredentialRecord, access_token: str, now: O
     credentials = load_credentials(record)
     credentials.access_token = access_token
     credentials.request_token = None
-    record.encrypted_payload = encrypt_text(credentials.model_dump_json())
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id)
     record.token_status = BrokerTokenStatus.VALID.value
     record.token_expires_at = default_token_expiry(record.broker_name, now)
     record.last_verified_at = now

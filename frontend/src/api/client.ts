@@ -79,6 +79,12 @@ import type {
   OptimizeResult,
   PortfolioExposure,
   SystemStatus,
+  EncryptionStatus,
+  FeatureFlags,
+  MemberScopes,
+  ScopeCatalogueEntry,
+  TenantFeatures,
+  VerificationSendResult
 } from "../types";
 
 const BASE = "/api/v1";
@@ -483,6 +489,19 @@ export const api = {
     request<SystemStatus>("/admin/controls/maintenance", { method: "PUT", body: JSON.stringify({ on, message }) }),
   adminSetDisabledBrokers: (names: string[]) =>
     request<SystemStatus>("/admin/controls/brokers", { method: "PUT", body: JSON.stringify({ names }) }),
+  // ---- Phase N: scopes, email verification, feature flags, encryption status
+  scopeCatalogue: () => request<ScopeCatalogueEntry[]>("/auth/scopes"),
+  memberScopes: (memberId: number) => request<MemberScopes>(`/team/members/${memberId}/scopes`),
+  setMemberScopes: (memberId: number, deny: string[], grant: string[]) =>
+    request<MemberScopes>(`/team/members/${memberId}/scopes`, { method: "PUT", body: JSON.stringify({ deny, grant }) }),
+  resendVerification: () => request<VerificationSendResult>("/auth/verify-email/resend", { method: "POST" }),
+  verifyEmail: (token: string) => request<UserResponse>(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST" }),
+  adminVerifyEmail: (memberId: number) => request<{ id: number; email_verified: boolean }>(`/team/members/${memberId}/verify-email`, { method: "POST" }),
+  myFeatures: () => request<TenantFeatures>("/system/features"),
+  adminFlags: () => request<FeatureFlags>("/admin/controls/flags"),
+  adminSetFlag: (name: string, on: boolean, tenants: number[] = []) =>
+    request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants }) }),
+  adminEncryptionStatus: () => request<EncryptionStatus>("/system/encryption"),
   disableMemberTrading: (memberId: number, reason: string) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),
   enableMemberTrading: (memberId: number) =>

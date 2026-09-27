@@ -25,6 +25,7 @@ from app.alerts.channels import EmailConfig, TelegramConfig, WebhookConfig, decr
 from app.core.enums import AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
+from app.secrets_store.envelope import ensure_tenant_key
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +194,8 @@ async def dispatch_pending(
     for delivery in due:
         channel = await session.get(AlertChannelRecord, delivery.channel_id)
         notification = await session.get(NotificationRecord, delivery.notification_id)
+        if channel is not None:
+            await ensure_tenant_key(session, channel.tenant_id)  # Phase N1
         if channel is None or notification is None or not channel.enabled:
             delivery.status = AlertDeliveryStatus.FAILED.value
             delivery.last_error = "Channel disabled or removed before delivery"

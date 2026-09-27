@@ -263,6 +263,14 @@ export default function TeamPage() {
               onChange={(e) => act(e.target.checked ? "Two-factor authentication is now required for live trading and broker credentials." : "Two-factor requirement removed.", () => api.setTenantMfaPolicy(e.target.checked))} />
             <span><b>Require two-factor authentication</b> for LIVE deployments, broker credentials and broker login. Members without it will be asked to enable it on the Account tab first. (Enable it on your own account before turning this on.)</span>
           </label>
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            <span className="text-slate-200 font-semibold">Reporting currency</span>
+            <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={tenant.base_currency ?? "INR"} disabled={busy}
+              onChange={(e) => act(`Portfolio figures now reported in ${e.target.value}.`, () => api.setTenantBaseCurrency(e.target.value))}>
+              {["INR", "USD", "USDT", "EUR", "GBP", "AED", "SGD"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <span className="text-muted">Portfolio exposure converts non-{tenant.base_currency ?? "INR"} instruments with the platform's FX rates.</span>
+          </div>
           <div className="mt-4 border-t border-border pt-3">
             <div className="text-xs font-semibold text-slate-200">Exchange algo id (SEBI algo tagging)</div>
             <p className="text-xs text-muted mt-1 mb-2">

@@ -42,6 +42,8 @@ class Tenant(Base):
     # out, so the platform does not know whether the broker holds the position. New LIVE entries
     # are refused while set; a position reconciliation with zero mismatches clears it.
     broker_uncertain_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Phase P3 / section 57: the currency portfolio figures are reported in (app/fx/service.py).
+    base_currency: Mapped[str] = mapped_column(String(4), nullable=False, default="INR", server_default="INR")
     broker_uncertain_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase K: why the status is what it is ("billing: grace expired", "admin: ...").
@@ -938,6 +940,23 @@ class AiActionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class FxRateRecord(Base):
+    """Phase P3: operator-maintained FX rates (base/quote -> rate). One row per pair; the
+    conversion helper also uses the inverse and the INR pivot."""
+
+    __tablename__ = "fx_rates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    base: Mapped[str] = mapped_column(String(4), nullable=False)
+    quote: Mapped[str] = mapped_column(String(4), nullable=False)
+    rate: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
+    as_of: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (UniqueConstraint("base", "quote", name="uq_fx_rates_pair"),)
 
 
 class TenantKeyRecord(Base):

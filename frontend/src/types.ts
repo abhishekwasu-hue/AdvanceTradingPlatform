@@ -995,6 +995,7 @@ export interface TenantInfo {
   usage: { active_deployments: number; custom_strategies: number; members: number; alert_channels: number };
   require_mfa_for_live?: boolean;
   algo_id?: string | null;
+  base_currency?: string;
 }
 
 export interface InviteInfo {
@@ -1379,6 +1380,18 @@ export interface DegradationRow {
 }
 
 export interface DegradationReport { strategies: DegradationRow[]; degraded: number; watch: number; note: string }
+
+// ---- Phase P: tax report, FX --------------------------------------------------------------------
+export interface TaxClassTotals {
+  trades: number; winners: number; gross_pnl: number; charges: number; net_pnl: number; turnover: number; sell_value: number;
+  stt_estimate: number; ctt_estimate: number; tds_estimate: number; taxable_gains: number; tax_estimate: number; disallowed_losses: number;
+  top_symbols: { symbol: string; net_pnl: number }[]; income_head: string;
+}
+export interface TaxReport {
+  financial_year: string; mode: string; generated_at: string; trades: number; net_pnl: number;
+  classes: Record<"EQUITY_INTRADAY" | "FNO" | "CRYPTO", TaxClassTotals>; notes: string[]; rates: Record<string, Record<string, number>>;
+}
+export interface FxRate { base: string; quote: string; rate: number; source: string; as_of: string | null }
 
 export interface Incident {
   id: number; severity: "WARNING" | "CRITICAL" | "EMERGENCY"; title: string; summary: string; status: "OPEN" | "MITIGATED" | "RESOLVED";

@@ -84,6 +84,8 @@ from app.public_api.routes import keys_router as api_keys_router, public_router 
 from app.ai.routes import router as ai_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
+from app.tax.routes import router as tax_router
+from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
@@ -156,6 +158,9 @@ app.include_router(system_status_router)
 app.include_router(controls_admin_router)
 app.include_router(trading_disable_router)
 app.include_router(portfolio_router)
+app.include_router(tax_router)
+app.include_router(fx_router)
+app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 
 _default_risk_config = RiskConfig()

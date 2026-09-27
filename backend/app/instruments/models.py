@@ -25,6 +25,9 @@ class ContractSpec(BaseModel):
     lot_size: float = Field(gt=0)
     tick_size: float = Field(gt=0)
     fractional: bool = False
+    # Phase P3: the currency this instrument is quoted and settled in (INR for every NSE/BSE/MCX
+    # contract and the INR crypto pairs; USDT for a USDT-quoted pair, etc.).
+    quote_currency: str = Field(default="INR", min_length=3, max_length=4)
 
 
 def default_contract_spec(symbol: str, exchange: str, asset_class: AssetClass) -> ContractSpec:

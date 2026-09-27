@@ -1,0 +1,55 @@
+# Phase P5 / section 51: staging overlay. Same images and topology as production, separate
+# ports, database name, volumes and a staging banner, so a release can be rehearsed on the same
+# host (or a small VM) before it reaches the trading environment.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml -p atp-staging up -d --build
+#   scripts/deploy.sh staging        # pull/build -> migration guard -> rolling restart -> health check
+#
+# Staging keeps EMAIL_VERIFICATION_REQUIRED off and BILLING_PROVIDER manual by default, and the
+# worker runs with WORKER_CYCLE_SECONDS=60 like production. Never point staging at production
+# broker credentials: LIVE deployments here should use a broker sandbox account.
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-advance_trading_platform_staging}
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+      - wal_archive_staging:/wal_archive
+
+  redis:
+    ports:
+      - "16379:6379"
+
+  backend:
+    environment:
+      ENVIRONMENT: staging
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform_staging}
+      ALLOWED_ORIGINS: ${STAGING_ALLOWED_ORIGINS:-http://localhost:18080}
+      EMAIL_VERIFICATION_REQUIRED: "false"
+      BILLING_PROVIDER: manual
+    ports:
+      - "18000:8000"
+
+  worker:
+    environment:
+      ENVIRONMENT: staging
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform_staging}
+
+  frontend:
+    ports:
+      - "18080:80"
+
+  backup:
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform_staging}
+    volumes:
+      - ./scripts/backup:/scripts:ro
+      - backups_staging:/backups
+      - wal_archive_staging:/wal_archive
+
+volumes:
+  postgres_data_staging:
+  backups_staging:
+  wal_archive_staging:

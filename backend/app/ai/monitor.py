@@ -118,6 +118,16 @@ async def observe(session: AsyncSession, tenant_id: int, deployments: List[Strat
                 proposals.append(Proposal(dep.id, None, "REVIEW_STRATEGY", "WIN_RATE_DRIFT",
                                           f"Deployment #{dep.id}: live win rate {live_wr:.0%} over the last {len(closed_all[-20:])} trades vs {bt_wr:.0%} in the latest backtest.",
                                           {"live_win_rate": round(live_wr, 3), "backtest_win_rate": round(bt_wr, 3), "backtest_run_id": run.id}))
+            # Phase P4 / section 50 model-drift gate: when the degradation engine (win rate,
+            # expectancy, profit factor vs the saved backtest) says DEGRADED, propose a pause -
+            # the human decides, exactly like every other proposal.
+            if run is not None:
+                from app.trading.degradation import compare, live_metrics
+                verdict = compare(live_metrics(closed_all), json.loads(run.metrics_json or "{}"))
+                if verdict["status"] == "DEGRADED":
+                    proposals.append(Proposal(dep.id, None, "PAUSE_DEPLOYMENT", "DEGRADATION",
+                                              f"Deployment #{dep.id} ({dep.strategy_id}) has degraded versus its backtest: {'; '.join(verdict['reasons'])}.",
+                                              {"reasons": verdict["reasons"], "backtest_run_id": run.id, "closed_trades": len(closed_all)}))
     return proposals
 
 

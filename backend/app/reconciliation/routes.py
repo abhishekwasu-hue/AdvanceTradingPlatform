@@ -1,19 +1,19 @@
 import json
+from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers, get_broker_adapter
-from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import BrokerCredentialRecord, TradeRecord, User
+from app.db.models import BrokerCredentialRecord, Tenant, User
 from app.db.session import get_session
-from app.notifications.service import notify
-from app.reconciliation.engine import reconcile_positions
-from app.reconciliation.models import ReconciliationReport, ReconciliationStatus
+from app.reconciliation.models import ReconciliationReport
+from app.reconciliation.service import open_trades, run_reconciliation
 from app.secrets_store.encryption import decrypt_text
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
@@ -41,39 +41,34 @@ async def reconcile_broker_positions(
 
     credentials = BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload)))
     adapter = get_broker_adapter(broker_name, credentials)
+    tenant = await session.get(Tenant, user.tenant_id)
 
     try:
-        broker_positions = await adapter.get_positions()
-    except Exception as exc:
-        await write_audit_log(
-            session, user.tenant_id, user.id, "position_reconciliation_failed", f"{broker_name}: {exc}",
-        )
-        await session.commit()
-        await notify(
-            session, user.tenant_id, NotificationType.SYSTEM_FAILURE,
-            title=f"Failed to fetch positions from {broker_name}", message=str(exc),
-            severity=NotificationSeverity.CRITICAL, user_id=user.id,
-        )
+        return await run_reconciliation(session, tenant, broker_name, adapter, user_id=user.id, source="api")
+    except Exception as exc:  # noqa: BLE001 - already audited, notified and flagged by the service
         raise HTTPException(status_code=502, detail=f"Failed to fetch positions from {broker_name}: {exc}") from exc
 
-    open_trades = list(
-        await session.scalars(
-            select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
-        )
+
+class ReconciliationStatusResponse(BaseModel):
+    broker_uncertain: bool
+    broker_uncertain_since: Optional[datetime] = None
+    broker_uncertain_reason: Optional[str] = None
+    last_reconciled_at: Optional[datetime] = None
+    open_live_trades: int
+
+
+@router.get("/status", response_model=ReconciliationStatusResponse)
+async def reconciliation_status(
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> ReconciliationStatusResponse:
+    """Whether this organisation's LIVE entries are currently blocked pending reconciliation
+    (Phase G1), when it was last reconciled, and how many LIVE positions the platform holds open."""
+    tenant = await session.get(Tenant, user.tenant_id)
+    live_open = len(await open_trades(session, user.tenant_id, mode="LIVE"))
+    return ReconciliationStatusResponse(
+        broker_uncertain=tenant.broker_uncertain_since is not None,
+        broker_uncertain_since=tenant.broker_uncertain_since,
+        broker_uncertain_reason=tenant.broker_uncertain_reason,
+        last_reconciled_at=tenant.last_reconciled_at,
+        open_live_trades=live_open,
     )
-
-    report = reconcile_positions(broker_name, open_trades, broker_positions)
-
-    for item in report.items:
-        if item.status != ReconciliationStatus.MATCHED:
-            await write_audit_log(
-                session, user.tenant_id, user.id, "position_reconciliation_mismatch",
-                f"{item.status.value} {item.symbol}: {item.detail}",
-            )
-    await write_audit_log(
-        session, user.tenant_id, user.id, "position_reconciliation_run",
-        f"{broker_name}: {report.mismatched_count} mismatch(es) across {len(report.items)} symbol(s)",
-    )
-    await session.commit()
-
-    return report

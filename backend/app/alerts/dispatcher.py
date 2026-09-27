@@ -6,6 +6,9 @@ dead SMTP server. `dispatch_pending` does the sending; the trading worker calls 
 (market open or not), and the Settings "send test" button calls `send_via_channel` directly.
 """
 import asyncio
+import hashlib
+import hmac
+import json
 import html
 import logging
 import smtplib
@@ -18,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import EmailConfig, TelegramConfig, decrypt_config, severity_reaches
+from app.alerts.channels import EmailConfig, TelegramConfig, WebhookConfig, decrypt_config, severity_reaches
 from app.core.enums import AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
@@ -118,6 +121,39 @@ async def send_email(config: EmailConfig, subject: str, plain_text: str) -> None
     await asyncio.to_thread(_smtp_send, config, message)
 
 
+def webhook_payload(notification: NotificationRecord) -> dict:
+    return {
+        "id": notification.id, "event_type": notification.event_type, "severity": notification.severity, "title": notification.title,
+        "message": notification.message, "created_at": _as_utc(notification.created_at).isoformat(), "tenant_id": notification.tenant_id,
+        "metadata": json.loads(notification.metadata_json) if getattr(notification, "metadata_json", None) else None,
+    }
+
+
+def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
+    """`sha256=<hex>` over `<timestamp>.<body>` - the receiver recomputes it with the shared secret."""
+    digest = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
+    """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success."""
+    if config.event_types and notification.event_type not in config.event_types:
+        return
+    body = json.dumps(webhook_payload(notification), separators=(",", ":"), sort_keys=True).encode()
+    timestamp = str(int(_utcnow().timestamp()))
+    headers = {"Content-Type": "application/json", "X-ATP-Timestamp": timestamp, "X-ATP-Signature": sign_webhook(config.secret, body, timestamp),
+               "X-ATP-Event": notification.event_type, "User-Agent": "ATP-Webhooks/1.0"}
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        response = await client.post(str(config.url), content=body, headers=headers)
+        if response.status_code >= 300:
+            raise RuntimeError(f"Webhook endpoint answered HTTP {response.status_code}")
+    finally:
+        if owns_client:
+            await client.aclose()
+
+
 async def send_via_channel(
     channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
 ) -> None:
@@ -129,6 +165,8 @@ async def send_via_channel(
     elif channel.channel_type == AlertChannelType.EMAIL.value:
         subject = f"[{notification.severity}] {notification.title}"
         await send_email(config, subject, plain)  # type: ignore[arg-type]
+    elif channel.channel_type == AlertChannelType.WEBHOOK.value:
+        await send_webhook(config, notification, client)  # type: ignore[arg-type]
     else:
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
 

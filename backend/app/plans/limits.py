@@ -98,7 +98,28 @@ def limits(plan: Plan) -> Dict[str, object]:
         "custom_strategies": plan.max_custom_strategies,
         "members": plan.max_members,
         "alert_channels": plan.max_alert_channels,
+        # Phase K commercial fields
+        "price_monthly": plan.price_monthly, "price_yearly": plan.price_yearly, "currency": plan.currency,
+        "live_strategies": plan.max_live_strategies, "backtests_per_month": plan.max_backtests_per_month,
+        "api_calls_per_day": plan.max_api_calls_per_day, "accounts": plan.max_accounts, "brokers": plan.max_brokers,
+        "option_features": plan.option_features, "ai_features": plan.ai_features, "marketplace_access": plan.marketplace_access,
+        "support_level": plan.support_level, "trial_days": plan.trial_days,
     }
+
+
+def feature_allowed(tenant: Optional[Tenant], feature: str) -> bool:
+    """Plan-gated features (Phase K): option_features, ai_features, marketplace_access, public_api."""
+    if tenant is None or not tenant_is_active(tenant):
+        return False
+    plan = get_plan(tenant.plan)
+    if feature == "public_api":
+        return plan.max_api_calls_per_day > 0
+    return bool(getattr(plan, feature, False))
+
+
+def require_feature(tenant: Tenant, feature: str, label: str) -> None:
+    if not feature_allowed(tenant, feature):
+        raise PlanLimitExceeded(f"{label} needs the Pro or Business plan (current: {get_plan(tenant.plan).name}).")
 
 
 def _upgrade_hint(plan: Plan) -> str:

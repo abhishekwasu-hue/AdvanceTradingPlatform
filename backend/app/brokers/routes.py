@@ -9,11 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.token_lifecycle import (
+    build_adapter,
     OAUTH_BROKERS,
     build_upstox_authorization_url,
     create_oauth_state,
@@ -30,7 +32,7 @@ from app.core.enums import BrokerTokenStatus, NotificationSeverity, Notification
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
-from app.secrets_store.encryption import encrypt_text
+from app.secrets_store.encryption import decrypt_text, encrypt_text
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +44,12 @@ UPSTOX_CALLBACK_PATH = "/api/broker/upstox/oauth/callback"
 class StoredBrokerInfo(BaseModel):
     broker_name: str
     updated_at: str
+    account_label: str = "primary"
 
 
 class BrokerTokenStatusResponse(BaseModel):
     broker_name: str
+    account_label: str = "primary"
     token_status: str
     token_expires_at: Optional[str]
     last_verified_at: Optional[str]
@@ -55,6 +59,13 @@ class BrokerTokenStatusResponse(BaseModel):
     oauth_supported: bool
     # The exact redirect URI to register on the broker's developer console for that flow.
     oauth_callback_url: Optional[str]
+
+
+def _clean_label(label: Optional[str]) -> str:
+    label = (label or "primary").strip().lower()
+    if not label or len(label) > 50 or not all(c.isalnum() or c in "-_" for c in label):
+        raise HTTPException(status_code=400, detail="account_label must be 1-50 letters, digits, '-' or '_'")
+    return label
 
 
 def _ensure_known_broker(name: str) -> None:
@@ -71,6 +82,7 @@ def _callback_url(request: Request, broker_name: str) -> Optional[str]:
 def _token_status_response(record: BrokerCredentialRecord, request: Request) -> BrokerTokenStatusResponse:
     return BrokerTokenStatusResponse(
         broker_name=record.broker_name,
+        account_label=record.account_label or "primary",
         token_status=record.token_status,
         token_expires_at=record.token_expires_at.isoformat() if record.token_expires_at else None,
         last_verified_at=record.last_verified_at.isoformat() if record.last_verified_at else None,
@@ -84,7 +96,7 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
-    session_id: Optional[int] = Depends(current_session_id),
+    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
 ) -> None:
     await ensure_live_step_up(session, user, session_id, "Storing broker credentials")
     """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
@@ -93,23 +105,26 @@ async def store_broker_credentials(
     /authenticate (or the OAuth callback) succeeds against the broker.
     """
     _ensure_known_broker(name)
+    account_label = _clean_label(account_label)
     encrypted = encrypt_text(credentials.model_dump_json())
 
-    existing = await get_credential_record(session, user.tenant_id, name)
+    existing = await get_credential_record(session, user.tenant_id, name, account_label)
     if existing:
         existing.encrypted_payload = encrypted
         existing.user_id = user.id
         existing.token_status = BrokerTokenStatus.UNKNOWN.value
         existing.token_expires_at = None
         existing.last_verified_at = None
+        record = existing
     else:
-        session.add(
-            BrokerCredentialRecord(
-                tenant_id=user.tenant_id, user_id=user.id, broker_name=name, encrypted_payload=encrypted
-            )
+        record = BrokerCredentialRecord(
+            tenant_id=user.tenant_id, user_id=user.id, broker_name=name, account_label=account_label, encrypted_payload=encrypted
         )
+        session.add(record)
+        await session.flush()
+    await ensure_account_for_credential(session, record)  # Phase I2: the account row behind the credential
 
-    await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored", name)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored", f"{name}/{account_label}")
     await session.commit()
 
 
@@ -121,7 +136,8 @@ async def list_stored_broker_credentials(
         select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
     )
     return [
-        StoredBrokerInfo(broker_name=r.broker_name, updated_at=r.updated_at.isoformat()) for r in records
+        StoredBrokerInfo(broker_name=r.broker_name, updated_at=r.updated_at.isoformat(), account_label=r.account_label or "primary")
+        for r in records
     ]
 
 
@@ -139,13 +155,42 @@ async def list_broker_token_status(
 
 @router.delete("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_broker_credentials(
-    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> None:
-    existing = await get_credential_record(session, user.tenant_id, name)
+    existing = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
     if existing:
         await session.delete(existing)
         await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_deleted", name)
         await session.commit()
+
+
+@router.post("/{name}/disconnect", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_broker(
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
+) -> None:
+    """Phase G3 (V3.14 rule 2): end today's broker session on purpose - invalidate the access
+    token at the broker (Upstox `DELETE /logout`, Kite `DELETE /session/token`) and mark it
+    EXPIRED here, so LIVE deployments stop until someone logs in again. The API key/secret stay
+    stored; only the session token is gone. Audited. A broker that refuses the logout call still
+    ends up EXPIRED locally - the platform will not use a token it has tried to revoke."""
+    record = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
+    detail = "token revoked at broker"
+    try:
+        adapter = build_adapter(record)
+        if adapter.access_token:
+            await adapter.disconnect()
+    except Exception as exc:  # noqa: BLE001 - local revocation is what matters
+        logger.warning("Broker %s logout call failed for tenant %s: %s", name, user.tenant_id, exc)
+        detail = f"broker logout call failed ({type(exc).__name__}); token marked expired locally"
+    payload = json.loads(decrypt_text(record.encrypted_payload))
+    payload.pop("access_token", None)
+    record.encrypted_payload = encrypt_text(json.dumps(payload))
+    record.token_status = BrokerTokenStatus.EXPIRED.value
+    record.token_expires_at = None
+    await write_audit_log(session, user.tenant_id, user.id, "broker_disconnected", f"{name}: {detail}")
+    await session.commit()
 
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile)

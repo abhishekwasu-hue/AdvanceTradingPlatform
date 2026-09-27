@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
-import { Card, StatTile } from "../components/ui";
+import { Card, StatTile, Disclaimer } from "../components/ui";
 import {
   defaultCalendarEvent,
   defaultCompanyProfile,
@@ -352,6 +352,7 @@ export default function FundamentalsPage() {
           nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet).
         </p>
       </div>
+      <Disclaimer kind="score" />
 
       <Card>
         <div className="flex flex-wrap items-end gap-3">

@@ -53,16 +53,34 @@ export interface TradeRecord {
   entry_price: number;
   quantity: number;
   stop_loss: number;
-  target1: number;
+  target1: number | null;
   target2: number | null;
   exit_time: string | null;
   exit_price: number | null;
   exit_reason: string | null;
   pnl: number | null;
   charges: number;
+  instrument_kind?: InstrumentKind;
+  exchange?: string | null;
+  lot_size?: number | null;
+  expiry?: string | null;
+  option_position?: OptionPosition | null;
+  premium_stop_pct?: number | null;
+  underlying_symbol?: string | null;
+  underlying_direction?: string | null;
+  underlying_stop_loss?: number | null;
+  underlying_target1?: number | null;
+  underlying_target2?: number | null;
+  expected_price?: number | null;
+  slippage?: number | null;
+  entry_latency_ms?: number | null;
   charges_source?: "ESTIMATED" | "CONTRACT_NOTE" | string;
   broker_order_id?: string | null;
   exit_order_id?: string | null;
+  leg_group_id?: string | null;
+  leg_role?: string | null;
+  option_strategy?: string | null;
+  group_meta?: StructureMetrics & { lots?: number; quantity?: number } | null;
 }
 
 export interface ContractNoteSummary {
@@ -179,6 +197,51 @@ export interface BacktestResult {
   expectancy: number;
   trades: Trade[];
   equity_curve: number[];
+  analytics?: BacktestAnalytics | null;
+  exit_rules?: string | null;
+  run_id?: number | null;
+}
+
+export interface ExitRules {
+  trailing_stop_pct?: number | null;
+  break_even_at_r?: number | null;
+  time_exit_minutes?: number | null;
+  time_exit_at?: string | null;
+}
+
+export interface AnalyticsBucket { key: string; trades: number; pnl: number; win_rate: number; avg_pnl: number }
+
+export interface BacktestAnalytics {
+  monthly: AnalyticsBucket[];
+  day_of_week: AnalyticsBucket[];
+  hour_of_day: AnalyticsBucket[];
+  exit_reasons: AnalyticsBucket[];
+  direction: AnalyticsBucket[];
+  holding_minutes: { avg: number | null; max: number | null; min: number | null };
+  slippage: { avg_per_unit: number | null; trades_with_data: number };
+  costs: { total_charges: number; gross_pnl: number; charges_pct_of_gross: number | null };
+  streaks: { max_consecutive_wins: number; max_consecutive_losses: number };
+  ratios: { cagr_pct: number | null; sharpe: number | null; sortino: number | null; calmar: number | null; period_days?: number };
+  drawdown_curve: number[];
+}
+
+export interface BacktestRunSummary {
+  id: number; strategy_id: string; symbol: string; base_timeframe: string; params: Record<string, unknown> | null;
+  exit_rules: ExitRules | null; data_source: string; bars: number; data_from: string | null; data_to: string | null;
+  engine_version: string; created_at: string | null; total_trades: number | null; net_pnl: number | null;
+  win_rate: number | null; max_drawdown: number | null; profit_factor: number | null;
+}
+
+export interface MonteCarloResult {
+  runs: number; trades: number; note?: string;
+  final_pnl?: { p5: number; p25: number; p50: number; p75: number; p95: number; mean: number };
+  max_drawdown?: { p50: number; p95: number; worst: number; original: number };
+  probability_of_loss_pct?: number; probability_dd_exceeds_original_pct?: number; risk_of_ruin_pct?: number;
+}
+
+export interface WalkForwardResult {
+  folds: number; note?: string; profitable_windows?: number; consistency_pct?: number; mean_window_pnl?: number; window_pnl_range?: number;
+  windows: { window: number; from: string; to: string; bars: number; trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; max_drawdown: number; expectancy: number }[];
 }
 
 export type Moneyness = "ITM" | "ATM" | "OTM";
@@ -372,6 +435,26 @@ export interface MarkPriceResponse {
 export interface StoredBrokerInfo {
   broker_name: string;
   updated_at: string;
+  account_label?: string;
+}
+
+// Phase I2: broker accounts
+export interface BrokerAccount {
+  id: number;
+  broker_name: string;
+  account_label: string;
+  broker_account_identifier: string | null;
+  display_name: string | null;
+  status: "ACTIVE" | "DISABLED";
+  is_default: boolean;
+  available_balance: number | null;
+  used_margin: number | null;
+  realized_pnl: number | null;
+  unrealized_pnl: number | null;
+  last_sync_at: string | null;
+  last_sync_error: string | null;
+  token_status: string | null;
+  created_at: string | null;
 }
 
 export interface BrokerCredentialsInput {
@@ -627,6 +710,7 @@ export type ExecutionMode = "PAPER" | "LIVE";
 
 export interface Deployment {
   id: number;
+  regime_filter?: string[] | null;
   strategy_id: string;
   symbol: string;
   exchange: string;
@@ -643,15 +727,146 @@ export interface Deployment {
   created_by: number | null;
   created_at: string;
   updated_at: string;
+  instrument_kind: InstrumentKind;
+  option_position: OptionPosition | null;
+  expiry_rule: ExpiryRule | null;
+  strike_rule: StrikeRule | null;
+  strike_offset: number;
+  premium_stop_pct: number | null;
+  max_lots: number | null;
+  contract_rules: string;
+  strike_filters?: StrikeFilters | null;
+  option_strategy?: OptionStrategy;
+  spread_width?: number;
+  target_credit_pct?: number | null;
+  stop_credit_pct?: number | null;
+  exit_rules?: ExitRules | null;
+  broker_account_id?: number | null;
 }
 
-export interface DeploymentCreateRequest {
+export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
+export type OptionPosition = "BUY" | "WRITE";
+export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY";
+export type StrikeRule = "ATM" | "ITM" | "OTM";
+
+export type OptionStrategy = "SINGLE" | "BULL_PUT_SPREAD" | "BEAR_CALL_SPREAD" | "IRON_CONDOR";
+
+export interface StrikeFilters {
+  min_oi?: number | null;
+  min_volume?: number | null;
+  max_spread_pct?: number | null;
+  min_iv_pct?: number | null;
+  max_iv_pct?: number | null;
+  target_delta?: number | null;
+  delta_tolerance?: number;
+  min_premium?: number | null;
+  max_premium?: number | null;
+  search_steps?: number;
+}
+
+export interface ContractRules {
+  instrument_kind: InstrumentKind;
+  option_position?: OptionPosition | null;
+  expiry_rule?: ExpiryRule | null;
+  strike_rule?: StrikeRule | null;
+  strike_offset?: number;
+  premium_stop_pct?: number | null;
+  max_lots?: number | null;
+  strike_filters?: StrikeFilters | null;
+  option_strategy?: OptionStrategy;
+  spread_width?: number;
+  target_credit_pct?: number | null;
+  stop_credit_pct?: number | null;
+}
+
+export interface StrikeCandidate {
+  strike: number;
+  ltp: number | null;
+  oi: number | null;
+  volume: number | null;
+  spread_pct: number | null;
+  iv_pct: number | null;
+  delta: number | null;
+  passes: boolean;
+  reasons: string[];
+}
+
+export interface StructureMetrics {
+  net_credit: number;
+  max_profit: number;
+  max_loss: number;
+  breakevens: number[];
+  target_value: number;
+  stop_value: number;
+  short_strikes: Record<string, number>;
+  legs: { role: string; side: string; tradingsymbol: string; strike: number | null; right: string | null; premium: number }[];
+}
+
+export interface StructurePreview {
+  strategy: OptionStrategy;
+  underlying_symbol: string;
+  lot_size: number;
+  expiry: string;
+  width_points: number;
+  notes: string[];
+  legs: (ResolvedContract & { role: string; side: string })[];
+  metrics?: StructureMetrics;
+  metrics_error?: string;
+}
+
+export interface PositionGreeks {
+  as_of: string;
+  spot: Record<string, number>;
+  legs: {
+    trade_id: number; symbol: string; leg_group_id: string | null; leg_role: string | null; option_strategy: string | null;
+    quantity: number; premium: number; implied_volatility: number; delta: number; gamma: number; theta: number; vega: number;
+    position_delta: number; position_gamma: number; position_theta: number; position_vega: number;
+  }[];
+  groups: { leg_group_id: string | null; legs: number; net_delta: number; net_gamma: number; net_theta: number; net_vega: number }[];
+  net: { net_delta: number; net_gamma: number; net_theta: number; net_vega: number };
+  skipped: { trade_id: number; reason: string }[];
+}
+
+export interface DeploymentCreateRequest extends ContractRules {
+  regime_filter?: string[] | null;
   strategy_id: string;
   symbol: string;
   exchange: string;
   timeframe: string;
   mode: ExecutionMode;
   broker_name?: string | null;
+  broker_account_id?: number | null;
+  exit_rules?: ExitRules | null;
+}
+
+export interface ResolvedContract {
+  kind: InstrumentKind;
+  underlying: string;
+  underlying_symbol: string;
+  tradingsymbol: string;
+  exchange: string;
+  instrument_key: string;
+  lot_size: number;
+  tick_size: number;
+  expiry: string;
+  strike: number | null;
+  right: "CE" | "PE" | null;
+  entry_side: "BUY" | "SELL";
+  trade_direction: "LONG" | "SHORT";
+  position: OptionPosition | null;
+  selection_notes?: string[];
+  selection?: { strike: number; rule_strike: number; notes: string[]; candidates: StrikeCandidate[] } | null;
+}
+
+export interface ContractPreview {
+  symbol: string;
+  kind: InstrumentKind;
+  rules?: string;
+  note?: string;
+  spot?: number | null;
+  spot_source?: "supplied" | "broker" | null;
+  contracts?: Record<"LONG" | "SHORT", ResolvedContract | { error: string }>;
+  structures?: Record<"LONG" | "SHORT", StructurePreview | { error: string }>;
 }
 
 export type BrokerTokenStatus = "UNKNOWN" | "VALID" | "EXPIRED" | "MISSING";
@@ -664,6 +879,30 @@ export interface BrokerTokenInfo {
   needs_login: boolean;
   oauth_supported: boolean;
   oauth_callback_url: string | null;
+}
+
+export interface ReconciliationStatus {
+  broker_uncertain: boolean;
+  broker_uncertain_since: string | null;
+  broker_uncertain_reason: string | null;
+  last_reconciled_at: string | null;
+  open_live_trades: number;
+}
+
+export interface ReconciliationItem {
+  symbol: string;
+  internal_net_quantity: number | null;
+  broker_net_quantity: number | null;
+  status: "MATCHED" | "QUANTITY_MISMATCH" | "MISSING_AT_BROKER" | "UNTRACKED_AT_BROKER";
+  internal_trade_ids: number[];
+  detail: string;
+}
+
+export interface ReconciliationReport {
+  broker_name: string;
+  checked_at: string;
+  items: ReconciliationItem[];
+  mismatched_count: number;
 }
 
 export interface WorkerStatus {
@@ -685,7 +924,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK";
 
 export interface AlertChannel {
   channel_type: AlertChannelType;
@@ -827,4 +1066,232 @@ export interface PlatformAuditLog {
   event: string;
   detail: string;
   created_at: string;
+}
+
+// Phase I1: risk hierarchy
+export type RiskScope = "GLOBAL" | "TENANT" | "USER" | "ACCOUNT" | "STRATEGY" | "INSTRUMENT";
+export type RiskLimitType =
+  | "MAX_DAILY_LOSS" | "MAX_STRATEGY_LOSS" | "MAX_LOSS_PER_TRADE" | "MAX_ORDER_VALUE"
+  | "MAX_POSITION_QUANTITY" | "MAX_OPEN_POSITIONS" | "MAX_TRADES_PER_DAY" | "MAX_CAPITAL_ALLOCATION_PCT";
+
+export interface RiskLimit {
+  id: number;
+  tenant_id: number | null;
+  scope: RiskScope;
+  scope_id: string;
+  limit_type: RiskLimitType;
+  limit_value: number;
+  enabled: boolean;
+  note: string | null;
+  created_by: number | null;
+  updated_at: string | null;
+}
+
+export interface RiskLimitRequest {
+  scope: RiskScope;
+  scope_id?: string;
+  limit_type: RiskLimitType;
+  limit_value: number;
+  enabled?: boolean;
+  note?: string | null;
+}
+
+export interface RiskEvent {
+  id: number;
+  created_at: string | null;
+  strategy_id: string | null;
+  symbol: string | null;
+  account_id: number | null;
+  rule_type: RiskLimitType;
+  scope: RiskScope;
+  current_value: number;
+  limit_value: number;
+  severity: string;
+  action: string;
+  status: "PASS" | "WARN" | "BLOCK";
+  reason: string;
+  order_id: number | null;
+}
+
+// ---- Phase K: billing, marketplace, public API ------------------------------------------------
+
+export interface PlanCatalogueEntry {
+  id: string;
+  name: string;
+  description: string;
+  price_monthly: number;
+  price_yearly: number;
+  currency: string;
+  trial_days: number;
+  [limit: string]: unknown;
+}
+
+export interface Subscription {
+  plan_id: string;
+  plan_name: string;
+  price_monthly: number;
+  price_yearly: number;
+  currency: string;
+  trial_days: number;
+  provider: string;
+  status: "NONE" | "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+  billing_cycle: "MONTHLY" | "YEARLY" | null;
+  current_period_start?: string | null;
+  current_period_end: string | null;
+  trial_end?: string | null;
+  grace_until: string | null;
+  cancel_at_period_end: boolean;
+  cancelled_at?: string | null;
+}
+
+export interface BillingTransaction {
+  id: number;
+  kind: string;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string;
+  provider_ref: string | null;
+  created_at: string;
+}
+
+export interface BillingOverview {
+  subscription: Subscription;
+  tenant_status: string;
+  status_reason: string | null;
+  limits: Record<string, unknown>;
+  metered_30d: Record<string, number>;
+  usage: Record<string, unknown>;
+}
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  rate_limit_per_minute: number;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  key?: string;
+  note?: string;
+}
+
+export interface MarketplacePerformance {
+  backtest_run_id: number;
+  symbol: string;
+  base_timeframe: string;
+  bars: number;
+  data_from: string | null;
+  data_to: string | null;
+  data_source: string;
+  engine_version: string;
+  total_trades: number | null;
+  win_rate: number | null;
+  net_pnl: number | null;
+  profit_factor: number | null;
+  max_drawdown: number | null;
+  expectancy: number | null;
+}
+
+export interface MarketplaceListing {
+  id: number;
+  title: string;
+  description: string;
+  methodology: string | null;
+  status: "DRAFT" | "PENDING_REVIEW" | "PUBLISHED" | "REJECTED" | "UNLISTED";
+  review_note: string | null;
+  version_number: number;
+  subscriber_count: number;
+  published_at: string | null;
+  created_at: string | null;
+  performance: MarketplacePerformance | null;
+  disclaimer: string;
+  custom_strategy_id: number | null;
+  config?: Record<string, unknown>;
+}
+
+export interface MarketplaceSubscription {
+  id: number;
+  listing_id: number;
+  status: string;
+  custom_strategy_id: number | null;
+  strategy_id: string | null;
+  title: string | null;
+  created_at: string | null;
+}
+
+// ---- Phase L: AI layer -------------------------------------------------------------------------
+
+export type AiProviderName = "anthropic" | "openai" | "rule_based";
+
+export interface AiProviderConfig {
+  provider: AiProviderName;
+  model: string;
+  api_key_set: boolean;
+  enabled: boolean;
+  configured: boolean;
+  last_used_at?: string | null;
+  last_error?: string | null;
+  ai_features_allowed: boolean;
+  providers: AiProviderName[];
+  default_models: Record<string, string>;
+}
+
+export type AiDraftStatus = "DRAFT" | "FAILED" | "BACKTESTED" | "APPROVED" | "REJECTED";
+
+export interface AiStrategyDraft {
+  id: number;
+  prompt: string;
+  provider: string;
+  model: string;
+  status: AiDraftStatus;
+  config: CustomStrategyConfig | null;
+  explanation: string | null;
+  warnings: string[];
+  backtest_run_id: number | null;
+  custom_strategy_id: number | null;
+  strategy_id: string | null;
+  approved_by: number | null;
+  approved_at: string | null;
+  created_at: string | null;
+  lineage: { provider: string; model: string; prompt_chars: number; generated_at: string | null };
+  disclaimer: string;
+  raw_response?: string | null;
+}
+
+export type RegimeKind = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "VOLATILE" | "QUIET" | "UNKNOWN";
+
+export interface Regime {
+  kind: RegimeKind;
+  confidence: number;
+  adx: number | null;
+  ema_fast: number | null;
+  ema_slow: number | null;
+  ema_slope_pct: number | null;
+  atr_pct: number | null;
+  atr_ratio: number | null;
+  bars: number;
+  reasons: string[];
+}
+
+export type AiActionStatus = "PROPOSED" | "APPROVED" | "EXECUTED" | "REJECTED" | "EXPIRED" | "FAILED";
+
+export interface AiAction {
+  id: number;
+  deployment_id: number | null;
+  trade_id: number | null;
+  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY";
+  rule: string;
+  reason: string;
+  evidence: Record<string, unknown>;
+  status: AiActionStatus;
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  executed_at: string | null;
+  result: string | null;
+  expires_at: string | null;
+  created_at: string | null;
 }

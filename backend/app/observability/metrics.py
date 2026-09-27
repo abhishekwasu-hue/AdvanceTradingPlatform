@@ -23,7 +23,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, His
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AlertDeliveryRecord, LoginEventRecord, StrategyDeploymentRecord, TradeRecord, WorkerHeartbeatRecord
+from app.db.models import AlertDeliveryRecord, LoginEventRecord, StrategyDeploymentRecord, Tenant, TradeRecord, WorkerHeartbeatRecord
 
 NAMESPACE = "atp"
 
@@ -63,6 +63,17 @@ WORKER_CLOSES = _counter("worker_positions_closed", "Positions the worker closed
 WORKER_ERRORS = _counter("worker_errors", "Errors recorded on worker cycle reports")
 WORKER_LAST_CYCLE = _gauge("worker_last_cycle_timestamp_seconds", "Unix time of the worker's last completed cycle (this process)")
 RETENTION_DELETED = _counter("retention_rows_deleted", "Rows deleted by the retention job", ("table",))
+# Phase G1: decisions refused on stale market data (kind = candles | quote), and tenants whose
+# LIVE entries are blocked because the broker's state is uncertain.
+MARKET_DATA_STALE = _counter("market_data_stale", "Signal/exit decisions refused because market data was stale", ("kind",))
+BROKER_UNCERTAIN_TENANTS = _gauge("broker_uncertain_tenants", "Tenants with LIVE entries blocked pending reconciliation")
+RECONCILIATIONS = _counter("reconciliations", "Position reconciliation runs by source and outcome", ("source", "outcome"))
+# Phase G2: broker call health and the per-broker circuit breaker (0 closed, 1 half-open, 2 open).
+BROKER_CALLS = _counter("broker_calls", "Broker API calls by broker, method and outcome (ok | rejected | failure)", ("broker", "method", "outcome"))
+BROKER_CIRCUIT_STATE = _gauge("broker_circuit_state", "Circuit breaker state per broker: 0 closed, 1 half-open, 2 open", ("broker",))
+BROKER_CIRCUIT_REJECTIONS = _counter("broker_circuit_rejections", "LIVE entries refused because the broker circuit was open", ("broker",))
+ORDER_ENTRY_LATENCY = _histogram("order_entry_latency_seconds", "Signal-to-fill latency of executed entries by mode", ("mode",),
+                                 buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30))
 
 # --- platform state (DB-derived, refreshed per scrape) -----------------------------------------
 ACTIVE_DEPLOYMENTS = _gauge("active_deployments", "Deployments in ACTIVE status", ("mode",))
@@ -125,6 +136,9 @@ async def refresh_db_gauges(session: AsyncSession, now: Optional[datetime] = Non
         .where(LoginEventRecord.success.is_(False), LoginEventRecord.created_at >= now - timedelta(minutes=15))
     )
     LOGIN_FAILURES_15M.set(failures or 0)
+
+    uncertain = await session.scalar(select(func.count()).select_from(Tenant).where(Tenant.broker_uncertain_since.is_not(None)))
+    BROKER_UNCERTAIN_TENANTS.set(uncertain or 0)
 
 
 def render() -> tuple[bytes, str]:

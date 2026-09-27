@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import { Card, DemoDataBanner } from "../components/ui";
+import { Card, DemoDataBanner, Disclaimer } from "../components/ui";
 import { ConditionListEditor } from "./StrategyBuilderPage";
 import {
   OPTION_FILTER_LABELS,
@@ -112,6 +112,7 @@ export default function ScannerPage() {
       </div>
 
       <DemoDataBanner />
+      <Disclaimer kind="signals" />
 
       <Card title="Watchlist">
         <div className="grid sm:grid-cols-[1fr_140px] gap-3">

@@ -24,6 +24,7 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.engine import run_backtest
+from app.backtest.routes import BacktestBody, ExitRulesBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -46,6 +47,7 @@ from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
 from app.notifications.routes import router as notifications_router
 from app.reconciliation.routes import router as reconciliation_router
+from app.accounts.routes import router as accounts_router
 from app.scanner.engine import run_scanner
 from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
@@ -53,6 +55,7 @@ from app.price_action.market_structure import analyze_market_structure
 from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
 from app.risk_engine.routes import router as risk_settings_router
+from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
@@ -70,9 +73,15 @@ from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
+from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
+from app.billing.routes import admin_router as billing_admin_router, router as billing_router
+from app.billing.service import meter
+from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
+from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
+from app.ai.routes import router as ai_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -111,9 +120,12 @@ app.include_router(broker_router)
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
+app.include_router(risk_hierarchy_router)
 app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
+app.include_router(accounts_router)
+app.include_router(backtest_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)
@@ -125,7 +137,15 @@ app.include_router(admin_router)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
+app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
+app.include_router(billing_router)
+app.include_router(billing_admin_router)
+app.include_router(marketplace_router)
+app.include_router(marketplace_admin_router)
+app.include_router(api_keys_router)
+app.include_router(public_api_router)
+app.include_router(ai_router)
 
 _default_risk_config = RiskConfig()
 
@@ -152,6 +172,9 @@ class BacktestRequest(BaseModel):
     candles: List[OHLCVBar]
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
+    # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
+    exit_rules: Optional[ExitRulesBody] = None
+    data_source: str = "uploaded"
 
 
 class PaperExecuteResponse(BaseModel):
@@ -341,7 +364,13 @@ async def backtest(
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
-    return run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config)
+    result = run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config,
+                          exit_rules=request.exit_rules.to_rules() if request.exit_rules else None)
+    # Phase J2: a logged-in caller's run is recorded (strategy, params, data span, metrics).
+    result.run_id = await record_run(session, user, BacktestBody(**request.model_dump()), result)
+    if user is not None:
+        await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
+    return result
 
 
 @app.post("/api/price-action/structure", response_model=MarketStructureResult)

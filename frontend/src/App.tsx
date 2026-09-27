@@ -6,6 +6,8 @@ import AccountPage from "./pages/AccountPage";
 import AdminPage from "./pages/AdminPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
+import MarketplacePage from "./pages/MarketplacePage";
+import AiCopilotPage from "./pages/AiCopilotPage";
 import DashboardPage from "./pages/DashboardPage";
 import DeploymentsPage from "./pages/DeploymentsPage";
 import FundamentalsPage from "./pages/FundamentalsPage";
@@ -87,6 +89,8 @@ function AppShell() {
           {page === "scanner" && <ScannerPage />}
           {page === "news-events" && <NewsEventsPage />}
           {page === "backtest" && <BacktestPage />}
+          {page === "marketplace" && <MarketplacePage />}
+          {page === "ai-copilot" && <AiCopilotPage />}
           {page === "option-chain" && <OptionChainPage />}
           {page === "instruments" && <InstrumentsPage />}
           {page === "positions" && <PositionsPage />}

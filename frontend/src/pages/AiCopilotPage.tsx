@@ -1,0 +1,167 @@
+import { Activity, CheckCircle2, ShieldAlert, Sparkles, XCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { Card, Disclaimer } from "../components/ui";
+import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
+import { generateSampleCandles } from "../utils/sampleData";
+
+const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
+
+function operandLabel(o: Condition["left"]): string {
+  return o.type === "value" ? String(o.value) : `${o.indicator}${o.period ? `(${o.period})` : ""}`;
+}
+const OPS: Record<string, string> = { GT: ">", LT: "<", GTE: ">=", LTE: "<=", CROSSES_ABOVE: "crosses above", CROSSES_BELOW: "crosses below" };
+
+function StatusBadge({ status }: { status: string }) {
+  const cls = status === "APPROVED" || status === "EXECUTED" ? "border-emerald-500/40 text-emerald-400" : status === "BACKTESTED" || status === "PROPOSED" ? "border-amber-500/40 text-amber-400"
+    : status === "REJECTED" || status === "FAILED" ? "border-rose-500/40 text-rose-400" : "border-border text-muted";
+  return <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{status}</span>;
+}
+
+/** Phase L: the AI Copilot - generate a strategy draft, backtest it, approve it (only then does
+ * it exist as a strategy); read the market regime; decide on the monitoring agent's proposals. */
+export default function AiCopilotPage() {
+  const { user } = useAuth();
+  const [prompt, setPrompt] = useState("");
+  const [drafts, setDrafts] = useState<AiStrategyDraft[]>([]);
+  const [selected, setSelected] = useState<AiStrategyDraft | null>(null);
+  const [actions, setActions] = useState<AiAction[]>([]);
+  const [regime, setRegime] = useState<Regime | null>(null);
+  const [symbol, setSymbol] = useState("SAMPLE");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  function refresh() {
+    api.aiDrafts().then(setDrafts).catch((e) => setError(String(e)));
+    api.aiActions().then(setActions).catch(() => {});
+  }
+  useEffect(() => { if (user) refresh(); }, [user]);
+
+  async function run(label: string | null, fn: () => Promise<unknown>) {
+    setBusy(true); setError(null); setMessage(null);
+    try { await fn(); if (label) setMessage(label); refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
+  }
+
+  const sampleCandles = () => generateSampleCandles(600, 100, 11);
+
+  if (!user) return <Card><p className="text-sm text-muted">Log in to use the AI Copilot.</p></Card>;
+
+  const open = actions.filter((a) => a.status === "PROPOSED");
+  const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
+        <p className="text-sm font-semibold text-purple-400/60">Drafts, not decisions: the AI writes rules and proposes actions; you backtest, approve or reject. Nothing trades without your explicit approval.</p>
+      </div>
+      <Disclaimer kind="ai" />
+
+      {open.length > 0 && (
+        <Card title={`Proposals waiting for you (${open.length})`}>
+          {open.map((a) => (
+            <div key={a.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-2">
+              <div className="flex items-center gap-2 text-sm font-bold"><ShieldAlert size={14} className="text-amber-400" /> {a.action.replace(/_/g, " ")} <span className="text-[11px] text-muted font-normal">· rule {a.rule} · deployment #{a.deployment_id ?? "-"}{a.trade_id ? ` · position #${a.trade_id}` : ""}</span></div>
+              <div className="text-xs text-slate-300 whitespace-pre-wrap mt-1">{a.reason}</div>
+              <div className="text-[11px] text-muted mt-1">evidence: {JSON.stringify(a.evidence)} · expires {a.expires_at ? new Date(a.expires_at).toLocaleString() : "-"}</div>
+              <div className="flex gap-2 mt-2">
+                <button disabled={busy} onClick={() => run("Approved and executed.", () => api.aiApproveAction(a.id))} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs"><CheckCircle2 size={12} className="inline mr-1" />Approve & execute</button>
+                <button disabled={busy} onClick={() => { const note = window.prompt("Why reject? (optional)") ?? ""; void run("Rejected.", () => api.aiRejectAction(a.id, note || undefined)); }} className="rounded border border-rose-500/40 text-rose-400 px-3 py-1 text-xs"><XCircle size={12} className="inline mr-1" />Reject</button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card title="Generate a strategy draft">
+          <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
+          <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target." value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
+
+          <div className="mt-4">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Recent drafts</div>
+            {drafts.length === 0 ? <div className="text-xs text-muted">None yet.</div> : (
+              <table className="w-full text-xs"><tbody>
+                {drafts.slice(0, 12).map((d) => (
+                  <tr key={d.id} className={`border-t border-border/60 cursor-pointer hover:bg-panel2/60 ${selected?.id === d.id ? "bg-panel2/60" : ""}`} onClick={() => api.aiDraft(d.id).then(setSelected)}>
+                    <td className="py-1 text-muted">#{d.id}</td>
+                    <td className="py-1 truncate max-w-[260px]" title={d.prompt}>{d.config?.name ?? d.prompt.slice(0, 40)}</td>
+                    <td className="py-1 text-muted">{d.provider}</td>
+                    <td className="py-1 text-right"><StatusBadge status={d.status} /></td>
+                  </tr>
+                ))}
+              </tbody></table>
+            )}
+          </div>
+        </Card>
+
+        <Card title={selected ? `Draft #${selected.id} - ${selected.status}` : "Draft review"}>
+          {!selected ? <div className="text-xs text-muted">Generate or pick a draft to review its rules, backtest it and approve it.</div> : (
+            <div className="space-y-2 text-xs">
+              <div className="text-muted">via {selected.lineage.provider} / {selected.lineage.model} · {selected.created_at ? new Date(selected.created_at).toLocaleString() : ""}</div>
+              {selected.explanation && <div className="text-slate-300 whitespace-pre-wrap">{selected.explanation}</div>}
+              {selected.warnings.length > 0 && <ul className="list-disc pl-4 text-amber-300">{selected.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+              {selected.config && (
+                <div className="rounded-lg border border-border bg-panel2/40 p-2 space-y-1">
+                  <div className="font-bold">{selected.config.name} · {selected.config.timeframe} · stop {selected.config.stop_loss_atr_mult}×ATR({selected.config.atr_period}) · targets {selected.config.target_rr.join("R / ")}R</div>
+                  {(["long_conditions", "short_conditions"] as const).map((side) => selected.config![side].length > 0 && (
+                    <div key={side}><span className="text-muted">{side === "long_conditions" ? "LONG when" : "SHORT when"}</span> {selected.config![side].map((c, i) => <span key={i} className="inline-block rounded border border-border px-1.5 py-0.5 mr-1 mb-1">{operandLabel(c.left)} {OPS[c.operator] ?? c.operator} {operandLabel(c.right)}</span>)}</div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <input className="rounded bg-panel2 border border-border px-2 py-1 text-xs w-28" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
+                {(selected.status === "DRAFT" || selected.status === "BACKTESTED") && (
+                  <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", sampleCandles()); setSelected(r.draft); setMessage(`Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (sample data - upload real candles on the Backtest page for a real read).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on sample data</button>
+                )}
+                {selected.status === "BACKTESTED" && (
+                  <button disabled={busy} onClick={() => run("Approved - it is now one of your strategies. Paper-trade it before LIVE.", async () => { const r = await api.aiApproveDraft(selected.id); setSelected(r.draft); })} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs">Approve as strategy</button>
+                )}
+                {selected.status !== "APPROVED" && selected.status !== "REJECTED" && (
+                  <button disabled={busy} onClick={() => run("Rejected.", async () => setSelected(await api.aiRejectDraft(selected.id)))} className="text-xs text-danger hover:underline">Reject</button>
+                )}
+                {selected.strategy_id && <span className="text-emerald-400">saved as {selected.strategy_id}</span>}
+                {selected.backtest_run_id && <span className="text-muted">backtest run #{selected.backtest_run_id}</span>}
+              </div>
+              <div className="text-[11px] text-muted">{selected.disclaimer}</div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card title="Market regime (sample read)">
+          <p className="text-xs text-muted mb-2">The same classifier the Autopilot uses for a deployment's regime filter: ADX for trend strength, EMA20/50 for direction, ATR against its median for volatility.</p>
+          <button disabled={busy} onClick={() => run(null, async () => setRegime(await api.aiRegime(sampleCandles())))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs"><Activity size={12} className="inline mr-1" />Classify sample candles</button>
+          {regime && (
+            <div className="mt-2 text-xs">
+              <div className="font-bold text-sm">{regime.kind.replace("_", " ")} <span className="text-muted font-normal">confidence {regime.confidence}</span></div>
+              <ul className="list-disc pl-4 text-slate-300 mt-1">{regime.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Decided proposals">
+          {decided.length === 0 ? <div className="text-xs text-muted">Nothing decided yet. The monitoring agent watches active deployments for losing streaks, daily drawdown, error streaks, stale positions in adverse regimes and win-rate drift.</div> : (
+            <table className="w-full text-xs"><tbody>
+              {decided.map((a) => (
+                <tr key={a.id} className="border-t border-border/60">
+                  <td className="py-1 text-muted">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</td>
+                  <td className="py-1">{a.action.replace(/_/g, " ")} <span className="text-muted">({a.rule})</span></td>
+                  <td className="py-1"><StatusBadge status={a.status} /></td>
+                  <td className="py-1 text-muted">{a.result ?? a.decision_note ?? ""}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          )}
+        </Card>
+      </div>
+
+      {error && <div className="text-sm text-danger">{error}</div>}
+      {message && <div className="text-sm text-accent">{message}</div>}
+    </div>
+  );
+}

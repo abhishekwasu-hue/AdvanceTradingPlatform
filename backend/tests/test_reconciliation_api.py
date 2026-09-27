@@ -15,6 +15,8 @@ def _store_credentials(headers):
 
 
 def _seed_open_trade(token, symbol="NIFTY", direction="LONG", quantity=50):
+    """A LIVE position the platform believes it holds. Reconciliation compares LIVE trades only
+    (Phase G1): PAPER positions never exist at the broker, so they would always be "missing"."""
     from app.auth.security import decode_access_token
     user_id = int(decode_access_token(token)["sub"])
 
@@ -22,7 +24,7 @@ def _seed_open_trade(token, symbol="NIFTY", direction="LONG", quantity=50):
         async with _session_factory() as session:
             user = await session.get(User, user_id)
             session.add(TradeRecord(
-                tenant_id=user.tenant_id, user_id=user.id, mode="PAPER", symbol=symbol, strategy_id="s",
+                tenant_id=user.tenant_id, user_id=user.id, mode="LIVE", symbol=symbol, strategy_id="s",
                 direction=direction, entry_time=datetime.now(timezone.utc), entry_price=100.0,
                 quantity=quantity, stop_loss=98.0, target1=104.0,
             ))

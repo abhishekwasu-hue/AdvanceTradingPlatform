@@ -259,6 +259,9 @@ def test_worker_cycle_drains_outbox(monkeypatch):
     monkeypatch.setattr(dispatcher, "_smtp_send", lambda config, message: sent.append(message))
     _notify(me["tenant_id"], NotificationSeverity.CRITICAL, title="From the worker")
 
+    from app.workers import trading_worker as tw
+    from tests.test_trading_worker import _no_master_sync
+    monkeypatch.setattr(tw, "sync_upstox", _no_master_sync)  # no network in tests (Phase F1 daily download)
     worker = TradingWorker(_session_factory, cycle_seconds=60)
     report = _run(worker.run_cycle(now=datetime(2026, 9, 26, 10, 30, tzinfo=ZoneInfo("Asia/Kolkata"))))  # Saturday: market closed
     assert not report.market_open and not report.errors

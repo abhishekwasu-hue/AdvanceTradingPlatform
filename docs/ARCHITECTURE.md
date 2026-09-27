@@ -2011,3 +2011,514 @@ Verified by `tests/test_backup_scripts.py` against a real Postgres (skipped on t
 run, executed in CI after the migrations step): plain round-trip with an intact chain, encrypted
 round-trip and a wrong passphrase yielding `restore_failed`, and a tampered file refused on the
 SHA-256 check. Also rehearsed by hand in this environment against the migrated local database.
+
+
+## Phase F: F&O Autopilot
+
+The autonomous engine so far ran a strategy on a symbol and traded that same symbol, which is
+right for cash equity and impossible for an index. Phase F lets a deployment analyse an
+underlying (index or stock) and trade a derived contract - an option (bought or written) or a
+future - chosen by rules at signal time, sized in lots, and exited on the strategy's own
+underlying levels with a premium safety net.
+
+### F1: Instrument master
+
+`instruments` table (migration `a1c9e7d3b520`), platform-wide: one row per contract a broker
+knows - `broker`, `exchange` (NSE/BSE/NFO/BFO as brokers name them), `instrument_key` (the
+broker's own id, e.g. `NSE_FO|56789`), `tradingsymbol`, `underlying` (NIFTY, BANKNIFTY,
+RELIANCE), `instrument_type` (EQ/INDEX/FUT/CE/PE), `expiry`, `strike`, `lot_size`, `tick_size`,
+`weekly`, `synced_at`; indexed for the two lookups routing needs (by underlying/type/expiry/
+strike, and by tradingsymbol).
+
+* **Sources** (`app/instruments/master.py`): Upstox's public per-exchange gzip JSON - no token
+  needed, so the platform has a master before any tenant logs in; `parse_upstox_master` maps
+  segments to exchanges (`NSE_FO` -> `NFO`, `BSE_FO` -> `BFO`), derives the underlying from
+  `underlying_symbol`/`name`, and normalises expiry from epoch milliseconds. Kite-style adapter
+  dumps go through `parse_broker_instruments`. `replace_master` swaps a broker's rows for the
+  given exchanges in one transaction, so readers never see a half-synced table.
+* **Bug fixed on the way**: the Upstox adapter stored `expiry` as the raw JSON value; the real
+  master sends epoch milliseconds, which the `Instrument` model (ISO string) rejects. It now
+  goes through `normalise_expiry`, and `name` prefers `underlying_symbol`.
+* **Underlying naming**: strategies take index candles under the index symbol (`NIFTY 50`,
+  `NIFTY BANK`), the F&O master names the underlying `NIFTY`/`BANKNIFTY`; `underlying_of` and
+  `INDEX_SYMBOLS` map both ways, `derivatives_exchange` picks NFO or BFO (SENSEX/BANKEX).
+* **Daily sync**: the worker downloads `INSTRUMENT_SYNC_EXCHANGES` (default `NSE`) once per IST
+  day from `INSTRUMENT_SYNC_HOUR_IST` (08:00) so expiries and lot sizes are current before the
+  open; a failed download is reported on the cycle and retried the next day, never every minute.
+  SUPER_ADMIN can force it with `POST /api/instrument-master/sync` (audited; a download failure
+  is a 502 with the reason).
+* **API**: `GET /api/instrument-master/status|search|expiries|strikes` for the console and the
+  contract resolver (F2).
+
+Verified by `tests/test_instrument_master.py` against a synthetic Upstox-shaped master
+(`tests/master_fixture.py`: NIFTY weekly + monthly options and future, BANKNIFTY, RELIANCE
+equity and options, indices): expiry formats, segment/type/underlying mapping, atomic replace,
+lookups, API and permissions, mocked sync, worker once-a-day scheduling and failure handling.
+Not verified: the real Upstox master download (egress is blocked in this environment); the
+parser's field names follow Upstox's published JSON and the adapter's existing mapping.
+
+### F2: Contract rules on deployments
+
+A deployment now says *what to trade* when its strategy signals on `symbol` (migration
+`b2d8f6a4c731`): `instrument_kind` UNDERLYING (the original behaviour, cash equity), OPTION or
+FUTURE, with rules resolved at signal time rather than a contract fixed at creation - a
+deployment created on Monday trades Thursday's at-the-money strike on Thursday.
+
+* **Rules** (`ContractRulesRequest.normalised` fills defaults and rejects nonsense):
+  `option_position` BUY (LONG -> buy CE, SHORT -> buy PE; loss capped at the premium) or WRITE
+  (LONG -> sell PE, SHORT -> sell CE; premium received, margin blocked, open-ended risk until the
+  underlying stop or the premium ceiling); `expiry_rule` NEAREST / NEXT / MONTHLY; `strike_rule`
+  ATM / ITM / OTM with `strike_offset` listed steps (ITM for a CE is below spot, for a PE above);
+  `premium_stop_pct` - for a bought option the premium floor below entry (default 30%), for a
+  written one the ceiling above entry (default 50%) - the safety net under the strategy's
+  underlying-level exits (F4); `max_lots` caps risk-based sizing (F3). Futures take only an
+  expiry rule. Uniqueness is now (tenant, strategy, symbol, mode, kind), so the same strategy can
+  run an option and a future deployment on one underlying.
+* **Guards**: an index (`NIFTY 50`, `NIFTY BANK`, ...) cannot be deployed as UNDERLYING (400 with
+  the fix); a derived-contract deployment needs the underlying's contracts in the instrument
+  master (409 pointing at the sync). Plan checks run first, so a free tenant still sees 402.
+* **Resolver** (`app/instruments/contracts.py`): `select_expiry` (expiry day counts as available;
+  MONTHLY = last expiry of the nearest month with one), `select_strike` (nearest listed strike,
+  ties to the lower; ITM/OTM stepped along the listed strikes and clamped), `option_right`, and
+  `resolve_contract(session, symbol, rules, direction, spot, today)` returning a
+  `ResolvedContract` (tradingsymbol, exchange NFO/BFO, broker instrument key, lot size, expiry,
+  strike, right, the entry order side and the trade direction used for P&L). Every failure is a
+  `ContractResolutionError` with the reason, which the worker records on the deployment.
+* **Preview**: `POST /api/deployments/preview-contract` resolves both directions for the given
+  rules using a supplied spot or the tenant's broker LTP, and says why when it cannot. The
+  Autopilot form has the rule controls (position, expiry, strike/offset, premium stop, max lots),
+  the preview card, switches to OPTION when an index symbol is typed, and the deployments table
+  shows each deployment's rule summary; the LIVE confirmation names written options' risk.
+* **Safety in this build**: until F3 wires execution, the worker records "not enabled" on an
+  OPTION/FUTURE deployment and takes no trade - it never falls through to trading the index.
+
+Verified by `tests/test_contract_rules.py` (right by position, expiry and strike rules incl.
+ties/clamping, resolution of bought/written options and futures for index and stock underlyings,
+explicit errors, request validation and defaults, uniqueness across kinds, master-presence guard,
+preview endpoint, the worker guard).
+
+### F3: Executing on the derived contract
+
+`app/execution/contract_execution.py` turns "LONG NIFTY 50 at 24512, stop 24460" plus the
+resolved contract into an *order signal* on the contract, so the risk engine, paper broker, live
+router and order trail keep working on one `Signal` shape:
+
+* **Bought option**: entry = current premium (`contract_ltp`, by broker instrument key first,
+  tradingsymbol second), stop = premium floor (`premium_stop_pct` below), direction LONG. Risk
+  per unit is the premium at risk, so the risk engine's `risk_amount / risk_per_unit` sizes lots
+  off it exactly as it sizes shares off a stop distance, in whole lots of the master's lot size
+  (a `ContractSpec` built from the resolved contract overrides the registry lookup). A small
+  account gets the existing "below one lot" rejection with its reason on the order trail.
+* **Written option**: entry = premium received, stop = premium ceiling above, direction SHORT
+  (P&L falls as the premium rises). Capped by `max_lots` (one lot when unset) and, LIVE, by
+  `written_lot_cap`: the broker's own margin requirement for one lot (`get_order_margin`, new on
+  `BrokerInterface`, implemented for Upstox `/charges/margin` and Kite `/margins/orders`)
+  against 80% of available margin. An unknown requirement or insufficient margin is a REJECTED
+  order with the reason - never a guess.
+* **Future**: entry = the future's price; the underlying's stop and target distances are
+  transplanted onto it; direction as signalled. Exits then work exactly as for cash (F4).
+* **Same pipeline**: `execute_signal_for_user(..., contract, rules, quote_broker)` builds the plan
+  before the order row is created (so the trail's symbol is the contract from its first event),
+  rejects on a missing quote, applies the size cap in `OrderRouter.execute(max_quantity=...)`, and
+  the existing LIVE path places the entry on NFO/BFO and an SL-M on the opposite side at the
+  premium floor/ceiling (or the transplanted future stop). PAPER fills at the contract's own
+  price with the usual slippage model, not at the underlying's.
+* **Trade record** (migration `c3e9a7b5d842`): `symbol` is the contract; `stop_loss` is on the
+  contract; `target1` is now nullable (an option has no target on its own price); the strategy's
+  levels are kept as `underlying_symbol`/`underlying_direction`/`underlying_stop_loss`/
+  `underlying_target1`/`underlying_target2` for the monitor (F4); plus `instrument_kind`,
+  `exchange`, `instrument_key`, `lot_size`, `expiry`, `option_position`, `premium_stop_pct`.
+  `exchange_for_trade` gives the monitor and square-off the right exchange for the quote and
+  the exit order.
+* **From the new master prompt** (V4.14 execution quality, safety rule 17): every trade records
+  `expected_price` (the signal's price), `slippage` (signed against the trade) and
+  `entry_latency_ms`; a LIVE entry that fills partially records the position and sizes the
+  protective stop to the *filled* quantity, with the partial fill spelled out on the trail (the
+  order book is read once for both price and quantity).
+* **Worker**: an OPTION/FUTURE deployment resolves its contract at signal time off the latest
+  underlying close; a rule that cannot be satisfied is recorded on the deployment and no trade
+  is taken. The F2 guard is gone.
+
+Verified by `tests/test_contract_execution.py` (order plans for buy/write/future, quote
+fallbacks and failure, margin cap arithmetic and refusals, PAPER buy sizing and stored fields,
+below-one-lot rejection, max-lots cap, missing-quote rejection on the trail, LIVE buy entry +
+floor SL-M, LIVE write sell + ceiling SL-M capped by margin, LIVE write refused on unknown/
+insufficient margin, partial fill, PAPER future with transplanted levels, worker end-to-end
+and resolution failure). Not verified: real broker margin API responses (parsed defensively).
+
+### F4: Exits for derived contracts
+
+The strategy decided the trade on the underlying, so the underlying decides the exit; the
+contract only prices it. `app/trading/exit_logic.py::check_contract_exit`:
+
+* **OPTION**: `underlying_exit` applies the strategy's stop / target 2 / target 1 (same priority
+  as cash, tolerant of a strategy with no targets) to the *underlying's* price; a hit exits at
+  the contract's current price with the reason suffixed "(underlying)". Independently, the
+  premium safety net: a bought option whose premium fell to the floor (`trade.stop_loss`), or a
+  written option whose premium rose to the ceiling, exits at the contract price - and this check
+  still runs when the underlying quote is unavailable, so a dead index feed never leaves an
+  option unprotected.
+* **FUTURE / UNDERLYING**: the levels are on the contract's own price - plain `check_exit`.
+* **Monitor** (`monitor_open_positions`): for option trades it quotes both the contract (on its
+  own exchange, `exchange_for_trade`) and the underlying (`underlying_exchange`: NSE, or BSE for
+  SENSEX/BANKEX); LIVE exits go through the existing single close path, so the floor/ceiling
+  SL-M is cancelled (or recognised as already filled) before the market exit on NFO/BFO.
+  Square-off at 15:15 IST is unchanged and covers expiry day.
+* **Charges**: `PaperBroker.estimate_round_trip_costs` now has per-kind profiles (equity, option
+  premium turnover with sell-side STT, futures notional with sell-side STT) - still an estimate a
+  contract note replaces (D4).
+* **Manual check**: `POST /api/positions/{id}/mark-price` takes `underlying_price` alongside the
+  contract's `current_price` for option positions; the Positions tab shows the underlying
+  levels and the premium floor/ceiling on each derived position.
+
+Verified by `tests/test_contract_exits.py` (level priority and missing targets, bought and
+written option exits on underlying levels and on the premium net, futures/cash unchanged, cost
+profiles, underlying exchange mapping, the monitor's two quotes with P&L on the premium, the
+premium-only fallback when the underlying feed fails, LIVE exit on NFO after cancelling the stop,
+the mark-price endpoint).
+
+## Phase G: Safety and reliability closure
+
+The revised master prompt's consolidated safety rules 7, 8 and 18 and sections 17 and 49, plus the
+V4.9 health spellings, V3.14 rule 2 and the section 47 disclaimers. Small modules, each closing
+one gap `docs/MASTER_PROMPT_GAP_ANALYSIS.md` named; `docs/SLO.md` states what they protect.
+
+### G1: Staleness gate, broker-uncertain flag, reconciliation on start
+
+**Staleness gate** (`app/market_data/freshness.py`). Two checks, both returning a human-readable
+reason or None:
+
+* `candle_staleness(last_bar_ts, timeframe, now)`: the newest bar of the deployment's base
+  timeframe may be at most `(MARKET_DATA_MAX_STALE_BARS + 1) * timeframe` old (default 3 missed
+  bars: a 1-minute feed more than 4 minutes behind the clock). The worker runs it in
+  `_evaluate_deployment` after the history check and *before* `strategy.analyze`; a stale feed
+  sets `last_error = "Skipped: market data stale: newest 1min bar is N min old (...)"`, counts on
+  `atp_market_data_stale_total{kind="candles"}` and `CycleReport.stale_skips`, and evaluates
+  nothing. The next fresh cycle trades normally.
+* `quote_is_stale(quote_ts, now)`: `MarketDataService.get_ltp` now asks the broker for a full
+  quote first (`BrokerInterface.get_quote_for_symbol`, implemented for Upstox and Kite with their
+  `last_trade_time`/`timestamp` parsed by `app/brokers/timestamps.py`) and raises
+  `StaleMarketDataError` when the exchange timestamp is older than `QUOTE_MAX_STALE_SECONDS`
+  (120). The position monitor already treats any price failure as "no decision this cycle", so a
+  stale quote leaves the position as it is, with the reason in the outcome's warnings. Brokers
+  whose LTP endpoint carries no timestamp are accepted as real-time (nothing to judge by).
+
+**Broker-uncertain flag** (`app/reconciliation/service.py`, `tenants.broker_uncertain_since /
+broker_uncertain_reason / last_reconciled_at`, migration `d4f0b8c6e953`). When a LIVE order ends
+FAILED - the broker call raised or timed out, so nobody knows whether the broker holds the
+position - `execute_signal_for_user` calls `mark_broker_uncertain`. From then on:
+
+* every new LIVE entry for that organisation is refused - inside `execute_signal_for_user`
+  (REJECTED, reason "Broker state uncertain since ... - LIVE entries blocked until position
+  reconciliation passes"), so the console, webhooks and the worker all hit the same wall; the
+  worker additionally skips one step earlier and writes the reason on the deployment;
+* exits are untouched (open risk is still real);
+* the worker runs `run_reconciliation` for the tenant *every cycle* while flagged. Zero
+  mismatches clears the flag (`broker_uncertain_cleared` audit row) and the same cycle may trade;
+  mismatches keep it, with one CRITICAL notification naming them.
+
+`run_reconciliation` is the one implementation behind the on-demand `POST
+/api/reconciliation/{broker}`, the worker's per-cycle run and the start-up run. It compares LIVE
+trades only (PAPER positions never exist at the broker), writes the same audit rows as before,
+stamps `last_reconciled_at`, and updates the flag. `GET /api/reconciliation/status` exposes the
+state; the Autopilot page shows a red banner with a "Reconcile" button while flagged.
+
+**Reconciliation on start** (`TradingWorker.reconcile_on_start`, safety rule 18). Before the
+first cycle, every tenant holding an open LIVE trade is reconciled against the broker(s) its
+deployments trade through (falling back to every stored broker for console-entered trades). A
+mismatch flags the tenant and raises the CRITICAL notification; a clean run clears a stale flag.
+A failure here never stops the worker from starting - the flag is the protection, not the
+process exit.
+
+### G2: Circuit breaker and SLOs
+
+`app/brokers/circuit_breaker.py`: one `CircuitBreaker` per broker name per process. Every call
+through `RateLimitedBroker` (what the worker uses) reports its outcome via `observe_call`;
+`OrderRouter` reports its own `place_order` when handed an unwrapped adapter. Only health failures
+count - timeouts, connection errors, 5xx, 429, malformed payloads; a business 4xx (margin,
+invalid instrument, expired token) is the broker working and moves nothing. More than
+`BROKER_CIRCUIT_FAILURE_RATIO` (0.5) of the last `BROKER_CIRCUIT_WINDOW_SECONDS` (60) of calls
+failing, after at least `BROKER_CIRCUIT_MIN_CALLS` (5), opens the breaker for
+`BROKER_CIRCUIT_OPEN_SECONDS` (120); then HALF_OPEN admits one probe entry, whose outcome closes
+or re-opens it.
+
+`OrderRouter.execute` checks `breaker.allow_submission()` before a LIVE entry and returns a
+REJECTED result with the breaker's reason while it is open - platform-wide, every tenant, because
+the broker is the shared dependency. Exits, cancels and protective stops are never refused. The
+kill switch is a person's decision and stays independent; either alone stops entries. Metrics:
+`atp_broker_calls_total{broker,method,outcome}`, `atp_broker_circuit_state{broker}` (0/1/2),
+`atp_broker_circuit_rejections_total`, plus `atp_order_entry_latency_seconds{mode}` for SLO-7.
+
+`docs/SLO.md` lists nine objectives with the metric that measures each and the alert that guards
+it; `scripts/monitoring/prometheus-alerts.yml` holds those alerts as Prometheus rules.
+
+### G3: Health aliases, broker disconnect, disclaimers
+
+* `GET /api/system/health/live | ready | dependencies` (V4.9). `dependencies` is `health/deep`
+  plus every breaker's snapshot and the count of broker-uncertain tenants; an open breaker makes
+  it `degraded`.
+* `BrokerInterface.get_balance()` (alias of `get_margins`) and `disconnect()` (default: forget
+  the token; Upstox `DELETE /logout`, Kite `DELETE /session/token`). `POST
+  /api/broker/{name}/disconnect` revokes today's session on purpose: broker logout, access token
+  removed from the encrypted payload, status EXPIRED, audit row `broker_disconnected`. Key and
+  secret stay, so the next login needs no re-entry.
+* `Disclaimer` component (`frontend/src/components/ui.tsx`) on the Backtest, Signals, Scanner,
+  Fundamentals and Strategy Builder pages, each naming what that page's numbers are not.
+
+## Phase H: Options depth
+
+Master prompt sections 23-25 and V2.1-2.6: the strike-selection pipeline and the V1 option
+structures (bull put spread, bear call spread, iron condor), on top of Phase F's single leg.
+
+### H1: Strike-selection pipeline
+
+`app/instruments/strike_selection.py`. A deployment may carry `strike_filters` (JSON):
+`min_oi`, `min_volume`, `max_spread_pct` (bid/ask over mid), `min_iv_pct`/`max_iv_pct`,
+`target_delta` with `delta_tolerance`, `min_premium`/`max_premium`, `search_steps`. With filters
+active, `resolve_contract` no longer trusts the rule strike: it fetches the live option chain
+through the tenant's broker (`chain_provider`, built by the worker from the market-data adapter),
+judges every listed strike within `search_steps` of the rule strike (`candidate_for` computes
+spread %, IV from the chain or solved from the premium, delta from the broker or Black-Scholes),
+and picks the passing strike nearest the target delta (or nearest the rule strike). The verdicts
+travel on `ResolvedContract.selection` / `selection_notes`, so the preview shows why 24450 beat
+24500 and the order's reasons carry the same sentence. No chain, an empty chain, or nothing
+passing is a `ContractResolutionError` recorded on the deployment - a configured filter is
+never silently skipped. Upstox chain parsing now keeps bid/ask, IV, delta, OI change and spot.
+
+### H2: Multi-leg structures
+
+`app/instruments/spreads.py` resolves a structure from the same rules: the short leg at the rule
+strike (ATM/OTM n) for the sold right, the wing `spread_width` listed steps further out; the
+condor does both sides with the shorts `strike_offset` steps OTM. Direction discipline: a bull
+put only on LONG, a bear call only on SHORT, the condor on either; a mismatch is a recorded
+"not entered on a SHORT signal", never the mirror structure. `structure_metrics` gives net
+credit, max profit, max loss (width - credit), breakevens and the group exit levels
+(`target_credit_pct` of the credit captured, `stop_credit_pct` of the credit lost).
+
+`app/execution/multileg.py::execute_structure` is the group counterpart of the single-leg
+pipeline: the same entry refusals (`entry_refusals`, now shared), one OrderRecord per leg under
+`<key>:L<i>`, quotes for every leg, the risk engine's day checks, lots sized off **max loss**
+(risk per trade / max loss per lot, capped by `max_lots` and LIVE by the broker's margin for the
+short legs), then paper fills at the quoted premiums or LIVE placement *wings first, shorts
+second*. A failed leg after another filled is unwound with market orders, every order ends
+FAILED, the tenant is flagged broker-uncertain (Phase G1) and a CRITICAL notification names the
+leg. Trades share `leg_group_id`, carry `leg_role`, `option_strategy` and the group's metrics in
+`group_meta`.
+
+Exits (`position_monitor._monitor_group`): the legs are judged together on the spread's value
+(cost to close = shorts' premiums minus wings'): value <= target, value >= stop, or the
+underlying through a short strike; a missing leg quote means no decision this cycle. Closing
+buys the shorts back first, then sells the wings; each leg books its own P&L. `GET
+/api/positions/greeks` computes per-leg and per-group Greeks from live premiums (IV solved
+from the last price) and the underlying's spot; the Positions page shows them on demand.
+
+The Autopilot form gains a Structure selector, wing width, target/stop credit %, a strike-filter
+panel, and previews legs with credit, max loss and breakeven when a broker session can quote
+them. Migration `e5a1c9d7f064`.
+
+## Phase I: Risk hierarchy and broker accounts
+
+### I1: Risk hierarchy
+
+Master prompt V3.4 / V4.5 and the section 17 check list. `risk_limits` rows carry one
+`limit_type` at one scope - GLOBAL (platform, SUPER_ADMIN), TENANT, USER, ACCOUNT, STRATEGY or
+INSTRUMENT (`scope_id` = user id / account id / strategy id / symbol) - and
+`app/risk_engine/hierarchy.py::evaluate` checks an order against every limit that applies to
+it, keeping the smallest of each type ("strictest wins"). Eight types: MAX_DAILY_LOSS and
+MAX_STRATEGY_LOSS (realised today, currency), MAX_LOSS_PER_TRADE (at the stop; for a structure
+its max loss), MAX_ORDER_VALUE, MAX_POSITION_QUANTITY, MAX_OPEN_POSITIONS, MAX_TRADES_PER_DAY,
+MAX_CAPITAL_ALLOCATION_PCT.
+
+The evaluator runs after sizing and before any fill or broker call: `OrderRouter.execute`
+awaits `pre_place_check(quantity)` (the closure `execute_signal_for_user` builds), and
+`execute_structure` calls it with the structure's max loss. Every check is a `risk_events` row
+(PASS, WARN at 80% of the limit, BLOCK) carrying the measured value, the limit, the scope and
+the order id, so the log answers both "why was this refused" and "how close are we". Breaches
+also act: MAX_STRATEGY_LOSS engages the strategy kill switch, a TENANT/GLOBAL MAX_DAILY_LOSS
+engages the tenant kill switch - idempotent, audited, with a CRITICAL notification - so the
+next signal is refused at the door. A failure to read or measure a limit blocks the order
+(fail safe). API under `/api/risk/limits|events|evaluate`; the Risk page shows limits and the
+event log. `risk_events` is in the never-deleted set.
+
+### I2: Broker accounts
+
+V3.14 rule 3 and V3.1-3.5 routing. `broker_credentials.account_label` (default `primary`,
+unique per tenant/broker/label) lets one broker hold several accounts as several credential
+rows; `broker_accounts` is the account behind each credential: broker identifier, display
+name, ACTIVE/DISABLED, default flag, and the last synced balance, used margin, realised and
+unrealised P&L (`app/accounts/service.py::sync_account`, from `get_balance`, `get_profile`
+and `get_positions`). Accounts are created when credentials are stored (and lazily for
+credentials that predate the table). API: `GET /api/accounts`, `POST /api/accounts/{id}/sync`,
+`.../enable|disable|default`, `PATCH /api/accounts/{id}`; credential endpoints take an
+`account_label` query parameter.
+
+Routing: a deployment may name `broker_account_id`; otherwise the broker's default account
+applies. The worker builds one adapter per (broker, label) and, per deployment, resolves the
+route (`_live_broker_for`): a DISABLED account, a missing session or a broker-uncertain tenant
+each record their reason and skip the entry. The account id is passed into execution so
+ACCOUNT-scope risk limits apply. Settings shows the accounts card; the Autopilot form offers
+the broker's accounts for LIVE deployments.
+
+## Phase J: Exits and backtesting depth
+
+### J1: Dynamic exit rules
+
+Master prompt section 29. `app/trading/exit_rules.py::ExitRules` (JSON on the deployment and
+on each trade it opens) carries `trailing_stop_pct`, `break_even_at_r`, `time_exit_minutes`
+and `time_exit_at` (IST). `apply_exit_rules` is one pure function of the trade's state and the
+latest bar or quote: it returns a stop that only ever tightens (break-even once the trade is
+`R` multiples in profit, a trailing stop off the best price once in profit), the new best
+price, and a time-exit reason when one fired. The backtest engine applies it per bar (judging
+the bar against the stop tightened on the *previous* bar) and the position monitor applies it
+per cycle on the current price, persisting `best_price` / `stop_loss` (the original stop stays
+in `initial_stop_loss`) and, LIVE, moving the broker-side SL-M trigger with `modify_order`
+(a failed modify keeps the software stop and is logged). One rule implementation for backtest,
+paper and live - section 13's "same logic everywhere" for exits.
+
+### J2: Backtest analytics, robustness and run records
+
+Sections 31-32, V2.10, V4.8. `app/backtest/analytics.py::build_analytics` derives the report
+views from the closed trades and the equity curve: monthly P&L, day-of-week and hour-of-day
+performance, exit-reason breakdown, direction split, holding-time stats, slippage summary
+(entry vs the signal's expected price), cost share, streaks, ratio metrics (CAGR, Sharpe,
+Sortino, Calmar where the sample allows) and the drawdown curve; `BacktestResult.analytics`
+carries it. `app/backtest/robustness.py` adds **Monte Carlo** (resample the trade P&Ls with
+replacement, report percentiles of final P&L and max drawdown, probability of loss, probability
+the drawdown exceeds the original) and **walk-forward** (the same parameters on consecutive
+windows, per-window metrics and a consistency score; no per-window re-optimisation, which would
+be a new strategy version). Endpoints `POST /api/backtest/monte-carlo` and
+`/api/backtest/walk-forward`.
+
+Every backtest a logged-in user runs is recorded (`backtest_runs`: strategy, params, exit
+rules, data source label, bar count and span, engine version, headline metrics and analytics)
+and listed at `GET /api/backtests` / `GET /api/backtests/{id}`, so a number on a screen is
+traceable to what produced it. The Backtest page gains exit-rule inputs, the analytics tables,
+Monte Carlo and walk-forward cards and the run history; the Autopilot form gains the same
+exit-rule inputs. Migration `a7c3e1f9b286`.
+
+## Phase K: Commercial SaaS layer
+
+### K1: Plans with prices, subscriptions, billing lifecycle, metering
+
+Master prompt V3.6-3.8, V3.14 rule 5. `app/plans/registry.py::Plan` now carries prices
+(monthly/yearly, INR), the commercial limits (LIVE strategies, backtests per month, public API
+calls per day, accounts, brokers), feature flags (`option_features`, `ai_features`,
+`marketplace_access`, `public_api`), support level and trial days; `plans/limits.py::
+feature_allowed` / `require_feature` gate features on plan **and** tenant status (a suspended
+organisation loses paid features). `app/billing/service.py` holds the lifecycle behind a
+`BillingProvider` abstraction whose first implementation is **manual** (bank transfer / UPI,
+operator records the payment; a gateway provider plugs in at the same seam):
+`subscribe` (a plan with trial days starts TRIALING and entitles at once; an invoice is raised
+payable after the trial), `record_payment` (operator/webhook: invoices PAID, ACTIVE, period
+extended), `cancel` (at period end or immediately), and the worker's daily `sweep` (trial or
+period ended → PAST_DUE with a 7-day grace and a renewal invoice; grace ended → CANCELLED,
+plan back to Free with `tenants.status_reason` recording why; cancellations falling due).
+Tables `subscriptions`, `billing_transactions` (INVOICE/PAYMENT/REFUND, never edited except
+OPEN→PAID), `usage_records` (daily buckets per metric). `meter()` is called for every order
+attempt (`create_order`), every logged-in backtest, every TradingView webhook event and every
+public API call. Endpoints `/api/billing/plans|""|subscribe|cancel|transactions|usage`,
+operator `POST /api/admin/billing/{tenant_id}/payment`. No card data ever touches the app.
+
+### K2: Strategy marketplace
+
+V3.9-3.10, V3.14 rule 8. `app/marketplace/service.py`: a creator lists one **frozen version**
+of their custom strategy (`marketplace_listings.config_json`; later edits never reach
+subscribers) with a title, description, methodology and a **saved backtest run as documented
+performance** (required to submit - the listing shows the run's symbol, timeframe, bar span,
+data source and engine version alongside the metrics, with a fixed disclaimer). Flow
+DRAFT → PENDING_REVIEW → PUBLISHED / REJECTED (with the reviewer's note back to the creator) →
+UNLISTED, reviewed by the SUPER_ADMIN (`/api/admin/marketplace/pending|{id}/publish|reject`).
+Subscribing copies the frozen config into the subscriber's own `custom_strategies` (a new
+version with source `marketplace:<id>`), so it goes through the subscriber's backtest → paper →
+live pipeline like anything they wrote; unsubscribing keeps the copy. Marketplace access is
+plan-gated (`require_feature(tenant, "marketplace_access")`), listings never expose the
+creator's internals. Frontend: the Marketplace page (discover, subscribe, publish, review queue).
+
+### K3: Public API and developer portal
+
+V3.11-3.12, V3.14 rules 9-10. `app/public_api/keys.py`: keys `atp_<prefix>_<secret>` shown
+once, stored hashed, with scopes, a per-key per-minute limiter, optional expiry, revocation,
+plan gate (`public_api`) and daily allowance (`max_api_calls_per_day`); `api_key_auth(scope)`
+is the dependency every `/api/public/v1/*` route uses, and it meters one `api_call`.
+`app/public_api/routes.py`: read endpoints (account, instruments, strategies, signals, orders,
+positions, trades, backtests, risk limits/events) and `POST /signals` which runs
+`execute_signal_for_user` in PAPER with an idempotency key (LIVE through a key is refused - it
+is bound to a broker account through deployments). `GET /api/public/v1/docs` is the
+machine-readable developer reference; `docs/PUBLIC_API.md` the human one. Keys are managed
+under Settings (OWNER only).
+
+### K4: Webhook alert channel
+
+V3.13 / section 42. `alerts/channels.py::WebhookConfig` (HTTPS URL, shared secret 16+ chars,
+optional event-type filter) joins Telegram and email; `dispatcher.send_webhook` POSTs the
+notification as JSON with `X-ATP-Event`, `X-ATP-Timestamp` and
+`X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)`, through the same outbox
+with the same retries and delivery records. Paid plans allow three channels so all of
+Telegram, email and webhook can be on. SMS/push remain out of scope (no provider decision).
+
+Migration `b8d4f2a0c397`.
+
+## Phase L: AI layer
+
+Master prompt section 56, V4.1-4.3, V4.7, safety rules 15-16. Three principles run through
+every part: the model **drafts, never decides**; every AI output goes through the same
+pipeline as a human's (backtest → paper → live, risk hierarchy, kill switches); the AI never
+holds a broker credential (a provider gets prompt text in and text out).
+
+### L1: Provider seam and tenant keys
+
+`app/ai/providers.py::LLMProvider` is one method, `complete(system, user) -> str`, with
+Anthropic (Messages API), OpenAI (Chat Completions) and a **rule-based** implementation that
+wraps the existing NLU parser - no key, no network - so every AI feature has an explainable
+fallback. The tenant's choice lives in `ai_provider_configs`: provider, model, and the API key
+Fernet-encrypted with `SECRETS_ENCRYPTION_KEY`, entered on the Settings page only (OWNER),
+never returned once stored, never read from the environment or a chat. Free-plan tenants and
+tenants without a configured provider always get the rule-based provider
+(`ai_settings.provider_for`). Provider errors (401/429/unreachable) are mapped to plain
+messages and recorded on the config row.
+
+### L2: Strategy generator behind the review gate
+
+`app/ai/generator.py` asks the provider for one JSON object in the `CustomStrategyConfig`
+contract (the no-code builder's schema: indicators, operators, ATR stop, R targets) plus an
+explanation and the model's own caveats. The answer is validated by the same pydantic model
+that guards `POST /api/custom-strategies`; an invalid answer is retried once with the error
+quoted back, then recorded as FAILED. The raw response is kept on the `ai_strategy_drafts` row
+for lineage (provider, model, prompt, time). State machine: DRAFT → BACKTESTED
+(`POST /api/ai/drafts/{id}/backtest` runs the draft through the ordinary engine and records a
+`backtest_runs` row with `strategy_id = ai_draft_<id>`) → APPROVED (`POST .../approve`, a human
+call that is refused until a backtest is attached) or REJECTED. Approval is the only way a
+draft becomes a `custom_strategies` row, stamped `origin="ai:<draft>"` and `ai_approved_by`,
+with a strategy version whose source is `ai:<draft>`; from there it is an ordinary strategy.
+
+### L3: Market regime engine
+
+`app/ai/regime.py::classify_regime` is deterministic: ADX(14) for trend strength, EMA20/EMA50
+relation and slope for direction, ATR as a share of price against its rolling median for
+volatility → TRENDING_UP / TRENDING_DOWN / RANGING / VOLATILE / QUIET (or UNKNOWN under 60
+bars), each with a confidence and the numbers behind the call. A deployment's optional
+`regime_filter` (a set of allowed regimes) is judged on the base frame right before the
+strategy runs; a blocked entry writes the regime, its confidence and the leading reasons into
+`last_error`, so the Autopilot card says exactly why it sat out. `POST /api/ai/regime`
+classifies uploaded candles; the Autopilot form offers the filter as toggles.
+
+### L4: Monitoring agent and the action-state machine
+
+`app/ai/monitor.py` observes each tenant's deployments at the end of every worker cycle from
+persisted records only (never a model call in the decision path): LOSING_STREAK (last 3 trades
+today lost), DAY_DRAWDOWN (a deployment's realised P&L today below 2% of capital),
+ERROR_STREAK (3 consecutive evaluation failures - below the worker's own auto-pause at 5, so
+the human hears first), STALE_POSITION (open > 120 min with the regime turned adverse),
+WIN_RATE_DRIFT (rolling win rate ≥ 25 points under the latest backtest). Each firing is one
+`ai_actions` row: PROPOSED → APPROVED → EXECUTED / FAILED, or REJECTED, or EXPIRED after 24
+hours; duplicates per (deployment, rule) are suppressed while one is open or was decided today.
+A proposal raises an `AI_PROPOSAL` notification (WARNING, so Telegram/email/webhook carry it).
+`POST /api/ai/actions/{id}/approve` is the human step and executes at once through the
+ordinary services (pause = the deployment's status change with an audited reason; exit = the
+position monitor's `close_position` off a usable broker session's LTP; review/reduce-risk =
+acknowledged, no automatic change). The AI Copilot page lists open proposals with their
+evidence, the decided history, the generator and the regime read; the Settings page holds
+the provider card. Migration `c9e5a3b1d4a8`.
+
+Not built (needs a product decision): AI-written scanners (V4.2) beyond the rule-based scanner,
+per-tenant model fine-tuning, and any auto-approval class - every action stays human-gated.

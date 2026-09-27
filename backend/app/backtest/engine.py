@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 import pandas as pd
 
@@ -10,8 +10,13 @@ from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import determine_exit_price
+from app.trading.exit_rules import ExitRules, apply_exit_rules
+from app.backtest.analytics import build_analytics
 
 __all__ = ["resample_ohlc", "run_backtest"]
+
+
+ENGINE_VERSION = "2"   # Phase J: exit rules + analytics
 
 
 def run_backtest(
@@ -20,6 +25,7 @@ def run_backtest(
     symbol: str,
     base_tf: str,
     risk_config: RiskConfig,
+    exit_rules: Optional[ExitRules] = None,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 
@@ -44,6 +50,9 @@ def run_backtest(
     trades: list[Trade] = []
     equity = risk_config.capital
     equity_curve = [equity]
+    rules = exit_rules if exit_rules is not None and exit_rules.active else None
+    initial_stop = 0.0
+    best_price: Optional[float] = None
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
@@ -51,10 +60,28 @@ def run_backtest(
 
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
-            outcome = determine_exit_price(
-                direction, open_trade.stop_loss, open_trade.target1, open_trade.target2,
-                bar["low"], bar["high"],
-            )
+            outcome = None
+            if rules is not None:
+                # Phase J1: the same rules the position monitor applies live, on this bar's range.
+                # The stop tightened on the previous bar is what this bar is judged against, so
+                # a bar cannot trail its own stop into itself.
+                bar_time = current_time.to_pydatetime() if hasattr(current_time, "to_pydatetime") else current_time
+                update = apply_exit_rules(
+                    rules, direction=direction, entry_price=open_trade.entry_price, initial_stop=initial_stop,
+                    current_stop=open_trade.stop_loss, best_price=best_price, high=float(bar["high"]), low=float(bar["low"]),
+                    entry_time=open_trade.entry_time, now=bar_time,
+                )
+                if update.time_exit_reason:
+                    outcome = (update.time_exit_reason, float(bar["close"]))
+            if outcome is None:
+                outcome = determine_exit_price(
+                    direction, open_trade.stop_loss, open_trade.target1, open_trade.target2,
+                    bar["low"], bar["high"],
+                )
+            if outcome is None and rules is not None:
+                best_price = update.best_price
+                if update.stop_changed:
+                    open_trade.stop_loss = update.stop_loss
 
             if outcome is not None:
                 reason, exit_price = outcome
@@ -74,6 +101,9 @@ def run_backtest(
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
                 if decision.approved:
                     open_trade = broker.open_trade(signal, decision.quantity, current_time)
+                    open_trade.expected_price = signal.entry
+                    initial_stop = open_trade.stop_loss
+                    best_price = None
                     state.trades_today += 1
                     state.open_positions += 1
 
@@ -114,4 +144,6 @@ def run_backtest(
         expectancy=round(net_pnl / total_trades, 2) if total_trades else 0.0,
         trades=trades,
         equity_curve=equity_curve,
+        analytics=build_analytics(trades, equity_curve, risk_config.capital),
+        exit_rules=rules.to_json() if rules is not None else None,
     )

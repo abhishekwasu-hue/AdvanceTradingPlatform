@@ -1,4 +1,6 @@
 import type {
+  ContractPreview,
+  ContractRules,
   ContractNoteIngest,
   ContractNoteSummary,
   AdminOverview,
@@ -50,6 +52,28 @@ import type {
   TradeRecord,
   UserResponse,
   WorkerStatus,
+  BacktestRunSummary,
+  BrokerAccount,
+  ExitRules,
+  MonteCarloResult,
+  WalkForwardResult,
+  PositionGreeks,
+  RiskEvent,
+  RiskLimit,
+  RiskLimitRequest,
+  ReconciliationReport,
+  ReconciliationStatus,
+  ApiKey,
+  BillingOverview,
+  BillingTransaction,
+  MarketplaceListing,
+  MarketplaceSubscription,
+  PlanCatalogueEntry,
+  Subscription,
+  AiAction,
+  AiProviderConfig,
+  AiStrategyDraft,
+  Regime,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -206,11 +230,22 @@ export const api = {
       { method: "POST", body: JSON.stringify({ symbol, candles }) },
     ),
 
-  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[]) =>
+  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample") =>
     request<BacktestResult>("/backtest", {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, data_source: dataSource }),
     }),
+  backtestMonteCarlo: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, runs = 1000) =>
+    request<{ monte_carlo: MonteCarloResult }>(`/backtest/monte-carlo?runs=${runs}`, {
+      method: "POST",
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+    }),
+  backtestWalkForward: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, folds = 4) =>
+    request<WalkForwardResult>(`/backtest/walk-forward?folds=${folds}`, {
+      method: "POST",
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+    }),
+  listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
 
   priceActionStructure: (symbol: string, candles: OHLCVBar[]) =>
     request<MarketStructureResult>("/price-action/structure", {
@@ -316,6 +351,18 @@ export const api = {
 
   getRiskSettings: () => request<RiskConfig>("/risk-settings"),
 
+  listRiskLimits: () => request<RiskLimit[]>("/risk/limits"),
+  upsertRiskLimit: (body: RiskLimitRequest) => request<RiskLimit>("/risk/limits", { method: "PUT", body: JSON.stringify(body) }),
+  deleteRiskLimit: (id: number) => request<void>(`/risk/limits/${id}`, { method: "DELETE" }),
+  listRiskEvents: (params?: { strategy_id?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.strategy_id) q.set("strategy_id", params.strategy_id);
+    if (params?.status) q.set("status", params.status);
+    if (params?.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return request<RiskEvent[]>(`/risk/events${qs ? `?${qs}` : ""}`);
+  },
+
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
 
@@ -341,11 +388,16 @@ export const api = {
 
   listStoredBrokerCredentials: () => request<StoredBrokerInfo[]>("/broker/credentials"),
 
-  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput) =>
-    request<void>(`/broker/${name}/credentials`, { method: "POST", body: JSON.stringify(credentials) }),
+  storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
 
-  deleteBrokerCredentials: (name: string) =>
-    request<void>(`/broker/${name}/credentials`, { method: "DELETE" }),
+  listAccounts: () => request<BrokerAccount[]>("/accounts"),
+  syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),
+  setAccountStatus: (id: number, enabled: boolean) => request<BrokerAccount>(`/accounts/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
+  setDefaultAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/default`, { method: "POST" }),
+
+  deleteBrokerCredentials: (name: string, accountLabel = "primary") =>
+    request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "DELETE" }),
 
   authenticateBroker: (name: string) =>
     request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
@@ -390,6 +442,12 @@ export const api = {
 
   upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
 
+  positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
+
+  reconciliationStatus: () => request<ReconciliationStatus>("/reconciliation/status"),
+  runReconciliation: (brokerName: string) =>
+    request<ReconciliationReport>(`/reconciliation/${brokerName}`, { method: "POST" }),
+
   workerStatus: () => request<WorkerStatus>("/system/worker-status"),
 
   listDeployments: (includeStopped = false) =>
@@ -397,6 +455,9 @@ export const api = {
 
   createDeployment: (body: DeploymentCreateRequest) =>
     request<Deployment>("/deployments", { method: "POST", body: JSON.stringify(body) }),
+
+  previewContract: (body: ContractRules & { symbol: string; spot?: number | null }) =>
+    request<ContractPreview>("/deployments/preview-contract", { method: "POST", body: JSON.stringify(body) }),
 
   pauseDeployment: (id: number, reason = "") =>
     request<Deployment>(`/deployments/${id}/pause`, { method: "POST", body: JSON.stringify({ reason }) }),
@@ -410,6 +471,55 @@ export const api = {
 
   // --- Alert delivery ---
 
+  // ---- Phase L: AI layer
+  aiProvider: () => request<AiProviderConfig>("/ai/provider"),
+  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
+    request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
+  aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
+  aiGenerate: (prompt: string) => request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt }) }),
+  aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
+  aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
+  aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample") =>
+    request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
+      method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }),
+    }),
+  aiApproveDraft: (id: number, name?: string) =>
+    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name }) }),
+  aiRejectDraft: (id: number, note?: string) => request<AiStrategyDraft>(`/ai/drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
+  aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
+  aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiRejectAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  // ---- Phase K: billing, API keys, marketplace
+  billingPlans: () => request<PlanCatalogueEntry[]>("/billing/plans"),
+  billingOverview: () => request<BillingOverview>("/billing"),
+  billingSubscribe: (plan_id: string, billing_cycle: "MONTHLY" | "YEARLY") =>
+    request<Subscription>("/billing/subscribe", { method: "POST", body: JSON.stringify({ plan_id, billing_cycle }) }),
+  billingCancel: (immediately: boolean) =>
+    request<Subscription>("/billing/cancel", { method: "POST", body: JSON.stringify({ immediately }) }),
+  billingTransactions: () => request<BillingTransaction[]>("/billing/transactions"),
+  billingUsage: (days = 30) => request<Record<string, number>>(`/billing/usage?days=${days}`),
+  adminRecordPayment: (tenantId: number, amount: number, reference?: string) =>
+    request<Subscription>(`/admin/billing/${tenantId}/payment`, { method: "POST", body: JSON.stringify({ amount, reference }) }),
+  listApiKeys: () => request<ApiKey[]>("/api-keys"),
+  apiKeyScopes: () => request<Record<string, string>>("/api-keys/scopes"),
+  createApiKey: (body: { name: string; scopes: string[]; rate_limit_per_minute: number; expires_in_days?: number | null }) =>
+    request<ApiKey>("/api-keys", { method: "POST", body: JSON.stringify(body) }),
+  revokeApiKey: (id: number) => request<void>(`/api-keys/${id}`, { method: "DELETE" }),
+  marketplace: () => request<MarketplaceListing[]>("/marketplace"),
+  marketplaceListing: (id: number) => request<MarketplaceListing>(`/marketplace/${id}`),
+  marketplaceMine: () => request<MarketplaceListing[]>("/marketplace/listings/mine"),
+  marketplaceSubscriptions: () => request<MarketplaceSubscription[]>("/marketplace/subscriptions"),
+  marketplaceCreate: (body: { custom_strategy_id: number; title: string; description: string; methodology?: string | null; backtest_run_id?: number | null; version_number?: number | null }) =>
+    request<MarketplaceListing>("/marketplace/listings", { method: "POST", body: JSON.stringify(body) }),
+  marketplaceSubmit: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/submit`, { method: "POST" }),
+  marketplaceUnlist: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/unlist`, { method: "POST" }),
+  marketplaceSubscribe: (id: number) =>
+    request<MarketplaceSubscription & { disclaimer: string; next: string }>(`/marketplace/${id}/subscribe`, { method: "POST" }),
+  marketplaceUnsubscribe: (id: number) => request<void>(`/marketplace/${id}/unsubscribe`, { method: "POST" }),
+  adminMarketplacePending: () => request<MarketplaceListing[]>("/admin/marketplace/pending"),
+  adminMarketplaceReview: (id: number, publish: boolean, note?: string) =>
+    request<MarketplaceListing>(`/admin/marketplace/${id}/${publish ? "publish" : "reject"}`, { method: "POST", body: JSON.stringify({ note }) }),
   listAlertChannels: () => request<AlertChannel[]>("/alert-channels"),
 
   upsertAlertChannel: (type: string, body: AlertChannelUpsert) =>

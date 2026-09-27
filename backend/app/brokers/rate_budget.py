@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from app.brokers.base import BrokerInterface
+from app.brokers.circuit_breaker import observe_call
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
 from app.core.enums import OrderSide
 
@@ -101,9 +102,19 @@ class RateLimitedBroker(BrokerInterface):
     def access_token(self) -> Optional[str]:
         return self.inner.access_token
 
+    # Phase G2: this wrapper reports every call's outcome to the broker's circuit breaker, so a
+    # caller holding it must not record the same call again (OrderRouter checks this flag).
+    records_circuit = True
+
     async def _call(self, method: str, *args, **kwargs):
         await self.budget.acquire()
-        return await getattr(self.inner, method)(*args, **kwargs)
+        try:
+            result = await getattr(self.inner, method)(*args, **kwargs)
+        except Exception as exc:
+            observe_call(self.name, method, exc)
+            raise
+        observe_call(self.name, method, None)
+        return result
 
     async def authenticate(self): return await self._call("authenticate")
     async def get_profile(self): return await self._call("get_profile")
@@ -122,6 +133,10 @@ class RateLimitedBroker(BrokerInterface):
     async def get_positions(self): return await self._call("get_positions")
     async def get_holdings(self): return await self._call("get_holdings")
     async def get_margins(self): return await self._call("get_margins")
+    async def get_order_margin(self, order): return await self._call("get_order_margin", order)
+    async def get_quote_for_symbol(self, symbol, exchange="NSE"): return await self._call("get_quote_for_symbol", symbol, exchange)
+    async def get_balance(self): return await self._call("get_balance")
+    async def disconnect(self): return await self._call("disconnect")
 
     # The non-abstract conveniences must go through the inner adapter's own overrides (Upstox
     # resolves instrument keys in them), each still costing one token.

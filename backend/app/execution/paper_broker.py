@@ -29,13 +29,37 @@ class PaperBroker:
         slip = price * self.slippage_pct / 100
         return price + slip if direction == SignalDirection.LONG else price - slip
 
-    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float) -> float:
-        turnover = (entry_price + exit_price) * quantity
-        stt = turnover * self.stt_pct / 100
-        exchange = turnover * self.exchange_pct / 100
+    # Approximate NSE charge profiles by instrument kind (percent of turnover), used only until a
+    # contract note replaces the estimate (Phase D4). Options: STT on the sell-side premium,
+    # exchange transaction charge on premium turnover; futures: STT sell side on notional.
+    COST_PROFILES = {
+        "UNDERLYING": {"stt_sell": 0.025, "stt_buy": 0.0, "exchange": 0.00345, "sebi": 0.0001, "stamp_buy": 0.003},
+        "OPTION": {"stt_sell": 0.1, "stt_buy": 0.0, "exchange": 0.035, "sebi": 0.0001, "stamp_buy": 0.003},
+        "FUTURE": {"stt_sell": 0.02, "stt_buy": 0.0, "exchange": 0.00173, "sebi": 0.0001, "stamp_buy": 0.002},
+    }
+
+    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING") -> float:
+        profile = self.COST_PROFILES.get((instrument_kind or "UNDERLYING").upper())
+        if profile is None or instrument_kind in (None, "UNDERLYING"):
+            turnover = (entry_price + exit_price) * quantity
+            stt = turnover * self.stt_pct / 100
+            exchange = turnover * self.exchange_pct / 100
+            brokerage = self.brokerage_per_order * 2
+            gst = (brokerage + exchange) * self.gst_pct / 100
+            return round(stt + exchange + brokerage + gst, 2)
+        # One leg is a buy and one a sell whichever way the trade went; sell-side STT applies to
+        # the sell leg's turnover, stamp duty to the buy leg's.
+        legs = [entry_price * quantity, exit_price * quantity]
+        turnover = sum(legs)
+        # For a bought contract the exit is the sell leg; for a written/short one the entry is.
+        sell_turnover, buy_turnover = legs[1], legs[0]
+        stt = sell_turnover * profile["stt_sell"] / 100 + buy_turnover * profile["stt_buy"] / 100
+        exchange = turnover * profile["exchange"] / 100
+        sebi = turnover * profile["sebi"] / 100
+        stamp = buy_turnover * profile["stamp_buy"] / 100
         brokerage = self.brokerage_per_order * 2
-        gst = (brokerage + exchange) * self.gst_pct / 100
-        return round(stt + exchange + brokerage + gst, 2)
+        gst = (brokerage + exchange + sebi) * self.gst_pct / 100
+        return round(stt + exchange + sebi + stamp + brokerage + gst, 2)
 
     def open_trade(self, signal: Signal, quantity: float, timestamp: datetime) -> Trade:
         fill_price = self._slip(signal.entry, signal.direction)

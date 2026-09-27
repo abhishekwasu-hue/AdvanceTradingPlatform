@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Card } from "../components/ui";
+import { Card, Disclaimer } from "../components/ui";
 import {
   defaultCondition,
   defaultCustomStrategyConfig,
@@ -222,6 +222,8 @@ export default function StrategyBuilderPage() {
           through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest).
         </p>
       </div>
+
+      <Disclaimer kind="ai" />
 
       <Card title="Describe your strategy in plain English">
         <p className="text-xs text-muted mb-2">

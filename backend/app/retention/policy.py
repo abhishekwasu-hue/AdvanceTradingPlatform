@@ -19,6 +19,7 @@ MIN_DAYS = 7
 
 NEVER_DELETED = (
     "audit_logs", "orders", "order_events", "trades", "signal_history", "custom_strategies", "strategy_versions",
+    "risk_events",
     "users", "tenants", "market_holidays",
 )
 

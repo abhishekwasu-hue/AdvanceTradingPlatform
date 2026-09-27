@@ -2654,3 +2654,61 @@ session closed -> migrate; pending and session open -> refuse (exit 3) unless `-
 `docs/adr/` records the ten decisions that shape the platform; `docs/STRATEGY_DSL.md` is the
 versioned reference for `CustomStrategyConfig`.
 
+## Phase O: Reliability, delivery and data-protection closure
+
+### O1: Least-privilege database roles (section 48)
+
+`scripts/db_roles.sql` (driven by `scripts/init_db_roles.py`) creates `atp_migrator`, which owns
+the schema and is the only role that may run DDL, and `atp_app`, which holds SELECT/INSERT/UPDATE/
+DELETE on every table and sequence (including future ones via default privileges) and nothing
+else. The API and worker connect as `atp_app` (`DATABASE_URL`); alembic and the migration guard
+connect as `atp_migrator` (`MIGRATION_DATABASE_URL`, falling back to `DATABASE_URL` so a
+single-role development database keeps working). A compromised app process can therefore not
+drop or alter tables, create roles or read other databases. The script is idempotent and is
+verified in CI against a scratch database (`tests/test_phase_o_hardening.py`).
+
+### O2: Per-exchange sessions (sections 57-61)
+
+`app/market_data/calendar.py` now carries one `ExchangeSession` per venue family: NSE (09:15-15:30,
+no new entries after 15:00, square-off 15:15; BSE/NFO/BFO share its clock and holidays), MCX
+(09:00-23:30, cut-offs 23:00/23:15, its own holiday calendar) and CRYPTO (24x7, no cut-offs).
+`session_family()` maps any exchange code to its family; `session_status(..., exchange=)` and
+`all_session_statuses()` give one status per family. The worker considers NSE plus every family
+that has an active deployment, runs whenever any of them is open, skips deployments whose venue
+is closed, applies each deployment's own entry cut-off, squares off only the venues whose
+square-off time has passed and monitors only positions on venues still trading. The retention
+job still keys off the NSE session. `GET /api/system/status` exposes all three sessions.
+
+### O3: Browser push and SMS channels (V3.13)
+
+`app/alerts/webpush.py` implements RFC 8291 (`aes128gcm` payload encryption: ephemeral P-256
+ECDH, HKDF with the subscription's auth secret, AES-128-GCM) and RFC 8292 (VAPID ES256 JWT) on
+top of `cryptography`, so no native dependency is needed. The platform's VAPID key is
+configuration (`VAPID_PRIVATE_KEY`, generate with `python -m app.alerts.webpush`). A PUSH channel
+holds every device of a tenant; the Settings card registers `public/sw.js`, subscribes and posts
+the subscription; the dispatcher prunes endpoints the push service reports gone (404/410).
+SMS is a request template for any HTTPS gateway (`SmsConfig`: URL, write-only headers, body
+template with `{to}`/`{text}`/`{title}`/`{severity}`, recipients); presets for MSG91 and Twilio
+are in the UI. Paid plans allow five channels. `docs/OPERATIONS.md 1.6e` covers both.
+
+### O4: Chaos tests, load baseline, AI and billing metrics (sections 49, 50, 54, V4.11)
+
+`tests/test_phase_o_hardening.py` injects the failures the runbooks talk about: Redis down (the
+single worker keeps trading; the lock fails open), a broker socket error mid-order (order FAILED,
+tenant flagged broker-uncertain, no retry without reconciliation), a candle API timeout (recorded
+on the deployment, cycle continues) and an alert-outbox failure (trading unaffected).
+`scripts/loadtest.py` measures the API against SLO-1 and `docs/PERFORMANCE.md` records the
+baseline. New Prometheus series: `atp_ai_provider_calls_total{provider,outcome}`,
+`atp_ai_proposals_total{action}`, `atp_ai_decisions_total{decision}`,
+`atp_billing_payments_total{source}`, `atp_billing_transitions_total{transition}`.
+
+### O5: Point-in-time recovery (section 52)
+
+The compose `postgres` service runs with `archive_mode=on` and copies every WAL segment (at most
+five minutes old, `archive_timeout=300`) into the `wal_archive` volume. `scripts/backup/base_backup.sh`
+takes a weekly physical base backup (`pg_basebackup`, tar+gzip, SHA-256, retention, WAL pruning);
+`scripts/backup/pitr_restore.sh <base|latest> "<time>" <new data dir>` unpacks a base backup and
+writes the recovery settings so a fresh Postgres replays the archive to that instant and promotes.
+Nightly logical dumps stay as the provider-independent copy. RPO is now the archive interval
+(minutes) instead of a day; the per-data-class table is in OPERATIONS 1.1.
+

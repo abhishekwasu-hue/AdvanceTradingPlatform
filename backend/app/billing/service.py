@@ -29,6 +29,7 @@ from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import BillingTransactionRecord, SubscriptionRecord, Tenant, UsageRecord
 from app.notifications.service import notify
 from app.plans.registry import DEFAULT_PLAN_ID, PLANS, Plan, get_plan
+from app.observability.metrics import BILLING_PAYMENTS, BILLING_TRANSITIONS
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,7 @@ async def record_payment(session: AsyncSession, tenant: Tenant, amount: float, *
     for inv in open_invoices:
         inv.status = "PAID"
     await _transaction(session, tenant.id, sub.id, "PAYMENT", amount, plan.currency, "PAID", f"Payment received ({provider().name})", reference)
+    BILLING_PAYMENTS.labels(source=provider().name).inc()
     base = max(now, _aware(sub.current_period_end) or now) if sub.status in (STATUS_ACTIVE, STATUS_TRIALING) else now
     sub.current_period_start = now
     sub.current_period_end = base + timedelta(days=CYCLE_DAYS.get(sub.billing_cycle, 30))
@@ -242,6 +244,9 @@ async def sweep(session: AsyncSession, now: Optional[datetime] = None) -> Dict[s
                          message="The grace period ended without payment. Your plan is now Free; live deployments will not fire.",
                          severity=NotificationSeverity.CRITICAL)
     await session.commit()
+    for transition, count in counts.items():
+        if count:
+            BILLING_TRANSITIONS.labels(transition=transition).inc(count)
     return counts
 
 

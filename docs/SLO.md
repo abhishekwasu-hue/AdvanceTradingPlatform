@@ -18,7 +18,7 @@ dashboard is annoyance.
 | SLO-6 | Reconciliation | A broker-uncertain tenant is either cleared or has a CRITICAL notification with the mismatch within one cycle; no tenant blocked longer than 30 minutes without operator action | `atp_broker_uncertain_tenants`, `atp_reconciliations_total{source,outcome}` | `TenantsBlockedPendingReconciliation` |
 | SLO-7 | Entry latency | p95 signal-to-fill under 2 s for LIVE entries (measured from the signal reaching the router to the fill being read back) | `atp_order_entry_latency_seconds_bucket{mode}` | `SlowEntries` |
 | SLO-8 | Alert delivery | Out-of-app alerts (Telegram/email) leave within 60 s; outbox never above 20 for 10 minutes | `atp_alert_outbox_pending`, `atp_alert_deliveries_total{status}` | `AlertOutboxBacklog`, `AlertDeliveriesFailing` |
-| SLO-9 | Recovery | RTO 30 min / RPO 24 h for the database (docs/OPERATIONS.md 1.1); nightly backup verified by restore | CI backup rehearsal; `scripts/backup/verify_backup.sh` exit status | (CI, not Prometheus) |
+| SLO-9 | Recovery | RTO 30 min / RPO 5 min for the database (WAL archiving + weekly base backup, docs/OPERATIONS.md 1.2a); nightly logical backup verified by restore | CI backup rehearsal; `scripts/backup/verify_backup.sh` exit status | (CI, not Prometheus) |
 
 ## How the safety gates relate to the SLOs
 

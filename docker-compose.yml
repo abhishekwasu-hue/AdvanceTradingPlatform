@@ -5,8 +5,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-atp_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atp_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-advance_trading_platform}
+    # Phase O5 / section 52: continuous WAL archiving into the `wal_archive` volume so
+    # scripts/backup/pitr_restore.sh can recover to any instant (RPO minutes, not a day).
+    command: ["postgres", "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - wal_archive:/wal_archive
     ports:
       - "5432:5432"
     healthcheck:
@@ -45,6 +50,10 @@ services:
       PLATFORM_SMTP_FROM: ${PLATFORM_SMTP_FROM:-}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-false}
       MIGRATION_FORCE: ${MIGRATION_FORCE:-}
+      # Phase O1: schema changes run as the owning role; unset = same as DATABASE_URL (single-role dev DB)
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
@@ -78,6 +87,8 @@ services:
       RETENTION_SESSIONS_DAYS: ${RETENTION_SESSIONS_DAYS:-30}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9102}
       INSTRUMENT_SYNC_EXCHANGES: ${INSTRUMENT_SYNC_EXCHANGES:-NSE}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"
@@ -112,9 +123,11 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
       BACKUP_KEEP_MIN: ${BACKUP_KEEP_MIN:-7}
       BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
+      WAL_ARCHIVE_DIR: /wal_archive
     volumes:
       - ./scripts/backup:/scripts:ro
       - backups:/backups
+      - wal_archive:/wal_archive
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,3 +136,4 @@ services:
 volumes:
   postgres_data:
   backups:
+  wal_archive:

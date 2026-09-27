@@ -147,6 +147,8 @@ class AlertChannelType(str, Enum):
     TELEGRAM = "TELEGRAM"
     EMAIL = "EMAIL"
     WEBHOOK = "WEBHOOK"   # Phase K4: HMAC-signed JSON POST to the tenant's own endpoint
+    PUSH = "PUSH"         # Phase O3: browser Web Push (VAPID + RFC 8291), one channel holding every device
+    SMS = "SMS"           # Phase O3: any HTTP SMS gateway (MSG91, Twilio, Textlocal, ...) via a request template
 
 
 class AlertDeliveryStatus(str, Enum):

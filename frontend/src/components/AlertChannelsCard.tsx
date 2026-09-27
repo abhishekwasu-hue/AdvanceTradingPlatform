@@ -1,4 +1,4 @@
-import { BellRing, Mail, Send, Webhook } from "lucide-react";
+import { BellRing, Mail, MessageSquare, Send, Smartphone, Webhook } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
@@ -23,6 +23,11 @@ export default function AlertChannelsCard() {
 
   const [tg, setTg] = useState({ bot_token: "", chat_id: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
   const [wh, setWh] = useState({ url: "", secret: "", event_types: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
+  const [sms, setSms] = useState({
+    preset: "msg91", url: "", headers: "", body_template: "", to_numbers: "", content_type: "application/json",
+    min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
+  });
+  const [pushSupported] = useState(() => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window);
   const [em, setEm] = useState({
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
@@ -35,6 +40,14 @@ export default function AlertChannelsCard() {
       if (t) setTg((s) => ({ ...s, chat_id: String(t.config.chat_id ?? ""), min_severity: t.min_severity, enabled: t.enabled }));
       const w = list.find((c) => c.channel_type === "WEBHOOK");
       if (w) setWh((s) => ({ ...s, url: String(w.config.url ?? ""), event_types: ((w.config.event_types as string[]) ?? []).join(", "), min_severity: w.min_severity, enabled: w.enabled }));
+      const s = list.find((c) => c.channel_type === "SMS");
+      if (s) {
+        setSms((prev) => ({
+          ...prev, preset: "custom", url: String(s.config.url ?? ""), body_template: String(s.config.body_template ?? ""),
+          content_type: String(s.config.content_type ?? "application/json"), to_numbers: ((s.config.to_numbers as string[]) ?? []).join(", "),
+          min_severity: s.min_severity, enabled: s.enabled,
+        }));
+      }
       const e = list.find((c) => c.channel_type === "EMAIL");
       if (e) {
         setEm((s) => ({
@@ -83,6 +96,39 @@ export default function AlertChannelsCard() {
 
   const stored = (type: AlertChannelType) => channels.find((c) => c.channel_type === type);
 
+  const SMS_PRESETS: Record<string, { url: string; headers: string; body_template: string; content_type: string; hint: string }> = {
+    msg91: { url: "https://control.msg91.com/api/v5/flow/", headers: "authkey: <your MSG91 auth key>", content_type: "application/json",
+      body_template: '{"template_id":"<DLT approved template id>","recipients":[{"mobiles":"{to}","message":"{text}"}]}', hint: "MSG91 Flow API; a DLT-approved template is required in India." },
+    twilio: { url: "https://api.twilio.com/2010-04-01/Accounts/<ACCOUNT_SID>/Messages.json", headers: "Authorization: Basic <base64(ACCOUNT_SID:AUTH_TOKEN)>",
+      content_type: "application/x-www-form-urlencoded", body_template: "From=<+1...>&To={to}&Body={text}", hint: "Twilio Messages API (form-encoded)." },
+    custom: { url: "", headers: "", body_template: "", content_type: "application/json", hint: "Any HTTPS gateway: placeholders {to} {text} {title} {severity}." },
+  };
+
+  function applyPreset(name: string) {
+    const p = SMS_PRESETS[name];
+    setSms((prev) => ({ ...prev, preset: name, ...(name === "custom" ? {} : { url: p.url, headers: p.headers, body_template: p.body_template, content_type: p.content_type }) }));
+  }
+
+  function parseHeaders(text: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    text.split("\n").forEach((line) => { const i = line.indexOf(":"); if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim(); });
+    return out;
+  }
+
+  async function enablePushHere() {
+    const { public_key } = await api.pushPublicKey();
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("Notification permission was not granted in the browser");
+    const padded = public_key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (public_key.length % 4)) % 4);
+    const raw = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+    const json = sub.toJSON();
+    const label = `${navigator.platform || "device"} · ${/Chrome|Firefox|Safari|Edg/.exec(navigator.userAgent)?.[0] ?? "browser"}`;
+    await api.upsertAlertChannel("push", { enabled: true, min_severity: (stored("PUSH")?.min_severity ?? "WARNING") as NotificationSeverity,
+      config: { subscription: { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth, label } } });
+  }
+
   function status(type: AlertChannelType) {
     const c = stored(type);
     if (!c) return <span className="text-muted">not configured</span>;
@@ -96,7 +142,7 @@ export default function AlertChannelsCard() {
   }
 
   return (
-    <Card title="Alert delivery (Telegram / email / webhook)">
+    <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
       <p className="text-xs text-muted mb-3">
         The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
         placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
@@ -194,6 +240,64 @@ export default function AlertChannelsCard() {
             }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
             <button disabled={busy || !stored("WEBHOOK")} onClick={() => test("WEBHOOK")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
             {stored("WEBHOOK") && <button disabled={busy} onClick={() => run("Webhook channel removed.", () => api.deleteAlertChannel("webhook"))} className="text-xs text-danger hover:underline">Remove</button>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-violet-400"><Smartphone size={14} /> Browser push</div>
+          <div className="text-[11px]">{status("PUSH")}</div>
+          <p className="text-[11px] text-muted">
+            System notifications on this device even with the tab closed (Chrome, Edge, Firefox, Safari 16+). Messages are
+            end-to-end encrypted to this browser; the push service never sees them. Add each device you use.
+          </p>
+          {((stored("PUSH")?.config.devices as { label: string; endpoint: string }[] | undefined) ?? []).map((d) => (
+            <div key={d.endpoint} className="flex items-center justify-between text-xs">
+              <span className="text-slate-200">{d.label}</span>
+              <button disabled={busy} onClick={() => run("Device removed.", () => (stored("PUSH")?.config.count as number) > 1
+                ? api.upsertAlertChannel("push", { enabled: true, min_severity: stored("PUSH")!.min_severity, config: { remove_endpoint: d.endpoint } })
+                : api.deleteAlertChannel("push"))} className="text-danger hover:underline">remove</button>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <button disabled={busy || !pushSupported} title={pushSupported ? "" : "This browser does not support Web Push"} onClick={() => run("Push enabled on this device.", enablePushHere)} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Enable on this device</button>
+            <button disabled={busy || !stored("PUSH")} onClick={() => test("PUSH")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("PUSH") && <button disabled={busy} onClick={() => run("Push channel removed.", () => api.deleteAlertChannel("push"))} className="text-xs text-danger hover:underline">Remove all</button>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-teal-400"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>
+          <div className="text-[11px]">{status("SMS")}</div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted">Preset</span>
+            <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={sms.preset} onChange={(e) => applyPreset(e.target.value)}>
+              <option value="msg91">MSG91</option><option value="twilio">Twilio</option><option value="custom">Custom</option>
+            </select>
+            <span className="text-[11px] text-muted">{SMS_PRESETS[sms.preset]?.hint}</span>
+          </div>
+          <input className={input} placeholder="Gateway URL (https)" value={sms.url} onChange={(e) => setSms({ ...sms, url: e.target.value })} />
+          <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder={"Headers, one per line: Name: value (blank = keep stored)"} value={sms.headers} onChange={(e) => setSms({ ...sms, headers: e.target.value })} />
+          <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder="Body template with {to} and {text}" value={sms.body_template} onChange={(e) => setSms({ ...sms, body_template: e.target.value })} />
+          <div className="grid grid-cols-3 gap-2">
+            <input className={`${input} col-span-2`} placeholder="Recipients, comma separated (+91...)" value={sms.to_numbers} onChange={(e) => setSms({ ...sms, to_numbers: e.target.value })} />
+            <input className={input} placeholder="Content type" value={sms.content_type} onChange={(e) => setSms({ ...sms, content_type: e.target.value })} />
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            <label className="flex items-center gap-1 text-muted">floor
+              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={sms.min_severity} onChange={(e) => setSms({ ...sms, min_severity: e.target.value as NotificationSeverity })}>
+                {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={sms.enabled} onChange={(e) => setSms({ ...sms, enabled: e.target.checked })} /> enabled</label>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={busy || !sms.url || !sms.to_numbers} onClick={() => run("SMS channel saved.", () => api.upsertAlertChannel("sms", {
+              enabled: sms.enabled, min_severity: sms.min_severity,
+              config: { url: sms.url, headers: parseHeaders(sms.headers), body_template: sms.body_template, content_type: sms.content_type,
+                method: "POST", to_numbers: sms.to_numbers.split(",").map((n) => n.trim()).filter(Boolean) },
+            }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || !stored("SMS")} onClick={() => test("SMS")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("SMS") && <button disabled={busy} onClick={() => run("SMS channel removed.", () => api.deleteAlertChannel("sms"))} className="text-xs text-danger hover:underline">Remove</button>}
           </div>
         </div>
       </div>

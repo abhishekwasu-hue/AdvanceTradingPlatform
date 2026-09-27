@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_secrets, parse_config
+from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_push, merge_secrets, parse_config
+from app.alerts import webpush
 from app.alerts.dispatcher import send_via_channel
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
@@ -67,7 +68,7 @@ def _channel_type_or_404(raw: str) -> str:
     try:
         return AlertChannelType(raw.upper()).value
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=f"Unknown channel type '{raw}'. Use TELEGRAM or EMAIL.") from exc
+        raise HTTPException(status_code=404, detail=f"Unknown channel type '{raw}'. Use one of {[t.value for t in AlertChannelType]}.") from exc
 
 
 async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str) -> Optional[AlertChannelRecord]:
@@ -76,6 +77,12 @@ async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str)
             AlertChannelRecord.tenant_id == tenant_id, AlertChannelRecord.channel_type == channel_type
         )
     )
+
+
+@router.get("/push/public-key")
+async def push_public_key(user: User = Depends(get_current_user)) -> dict:
+    """Phase O3: the VAPID public key the browser passes as `applicationServerKey`."""
+    return {"public_key": webpush.public_key_b64(), "configured": webpush.configured()}
 
 
 @router.get("", response_model=List[AlertChannelResponse])
@@ -99,7 +106,8 @@ async def upsert_alert_channel(
     record = await _get_channel(session, user.tenant_id, kind)
     existing_raw = decrypt_raw(record) if record is not None else None
     try:
-        config = parse_config(kind, merge_secrets(kind, request.config, existing_raw))
+        merged = merge_push(request.config, existing_raw) if kind == AlertChannelType.PUSH.value else merge_secrets(kind, request.config, existing_raw)
+        config = parse_config(kind, merged)
     except (ValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

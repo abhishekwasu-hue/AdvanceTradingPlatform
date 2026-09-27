@@ -60,10 +60,68 @@ class WebhookConfig(BaseModel):
         return value
 
 
-ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig]
+class PushSubscription(BaseModel):
+    """What `PushManager.subscribe()` returns in the browser, plus a label so the user recognises
+    the device. The keys are per-device secrets (they decrypt the messages) - stored encrypted."""
+
+    endpoint: HttpUrl
+    p256dh: str = Field(min_length=80, max_length=120)
+    auth: str = Field(min_length=20, max_length=30)
+    label: str = Field(default="browser", max_length=60)
+
+
+class PushConfig(BaseModel):
+    """Phase O3: one channel, many devices. Saving with `subscription` appends a device, saving
+    with `remove_endpoint` drops one; stale endpoints (404/410 from the push service) are pruned
+    on delivery."""
+
+    subscriptions: List[PushSubscription] = Field(min_length=1, max_length=20)
+
+
+class SmsConfig(BaseModel):
+    """Phase O3: a request template for any HTTP SMS gateway, so no vendor SDK is baked in.
+    `body_template` is JSON (or form text) with `{to}`, `{text}`, `{title}`, `{severity}`
+    placeholders; `headers` carry the gateway's auth (write-only). Presets for MSG91 and Twilio are
+    in docs/OPERATIONS.md 1.6e."""
+
+    url: HttpUrl
+    method: str = Field(default="POST", pattern="^(POST|GET)$")
+    headers: Dict[str, str] = Field(default_factory=dict)
+    content_type: str = Field(default="application/json", max_length=80)
+    body_template: str = Field(min_length=2, max_length=2000)
+    to_numbers: List[str] = Field(min_length=1, max_length=10)
+    max_length: int = Field(default=300, ge=60, le=1000)
+
+    @field_validator("url")
+    @classmethod
+    def _https_only(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https" and value.host not in ("localhost", "127.0.0.1"):
+            raise ValueError("SMS gateway URL must use https")
+        return value
+
+    @field_validator("to_numbers")
+    @classmethod
+    def _numbers(cls, value: List[str]) -> List[str]:
+        clean = []
+        for number in value:
+            digits = number.strip().replace(" ", "").replace("-", "")
+            if not digits.lstrip("+").isdigit() or len(digits.lstrip("+")) < 8:
+                raise ValueError(f"'{number}' is not a phone number (use E.164, e.g. +919812345678)")
+            clean.append(digits)
+        return clean
+
+    @field_validator("body_template")
+    @classmethod
+    def _has_text(cls, value: str) -> str:
+        if "{text}" not in value and "{title}" not in value:
+            raise ValueError("body_template must contain {text} or {title} so the alert is actually sent")
+        return value
+
+
+ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig]
 
 SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token",), AlertChannelType.EMAIL.value: ("password",),
-                 AlertChannelType.WEBHOOK.value: ("secret",)}
+                 AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",)}
 
 
 def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
@@ -73,7 +131,27 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
         return EmailConfig.model_validate(raw)
     if channel_type == AlertChannelType.WEBHOOK.value:
         return WebhookConfig.model_validate(raw)
+    if channel_type == AlertChannelType.PUSH.value:
+        return PushConfig.model_validate(raw)
+    if channel_type == AlertChannelType.SMS.value:
+        return SmsConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
+
+
+def merge_push(incoming: Dict[str, Any], existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """PUSH upserts are device operations: `subscription` adds (or refreshes, by endpoint),
+    `remove_endpoint` drops; a bare `subscriptions` list replaces everything."""
+    current = list((existing or {}).get("subscriptions") or [])
+    if "subscriptions" in incoming:
+        return {"subscriptions": incoming["subscriptions"]}
+    added = incoming.get("subscription")
+    if added:
+        endpoint = str(added.get("endpoint", ""))
+        current = [s for s in current if str(s.get("endpoint")) != endpoint] + [added]
+    remove = incoming.get("remove_endpoint")
+    if remove:
+        current = [s for s in current if str(s.get("endpoint")) != str(remove)]
+    return {"subscriptions": current}
 
 
 def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -110,6 +188,14 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
         return {"chat_id": raw.get("chat_id"), "bot_token_hint": f"{token[:4]}…{token[-3:]}" if len(token) > 8 else "set"}
     if record.channel_type == AlertChannelType.WEBHOOK.value:
         return {"url": raw.get("url"), "event_types": raw.get("event_types", []), "secret_set": bool(raw.get("secret"))}
+    if record.channel_type == AlertChannelType.PUSH.value:
+        subs = raw.get("subscriptions", [])
+        return {"devices": [{"label": s.get("label", "browser"), "endpoint_hint": str(s.get("endpoint", ""))[:40] + "…",
+                             "endpoint": s.get("endpoint")} for s in subs], "count": len(subs)}
+    if record.channel_type == AlertChannelType.SMS.value:
+        return {"url": raw.get("url"), "method": raw.get("method", "POST"), "content_type": raw.get("content_type"),
+                "body_template": raw.get("body_template"), "to_numbers": raw.get("to_numbers", []),
+                "headers_set": sorted((raw.get("headers") or {}).keys()), "max_length": raw.get("max_length", 300)}
     return {
         "smtp_host": raw.get("smtp_host"), "smtp_port": raw.get("smtp_port"), "username": raw.get("username"),
         "use_tls": raw.get("use_tls", True), "from_address": raw.get("from_address"), "to_addresses": raw.get("to_addresses", []),

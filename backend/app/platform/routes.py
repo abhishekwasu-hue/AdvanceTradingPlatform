@@ -44,7 +44,11 @@ class TradingDisableBody(BaseModel):
 @status_router.get("/status")
 async def system_status(session: AsyncSession = Depends(get_session)) -> dict:
     """Unauthenticated: the frontend banner reads it before login too."""
-    return await controls.status(session)
+    from app.market_data.calendar import all_session_statuses
+    result = await controls.status(session)
+    result["sessions"] = {name: {"is_open": st.is_open, "reason": st.reason, "next_open": st.next_open.isoformat() if st.next_open else None}
+                          for name, st in (await all_session_statuses(session)).items()}
+    return result
 
 
 @admin_router.get("")

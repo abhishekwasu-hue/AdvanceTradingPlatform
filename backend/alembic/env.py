@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from app.core.config import DATABASE_URL
+from app.core.config import MIGRATION_DATABASE_URL
 from app.db.base import Base
 from app.db import models as _models  # noqa: F401  (registers all tables on Base.metadata)
 
@@ -20,9 +20,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Same DATABASE_URL the app itself reads (env var, falling back to local dev default) -
-# never hardcode credentials in alembic.ini.
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# MIGRATION_DATABASE_URL (the schema-owning role, Phase O1) falling back to the app's own
+# DATABASE_URL - never hardcode credentials in alembic.ini.
+config.set_main_option("sqlalchemy.url", MIGRATION_DATABASE_URL)
 
 target_metadata = Base.metadata
 

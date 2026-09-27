@@ -13,7 +13,7 @@ notifies by circular are deliberately not modelled: the worker simply stays idle
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Iterable, Optional, Set
+from typing import Dict, Iterable, Optional, Set
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -25,6 +25,38 @@ IST = ZoneInfo("Asia/Kolkata")
 
 MARKET_OPEN = time(9, 15)
 MARKET_CLOSE = time(15, 30)
+
+
+@dataclass(frozen=True)
+class ExchangeSession:
+    """Phase O2 / section 57-61: regular hours of one exchange family, all in IST. `always_open`
+    covers 24x7 venues (crypto). `no_new_entries_after` / `square_off_at` are the worker's intraday
+    cut-offs for that venue (NSE: 15:00 / 15:15; MCX: 23:00 / 23:15; crypto: never)."""
+
+    name: str
+    open: time
+    close: time
+    no_new_entries_after: Optional[time]
+    square_off_at: Optional[time]
+    weekdays_only: bool = True
+    always_open: bool = False
+    holiday_calendar: str = "NSE"   # which `market_holidays.exchange` rows apply
+
+
+EXCHANGE_SESSIONS = {
+    "NSE": ExchangeSession("NSE", time(9, 15), time(15, 30), time(15, 0), time(15, 15), holiday_calendar="NSE"),
+    "MCX": ExchangeSession("MCX", time(9, 0), time(23, 30), time(23, 0), time(23, 15), holiday_calendar="MCX"),
+    "CRYPTO": ExchangeSession("CRYPTO", time(0, 0), time(23, 59, 59), None, None, weekdays_only=False, always_open=True,
+                              holiday_calendar="CRYPTO"),
+}
+# Segments that trade on an exchange family's clock and calendar.
+_SESSION_ALIASES = {"NSE": "NSE", "BSE": "NSE", "NFO": "NSE", "BFO": "NSE", "NSE_EQ": "NSE", "NSE_FO": "NSE", "BSE_EQ": "NSE",
+                    "MCX": "MCX", "MCX_FO": "MCX", "CRYPTO": "CRYPTO", "BINANCE": "CRYPTO", "COINDCX": "CRYPTO", "WAZIRX": "CRYPTO"}
+
+
+def session_family(exchange: Optional[str]) -> str:
+    """NFO/BFO/BSE -> NSE clock; MCX segments -> MCX; crypto venues -> CRYPTO; unknown -> NSE."""
+    return _SESSION_ALIASES.get((exchange or "NSE").upper(), "NSE")
 
 
 @dataclass(frozen=True)
@@ -60,28 +92,46 @@ def next_trading_day(day: date, holidays: Iterable[date] = ()) -> date:
     return candidate
 
 
-def session_status(now: Optional[datetime] = None, holidays: Iterable[date] = ()) -> SessionStatus:
-    """Pure decision: given the instant and the holiday set, is the regular NSE session open?"""
+def session_status(now: Optional[datetime] = None, holidays: Iterable[date] = (), exchange: str = "NSE") -> SessionStatus:
+    """Pure decision: given the instant and the holiday set, is the regular session of this
+    exchange family open? Defaults to NSE, the clock every earlier caller meant."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
     holiday_set = set(holidays)
     now_ist = to_ist(now)
     today = now_ist.date()
+    if spec.always_open:
+        return SessionStatus(True, f"{spec.name} trades around the clock", None)
+
+    def _is_day(day: date) -> bool:
+        return (day.weekday() < 5 or not spec.weekdays_only) and day not in holiday_set
+
+    def _next_day(day: date) -> date:
+        candidate = day + timedelta(days=1)
+        for _ in range(60):
+            if _is_day(candidate):
+                return candidate
+            candidate += timedelta(days=1)
+        return candidate
 
     def _open_on(day: date) -> datetime:
-        return datetime.combine(day, MARKET_OPEN, tzinfo=IST)
+        return datetime.combine(day, spec.open, tzinfo=IST)
 
-    if not is_trading_day(today, holiday_set):
+    if not _is_day(today):
         why = "exchange holiday" if today in holiday_set else "weekend"
-        return SessionStatus(False, f"Market closed: {why} ({today.isoformat()})", _open_on(next_trading_day(today, holiday_set)))
+        return SessionStatus(False, f"{spec.name} closed: {why} ({today.isoformat()})", _open_on(_next_day(today)))
 
     current = now_ist.time()
-    if current < MARKET_OPEN:
-        return SessionStatus(False, f"Market not yet open (opens {MARKET_OPEN.strftime('%H:%M')} IST)", _open_on(today))
-    if current >= MARKET_CLOSE:
-        return SessionStatus(
-            False, f"Market closed for the day (closed {MARKET_CLOSE.strftime('%H:%M')} IST)",
-            _open_on(next_trading_day(today, holiday_set)),
-        )
-    return SessionStatus(True, "Regular session open", None)
+    if current < spec.open:
+        return SessionStatus(False, f"{spec.name} not yet open (opens {spec.open.strftime('%H:%M')} IST)", _open_on(today))
+    if current >= spec.close:
+        return SessionStatus(False, f"{spec.name} closed for the day (closed {spec.close.strftime('%H:%M')} IST)", _open_on(_next_day(today)))
+    return SessionStatus(True, f"{spec.name} regular session open", None)
+
+
+def intraday_cutoffs(exchange: Optional[str]) -> tuple[Optional[time], Optional[time]]:
+    """(no_new_entries_after, square_off_at) for the venue's clock; (None, None) for 24x7 venues."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
+    return spec.no_new_entries_after, spec.square_off_at
 
 
 async def load_holidays(session: AsyncSession, exchange: str = "NSE", year: Optional[int] = None) -> Set[date]:
@@ -98,4 +148,11 @@ async def market_session_status(
     session: AsyncSession, now: Optional[datetime] = None, exchange: str = "NSE"
 ) -> SessionStatus:
     """DB-backed variant the worker calls once per cycle."""
-    return session_status(now, await load_holidays(session, exchange))
+    family = session_family(exchange)
+    return session_status(now, await load_holidays(session, EXCHANGE_SESSIONS[family].holiday_calendar), family)
+
+
+async def all_session_statuses(session: AsyncSession, now: Optional[datetime] = None) -> Dict[str, SessionStatus]:
+    """Phase O2: one status per exchange family - the worker processes whichever venues are open
+    and the status endpoint shows all of them."""
+    return {name: await market_session_status(session, now, name) for name in EXCHANGE_SESSIONS}

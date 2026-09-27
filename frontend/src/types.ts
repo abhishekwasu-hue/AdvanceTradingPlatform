@@ -929,7 +929,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS";
 
 export interface AlertChannel {
   channel_type: AlertChannelType;

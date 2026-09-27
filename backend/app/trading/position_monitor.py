@@ -323,7 +323,7 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
 
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
-    broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None,
+    broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, families: Optional[set] = None,
 ) -> List[CloseOutcome]:
     """The worker's per-cycle sweep for one tenant: current price for every open position, close
     the ones whose stop/target has been crossed. `price_lookup(symbol, exchange)` is normally
@@ -333,6 +333,10 @@ async def monitor_open_positions(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
     ))
+    if families is not None:
+        # Phase O2: only venues whose session is open right now; a closed venue's quote is stale anyway.
+        from app.market_data.calendar import session_family
+        open_trades = [t for t in open_trades if session_family(exchange_for_trade(t)) in families]
     outcomes: List[CloseOutcome] = []
     # Phase H2: legs of one structure are judged together, never one by one.
     groups: Dict[str, List[TradeRecord]] = {}

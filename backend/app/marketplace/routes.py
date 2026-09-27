@@ -19,6 +19,7 @@ from app.db.session import get_session
 from app.marketplace import service
 from app.marketplace.service import MarketplaceError, as_dict
 from app.plans.limits import require_feature
+from app.platform.controls import require_flag
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
 admin_router = APIRouter(prefix="/api/admin/marketplace", tags=["admin"], dependencies=[Depends(require_role())])
@@ -40,6 +41,7 @@ class ReviewBody(BaseModel):
 async def _gate(session: AsyncSession, user: User) -> Tenant:
     tenant = await session.get(Tenant, user.tenant_id)
     require_feature(tenant, "marketplace_access", "The strategy marketplace")
+    await require_flag(session, "marketplace", user.tenant_id)  # Phase N4 operator kill flag
     return tenant
 
 

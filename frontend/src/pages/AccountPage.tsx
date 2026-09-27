@@ -1,4 +1,4 @@
-import { LogOut, Lock, Mail } from "lucide-react";
+import { LogOut, Lock, Mail, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, setToken } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -8,7 +8,7 @@ import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 
 export default function AccountPage() {
-  const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout } = useAuth();
+  const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
   const [mode, setMode] = useState<"login" | "register" | "invite" | "forgot" | "reset" | "mfa">("login");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
@@ -26,6 +26,7 @@ export default function AccountPage() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +43,13 @@ export default function AccountPage() {
   // password, and join their organisation instead of creating a new one.
   useEffect(() => {
     try {
+      const verify = new URLSearchParams(window.location.search).get("verify");
+      if (verify) {
+        window.history.replaceState({}, "", window.location.pathname);
+        api.verifyEmail(verify)
+          .then((u) => { setVerifyMessage(`${u.email} is verified.`); void refreshUser(); })
+          .catch((e) => setVerifyMessage(String(e)));
+      }
       const reset = new URLSearchParams(window.location.search).get("reset");
       if (reset) {
         setResetToken(reset);
@@ -90,6 +98,30 @@ export default function AccountPage() {
             </button>
           </div>
         </Card>
+        <Card title="Email verification">
+          {user.email_verified ? (
+            <div className="text-xs text-accent flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
+          ) : (
+            <div className="space-y-2 text-xs">
+              <p className="text-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
+              <button
+                className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5"
+                onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "No platform mailer is configured - ask the operator to verify your address or configure PLATFORM_SMTP_*.")).catch((e) => setVerifyMessage(String(e)))}
+              >
+                Resend verification email
+              </button>
+            </div>
+          )}
+          {verifyMessage && <div className="mt-2 text-xs text-slate-300">{verifyMessage}</div>}
+        </Card>
+        {user.scopes && user.scopes.length > 0 && (
+          <Card title="Your permissions">
+            <div className="flex flex-wrap gap-1.5">
+              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-panel2 px-2 py-0.5 text-[11px] font-mono text-slate-300">{s}</span>)}
+            </div>
+            <p className="mt-2 text-[11px] text-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
+          </Card>
+        )}
         <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
         <Card title="Change password">
           <form

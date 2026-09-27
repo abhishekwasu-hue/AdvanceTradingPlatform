@@ -40,7 +40,7 @@ def provisioning_uri(secret: str, email: str) -> str:
 
 
 def store_secret(user: User, secret: str) -> None:
-    user.mfa_secret_encrypted = encrypt_text(secret)
+    user.mfa_secret_encrypted = encrypt_text(secret, user.tenant_id)
 
 
 def load_secret(user: User) -> Optional[str]:

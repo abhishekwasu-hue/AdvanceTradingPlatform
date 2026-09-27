@@ -107,6 +107,8 @@ def api_key_auth(scope: str):
         if scope not in parse_scopes(record.scopes):
             raise HTTPException(status_code=403, detail=f"API key lacks scope '{scope}'")
         tenant = await session.get(Tenant, record.tenant_id)
+        from app.platform.controls import require_flag
+        await require_flag(session, "public_api", record.tenant_id)  # Phase N4 operator kill flag
         if not feature_allowed(tenant, "public_api"):
             raise HTTPException(status_code=402, detail="Public API access needs the Pro or Business plan (or the organisation is suspended)")
         user = await session.get(User, record.user_id) if record.user_id else None
@@ -119,5 +121,7 @@ def api_key_auth(scope: str):
             raise HTTPException(status_code=429, detail=f"Daily public API allowance ({plan.max_api_calls_per_day}) used up")
         record.last_used_at = now
         await meter(session, tenant.id, "api_call", 1, source="public_api", metadata={"path": request.url.path, "key": record.id})
+        from app.secrets_store.envelope import ensure_tenant_key
+        await ensure_tenant_key(session, tenant.id)  # Phase N1
         return ApiPrincipal(record, user, tenant)
     return _check

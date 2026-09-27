@@ -151,6 +151,8 @@ class OptimizeBody(BaseModel):
 async def backtest_optimize(body: OptimizeBody, user: Optional[User] = Depends(get_current_user_optional),
                             session: AsyncSession = Depends(get_session)) -> dict:
     """Phase M / V4.6: grid search on the in-sample part, ranked by the out-of-sample metric."""
+    from app.platform.controls import require_flag
+    await require_flag(session, "backtest_optimizer", user.tenant_id if user else None)  # Phase N4
     strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
                                             candles=body.candles, risk_config=body.risk_config), user, session)
     try:

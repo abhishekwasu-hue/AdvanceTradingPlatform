@@ -105,11 +105,11 @@ async def upsert_alert_channel(
 
     if record is None:
         await check_can_add_alert_channel(session, await load_tenant(session, user.tenant_id))
-        record = AlertChannelRecord(tenant_id=user.tenant_id, channel_type=kind, created_by=user.id, encrypted_config=encrypt_config(config))
+        record = AlertChannelRecord(tenant_id=user.tenant_id, channel_type=kind, created_by=user.id, encrypted_config=encrypt_config(config, user.tenant_id))
         session.add(record)
         event = "alert_channel_created"
     else:
-        record.encrypted_config = encrypt_config(config)
+        record.encrypted_config = encrypt_config(config, user.tenant_id)
         event = "alert_channel_updated"
     record.enabled = request.enabled
     record.min_severity = request.min_severity.value

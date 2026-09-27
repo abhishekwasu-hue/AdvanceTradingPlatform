@@ -41,6 +41,8 @@ export interface UserResponse {
   tenant_id: number;
   role: string;
   mfa_enabled?: boolean;
+  email_verified?: boolean;
+  scopes?: string[];
 }
 
 export interface TradeRecord {
@@ -1310,6 +1312,44 @@ export interface SystemStatus {
   maintenance_mode: boolean;
   maintenance_message: string | null;
   disabled_brokers: string[];
+}
+
+// ---- Phase N: scopes, email verification, feature flags, encryption status ------------------------
+
+export interface ScopeCatalogueEntry {
+  scope: string;
+  description: string;
+  roles: string[];
+}
+
+export interface MemberScopes {
+  id: number;
+  role: string;
+  scopes: string[];
+  overrides: { deny: string[]; grant: string[] };
+}
+
+export interface VerificationSendResult {
+  sent: boolean;
+  mailer_configured?: boolean;
+  expires_in_hours?: number;
+  already_verified: boolean;
+}
+
+export interface FeatureFlag {
+  on: boolean;
+  tenants: number[];
+  description: string;
+}
+
+export type FeatureFlags = Record<string, FeatureFlag>;
+export type TenantFeatures = Record<string, boolean>;
+
+export interface EncryptionStatus {
+  tenant_keys: number;
+  secrets_total: number;
+  secrets_legacy: number;
+  keys_loaded: number;
 }
 
 export interface SymbolExposure {

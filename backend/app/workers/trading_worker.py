@@ -63,6 +63,7 @@ from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
+from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenant_keys
 from app.accounts.service import routing_for_deployment
 from app.notifications.service import notify
 from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
@@ -261,6 +262,7 @@ class TradingWorker:
         for tenant_id, tenant_deployments in by_tenant.items():
             with bind_log_context(tenant_id=tenant_id):
                 try:
+                    await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
                     await self._process_tenant(session, tenant_id, tenant_deployments, now, report)
                     report.tenants_processed += 1
                 except Exception as exc:  # noqa: BLE001 - one tenant must never block the others

@@ -16,6 +16,7 @@ from app.db.session import get_session
 from app.execution.order_persistence import get_order_by_idempotency_key
 from app.billing.service import meter
 from app.execution.signal_execution import execute_signal_for_user
+from app.secrets_store.envelope import ensure_tenant_key
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
@@ -88,6 +89,7 @@ async def tradingview_webhook(
     tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == webhook_token))
     if tenant is None:
         raise HTTPException(status_code=401, detail="Unknown or invalid webhook token")
+    await ensure_tenant_key(session, tenant.id)  # Phase N1
 
     idempotency_key = f"tv:{payload.alert_id}" if payload.alert_id else None
     if idempotency_key:

@@ -49,6 +49,11 @@ function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void })
             MAINTENANCE: no new entries{status.maintenance_message ? ` - ${status.maintenance_message}` : ""}
           </span>
         )}
+        {user && user.email_verified === false && (
+          <button onClick={() => onChange("account")} className="truncate rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[11px] font-bold text-sky-300 hover:bg-sky-500/20" title="LIVE trading and broker credentials may require a verified address">
+            Verify your email
+          </button>
+        )}
         {status && status.disabled_brokers.length > 0 && (
           <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-300">
             LIVE paused on {status.disabled_brokers.join(", ")}

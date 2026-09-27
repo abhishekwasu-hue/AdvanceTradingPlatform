@@ -98,6 +98,11 @@ async def store_broker_credentials(
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
     session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
 ) -> None:
+    from app.auth.scopes import has_scope, scope_denied
+    from app.auth.verification import ensure_verified
+    if not has_scope(user, "brokers:write"):
+        raise scope_denied(user, "brokers:write")
+    ensure_verified(user, "Storing broker credentials")
     await ensure_live_step_up(session, user, session_id, "Storing broker credentials")
     """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
     plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
@@ -106,7 +111,7 @@ async def store_broker_credentials(
     """
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
-    encrypted = encrypt_text(credentials.model_dump_json())
+    encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id)
 
     existing = await get_credential_record(session, user.tenant_id, name, account_label)
     if existing:
@@ -186,7 +191,7 @@ async def disconnect_broker(
         detail = f"broker logout call failed ({type(exc).__name__}); token marked expired locally"
     payload = json.loads(decrypt_text(record.encrypted_payload))
     payload.pop("access_token", None)
-    record.encrypted_payload = encrypt_text(json.dumps(payload))
+    record.encrypted_payload = encrypt_text(json.dumps(payload), record.tenant_id)
     record.token_status = BrokerTokenStatus.EXPIRED.value
     record.token_expires_at = None
     await write_audit_log(session, user.tenant_id, user.id, "broker_disconnected", f"{name}: {detail}")
@@ -272,7 +277,7 @@ async def upstox_oauth_start(
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
-        record.encrypted_payload = encrypt_text(credentials.model_dump_json())
+        record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id)
 
     state = create_oauth_state(user.tenant_id, user.id, "upstox")
     await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", "upstox")

@@ -278,6 +278,33 @@ Never publish a listing without an attached backtest run; the API refuses the su
   drill measured. The record keeps the audit-log id range it spans - that is the post-mortem's
   evidence trail (section 1.1's RPO/RTO targets are judged against these numbers).
 
+### 1.6d Secrets, scopes, verification, flags and migrations (Phase N)
+
+- **Encryption estate** (*Admin Console → Feature flags* footer, `GET /api/system/encryption`):
+  after upgrading to Phase N run `python scripts/reencrypt_secrets.py status`, then `reencrypt`
+  once (outside market hours; it is idempotent) so no secret depends directly on the master key.
+- **Master key rotation**: (1) `reencrypt` under the current key, (2) set the new
+  `SECRETS_ENCRYPTION_KEY` and put the previous value in `OLD_SECRETS_ENCRYPTION_KEY`, (3)
+  `python scripts/reencrypt_secrets.py rotate-master`, (4) restart API and worker, (5) remove
+  `OLD_SECRETS_ENCRYPTION_KEY`. The script never prints a key. A start-up error mentioning
+  `rotate-master` means step 3 was skipped.
+- **Platform mailer**: set `PLATFORM_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM`; until then
+  verification links appear in the API log (`Email verification link for ...`) and the Account
+  tab tells users to ask you. Turn `EMAIL_VERIFICATION_REQUIRED=true` on only after the mailer
+  works (production config validation refuses the combination otherwise). A user without mail
+  access can be stamped verified from `POST /api/team/members/{id}/verify-email` (admin).
+- **Scopes**: owners manage them under *Team → permissions*. A member reporting 403 with
+  `X-Missing-Scope` needs that scope granted or the denial lifted; SUPER_ADMIN is never limited.
+- **Feature flags** (*Admin Console → Feature flags*): turn a feature off during an incident
+  (`ai_copilot` when the provider misbehaves, `public_api` under abuse, `live_trading` when a
+  broker-wide problem is not limited to one broker, `self_signup` to go invite-only). An
+  allow-list keeps it on for named tenants. Every change is an audit event (`feature_flag_set`).
+- **Migrations during market hours**: the backend container runs `scripts/migrate_guard.py`
+  before uvicorn. A new image with a pending migration deployed between 09:15 and 15:30 IST on a
+  trading day exits with code 3 and the container restarts until you either deploy after close
+  or set `MIGRATION_FORCE=1` for that one start (accepting the risk to open positions). Restarts
+  without pending migrations are unaffected.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

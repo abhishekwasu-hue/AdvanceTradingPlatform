@@ -22,6 +22,7 @@ from app.plans.limits import require_feature
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
 from app.trading.exit_rules import ExitRules
+from app.platform.controls import require_flag
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -89,6 +90,7 @@ async def delete_provider(user: User = Depends(require_owner), session: AsyncSes
 
 @router.post("/drafts", status_code=201)
 async def generate_draft(body: GenerateBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    await require_flag(session, "ai_copilot", user.tenant_id)  # Phase N4 operator kill flag
     tenant = await _tenant(session, user)
     draft = await generator.generate(session, tenant, user, body.prompt)
     return generator.as_dict(draft)

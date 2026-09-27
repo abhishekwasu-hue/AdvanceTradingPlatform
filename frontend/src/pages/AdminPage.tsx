@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
-import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, Incident, PlatformAuditLog, SystemStatus } from "../types";
+import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, SystemStatus } from "../types";
 
 const STATUSES = ["active", "suspended"];
 
@@ -21,6 +21,9 @@ export default function AdminPage() {
   const [maintMsg, setMaintMsg] = useState("");
   const [brokerList, setBrokerList] = useState("");
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [flags, setFlags] = useState<FeatureFlags | null>(null);
+  const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
+  const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
   const [incTitle, setIncTitle] = useState("");
   const [incSeverity, setIncSeverity] = useState("WARNING");
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +37,8 @@ export default function AdminPage() {
     api.adminOverview().then(setOverview).catch((e) => setError(String(e)));
     api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch(() => {});
     api.adminIncidents().then(setIncidents).catch(() => {});
+    api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch(() => {});
+    api.adminEncryptionStatus().then(setEncryption).catch(() => {});
     api.adminPlans().then(setPlans).catch(() => {});
     api.adminTenants(query).then(setTenants).catch((e) => setError(String(e)));
     api.adminAuditLogs(selected?.id).then(setLogs).catch(() => {});
@@ -124,6 +129,36 @@ export default function AdminPage() {
             <button disabled={busy} onClick={() => act("Disabled brokers updated.", () => api.adminSetDisabledBrokers(brokerList.split(",").map((b) => b.trim()).filter(Boolean)).then(setControls))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1">Save</button>
           </div>
         </div>
+      </Card>
+
+      <Card title="Feature flags">
+        <p className="text-xs text-muted mb-3">Kill flags: every feature is on unless turned off here. Turning one off with a tenant allow-list keeps it on for those tenants only (staged rollouts, beta access). Exits and PAPER trading are never behind a flag.</p>
+        <table className="w-full text-xs">
+          <thead className="text-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Flag</th><th className="py-1 pr-3">State</th><th className="py-1 pr-3">Allow-listed tenant ids</th><th className="py-1 text-right">Actions</th></tr></thead>
+          <tbody>
+            {flags && Object.entries(flags).map(([name, f]) => (
+              <tr key={name} className="border-t border-border">
+                <td className="py-1.5 pr-3"><div className="font-mono text-slate-200">{name}</div><div className="text-[10px] text-muted">{f.description}</div></td>
+                <td className={`py-1.5 pr-3 font-bold ${f.on ? "text-accent" : "text-rose-400"}`}>{f.on ? "ON" : `OFF${f.tenants.length ? ` (${f.tenants.length} allowed)` : ""}`}</td>
+                <td className="py-1.5 pr-3"><input className="w-full rounded bg-panel2 border border-border px-2 py-1" placeholder="e.g. 3, 17" value={flagTenants[name] ?? ""} onChange={(e) => setFlagTenants({ ...flagTenants, [name]: e.target.value })} /></td>
+                <td className="py-1.5 text-right whitespace-nowrap">
+                  {f.on
+                    ? <button disabled={busy} onClick={() => act(`${name} turned off.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(setFlags))} className="rounded border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 px-2 py-0.5">Turn off</button>
+                    : <>
+                        <button disabled={busy} onClick={() => act(`${name} allow-list saved.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(setFlags))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-2 py-0.5 mr-1">Save list</button>
+                        <button disabled={busy} onClick={() => act(`${name} turned on.`, () => api.adminSetFlag(name, true).then(setFlags))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-2 py-0.5">Turn on</button>
+                      </>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {encryption && (
+          <div className="mt-3 text-[11px] text-muted">
+            Secrets at rest: {encryption.tenant_keys} tenant data keys, {encryption.secrets_total - encryption.secrets_legacy}/{encryption.secrets_total} secrets under tenant keys
+            {encryption.secrets_legacy > 0 && <span className="text-amber-400"> - {encryption.secrets_legacy} still under the master key (run scripts/reencrypt_secrets.py reencrypt)</span>}.
+          </div>
+        )}
       </Card>
 
       <Card title={`Incidents (${incidents.filter((i) => i.status !== "RESOLVED").length} open)`}>

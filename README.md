@@ -230,6 +230,17 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Security and platform hardening (Phase N)
+
+- **Per-tenant envelope encryption**: every tenant's secrets sit under its own data key, wrapped
+  by the master key; master rotation re-wraps keys, not credentials (`scripts/reencrypt_secrets.py`).
+- **Fine-grained permissions**: owners deny or grant individual scopes per member on top of roles
+  (*Team → permissions*); LIVE needs `trading:live`, credentials need `brokers:write`.
+- **Email verification** with a platform mailer; optionally required for LIVE and credentials.
+- **Feature flags** with tenant allow-lists in the Admin Console; a **migration-hour guard** that
+  refuses schema changes while the NSE session is open.
+- **ADRs** in `docs/adr/` and the versioned **Strategy DSL reference** in `docs/STRATEGY_DSL.md`.
+
 ## Operations and risk closure (Phase M)
 
 - **Platform controls**: maintenance mode with a message, per-broker LIVE disable, per-user trading disable; an

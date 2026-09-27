@@ -87,8 +87,8 @@ def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optiona
     return merged
 
 
-def encrypt_config(config: ChannelConfig) -> str:
-    return encrypt_text(config.model_dump_json())
+def encrypt_config(config: ChannelConfig, tenant_id: Optional[int] = None) -> str:
+    return encrypt_text(config.model_dump_json(), tenant_id)
 
 
 def decrypt_config(record: AlertChannelRecord) -> ChannelConfig:

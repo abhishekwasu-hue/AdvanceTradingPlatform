@@ -29,7 +29,7 @@ async def save_config(session: AsyncSession, user: User, *, provider: str, model
         session.add(record)
     if provider != "rule_based":
         if api_key:
-            record.encrypted_api_key = encrypt_text(api_key.strip())
+            record.encrypted_api_key = encrypt_text(api_key.strip(), record.tenant_id)
         elif record.provider != provider or not record.encrypted_api_key:
             raise ProviderError(f"{provider} needs an API key")
     else:

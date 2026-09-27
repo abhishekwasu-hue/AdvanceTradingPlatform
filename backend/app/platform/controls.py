@@ -72,3 +72,62 @@ async def entry_blocks(session: AsyncSession, *, user: Optional[User], mode: str
     if user is not None and user.trading_disabled_reason:
         reasons.append(f"Trading disabled for this user: {user.trading_disabled_reason}")
     return reasons
+
+
+# --- Phase N4: feature flags ---------------------------------------------------------------------
+# Kill-flag semantics: a feature is ON unless the operator turned its flag off, optionally keeping
+# it on for an allow-list of tenants (staged rollouts / beta access). Unknown flags are ON.
+KEY_FEATURE_FLAGS = "feature_flags"
+
+FEATURE_FLAGS: Dict[str, str] = {
+    "ai_copilot": "AI strategy drafts, regime engine and monitoring agent",
+    "marketplace": "Strategy marketplace listings and subscriptions",
+    "public_api": "Public REST API keys and /api/public/v1",
+    "backtest_optimizer": "Parameter optimisation grid runs",
+    "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
+    "self_signup": "Public registration (off: invite-only)",
+}
+
+
+async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
+    stored = (await _get(session, KEY_FEATURE_FLAGS)).get("flags") or {}
+    result: Dict[str, Dict] = {}
+    for name, description in FEATURE_FLAGS.items():
+        entry = stored.get(name) or {}
+        result[name] = {"on": bool(entry.get("on", True)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
+                        "description": description}
+    return result
+
+
+async def flag_enabled(session: AsyncSession, name: str, tenant_id: Optional[int] = None) -> bool:
+    flags = await feature_flags(session)
+    entry = flags.get(name)
+    if entry is None:
+        return True
+    if entry["on"]:
+        return True
+    return tenant_id is not None and tenant_id in entry["tenants"]
+
+
+async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, tenants: Optional[List[int]] = None) -> Dict[str, Dict]:
+    if name not in FEATURE_FLAGS:
+        raise ValueError(f"Unknown feature flag '{name}' - known: {sorted(FEATURE_FLAGS)}")
+    current = await _get(session, KEY_FEATURE_FLAGS)
+    flags = current.get("flags") or {}
+    flags[name] = {"on": on, "tenants": sorted({int(t) for t in (tenants or [])})}
+    await _set(session, KEY_FEATURE_FLAGS, {"flags": flags}, user)
+    await write_audit_log(session, None, user.id, "feature_flag_set", f"{name}: on={on} tenants={flags[name]['tenants'] or '-'}")
+    await session.commit()
+    return await feature_flags(session)
+
+
+async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -> Dict[str, bool]:
+    return {name: await flag_enabled(session, name, tenant_id) for name in FEATURE_FLAGS}
+
+
+async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int]) -> None:
+    """Raises 503 with a machine-readable header when the operator has turned a feature off."""
+    if not await flag_enabled(session, name, tenant_id):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail=f"The '{name}' feature is currently disabled by the platform operator",
+                            headers={"X-Feature-Disabled": name})

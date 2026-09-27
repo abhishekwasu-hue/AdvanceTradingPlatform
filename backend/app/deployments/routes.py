@@ -31,7 +31,7 @@ from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
 from app.trading.exit_rules import ExitRules
 from app.ai.regime import parse_filter, validate_filter
-from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics
+from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics, is_debit
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
@@ -117,9 +117,11 @@ class ContractRulesRequest(BaseModel):
         if self.option_strategy != OptionStrategy.SINGLE and self.instrument_kind != InstrumentKind.OPTION:
             raise HTTPException(status_code=400, detail="Multi-leg structures only apply to OPTION deployments")
         if self.option_strategy == OptionStrategy.SINGLE and (self.target_credit_pct is not None or self.stop_credit_pct is not None):
-            raise HTTPException(status_code=400, detail="target/stop credit % only apply to spreads and condors")
+            raise HTTPException(status_code=400, detail="target/stop credit % only apply to multi-leg structures")
         if self.option_strategy != OptionStrategy.SINGLE and self.premium_stop_pct is not None:
-            raise HTTPException(status_code=400, detail="A spread is exited on its net credit (target/stop credit %), not a premium stop")
+            raise HTTPException(status_code=400, detail="A structure is exited on its net credit/debit (target/stop %), not a premium stop")
+        if is_debit(self.option_strategy) and self.stop_credit_pct is not None and self.stop_credit_pct > 100:
+            raise HTTPException(status_code=400, detail="A debit structure cannot lose more than its debit: stop % must be at most 100")
         if self.strike_filters is not None and self.strike_filters.min_iv_pct is not None and self.strike_filters.max_iv_pct is not None \
                 and self.strike_filters.min_iv_pct > self.strike_filters.max_iv_pct:
             raise HTTPException(status_code=400, detail="min_iv_pct must not exceed max_iv_pct")
@@ -133,7 +135,8 @@ class ContractRulesRequest(BaseModel):
             return ContractRulesRequest(**data)
         position = self.option_position or (OptionPosition.WRITE if self.option_strategy != OptionStrategy.SINGLE else OptionPosition.BUY)
         if self.option_strategy != OptionStrategy.SINGLE:
-            position = OptionPosition.WRITE  # the structure sells its short legs; the wings are bought
+            # Credit structures sell their primary legs (wings bought); debit structures buy theirs.
+            position = OptionPosition.BUY if is_debit(self.option_strategy) else OptionPosition.WRITE
         data["option_position"] = position
         data["strike_rule"] = self.strike_rule or StrikeRule.ATM
         if data["strike_rule"] == StrikeRule.ATM and self.strike_offset:

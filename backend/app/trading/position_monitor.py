@@ -239,11 +239,24 @@ def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_pri
     value = sum(prices[l.id] if l.leg_role == "SHORT" else -prices[l.id] for l in legs)
     stop_value = meta.get("stop_value")
     target_value = meta.get("target_value")
+    if meta.get("debit"):
+        # Phase R: a debit structure is judged on what selling it brings (longs minus shorts).
+        worth = -value
+        if stop_value is not None and worth <= stop_value:
+            return f"Structure stop (worth {worth:.2f} <= {stop_value:g})"
+        if target_value is not None and worth >= target_value:
+            return f"Structure target (worth {worth:.2f} >= {target_value:g})"
+        return None
     if stop_value is not None and value >= stop_value:
         return f"Spread stop (value {value:.2f} >= {stop_value:g})"
     if target_value is not None and value <= target_value:
         return f"Spread target (value {value:.2f} <= {target_value:g})"
     if underlying_price is not None:
+        exits = meta.get("underlying_exits") or {}
+        if "below" in exits and underlying_price <= exits["below"]:
+            return f"Lower breakeven {exits['below']:g} breached (underlying {underlying_price:.2f})"
+        if "above" in exits and underlying_price >= exits["above"]:
+            return f"Upper breakeven {exits['above']:g} breached (underlying {underlying_price:.2f})"
         for right, strike in (meta.get("short_strikes") or {}).items():
             if right == "PE" and underlying_price <= strike:
                 return f"Short {int(strike)} PE breached (underlying {underlying_price:.2f})"

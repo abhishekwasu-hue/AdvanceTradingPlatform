@@ -24,6 +24,8 @@ import {
   type StoredBrokerInfo,
   type StrategyInfo,
   type WorkerStatus,
+  DEBIT_STRUCTURES,
+  WINGED_STRUCTURES,
 } from "../types";
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
@@ -380,6 +382,12 @@ export default function DeploymentsPage() {
                   <option value="BULL_PUT_SPREAD">Bull put spread (LONG)</option>
                   <option value="BEAR_CALL_SPREAD">Bear call spread (SHORT)</option>
                   <option value="IRON_CONDOR">Iron condor (either)</option>
+                  <option value="IRON_BUTTERFLY">Iron butterfly (either)</option>
+                  <option value="SHORT_STRADDLE">Short straddle (either, undefined risk)</option>
+                  <option value="SHORT_STRANGLE">Short strangle (either, undefined risk)</option>
+                  <option value="LONG_STRADDLE">Long straddle (either, debit)</option>
+                  <option value="LONG_STRANGLE">Long strangle (either, debit)</option>
+                  <option value="CALENDAR_SPREAD">Calendar spread (either, debit)</option>
                 </select>
               </div>
             )}
@@ -424,15 +432,19 @@ export default function DeploymentsPage() {
                   </div>
                 ) : (
                   <>
+                    {WINGED_STRUCTURES.includes(structure) && (
+                      <div>
+                        <label className="block text-xs text-muted mb-1">Wing width (steps)</label>
+                        <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
+                      </div>
+                    )}
                     <div>
-                      <label className="block text-xs text-muted mb-1">Wing width (steps)</label>
-                      <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-muted mb-1">Target / stop (% of credit)</label>
+                      <label className="block text-xs text-muted mb-1">Target / stop (% of {DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
                       <div className="flex gap-1">
-                        <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} title="take profit once this % of the credit is captured" />
-                        <input type="number" min={10} max={500} placeholder="100" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} title="stop when the loss reaches this % of the credit" />
+                        <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)}
+                          title={DEBIT_STRUCTURES.includes(structure) ? "take profit once the structure is worth this % more than the debit" : "take profit once this % of the credit is captured"} />
+                        <input type="number" min={10} max={DEBIT_STRUCTURES.includes(structure) ? 100 : 500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)}
+                          title={DEBIT_STRUCTURES.includes(structure) ? "stop when this % of the debit is lost (max 100)" : "stop when the loss reaches this % of the credit"} />
                       </div>
                     </div>
                   </>
@@ -475,7 +487,11 @@ export default function DeploymentsPage() {
                 {kind === "OPTION"
                   ? structure === "SINGLE"
                     ? "The strategy signals on the underlying; at signal time the contract is picked from the instrument master and the spot. Exits follow the strategy's underlying levels, with the premium " + (position === "BUY" ? "stop" : "ceiling") + " as a safety net."
-                    : "A defined-risk credit structure sold at signal time: short leg at the rule strike, protective wing(s) the chosen width away. Sized in lots off max loss; closed as one position on the credit target/stop, a short-strike breach, or square-off."
+                    : DEBIT_STRUCTURES.includes(structure)
+                      ? "A debit structure bought at signal time; the debit is the max loss and what the lots are sized off. Closed as one position when it is worth the target % more, has lost the stop % of the debit, or at square-off."
+                      : WINGED_STRUCTURES.includes(structure)
+                        ? "A defined-risk credit structure sold at signal time: short leg(s) at the rule strike, protective wing(s) the chosen width away. Sized in lots off max loss; closed as one position on the credit target/stop, a short-strike breach, or square-off."
+                        : "An undefined-risk credit structure: short CE and PE with no wings. There is no max loss - lots are sized off the loss the stop accepts, and the broker's full margin applies. Closed on the credit target/stop, a short-strike breach, or square-off."
                   : "The strategy signals on the underlying; the future of the chosen expiry is traded in the signal's direction."}
               </span>
               {kind === "OPTION" && (

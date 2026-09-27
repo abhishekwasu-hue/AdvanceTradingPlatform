@@ -2793,3 +2793,44 @@ instrument master", "Margin 500/share, 10,000 available -> at most 16") are prep
 order's reasons. The router now reports `partial_fill` and `requested_quantity`, and a fill
 smaller than requested passes through `PARTIAL_FILL` on the order trail before `FILLED`
 (safety rule 17 on the order, not only on the trade).
+
+## Phase R: Option structures depth (sections 23-25, V2.1-2.6)
+
+`app/instruments/spreads.py` grew from three structures to nine, all built at signal time from
+the deployment's rules and executed by the same `execute_structure` group pipeline:
+
+| Structure | Legs | Signal | Economics | Sizing basis |
+| --- | --- | --- | --- | --- |
+| Bull put / bear call spread (H2) | short + wing | LONG / SHORT | credit, max loss = width - credit | max loss |
+| Iron condor (H2) | 2 shorts OTM + 2 wings | either | credit, defined | max loss |
+| **Iron butterfly** | 2 shorts ATM + 2 wings | either | credit, defined | max loss |
+| **Short straddle** | 2 shorts ATM, no wings | either | credit, **undefined** | the stop (`stop_credit_pct` of the credit) |
+| **Short strangle** | 2 shorts OTM, no wings | either | credit, undefined | the stop |
+| **Long straddle** | 2 longs ATM | either | **debit** = max loss, profit open | the debit |
+| **Long strangle** | 2 longs OTM | either | debit | the debit |
+| **Calendar spread** | short rule expiry ATM + long next expiry, same strike (PE on LONG, CE on SHORT) | either | debit | the debit |
+
+`StructureMetrics` carries `debit`, `defined_risk`, `risk_per_unit` (what the sizer divides
+risk-per-trade by), `max_loss` (None when undefined) and `max_profit` (None when open-ended),
+so the executor, the risk hierarchy and the preview all reason from one number. A debit
+structure quoting as a net credit, or a credit one as a net debit, is refused as inconsistent
+quotes, never entered.
+
+Group exits (`position_monitor.group_exit`) gained two rules. A debit structure is judged on its
+*worth* (longs minus shorts): close at worth >= debit x (1 + target%) or <= debit x (1 - stop%),
+with stop% capped at 100 (the whole debit; the deployment API rejects more). A structure whose
+shorts sit at the money (short straddle, iron butterfly) cannot use "underlying through the
+short strike" - it would fire on entry - so `underlying_exits` holds its breakevens and the
+group closes beyond either one; spreads, condors and strangles keep the short-strike breach.
+
+LIVE margin: the short legs' broker number as before; a long-only structure (long straddle or
+strangle) blocks exactly its debit, so `_live_lot_cap` uses debit x lot size (Phase Q's premium
+rule). Placement order is unchanged: long legs first, shorts second, so a calendar buys the far
+expiry before selling the near one and no short is ever naked. The deployment API sets
+`option_position` BUY for debit structures and WRITE for credit ones, `spread_width` applies to
+winged structures only, and `describe_structure` names each structure and its risk character
+on the deployment card. The Autopilot form lists all nine with the target/stop inputs labelled
+"% of credit" or "% of debit" and an undefined-risk warning where it applies.
+
+Still not built: ratio spreads, long butterflies and a free-form leg builder (an explicit legs
+list on the deployment instead of rules), and historical option-chain backtests.

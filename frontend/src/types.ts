@@ -754,7 +754,11 @@ export type OptionPosition = "BUY" | "WRITE";
 export type ExpiryRule = "NEAREST" | "NEXT" | "MONTHLY";
 export type StrikeRule = "ATM" | "ITM" | "OTM";
 
-export type OptionStrategy = "SINGLE" | "BULL_PUT_SPREAD" | "BEAR_CALL_SPREAD" | "IRON_CONDOR";
+export type OptionStrategy =
+  | "SINGLE" | "BULL_PUT_SPREAD" | "BEAR_CALL_SPREAD" | "IRON_CONDOR"
+  | "IRON_BUTTERFLY" | "SHORT_STRADDLE" | "SHORT_STRANGLE" | "LONG_STRADDLE" | "LONG_STRANGLE" | "CALENDAR_SPREAD";
+export const DEBIT_STRUCTURES: OptionStrategy[] = ["LONG_STRADDLE", "LONG_STRANGLE", "CALENDAR_SPREAD"];
+export const WINGED_STRUCTURES: OptionStrategy[] = ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY"];
 
 export interface StrikeFilters {
   min_oi?: number | null;

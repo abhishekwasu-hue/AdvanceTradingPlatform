@@ -352,6 +352,13 @@ class OptionStrategy(str, Enum):
     BULL_PUT_SPREAD = "BULL_PUT_SPREAD"
     BEAR_CALL_SPREAD = "BEAR_CALL_SPREAD"
     IRON_CONDOR = "IRON_CONDOR"
+    # Phase R (V2.1-2.6): neutral and volatility structures on either signal.
+    IRON_BUTTERFLY = "IRON_BUTTERFLY"      # sell ATM CE + PE, wings spread_width steps out (credit, defined risk)
+    SHORT_STRADDLE = "SHORT_STRADDLE"      # sell ATM CE + PE (credit, undefined risk - sized off the stop)
+    SHORT_STRANGLE = "SHORT_STRANGLE"      # sell OTM CE + PE strike_offset steps out (credit, undefined risk)
+    LONG_STRADDLE = "LONG_STRADDLE"        # buy ATM CE + PE (debit, max loss = debit)
+    LONG_STRANGLE = "LONG_STRANGLE"        # buy OTM CE + PE (debit)
+    CALENDAR_SPREAD = "CALENDAR_SPREAD"    # sell the rule expiry ATM, buy the next expiry same strike (debit)
 
 
 class StrikeRule(str, Enum):

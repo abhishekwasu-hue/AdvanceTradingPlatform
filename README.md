@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Option structures depth (Phase R)
+
+- **Nine structures** on a deployment: bull put, bear call, iron condor, iron butterfly, short
+  straddle, short strangle, long straddle, long strangle, calendar spread.
+- **Credit, debit and undefined-risk economics** in one metrics object: max loss, max profit,
+  breakevens, the sizing basis (max loss, the debit, or the stop) and the group exit levels.
+- **Group exits** for debit structures (worth-based) and breakeven exits for at-the-money shorts.
+
 ## Order pre-checks (Phase Q)
 
 - **Instrument and expiry validity** before any LIVE order: index spots refused (derive a

@@ -2,28 +2,28 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` + Phase F, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase Q, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
 
 | Section | Status | Notes |
 | --- | --- | --- |
-| 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER. Email verification missing. |
+| 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER; fine-grained scopes (N2); email verification with step-up (N3). |
 | 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) and `subscribe_market_data()` (raises until an adapter streams) added (Phase M). Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
 | 10 market data | partial | Candles/LTP via broker REST with Redis cache; staleness gate on candles and quotes (Phase G1); no websocket feed. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; versioned reference `docs/STRATEGY_DSL.md` (Phase N5). |
-| 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done / partial | Order state machine, idempotency, reconciliation exist. §17 checks: data fresh (Phase G1) and broker healthy (Phase G2 circuit) done; **margin available** for buys and **instrument/expiry validity** still missing. `PARTIAL_FILL` handled on the trade (F3) but not as an order status. |
+| 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done (Phase Q) | Order state machine, idempotency, reconciliation. §17 checks all present: data fresh (G1), broker healthy (G2 circuit), risk approved (risk engine + I1 hierarchy), margin available for every LIVE entry from the broker's calculator (Q; bought options by premium, nothing guessed for equity/futures), instrument/expiry validity against the instrument master (Q). `PARTIAL_FILL` on the trade (F3) and on the order trail (Q). |
 | 23-25 options engine, strategies, Greeks | done (Phase F + H) | Strike-selection pipeline with liquidity/OI/IV/delta/premium filters (H1); bull put, bear call, iron condor with max-loss sizing and group exits (H2); Greeks per leg and per structure on open positions. Future structures (straddle, strangle, ratio, calendar, butterfly, custom builder) not built. |
 | 26-27 paper, live | done | Same pipeline; configurable slippage; execution delay/bid-ask simulation not modelled. |
 | 28 kill switches, emergency exit | done | Global/tenant/strategy + emergency exit. |
 | 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
 | 30 TradingView webhook | done | |
-| 31-32 backtest | done (Phase J2) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records. **Parameter optimisation** and historical option-chain backtests not built. |
+| 31-32 backtest | done (Phase J2 + M4) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records, grid parameter optimisation with out-of-sample ranking (M4). Historical option-chain backtests not built. |
 | 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis rule-based; LLM provider seam + generator with review gate added (Phase L). Scanner stays rule-based. |
-| 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (Phase K4); **SMS/push channels missing** (no provider decision). |
-| 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` missing. |
+| 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (K4); browser Web Push and SMS through any HTTP gateway (O3). |
+| 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` with invoices/payments (K1). |
 
 ## Part II - non-functional (Sections 47-61)
 
@@ -56,9 +56,9 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V4.1-4.3 AI agent, AI scanner, AI generator | done / partial (Phase L) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) still rule-based. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | done (Phase M2) | Portfolio engine (gross/net notional, concentration, unrealised, risk at stops) at `GET /api/portfolio/exposure`; eight scopes GLOBAL/TENANT/USER/ACCOUNT/PORTFOLIO/STRATEGY/DEPLOYMENT/INSTRUMENT with gross-exposure and symbol-concentration limits. |
 | V4.6-4.8 quant, regime, advanced backtesting | done / partial | Regime engine + filter (L3); Monte Carlo/walk-forward/analytics (J); grid parameter optimisation with out-of-sample ranking and overfit gap (Phase M4). Factor/quant models not built. |
-| V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and the broker-uncertain block done (Phase G). |
-| V4.10 DR | partial | Restore-test script; RPO/RTO targets table in OPERATIONS; incident records with measured data-loss/downtime and audit range (Phase M4). PITR/WAL still an infra task. |
-| V4.11 monitoring | partial | Trading metrics; severities INFO/WARNING/CRITICAL/EMERGENCY (Phase M3); AI/billing metrics not exported. |
+| V4.9 HA | partial | `/health/live|ready|dependencies`, broker-uncertain block (G), restart-safe worker, PITR (O5). Multi-replica worker and a second region remain infrastructure choices, not code gaps. |
+| V4.10 DR | done (Phase O5) | Daily verified backups + restore test (E3), WAL archiving, base backups and `pitr_restore.sh` (O5), RPO/RTO table, incident records with measured data loss/downtime (M4). |
+| V4.11 monitoring | done (Phase O4) | Trading, AI provider/proposal/decision and billing payment/transition metrics exported; severities INFO/WARNING/CRITICAL/EMERGENCY (M3); Prometheus alert rules and SLO document (G2). |
 | V4.12 security scopes | done (Phase N2) | Scope catalogue over roles, per-member deny/grant by the owner, enforced at the trading/team/LIVE/credential gates; `/api/auth/me` exposes effective scopes. |
 | V4.13 enterprise admin | done (Phase M1) | Tenant/plan/status, kill switch, retention, exports, maintenance mode, broker disable, per-user trading disable, incidents. |
 | V4.14 trade journal | done (Phase M3) | Strategy, deployment, execution quality, charges source, regime at entry, notes, tags. |

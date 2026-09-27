@@ -18,6 +18,8 @@ from app.core import config
 from app.observability.metrics import ORDER_ENTRY_LATENCY, ORDERS
 from app.core.enums import OptionPosition
 from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
+from app.execution.prechecks import PreCheckRefusal, live_margin_cap, margin_probe_for, validate_instrument
+from app.core.enums import OrderSide, SignalDirection
 from app.instruments.contracts import ContractRules, ResolvedContract
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
@@ -151,7 +153,55 @@ async def execute_signal_for_user(
             ORDERS.labels(mode=mode, status=order.status).inc()
             return ExecutionResult(executed=False, reasons=[reason]), order
 
-        if contract is not None and execution_mode == ExecutionMode.LIVE and contract.position == OptionPosition.WRITE:
+        # Phase Q / section 17: the instrument must exist and be tradable today, and - LIVE - the
+        # account's margin must cover at least one unit. Both are business decisions (REJECTED).
+        pre_notes: list = []
+        if contract_spec is None:
+            contract_spec = get_contract_spec(signal.symbol)
+        order_exchange = contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE")
+        refusals, notes = await validate_instrument(
+            session, symbol=signal.symbol, exchange=order_exchange, mode=mode,
+            broker_name=getattr(broker, "name", None) if broker is not None else None, contract=contract,
+        )
+        pre_notes.extend(notes)
+        if refusals:
+            order.reasons_json = json.dumps(refusals)
+            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(refusals))
+            logger.warning("Order rejected - instrument check: %s", "; ".join(refusals))
+            ORDERS.labels(mode=mode, status=order.status).inc()
+            await notify(
+                session, user.tenant_id, NotificationType.REJECTION,
+                title=f"Order rejected: {signal.symbol}", message="; ".join(refusals),
+                severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
+            )
+            return ExecutionResult(executed=False, reasons=refusals), order
+
+        is_write = contract is not None and contract.position == OptionPosition.WRITE
+        if execution_mode == ExecutionMode.LIVE and not is_write:
+            probe = margin_probe_for(
+                contract, symbol=signal.symbol, exchange=order_exchange,
+                side=OrderSide.BUY if signal.direction == SignalDirection.LONG else OrderSide.SELL,
+                unit=float(contract_spec.lot_size) if contract_spec is not None else 1.0, unit_price=signal.entry,
+            )
+            try:
+                margin_cap, margin_note = await live_margin_cap(broker, **probe)
+            except PreCheckRefusal as exc:
+                reason = str(exc)
+                order.reasons_json = json.dumps([reason])
+                order = await transition_order(session, order, OrderStatus.REJECTED, detail=reason)
+                logger.warning("Order rejected - margin: %s", reason)
+                ORDERS.labels(mode=mode, status=order.status).inc()
+                await notify(
+                    session, user.tenant_id, NotificationType.RISK_REJECTION,
+                    title=f"Order rejected: {signal.symbol}", message=reason,
+                    severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
+                )
+                return ExecutionResult(executed=False, reasons=[reason]), order
+            pre_notes.append(margin_note)
+            if margin_cap is not None:
+                max_quantity = margin_cap if max_quantity is None else min(max_quantity, margin_cap)
+
+        if is_write and execution_mode == ExecutionMode.LIVE:
             # Writing needs the broker's margin number; an unknown requirement is a refusal.
             try:
                 cap_lots, note = await written_lot_cap(broker, contract)
@@ -167,11 +217,9 @@ async def execute_signal_for_user(
                 plan.notes.append(note)
 
         state = await build_trading_day_state(session, user)
-        if contract_spec is None:
-            contract_spec = get_contract_spec(signal.symbol)
         order_router = OrderRouter(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
-            exchange=contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE"),
+            exchange=order_exchange,
             algo_id=tenant.algo_id if tenant is not None else None,
         )
         async def hierarchy_check(quantity: float):
@@ -189,6 +237,8 @@ async def execute_signal_for_user(
                                                             pre_place_check=hierarchy_check)
         if plan is not None:
             result.reasons = plan.notes + result.reasons
+        if pre_notes:
+            result.reasons = pre_notes + result.reasons
 
         order.reasons_json = json.dumps(result.reasons)
         order.algo_tag = result.algo_tag
@@ -234,6 +284,15 @@ async def execute_signal_for_user(
         venue = broker.name if (execution_mode == ExecutionMode.LIVE and broker is not None) else "paper broker"
         order = await transition_order(session, order, OrderStatus.SUBMITTED, detail=f"Submitted to {venue}")
         order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
+        if result.partial_fill:
+            # Safety rule 17 on the order trail too: the fill was smaller than requested. The
+            # position (and its stop) already use the filled quantity (OrderRouter); the order
+            # settles as FILLED on that quantity - no remainder is left working at the broker
+            # for a market order.
+            order = await transition_order(
+                session, order, OrderStatus.PARTIAL_FILL,
+                detail=f"Partial fill: {result.trade.quantity:g} of {result.requested_quantity:g}" if result.trade is not None else "Partial fill",
+            )
         order = await transition_order(
             session, order, OrderStatus.FILLED,
             detail="Paper fill" if execution_mode == ExecutionMode.PAPER else f"Live fill {result.broker_order_id}",

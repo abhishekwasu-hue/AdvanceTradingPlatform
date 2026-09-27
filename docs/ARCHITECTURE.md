@@ -2765,3 +2765,31 @@ blue-green: one database, one worker replica by design). `.github/workflows/depl
 runs it over SSH on pushes to main when the `STAGING_ENABLED` variable and SSH secrets exist.
 Cloud infrastructure-as-code stays out of the repository until a target cloud is chosen.
 
+## Phase Q: Order pre-checks (section 17)
+
+Section 17 lists what a new entry must prove before placement: data fresh (G1), broker healthy
+(G2), risk approved (risk engine + I1 hierarchy), **margin available** and **instrument/expiry
+valid**. `app/execution/prechecks.py` closes the last two, between the kill-switch refusals and
+the risk engine in `execute_signal_for_user`:
+
+* `validate_instrument` - a resolved contract whose expiry has passed is refused in every mode
+  (and one expiring today is noted). LIVE only: an index spot symbol (`NIFTY 50`, `NIFTY BANK`,
+  `SENSEX`...) is refused with the instruction to set option/future contract rules, and a plain
+  symbol is looked up in the broker's instrument master when that master has been synced -
+  unknown symbol, INDEX row or past expiry refuse; a master that was never synced for the broker
+  only notes that the symbol was not verified. MCX/crypto registry instruments skip the master.
+* `live_margin_cap` - generalises F3's `written_lot_cap` to every LIVE entry. It asks the
+  broker's margin calculator for one lot (or one share) - Zerodha basket margin, Upstox
+  `/charges/margin` - and caps the size at `MARGIN_SAFETY` (80%) of available margin, refusing
+  when even one unit is not covered or when the funds endpoint cannot be read (safety rule 7).
+  A bought option without a calculator answer uses premium x lot size, which is the exact cash
+  the buy consumes. Equity or a future without a calculator answer is *not* guessed (intraday
+  leverage differs per broker and per stock): the trail notes "margin not verifiable" and the
+  broker enforces it at placement, exactly as before. Written options keep F3's strict rule.
+
+Both are business decisions, so the order trail records REJECTED (never FAILED) with the reason,
+the user gets a WARNING notification, and the verification notes ("verified against upstox's
+instrument master", "Margin 500/share, 10,000 available -> at most 16") are prepended to the
+order's reasons. The router now reports `partial_fill` and `requested_quantity`, and a fill
+smaller than requested passes through `PARTIAL_FILL` on the order trail before `FILLED`
+(safety rule 17 on the order, not only on the trade).

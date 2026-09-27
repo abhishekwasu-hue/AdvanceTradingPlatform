@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Order pre-checks (Phase Q)
+
+- **Instrument and expiry validity** before any LIVE order: index spots refused (derive a
+  contract), unknown symbols refused against the synced instrument master, expired contracts
+  refused in every mode.
+- **Margin available for every LIVE entry**: sized to the broker's own margin number (80% of
+  available margin), refused when one unit is not covered; bought options fall back to premium x
+  lot; nothing is guessed for equity or futures.
+- **PARTIAL_FILL** recorded on the order trail when the broker fills less than requested.
+
 ## Backstop, tax, currency and staging (Phase P)
 
 - **Protective-stop guard**: every open LIVE position keeps a standing broker-side stop; missing

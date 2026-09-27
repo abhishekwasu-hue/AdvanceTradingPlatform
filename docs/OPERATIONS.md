@@ -372,6 +372,24 @@ Never publish a listing without an attached backtest run; the API refuses the su
   after 15:30 IST; the migration guard refuses schema changes during the session and the script
   restarts the API only after the deep health check passes.
 
+### 1.6g Order pre-checks (Phase Q)
+
+- **"is an index, not a tradable instrument"** on a LIVE deployment: the deployment trades the
+  index spot. Set contract rules (option BUY/WRITE or future) under *Autopilot*; paper
+  deployments on the spot keep working.
+- **"not in <broker>'s NSE instrument master"**: the symbol is misspelt or delisted, or the
+  master is stale. Check *Instruments → search*; the worker re-syncs the master daily, and
+  `POST /api/instrument-master/sync` forces it.
+- **"Insufficient margin for ..."**: the broker's calculator says the account cannot carry one
+  lot/share. Add funds or reduce `max_lots`; the order was never sent.
+- **"Margin not verifiable with <broker>"** (note, not a refusal): the broker has no margin
+  calculator in its adapter (Shoonya) or it errored; the broker still enforces margin when the
+  order is placed, as it always did.
+- **"Could not read available margin"**: the funds endpoint failed - usually an expired broker
+  session. Re-login under *Settings → Broker*; entries resume on the next signal.
+- **PARTIAL_FILL** on an order's trail: the position and its stop use the filled quantity; the
+  remainder of a market order is not left working. Reconciliation confirms against the broker.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

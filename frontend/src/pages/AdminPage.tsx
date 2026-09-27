@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
-import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, PlatformAuditLog } from "../types";
+import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, Incident, PlatformAuditLog, SystemStatus } from "../types";
 
 const STATUSES = ["active", "suspended"];
 
@@ -17,6 +17,12 @@ export default function AdminPage() {
   const [selected, setSelected] = useState<AdminTenantDetail | null>(null);
   const [logs, setLogs] = useState<PlatformAuditLog[]>([]);
   const [killReason, setKillReason] = useState("");
+  const [controls, setControls] = useState<SystemStatus | null>(null);
+  const [maintMsg, setMaintMsg] = useState("");
+  const [brokerList, setBrokerList] = useState("");
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [incTitle, setIncTitle] = useState("");
+  const [incSeverity, setIncSeverity] = useState("WARNING");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,6 +32,8 @@ export default function AdminPage() {
   function refresh() {
     if (!isAdmin) return;
     api.adminOverview().then(setOverview).catch((e) => setError(String(e)));
+    api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch(() => {});
+    api.adminIncidents().then(setIncidents).catch(() => {});
     api.adminPlans().then(setPlans).catch(() => {});
     api.adminTenants(query).then(setTenants).catch((e) => setError(String(e)));
     api.adminAuditLogs(selected?.id).then(setLogs).catch(() => {});
@@ -94,6 +102,55 @@ export default function AdminPage() {
             <input className="rounded bg-panel2 border border-border px-2 py-1 text-xs w-56" placeholder="reason" value={killReason} onChange={(e) => setKillReason(e.target.value)} />
             <button disabled={busy || !killReason} onClick={() => act("Global kill switch engaged.", () => api.engageGlobalKillSwitch(killReason))} className="rounded bg-danger hover:bg-red-700 text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Engage</button>
           </div>
+        )}
+      </Card>
+
+      <Card title="Platform controls">
+        <div className="grid lg:grid-cols-2 gap-4 text-xs">
+          <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
+            <div className="font-bold text-sm">Maintenance mode {controls?.maintenance_mode ? <span className="text-amber-400">ON</span> : <span className="text-muted">off</span>}</div>
+            <p className="text-muted">Planned pause: no new entries on any tenant (paper or live); exits, monitoring and the API keep running; every user sees the message. The kill switch above is the unplanned emergency stop.</p>
+            <input className="w-full rounded bg-panel2 border border-border px-2 py-1" placeholder="Message shown to users" value={maintMsg} onChange={(e) => setMaintMsg(e.target.value)} />
+            <div className="flex gap-2">
+              {controls?.maintenance_mode
+                ? <button disabled={busy} onClick={() => act("Maintenance mode off.", () => api.adminSetMaintenance(false).then(setControls))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1">Turn off</button>
+                : <button disabled={busy} onClick={() => act("Maintenance mode on.", () => api.adminSetMaintenance(true, maintMsg).then(setControls))} className="rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1">Turn on</button>}
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
+            <div className="font-bold text-sm">Disabled brokers {controls && controls.disabled_brokers.length > 0 && <span className="text-rose-400">{controls.disabled_brokers.join(", ")}</span>}</div>
+            <p className="text-muted">LIVE entries through a listed broker are refused platform-wide (its API is degraded, or credentials are being rotated). Exits still go through. Comma-separated names: upstox, zerodha, shoonya.</p>
+            <input className="w-full rounded bg-panel2 border border-border px-2 py-1" placeholder="upstox, zerodha" value={brokerList} onChange={(e) => setBrokerList(e.target.value)} />
+            <button disabled={busy} onClick={() => act("Disabled brokers updated.", () => api.adminSetDisabledBrokers(brokerList.split(",").map((b) => b.trim()).filter(Boolean)).then(setControls))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1">Save</button>
+          </div>
+        </div>
+      </Card>
+
+      <Card title={`Incidents (${incidents.filter((i) => i.status !== "RESOLVED").length} open)`}>
+        <div className="flex flex-wrap gap-2 text-xs mb-3">
+          <input className="rounded bg-panel2 border border-border px-2 py-1 w-72" placeholder="Title" value={incTitle} onChange={(e) => setIncTitle(e.target.value)} />
+          <select className="rounded bg-panel2 border border-border px-1 py-1" value={incSeverity} onChange={(e) => setIncSeverity(e.target.value)}>
+            {["WARNING", "CRITICAL", "EMERGENCY"].map((s) => <option key={s}>{s}</option>)}
+          </select>
+          <button disabled={busy || incTitle.length < 3} onClick={() => act("Incident opened.", () => api.adminCreateIncident({ title: incTitle, severity: incSeverity }).then(() => { setIncTitle(""); return api.adminIncidents().then(setIncidents); }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1">Open incident</button>
+          <span className="text-muted">The global kill switch opens one automatically. Resolve with a root cause; downtime is measured from the start.</span>
+        </div>
+        {incidents.length === 0 ? <div className="text-xs text-muted">No incidents recorded.</div> : (
+          <table className="w-full text-xs"><tbody>
+            {incidents.slice(0, 15).map((i) => (
+              <tr key={i.id} className="border-t border-border/60">
+                <td className="py-1 text-muted">#{i.id} {i.started_at ? new Date(i.started_at).toLocaleString() : ""}</td>
+                <td className={`py-1 font-bold ${i.severity === "EMERGENCY" ? "text-rose-400" : i.severity === "CRITICAL" ? "text-amber-400" : "text-slate-300"}`}>{i.severity}</td>
+                <td className="py-1">{i.title} <span className="text-muted">({i.source})</span>{i.root_cause && <div className="text-muted">cause: {i.root_cause}</div>}</td>
+                <td className="py-1">{i.status}{i.downtime_minutes != null && <span className="text-muted"> · {i.downtime_minutes} min</span>}</td>
+                <td className="py-1 text-right">
+                  {i.status !== "RESOLVED" && (
+                    <button disabled={busy} onClick={() => { const cause = window.prompt("Root cause") ?? ""; const actions = window.prompt("Actions taken") ?? ""; void act("Incident resolved.", () => api.adminUpdateIncident(i.id, { status: "RESOLVED", root_cause: cause, actions_taken: actions }).then(() => api.adminIncidents().then(setIncidents))); }} className="text-brand hover:underline">Resolve</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody></table>
         )}
       </Card>
 

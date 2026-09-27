@@ -8,7 +8,9 @@ const SCOPES: { value: RiskScope; label: string; needsId: string | null }[] = [
   { value: "TENANT", label: "Organisation", needsId: null },
   { value: "USER", label: "User", needsId: "user id" },
   { value: "ACCOUNT", label: "Broker account", needsId: "account id" },
+  { value: "PORTFOLIO", label: "Portfolio (whole open book)", needsId: null },
   { value: "STRATEGY", label: "Strategy", needsId: "strategy id" },
+  { value: "DEPLOYMENT", label: "Autopilot deployment", needsId: "deployment id" },
   { value: "INSTRUMENT", label: "Instrument", needsId: "symbol" },
 ];
 
@@ -18,6 +20,8 @@ const TYPES: { value: RiskLimitType; label: string; unit: string }[] = [
   { value: "MAX_LOSS_PER_TRADE", label: "Max loss per trade", unit: "₹ at the stop (spreads: max loss)" },
   { value: "MAX_ORDER_VALUE", label: "Max order value", unit: "₹ entry × quantity" },
   { value: "MAX_POSITION_QUANTITY", label: "Max quantity per order", unit: "units" },
+  { value: "MAX_GROSS_EXPOSURE", label: "Max gross exposure", unit: "₹ open notional after the order (PORTFOLIO scope)" },
+  { value: "MAX_SYMBOL_CONCENTRATION_PCT", label: "Max symbol concentration", unit: "% of capital in one symbol after the order" },
   { value: "MAX_OPEN_POSITIONS", label: "Max open positions", unit: "count, including the new one" },
   { value: "MAX_TRADES_PER_DAY", label: "Max trades per day", unit: "count" },
   { value: "MAX_CAPITAL_ALLOCATION_PCT", label: "Max capital per order", unit: "% of capital" },

@@ -57,6 +57,10 @@ class TradeRecordResponse(BaseModel):
     leg_role: Optional[str] = None
     option_strategy: Optional[str] = None
     group_meta: Optional[dict] = None
+    # Phase M / V4.14 journal
+    regime_at_entry: Optional[str] = None
+    notes: Optional[str] = None
+    tags: List[str] = []
 
     @classmethod
     def from_record(cls, record: TradeRecord) -> "TradeRecordResponse":
@@ -77,6 +81,8 @@ class TradeRecordResponse(BaseModel):
             expected_price=record.expected_price, slippage=record.slippage, entry_latency_ms=record.entry_latency_ms,
             leg_group_id=record.leg_group_id, leg_role=record.leg_role, option_strategy=record.option_strategy,
             group_meta=json.loads(record.group_meta) if record.group_meta else None,
+            regime_at_entry=record.regime_at_entry, notes=record.notes,
+            tags=[t for t in (record.tags or "").split(",") if t],
         )
 
 
@@ -296,6 +302,37 @@ async def mark_price(
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)
+
+
+class JournalBody(BaseModel):
+    notes: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+@router.patch("/trades/{trade_id}/journal", response_model=TradeRecordResponse)
+async def update_trade_journal(
+    trade_id: int, body: JournalBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+) -> TradeRecordResponse:
+    """Phase M / V4.14: notes and tags on a trade (open or closed). Everything else on the row is
+    written by the pipeline and stays read-only."""
+    record = await session.get(TradeRecord, trade_id)
+    if record is None or record.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="No such trade")
+    if body.notes is not None:
+        record.notes = body.notes.strip()[:5000] or None
+    if body.tags is not None:
+        clean = sorted({t.strip().lower()[:30] for t in body.tags if t and t.strip()})[:10]
+        record.tags = ",".join(clean) or None
+    await session.commit()
+    await session.refresh(record)
+    return TradeRecordResponse.from_record(record)
+
+
+@router.get("/analytics/degradation")
+async def analytics_degradation(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase M / V4.15: live results per strategy against its latest saved backtest."""
+    from app.trading.degradation import build_degradation
+    return await build_degradation(session, user.tenant_id)
 
 
 @router.get("/analytics/summary", response_model=AnalyticsSummary)

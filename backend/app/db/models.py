@@ -62,6 +62,9 @@ class User(Base):
     # Deactivated (removed from the team) users keep their rows for attribution/audit history
     # but can no longer log in or use an existing token - see get_current_user.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # Phase M / V4.13: an OWNER or platform admin can stop one member from opening new positions
+    # without deactivating the account (they can still watch, exit and report).
+    trading_disabled_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # TOTP MFA (app/auth/mfa.py). The secret is Fernet-encrypted; a pending (not yet confirmed)
     # enrolment has a secret but mfa_enabled = False.
     mfa_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
@@ -300,6 +303,11 @@ class TradeRecord(Base):
     exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     initial_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     best_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Phase M / V4.14 trade journal: the regime read at entry (from the deployment's base frame),
+    # free notes and comma-separated tags the trader adds afterwards.
+    regime_at_entry: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -923,6 +931,45 @@ class AiActionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class PlatformControlRecord(Base):
+    """Phase M / V4.13: platform-wide operator switches as key -> JSON value: `maintenance_mode`
+    ({"on": bool, "message": str}), `disabled_brokers` ({"names": [..]}). Read on every entry."""
+
+    __tablename__ = "platform_controls"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class IncidentRecord(Base):
+    """Phase M / V4.10: the incident record the DR runbook asks for - opened by the operator or
+    automatically (global kill switch), closed with a root cause and the audit-log range it covers."""
+
+    __tablename__ = "incidents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="WARNING")   # WARNING / CRITICAL / EMERGENCY
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN", index=True)   # OPEN / MITIGATED / RESOLVED
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="operator")   # operator / kill_switch / circuit_breaker
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    mitigated_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    root_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actions_taken: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audit_log_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audit_log_to_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    data_loss_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)     # measured RPO
+    downtime_minutes: Mapped[float | None] = mapped_column(Float, nullable=True)      # measured RTO
+    opened_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
 class KillSwitchRecord(Base):

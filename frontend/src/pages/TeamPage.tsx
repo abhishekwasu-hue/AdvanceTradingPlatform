@@ -177,12 +177,15 @@ export default function TeamPage() {
                   ) : <RoleBadge role={m.role} />}
                 </td>
                 <td className="py-1.5 pr-3 text-muted">{new Date(m.created_at).toLocaleDateString()}</td>
-                <td className={`py-1.5 pr-3 ${m.is_active ? "text-accent" : "text-muted"}`}>{m.is_active ? "active" : "removed"}</td>
+                <td className={`py-1.5 pr-3 ${m.is_active ? "text-accent" : "text-muted"}`}>{m.is_active ? "active" : "removed"}{m.trading_disabled_reason && <div className="text-[10px] text-amber-400" title={m.trading_disabled_reason}>trading disabled</div>}</td>
                 {isOwner && (
                   <td className="py-1.5 text-right">
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && m.is_active && (
                       <button disabled={busy} title="Log this member out of every device" onClick={() => act(`${m.email} logged out everywhere.`, () => api.logoutMemberEverywhere(m.id))} className="text-xs text-muted hover:text-slate-200 mr-2">log out</button>
                     )}
+                    {m.role !== "SUPER_ADMIN" && m.is_active && (m.trading_disabled_reason
+                      ? <button disabled={busy} onClick={() => act(`${m.email} can trade again.`, () => api.enableMemberTrading(m.id))} className="text-xs text-brand hover:underline mr-2">enable trading</button>
+                      : <button disabled={busy} title="Stop this member opening new positions (exits and reading stay allowed)" onClick={() => { const reason = window.prompt("Reason (shown to the member)"); if (reason && reason.length >= 3) void act(`${m.email}: trading disabled.`, () => api.disableMemberTrading(m.id, reason)); }} className="text-xs text-amber-400 hover:underline mr-2">disable trading</button>)}
                     {m.id !== user.id && m.role !== "SUPER_ADMIN" && (m.is_active
                       ? <button disabled={busy} title="Remove from team" onClick={() => act(`${m.email} removed.`, () => api.removeMember(m.id))} className="p-1 text-danger hover:bg-panel2 rounded"><UserMinus size={14} /></button>
                       : <span className="flex items-center gap-2">

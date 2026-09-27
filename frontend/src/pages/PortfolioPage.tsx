@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile } from "../components/ui";
-import type { TradeRecord } from "../types";
+import type { PortfolioExposure, TradeRecord } from "../types";
 
 export default function PortfolioPage() {
   const { user, loading: authLoading } = useAuth();
@@ -73,6 +73,8 @@ export default function PortfolioPage() {
         <StatTile label="Symbols Held" value={allocationBySymbol.length} />
       </div>
 
+      <ExposureCard />
+
       <Card title="Cumulative realized P&amp;L over time">
         <EquityCurveChart equity={equityCurve} />
       </Card>
@@ -100,5 +102,34 @@ export default function PortfolioPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+
+/** Phase M / V4.4: the portfolio engine's view - gross/net notional, concentration, risk at the stops. */
+function ExposureCard() {
+  const [exposure, setExposure] = useState<PortfolioExposure | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { api.portfolioExposure().then(setExposure).catch((e) => setErr(String(e))); }, []);
+  if (err) return <Card title="Exposure"><div className="text-xs text-danger">{err}</div></Card>;
+  if (!exposure) return null;
+  return (
+    <Card title={`Exposure (${exposure.price_source === "ltp" ? "live prices" : "entry prices - no broker session"})`}>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
+        <StatTile label="Gross notional" value={`${exposure.gross_notional.toFixed(0)} (${exposure.gross_pct_of_capital.toFixed(0)}%)`} />
+        <StatTile label="Net notional" value={exposure.net_notional.toFixed(0)} tone={exposure.net_notional >= 0 ? "up" : "down"} />
+        <StatTile label="Unrealised P&L" value={exposure.unrealised_pnl.toFixed(0)} tone={exposure.unrealised_pnl >= 0 ? "up" : "down"} />
+        <StatTile label="Risk at stops" value={`${exposure.risk_at_stops.toFixed(0)} (${exposure.risk_pct_of_capital.toFixed(1)}%)`} tone="down" />
+        <StatTile label="Largest symbol" value={`${exposure.largest_symbol_pct.toFixed(0)}% of capital`} />
+      </div>
+      {exposure.warnings.length > 0 && <ul className="text-xs text-amber-300 list-disc pl-4 mb-2">{exposure.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {exposure.by_symbol.length > 0 && (
+        <table className="w-full text-xs"><thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Positions</th><th className="py-1 pr-3">Net qty</th><th className="py-1 pr-3">Notional</th><th className="py-1 pr-3">% capital</th><th className="py-1 pr-3">Unrealised</th><th className="py-1 pr-3">Risk at stop</th><th className="py-1 pr-3">Strategies</th></tr></thead>
+          <tbody>{exposure.by_symbol.map((r) => (
+            <tr key={r.symbol} className="border-t border-border/60"><td className="py-1 pr-3 font-medium">{r.symbol}</td><td className="py-1 pr-3">{r.positions}</td><td className="py-1 pr-3">{r.quantity}</td><td className="py-1 pr-3">{r.notional.toFixed(0)}</td><td className={`py-1 pr-3 ${r.pct_of_capital > 40 ? "text-amber-400" : ""}`}>{r.pct_of_capital.toFixed(1)}%</td><td className={`py-1 pr-3 ${r.unrealised_pnl >= 0 ? "text-accent" : "text-danger"}`}>{r.unrealised_pnl.toFixed(0)}</td><td className="py-1 pr-3 text-danger">{r.risk_at_stop.toFixed(0)}</td><td className="py-1 pr-3 text-muted">{r.strategies.join(", ")}</td></tr>
+          ))}</tbody></table>
+      )}
+      <div className="text-[11px] text-muted mt-2">Set portfolio-wide caps (max gross exposure, max symbol concentration) under Risk Management → limits, scope "Portfolio".</div>
+    </Card>
   );
 }

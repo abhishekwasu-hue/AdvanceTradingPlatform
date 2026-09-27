@@ -74,6 +74,11 @@ import type {
   AiProviderConfig,
   AiStrategyDraft,
   Regime,
+  DegradationReport,
+  Incident,
+  OptimizeResult,
+  PortfolioExposure,
+  SystemStatus,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -471,6 +476,28 @@ export const api = {
 
   // --- Alert delivery ---
 
+  // ---- Phase M: platform controls, portfolio, degradation, incidents, optimisation
+  systemStatus: () => request<SystemStatus>("/system/status"),
+  adminControls: () => request<SystemStatus>("/admin/controls"),
+  adminSetMaintenance: (on: boolean, message?: string) =>
+    request<SystemStatus>("/admin/controls/maintenance", { method: "PUT", body: JSON.stringify({ on, message }) }),
+  adminSetDisabledBrokers: (names: string[]) =>
+    request<SystemStatus>("/admin/controls/brokers", { method: "PUT", body: JSON.stringify({ names }) }),
+  disableMemberTrading: (memberId: number, reason: string) =>
+    request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-disable`, { method: "POST", body: JSON.stringify({ reason }) }),
+  enableMemberTrading: (memberId: number) =>
+    request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
+  portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
+  analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
+  updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
+    request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),
+  adminIncidents: (status?: string) => request<Incident[]>(`/admin/incidents${status ? `?status=${status}` : ""}`),
+  adminCreateIncident: (body: { title: string; severity: string; summary?: string; tenant_id?: number | null }) =>
+    request<Incident>("/admin/incidents", { method: "POST", body: JSON.stringify(body) }),
+  adminUpdateIncident: (id: number, body: Partial<Pick<Incident, "status" | "summary" | "root_cause" | "actions_taken" | "data_loss_minutes" | "downtime_minutes">>) =>
+    request<Incident>(`/admin/incidents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  backtestOptimize: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], paramGrid: Record<string, (number | string)[]>, metric = "net_pnl", split = 0.7) =>
+    request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),
   // ---- Phase L: AI layer
   aiProvider: () => request<AiProviderConfig>("/ai/provider"),
   aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>

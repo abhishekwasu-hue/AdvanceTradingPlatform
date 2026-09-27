@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
-import type { AnalyticsSummary, GroupStats } from "../types";
+import type { AnalyticsSummary, DegradationReport, GroupStats } from "../types";
 
 function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
   return (
@@ -38,11 +38,13 @@ function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
 export default function AnalyticsPage() {
   const { user, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [degradation, setDegradation] = useState<DegradationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     api.getAnalyticsSummary().then(setSummary).catch((e) => setError(String(e)));
+    api.analyticsDegradation().then(setDegradation).catch(() => {});
   }, [user]);
 
   if (authLoading) return null;
@@ -66,6 +68,24 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-4">
+      {degradation && degradation.strategies.length > 0 && (
+        <Card title={`Live vs backtest (${degradation.degraded} degraded, ${degradation.watch} on watch)`}>
+          <table className="w-full text-xs"><thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Live trades</th><th className="py-1 pr-3">Live win rate</th><th className="py-1 pr-3">Recent-20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Live expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
+            <tbody>{degradation.strategies.map((r) => (
+              <tr key={r.strategy_id} className="border-t border-border/60">
+                <td className="py-1 pr-3 font-medium">{r.strategy_id}</td>
+                <td className={`py-1 pr-3 font-bold ${r.status === "DEGRADED" ? "text-danger" : r.status === "WATCH" ? "text-amber-400" : r.status === "OK" ? "text-accent" : "text-muted"}`}>{r.status.replace("_", " ")}</td>
+                <td className="py-1 pr-3">{r.live.trades}</td>
+                <td className="py-1 pr-3">{r.live.win_rate != null ? `${(r.live.win_rate * 100).toFixed(0)}%` : "-"}</td>
+                <td className="py-1 pr-3">{r.recent_20.win_rate != null ? `${(r.recent_20.win_rate * 100).toFixed(0)}%` : "-"}</td>
+                <td className="py-1 pr-3">{r.backtest?.win_rate != null ? `${(r.backtest.win_rate * 100).toFixed(0)}%` : "-"}</td>
+                <td className={`py-1 pr-3 ${(r.live.expectancy ?? 0) >= 0 ? "text-accent" : "text-danger"}`}>{r.live.expectancy?.toFixed(1) ?? "-"}</td>
+                <td className="py-1 pr-3 text-muted">{r.reasons.join("; ")}</td>
+              </tr>
+            ))}</tbody></table>
+          <div className="text-[11px] text-muted mt-2">{degradation.note}</div>
+        </Card>
+      )}
       <div>
         <h1 className="text-xl font-extrabold text-lime-400">Analytics</h1>
         <p className="text-sm font-semibold text-lime-400/60">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>

@@ -40,6 +40,8 @@ class NotificationSeverity(str, Enum):
     INFO = "INFO"
     WARNING = "WARNING"
     CRITICAL = "CRITICAL"
+    # Phase M / V4.11: platform-level events (global kill switch, emergency exit, maintenance).
+    EMERGENCY = "EMERGENCY"
 
 
 class AssetClass(str, Enum):
@@ -62,7 +64,9 @@ class RiskScope(str, Enum):
     TENANT = "TENANT"
     USER = "USER"              # scope_id = user id
     ACCOUNT = "ACCOUNT"        # scope_id = broker account id
+    PORTFOLIO = "PORTFOLIO"    # Phase M / V4.5: the tenant's whole open book (exposure, concentration)
     STRATEGY = "STRATEGY"      # scope_id = strategy id
+    DEPLOYMENT = "DEPLOYMENT"  # Phase M / V4.5: scope_id = deployment id (one Autopilot instance)
     INSTRUMENT = "INSTRUMENT"  # scope_id = symbol
 
 
@@ -75,6 +79,8 @@ class RiskLimitType(str, Enum):
     MAX_OPEN_POSITIONS = "MAX_OPEN_POSITIONS"            # count
     MAX_TRADES_PER_DAY = "MAX_TRADES_PER_DAY"            # count
     MAX_CAPITAL_ALLOCATION_PCT = "MAX_CAPITAL_ALLOCATION_PCT"  # % of capital in one order
+    MAX_GROSS_EXPOSURE = "MAX_GROSS_EXPOSURE"            # currency, open notional after this order (Phase M / V4.4)
+    MAX_SYMBOL_CONCENTRATION_PCT = "MAX_SYMBOL_CONCENTRATION_PCT"  # % of capital in one symbol after this order
 
 
 class RiskAction(str, Enum):

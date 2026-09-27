@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, DemoDataBanner, StatTile, Disclaimer } from "../components/ui";
-import type { BacktestResult, BacktestRunSummary, ExitRules, MonteCarloResult, OHLCVBar, StrategyInfo, WalkForwardResult } from "../types";
+import type { BacktestResult, BacktestRunSummary, ExitRules, MonteCarloResult, OHLCVBar, OptimizeResult, StrategyInfo, WalkForwardResult } from "../types";
 import { useAuth } from "../auth/AuthContext";
 import { generateSampleCandles } from "../utils/sampleData";
 
@@ -24,6 +24,20 @@ export default function BacktestPage() {
   const [timeExitAt, setTimeExitAt] = useState("");
   const [monteCarlo, setMonteCarlo] = useState<MonteCarloResult | null>(null);
   const [walkForward, setWalkForward] = useState<WalkForwardResult | null>(null);
+  const [optGrid, setOptGrid] = useState('{"ema_fast": [9, 12], "rsi_period": [7, 14]}');
+  const [optMetric, setOptMetric] = useState("net_pnl");
+  const [optResult, setOptResult] = useState<OptimizeResult | null>(null);
+  const [optBusy, setOptBusy] = useState(false);
+  const [optError, setOptError] = useState<string | null>(null);
+
+  async function runOptimize() {
+    if (!selected || chartCandles.length === 0) return;
+    setOptBusy(true); setOptError(null);
+    try {
+      const grid = JSON.parse(optGrid) as Record<string, (number | string)[]>;
+      setOptResult(await api.backtestOptimize(selected.id, symbol, selected.timeframes[0], chartCandles, grid, optMetric));
+    } catch (e) { setOptError(String(e)); } finally { setOptBusy(false); }
+  }
   const [runs, setRuns] = useState<BacktestRunSummary[]>([]);
   const [robustBusy, setRobustBusy] = useState(false);
 
@@ -242,6 +256,39 @@ export default function BacktestPage() {
               </div>
             </Card>
           )}
+
+          <Card title="Parameter optimisation (in-sample search, out-of-sample ranking)">
+            <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+              <input className="flex-1 min-w-[260px] rounded bg-panel2 border border-border px-2 py-1 font-mono" value={optGrid} onChange={(e) => setOptGrid(e.target.value)} />
+              <select className="rounded bg-panel2 border border-border px-1 py-1" value={optMetric} onChange={(e) => setOptMetric(e.target.value)}>
+                {["net_pnl", "expectancy", "profit_factor", "win_rate"].map((m) => <option key={m}>{m}</option>)}
+              </select>
+              <button onClick={runOptimize} disabled={optBusy || !result} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-slate-200 disabled:opacity-50">{optBusy ? "Searching…" : "Optimise"}</button>
+              <span className="text-muted">Grid as JSON (max 60 combinations). First 70% of the bars fit, last 30% judge.</span>
+            </div>
+            {optError && <div className="text-xs text-danger">{optError}</div>}
+            {optResult && (
+              <div className="text-xs">
+                <div className="text-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust</div>
+                <table className="w-full"><thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
+                  <tbody>{optResult.results.slice(0, 12).map((r: OptimizeResult["results"][number], i: number) => {
+                    const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];
+                    const ins = r.in_sample[key]; const oos = r.out_of_sample[key];
+                    return (
+                      <tr key={i} className={`border-t border-border/60 ${i === 0 ? "text-accent" : ""}`}>
+                        <td className="py-1 pr-3 font-mono">{JSON.stringify(r.params)}</td>
+                        <td className="py-1 pr-3">{typeof ins === "number" ? ins.toFixed(2) : "-"}</td>
+                        <td className="py-1 pr-3">{typeof oos === "number" ? oos.toFixed(2) : "-"}</td>
+                        <td className="py-1 pr-3">{r.out_of_sample.trades}</td>
+                        <td className={`py-1 pr-3 ${(r.overfit_gap ?? 0) > 0 ? "text-amber-400" : ""}`}>{r.overfit_gap?.toFixed(2) ?? "-"}</td>
+                        <td className="py-1 pr-3 text-muted">{r.flags.join("; ")}</td>
+                      </tr>
+                    );
+                  })}</tbody></table>
+                <div className="text-[11px] text-muted mt-1">{optResult.note}</div>
+              </div>
+            )}
+          </Card>
 
           <Card title="Robustness">
             <div className="flex flex-wrap items-center gap-3 text-xs mb-3">

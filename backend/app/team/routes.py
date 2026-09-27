@@ -58,10 +58,12 @@ class MemberResponse(BaseModel):
     role: str
     is_active: bool
     created_at: str
+    trading_disabled_reason: Optional[str] = None
 
     @classmethod
     def from_user(cls, user: User) -> "MemberResponse":
-        return cls(id=user.id, email=user.email, role=user.role, is_active=user.is_active, created_at=user.created_at.isoformat())
+        return cls(id=user.id, email=user.email, role=user.role, is_active=user.is_active, created_at=user.created_at.isoformat(),
+                   trading_disabled_reason=user.trading_disabled_reason)
 
 
 class InviteCreateRequest(BaseModel):

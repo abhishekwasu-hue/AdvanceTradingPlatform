@@ -78,6 +78,11 @@ async def engage_global(
     disengaged - reserved for a platform operator, never something a tenant's own users can flip."""
     record = await checks.engage(session, KillSwitchScope.GLOBAL, None, user, request.reason)
     await write_audit_log(session, None, user.id, "kill_switch_global_engaged", request.reason)
+    # Phase M / V4.10: a platform-wide stop is an incident by definition - open the record now so
+    # the post-mortem has its start time and audit range.
+    from app.incidents.service import open_incident
+    await open_incident(session, title=f"Global kill switch engaged: {request.reason or 'no reason given'}"[:200], severity="EMERGENCY",
+                        summary="Opened automatically when the global kill switch was engaged.", source="kill_switch", user=user, commit=False)
     await session.commit()
     return KillSwitchStateResponse.from_record(KillSwitchScope.GLOBAL, record)
 
@@ -209,7 +214,7 @@ async def emergency_exit(
 
     await notify(
         session, user.tenant_id, NotificationType.EMERGENCY_EXIT,
-        title="Emergency exit triggered", severity=NotificationSeverity.CRITICAL, user_id=user.id,
+        title="Emergency exit triggered", severity=NotificationSeverity.EMERGENCY, user_id=user.id,
         message=(
             f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; "
             f"closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"

@@ -192,7 +192,7 @@ def test_broker_generic_auth_failure_creates_broker_disconnect_notification(monk
     assert notifications[0]["event_type"] == "BROKER_DISCONNECT"
 
 
-def test_emergency_exit_creates_critical_notification():
+def test_emergency_exit_creates_emergency_notification():
     token = _register("notif_emergency@example.com")
     headers = {"Authorization": f"Bearer {token}"}
     response = client.post("/api/kill-switch/emergency-exit", headers=headers, json={"reason": "risk event"})
@@ -201,7 +201,7 @@ def test_emergency_exit_creates_critical_notification():
     notifications = client.get("/api/notifications", headers=headers).json()
     assert len(notifications) == 1
     assert notifications[0]["event_type"] == "EMERGENCY_EXIT"
-    assert notifications[0]["severity"] == "CRITICAL"
+    assert notifications[0]["severity"] == "EMERGENCY"   # Phase M / V4.11: platform-level severity
 
 
 def test_reconciliation_failure_creates_system_failure_notification(monkeypatch):

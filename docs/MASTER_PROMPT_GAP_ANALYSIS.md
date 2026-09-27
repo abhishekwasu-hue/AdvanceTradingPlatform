@@ -10,7 +10,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER. Email verification missing. |
-| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` added (Phase G3); `exit_position()` / `subscribe_market_data()` from V3.14 and §8 still not on the interface. Tokens Fernet-encrypted with one app key, not envelope-encrypted per tenant (§48). |
+| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) and `subscribe_market_data()` (raises until an adapter streams) added (Phase M). Tokens Fernet-encrypted with one app key, not envelope-encrypted per tenant (§48). |
 | 10 market data | partial | Candles/LTP via broker REST with Redis cache; staleness gate on candles and quotes (Phase G1); no websocket feed. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; DSL schema not formally versioned (§55). |
@@ -54,15 +54,15 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V3.13 notifications | partial | Telegram, email, webhook (Phase K4). SMS/push not built. |
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
 | V4.1-4.3 AI agent, AI scanner, AI generator | done / partial (Phase L) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) still rule-based. |
-| V4.4-4.5 portfolio engine, 8-level risk hierarchy | missing | Greeks per leg exist; no aggregation or hierarchy. |
-| V4.6-4.8 quant, regime, advanced backtesting | partial | Regime engine + deployment regime filter (Phase L3); Monte Carlo/walk-forward/analytics (Phase J). Parameter optimisation and factor/quant models not built. |
+| V4.4-4.5 portfolio engine, 8-level risk hierarchy | done (Phase M2) | Portfolio engine (gross/net notional, concentration, unrealised, risk at stops) at `GET /api/portfolio/exposure`; eight scopes GLOBAL/TENANT/USER/ACCOUNT/PORTFOLIO/STRATEGY/DEPLOYMENT/INSTRUMENT with gross-exposure and symbol-concentration limits. |
+| V4.6-4.8 quant, regime, advanced backtesting | done / partial | Regime engine + filter (L3); Monte Carlo/walk-forward/analytics (J); grid parameter optimisation with out-of-sample ranking and overfit gap (Phase M4). Factor/quant models not built. |
 | V4.9 HA | partial | Health endpoints exist under `/api/system/...`; `/health/live|ready|dependencies` aliases and the broker-uncertain block done (Phase G). |
-| V4.10 DR | partial | Restore-test sequence exists as script; RPO/RTO per tier, incident record schema missing. |
-| V4.11 monitoring | partial | Trading metrics exist; AI/billing domains n/a; severities INFO/WARNING/CRITICAL (no EMERGENCY). |
+| V4.10 DR | partial | Restore-test script; RPO/RTO targets table in OPERATIONS; incident records with measured data-loss/downtime and audit range (Phase M4). PITR/WAL still an infra task. |
+| V4.11 monitoring | partial | Trading metrics; severities INFO/WARNING/CRITICAL/EMERGENCY (Phase M3); AI/billing metrics not exported. |
 | V4.12 security scopes | missing | Roles, not fine-grained scopes. |
-| V4.13 enterprise admin | partial | Tenant/plan/status, kill switch, retention, exports; **maintenance mode, broker disable, per-user trading disable missing**. |
-| V4.14 trade journal | partial | Trades carry strategy, deployment, execution quality (F3), charges source; **market/regime context, notes, tags missing**. |
-| V4.15 performance intelligence | partial | Analytics by strategy/symbol; **degradation baselines missing**. |
+| V4.13 enterprise admin | done (Phase M1) | Tenant/plan/status, kill switch, retention, exports, maintenance mode, broker disable, per-user trading disable, incidents. |
+| V4.14 trade journal | done (Phase M3) | Strategy, deployment, execution quality, charges source, regime at entry, notes, tags. |
+| V4.15 performance intelligence | done (Phase M3) | Analytics by strategy/symbol; live-vs-backtest degradation status per strategy (`GET /api/analytics/degradation`). |
 
 ## Consolidated safety rules - where each stands
 
@@ -88,5 +88,6 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
 - **Phase K - commercial SaaS** - **DONE** on this branch (ARCHITECTURE.md Phase K, docs/PUBLIC_API.md). Was: billing abstraction and metering, marketplace, public API + developer portal, webhook notifications. SMS/push still need a provider decision.
+- **Phase M - gap closure** - **DONE** (ARCHITECTURE.md Phase M): maintenance mode, broker disable, per-user trading disable, portfolio engine + PORTFOLIO/DEPLOYMENT scopes, trade journal, EMERGENCY severity, degradation baselines, incidents, `exit_position`, parameter optimisation.
 - **Phase L - AI layer** - **DONE** on this branch (ARCHITECTURE.md Phase L). Was: LLM-backed strategy generator with the review gate, market regime engine, monitoring agent with the action-state machine. Provider keys are entered per tenant on the Settings page (encrypted); Anthropic, OpenAI or the built-in rule-based fallback.
 - **Continuous**: the V1 exit gate - a real Upstox account run - as soon as credentials are entered in Settings.

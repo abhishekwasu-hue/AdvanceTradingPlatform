@@ -2542,3 +2542,59 @@ the provider card. Migration `c9e5a3b1d4a8`.
 
 Not built (needs a product decision): AI-written scanners (V4.2) beyond the rule-based scanner,
 per-tenant model fine-tuning, and any auto-approval class - every action stays human-gated.
+
+## Phase M: Closure of the remaining master-prompt gaps
+
+### M1: Platform controls (V4.13)
+
+`app/platform/controls.py` holds operator switches in `platform_controls` (key -> JSON):
+**maintenance mode** (no new entries anywhere, paper or live; exits, monitoring and the API keep
+running; every user sees the message via the unauthenticated `GET /api/system/status` the top bar
+polls) and **disabled brokers** (no new LIVE entries through a named broker; exits still go). Both
+are checked in `entry_refusals` alongside the kill switches, so single-leg, multi-leg, TradingView
+and public-API entries all obey them; the worker also refuses at `_live_broker_for` and says why
+on the deployment. **Per-user trading disable** is `users.trading_disabled_reason`, set by the
+tenant OWNER (`POST /api/team/members/{id}/trading-disable|enable`) or a platform admin, and
+checked in the same place - the member keeps reading, exiting and reporting. Admin endpoints:
+`GET /api/admin/controls`, `PUT .../maintenance`, `PUT .../brokers` (SUPER_ADMIN + MFA).
+
+### M2: Portfolio engine and two more risk scopes (V4.4-4.5)
+
+`app/portfolio/engine.py::snapshot` aggregates a tenant's open trades into gross/net/long/short
+notional, per-symbol and per-strategy exposure, concentration, unrealised P&L at the given prices
+(LTP when a broker session is usable, else entry - the response says which), realised P&L today
+and loss-if-every-stop-hits, with plain warnings (leverage, concentration over 40%, stop risk over
+5% of capital). `GET /api/portfolio/exposure`; the Portfolio page shows it. The risk hierarchy
+gains **PORTFOLIO** (whole book, no scope id) and **DEPLOYMENT** (one Autopilot instance) scopes -
+eight levels: GLOBAL, TENANT, USER, ACCOUNT, PORTFOLIO, STRATEGY, DEPLOYMENT, INSTRUMENT - and two
+limit types, `MAX_GROSS_EXPOSURE` (open notional after the order) and
+`MAX_SYMBOL_CONCENTRATION_PCT` (one symbol's share of capital after the order). Open-position and
+trades-per-day counts honour the DEPLOYMENT scope; `RiskContext.deployment_id` is set by both
+executors.
+
+### M3: Trade journal (V4.14), EMERGENCY severity (V4.11), degradation baselines (V4.15)
+
+Trades carry `regime_at_entry` (stamped by the worker from the regime it classified on the base
+frame), free `notes` and comma-separated `tags` (`PATCH /api/trades/{id}/journal`; Positions page).
+`NotificationSeverity.EMERGENCY` ranks above CRITICAL for channel floors and is used for the
+emergency exit. `app/trading/degradation.py` compares each strategy's live results (all and the
+last 20 trades) with its latest saved backtest - win rate, expectancy, profit factor - into
+OK / WATCH / DEGRADED / NO_BASELINE / INSUFFICIENT_DATA with the reasons (`GET
+/api/analytics/degradation`; Analytics page).
+
+### M4: Incidents (V4.10), broker interface completion (section 8), optimisation (V4.6)
+
+`incidents` records severity, title, status (OPEN → MITIGATED → RESOLVED), source, the audit-log
+id range they span, root cause, actions and measured data-loss / downtime minutes (downtime is
+computed at resolution when not given); engaging the global kill switch opens one automatically
+(`app/incidents/`, `/api/admin/incidents`). `BrokerInterface.exit_position` squares off at market
+by default (adapters may override with a native square-off) and `subscribe_market_data` raises
+`NotImplementedError` until an adapter streams - callers poll. `app/backtest/optimizer.py` runs a
+bounded grid (60 combinations) on the in-sample part of the data, re-runs each untouched on the
+held-out part and ranks by the **out-of-sample** metric with the in-sample figure and an
+`overfit_gap` beside it (`POST /api/backtest/optimize`; Backtest page). Migration `e1a7c5d3f6b0`.
+
+Still open after Phase M (all need a product/provider decision, not code alone): SMS/push
+channels, fine-grained API scopes replacing roles (V4.12), per-tenant envelope encryption and a
+secret manager (§48), multi-currency and FIU/TDS (§57-61), a websocket market-data feed, and the
+V1 exit gate - a real Upstox run with the operator's credentials.

@@ -261,6 +261,23 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Lineage** (V4 governance): `ai_strategy_drafts` keeps prompt, provider, model and raw response;
   `custom_strategies.origin = ai:<draft>` links a live strategy back to it.
 
+### 1.6c Platform controls and incidents (Phase M)
+
+- **Maintenance mode** (*Admin Console → Platform controls*): turn on with a message before a
+  planned DB or broker-integration change. No new entries anywhere; exits, monitoring and the API
+  keep running; the top bar shows the message to every user. Turn off afterwards - it is not
+  lifted automatically. Both changes are audit events (`maintenance_mode_on|off`).
+- **Disabled brokers**: list a broker while its API is degraded or its credentials rotate; LIVE
+  entries through it are refused and the deployment says so; exits still go through. Remove it
+  from the list to resume.
+- **Per-user trading disable** is the tenant OWNER's tool (*Team → disable trading*) and yours
+  for a member who must stop opening positions while keeping access.
+- **Incidents** (*Admin Console → Incidents*, `/api/admin/incidents`): engaging the global kill
+  switch opens one automatically; open one by hand for any outage. Resolve it with the root cause
+  and the actions taken; downtime is computed from the start time, data loss is what the restore
+  drill measured. The record keeps the audit-log id range it spans - that is the post-mortem's
+  evidence trail (section 1.1's RPO/RTO targets are judged against these numbers).
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

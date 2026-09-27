@@ -106,6 +106,7 @@ class TenantResponse(BaseModel):
     usage: dict
     require_mfa_for_live: bool = False
     algo_id: Optional[str] = None
+    base_currency: str = "INR"
 
 
 @router.get("/tenant", response_model=TenantResponse)
@@ -119,6 +120,7 @@ async def get_tenant(user: User = Depends(get_current_user), session: AsyncSessi
         id=tenant.id, name=tenant.name, plan=plan.id, plan_name=plan.name, plan_description=plan.description,
         status=tenant.status, members=members or 0, limits=plan_limits(plan), usage=await plan_usage(session, tenant.id),
         require_mfa_for_live=tenant.require_mfa_for_live, algo_id=tenant.algo_id,
+        base_currency=getattr(tenant, "base_currency", None) or "INR",
     )
 
 
@@ -127,6 +129,8 @@ class TenantRenameRequest(BaseModel):
     require_mfa_for_live: Optional[bool] = None
     # Exchange-issued algo id (Phase D1); empty string clears it.
     algo_id: Optional[str] = None
+    # Phase P3: reporting currency for portfolio figures.
+    base_currency: Optional[str] = None
 
 
 @router.patch("/tenant", response_model=TenantResponse)
@@ -140,6 +144,13 @@ async def rename_tenant(
             raise HTTPException(status_code=400, detail="Name must be 1-255 characters")
         tenant.name = name
         await write_audit_log(session, user.tenant_id, user.id, "tenant_renamed", name)
+    if request.base_currency is not None:
+        from app.fx.service import SUPPORTED_CURRENCIES
+        code = request.base_currency.strip().upper()
+        if code not in SUPPORTED_CURRENCIES:
+            raise HTTPException(status_code=400, detail=f"base_currency must be one of {list(SUPPORTED_CURRENCIES)}")
+        tenant.base_currency = code
+        await write_audit_log(session, user.tenant_id, user.id, "tenant_base_currency", code)
     if request.algo_id is not None:
         algo_id = request.algo_id.strip()
         if algo_id and not valid_algo_id(algo_id):

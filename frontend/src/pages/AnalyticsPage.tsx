@@ -2,7 +2,55 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
-import type { AnalyticsSummary, DegradationReport, GroupStats } from "../types";
+import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
+import { getToken } from "../api/client";
+
+function TaxReportCard() {
+  const [years, setYears] = useState<string[]>([]);
+  const [fy, setFy] = useState<string>("");
+  const [mode, setMode] = useState<string>("LIVE");
+  const [report, setReport] = useState<TaxReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { api.taxYears().then((y) => { setYears(y.years); setFy((f) => f || y.current); }).catch((e) => setError(String(e))); }, []);
+  useEffect(() => { if (fy) api.taxReport(fy, mode).then(setReport).catch((e) => setError(String(e))); }, [fy, mode]);
+  const money = (v: number) => v.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  async function download() {
+    const res = await fetch(api.taxReportCsvUrl(fy, mode), { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+    const blob = await res.blob();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tax-report-${fy}-${mode}.csv`; a.click();
+  }
+  return (
+    <Card title="Tax report (financial year)">
+      <div className="flex flex-wrap items-center gap-2 text-xs mb-3">
+        <label className="text-muted">FY <select className="rounded bg-panel2 border border-border px-1 py-0.5 ml-1" value={fy} onChange={(e) => setFy(e.target.value)}>{years.map((y) => <option key={y}>{y}</option>)}</select></label>
+        <label className="text-muted">Trades <select className="rounded bg-panel2 border border-border px-1 py-0.5 ml-1" value={mode} onChange={(e) => setMode(e.target.value)}>{["LIVE", "PAPER", "ALL"].map((m) => <option key={m}>{m}</option>)}</select></label>
+        <button onClick={download} disabled={!report} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 disabled:opacity-50">Download CSV</button>
+        {report && <span className="text-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
+      </div>
+      {error && <div className="text-xs text-danger">{error}</div>}
+      {report && (
+        <table className="w-full text-xs">
+          <thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Head</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Gross</th><th className="py-1 pr-3">Charges</th><th className="py-1 pr-3">Net</th><th className="py-1 pr-3">Turnover</th><th className="py-1 pr-3">STT/CTT est.</th><th className="py-1 pr-3">Crypto TDS / 30% tax</th></tr></thead>
+          <tbody>
+            {(Object.entries(report.classes) as [string, TaxReport["classes"]["FNO"]][]).map(([k, c]) => (
+              <tr key={k} className="border-t border-border/60">
+                <td className="py-1 pr-3"><div className="font-medium">{k.replace("_", " ")}</div><div className="text-[10px] text-muted">{c.income_head}</div></td>
+                <td className="py-1 pr-3">{c.trades}</td>
+                <td className={`py-1 pr-3 ${c.gross_pnl >= 0 ? "text-accent" : "text-danger"}`}>{money(c.gross_pnl)}</td>
+                <td className="py-1 pr-3">{money(c.charges)}</td>
+                <td className={`py-1 pr-3 font-semibold ${c.net_pnl >= 0 ? "text-accent" : "text-danger"}`}>{money(c.net_pnl)}</td>
+                <td className="py-1 pr-3">{money(c.turnover)}</td>
+                <td className="py-1 pr-3">{money(c.stt_estimate + c.ctt_estimate)}</td>
+                <td className="py-1 pr-3">{k === "CRYPTO" ? `${money(c.tds_estimate)} / ${money(c.tax_estimate)}${c.disallowed_losses ? ` (losses ${money(c.disallowed_losses)} not set off)` : ""}` : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {report && <ul className="mt-2 space-y-0.5 text-[11px] text-muted list-disc pl-4">{report.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
+    </Card>
+  );
+}
 
 function GroupTable({ title, rows }: { title: string; rows: GroupStats[] }) {
   return (
@@ -86,6 +134,7 @@ export default function AnalyticsPage() {
           <div className="text-[11px] text-muted mt-2">{degradation.note}</div>
         </Card>
       )}
+      <TaxReportCard />
       <div>
         <h1 className="text-xl font-extrabold text-lime-400">Analytics</h1>
         <p className="text-sm font-semibold text-lime-400/60">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>

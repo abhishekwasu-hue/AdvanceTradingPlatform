@@ -2712,3 +2712,56 @@ writes the recovery settings so a fresh Postgres replays the archive to that ins
 Nightly logical dumps stay as the provider-independent copy. RPO is now the archive interval
 (minutes) instead of a day; the per-data-class table is in OPERATIONS 1.1.
 
+## Phase P: Safety backstop, tax, currency, drift and staging
+
+### P1: Protective-stop guard (section 52)
+
+`app/trading/stop_guard.py::verify_protective_stops` reads the broker order book once per tenant
+and, for every open LIVE single-leg trade, checks that its SL-M is standing (OPEN / TRIGGER
+PENDING). A stop that is missing (placement failed at entry), cancelled or rejected is re-placed
+on the opposite side at the trade's stop, the trade's `sl_order_id` is updated, an audit row
+`protective_stop_rearmed` is written and the user gets a WARNING; a stop the exchange already
+filled is left to the position monitor to book. Placement failures raise one CRITICAL per trade
+per 30 minutes and never touch the position. It runs at worker start-up after reconciliation and
+once per cycle per tenant with a LIVE broker (`CycleReport.stops_rearmed`). Multi-leg structures
+are skipped: their legs are protected as a group by the monitor.
+
+### P2: Financial-year tax report (sections 57-61)
+
+`app/tax/report.py` aggregates closed trades of an Indian financial year (1 April to 31 March,
+IST) into the three income heads the Income Tax Act uses: equity intraday (speculative business),
+F&O including MCX (non-speculative business) and crypto/VDA (section 115BBH: 30% on gains, no loss
+set-off, 1% TDS under 194S). Turnover follows the ICAI guidance note (absolute profit/loss, plus
+premium on options sold). STT/CTT/TDS are independent estimates at the rates in `RATES` for
+reconciliation with the broker's annual statement; the per-trade `charges` already recorded are
+reported alongside. `GET /api/tax/years|report|report.csv` (LIVE by default, PAPER or ALL on
+request); the Analytics page has the card and the CSV download. FIU-IND reporting is an
+exchange-side obligation and is documented as such, not implemented.
+
+### P3: Base currency and FX (section 57)
+
+`tenants.base_currency` (INR default, owner-editable from Team) and `ContractSpec.quote_currency`
+(INR for every current instrument) are the two ends of `app/fx/service.py::convert`, which uses
+a direct rate, its inverse or the INR pivot from the operator-maintained `fx_rates` table
+(`PUT /api/admin/fx-rates`, `GET /api/fx/rates`). Portfolio exposure converts each symbol's price
+into the tenant's base currency before aggregating and reports `base_currency`, `fx_rates_used`
+and `fx_missing`. With INR-only instruments and tenants nothing changes; a USDT-quoted pair or a
+USD-reporting desk now has a place to plug in.
+
+### P4: Drift gate (section 50)
+
+The monitoring agent gained a `DEGRADATION` rule: when the degradation engine (win rate,
+expectancy and profit factor of the live record versus the strategy's latest saved backtest)
+returns DEGRADED, the agent proposes `PAUSE_DEPLOYMENT` with the reasons as evidence. As with
+every proposal, a human approves or rejects; nothing pauses on its own (ADR 0006).
+
+### P5: Staging and rolling deploy (section 51)
+
+`docker-compose.staging.yml` overlays the production compose file with separate ports, database,
+volumes and a staging banner; `scripts/deploy.sh staging|production [ref]` builds, runs the
+migration guard in a one-off container, restarts the API and waits for the deep health check,
+then restarts worker and frontend, printing the running versions (rolling on one host, not
+blue-green: one database, one worker replica by design). `.github/workflows/deploy-staging.yml`
+runs it over SSH on pushes to main when the `STAGING_ENABLED` variable and SSH secrets exist.
+Cloud infrastructure-as-code stays out of the repository until a target cloud is chosen.
+

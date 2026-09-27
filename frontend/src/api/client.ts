@@ -84,7 +84,9 @@ import type {
   MemberScopes,
   ScopeCatalogueEntry,
   TenantFeatures,
-  VerificationSendResult
+  VerificationSendResult,
+  TaxReport,
+  FxRate
 } from "../types";
 
 const BASE = "/api/v1";
@@ -588,6 +590,15 @@ export const api = {
 
   setTenantMfaPolicy: (requireMfaForLive: boolean) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ require_mfa_for_live: requireMfaForLive }) }),
+
+  setTenantBaseCurrency: (code: string) =>
+    request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ base_currency: code }) }),
+  taxYears: () => request<{ years: string[]; current: string }>("/tax/years"),
+  taxReport: (fy: string, mode: string) => request<TaxReport>(`/tax/report?fy=${encodeURIComponent(fy)}&mode=${mode}`),
+  taxReportCsvUrl: (fy: string, mode: string) => `${BASE}/tax/report.csv?fy=${encodeURIComponent(fy)}&mode=${mode}`,
+  fxRates: () => request<{ rates: FxRate[]; supported: string[] }>("/fx/rates"),
+  adminSetFxRate: (base: string, quote: string, rate: number, source = "manual") =>
+    request<FxRate>("/admin/fx-rates", { method: "PUT", body: JSON.stringify({ base, quote, rate, source }) }),
 
   setTenantAlgoId: (algoId: string) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ algo_id: algoId }) }),

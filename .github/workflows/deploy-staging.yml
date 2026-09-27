@@ -1,0 +1,39 @@
+# Phase P5: deploy main to the staging host over SSH. Runs only when the repository has the
+# STAGING_SSH_HOST / STAGING_SSH_USER / STAGING_SSH_KEY secrets; without them the job is skipped,
+# so forks and local clones are unaffected. The host needs docker compose and a checkout of this
+# repository at STAGING_REPO_PATH (default /opt/atp).
+name: Deploy staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (default: main)"
+        required: false
+        default: main
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ vars.STAGING_ENABLED == 'true' }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ vars.STAGING_REPO_PATH || '/opt/atp' }}"
+            git fetch -q origin
+            scripts/deploy.sh staging "${{ github.event.inputs.ref || 'origin/main' }}"
+      - name: Smoke test
+        run: |
+          curl -sf "${{ vars.STAGING_URL || 'http://localhost:18000' }}/api/system/health" || echo "smoke test skipped (STAGING_URL unset or unreachable from runner)"

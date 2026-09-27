@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Backstop, tax, currency and staging (Phase P)
+
+- **Protective-stop guard**: every open LIVE position keeps a standing broker-side stop; missing
+  or cancelled stops are re-armed each cycle and at start-up.
+- **Financial-year tax report** by income head (equity intraday, F&O, crypto) with STT/CTT/TDS
+  estimates and CSV download.
+- **Reporting currency + FX rates** groundwork; portfolio figures convert to the tenant's currency.
+- **Drift gate**: the monitoring agent proposes a pause when live results degrade vs the backtest.
+- **Staging overlay and rolling deploy script**, with an optional GitHub deploy workflow.
+
 ## Reliability and delivery closure (Phase O)
 
 - **Least-privilege DB roles**: the app runs DML-only; only the migrator owns the schema.

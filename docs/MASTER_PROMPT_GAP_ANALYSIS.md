@@ -32,14 +32,14 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 47 compliance | partial | Algo tagging, retention, exports, erasure done. Disclaimers on backtest/signal/score/AI screens (Phase G3); advisory-vs-execution classification is a business decision. |
 | 48 security | mostly done | Rate limits, hash-chained audit, sessions/MFA, scanning, circuit breaker (G2), per-tenant envelope encryption with master rotation (N1), email verification (N3), least-privilege DB roles (Phase O1). **An external pentest remains.** |
 | 49 reliability | mostly done | Structured logs, metrics, heartbeat, deep health, circuit breaker, written SLOs, staleness gate; chaos tests for Redis loss, broker socket errors, candle timeouts and outbox failure (Phase O4). Heartbeat alert wiring is the operator's (Prometheus rule given). |
-| 50 testing | mostly done | Unit, golden path, fuzz, idempotency, disaster simulation, exit parity, chaos (O4), load/latency probe with baseline (O4). **Staging environment and a model-drift gate remain.** |
-| 51 CI/CD | partial | Pipeline with scans done; feature flags with tenant allow-lists and the migration-hour guard (Phase N4). **Staging environment, IaC, blue-green remain infra tasks.** |
-| 52 DR | mostly done | Daily verified backups (E3), WAL archiving + base backups + PITR restore script and per-data-class RPO/RTO (Phase O5), restart-reconcile-before-signals (G1). **Broker-side GTT backstop remains.** |
+| 50 testing | mostly done | Unit, golden path, fuzz, idempotency, disaster simulation, exit parity, chaos (O4), load/latency probe (O4), model-drift gate as a monitoring-agent proposal (Phase P4), staging overlay + deploy script (P5). |
+| 51 CI/CD | mostly done | Pipeline with scans, feature flags, migration-hour guard (N4); staging compose overlay, rolling deploy script and SSH deploy workflow (Phase P5). **Cloud IaC waits for a target cloud.** |
+| 52 DR | done | Daily verified backups (E3), WAL archiving + base backups + PITR (O5), restart-reconcile-before-signals (G1), protective-stop guard re-arming broker-side stops every cycle (Phase P1). |
 | 53 governance | partial | Retention, erasure, audit immutability done. AI/ML lineage only for what exists. |
 | 54 performance | done (Phase O4) | SLO-1 thresholds enforced by `scripts/loadtest.py`; measured baseline in docs/PERFORMANCE.md (worst p95 150 ms at 20 users on a 2-vCPU sandbox). |
 | 55 docs | done | Architecture/operations/README, OpenAPI, ten ADRs (`docs/adr/`) and the versioned DSL reference (Phase N5). |
 | 56 conversational builder | done (Phase L) | LLM-backed generator (Anthropic/OpenAI/rule-based) emitting the DSL behind the backtest + approval gate, with lineage. |
-| 57-61 global, multi-asset, brokers, performance engineering | partial | MCX/crypto contract specs and sizing; per-exchange sessions with own hours, cut-offs and holiday calendars (Phase O2). **Multi-currency P&L, FIU/TDS module and the hot-path split remain (business decisions on currencies and tax reporting first).** |
+| 57-61 global, multi-asset, brokers, performance engineering | mostly done | Per-exchange sessions (O2); tenant base currency, instrument quote currency, FX rates and converted portfolio exposure (P3); financial-year tax report with STT/CTT/crypto TDS estimates (P2). FIU-IND reporting is an exchange-side duty (documented). **Hot-path split remains an architecture option, not a gap in behaviour.** |
 
 ## Part III - V1-V4
 
@@ -88,6 +88,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 - **Phase I - risk hierarchy and accounts** - **DONE** on this branch (ARCHITECTURE.md Phase I). Was: `risk_limits` with scopes and "strictest wins", `risk_events` append-only, multiple accounts per broker with routing rules.
 - **Phase J - exits and backtesting depth** - **DONE** on this branch (ARCHITECTURE.md Phase J). Was: trailing/break-even/time exits; walk-forward, Monte Carlo, analytics views; backtest run records with engine/data versions.
 - **Phase K - commercial SaaS** - **DONE** on this branch (ARCHITECTURE.md Phase K, docs/PUBLIC_API.md). Was: billing abstraction and metering, marketplace, public API + developer portal, webhook notifications. SMS/push still need a provider decision.
+- **Phase P - backstop, tax, currency, drift, staging** - **DONE** (ARCHITECTURE.md Phase P): protective-stop guard, FY tax report, base currency + FX, drift gate, staging overlay + rolling deploy.
 - **Phase O - reliability and delivery closure** - **DONE** (ARCHITECTURE.md Phase O): least-privilege DB roles, per-exchange sessions, browser push + SMS, chaos tests, load baseline, AI/billing metrics, PITR.
 - **Phase N - security and platform hardening** - **DONE** (ARCHITECTURE.md Phase N): per-tenant envelope encryption + rotation tooling, fine-grained scopes, email verification + platform mailer, feature flags, migration-hour guard, ADRs, DSL reference.
 - **Phase M - gap closure** - **DONE** (ARCHITECTURE.md Phase M): maintenance mode, broker disable, per-user trading disable, portfolio engine + PORTFOLIO/DEPLOYMENT scopes, trade journal, EMERGENCY severity, degradation baselines, incidents, `exit_position`, parameter optimisation.

@@ -351,6 +351,27 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Performance probe**: `python scripts/loadtest.py --base https://<api> --users 20 --seconds 30`
   after every release that touches the request path; paste the table into docs/PERFORMANCE.md.
 
+### 1.6f Stop guard, tax report, currencies, drift gate, staging (Phase P)
+
+- **Stop guard**: a WARNING "Protective stop re-armed" means the broker-side SL-M was missing or
+  cancelled and has been re-placed; look at who cancelled it (audit `protective_stop_rearmed`).
+  A CRITICAL "No broker-side stop" means re-placing failed (margin, session): the software stop
+  still runs every cycle, but close the position by hand if the broker session is gone.
+- **Tax report** (*Analytics → Tax report*): users pick the financial year and LIVE/PAPER/ALL and
+  download the CSV for their CA. Rates live in `backend/app/tax/report.py::RATES`; update them
+  in the same commit as a Finance Act change and note the date in the docstring.
+- **FX rates** (`PUT /api/admin/fx-rates`, admin): set `USD/INR`, `USDT/INR`, etc. when a tenant
+  reports in a non-INR currency or trades a non-INR instrument; portfolio exposure lists
+  `fx_missing` pairs it could not convert. Owners choose the reporting currency under *Team*.
+- **Drift gate**: a `DEGRADATION` proposal under *AI Copilot* says the live record has diverged
+  from the backtest; approve to pause, reject to keep trading, or re-run the backtest with recent
+  data if the market has simply changed.
+- **Staging**: `scripts/deploy.sh staging` on the host (ports 18000/18080, database
+  `advance_trading_platform_staging`); set `STAGING_ENABLED=true` plus `STAGING_SSH_*` secrets
+  to have GitHub deploy every push to main. Production deploys are `scripts/deploy.sh production`
+  after 15:30 IST; the migration guard refuses schema changes during the session and the script
+  restarts the API only after the deep health check passes.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

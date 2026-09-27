@@ -67,6 +67,7 @@ from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenan
 from app.accounts.service import routing_for_deployment
 from app.notifications.service import notify
 from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
+from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,7 @@ class CycleReport:
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
+    stops_rearmed: int = 0
 
 
 def _adapter_key(broker_name: str, account_label: str) -> str:
@@ -347,6 +349,13 @@ class TradingWorker:
         if monitored:
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=live_broker, user_id=user.id, families=monitored)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
+        # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
+        if live_broker is not None and tenant_row is not None:
+            try:
+                guard = await verify_protective_stops(session, tenant_row, live_broker, user_id=user.id)
+                report.stops_rearmed += guard["rearmed"]
+            except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
+                logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
         tenant_started = time.monotonic()
         tenant = await session.get(Tenant, tenant_id)
         if tenant is not None and not tenant_is_active(tenant):
@@ -627,6 +636,12 @@ class TradingWorker:
                         logger.info("Start-up reconciliation: tenant %s %s -> %d mismatch(es)", tenant_id, broker_name, report.mismatched_count)
                     except Exception as exc:  # noqa: BLE001
                         logger.error("Start-up reconciliation: tenant %s %s failed: %s", tenant_id, broker_name, exc)
+                    try:
+                        guard = await verify_protective_stops(session, tenant, adapter, user_id=user.id, source="startup")
+                        if guard["rearmed"] or guard["failed"]:
+                            logger.warning("Start-up stop guard: tenant %s %s -> %s", tenant_id, broker_name, guard)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error("Start-up stop guard: tenant %s %s failed: %s", tenant_id, broker_name, exc)
                     checked += 1
         return checked
 

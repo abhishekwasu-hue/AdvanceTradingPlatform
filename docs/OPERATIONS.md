@@ -443,6 +443,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
 * A LIVE structure that reads `Structure failed: ... unwound N filled leg(s)` had a leg fail
   mid-placement; the filled wing was sold back, and the tenant is broker-uncertain until
   reconciliation passes (see the Phase G notes below).
+* **Short straddle / strangle** (Phase R) have **no max loss**. The deployment card says
+  "undefined risk, sized off the stop": the lots come from `stop_credit_pct` of the credit, so a
+  100% stop on a 230-point straddle risks 17,250 per NIFTY lot. Keep `max_lots` on these and
+  watch the "Upper/Lower breakeven breached" exits; the broker's full SPAN+exposure margin
+  applies and the margin cap sizes to it.
+* **Long straddle / strangle / calendar** are debit structures: `option_position` BUY, the debit
+  is the max loss and the sizing basis, target/stop are "% of debit" (stop at most 100). A
+  `would be a net credit` refusal on a calendar means the far expiry quoted below the near one:
+  stale or crossed quotes, check the chain before re-enabling.
+* A **calendar spread**'s near leg expires first; the per-deployment entry cutoff and the
+  square-off close both legs together, so the far leg is never left alone past the near expiry
+  unless someone closes a leg by hand.
 
 #### Phase G safety gates in the worker
 

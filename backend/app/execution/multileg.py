@@ -140,29 +140,29 @@ async def execute_structure(
     lot = structure.lot_size
     spec = ContractSpec(symbol=structure.underlying_symbol, exchange=structure.legs[0].contract.exchange, asset_class=AssetClass.INDEX_OPTION,
                         description=f"{structure.strategy.value} on {structure.underlying_symbol}", lot_size=float(lot), tick_size=0.05)
+    # Phase R: `risk_per_unit` is the max loss of a defined-risk credit structure, the debit of a
+    # debit structure, or the stop distance of an undefined-risk short straddle/strangle.
+    basis = abs(metrics.net_credit)
     sizing_signal = signal.model_copy(update={
-        "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": metrics.net_credit,
-        "stop_loss": round(metrics.net_credit + metrics.max_loss, 2), "target1": None, "target2": None, "risk_reward": None,
+        "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": basis,
+        "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
     })
     decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec)
-    notes = list(structure.notes) + [
-        f"Net credit {metrics.net_credit:g}/unit, max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot), "
-        f"breakeven {', '.join(f'{b:g}' for b in metrics.breakevens)}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}",
-    ]
+    notes = list(structure.notes) + [_economics_note(metrics, lot)]
     if not decision.approved:
         reasons = notes + decision.reasons
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     lots = int(decision.quantity // lot)
     if lots < 1:
-        reasons = notes + [f"Max loss per lot ({metrics.max_loss * lot:,.0f}) exceeds risk per trade ({cfg.capital * cfg.risk_per_trade_pct / 100:,.0f})"]
+        reasons = notes + [f"Risk per lot ({metrics.risk_per_unit * lot:,.0f}) exceeds risk per trade ({cfg.capital * cfg.risk_per_trade_pct / 100:,.0f})"]
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     if rules.max_lots:
         lots = min(lots, rules.max_lots)
     if execution_mode == ExecutionMode.LIVE:
         try:
-            cap, note = await _live_lot_cap(broker, structure)
+            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None)
         except ContractExecutionError as exc:
             reasons = notes + [str(exc)]
             await _reject_all(session, orders, reasons)
@@ -176,8 +176,8 @@ async def execute_structure(
     # and the short legs' premium as the order value.
     verdict = await evaluate_hierarchy(session, RiskContext(
         tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=structure.underlying_symbol, quantity=quantity,
-        entry=metrics.net_credit, stop_loss=None, capital=cfg.capital, mode=mode, order_id=orders[0].id, account_id=account_id,
-        risk_per_unit=metrics.max_loss, deployment_id=deployment_id,
+        entry=basis, stop_loss=None, capital=cfg.capital, mode=mode, order_id=orders[0].id, account_id=account_id,
+        risk_per_unit=metrics.risk_per_unit, deployment_id=deployment_id,
     ), user=user)
     notes.extend(verdict.notes)
     if not verdict.allowed:
@@ -225,6 +225,8 @@ async def execute_structure(
         expected = premiums[leg.contract.tradingsymbol]
         # Per-leg levels are informational: the group exit is what closes the position.
         stop = round(fill_price * (2.0 if leg.role == "SHORT" else 0.0), 2)
+        if metrics.debit and leg.role == "LONG":
+            stop = round(fill_price * (1 - min(stop_credit_pct if stop_credit_pct is not None else 50.0, 100.0) / 100.0), 2)
         trade = Trade(symbol=leg.contract.tradingsymbol, strategy_id=strategy_id, direction=leg.contract.trade_direction,
                       entry_time=now, entry_price=fill_price, quantity=quantity, stop_loss=stop,
                       expected_price=expected, entry_latency_ms=latency_ms)
@@ -257,9 +259,34 @@ async def execute_structure(
     return StructureResult(executed=True, reasons=notes, orders=orders, trades=trades, leg_group_id=group_id, metrics=metrics)
 
 
-async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure) -> Tuple[int, str]:
+def _economics_note(metrics: StructureMetrics, lot: int) -> str:
+    be = ", ".join(f"{b:g}" for b in metrics.breakevens) or "n/a"
+    if metrics.debit:
+        debit = -metrics.net_credit
+        return (f"Net debit {debit:g}/unit ({debit * lot:,.0f}/lot) = max loss, profit open-ended, breakeven {be}; "
+                f"exit at worth >= {metrics.target_value:g} or <= {metrics.stop_value:g}")
+    if not metrics.defined_risk:
+        return (f"Net credit {metrics.net_credit:g}/unit, UNDEFINED max loss - sized off the stop ({metrics.risk_per_unit:g}/unit, "
+                f"{metrics.risk_per_unit * lot:,.0f}/lot), breakeven {be}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}")
+    return (f"Net credit {metrics.net_credit:g}/unit, max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot), "
+            f"breakeven {be}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}")
+
+
+async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None) -> Tuple[int, str]:
     """Lots the account's margin allows: the broker's requirement for one lot of every short
-    leg (no spread benefit assumed - conservative) against MARGIN_SAFETY of available margin."""
+    leg (no spread benefit assumed - conservative) against MARGIN_SAFETY of available margin.
+    A structure with no short leg (Phase R long straddle/strangle) blocks exactly its debit, so
+    that is the per-lot number (Phase Q's premium rule)."""
+    if not structure.short_legs:
+        if debit_per_unit is None or debit_per_unit <= 0:
+            raise ContractExecutionError("No short leg and no debit to size the long-only structure's margin from - refused")
+        per_lot = float(debit_per_unit) * structure.lot_size
+        margins = await broker.get_margins()
+        available = float(margins.available_margin or margins.available_cash or 0.0)
+        lots = int((available * MARGIN_SAFETY) // per_lot)
+        if lots < 1:
+            raise ContractExecutionError(f"Insufficient funds for the debit: {per_lot:,.0f} per lot needed, {available:,.0f} available")
+        return lots, f"Debit {per_lot:,.0f}/lot, {available:,.0f} available -> at most {lots} lot(s)"
     per_lot = 0.0
     for leg in structure.short_legs:
         probe = BrokerOrderRequest(

@@ -1,7 +1,9 @@
 import { Bell, UserCircle2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
+import { api } from "./api/client";
+import type { SystemStatus } from "./types";
 import AccountPage from "./pages/AccountPage";
 import AdminPage from "./pages/AdminPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
@@ -30,10 +32,29 @@ import TeamPage from "./pages/TeamPage";
 function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
   const { user } = useAuth();
   const title = page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
+  const [status, setStatus] = useState<SystemStatus | null>(null);
+  useEffect(() => {
+    const load = () => api.systemStatus().then(setStatus).catch(() => {});
+    load();
+    const id = window.setInterval(load, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-6">
-      <h1 className="text-[15px] font-semibold text-slate-100">{title}</h1>
+      <div className="flex items-center gap-3 min-w-0">
+        <h1 className="text-[15px] font-semibold text-slate-100">{title}</h1>
+        {status?.maintenance_mode && (
+          <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title={status.maintenance_message ?? ""}>
+            MAINTENANCE: no new entries{status.maintenance_message ? ` - ${status.maintenance_message}` : ""}
+          </span>
+        )}
+        {status && status.disabled_brokers.length > 0 && (
+          <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] font-bold text-rose-300">
+            LIVE paused on {status.disabled_brokers.join(", ")}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-1.5">
         <button
           onClick={() => onChange("notifications")}

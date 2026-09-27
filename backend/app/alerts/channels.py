@@ -9,7 +9,8 @@ from app.core.enums import AlertChannelType, NotificationSeverity
 from app.db.models import AlertChannelRecord
 from app.secrets_store.encryption import decrypt_text, encrypt_text
 
-SEVERITY_RANK = {NotificationSeverity.INFO.value: 0, NotificationSeverity.WARNING.value: 1, NotificationSeverity.CRITICAL.value: 2}
+SEVERITY_RANK = {NotificationSeverity.INFO.value: 0, NotificationSeverity.WARNING.value: 1, NotificationSeverity.CRITICAL.value: 2,
+                 NotificationSeverity.EMERGENCY.value: 3}
 
 
 def severity_reaches(severity: str, floor: str) -> bool:

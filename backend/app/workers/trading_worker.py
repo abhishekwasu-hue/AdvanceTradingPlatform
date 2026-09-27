@@ -49,6 +49,7 @@ from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
+from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
@@ -420,7 +421,7 @@ class TradingWorker:
         # Phase L3: the regime filter - a deployment that only trades trends sits out ranges, and
         # says so. Classified on the base frame the strategy is about to read.
         allowed = parse_filter(dep.regime_filter)
-        regime = classify_regime(base) if (allowed or dep.id in self._regime_wanted) else None
+        regime = classify_regime(base) if (allowed or dep.id in self._regime_wanted or len(base) >= 60) else None
         if regime is not None:
             self._regimes[dep.id] = regime.kind
         if allowed:
@@ -495,6 +496,11 @@ class TradingWorker:
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
         dep.consecutive_failures = 0
+        # Phase M / V4.14: stamp the regime read at entry on the trade for the journal.
+        if result.executed and order.trade_id is not None and dep.id in self._regimes:
+            trade = await session.get(TradeRecord, order.trade_id)
+            if trade is not None and trade.regime_at_entry is None:
+                trade.regime_at_entry = self._regimes[dep.id]
         await session.commit()
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
         return result.executed
@@ -547,6 +553,9 @@ class TradingWorker:
             return None, account_id, None
         if account is not None and account.status != "ACTIVE":
             return None, account_id, f"LIVE entry skipped: broker account #{account.id} ({account.broker_name}/{account.account_label}) is {account.status}"
+        # Phase M / V4.13: the operator can switch a broker off platform-wide (exits still run).
+        if (dep.broker_name or "").lower() in (await platform_controls.status(session))["disabled_brokers"]:
+            return None, account_id, f"LIVE entry skipped: broker {dep.broker_name} is disabled by the platform operator"
         broker = adapters.get(_adapter_key(dep.broker_name or "", label))
         if broker is None:
             return None, account_id, f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"

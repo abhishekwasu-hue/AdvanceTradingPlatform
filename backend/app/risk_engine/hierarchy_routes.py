@@ -71,7 +71,7 @@ class RiskEventResponse(BaseModel):
 
 
 def _needs_scope_id(scope: RiskScope) -> bool:
-    return scope in (RiskScope.USER, RiskScope.ACCOUNT, RiskScope.STRATEGY, RiskScope.INSTRUMENT)
+    return scope in (RiskScope.USER, RiskScope.ACCOUNT, RiskScope.STRATEGY, RiskScope.DEPLOYMENT, RiskScope.INSTRUMENT)
 
 
 @router.get("/limits", response_model=List[RiskLimitResponse])

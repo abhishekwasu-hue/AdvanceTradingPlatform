@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.backtest.engine import ENGINE_VERSION, run_backtest
+from app.backtest.optimizer import MAX_COMBOS, optimize
 from app.backtest.robustness import monte_carlo, walk_forward
 from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_dataframe
 from app.custom_strategies.resolver import resolve_strategy
@@ -133,3 +134,27 @@ async def backtest_walk_forward(
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     return walk_forward(strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds)
+
+
+class OptimizeBody(BaseModel):
+    strategy_id: str
+    symbol: str
+    base_timeframe: str
+    candles: List[OHLCVBar]
+    param_grid: Dict[str, List] = Field(description=f"parameter -> candidate values; at most {MAX_COMBOS} combinations")
+    metric: str = Field(default="net_pnl", pattern=r"^(net_pnl|expectancy|profit_factor|win_rate)$")
+    split: float = Field(default=0.7, ge=0.5, le=0.9)
+    risk_config: Optional[RiskConfig] = None
+
+
+@router.post("/api/backtest/optimize")
+async def backtest_optimize(body: OptimizeBody, user: Optional[User] = Depends(get_current_user_optional),
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase M / V4.6: grid search on the in-sample part, ranked by the out-of-sample metric."""
+    strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
+                                            candles=body.candles, risk_config=body.risk_config), user, session)
+    try:
+        return optimize(strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, body.risk_config or RiskConfig(),
+                        body.param_grid, metric=body.metric, split=body.split)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

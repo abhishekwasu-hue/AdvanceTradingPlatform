@@ -34,7 +34,9 @@ logger = logging.getLogger(__name__)
 
 WARN_FRACTION = 0.8
 
-CURRENCY_TYPES = {RiskLimitType.MAX_DAILY_LOSS, RiskLimitType.MAX_STRATEGY_LOSS, RiskLimitType.MAX_LOSS_PER_TRADE, RiskLimitType.MAX_ORDER_VALUE}
+CURRENCY_TYPES = {RiskLimitType.MAX_DAILY_LOSS, RiskLimitType.MAX_STRATEGY_LOSS, RiskLimitType.MAX_LOSS_PER_TRADE, RiskLimitType.MAX_ORDER_VALUE,
+                  RiskLimitType.MAX_GROSS_EXPOSURE}
+PCT_TYPES = {RiskLimitType.MAX_CAPITAL_ALLOCATION_PCT, RiskLimitType.MAX_SYMBOL_CONCENTRATION_PCT}
 
 
 @dataclass
@@ -52,6 +54,8 @@ class RiskContext:
     order_id: Optional[int] = None
     # Multi-leg: the structure's max loss per unit replaces |entry - stop|.
     risk_per_unit: Optional[float] = None
+    # Phase M / V4.5: the Autopilot instance placing the order (DEPLOYMENT scope).
+    deployment_id: Optional[int] = None
 
 
 @dataclass
@@ -76,7 +80,9 @@ def _scope_ids(ctx: RiskContext) -> Dict[RiskScope, str]:
     return {
         RiskScope.GLOBAL: "", RiskScope.TENANT: "", RiskScope.USER: str(ctx.user_id),
         RiskScope.ACCOUNT: str(ctx.account_id) if ctx.account_id is not None else None,
-        RiskScope.STRATEGY: ctx.strategy_id, RiskScope.INSTRUMENT: ctx.symbol.upper(),
+        RiskScope.PORTFOLIO: "", RiskScope.STRATEGY: ctx.strategy_id,
+        RiskScope.DEPLOYMENT: str(ctx.deployment_id) if ctx.deployment_id is not None else None,
+        RiskScope.INSTRUMENT: ctx.symbol.upper(),
     }
 
 
@@ -92,7 +98,7 @@ async def applicable_limits(session: AsyncSession, ctx: RiskContext) -> List[Ris
         wanted = ids.get(RiskScope(row.scope))
         if wanted is None:
             continue
-        if row.scope in (RiskScope.GLOBAL.value, RiskScope.TENANT.value) or row.scope_id == wanted:
+        if row.scope in (RiskScope.GLOBAL.value, RiskScope.TENANT.value, RiskScope.PORTFOLIO.value) or row.scope_id == wanted:
             out.append(row)
     return out
 
@@ -133,6 +139,8 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
             query = query.where(TradeRecord.symbol == ctx.symbol)
         elif rule.scope == RiskScope.USER.value:
             query = query.where(TradeRecord.user_id == ctx.user_id)
+        elif rule.scope == RiskScope.DEPLOYMENT.value and ctx.deployment_id is not None:
+            query = query.where(TradeRecord.deployment_id == ctx.deployment_id)
         return float((await session.scalar(query)) or 0) + 1.0, "open positions after this order"
     if limit_type == RiskLimitType.MAX_TRADES_PER_DAY:
         query = select(func.count()).select_from(TradeRecord).where(TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.entry_time >= today_start)
@@ -140,17 +148,29 @@ async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimi
             query = query.where(TradeRecord.strategy_id == ctx.strategy_id)
         elif rule.scope == RiskScope.USER.value:
             query = query.where(TradeRecord.user_id == ctx.user_id)
+        elif rule.scope == RiskScope.DEPLOYMENT.value and ctx.deployment_id is not None:
+            query = query.where(TradeRecord.deployment_id == ctx.deployment_id)
         return float((await session.scalar(query)) or 0) + 1.0, "trades today including this one"
     if limit_type == RiskLimitType.MAX_CAPITAL_ALLOCATION_PCT:
         value = (ctx.entry or 0.0) * ctx.quantity
         return float(value / ctx.capital * 100.0) if ctx.capital > 0 else 100.0, "share of capital"
+    if limit_type == RiskLimitType.MAX_GROSS_EXPOSURE:
+        # Phase M / V4.4: open notional at entry prices plus this order.
+        from app.portfolio.engine import gross_exposure
+        current = await gross_exposure(session, ctx.tenant_id)
+        return float(current + (ctx.entry or 0.0) * ctx.quantity), "gross exposure after this order"
+    if limit_type == RiskLimitType.MAX_SYMBOL_CONCENTRATION_PCT:
+        from app.portfolio.engine import gross_exposure
+        current = await gross_exposure(session, ctx.tenant_id, symbol=ctx.symbol)
+        value = current + (ctx.entry or 0.0) * ctx.quantity
+        return float(value / ctx.capital * 100.0) if ctx.capital > 0 else 100.0, f"{ctx.symbol} share of capital after this order"
     return 0.0, limit_type.value
 
 
 def _fmt(limit_type: RiskLimitType, value: float) -> str:
     if limit_type in CURRENCY_TYPES:
         return f"{value:,.0f}"
-    if limit_type == RiskLimitType.MAX_CAPITAL_ALLOCATION_PCT:
+    if limit_type in PCT_TYPES:
         return f"{value:.1f}%"
     return f"{value:g}"
 

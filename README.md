@@ -230,6 +230,15 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Operations and risk closure (Phase M)
+
+- **Platform controls**: maintenance mode with a message, per-broker LIVE disable, per-user trading disable; an
+  incidents log opened automatically by the global kill switch.
+- **Portfolio engine**: gross/net exposure, concentration and loss-at-stops across the open book; risk limits now span
+  eight scopes including the whole portfolio and a single Autopilot deployment.
+- **Trade journal** (regime at entry, notes, tags), **live-vs-backtest degradation** per strategy, and **parameter
+  optimisation** ranked out-of-sample with an overfit gap.
+
 ## AI layer (Phase L)
 
 - **AI Copilot**: describe a strategy, get a draft in the Strategy Builder's rule schema with the model's
@@ -294,7 +303,7 @@ npm run dev
 
 ```bash
 cd backend
-pytest -q       # 768 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
+pytest -q       # 780 passing - runs against an in-memory SQLite DB, no Postgres/Redis needed
                 # (tests/test_backup_scripts.py additionally runs when a migrated Postgres is at DATABASE_URL)
 
 cd frontend

@@ -45,6 +45,9 @@ export interface UserResponse {
 
 export interface TradeRecord {
   id: number;
+  regime_at_entry?: string | null;
+  notes?: string | null;
+  tags?: string[];
   mode: string;
   symbol: string;
   strategy_id: string;
@@ -388,7 +391,7 @@ export type NotificationEventType =
   | "SYSTEM_FAILURE"
   | "SECURITY";
 
-export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL";
+export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 
 export interface WebhookTokenResponse {
   webhook_token: string;
@@ -965,6 +968,7 @@ export interface TeamMember {
   role: TenantRole;
   is_active: boolean;
   created_at: string;
+  trading_disabled_reason?: string | null;
 }
 
 export interface TeamInvite {
@@ -1069,10 +1073,11 @@ export interface PlatformAuditLog {
 }
 
 // Phase I1: risk hierarchy
-export type RiskScope = "GLOBAL" | "TENANT" | "USER" | "ACCOUNT" | "STRATEGY" | "INSTRUMENT";
+export type RiskScope = "GLOBAL" | "TENANT" | "USER" | "ACCOUNT" | "PORTFOLIO" | "STRATEGY" | "DEPLOYMENT" | "INSTRUMENT";
 export type RiskLimitType =
   | "MAX_DAILY_LOSS" | "MAX_STRATEGY_LOSS" | "MAX_LOSS_PER_TRADE" | "MAX_ORDER_VALUE"
-  | "MAX_POSITION_QUANTITY" | "MAX_OPEN_POSITIONS" | "MAX_TRADES_PER_DAY" | "MAX_CAPITAL_ALLOCATION_PCT";
+  | "MAX_POSITION_QUANTITY" | "MAX_OPEN_POSITIONS" | "MAX_TRADES_PER_DAY" | "MAX_CAPITAL_ALLOCATION_PCT"
+  | "MAX_GROSS_EXPOSURE" | "MAX_SYMBOL_CONCENTRATION_PCT";
 
 export interface RiskLimit {
   id: number;
@@ -1297,4 +1302,59 @@ export interface AiAction {
   result: string | null;
   expires_at: string | null;
   created_at: string | null;
+}
+
+// ---- Phase M: platform controls, portfolio, degradation, incidents, optimisation ----------------
+
+export interface SystemStatus {
+  maintenance_mode: boolean;
+  maintenance_message: string | null;
+  disabled_brokers: string[];
+}
+
+export interface SymbolExposure {
+  symbol: string; positions: number; quantity: number; notional: number; pct_of_capital: number;
+  unrealised_pnl: number; risk_at_stop: number; strategies: string[];
+}
+
+export interface PortfolioExposure {
+  as_of: string; capital: number; open_positions: number; gross_notional: number; net_notional: number; long_notional: number;
+  short_notional: number; gross_pct_of_capital: number; unrealised_pnl: number; realised_today: number; risk_at_stops: number;
+  risk_pct_of_capital: number; largest_symbol_pct: number; by_symbol: SymbolExposure[]; by_strategy: Record<string, number>;
+  by_mode: Record<string, number>; warnings: string[]; price_source: "ltp" | "entry"; priced_symbols: string[];
+}
+
+export interface DegradationMetrics {
+  trades: number; win_rate: number | null; net_pnl: number; expectancy: number | null; profit_factor: number | null;
+  avg_win: number | null; avg_loss: number | null;
+}
+
+export interface DegradationRow {
+  strategy_id: string;
+  live: DegradationMetrics;
+  recent_20: DegradationMetrics;
+  backtest: { run_id: number; win_rate: number | null; expectancy: number | null; profit_factor: number | null; net_pnl: number | null; total_trades: number | null; data_to: string | null } | null;
+  status: "OK" | "WATCH" | "DEGRADED" | "NO_BASELINE" | "INSUFFICIENT_DATA";
+  reasons: string[];
+}
+
+export interface DegradationReport { strategies: DegradationRow[]; degraded: number; watch: number; note: string }
+
+export interface Incident {
+  id: number; severity: "WARNING" | "CRITICAL" | "EMERGENCY"; title: string; summary: string; status: "OPEN" | "MITIGATED" | "RESOLVED";
+  source: string; tenant_id: number | null; started_at: string | null; mitigated_at: string | null; resolved_at: string | null;
+  root_cause: string | null; actions_taken: string | null; audit_log_from_id: number | null; audit_log_to_id: number | null;
+  data_loss_minutes: number | null; downtime_minutes: number | null; opened_by: number | null; created_at: string | null;
+}
+
+export interface OptimizeRow {
+  params: Record<string, number | string>;
+  in_sample: { trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; max_drawdown: number };
+  out_of_sample: { trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; max_drawdown: number };
+  score: number | null; overfit_gap: number | null; flags: string[];
+}
+
+export interface OptimizeResult {
+  metric: string; split: number; in_sample_bars: number; out_of_sample_bars: number; combinations: number;
+  best: OptimizeRow | null; robust_count: number; results: OptimizeRow[]; note: string;
 }

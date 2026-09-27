@@ -104,7 +104,8 @@ async def execute_structure(
         orders.append(order)
         leg_signals.append(leg_signal)
 
-    refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id)
+    refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
+                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",
@@ -176,7 +177,7 @@ async def execute_structure(
     verdict = await evaluate_hierarchy(session, RiskContext(
         tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=structure.underlying_symbol, quantity=quantity,
         entry=metrics.net_credit, stop_loss=None, capital=cfg.capital, mode=mode, order_id=orders[0].id, account_id=account_id,
-        risk_per_unit=metrics.max_loss,
+        risk_per_unit=metrics.max_loss, deployment_id=deployment_id,
     ), user=user)
     notes.extend(verdict.notes)
     if not verdict.allowed:

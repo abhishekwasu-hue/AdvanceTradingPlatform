@@ -21,6 +21,7 @@ from app.execution.contract_execution import ContractExecutionError, build_order
 from app.instruments.contracts import ContractRules, ResolvedContract
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
+from app.platform.controls import entry_blocks as platform_entry_blocks
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -28,11 +29,14 @@ from app.trading.persistence import build_trading_day_state, persist_trade
 logger = logging.getLogger(__name__)
 
 
-async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant_id: int, mode: str, strategy_id: str) -> list:
+async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant_id: int, mode: str, strategy_id: str, *,
+                         user: Optional[User] = None, broker_name: Optional[str] = None) -> list:
     """Every reason a *new entry* must be refused before any sizing or routing: kill switches,
+    platform controls (maintenance mode, disabled broker, per-user trading disable - Phase M),
     a suspended organisation, plan limits, the SEBI algo id and the broker-uncertain flag
     (safety rule 8). Shared by the single-leg pipeline and the multi-leg executor (Phase H2)."""
     reasons = await active_kill_switch_reasons(session, tenant_id, strategy_id)
+    reasons.extend(await platform_entry_blocks(session, user=user, mode=mode, broker_name=broker_name))
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
@@ -108,7 +112,8 @@ async def execute_signal_for_user(
         order = await transition_order(session, order, OrderStatus.VALIDATING, detail="Signal received")
 
         tenant = await session.get(Tenant, user.tenant_id)
-        kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id)
+        kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
+                                                   broker_name=getattr(broker, "name", None) if broker is not None else None)
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -175,7 +180,7 @@ async def execute_signal_for_user(
             ctx = RiskContext(
                 tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=signal.symbol, quantity=quantity,
                 entry=signal.entry, stop_loss=signal.stop_loss, capital=effective_risk_config.capital, mode=mode,
-                order_id=order.id, account_id=account_id,
+                order_id=order.id, account_id=account_id, deployment_id=deployment_id,
             )
             verdict = await evaluate_hierarchy(session, ctx, user=user)
             return verdict.allowed, verdict.reasons, verdict.notes

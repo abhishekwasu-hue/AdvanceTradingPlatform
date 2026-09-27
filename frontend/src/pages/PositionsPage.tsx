@@ -217,6 +217,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
             <th className="py-1 pr-3">Exit</th>
             <th className="py-1 pr-3">P&amp;L</th>
             <th className="py-1 pr-3">Charges</th>
+            <th className="py-1 pr-3">Journal</th>
           </tr>
         </thead>
         <tbody>
@@ -237,6 +238,20 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
               </td>
               <td className="py-1 pr-3 text-muted" title={r.charges_source === "CONTRACT_NOTE" ? "Broker's actual charges from an uploaded contract note" : "Platform estimate (NSE cost model)"}>
                 {r.charges.toFixed(2)} <span className={`text-[10px] uppercase ${r.charges_source === "CONTRACT_NOTE" ? "text-accent" : "text-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
+              </td>
+              <td className="py-1 pr-3 text-muted">
+                {r.regime_at_entry && <div className="text-[10px] uppercase">{r.regime_at_entry.replace("_", " ").toLowerCase()}</div>}
+                {(r.tags ?? []).map((t) => <span key={t} className="inline-block rounded border border-border px-1 mr-1 text-[10px]">{t}</span>)}
+                {r.notes && <div className="text-[10px] italic truncate max-w-[180px]" title={r.notes}>{r.notes}</div>}
+                <button
+                  onClick={() => {
+                    const notes = window.prompt("Journal notes", r.notes ?? "");
+                    if (notes === null) return;
+                    const tags = window.prompt("Tags (comma separated)", (r.tags ?? []).join(", "));
+                    void api.updateTradeJournal(r.id, { notes, tags: (tags ?? "").split(",").map((t) => t.trim()).filter(Boolean) }).then(() => window.location.reload());
+                  }}
+                  className="text-[10px] text-brand hover:underline"
+                >journal</button>
               </td>
             </tr>
           ))}

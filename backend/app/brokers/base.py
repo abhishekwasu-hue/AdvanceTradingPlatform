@@ -114,6 +114,21 @@ class BrokerInterface(ABC):
         funds endpoint differs from their margin endpoint."""
         return await self.get_margins()
 
+    async def exit_position(self, symbol: str, exchange: str, quantity: float, side: OrderSide, *, product: str = "MIS",
+                            tag: Optional[str] = None) -> BrokerOrderResponse:
+        """Phase M / master prompt section 8 and V3.14: square off `quantity` of `symbol` at market.
+        `side` is the position's side (LONG -> BUY); the exit is the opposite. Adapters may
+        override with a broker-native square-off call; the default is one market order."""
+        exit_side = OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY
+        return await self.place_order(BrokerOrderRequest(symbol=symbol, exchange=exchange, transaction_type=exit_side,
+                                                         quantity=quantity, order_type="MARKET", product=product, tag=tag))
+
+    async def subscribe_market_data(self, symbols: List[str]) -> None:
+        """Streaming quotes (section 8). No adapter streams yet - the platform polls REST with the
+        staleness gate (Phase G1). Adapters that gain a websocket override this; callers must
+        treat `NotImplementedError` as "poll instead"."""
+        raise NotImplementedError(f"{self.name} has no streaming market data; poll get_ltp/get_quote")
+
     async def disconnect(self) -> None:
         """Invalidate this session token at the broker (Upstox `DELETE /logout`, Kite
         `DELETE /session/token`) and forget it locally. Default: forget only - the adapter has no

@@ -312,10 +312,18 @@ def _seed_trades(tenant_id: int, dep_id: int, user_id: int, pnls, *, open_positi
     _run(go())
 
 
+# The monitor's "today" is the IST calendar day. Trades seeded a few minutes before the wall clock
+# land on *yesterday's* IST date whenever the suite runs just after midnight IST (18:30-19:30 UTC),
+# so these tests anchor "now" to midday of the current IST date: the seeded exits stay on today
+# and the proposals' expiry stays ahead of the API's wall clock.
+from zoneinfo import ZoneInfo as _ZoneInfo
+MONITOR_NOW = datetime.now(_ZoneInfo("Asia/Kolkata")).replace(hour=12, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
 def test_monitor_proposes_pause_on_losing_streak_and_executes_only_after_approval():
     t = _worker_tenant("w-ai-monitor@example.com")
     dep_id = _deploy(t)
-    now = datetime.now(timezone.utc)
+    now = MONITOR_NOW
     _seed_trades(t["tenant_id"], dep_id, t["user_id"], [-300, -250, -400], now=now)
 
     async def observe_and_raise():
@@ -350,7 +358,7 @@ def test_monitor_proposes_pause_on_losing_streak_and_executes_only_after_approva
 def test_monitor_rejection_expiry_and_drawdown_rule():
     t = _worker_tenant("w-ai-monitor2@example.com")
     dep_id = _deploy(t)
-    now = datetime.now(timezone.utc)
+    now = MONITOR_NOW
     _seed_trades(t["tenant_id"], dep_id, t["user_id"], [-1500, 200, -1200], now=now)   # -2500 on 100k capital = -2.5%
 
     async def go():

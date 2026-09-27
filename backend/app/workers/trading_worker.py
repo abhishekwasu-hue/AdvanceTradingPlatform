@@ -40,6 +40,7 @@ from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_acquire_lock, cache_release_lock
+from app.core import config as app_config
 from app.core.config import WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy
 from app.core.logging_config import bind_log_context, configure_logging
@@ -61,6 +62,7 @@ from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
+from app.market_data.stream import StreamManager
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
 from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenant_keys
@@ -108,6 +110,7 @@ class CycleReport:
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
     stops_rearmed: int = 0
+    streams_connected: int = 0   # Phase S: websocket quote streams currently connected
 
 
 def _adapter_key(broker_name: str, account_label: str) -> str:
@@ -151,6 +154,9 @@ class TradingWorker:
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
+        # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
+        # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
+        self.streams = StreamManager()
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -180,6 +186,7 @@ class TradingWorker:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
             except asyncio.TimeoutError:
                 pass
+        await self.streams.stop_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     # --- one cycle ---------------------------------------------------------------------------
@@ -322,6 +329,8 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        if app_config.STREAMING_QUOTES_ENABLED:
+            await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
 
         # Exits before entries.
         now_ist = now.astimezone(IST)
@@ -741,6 +750,26 @@ class TradingWorker:
             )
             return
         await session.commit()
+
+    async def _stream_quotes(self, session: AsyncSession, tenant_id: int, adapters: Dict[str, BrokerInterface], data_broker: BrokerInterface,
+                             deployments: List[StrategyDeploymentRecord], report: CycleReport) -> None:
+        """Phase S: keep the tenant's quote stream subscribed to every symbol a decision this
+        cycle could need - each deployment's symbol and every open position (contract and its
+        underlying). A broker without a stream, or a stream that cannot resolve a symbol, leaves
+        that symbol on REST polling; nothing else changes."""
+        key = next((k for k, a in adapters.items() if a is data_broker), data_broker.name)
+        wanted: set = {(d.symbol, d.exchange or "NSE") for d in deployments}
+        open_trades = await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)))
+        for trade in open_trades:
+            wanted.add((trade.symbol, exchange_for_trade(trade)))
+            if trade.underlying_symbol:
+                from app.trading.position_monitor import underlying_exchange
+                wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))
+        try:
+            await self.streams.ensure(f"{tenant_id}:{key}", data_broker, sorted(wanted))
+        except Exception as exc:  # noqa: BLE001 - streaming is an optimisation over REST, never a blocker
+            logger.warning("Tenant %s: quote stream error: %s", tenant_id, exc)
+        report.streams_connected = self.streams.active
 
     async def _heartbeat(self, session: AsyncSession, report: CycleReport, cycle_ms: int) -> None:
         record = await session.scalar(select(WorkerHeartbeatRecord).where(WorkerHeartbeatRecord.worker_name == self.worker_name))

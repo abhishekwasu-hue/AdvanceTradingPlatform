@@ -390,6 +390,26 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **PARTIAL_FILL** on an order's trail: the position and its stop use the filled quantity; the
   remainder of a market order is not left working. Reconciliation confirms against the broker.
 
+### 1.6h Streaming quotes (Phase S)
+
+- **Turning it on**: set `STREAMING_QUOTES_ENABLED=true` on the worker (and API, for the Redis
+  mirror) and restart. Watch the worker log for `stream error` lines and the metrics
+  `ticks_received_total{broker}` (should climb during the session) and
+  `stream_reconnects_total{broker}` (should stay near zero). Leave it off until one paper day has
+  shown ticks arriving; polling continues underneath either way.
+- **First live verification** (not possible in the sandbox): with a valid Upstox session the
+  authorise call must return `authorized_redirect_uri` and the first binary frame must decode to
+  the subscribed instrument keys with a plausible `ltp`. If `ticks_received_total` stays at zero
+  while `stream_reconnects_total` climbs, the feed URL or the frame layout differs from what
+  `app/market_data/stream.py` expects; keep the flag off and file the frame bytes.
+- **"cannot resolve X - REST fallback"** in the log: the symbol is not in the broker's instrument
+  dump under that exchange; that symbol is polled, the rest stream.
+- **Stale ticks**: a tick older than `TICK_MAX_AGE_SECONDS` is ignored and the REST quote used;
+  the Phase G1 gate then decides. A silent socket therefore costs one REST call per symbol per
+  cycle, never a decision on an old price.
+- **Kite**: the ticker accepts at most 3 connections per API key and 3,000 tokens per
+  connection; one stream per tenant session stays well inside that.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Streaming quotes (Phase S)
+
+- **Websocket feeds** for Upstox (Market Data Feed V3, protobuf decoded natively) and Zerodha
+  (Kite binary ticker), one stream per broker session, resubscribed each cycle to the symbols
+  the deployments and open positions need.
+- **Tick cache first, REST second**: `get_ltp` uses a tick younger than the staleness limit and
+  polls otherwise; the safety gate is unchanged. Off by default (`STREAMING_QUOTES_ENABLED`).
+
 ## Option structures depth (Phase R)
 
 - **Nine structures** on a deployment: bull put, bear call, iron condor, iron butterfly, short

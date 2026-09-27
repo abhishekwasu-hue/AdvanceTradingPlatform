@@ -2834,3 +2834,42 @@ on the deployment card. The Autopilot form lists all nine with the target/stop i
 
 Still not built: ratio spreads, long butterflies and a free-form leg builder (an explicit legs
 list on the deployment instead of rules), and historical option-chain backtests.
+
+## Phase S: Streaming quotes (sections 8 and 10)
+
+Every price the worker used before this phase was a REST poll: one call per symbol per cycle,
+through the rate budget, at most once a minute. `app/market_data/stream.py` adds the broker
+websocket feeds without changing any decision rule:
+
+* **`TickCache`** is the hand-off. Streams write the newest tick per (broker, exchange, symbol);
+  `MarketDataService.get_ltp` reads it first and uses it when it is younger than
+  `TICK_MAX_AGE_SECONDS` (default: the Phase G1 quote limit), otherwise falls back to the REST
+  quote exactly as before. Process-local with a Redis mirror (short TTL) so the API process can
+  show the same price; Redis absent means REST, never a stale value.
+* **`TickStream`** owns one websocket: connect, subscribe, decode, reconnect with backoff
+  (1-2-5-10-30 s), resend the whole subscription on every new socket, apply subscription changes
+  on the live socket. The connection object is injectable, so the loop is tested against a
+  scripted fake; the decoders are pure functions on bytes.
+* **`UpstoxTickStream`**: Market Data Feed V3 - the authorised wss URL from
+  `GET /v3/feed/market-data-feed/authorize`, a JSON `sub` frame in `ltpc` mode keyed by
+  instrument key, protobuf `FeedResponse` frames. A minimal protobuf wire-format reader extracts
+  LTPC (ltp, last trade time, close) from `ltpc`, `fullFeed.marketFF/indexFF.ltpc` and
+  `firstLevelWithGreeks.ltpc`, so there is no generated `_pb2` module and no `protobuf`
+  dependency; `encode_upstox_v3` is the test-side inverse.
+* **`KiteTickStream`**: Kite Connect's ticker at `wss://ws.kite.trade?api_key=..&access_token=..`,
+  JSON `subscribe`/`mode full` frames by instrument token, binary quote frames (big-endian,
+  paise, 1e7 for currency derivatives, exchange timestamp at offset 60 of the full packet).
+* **`StreamManager`** in the worker keeps one stream task per `<tenant>:<broker session>`,
+  resubscribed every cycle to each deployment's symbol and every open position's contract and
+  underlying (`_stream_quotes`). `CycleReport.streams_connected` counts connected sockets;
+  `ticks_received_total` and `stream_reconnects_total` are exported per broker.
+
+Off by default (`STREAMING_QUOTES_ENABLED=false`): the worker polls REST as before. Turned on, a
+symbol the stream cannot resolve, a broker with no stream (Shoonya and the stubs), or a socket
+that has gone quiet all degrade to the REST poll, and the staleness gate still refuses a tick
+whose exchange time is older than the limit. `BrokerInterface.subscribe_market_data` now points
+at `stream_for(adapter)`; the worker, not the adapter, owns the connection.
+
+Verified here against hand-built frames and scripted sockets only; the first live run against
+Upstox should confirm the authorise response key and the LTPC field numbers before the flag is
+left on in production (OPERATIONS 1.6h).

@@ -24,6 +24,7 @@ from app.custom_strategies import versioning
 from app.db.models import AiStrategyDraftRecord, BacktestRunRecord, CustomStrategyRecord, Tenant, User
 from app.plans.limits import check_can_add_custom_strategy
 from app.strategy_engine.declarative import CustomStrategyConfig
+from app.observability.metrics import AI_PROVIDER_CALLS
 
 SYSTEM_PROMPT = """You design rule-based intraday trading strategies for Indian equities and index derivatives.
 Answer with ONE JSON object and nothing else, shaped exactly like:
@@ -72,7 +73,9 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
     for attempt in range(MAX_ATTEMPTS):
         try:
             raw = await provider.complete(SYSTEM_PROMPT, user_message if attempt == 0 else f"{user_message}\n\nYour previous answer was invalid: {last_error}. Answer again with valid JSON only.")
+            AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
         except ProviderError as exc:
+            AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
             draft.status, draft.explanation = "FAILED", str(exc)
             await ai_settings.mark_used(session, tenant.id, error=str(exc))
             await session.commit()

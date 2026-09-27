@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Reliability and delivery closure (Phase O)
+
+- **Least-privilege DB roles**: the app runs DML-only; only the migrator owns the schema.
+- **Per-exchange sessions**: NSE, MCX (to 23:30 IST) and crypto (24x7) each on their own clock,
+  entry cut-offs and square-off.
+- **Browser push and SMS** alert channels, with no third-party push service and any SMS gateway.
+- **Chaos tests**, a **load-test probe** with the measured baseline (`docs/PERFORMANCE.md`), and
+  AI/billing Prometheus metrics.
+- **Point-in-time recovery**: WAL archiving, weekly base backups, `pitr_restore.sh`.
+
 ## Security and platform hardening (Phase N)
 
 - **Per-tenant envelope encryption**: every tenant's secrets sit under its own data key, wrapped

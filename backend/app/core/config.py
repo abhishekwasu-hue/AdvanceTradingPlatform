@@ -11,6 +11,10 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform"
 )
+# Phase O1 / section 48: least privilege. The API and worker run as a DML-only role (DATABASE_URL);
+# schema migrations run as the owning role through this URL (scripts/db_roles.sql creates both).
+# Unset = same URL as the app, which is how a single-role dev database keeps working.
+MIGRATION_DATABASE_URL = os.environ.get("MIGRATION_DATABASE_URL", "").strip() or DATABASE_URL
 
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_JWT_SECRET)
@@ -125,6 +129,12 @@ PLATFORM_SMTP_FROM = os.environ.get("PLATFORM_SMTP_FROM", "")
 PLATFORM_SMTP_STARTTLS = os.environ.get("PLATFORM_SMTP_STARTTLS", "true").strip().lower() not in {"0", "false", "no"}
 # When on, LIVE deployments and broker credential storage require a verified email address.
 EMAIL_VERIFICATION_REQUIRED = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
+
+# --- Web Push (Phase O3) --------------------------------------------------------------------------
+# VAPID key pair identifying this server to browser push services. Generate once with
+# `python -m app.alerts.webpush` and keep it stable: rotating it invalidates every subscription.
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "mailto:ops@example.com").strip()
 
 # --- Billing gateway (Phase K1b) ----------------------------------------------------------
 # "manual" = the operator records bank/UPI payments; "razorpay" = Razorpay Subscriptions with

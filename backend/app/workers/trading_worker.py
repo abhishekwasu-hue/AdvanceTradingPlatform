@@ -58,7 +58,7 @@ from app.instruments.contracts import ContractResolutionError, ContractRules, re
 from app.instruments.spreads import resolve_structure
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
-from app.market_data.calendar import IST, market_session_status
+from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.observability.metrics import MARKET_DATA_STALE
@@ -105,6 +105,7 @@ class CycleReport:
     master_synced: Optional[Dict[str, int]] = None
     stale_skips: int = 0
     reconciled: int = 0
+    open_exchanges: List[str] = field(default_factory=list)
 
 
 def _adapter_key(broker_name: str, account_label: str) -> str:
@@ -191,14 +192,22 @@ class TradingWorker:
 
         try:
             async with self.session_factory() as session:
-                status = await market_session_status(session, now)
-                report = CycleReport(started_at=now, market_open=status.is_open, session_reason=status.reason)
-                if status.is_open:
+                # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
+                # when a deployment actually trades there, so a pure-equity platform behaves as before.
+                wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
+                    select(StrategyDeploymentRecord.exchange).where(
+                        StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())}
+                statuses = {name: st for name, st in (await all_session_statuses(session, now)).items() if name in wanted}
+                self._open_families = {name for name, st in statuses.items() if st.is_open}
+                nse = statuses["NSE"]
+                reason = nse.reason if wanted == {"NSE"} else "; ".join(f"{n}: {'open' if st.is_open else 'closed'}" for n, st in sorted(statuses.items()))
+                report = CycleReport(started_at=now, market_open=bool(self._open_families), session_reason=reason, open_exchanges=sorted(self._open_families))
+                if self._open_families:
                     self._stale_skips = 0
                     await self._process_tenants(session, now, report)
                     report.stale_skips = self._stale_skips
                 else:
-                    logger.debug("Market closed: %s", status.reason)
+                    logger.debug("Market closed: %s", reason)
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:
@@ -220,7 +229,7 @@ class TradingWorker:
                         self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
-                if not status.is_open and self._last_retention_day != now.astimezone(IST).date():
+                if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
                     try:
                         report.retention = await run_retention(session, now)
                         self._last_retention_day = now.astimezone(IST).date()
@@ -328,13 +337,16 @@ class TradingWorker:
                 report.reconciled += 1
             except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
                 logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
-        if now_ist.time() >= SQUARE_OFF_AT:
-            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, live_broker, user.id)
-        else:
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=live_broker, user_id=user.id)
+        open_families = getattr(self, "_open_families", None) or {"NSE"}
+        # Phase O2: each venue squares off on its own clock (NSE 15:15, MCX 23:15, crypto never);
+        # positions on venues still inside their session are monitored as before.
+        due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
+        if due_square_off:
+            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, live_broker, user.id, families=due_square_off)
+        monitored = open_families - due_square_off
+        if monitored:
+            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=live_broker, user_id=user.id, families=monitored)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
-
-        entries_allowed = now_ist.time() < NO_NEW_ENTRIES_AFTER
         tenant_started = time.monotonic()
         tenant = await session.get(Tenant, tenant_id)
         if tenant is not None and not tenant_is_active(tenant):
@@ -361,6 +373,11 @@ class TradingWorker:
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
                 continue
+            family = session_family(dep.exchange)
+            if family not in open_families:
+                continue  # Phase O2: this venue is closed right now; nothing to evaluate
+            no_new_after = intraday_cutoffs(family)[0]
+            entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
                 try:
                     executed = await self._evaluate_deployment(
@@ -672,13 +689,15 @@ class TradingWorker:
 
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
-        live_broker: Optional[BrokerInterface], user_id: int,
+        live_broker: Optional[BrokerInterface], user_id: int, families: Optional[set] = None,
     ) -> int:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         ))
         closed = 0
         for trade in open_trades:
+            if families is not None and session_family(exchange_for_trade(trade)) not in families:
+                continue
             try:
                 price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
             except Exception as exc:  # noqa: BLE001

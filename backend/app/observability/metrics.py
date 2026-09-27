@@ -54,6 +54,13 @@ ORDERS = _counter("orders", "Order attempts by mode and final status", ("mode", 
 LOGIN_ATTEMPTS = _counter("login_attempts", "Login attempts by outcome", ("success", "reason"))
 ALERT_DELIVERIES = _counter("alert_deliveries", "Out-of-app alert deliveries by channel type and outcome", ("channel", "status"))
 
+# --- AI and billing (Phase O4 / V4.11) --------------------------------------------------------
+AI_PROVIDER_CALLS = _counter("ai_provider_calls", "LLM provider calls by provider and outcome", ("provider", "outcome"))
+AI_PROPOSALS = _counter("ai_proposals", "Monitoring-agent proposals raised by action type", ("action",))
+AI_DECISIONS = _counter("ai_decisions", "Human decisions on AI proposals", ("decision",))
+BILLING_PAYMENTS = _counter("billing_payments", "Payments recorded by source", ("source",))
+BILLING_TRANSITIONS = _counter("billing_transitions", "Subscription state transitions made by the daily sweep", ("transition",))
+
 # --- worker ------------------------------------------------------------------------------------
 WORKER_CYCLES = _counter("worker_cycles", "Trading worker cycles by market state", ("market_open",))
 WORKER_CYCLE_SECONDS = _histogram("worker_cycle_duration_seconds", "Trading worker cycle wall time",

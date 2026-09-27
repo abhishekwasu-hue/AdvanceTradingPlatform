@@ -573,6 +573,8 @@ export const api = {
 
   deleteAlertChannel: (type: string) => request<void>(`/alert-channels/${type}`, { method: "DELETE" }),
 
+  pushPublicKey: () => request<{ public_key: string; configured: boolean }>("/alert-channels/push/public-key"),
+
   testAlertChannel: (type: string) =>
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),
 

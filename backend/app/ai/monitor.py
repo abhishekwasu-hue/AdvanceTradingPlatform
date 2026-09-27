@@ -30,6 +30,7 @@ from app.db.models import AiActionRecord, BacktestRunRecord, StrategyDeploymentR
 from app.market_data.calendar import IST
 from app.notifications.service import notify
 from app.risk_engine.routes import get_tenant_risk_config
+from app.observability.metrics import AI_DECISIONS, AI_PROPOSALS
 
 TTL_HOURS = 24
 LOSING_STREAK = 3
@@ -138,6 +139,7 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
                              evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS))
         session.add(row)
         await session.flush()
+        AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
                      severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id)
@@ -167,6 +169,7 @@ async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, a
         await session.commit()
         raise ValueError("This proposal has expired")
     action.status = "APPROVED" if approve else "REJECTED"
+    AI_DECISIONS.labels(decision=action.status).inc()
     action.decided_by, action.decided_at, action.decision_note = user.id, now, (note or "")[:300] or None
     await write_audit_log(session, action.tenant_id, user.id, "ai_action_decided", f"#{action.id} {action.action} {action.status} {note or ''}".strip())
     await session.commit()

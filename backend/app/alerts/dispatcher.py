@@ -11,6 +11,7 @@ import hmac
 import json
 import html
 import logging
+import re
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -21,7 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import EmailConfig, TelegramConfig, WebhookConfig, decrypt_config, severity_reaches
+from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, encrypt_config, severity_reaches
+from app.alerts import webpush
 from app.core.enums import AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
@@ -155,10 +157,87 @@ async def send_webhook(config: WebhookConfig, notification: NotificationRecord, 
             await client.aclose()
 
 
+_PLACEHOLDER = re.compile(r"\{(to|text|title|severity|event_type)\}")
+
+
+def _fill_template(template: str, values: dict) -> str:
+    """Only the documented placeholders are substituted; every other brace (the JSON body itself)
+    is left exactly as typed - `str.format` would choke on it."""
+    return _PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
+
+
+def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: str) -> Tuple[str, Optional[str]]:
+    """(body, query) for one recipient: the template with placeholders filled and JSON-escaped when
+    the content type is JSON, so an alert message containing quotes cannot break the request."""
+    plain, _ = render_text(notification)
+    text = plain[: config.max_length]
+    values = {"to": to_number, "text": text, "title": notification.title[:120], "severity": notification.severity,
+              "event_type": notification.event_type}
+    if "json" in config.content_type:
+        values = {k: json.dumps(v)[1:-1] for k, v in values.items()}  # escape for insertion inside JSON strings
+    return _fill_template(config.body_template, values), None
+
+
+async def send_sms(config: SmsConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
+    """Phase O3: one gateway request per recipient; the first failure is raised after trying all."""
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    errors: List[str] = []
+    try:
+        for number in config.to_numbers:
+            body, _ = render_sms(config, notification, number)
+            headers = {"Content-Type": config.content_type, "User-Agent": "ATP-Alerts/1.0", **config.headers}
+            try:
+                if config.method == "GET":
+                    response = await client.get(str(config.url), params=dict(p.split("=", 1) for p in body.split("&") if "=" in p), headers=headers)
+                else:
+                    response = await client.post(str(config.url), content=body.encode(), headers=headers)
+                if response.status_code >= 300:
+                    errors.append(f"{number}: HTTP {response.status_code} {response.text[:100]}")
+            except httpx.HTTPError as exc:
+                errors.append(f"{number}: {type(exc).__name__}")
+    finally:
+        if owns_client:
+            await client.aclose()
+    if errors:
+        raise RuntimeError("SMS gateway: " + "; ".join(errors))
+
+
+async def send_push(config: PushConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> List[str]:
+    """Phase O3: every registered device; returns the endpoints the push service reports gone so
+    the caller can prune them. Raises only when no device could be reached."""
+    payload = {"title": f"[{notification.severity}] {notification.title}", "body": notification.message[:300],
+               "event_type": notification.event_type, "severity": notification.severity, "notification_id": notification.id,
+               "url": "/?page=notifications"}
+    gone: List[str] = []
+    errors: List[str] = []
+    delivered = 0
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        for sub in config.subscriptions:
+            try:
+                await webpush.send_push(str(sub.endpoint), sub.p256dh, sub.auth, payload, client=client)
+                delivered += 1
+            except webpush.PushGone:
+                gone.append(str(sub.endpoint))
+            except Exception as exc:  # noqa: BLE001 - per-device failure, keep going
+                errors.append(f"{sub.label}: {exc}"[:120])
+    finally:
+        if owns_client:
+            await client.aclose()
+    if delivered == 0 and (errors or not gone):
+        raise RuntimeError("Web Push: " + ("; ".join(errors) if errors else "no reachable device"))
+    if delivered == 0 and gone and not errors:
+        raise RuntimeError("Web Push: every registered device has unsubscribed - enable push again from Settings")
+    return gone
+
+
 async def send_via_channel(
     channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
 ) -> None:
-    """Sends one notification through one channel. Raises on failure with a message safe to store."""
+    """Sends one notification through one channel. Raises on failure with a message safe to store.
+    A PUSH channel whose devices have gone gets its config rewritten in place (caller commits)."""
     config = decrypt_config(channel)
     plain, html_body = render_text(notification)
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
@@ -168,6 +247,15 @@ async def send_via_channel(
         await send_email(config, subject, plain)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
         await send_webhook(config, notification, client)  # type: ignore[arg-type]
+    elif channel.channel_type == AlertChannelType.PUSH.value:
+        gone = await send_push(config, notification, client)  # type: ignore[arg-type]
+        if gone:
+            remaining = [s for s in config.subscriptions if str(s.endpoint) not in gone]  # type: ignore[union-attr]
+            if remaining:
+                channel.encrypted_config = encrypt_config(PushConfig(subscriptions=remaining), channel.tenant_id)
+            logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
+    elif channel.channel_type == AlertChannelType.SMS.value:
+        await send_sms(config, notification, client)  # type: ignore[arg-type]
     else:
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
 

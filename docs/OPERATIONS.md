@@ -13,7 +13,7 @@ it's a target number or a procedure to follow once real infra exists, it says th
 
 | Scenario | RPO (max acceptable data loss) | RTO (max acceptable downtime) |
 |---|---|---|
-| Database crash / corruption | 5 minutes (one WAL-shipping interval) | 30 minutes |
+| Database crash / corruption | 5 minutes (one WAL archive interval, Phase O5 - in force) | 30 minutes |
 | Application server crash | 0 (stateless - DB is the only state) | 2 minutes (restart / redeploy) |
 | Full region outage | 15 minutes (last cross-region backup) | 4 hours (restore into a new region) |
 
@@ -52,6 +52,29 @@ assumption.
   follow 1.3 for open positions. Point-in-time recovery between daily dumps is not provided: for
   that, add WAL archiving or use a managed Postgres with PITR, and keep these dumps as the
   provider-independent copy.
+
+### 1.2a Point-in-time recovery (Phase O5)
+
+- **Continuous WAL archiving** is on in `docker-compose.yml` (`archive_mode=on`, five-minute
+  `archive_timeout`, segments copied into the `wal_archive` volume). Copy that volume off the host
+  with the dumps.
+- **Weekly base backup**: `docker compose run --rm backup sh /scripts/base_backup.sh` (or from
+  cron). It writes `backups/base/<stamp>/`, keeps the newest `BASE_BACKUP_KEEP` (4) and prunes WAL
+  older than the oldest kept base backup. Alert when `LAST_BASE_BACKUP_OK` is older than 8 days.
+- **Recover to an instant** (e.g. just before a bad bulk change at 11:04 IST):
+  1. stop the API and worker (`docker compose stop backend worker`);
+  2. `docker compose run --rm -v atp_pitr:/pitr backup sh /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
+  3. start a scratch Postgres on that directory (`docker run --rm -v atp_pitr:/var/lib/postgresql/data postgres:17-alpine`),
+     which replays WAL to the target and promotes; verify `alembic current`, open trades and
+     `python -m app.audit.verify_chain` against it;
+  4. swap volumes (or `pg_dump` the scratch and `restore.sh` into production), start the worker
+     last and follow 1.3 for open positions.
+- **RPO/RTO per data class** (section 52): orders, trades, risk events and the audit chain
+  (transactional, WAL-archived) RPO 5 min / RTO 30 min; notifications and alert deliveries the
+  same RPO, RTO best effort (they regenerate); market-data caches and the worker lock live in
+  Redis and are not backed up (RPO n/a, rebuilt on the next cycle); broker credentials and
+  tenant keys are in Postgres under the same guarantees, plus the master key in your secret
+  store (loss of the master key is unrecoverable by design).
 
 ### 1.3 Crash-recovery runbook: open positions
 
@@ -304,6 +327,29 @@ Never publish a listing without an attached backtest run; the API refuses the su
   trading day exits with code 3 and the container restarts until you either deploy after close
   or set `MIGRATION_FORCE=1` for that one start (accepting the risk to open positions). Restarts
   without pending migrations are unaffected.
+
+### 1.6e Database roles, exchange sessions, push and SMS (Phase O)
+
+- **Least-privilege roles** (once per database): `SUPERUSER_DATABASE_URL=... ATP_APP_PASSWORD=...
+  ATP_MIGRATOR_PASSWORD=... python scripts/init_db_roles.py`, then set `DATABASE_URL` to `atp_app`
+  and `MIGRATION_DATABASE_URL` to `atp_migrator` and restart. Re-run the script after restoring
+  a dump made under a single role (it re-owns tables). A migration failing with "must be owner"
+  means `MIGRATION_DATABASE_URL` is unset.
+- **Exchange sessions**: the worker now trades MCX deployments until 23:30 IST and crypto around
+  the clock; the Admin/System status shows each venue's state. Load MCX holidays into
+  `market_holidays` with `exchange = 'MCX'` (the NSE list does not apply to commodities).
+  Retention still runs after the NSE close.
+- **Browser push**: generate a VAPID key pair once (`python -m app.alerts.webpush`), put both
+  values in the environment of the API *and* the worker, and never rotate casually (every device
+  must re-subscribe). Users enable push per device under *Settings → Alert delivery*. Endpoints
+  the push service reports gone are pruned automatically. Safari needs the site installed to the
+  home screen on iOS.
+- **SMS**: a tenant pastes its own gateway credentials (MSG91 auth key, Twilio basic auth) into a
+  request template; the platform holds no SMS account. In India a DLT-registered template id is
+  required; the MSG91 preset shows where it goes. Gateway errors appear as the channel's
+  `last_error` with the HTTP status.
+- **Performance probe**: `python scripts/loadtest.py --base https://<api> --users 20 --seconds 30`
+  after every release that touches the request path; paste the table into docs/PERFORMANCE.md.
 
 ### 1.7 Trading worker runbook
 

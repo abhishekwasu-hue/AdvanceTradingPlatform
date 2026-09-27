@@ -358,8 +358,9 @@ def test_flag_helpers_pure():
 
 def test_migration_guard_decision_uses_market_calendar(tmp_path, monkeypatch):
     import importlib.util
-    import subprocess
-    spec = importlib.util.spec_from_file_location("migrate_guard", "/home/user/AdvanceTradingPlatform/backend/scripts/migrate_guard.py")
+    import os
+    guard_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "migrate_guard.py")
+    spec = importlib.util.spec_from_file_location("migrate_guard", guard_path)
     guard = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(guard)
 

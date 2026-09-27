@@ -10,13 +10,14 @@ a provider gets text in and text out, nothing else.
 """
 import json
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Any, Optional, Protocol
 
 import httpx
 
 from app.core import config
 
-DEFAULT_MODELS = {"anthropic": "claude-sonnet-4-5", "openai": "gpt-4o-mini", "rule_based": "nlu-parser-v1"}
+DEFAULT_MODELS = {"anthropic": "claude-opus-5", "openai": "gpt-4o-mini", "rule_based": "nlu-parser-v1"}
+DEFAULT_PROVIDER = "anthropic"   # the operator's choice; a tenant without a key still falls back to rule_based
 PROVIDERS = tuple(DEFAULT_MODELS)
 TIMEOUT = float(getattr(config, "AI_PROVIDER_TIMEOUT_SECONDS", 45.0))
 
@@ -34,16 +35,48 @@ class LLMProvider(Protocol):
 
 @dataclass
 class AnthropicProvider:
+    """Claude through the official `anthropic` SDK (1.x, httpx2-based). Adaptive thinking is left
+    on (the model decides how much to reason); effort sits at `medium` because a rule draft is
+    a short, structured answer. `fallbacks="default"` lets a safety-classifier decline re-run on
+    Anthropic's recommended substitute inside the same call; a refusal that survives that is
+    surfaced as a ProviderError, never as an empty strategy. `http_client` is an SDK
+    `DefaultAsyncHttpxClient` (tests hand in one with a mock transport)."""
+
     api_key: str
     model: str = DEFAULT_MODELS["anthropic"]
-    client: Optional[httpx.AsyncClient] = None
+    http_client: Optional[Any] = None
     name: str = "anthropic"
-    base_url: str = "https://api.anthropic.com"
+    effort: str = "medium"
 
-    async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
-        payload = {"model": self.model, "max_tokens": max_tokens, "system": system, "messages": [{"role": "user", "content": user}]}
-        headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
-        return await _post(self.client, f"{self.base_url}/v1/messages", payload, headers, _anthropic_text)
+    async def complete(self, system: str, user: str, *, max_tokens: int = 16000) -> str:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=self.api_key, http_client=self.http_client, timeout=TIMEOUT, max_retries=1)
+        try:
+            response = await client.beta.messages.create(
+                model=self.model, max_tokens=max_tokens, system=system,
+                messages=[{"role": "user", "content": user}],
+                thinking={"type": "adaptive"}, output_config={"effort": self.effort},
+                betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+            )
+        except anthropic.AuthenticationError as exc:
+            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings") from exc
+        except anthropic.RateLimitError as exc:
+            raise ProviderError("Anthropic rate limit (429) - try again shortly") from exc
+        except anthropic.NotFoundError as exc:
+            raise ProviderError(f"Anthropic does not know model '{self.model}' - pick another under Settings") from exc
+        except anthropic.APIStatusError as exc:
+            raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}") from exc
+        finally:
+            await client.close()
+        if response.stop_reason == "refusal":
+            detail = getattr(getattr(response, "stop_details", None), "explanation", None) or "the request was declined by a safety classifier"
+            raise ProviderError(f"Anthropic declined the request: {detail}")
+        text = "".join(block.text for block in response.content if block.type == "text")
+        if not text:
+            raise ProviderError("Anthropic answered without text content")
+        return text
 
 
 @dataclass
@@ -80,14 +113,6 @@ class RuleBasedProvider:
         })
 
 
-def _anthropic_text(body: dict) -> str:
-    parts = body.get("content") or []
-    text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
-    if not text:
-        raise ProviderError("Anthropic answered without text content")
-    return text
-
-
 def _openai_text(body: dict) -> str:
     try:
         return body["choices"][0]["message"]["content"]
@@ -117,12 +142,13 @@ async def _post(client: Optional[httpx.AsyncClient], url: str, payload: dict, he
         raise ProviderError("Provider answered with non-JSON") from exc
 
 
-def build_provider(name: str, api_key: Optional[str], model: Optional[str], client: Optional[httpx.AsyncClient] = None) -> LLMProvider:
+def build_provider(name: str, api_key: Optional[str], model: Optional[str], client: Optional[Any] = None) -> LLMProvider:
+    """`client` is an SDK http client for Anthropic (httpx2-based) or an `httpx.AsyncClient` for OpenAI."""
     name = (name or "rule_based").lower()
     if name == "anthropic":
         if not api_key:
             raise ProviderError("Anthropic needs an API key")
-        return AnthropicProvider(api_key=api_key, model=model or DEFAULT_MODELS[name], client=client)
+        return AnthropicProvider(api_key=api_key, model=model or DEFAULT_MODELS[name], http_client=client)
     if name == "openai":
         if not api_key:
             raise ProviderError("OpenAI needs an API key")

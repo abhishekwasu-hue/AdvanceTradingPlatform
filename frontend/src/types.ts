@@ -1142,6 +1142,8 @@ export interface Subscription {
   grace_until: string | null;
   cancel_at_period_end: boolean;
   cancelled_at?: string | null;
+  checkout_url?: string | null;
+  subscription_provider?: string | null;
 }
 
 export interface BillingTransaction {
@@ -1237,6 +1239,7 @@ export interface AiProviderConfig {
   ai_features_allowed: boolean;
   providers: AiProviderName[];
   default_models: Record<string, string>;
+  default_provider?: AiProviderName;
 }
 
 export type AiDraftStatus = "DRAFT" | "FAILED" | "BACKTESTED" | "APPROVED" | "REJECTED";

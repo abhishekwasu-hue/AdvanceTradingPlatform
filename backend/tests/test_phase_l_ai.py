@@ -55,28 +55,61 @@ def _candles(prices):
 
 # --- L1 providers + settings ---------------------------------------------------------------------
 
-def test_provider_parsing_and_error_mapping():
+def _anthropic_mock(handler):
+    import httpx2
+    from anthropic import DefaultAsyncHttpxClient
+    return DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler))
+
+
+def test_anthropic_provider_uses_the_sdk_and_maps_errors():
+    import httpx2
     seen = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request):
         seen.append(request)
-        if "anthropic" in str(request.url):
-            assert request.headers["x-api-key"] == "sk-ant-test" and "anthropic-version" in request.headers
-            return httpx.Response(200, json={"content": [{"type": "text", "text": "hello from claude"}]})
+        assert request.url.path == "/v1/messages" and request.headers["x-api-key"] == "sk-ant-test"
+        if request.headers["x-api-key"] == "sk-ant-test" and b"refuse me" in request.content:
+            return httpx2.Response(200, json={"id": "msg_2", "type": "message", "role": "assistant", "model": "claude-opus-5", "content": [],
+                                              "stop_reason": "refusal", "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1},
+                                              "stop_details": {"type": "refusal", "category": "cyber", "explanation": "declined"}})
+        return httpx2.Response(200, json={"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5",
+                                          "content": [{"type": "thinking", "thinking": "", "signature": "x"}, {"type": "text", "text": "hello from claude"}],
+                                          "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}})
+    provider = AnthropicProvider("sk-ant-test", http_client=_anthropic_mock(handler))
+    assert provider.model == "claude-opus-5"
+    assert _run(provider.complete("sys", "make a strategy")) == "hello from claude"
+    body = json.loads(seen[0].content)
+    assert body["model"] == "claude-opus-5" and body["system"] == "sys" and body["messages"] == [{"role": "user", "content": "make a strategy"}]
+    assert body["thinking"] == {"type": "adaptive"} and body["output_config"] == {"effort": "medium"} and body["fallbacks"] == "default"
+    assert "server-side-fallback-2026-07-01" in seen[0].headers["anthropic-beta"]
+    assert set(body) == {"model", "max_tokens", "system", "messages", "thinking", "output_config", "fallbacks"}   # prompt text only, no credentials
+    try:
+        _run(AnthropicProvider("sk-ant-test", http_client=_anthropic_mock(handler)).complete("sys", "refuse me"))
+        assert False, "expected ProviderError"
+    except ProviderError as exc:
+        assert "declined" in str(exc)
+
+    def unauthorized(request):
+        return httpx2.Response(401, json={"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
+    try:
+        _run(AnthropicProvider("sk-ant-bad", http_client=_anthropic_mock(unauthorized)).complete("s", "u"))
+        assert False
+    except ProviderError as exc:
+        assert "401" in str(exc)
+
+
+def test_openai_provider_parsing_and_error_mapping():
+    def handler(request: httpx.Request) -> httpx.Response:
         if request.headers.get("Authorization") == "Bearer bad":
             return httpx.Response(401, json={})
         return httpx.Response(200, json={"choices": [{"message": {"content": "hello from gpt"}}]})
     mock = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    assert _run(AnthropicProvider("sk-ant-test", client=mock).complete("s", "u")) == "hello from claude"
     assert _run(OpenAIProvider("sk-openai", client=mock).complete("s", "u")) == "hello from gpt"
     try:
         _run(OpenAIProvider("bad", client=mock).complete("s", "u"))
         assert False, "expected ProviderError"
     except ProviderError as exc:
         assert "401" in str(exc)
-    # the payload never carries anything but the prompt text
-    body = json.loads(seen[0].content)
-    assert set(body) == {"model", "max_tokens", "system", "messages"}
     assert isinstance(build_provider("rule_based", None, None), RuleBasedProvider)
     try:
         build_provider("anthropic", None, None)
@@ -89,7 +122,7 @@ def test_provider_config_is_owner_only_encrypted_and_never_returned():
     headers, me = _owner("ai-provider@example.com")
     default = client.get("/api/ai/provider", headers=headers).json()
     assert default["provider"] == "rule_based" and default["configured"] is False and default["ai_features_allowed"] is True
-    saved = client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-secret-value-123", "model": "claude-sonnet-4-5"})
+    saved = client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-secret-value-123", "model": "claude-opus-5"})
     assert saved.status_code == 200, saved.text
     assert saved.json()["api_key_set"] is True and "sk-ant-secret" not in saved.text
 
@@ -100,7 +133,7 @@ def test_provider_config_is_owner_only_encrypted_and_never_returned():
     cipher = _run(stored())
     assert cipher != "sk-ant-secret-value-123" and decrypt_text(cipher) == "sk-ant-secret-value-123"
     # Switching model keeps the stored key; switching provider without a key is refused.
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "model": "claude-opus-4-1"}).json()["api_key_set"] is True
+    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "model": "claude-sonnet-5"}).json()["api_key_set"] is True
     assert client.put("/api/ai/provider", headers=headers, json={"provider": "openai"}).status_code == 400
     assert any(l["event"] == "ai_provider_configured" for l in client.get("/api/audit-logs", headers=headers).json())
     assert client.delete("/api/ai/provider", headers=headers).status_code == 204

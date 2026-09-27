@@ -6,6 +6,7 @@ numpy>=1.26,<3.0
 pytest>=8.0,<10.0
 hypothesis>=6.100,<7.0
 httpx>=0.26,<1.0
+anthropic>=1.8,<2.0
 sqlalchemy[asyncio]>=2.0,<3.0
 asyncpg>=0.29,<1.0
 aiosqlite>=0.20,<1.0

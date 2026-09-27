@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.providers import DEFAULT_MODELS, LLMProvider, PROVIDERS, ProviderError, RuleBasedProvider, build_provider
+from app.ai.providers import DEFAULT_MODELS, DEFAULT_PROVIDER, LLMProvider, PROVIDERS, ProviderError, RuleBasedProvider, build_provider
 from app.audit.log import write_audit_log
 from app.db.models import AiProviderConfigRecord, Tenant, User
 from app.plans.limits import feature_allowed
@@ -74,7 +74,7 @@ def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant) -> dict:
     allowed = feature_allowed(tenant, "ai_features")
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,
-                "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS}
+                "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS, "default_provider": DEFAULT_PROVIDER}
     return {"provider": record.provider, "model": record.model, "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
             "configured": True, "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None, "last_error": record.last_error,
-            "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS}
+            "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS, "default_provider": DEFAULT_PROVIDER}

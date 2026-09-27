@@ -111,3 +111,13 @@ def validate_production_config() -> None:
         raise RuntimeError(
             "Refusing to start with ENVIRONMENT=production and insecure configuration:\n- " + "\n- ".join(problems)
         )
+
+# --- Billing gateway (Phase K1b) ----------------------------------------------------------
+# "manual" = the operator records bank/UPI payments; "razorpay" = Razorpay Subscriptions with
+# hosted checkout and webhooks. These are the operator's own gateway secrets (platform-level,
+# like JWT_SECRET_KEY) - never a tenant's. Missing keys fall back to manual with a warning.
+BILLING_PROVIDER = os.environ.get("BILLING_PROVIDER", "manual").strip().lower()
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+RAZORPAY_BASE_URL = os.environ.get("RAZORPAY_BASE_URL", "https://api.razorpay.com/v1")

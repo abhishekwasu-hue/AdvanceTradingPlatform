@@ -19,7 +19,12 @@ export default function AiProviderCard() {
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
 
   function refresh() {
-    api.aiProvider().then((c) => { setConfig(c); setForm((f) => ({ ...f, provider: c.provider, model: c.model, enabled: c.enabled, api_key: "" })); }).catch((e) => setError(String(e)));
+    api.aiProvider().then((c) => {
+      setConfig(c);
+      // Not configured yet: pre-select the platform's recommended provider (Claude) so the owner only pastes a key.
+      const provider = c.configured ? c.provider : (c.default_provider ?? "anthropic");
+      setForm((f) => ({ ...f, provider, model: c.configured ? c.model : (c.default_models[provider] ?? ""), enabled: c.enabled, api_key: "" }));
+    }).catch((e) => setError(String(e)));
   }
   useEffect(refresh, []);
 
@@ -31,8 +36,9 @@ export default function AiProviderCard() {
   return (
     <Card title="AI provider">
       <p className="text-xs text-muted mb-3">
-        Powers the AI Copilot's strategy generator and the wording of monitoring proposals. Without a provider (or on the Free plan)
-        everything falls back to the built-in rule-based parser - no data leaves the platform. The model only ever receives the text
+        Powers the AI Copilot's strategy generator and the wording of monitoring proposals. Claude (Anthropic) is the recommended
+        provider: paste an Anthropic API key from console.anthropic.com. Without a key (or on the Free plan) everything falls back to the
+        built-in rule-based parser - no data leaves the platform. The model only ever receives the text
         you type; it never sees broker credentials, and nothing it produces can trade before you backtest and approve it.
       </p>
       {config && (

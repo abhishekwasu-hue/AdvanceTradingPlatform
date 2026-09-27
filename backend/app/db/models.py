@@ -728,8 +728,41 @@ class SubscriptionRecord(Base):
     grace_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(nullable=False, default=False)
     cancelled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Phase K1b: the gateway's hosted checkout / autopay-mandate link for this subscription.
+    checkout_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class BillingGatewayPlanRecord(Base):
+    """Phase K1b: our (plan, cycle) -> the gateway's plan object, created lazily once."""
+
+    __tablename__ = "billing_gateway_plans"
+    __table_args__ = (UniqueConstraint("provider", "plan_id", "billing_cycle", name="uq_gateway_plan"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    plan_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    billing_cycle: Mapped[str] = mapped_column(String(10), nullable=False)
+    gateway_plan_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class BillingWebhookEventRecord(Base):
+    """Phase K1b: every gateway webhook delivery, keyed by the gateway's event id so a redelivery
+    is a no-op. Payloads are kept for dispute handling and audit."""
+
+    __tablename__ = "billing_webhook_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    result: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 
 
 class BillingTransactionRecord(Base):

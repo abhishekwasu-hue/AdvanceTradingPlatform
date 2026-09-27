@@ -7,7 +7,9 @@ records a payment against the open invoice (the manual provider's "gateway webho
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import json
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,9 @@ from app.auth.dependencies import get_current_user, require_owner, require_role
 from app.billing.service import (
     cancel, get_subscription, plans_catalogue, record_payment, subscribe, subscription_dict, usage_summary,
 )
+from app.billing.razorpay import GatewayError, RazorpayProvider
+from app.billing.webhooks import WebhookRejected, handle_razorpay
+from app.billing.service import provider as billing_provider
 from app.db.models import BillingTransactionRecord, Tenant, User
 from app.db.session import get_session
 from app.plans.limits import limits, usage as plan_usage
@@ -65,7 +70,7 @@ async def subscribe_plan(body: SubscribeRequest, user: User = Depends(require_ow
     tenant = await session.get(Tenant, user.tenant_id)
     try:
         sub = await subscribe(session, tenant, body.plan_id.lower(), body.billing_cycle.upper(), user_id=user.id)
-    except ValueError as exc:
+    except (ValueError, GatewayError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.refresh(tenant)
     return subscription_dict(sub, tenant)
@@ -76,7 +81,7 @@ async def cancel_plan(body: CancelRequest, user: User = Depends(require_owner), 
     tenant = await session.get(Tenant, user.tenant_id)
     try:
         sub = await cancel(session, tenant, immediately=body.immediately, user_id=user.id)
-    except ValueError as exc:
+    except (ValueError, GatewayError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.refresh(tenant)
     return subscription_dict(sub, tenant)
@@ -119,3 +124,29 @@ async def admin_billing(tenant_id: int, session: AsyncSession = Depends(get_sess
     rows = await session.scalars(select(BillingTransactionRecord).where(BillingTransactionRecord.tenant_id == tenant_id)
                                  .order_by(BillingTransactionRecord.id.desc()).limit(50))
     return {"subscription": subscription_dict(sub, tenant), "transactions": [_tx(r) for r in rows]}
+
+
+# --- gateway webhooks (Phase K1b) -----------------------------------------------------------------
+
+webhook_router = APIRouter(prefix="/api/billing/webhooks", tags=["billing"])
+
+
+@webhook_router.post("/razorpay")
+async def razorpay_webhook(request: Request, session: AsyncSession = Depends(get_session),
+                           x_razorpay_signature: Optional[str] = Header(default=None, alias="X-Razorpay-Signature"),
+                           x_razorpay_event_id: Optional[str] = Header(default=None, alias="X-Razorpay-Event-Id")) -> dict:
+    """Unauthenticated by design (Razorpay calls it); the HMAC over the raw body is the auth.
+    Always answers 200 once verified so Razorpay does not retry a delivery we recorded."""
+    current = billing_provider()
+    if not isinstance(current, RazorpayProvider):
+        raise HTTPException(status_code=404, detail="Razorpay is not the configured billing provider")
+    body = await request.body()
+    try:
+        payload = json.loads(body or b"{}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Body is not JSON") from exc
+    try:
+        record = await handle_razorpay(session, current, body, x_razorpay_signature, x_razorpay_event_id, payload)
+    except WebhookRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "event_id": record.event_id, "event": record.event_type, "result": record.result}

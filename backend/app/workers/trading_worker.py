@@ -56,7 +56,7 @@ from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
 from app.instruments.master import sync_upstox
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
-from app.instruments.spreads import resolve_structure
+from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
@@ -572,8 +572,9 @@ class TradingWorker:
             structure = await resolve_structure(
                 session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
                 spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker),
+                custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
             )
-        except ContractResolutionError as exc:
+        except (ContractResolutionError, ValueError) as exc:
             dep.last_error = f"Structure not built: {exc}"
             dep.last_signal_at = signal_ts if "not entered on" in str(exc) else dep.last_signal_at
             await session.commit()

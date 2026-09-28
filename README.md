@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Ratio spreads, butterflies and custom legs (Phase U)
+
+- **Payoff-priced structures**: call/put ratio spreads (1:2), long butterfly (1:2:1) and a
+  free-form leg builder (2-6 legs with roles, strikes and ratios). Max loss, max profit and
+  breakevens are computed from the expiry payoff, never assumed.
+- **Per-leg quantities** through the executor and the position monitor; exits on P&L per unit
+  with an underlying exit beyond an unprotected side's breakeven.
+
 ## Account routing (Phase T)
 
 - **Rule-based broker selection** per deployment or tenant default: most margin, least

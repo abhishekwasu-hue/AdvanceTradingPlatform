@@ -32,7 +32,10 @@ from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
 from app.trading.exit_rules import ExitRules
 from app.ai.regime import parse_filter, validate_filter
-from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics, is_debit
+from app.instruments.spreads import (
+    MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg, custom_legs_json, describe_structure, is_debit, is_payoff_priced,
+    parse_custom_legs, resolve_structure, structure_metrics,
+)
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, describe_rules, resolve_contract,
@@ -105,6 +108,11 @@ class ContractRulesRequest(BaseModel):
     spread_width: int = Field(default=2, ge=1, le=20, description="wing distance in listed strike steps")
     target_credit_pct: Optional[float] = Field(default=None, ge=5, le=95, description="take profit at this % of the credit captured")
     stop_credit_pct: Optional[float] = Field(default=None, ge=10, le=500, description="stop when the loss reaches this % of the credit")
+    # Phase U: the legs of a CUSTOM structure (2..6), each on the deployment's expiry rule.
+    custom_legs: Optional[List["CustomLegRequest"]] = Field(default=None, max_length=MAX_CUSTOM_LEGS)
+
+    def custom_leg_specs(self) -> List[CustomLeg]:
+        return [leg.to_spec() for leg in (self.custom_legs or [])]
 
     def normalised(self) -> "ContractRulesRequest":
         """Fills the defaults the kind implies and rejects rules that make no sense for it."""
@@ -123,6 +131,16 @@ class ContractRulesRequest(BaseModel):
             raise HTTPException(status_code=400, detail="A structure is exited on its net credit/debit (target/stop %), not a premium stop")
         if is_debit(self.option_strategy) and self.stop_credit_pct is not None and self.stop_credit_pct > 100:
             raise HTTPException(status_code=400, detail="A debit structure cannot lose more than its debit: stop % must be at most 100")
+        if self.option_strategy == OptionStrategy.CUSTOM:
+            try:
+                specs = self.custom_leg_specs()
+                parse_custom_legs([leg.as_dict() for leg in specs])
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"custom_legs: {exc}")
+            if self.strike_filters is not None:
+                raise HTTPException(status_code=400, detail="Strike filters do not apply to a CUSTOM structure: its legs name their strikes")
+        elif self.custom_legs:
+            raise HTTPException(status_code=400, detail="custom_legs only apply when option_strategy is CUSTOM")
         if self.strike_filters is not None and self.strike_filters.min_iv_pct is not None and self.strike_filters.max_iv_pct is not None \
                 and self.strike_filters.min_iv_pct > self.strike_filters.max_iv_pct:
             raise HTTPException(status_code=400, detail="min_iv_pct must not exceed max_iv_pct")
@@ -135,7 +153,9 @@ class ContractRulesRequest(BaseModel):
                 raise HTTPException(status_code=400, detail="Futures take only an expiry rule (and max_lots)")
             return ContractRulesRequest(**data)
         position = self.option_position or (OptionPosition.WRITE if self.option_strategy != OptionStrategy.SINGLE else OptionPosition.BUY)
-        if self.option_strategy != OptionStrategy.SINGLE:
+        if self.option_strategy == OptionStrategy.CUSTOM:
+            position = OptionPosition.WRITE if any(leg.role == "SHORT" for leg in self.custom_legs or []) else OptionPosition.BUY
+        elif self.option_strategy != OptionStrategy.SINGLE:
             # Credit structures sell their primary legs (wings bought); debit structures buy theirs.
             position = OptionPosition.BUY if is_debit(self.option_strategy) else OptionPosition.WRITE
         data["option_position"] = position
@@ -149,7 +169,7 @@ class ContractRulesRequest(BaseModel):
         return ContractRulesRequest(**data)
 
     def structure_description(self) -> str:
-        return describe_structure(self.option_strategy, self.spread_width, self.to_rules())
+        return describe_structure(self.option_strategy, self.spread_width, self.to_rules(), self.custom_leg_specs())
 
     def to_rules(self) -> ContractRules:
         return ContractRules(
@@ -161,6 +181,20 @@ class ContractRulesRequest(BaseModel):
 
     def filters_json(self) -> Optional[str]:
         return self.strike_filters.to_filters().to_json() if self.strike_filters else None
+
+
+class CustomLegRequest(BaseModel):
+    right: str = Field(pattern="^(CE|PE|ce|pe)$")
+    role: str = Field(pattern="^(SHORT|LONG|short|long)$")
+    strike_rule: StrikeRule = StrikeRule.ATM
+    strike_offset: int = Field(default=0, ge=0, le=20)
+    ratio: int = Field(default=1, ge=1, le=MAX_LEG_RATIO)
+
+    def to_spec(self) -> CustomLeg:
+        return CustomLeg.from_dict(self.model_dump())
+
+
+ContractRulesRequest.model_rebuild()
 
 
 class DeploymentCreateRequest(ContractRulesRequest):
@@ -219,6 +253,7 @@ class DeploymentResponse(BaseModel):
     spread_width: int = 2
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
+    custom_legs: Optional[List[dict]] = None
     broker_account_id: Optional[int] = None
     routing_policy: Optional[str] = None
     route_across_brokers: bool = False
@@ -243,6 +278,7 @@ class DeploymentResponse(BaseModel):
             strike_filters=json.loads(record.strike_filters) if record.strike_filters else None,
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
+            custom_legs=json.loads(record.custom_legs) if getattr(record, "custom_legs", None) else None,
             broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
             routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
             last_route=getattr(record, "last_route", None),
@@ -254,7 +290,11 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
     rules = ContractRules.from_deployment(record)
     strategy = OptionStrategy(record.option_strategy or "SINGLE")
     if rules.kind == InstrumentKind.OPTION and strategy != OptionStrategy.SINGLE:
-        text = describe_structure(strategy, record.spread_width or 2, rules)
+        try:
+            legs = parse_custom_legs(getattr(record, "custom_legs", None))
+        except ValueError:
+            legs = []
+        text = describe_structure(strategy, record.spread_width or 2, rules, legs)
         if rules.strike_filters.active:
             text += f", filters: {rules.strike_filters.describe()}"
     else:
@@ -416,6 +456,7 @@ async def create_deployment(
         strike_filters=rules.filters_json(),
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
+        custom_legs=custom_legs_json(rules.custom_leg_specs()) if rules.option_strategy == OptionStrategy.CUSTOM else None,
         broker_account_id=account.id if account is not None else None,
         routing_policy=request.routing_policy.value if request.routing_policy is not None else None,
         route_across_brokers=bool(request.route_across_brokers),
@@ -473,6 +514,7 @@ async def preview_contract(
                 structure = await resolve_structure(
                     session, request.symbol, rules.to_rules(), rules.option_strategy, direction,
                     spread_width=rules.spread_width, spot=spot, today=today, chain_provider=chain_provider,
+                    custom_legs=rules.custom_leg_specs(),
                 )
             except ContractResolutionError as exc:
                 out["structures"][direction.value] = {"error": str(exc)}

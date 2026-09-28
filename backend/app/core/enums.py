@@ -359,6 +359,12 @@ class OptionStrategy(str, Enum):
     LONG_STRADDLE = "LONG_STRADDLE"        # buy ATM CE + PE (debit, max loss = debit)
     LONG_STRANGLE = "LONG_STRANGLE"        # buy OTM CE + PE (debit)
     CALENDAR_SPREAD = "CALENDAR_SPREAD"    # sell the rule expiry ATM, buy the next expiry same strike (debit)
+    # Phase U: ratio and butterfly structures and the free-form leg builder, priced off the
+    # expiry payoff (app/instruments/payoff.py) rather than a hand rule.
+    CALL_RATIO_SPREAD = "CALL_RATIO_SPREAD"   # buy 1 CE at the rule strike, sell 2 CE spread_width steps higher (LONG lean; undefined upside)
+    PUT_RATIO_SPREAD = "PUT_RATIO_SPREAD"     # buy 1 PE at the rule strike, sell 2 PE spread_width steps lower (SHORT lean; undefined downside)
+    LONG_BUTTERFLY = "LONG_BUTTERFLY"         # buy 1 wing, sell 2 ATM, buy 1 wing, spread_width steps each side (debit, defined risk)
+    CUSTOM = "CUSTOM"                         # the deployment's own legs (custom_legs), any rights/roles/strikes/ratios, one expiry
 
 
 class StrikeRule(str, Enum):

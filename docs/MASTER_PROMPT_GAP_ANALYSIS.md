@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase T, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase U, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -15,7 +15,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; versioned reference `docs/STRATEGY_DSL.md` (Phase N5). |
 | 15-22 signal, risk, sizing, order, idempotency, position, reconciliation | done (Phase Q) | Order state machine, idempotency, reconciliation. §17 checks all present: data fresh (G1), broker healthy (G2 circuit), risk approved (risk engine + I1 hierarchy), margin available for every LIVE entry from the broker's calculator (Q; bought options by premium, nothing guessed for equity/futures), instrument/expiry validity against the instrument master (Q). `PARTIAL_FILL` on the trade (F3) and on the order trail (Q). |
-| 23-25 options engine, strategies, Greeks | done (Phase F + H + R) | Strike-selection pipeline with liquidity/OI/IV/delta/premium filters (H1); bull put, bear call, iron condor (H2); iron butterfly, short/long straddle and strangle, calendar spread with credit/debit/undefined-risk economics, sizing basis and group exits (R); Greeks per leg and per structure on open positions. Ratio spreads, long butterflies and a free-form leg builder not built. |
+| 23-25 options engine, strategies, Greeks | done (Phase F + H + R + U) | Strike-selection pipeline with liquidity/OI/IV/delta/premium filters (H1); bull put, bear call, iron condor (H2); iron butterfly, short/long straddle and strangle, calendar spread with credit/debit/undefined-risk economics, sizing basis and group exits (R); call/put ratio spreads, long butterfly and a free-form leg builder priced off the expiry payoff with per-leg ratios and P&L-based exits (U); Greeks per leg and per structure on open positions. |
 | 26-27 paper, live | done | Same pipeline; configurable slippage; execution delay/bid-ask simulation not modelled. |
 | 28 kill switches, emergency exit | done | Global/tenant/strategy + emergency exit. |
 | 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
@@ -46,7 +46,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Item | Status | Gaps |
 | --- | --- | --- |
 | V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. |
-| V2.1-2.6 options depth | mostly done (Phase R) | Nine structures; see §23-25 for what remains (ratio, long butterfly, custom leg builder, historical chain backtests). |
+| V2.1-2.6 options depth | done (Phase R + U) | Thirteen structures plus the custom leg builder; historical option-chain backtests remain (see §31-32). |
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I + T) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; `risk_limits` at six scopes with strictest-wins and `risk_events`. Routing policies EXPLICIT / MOST_MARGIN / LEAST_UTILISED / FEWEST_POSITIONS per deployment or tenant default, optionally across brokers, decided on balances the worker refreshes before routing, recorded on the deployment and on every trade (T); exits and stop re-arms follow the trade's own account. Reconciliation still runs against one session per tenant. |
 | V3.6-3.8 plans, billing, metering | done (Phase K1) | Priced plans with feature flags, subscriptions with trial/grace lifecycle behind a `BillingProvider` (manual provider; a gateway plugs in at the same seam), invoices/payments, usage metering (orders, backtests, webhook events, API calls). Razorpay Subscriptions gateway (hosted checkout, autopay, signed idempotent webhooks) behind the seam; manual remains for bank transfers. |

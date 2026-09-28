@@ -429,6 +429,24 @@ Never publish a listing without an attached backtest run; the API refuses the su
   worker's sessions; its open positions are still exited through it as long as its token is
   valid, because the exit uses the trade's account, not the candidate list.
 
+### 1.6j Ratio spreads, butterflies and custom legs (Phase U)
+
+- **Reading the card**: these structures show "net credit/debit, max loss (or UNDEFINED), max
+  profit, breakevens; exit at P&L >= x or <= y per unit". Multiply by lot size and lots for
+  rupees. "UNDEFINED max loss" means one side has more sold than bought; the lots were sized
+  off the stop, and the group also closes beyond that side's breakeven.
+- **"cannot profit at expiry at these premiums"**: the legs, at the quotes just fetched, lose
+  everywhere - typically a custom set with the roles inverted, or a ratio spread whose short
+  strike is too close. Check the legs on the deployment; nothing was placed.
+- **"shows no loss at expiry ... quotes inconsistent"**: a defined-risk set priced as free
+  money, which only happens with stale or crossed quotes. Nothing was placed; it retries on
+  the next signal.
+- **LIVE margin**: the broker's requirement is asked for each short leg at its full ratio
+  quantity, no spread benefit assumed. A 1:2 ratio spread therefore needs the margin of two
+  naked shorts to pass the cap; SPAN benefit at the broker is a bonus, never relied on.
+- **Custom legs and filters**: strike filters are refused on a CUSTOM structure because its
+  legs name their strikes; use OTM/ITM steps per leg instead.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

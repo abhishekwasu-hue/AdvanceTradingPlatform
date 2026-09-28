@@ -62,6 +62,12 @@ class RiskConfig(BaseModel):
     max_consecutive_losses: int = 4
     min_risk_reward: float = 1.2
     lot_size: int = 1
+    # Phase V1 (Risk Guardian): the rules the engine keeps whatever built the strategy.
+    max_portfolio_risk_pct: float = 6.0    # R4: loss if every open stop hits + this trade, % of capital
+    stop_cooldown_minutes: int = 30        # R10: no re-entry in an underlying this long after a stop-out
+    dd_level_1_pct: float = 5.0            # P2: this far below the equity peak, risk per trade is halved
+    dd_level_2_pct: float = 10.0           # P3: this far below, new entries pause until reviewed
+    event_size_cut_pct: float = 50.0       # M8: default size cut on an event day flagged SIZE_CUT
 
 
 class RiskDecision(BaseModel):

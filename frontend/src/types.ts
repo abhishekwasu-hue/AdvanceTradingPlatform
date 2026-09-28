@@ -349,6 +349,63 @@ export interface RiskConfig {
   max_consecutive_losses: number;
   min_risk_reward: number;
   lot_size: number;
+  // Phase V1: Risk Guardian rules
+  max_portfolio_risk_pct: number;
+  stop_cooldown_minutes: number;
+  dd_level_1_pct: number;
+  dd_level_2_pct: number;
+  event_size_cut_pct: number;
+}
+
+export type RiskCeilings = Record<string, number>;
+
+export interface MarketEvent {
+  id: number;
+  tenant_id: number | null;
+  global: boolean;
+  underlying: string | null;
+  event_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  kind: string;
+  action: "BLOCK" | "SIZE_CUT";
+  size_cut_pct: number | null;
+  description: string;
+  created_at: string | null;
+}
+
+export interface MarketEventRequest {
+  event_date: string;
+  underlying?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  kind: string;
+  action: "BLOCK" | "SIZE_CUT";
+  size_cut_pct?: number | null;
+  description?: string;
+  global_event?: boolean;
+}
+
+export interface GuardianModeStatus {
+  equity: number;
+  peak: number;
+  drawdown_pct: number;
+  closed_trades: number;
+  state: "normal" | "reduced" | "paused";
+  size_multiplier: number;
+  open_risk_by_bucket: Record<string, number>;
+  open_risk_total: number;
+  open_risk_pct: number;
+  portfolio_cap: number;
+  cooldowns: { underlying: string; exit_reason: string | null; minutes_left: number }[];
+}
+
+export interface GuardianStatus {
+  as_of: string;
+  settings: RiskConfig;
+  modes: Record<"PAPER" | "LIVE", GuardianModeStatus>;
+  events_today: MarketEvent[];
+  ceilings: RiskCeilings;
 }
 
 export interface GroupStats {

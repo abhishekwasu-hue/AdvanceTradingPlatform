@@ -2951,3 +2951,44 @@ no loss (inconsistent quotes), is refused before any order. Migration `c5e7a9b2d
 `strategy_deployments.custom_legs`. The Autopilot form gains the three structures and a leg
 builder (buy/sell, ratio, ATM/ITM/OTM + steps, CE/PE per leg); the preview shows each leg's
 ratio, the computed max loss/profit and the P&L exit levels.
+
+## Phase V1: Risk Guardian engine rules
+
+The AI strategy builder's "Pro Trader Risk Guardian" spec lists the rules every strategy must
+obey and says the hard ones must live in the execution engine, not only in the prompt. Most
+already did: a stop before every entry, size derived from risk (never from premium or margin),
+strictest-wins limits, a stop that only tightens (`exit_rules.py`), defined-risk structures
+with undefined-risk ones sized off the stop. `app/risk_engine/guardian.py` adds the rest, run
+on every entry - single leg and multi-leg, PAPER and LIVE, whatever built the strategy:
+
+* **R10 cool-down.** No re-entry in an underlying for `stop_cooldown_minutes` (default 30)
+  after a position in it closed on a stop: the stop level, a premium floor/ceiling, a structure
+  stop, a breached short strike. Target, time and square-off exits start no cool-down, and a
+  LIVE stop-out does not cool PAPER down (modes are separate).
+* **P2/P3 drawdown ladder.** Equity per mode = capital + realised P&L of every closed trade;
+  the peak is the high-water mark. `dd_level_1_pct` (5%) below it the risk per trade is
+  halved; `dd_level_2_pct` (10%) below it new entries are paused until equity recovers or the
+  level is raised after a review. The multiplier is never above 1, so a hot streak never
+  raises size (P4).
+* **M8 event blackout.** `market_events` rows - a tenant's own, or global ones the operator
+  keeps - name a date, an optional IST time window, an underlying (or `INDEX` for the whole
+  index bucket, or every symbol) and an action: BLOCK refuses entries, SIZE_CUT scales the risk
+  per trade by `1 - size_cut_pct/100` (default the tenant's `event_size_cut_pct`, 50%).
+* **R4 portfolio risk with correlated buckets.** After sizing, the loss if every open stop hits
+  plus this trade's max loss must stay within `max_portfolio_risk_pct` (6%) of capital.
+  NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX and BANKEX form one `INDEX` bucket, so index
+  short-vol positions never count as diversified; a multi-leg group counts once at its
+  structure's risk per unit. The refusal names the bucket the trade would join.
+* **Ceilings.** `platform.controls.risk_ceilings` (risk per trade 2%, daily loss 5%, portfolio
+  risk 10%, pause level 25%, minimum cool-down 0) are SUPER_ADMIN settings under
+  `/api/admin/controls/risk-ceilings`. The risk-settings API refuses values above them and the
+  engine clamps saved settings at runtime, noting the clamp on the order.
+
+Where it sits: `execute_signal_for_user` and `execute_structure` clamp the tenant's
+`RiskConfig`, run `guard_entry` (refusal = REJECTED order with a RISK_REJECTION notification;
+size cut = a smaller `risk_per_trade_pct` for the sizer), then check `portfolio_risk_block`
+next to the Phase I1 hierarchy before placement. `GET /api/risk-guardian/status` reports the
+drawdown, state and multiplier per mode, open risk by bucket, active cool-downs, today's
+events and the ceilings - the Risk page shows it, and Phase V3 feeds it to the AI as runtime
+context. R6 (never add to a loser) holds by construction: one open position per deployment and
+no add-to-position path. Migration `d6f8b1c3e5a7`.

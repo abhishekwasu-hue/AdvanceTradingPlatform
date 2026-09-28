@@ -230,6 +230,15 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Risk Guardian rules (Phase V1)
+
+- **Engine-enforced trader discipline**, whatever built the strategy: cool-down after a
+  stop-out, a drawdown ladder that halves size and then pauses entries, event-day blackouts and
+  size cuts from a market-events calendar, and a portfolio risk cap with index positions in one
+  correlated bucket.
+- **Platform ceilings** the operator sets; tenant settings cannot exceed them and are clamped
+  at runtime if they do.
+
 ## Ratio spreads, butterflies and custom legs (Phase U)
 
 - **Payoff-priced structures**: call/put ratio spreads (1:2), long butterfly (1:2:1) and a

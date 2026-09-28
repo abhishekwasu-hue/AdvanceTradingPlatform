@@ -1,5 +1,5 @@
 """Phase M / V4.13 endpoints: public status, admin controls, per-user trading disable."""
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -41,6 +41,10 @@ class TradingDisableBody(BaseModel):
     reason: str = Field(min_length=3, max_length=200)
 
 
+class RiskCeilingsBody(BaseModel):
+    values: Dict[str, float] = Field(default_factory=dict, max_length=10)
+
+
 @status_router.get("/status")
 async def system_status(session: AsyncSession = Depends(get_session)) -> dict:
     """Unauthenticated: the frontend banner reads it before login too."""
@@ -64,6 +68,20 @@ async def put_maintenance(body: MaintenanceBody, user: User = Depends(require_ro
 @admin_router.put("/brokers")
 async def put_brokers(body: BrokersBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     return await controls.set_disabled_brokers(session, user, body.names)
+
+
+@admin_router.get("/risk-ceilings")
+async def get_risk_ceilings(session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase V1: the hard ceilings every tenant's risk settings stay under."""
+    return await controls.risk_ceilings(session)
+
+
+@admin_router.put("/risk-ceilings")
+async def put_risk_ceilings(body: RiskCeilingsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    try:
+        return await controls.set_risk_ceilings(session, user, body.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # --- Phase N4: feature flags -----------------------------------------------------------------------

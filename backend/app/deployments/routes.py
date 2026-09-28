@@ -21,6 +21,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.registry import available_brokers
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
+from app.accounts.routing import RoutingPolicy
 from app.accounts.service import get_account
 from app.market_data.calendar import IST
 from datetime import datetime
@@ -171,6 +172,9 @@ class DeploymentCreateRequest(ContractRulesRequest):
     broker_name: Optional[str] = None
     # Phase I2: route LIVE orders to one broker account (None = the broker's default account).
     broker_account_id: Optional[int] = None
+    # Phase T: choose the account at signal time by rule (None = the organisation's default policy).
+    routing_policy: Optional[RoutingPolicy] = None
+    route_across_brokers: bool = False
     # Phase J1: dynamic exits.
     exit_rules: Optional[ExitRulesRequest] = None
     regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
@@ -216,6 +220,9 @@ class DeploymentResponse(BaseModel):
     target_credit_pct: Optional[float] = None
     stop_credit_pct: Optional[float] = None
     broker_account_id: Optional[int] = None
+    routing_policy: Optional[str] = None
+    route_across_brokers: bool = False
+    last_route: Optional[str] = None
     exit_rules: Optional[dict] = None
     regime_filter: Optional[List[str]] = None
     contract_rules: str = "underlying"
@@ -237,6 +244,8 @@ class DeploymentResponse(BaseModel):
             option_strategy=record.option_strategy or "SINGLE", spread_width=record.spread_width or 2,
             target_credit_pct=record.target_credit_pct, stop_credit_pct=record.stop_credit_pct,
             broker_account_id=record.broker_account_id, exit_rules=json.loads(record.exit_rules) if record.exit_rules else None,
+            routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
+            last_route=getattr(record, "last_route", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
         )
 
@@ -368,6 +377,10 @@ async def create_deployment(
         if broker_name and account.broker_name != broker_name:
             raise HTTPException(status_code=400, detail=f"Account #{account.id} belongs to {account.broker_name}, not {broker_name}")
         broker_name = account.broker_name
+    if request.route_across_brokers and request.mode != ExecutionMode.LIVE:
+        raise HTTPException(status_code=400, detail="route_across_brokers only applies to LIVE deployments")
+    if request.routing_policy not in (None, RoutingPolicy.EXPLICIT) and request.mode != ExecutionMode.LIVE:
+        raise HTTPException(status_code=400, detail="A routing policy only applies to LIVE deployments (paper trades need no account)")
     if request.mode == ExecutionMode.LIVE:
         if not broker_name:
             raise HTTPException(status_code=400, detail="LIVE deployments must name the broker to trade through")
@@ -404,6 +417,8 @@ async def create_deployment(
         option_strategy=rules.option_strategy.value, spread_width=rules.spread_width,
         target_credit_pct=rules.target_credit_pct, stop_credit_pct=rules.stop_credit_pct,
         broker_account_id=account.id if account is not None else None,
+        routing_policy=request.routing_policy.value if request.routing_policy is not None else None,
+        route_across_brokers=bool(request.route_across_brokers),
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
         regime_filter=",".join(_regime_filter(request)) or None,
     )

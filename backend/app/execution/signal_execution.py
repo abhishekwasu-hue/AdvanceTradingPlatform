@@ -306,7 +306,7 @@ async def execute_signal_for_user(
             trade_record = await persist_trade(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
-                contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules,
+                contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules, account_id=account_id,
             )
             order.trade_id = trade_record.id
             update_log_context(trade_id=trade_record.id)

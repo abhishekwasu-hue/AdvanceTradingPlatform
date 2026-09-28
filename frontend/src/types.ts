@@ -747,6 +747,9 @@ export interface Deployment {
   stop_credit_pct?: number | null;
   exit_rules?: ExitRules | null;
   broker_account_id?: number | null;
+  routing_policy?: RoutingPolicy | null;
+  route_across_brokers?: boolean;
+  last_route?: string | null;
 }
 
 export type InstrumentKind = "UNDERLYING" | "OPTION" | "FUTURE";
@@ -845,8 +848,18 @@ export interface DeploymentCreateRequest extends ContractRules {
   mode: ExecutionMode;
   broker_name?: string | null;
   broker_account_id?: number | null;
+  routing_policy?: RoutingPolicy | null;
+  route_across_brokers?: boolean;
   exit_rules?: ExitRules | null;
 }
+
+export type RoutingPolicy = "EXPLICIT" | "MOST_MARGIN" | "LEAST_UTILISED" | "FEWEST_POSITIONS";
+export const ROUTING_POLICIES: { value: RoutingPolicy; label: string; help: string }[] = [
+  { value: "EXPLICIT", label: "Explicit", help: "The chosen account, or the broker's default." },
+  { value: "MOST_MARGIN", label: "Most margin", help: "The active account with the largest synced available margin." },
+  { value: "LEAST_UTILISED", label: "Least utilised", help: "The active account with the lowest margin utilisation." },
+  { value: "FEWEST_POSITIONS", label: "Fewest positions", help: "The active account carrying the fewest open LIVE positions." },
+];
 
 export interface ResolvedContract {
   kind: InstrumentKind;
@@ -999,6 +1012,7 @@ export interface TenantInfo {
   usage: { active_deployments: number; custom_strategies: number; members: number; alert_channels: number };
   require_mfa_for_live?: boolean;
   algo_id?: string | null;
+  default_routing_policy?: RoutingPolicy;
   base_currency?: string;
 }
 

@@ -38,14 +38,26 @@ _last_failure_alert: Dict[int, float] = {}   # trade id -> monotonic time of the
 
 async def verify_protective_stops(
     session: AsyncSession, tenant: Tenant, broker: BrokerInterface, *, user_id: Optional[int] = None, source: str = "worker",
-    product: str = "MIS",
+    product: str = "MIS", account_id: Optional[int] = None, include_unassigned: bool = True,
 ) -> Dict[str, int]:
     """Re-arms missing/cancelled/rejected stops for the tenant's open LIVE single-leg trades.
-    Returns counts: checked, standing, rearmed, filled_pending, failed."""
+    Returns counts: checked, standing, rearmed, filled_pending, failed.
+
+    Phase T: `account_id` scopes the check to the trades that sit in that broker account (the
+    `broker` must be that account's session); `include_unassigned` also takes trades recorded
+    before accounts were tracked. A stop must never be re-armed in a different account from
+    the position it protects."""
     counts = {"checked": 0, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 0}
-    trades: List[TradeRecord] = list(await session.scalars(select(TradeRecord).where(
+    query = select(TradeRecord).where(
         TradeRecord.tenant_id == tenant.id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value,
-        TradeRecord.leg_group_id.is_(None))))
+        TradeRecord.leg_group_id.is_(None))
+    if account_id is not None:
+        from sqlalchemy import or_
+        scope = TradeRecord.broker_account_id == account_id
+        if include_unassigned:
+            scope = or_(scope, TradeRecord.broker_account_id.is_(None))
+        query = query.where(scope)
+    trades: List[TradeRecord] = list(await session.scalars(query))
     if not trades:
         return counts
     try:

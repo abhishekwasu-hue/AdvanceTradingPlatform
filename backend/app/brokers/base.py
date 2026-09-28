@@ -124,10 +124,16 @@ class BrokerInterface(ABC):
                                                          quantity=quantity, order_type="MARKET", product=product, tag=tag))
 
     async def subscribe_market_data(self, symbols: List[str]) -> None:
-        """Streaming quotes (section 8). No adapter streams yet - the platform polls REST with the
-        staleness gate (Phase G1). Adapters that gain a websocket override this; callers must
-        treat `NotImplementedError` as "poll instead"."""
-        raise NotImplementedError(f"{self.name} has no streaming market data; poll get_ltp/get_quote")
+        """Streaming quotes (section 8). Phase S implements them outside the adapter, in
+        `app.market_data.stream` (`stream_for(adapter)` returns the Upstox V3 or Kite ticker
+        stream; the worker owns the connection and the tick cache feeds `get_ltp`). An adapter
+        with no stream raises here and the platform polls REST with the staleness gate (G1)."""
+        from app.market_data.stream import stream_for
+        if stream_for(self) is None:
+            raise NotImplementedError(f"{self.name} has no streaming market data; poll get_ltp/get_quote")
+        raise NotImplementedError(
+            f"{self.name} streams through app.market_data.stream.stream_for(adapter); the worker owns the subscription"
+        )
 
     async def disconnect(self) -> None:
         """Invalidate this session token at the broker (Upstox `DELETE /logout`, Kite

@@ -71,6 +71,13 @@ INSTRUMENT_SYNC_HOUR_IST = int(os.environ.get("INSTRUMENT_SYNC_HOUR_IST", "8"))
 MARKET_DATA_MAX_STALE_BARS = int(os.environ.get("MARKET_DATA_MAX_STALE_BARS", "3"))
 QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
 
+# Phase S: streaming quotes. Off by default: the worker polls REST as before. On, the worker keeps
+# one websocket per broker session (Upstox Market Data Feed V3, Kite ticker) subscribed to the
+# symbols its deployments and open positions need; get_ltp uses a tick younger than
+# TICK_MAX_AGE_SECONDS (default: the quote staleness limit) and falls back to REST otherwise.
+STREAMING_QUOTES_ENABLED = os.environ.get("STREAMING_QUOTES_ENABLED", "false").lower() in ("1", "true", "yes")
+TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
+
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS
 # failed (timeouts, 5xx, 429 - not business 4xx), after at least BROKER_CIRCUIT_MIN_CALLS, new

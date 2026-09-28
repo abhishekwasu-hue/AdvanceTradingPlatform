@@ -79,6 +79,8 @@ RECONCILIATIONS = _counter("reconciliations", "Position reconciliation runs by s
 BROKER_CALLS = _counter("broker_calls", "Broker API calls by broker, method and outcome (ok | rejected | failure)", ("broker", "method", "outcome"))
 BROKER_CIRCUIT_STATE = _gauge("broker_circuit_state", "Circuit breaker state per broker: 0 closed, 1 half-open, 2 open", ("broker",))
 BROKER_CIRCUIT_REJECTIONS = _counter("broker_circuit_rejections", "LIVE entries refused because the broker circuit was open", ("broker",))
+TICKS_RECEIVED = _counter("ticks_received", "Streaming quote ticks received by broker (Phase S)", ("broker",))
+STREAM_RECONNECTS = _counter("stream_reconnects", "Streaming quote websocket reconnects by broker (Phase S)", ("broker",))
 ORDER_ENTRY_LATENCY = _histogram("order_entry_latency_seconds", "Signal-to-fill latency of executed entries by mode", ("mode",),
                                  buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30))
 

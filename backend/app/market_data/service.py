@@ -117,7 +117,15 @@ class MarketDataService:
         """Current price for an exit decision. Deliberately uncached: an exit decision on a 60s-old
         price is a real stop-loss slip. When the broker can attach the exchange's own timestamp
         (get_quote_for_symbol) the quote must also be younger than QUOTE_MAX_STALE_SECONDS, or
-        StaleMarketDataError is raised and the caller makes no decision this cycle (Phase G1)."""
+        StaleMarketDataError is raised and the caller makes no decision this cycle (Phase G1).
+
+        Phase S: when a streaming tick for the symbol is younger than TICK_MAX_AGE_SECONDS it is
+        the price - it is the exchange's last trade, not a poll - and no REST call is made. An
+        older or missing tick falls through to the REST quote exactly as before."""
+        from app.market_data.stream import tick_cache
+        tick = await tick_cache.fresh(self.broker.name, exchange, symbol, now)
+        if tick is not None:
+            return float(tick.ltp)
         quote = await self.broker.get_quote_for_symbol(symbol, exchange)
         if quote is None:
             return await self.broker.get_ltp_for_symbol(symbol, exchange)

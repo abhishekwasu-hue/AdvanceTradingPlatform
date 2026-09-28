@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
-import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, SystemStatus } from "../types";
+import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 
 const STATUSES = ["active", "suspended"];
 
@@ -24,6 +24,8 @@ export default function AdminPage() {
   const [flags, setFlags] = useState<FeatureFlags | null>(null);
   const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
   const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
+  const [ceilings, setCeilings] = useState<RiskCeilings | null>(null);
+  const [ceilingDraft, setCeilingDraft] = useState<Record<string, string>>({});
   const [incTitle, setIncTitle] = useState("");
   const [incSeverity, setIncSeverity] = useState("WARNING");
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +41,7 @@ export default function AdminPage() {
     api.adminIncidents().then(setIncidents).catch(() => {});
     api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch(() => {});
     api.adminEncryptionStatus().then(setEncryption).catch(() => {});
+    api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch(() => {});
     api.adminPlans().then(setPlans).catch(() => {});
     api.adminTenants(query).then(setTenants).catch((e) => setError(String(e)));
     api.adminAuditLogs(selected?.id).then(setLogs).catch(() => {});
@@ -129,6 +132,19 @@ export default function AdminPage() {
             <button disabled={busy} onClick={() => act("Disabled brokers updated.", () => api.adminSetDisabledBrokers(brokerList.split(",").map((b) => b.trim()).filter(Boolean)).then(setControls))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1">Save</button>
           </div>
         </div>
+      </Card>
+
+      <Card title="Risk ceilings (Risk Guardian)">
+        <p className="text-xs text-muted mb-3">Hard limits every tenant's risk settings stay under: a tenant cannot save a value above a ceiling, and the engine clamps older settings at runtime. Risk per trade 2% is the spec's hard ceiling; the minimum cool-down forces every tenant to wait at least this long after a stop-out.</p>
+        <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
+          {ceilings && Object.keys(ceilings).map((key) => (
+            <div key={key}>
+              <label className="block text-[10px] text-muted mb-0.5 font-mono">{key}</label>
+              <input type="number" step="0.1" min={0} className="w-full rounded bg-panel2 border border-border px-2 py-1" value={ceilingDraft[key] ?? ""} onChange={(e) => setCeilingDraft({ ...ceilingDraft, [key]: e.target.value })} />
+            </div>
+          ))}
+        </div>
+        <button disabled={busy || !ceilings} onClick={() => act("Risk ceilings saved.", () => api.adminSetRiskCeilings(Object.fromEntries(Object.entries(ceilingDraft).map(([k, v]) => [k, Number(v)]))).then(setCeilings))} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save ceilings</button>
       </Card>
 
       <Card title="Feature flags">

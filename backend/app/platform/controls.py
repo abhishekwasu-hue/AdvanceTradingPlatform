@@ -131,3 +131,76 @@ async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int
         from fastapi import HTTPException
         raise HTTPException(status_code=503, detail=f"The '{name}' feature is currently disabled by the platform operator",
                             headers={"X-Feature-Disabled": name})
+
+
+# --- Phase V1: risk ceilings ----------------------------------------------------------------------
+# The Risk Guardian spec keeps every default admin-configurable *with hard ceilings*: a tenant may
+# set its own risk per trade, daily loss, portfolio risk and drawdown pause level, but never above
+# these, and never a stop cool-down shorter than the minimum. Enforced at the settings API and,
+# belt and braces, clamped at runtime on every entry.
+KEY_RISK_CEILINGS = "risk_ceilings"
+RISK_CEILINGS_DEFAULT: Dict[str, float] = {
+    "risk_per_trade_pct": 2.0,        # spec R2: hard ceiling 2%
+    "max_daily_loss_pct": 5.0,        # spec R5 default 2%; the ceiling leaves room for a wider tenant setting
+    "max_portfolio_risk_pct": 10.0,   # spec R4 default 6%
+    "dd_level_2_pct": 25.0,           # the pause level cannot be pushed beyond a quarter of the peak
+    "min_stop_cooldown_minutes": 0.0, # spec R10: an operator may force a minimum cool-down
+}
+CEILING_MAX_KEYS = ("risk_per_trade_pct", "max_daily_loss_pct", "max_portfolio_risk_pct", "dd_level_2_pct")
+
+
+async def risk_ceilings(session: AsyncSession) -> Dict[str, float]:
+    stored = await _get(session, KEY_RISK_CEILINGS)
+    out = dict(RISK_CEILINGS_DEFAULT)
+    for key in out:
+        if key in stored:
+            try:
+                out[key] = float(stored[key])
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+async def set_risk_ceilings(session: AsyncSession, user: User, values: Dict[str, float]) -> Dict[str, float]:
+    current = await risk_ceilings(session)
+    for key, value in values.items():
+        if key not in RISK_CEILINGS_DEFAULT:
+            raise ValueError(f"Unknown risk ceiling '{key}' - known: {sorted(RISK_CEILINGS_DEFAULT)}")
+        number = float(value)
+        if number < 0 or (key in CEILING_MAX_KEYS and number <= 0):
+            raise ValueError(f"{key} must be a positive number")
+        current[key] = number
+    await _set(session, KEY_RISK_CEILINGS, current, user)
+    await write_audit_log(session, None, user.id, "risk_ceilings_set", ", ".join(f"{k}={v:g}" for k, v in sorted(current.items())))
+    await session.commit()
+    return current
+
+
+def ceiling_violations(cfg, ceilings: Dict[str, float]) -> List[str]:
+    """Why a tenant's RiskConfig may not be saved as given."""
+    errors: List[str] = []
+    for key in CEILING_MAX_KEYS:
+        value = float(getattr(cfg, key, 0.0) or 0.0)
+        if value > ceilings[key]:
+            errors.append(f"{key} {value:g} exceeds the platform ceiling {ceilings[key]:g}")
+    minimum = ceilings.get("min_stop_cooldown_minutes", 0.0)
+    if float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
+        errors.append(f"stop_cooldown_minutes must be at least {minimum:g}")
+    return errors
+
+
+def clamp_config(cfg, ceilings: Dict[str, float]):
+    """(config within the ceilings, notes saying what was clamped). Runtime safety net for
+    settings saved before a ceiling was lowered."""
+    updates = {}
+    notes: List[str] = []
+    for key in CEILING_MAX_KEYS:
+        value = float(getattr(cfg, key, 0.0) or 0.0)
+        if value > ceilings[key]:
+            updates[key] = ceilings[key]
+            notes.append(f"{key} {value:g} capped at the platform ceiling {ceilings[key]:g}")
+    minimum = ceilings.get("min_stop_cooldown_minutes", 0.0)
+    if float(getattr(cfg, "stop_cooldown_minutes", 0) or 0) < minimum:
+        updates["stop_cooldown_minutes"] = int(minimum)
+        notes.append(f"stop_cooldown_minutes raised to the platform minimum {minimum:g}")
+    return (cfg.model_copy(update=updates) if updates else cfg), notes

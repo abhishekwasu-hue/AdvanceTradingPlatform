@@ -447,6 +447,25 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Custom legs and filters**: strike filters are refused on a CUSTOM structure because its
   legs name their strikes; use OTM/ITM steps per leg instead.
 
+### 1.6k Risk Guardian rules (Phase V1)
+
+- **"Cool-down: X was stopped out N min ago"**: rule R10. The next signal in that underlying
+  is refused until `stop_cooldown_minutes` have passed. Shorten the setting on the Risk page
+  if it is too conservative for the strategy's timeframe; the platform minimum applies.
+- **"Drawdown ladder ... risk per trade halved" / "... new entries paused"**: the mode's equity
+  is 5% / 10% below its peak. Paused is not a kill switch: exits keep running and the pause
+  lifts on its own when equity recovers above the level. To resume earlier, review the journal
+  and raise `dd_level_2_pct` (within the ceiling) - deliberately, once, not per trade.
+- **"Event blackout" / "Event risk ... cut"**: an entry on a `market_events` day. Tenants keep
+  their own events on the Risk page; the operator adds global ones (budget, RBI policy,
+  expiry) with `global_event: true`. An event with a time window applies only inside it (IST).
+- **"Portfolio risk: open risk at the stops ... exceeds"**: rule R4. Either close something or
+  raise `max_portfolio_risk_pct` within the ceiling. Index positions share one bucket; the
+  message says how much that bucket already holds.
+- **"... capped at the platform ceiling"** on an order: the tenant's saved setting is above a
+  ceiling the operator lowered later. The engine used the ceiling; the tenant should re-save
+  its settings. Ceilings: `GET/PUT /api/admin/controls/risk-ceilings` (SUPER_ADMIN + MFA).
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

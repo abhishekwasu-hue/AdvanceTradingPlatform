@@ -485,6 +485,29 @@ class MarketHolidayRecord(Base):
     description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
+class MarketEventRecord(Base):
+    """Phase V1 (rule M8): a scheduled market event the guardian acts on - budget, RBI policy,
+    expiry, results. `tenant_id` NULL = global (kept by the platform operator), else the
+    tenant's own. `underlying` NULL/"*" = every symbol, "INDEX" = the index bucket, else one
+    underlying. A BLOCK event refuses entries in its window; SIZE_CUT scales the risk per trade
+    by `size_cut_pct` (NULL = the tenant's default)."""
+
+    __tablename__ = "market_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    underlying: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)   # "HH:MM" IST
+    end_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="OTHER")
+    action: Mapped[str] = mapped_column(String(10), nullable=False, default="SIZE_CUT")
+    size_cut_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
 class OrderRecord(Base):
     """The formal order lifecycle record every paper/live execution *attempt* by a logged-in
     user creates (app/execution/order_state_machine.py enforces its transitions) - unlike
@@ -636,6 +659,12 @@ class RiskSettingsRecord(Base):
     max_open_positions: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     max_consecutive_losses: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     min_risk_reward: Mapped[float] = mapped_column(Float, nullable=False, default=1.2)
+    # Phase V1: Risk Guardian rules (see app/risk_engine/guardian.py).
+    max_portfolio_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=6.0, server_default="6.0")
+    stop_cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
+    dd_level_1_pct: Mapped[float] = mapped_column(Float, nullable=False, default=5.0, server_default="5.0")
+    dd_level_2_pct: Mapped[float] = mapped_column(Float, nullable=False, default=10.0, server_default="10.0")
+    event_size_cut_pct: Mapped[float] = mapped_column(Float, nullable=False, default=50.0, server_default="50.0")
     lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 

@@ -48,6 +48,8 @@ from app.notifications.service import notify
 from app.observability.metrics import ORDERS
 from app.reconciliation.service import mark_broker_uncertain
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
+from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
+from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine.risk_manager import RiskManager
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
@@ -136,7 +138,20 @@ async def execute_structure(
     # Sizing: the risk engine's day checks plus lots off max loss. A synthetic signal whose
     # entry-to-stop distance *is* the max loss per unit makes `risk / max_loss` the quantity.
     cfg = risk_config or await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    # Phase V1: ceilings, then the guardian's entry rules (cool-down, drawdown ladder, events).
+    cfg, guardian_notes = clamp_config(cfg, await risk_ceilings(session))
     state = await build_trading_day_state(session, user)
+    daily_limit = -abs(cfg.capital * cfg.max_daily_loss_pct / 100)
+    # A breached daily-loss limit outranks the guardian (the risk engine's refusal engages the kill switch).
+    guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg) \
+        if state.daily_pnl > daily_limit else GuardianVerdict()
+    if guard.reasons:
+        await _reject_all(session, orders, guard.reasons)
+        await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused by the risk guardian: {structure.underlying_symbol}",
+                     message="; ".join(guard.reasons), severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=orders[0].id)
+        return StructureResult(executed=False, reasons=guard.reasons, orders=orders, metrics=metrics)
+    cfg = apply_multiplier(cfg, guard.size_multiplier)
+    guardian_notes.extend(guard.notes)
     lot = structure.lot_size
     spec = ContractSpec(symbol=structure.underlying_symbol, exchange=structure.legs[0].contract.exchange, asset_class=AssetClass.INDEX_OPTION,
                         description=f"{structure.strategy.value} on {structure.underlying_symbol}", lot_size=float(lot), tick_size=0.05)
@@ -149,7 +164,7 @@ async def execute_structure(
         "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
     })
     decision = RiskManager(cfg).validate_and_size(sizing_signal, state, contract_spec=spec)
-    notes = list(structure.notes) + [_economics_note(metrics, lot)]
+    notes = list(structure.notes) + [_economics_note(metrics, lot)] + guardian_notes
     if not decision.approved:
         reasons = notes + decision.reasons
         await _reject_all(session, orders, reasons)
@@ -176,6 +191,14 @@ async def execute_structure(
         notes.append(f"{lots} lot(s) x {lot} = {quantity} per 1x leg; ratio legs x{structure.max_ratio} = {quantity * structure.max_ratio}")
     else:
         notes.append(f"{lots} lot(s) x {lot} = {quantity} per leg")
+
+    # Phase V1 (R4): open risk at the stops plus this structure's max loss within the cap.
+    block, _ = await portfolio_risk_block(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
+                                          new_max_loss=metrics.risk_per_unit * quantity)
+    if block:
+        reasons = notes + [block]
+        await _reject_all(session, orders, reasons)
+        return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
 
     # Phase I1: the risk hierarchy, with the structure's max loss per unit as the risk per unit
     # and the short legs' premium as the order value. Quantity is the largest leg's (Phase U ratios).

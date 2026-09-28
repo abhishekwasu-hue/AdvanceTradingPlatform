@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase U, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase V1, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -82,6 +82,8 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 20 no module silently changes another's risk config: **done**.
 
 ## Proposed next phases (recommendation order)
+
+- **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2** (compliance validator on AI drafts with one auto-fix round and a "user must accept" statement) and **V3** (the new system prompt, schema mapping and runtime context) follow.
 
 - **Phase G - safety and reliability closure** - **DONE** on this branch (ARCHITECTURE.md Phase G, docs/SLO.md). Was: market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.
 - **Phase H - options depth** - **DONE** on this branch (ARCHITECTURE.md Phase H). Was: strike-selection filters from the option chain (liquidity, OI, IV, delta), multi-leg deployments (bull put, bear call, iron condor) with max-loss/max-profit/breakeven/margin sizing and group exits, Greeks per position.

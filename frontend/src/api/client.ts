@@ -86,7 +86,11 @@ import type {
   TenantFeatures,
   VerificationSendResult,
   TaxReport,
-  FxRate
+  FxRate,
+  GuardianStatus,
+  MarketEvent,
+  MarketEventRequest,
+  RiskCeilings,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -491,6 +495,21 @@ export const api = {
     request<SystemStatus>("/admin/controls/maintenance", { method: "PUT", body: JSON.stringify({ on, message }) }),
   adminSetDisabledBrokers: (names: string[]) =>
     request<SystemStatus>("/admin/controls/brokers", { method: "PUT", body: JSON.stringify({ names }) }),
+  // ---- Phase V1: Risk Guardian
+  guardianStatus: () => request<GuardianStatus>("/risk-guardian/status"),
+  riskCeilings: () => request<RiskCeilings>("/risk-settings/ceilings"),
+  listMarketEvents: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    return request<MarketEvent[]>(`/risk-guardian/events${qs ? `?${qs}` : ""}`);
+  },
+  createMarketEvent: (body: MarketEventRequest) => request<MarketEvent>("/risk-guardian/events", { method: "POST", body: JSON.stringify(body) }),
+  deleteMarketEvent: (id: number) => request<void>(`/risk-guardian/events/${id}`, { method: "DELETE" }),
+  adminRiskCeilings: () => request<RiskCeilings>("/admin/controls/risk-ceilings"),
+  adminSetRiskCeilings: (values: Record<string, number>) =>
+    request<RiskCeilings>("/admin/controls/risk-ceilings", { method: "PUT", body: JSON.stringify({ values }) }),
   // ---- Phase N: scopes, email verification, feature flags, encryption status
   scopeCatalogue: () => request<ScopeCatalogueEntry[]>("/auth/scopes"),
   memberScopes: (memberId: number) => request<MemberScopes>(`/team/members/${memberId}/scopes`),

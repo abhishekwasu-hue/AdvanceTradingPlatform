@@ -25,6 +25,8 @@ from app.reconciliation.service import broker_uncertain_reason, mark_broker_unce
 from app.plans.limits import live_allowed, tenant_is_active
 from app.platform.controls import entry_blocks as platform_entry_blocks
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
+from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
+from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine.routes import get_tenant_risk_config
 from app.trading.persistence import build_trading_day_state, persist_trade
 
@@ -156,6 +158,33 @@ async def execute_signal_for_user(
         # Phase Q / section 17: the instrument must exist and be tradable today, and - LIVE - the
         # account's margin must cover at least one unit. Both are business decisions (REJECTED).
         pre_notes: list = []
+
+        # Phase V1: the platform ceilings clamp the tenant's settings, then the Risk Guardian's
+        # entry rules run before sizing - cool-down after a stop-out (R10), the drawdown ladder
+        # (P2/P3) and event blackouts / size cuts (M8). A refusal is a REJECTED order; a size cut
+        # is a smaller risk per trade for every sizer downstream.
+        effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session))
+        pre_notes.extend(ceiling_notes)
+        # A breached daily-loss limit (R5) outranks the guardian: the risk engine's own refusal
+        # below engages the kill switch and raises DAILY_LOSS_LIMIT, which a guardian refusal
+        # must not pre-empt.
+        day_state = await build_trading_day_state(session, user)
+        daily_limit = -abs(effective_risk_config.capital * effective_risk_config.max_daily_loss_pct / 100)
+        guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config) \
+            if day_state.daily_pnl > daily_limit else GuardianVerdict()
+        if guard.reasons:
+            order.reasons_json = json.dumps(guard.reasons)
+            order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(guard.reasons))
+            logger.warning("Order rejected - risk guardian: %s", "; ".join(guard.reasons))
+            ORDERS.labels(mode=mode, status=order.status).inc()
+            await notify(
+                session, user.tenant_id, NotificationType.RISK_REJECTION,
+                title=f"Order refused by the risk guardian: {signal.symbol}", message="; ".join(guard.reasons),
+                severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
+            )
+            return ExecutionResult(executed=False, reasons=guard.reasons), order
+        effective_risk_config = apply_multiplier(effective_risk_config, guard.size_multiplier)
+        pre_notes.extend(guard.notes)
         if contract_spec is None:
             contract_spec = get_contract_spec(signal.symbol)
         order_exchange = contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE")
@@ -231,7 +260,11 @@ async def execute_signal_for_user(
                 order_id=order.id, account_id=account_id, deployment_id=deployment_id,
             )
             verdict = await evaluate_hierarchy(session, ctx, user=user)
-            return verdict.allowed, verdict.reasons, verdict.notes
+            # Phase V1 (R4): the loss if every open stop hits, plus this trade's, within the cap.
+            block, _ = await portfolio_risk_block(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol,
+                                                  cfg=effective_risk_config, new_max_loss=abs(signal.entry - signal.stop_loss) * quantity)
+            reasons = list(verdict.reasons) + ([block] if block else [])
+            return verdict.allowed and block is None, reasons, verdict.notes
 
         result: ExecutionResult = await order_router.execute(signal, state, contract_spec=contract_spec, max_quantity=max_quantity,
                                                             pre_place_check=hierarchy_check)

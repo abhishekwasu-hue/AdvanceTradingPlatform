@@ -56,6 +56,7 @@ from app.price_action.models import MarketStructureResult, PatternMatch
 from app.risk_engine.risk_manager import TradingDayState
 from app.risk_engine.routes import router as risk_settings_router
 from app.risk_engine.hierarchy_routes import router as risk_hierarchy_router
+from app.risk_engine.guardian_routes import router as risk_guardian_router
 from app.signal_scoring.engine import enrich_signal
 from app.signal_scoring.models import EnrichedSignal
 from app.strategy_engine.registry import registry
@@ -128,6 +129,7 @@ app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
+app.include_router(risk_guardian_router)
 app.include_router(fundamentals_router)
 app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)

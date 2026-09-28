@@ -593,6 +593,8 @@ export const api = {
 
   setTenantBaseCurrency: (code: string) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ base_currency: code }) }),
+  setTenantRoutingPolicy: (policy: string) =>
+    request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ default_routing_policy: policy }) }),
   taxYears: () => request<{ years: string[]; current: string }>("/tax/years"),
   taxReport: (fy: string, mode: string) => request<TaxReport>(`/tax/report?fy=${encodeURIComponent(fy)}&mode=${mode}`),
   taxReportCsvUrl: (fy: string, mode: string) => `${BASE}/tax/report.csv?fy=${encodeURIComponent(fy)}&mode=${mode}`,

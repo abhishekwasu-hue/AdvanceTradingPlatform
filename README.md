@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Account routing (Phase T)
+
+- **Rule-based broker selection** per deployment or tenant default: most margin, least
+  utilised, fewest positions, or explicit; optionally across brokers. The chosen account and
+  the reason are shown on the Autopilot card and stored on every trade.
+- **Fresh balances only**: the worker refreshes each account's margin before routing; a stale
+  number falls back to the default account and says so.
+- **Exits follow the trade**: every close, square-off and stop re-arm goes through the account
+  the position was opened in.
+
 ## Streaming quotes (Phase S)
 
 - **Websocket feeds** for Upstox (Market Data Feed V3, protobuf decoded natively) and Zerodha

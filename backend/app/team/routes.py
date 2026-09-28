@@ -107,6 +107,7 @@ class TenantResponse(BaseModel):
     require_mfa_for_live: bool = False
     algo_id: Optional[str] = None
     base_currency: str = "INR"
+    default_routing_policy: str = "EXPLICIT"
 
 
 @router.get("/tenant", response_model=TenantResponse)
@@ -121,6 +122,7 @@ async def get_tenant(user: User = Depends(get_current_user), session: AsyncSessi
         status=tenant.status, members=members or 0, limits=plan_limits(plan), usage=await plan_usage(session, tenant.id),
         require_mfa_for_live=tenant.require_mfa_for_live, algo_id=tenant.algo_id,
         base_currency=getattr(tenant, "base_currency", None) or "INR",
+        default_routing_policy=getattr(tenant, "default_routing_policy", None) or "EXPLICIT",
     )
 
 
@@ -131,6 +133,8 @@ class TenantRenameRequest(BaseModel):
     algo_id: Optional[str] = None
     # Phase P3: reporting currency for portfolio figures.
     base_currency: Optional[str] = None
+    # Phase T: how LIVE deployments without their own policy choose a broker account.
+    default_routing_policy: Optional[str] = None
 
 
 @router.patch("/tenant", response_model=TenantResponse)
@@ -151,6 +155,14 @@ async def rename_tenant(
             raise HTTPException(status_code=400, detail=f"base_currency must be one of {list(SUPPORTED_CURRENCIES)}")
         tenant.base_currency = code
         await write_audit_log(session, user.tenant_id, user.id, "tenant_base_currency", code)
+    if request.default_routing_policy is not None:
+        from app.accounts.routing import RoutingPolicy
+        try:
+            policy = RoutingPolicy(request.default_routing_policy.strip().upper())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"default_routing_policy must be one of {[p.value for p in RoutingPolicy]}")
+        tenant.default_routing_policy = policy.value
+        await write_audit_log(session, user.tenant_id, user.id, "tenant_routing_policy", policy.value)
     if request.algo_id is not None:
         algo_id = request.algo_id.strip()
         if algo_id and not valid_algo_id(algo_id):

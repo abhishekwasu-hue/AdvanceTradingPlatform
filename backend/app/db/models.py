@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 
+from sqlalchemy.sql import false
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +45,8 @@ class Tenant(Base):
     broker_uncertain_since: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase P3 / section 57: the currency portfolio figures are reported in (app/fx/service.py).
     base_currency: Mapped[str] = mapped_column(String(4), nullable=False, default="INR", server_default="INR")
+    # Phase T: the routing policy deployments use when they do not set their own.
+    default_routing_policy: Mapped[str] = mapped_column(String(20), nullable=False, default="EXPLICIT", server_default="EXPLICIT")
     broker_uncertain_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase K: why the status is what it is ("billing: grace expired", "admin: ...").
@@ -270,6 +273,8 @@ class TradeRecord(Base):
     deployment_id: Mapped[int | None] = mapped_column(
         ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
+    # Phase T: the broker account the LIVE position sits in (routing + FEWEST_POSITIONS + reconciliation).
+    broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.
@@ -425,6 +430,12 @@ class StrategyDeploymentRecord(Base):
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Phase I2: route this deployment's LIVE orders to one broker account (NULL = the broker's default).
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Phase T (V3.1-3.5): how the account is chosen at signal time - EXPLICIT / MOST_MARGIN /
+    # LEAST_UTILISED / FEWEST_POSITIONS (NULL = the tenant's default policy); whether candidates
+    # may come from every broker the tenant has a session for; and the last decision taken.
+    routing_policy: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    route_across_brokers: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    last_route: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Phase J1: dynamic exit rules JSON (trailing %, break-even R, time exits) - app/trading/exit_rules.py.
     exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Phase L3: comma-separated regimes (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, QUIET) the

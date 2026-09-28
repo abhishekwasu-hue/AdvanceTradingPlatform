@@ -26,6 +26,8 @@ import {
   type WorkerStatus,
   DEBIT_STRUCTURES,
   WINGED_STRUCTURES,
+  ROUTING_POLICIES,
+  type RoutingPolicy,
 } from "../types";
 
 // Index symbols have no cash leg: picking one switches the form to options (server rejects UNDERLYING on an index).
@@ -78,6 +80,9 @@ export default function DeploymentsPage() {
   const [brokerName, setBrokerName] = useState<string>("");
   const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("");
+  // Phase T: rule-based account choice at signal time.
+  const [routingPolicy, setRoutingPolicy] = useState<RoutingPolicy | "">("");
+  const [acrossBrokers, setAcrossBrokers] = useState(false);
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
   // Phase F2: what to trade when the strategy signals on the symbol.
@@ -198,6 +203,7 @@ export default function DeploymentsPage() {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, ...contractRules(),
+        routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -351,7 +357,7 @@ export default function DeploymentsPage() {
           </div>
         </div>
         {mode === "LIVE" && accounts.filter((a) => !brokerName || a.broker_name === brokerName).length > 1 && (
-          <div className="mt-2 flex items-center gap-2 text-xs">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-muted">Account</span>
             <select className="rounded bg-panel2 border border-border px-2 py-1 text-xs" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
               <option value="">default account</option>
@@ -361,6 +367,17 @@ export default function DeploymentsPage() {
                 </option>
               ))}
             </select>
+            <span className="text-muted ml-2">Routing</span>
+            <select className="rounded bg-panel2 border border-border px-2 py-1 text-xs" value={routingPolicy} onChange={(e) => setRoutingPolicy(e.target.value as RoutingPolicy | "")}
+              title={ROUTING_POLICIES.find((p) => p.value === routingPolicy)?.help ?? "Organisation default (Team page)"}>
+              <option value="">organisation default</option>
+              {ROUTING_POLICIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+            {routingPolicy && routingPolicy !== "EXPLICIT" && (
+              <label className="flex items-center gap-1 text-muted">
+                <input type="checkbox" checked={acrossBrokers} onChange={(e) => setAcrossBrokers(e.target.checked)} /> across brokers
+              </label>
+            )}
           </div>
         )}
 
@@ -679,7 +696,9 @@ export default function DeploymentsPage() {
                     <td className="py-1.5 pr-3 font-medium text-slate-200">{d.strategy_id}<div className="text-[10px] text-muted">{d.timeframe} base</div></td>
                     <td className="py-1.5 pr-3 text-slate-200">{d.symbol}<div className="text-[10px] text-muted">{d.exchange}{d.instrument_kind !== "UNDERLYING" ? ` · ${d.contract_rules}` : ""}</div></td>
                     <td className="py-1.5 pr-3"><ModeBadge mode={d.mode} /></td>
-                    <td className="py-1.5 pr-3 capitalize text-slate-300">{d.broker_name ?? "-"}</td>
+                    <td className="py-1.5 pr-3 capitalize text-slate-300">{d.broker_name ?? "-"}
+                      {d.mode === "LIVE" && d.last_route && <div className="text-[10px] text-muted normal-case max-w-[14rem] truncate" title={d.last_route}>{d.last_route}</div>}
+                    </td>
                     <td className="py-1.5 pr-3"><StatusBadge status={d.status} /></td>
                     <td className="py-1.5 pr-3 font-tabular text-slate-200">{d.open_positions}</td>
                     <td className="py-1.5 pr-3 text-muted whitespace-nowrap">{ago(d.last_evaluated_at)}</td>

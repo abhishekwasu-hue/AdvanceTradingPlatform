@@ -2873,3 +2873,40 @@ at `stream_for(adapter)`; the worker, not the adapter, owns the connection.
 Verified here against hand-built frames and scripted sockets only; the first live run against
 Upstox should confirm the authorise response key and the LTPC field numbers before the flag is
 left on in production (OPERATIONS 1.6h).
+
+## Phase T: Broker-selection rules (V3.1-3.5)
+
+Phase I2 gave a tenant several broker accounts and let a deployment name one; the account was
+fixed when the deployment was created. `app/accounts/routing.py` makes the choice at signal
+time from what the accounts look like now:
+
+* **Policies** (`RoutingPolicy`): `EXPLICIT` (unchanged default - the deployment's account, else
+  the broker's default), `MOST_MARGIN` (largest synced available balance), `LEAST_UTILISED`
+  (smallest `used / (used + available)`), `FEWEST_POSITIONS` (fewest open LIVE positions, ties
+  to the larger balance). A deployment carries its own policy; the tenant's
+  `default_routing_policy` (Team page) applies when it has none. Candidates are the ACTIVE
+  accounts at the deployment's broker, or at every broker the tenant has a session for when
+  `route_across_brokers` is set. PAPER deployments cannot carry a policy (400).
+* **Fresh numbers only**: `choose_account` is a pure function; a capital policy trusts a balance
+  synced within `ROUTING_MAX_SYNC_AGE_SECONDS` (15 min) and otherwise falls back to the default
+  account with a note that says so - a stale figure never decides where money goes. The worker
+  refreshes every ACTIVE account through its own session once per `ACCOUNT_REFRESH_SECONDS`
+  (5 min) *before* routing (`_refresh_accounts`), so the decision is made on this cycle's
+  balances; a failed pull is recorded on the account row (`last_sync_error`).
+* **The decision is recorded**: `strategy_deployments.last_route` ("account #7 (upstox/second)
+  by MOST_MARGIN: 3,00,000 available") is shown on the Autopilot card; every trade stores the
+  account it was placed in (`trades.broker_account_id`).
+* **Exits follow the trade's account.** Before this phase the worker closed, squared off and
+  stop-guarded every LIVE position through the first LIVE session it held - wrong the moment a
+  tenant had two accounts. Now the worker builds one adapter per ACTIVE account with a usable
+  token (not only the accounts a deployment names), and with more than one account it passes no
+  broker to the monitor and the square-off: `position_monitor.broker_for_trade` resolves the
+  trade's own account (then the deployment's broker, then the single credential), building each
+  adapter once per cycle (`session.info["trade_brokers"]`). `verify_protective_stops` takes an
+  `account_id` scope and is run per account against that account's order book, trades recorded
+  before accounts were tracked going with the broker's default account. Reconciliation is still
+  one session per tenant (the first LIVE one); a multi-account reconciliation is the remaining
+  gap and is noted in the gap analysis.
+
+Migration `b4d6f8a1c3e5` adds `routing_policy`, `route_across_brokers`, `last_route` on
+deployments, `default_routing_policy` on tenants and the indexed `broker_account_id` on trades.

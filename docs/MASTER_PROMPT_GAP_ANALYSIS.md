@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase Q, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase T, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -48,7 +48,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. |
 | V2.1-2.6 options depth | mostly done (Phase R) | Nine structures; see §23-25 for what remains (ratio, long butterfly, custom leg builder, historical chain backtests). |
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
-| V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; deployments route to an account; `risk_limits` at six scopes with strictest-wins and `risk_events`. Broker-selection *rules* (capital/risk-based routing across brokers) not built - routing is explicit per deployment. |
+| V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I + T) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; `risk_limits` at six scopes with strictest-wins and `risk_events`. Routing policies EXPLICIT / MOST_MARGIN / LEAST_UTILISED / FEWEST_POSITIONS per deployment or tenant default, optionally across brokers, decided on balances the worker refreshes before routing, recorded on the deployment and on every trade (T); exits and stop re-arms follow the trade's own account. Reconciliation still runs against one session per tenant. |
 | V3.6-3.8 plans, billing, metering | done (Phase K1) | Priced plans with feature flags, subscriptions with trial/grace lifecycle behind a `BillingProvider` (manual provider; a gateway plugs in at the same seam), invoices/payments, usage metering (orders, backtests, webhook events, API calls). Razorpay Subscriptions gateway (hosted checkout, autopay, signed idempotent webhooks) behind the seam; manual remains for bank transfers. |
 | V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. Revenue share / creator payouts not built. |
 | V3.13 notifications | done (Phase O3) | Telegram, email, webhook (K4), browser Web Push (VAPID, RFC 8291, no third-party service) and SMS through any HTTP gateway (MSG91/Twilio presets). |

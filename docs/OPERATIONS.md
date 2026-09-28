@@ -410,6 +410,25 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Kite**: the ticker accepts at most 3 connections per API key and 3,000 tokens per
   connection; one stream per tenant session stays well inside that.
 
+### 1.6i Account routing (Phase T)
+
+- **Choosing a policy**: on the Autopilot form (per deployment) or the Team page (tenant
+  default). `EXPLICIT` keeps today's behaviour. The capital policies need the accounts' balances
+  synced within 15 minutes; the worker does this itself every 5 minutes through the sessions it
+  holds, so a fresh worker restart may route the first cycle by the default account.
+- **"needs a balance synced within 15 min, none is - default account used"** in the card's
+  routing line: no candidate had a fresh balance. Check *Settings → Broker accounts* for
+  `last_sync_error` (funds endpoint down, session expired) and re-login; the policy takes over
+  again on the next refresh.
+- **A position in the wrong account**: cannot happen from this version on - exits and stop
+  re-arms are placed through the account recorded on the trade. Trades from before this
+  version have no account and are handled through the broker's default account; if such a
+  trade actually sits in another account, close it by hand at the broker and mark it exited in
+  the journal.
+- **Disabling an account** (Settings) removes it from every policy's candidates and from the
+  worker's sessions; its open positions are still exited through it as long as its token is
+  valid, because the exit uses the trade's account, not the candidate list.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

@@ -80,14 +80,22 @@ def exchange_for_trade(trade: TradeRecord) -> str:
 
 
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:
-    """The authenticated adapter that can square off this LIVE trade: the broker its deployment
-    trades through, or - for a trade entered by hand - the tenant's single stored broker. None
+    """The authenticated adapter that can square off this LIVE trade: the broker account the
+    position sits in (Phase T), else the broker its deployment trades through, else - for a trade
+    entered by hand - the tenant's single stored broker. None
     when there is no usable (VALID, unexpired) token, so callers never fire an exit order that the
     broker would reject anyway."""
     if trade.mode != ExecutionMode.LIVE.value:
         return None
     record: Optional[BrokerCredentialRecord] = None
-    if trade.deployment_id is not None:
+    if getattr(trade, "broker_account_id", None) is not None:
+        # Phase T: the position sits in a specific broker account; its exit goes there, never to
+        # whichever session the tenant happens to hold first.
+        from app.accounts.service import credential_for_account, get_account
+        account = await get_account(session, trade.tenant_id, trade.broker_account_id)
+        if account is not None:
+            record = await credential_for_account(session, account)
+    if record is None and trade.deployment_id is not None:
         deployment = await session.get(StrategyDeploymentRecord, trade.deployment_id)
         if deployment is not None and deployment.broker_name:
             record = await get_credential_record(session, trade.tenant_id, deployment.broker_name)
@@ -98,7 +106,14 @@ async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optiona
         record = records[0] if len(records) == 1 else None
     if record is None or not token_is_usable(record):
         return None
-    return build_adapter(record)
+    # One adapter per credential per session (the worker's cycle): the monitor, the square-off
+    # and the group exits all resolve through here, so a tenant with many positions in one
+    # account does not build a client per position.
+    cache: Dict[int, BrokerInterface] = session.info.setdefault("trade_brokers", {})
+    adapter = cache.get(record.id)
+    if adapter is None:
+        adapter = cache[record.id] = build_adapter(record)
+    return adapter
 
 
 async def _find_order(broker: BrokerInterface, order_id: str) -> Optional[BrokerOrderStatus]:

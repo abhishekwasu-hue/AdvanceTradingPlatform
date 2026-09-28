@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
-import { ROLE_LABELS, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
+import { ROLE_LABELS, ROUTING_POLICIES, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
@@ -270,6 +270,14 @@ export default function TeamPage() {
               {["INR", "USD", "USDT", "EUR", "GBP", "AED", "SGD"].map((c) => <option key={c}>{c}</option>)}
             </select>
             <span className="text-muted">Portfolio exposure converts non-{tenant.base_currency ?? "INR"} instruments with the platform's FX rates.</span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted">Default account routing</span>
+            <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={tenant.default_routing_policy ?? "EXPLICIT"} disabled={busy}
+              onChange={(e) => act("Default account routing updated.", () => api.setTenantRoutingPolicy(e.target.value))}>
+              {ROUTING_POLICIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+            <span className="text-muted">{ROUTING_POLICIES.find((p) => p.value === (tenant.default_routing_policy ?? "EXPLICIT"))?.help} LIVE deployments without their own policy use this.</span>
           </div>
           <div className="mt-4 border-t border-border pt-3">
             <div className="text-xs font-semibold text-slate-200">Exchange algo id (SEBI algo tagging)</div>

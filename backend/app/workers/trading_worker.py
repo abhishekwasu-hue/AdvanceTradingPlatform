@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time as dtime, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.brokers.base import BrokerInterface
@@ -66,7 +66,8 @@ from app.market_data.stream import StreamManager
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
 from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenant_keys
-from app.accounts.service import routing_for_deployment
+from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
+from app.accounts.service import credential_for_account, default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
 from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
 from app.trading.stop_guard import verify_protective_stops
@@ -157,6 +158,8 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # Phase T: last balance refresh attempt per broker account (failures throttled too).
+        self._last_account_refresh: Dict[int, datetime] = {}
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -296,29 +299,19 @@ class TradingWorker:
             logger.warning("Tenant %s has deployments but no user to act as - skipping", tenant_id)
             return
 
-        # One adapter per (broker, account) the tenant trades through, only when its token is
-        # proven. Keys are "<broker>" for the primary account and "<broker>@<label>" otherwise
-        # (Phase I2); `_adapter_key` maps a deployment to its key.
+        # One adapter per (broker, account) whose token is proven - every ACTIVE account, not only
+        # the ones a deployment names: a routing policy may pick any of them, an open position may
+        # sit in any of them, and each one's balance is refreshed through its own session. Keys are
+        # "<broker>" for the primary account and "<broker>@<label>" otherwise (Phase I2);
+        # `_adapter_key` maps a deployment to its key.
         adapters: Dict[str, BrokerInterface] = {}
-        routes: Dict[int, tuple] = {}   # deployment id -> (account, label)
-        keys = set()
-        for dep in deployments:
-            if not dep.broker_name:
+        accounts = await list_accounts(session, tenant_id)   # creates rows for pre-I2 credentials
+        for account in accounts:
+            if account.status != "ACTIVE":
                 continue
-            account, label = await routing_for_deployment(session, tenant_id, dep.broker_name, dep.broker_account_id)
-            routes[dep.id] = (account, label)
-            keys.add((dep.broker_name, label))
-        if not keys:
-            # PAPER deployments still need a market-data source: any stored broker will do.
-            records = list(await session.scalars(
-                select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)
-            ))
-            keys = {(r.broker_name, r.account_label or "primary") for r in records}
-        for name, label in keys:
-            adapter = await self._usable_adapter(session, tenant_id, name, user.id, now, account_label=label)
+            adapter = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
             if adapter is not None:
-                adapters[_adapter_key(name, label)] = adapter
-        self._routes = routes
+                adapters[_adapter_key(account.broker_name, account.account_label)] = adapter
 
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
@@ -329,6 +322,25 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        # Phase T: balances first, so a capital policy decides on this cycle's numbers.
+        await self._refresh_accounts(session, accounts, adapters, now)
+
+        routes: Dict[int, tuple] = {}   # deployment id -> (account, label)
+        tenant_for_routing = await session.get(Tenant, tenant_id)
+        for dep in deployments:
+            if not dep.broker_name:
+                continue
+            policy = policy_for(dep.routing_policy, getattr(tenant_for_routing, "default_routing_policy", None))
+            if dep.mode == ExecutionMode.LIVE.value and policy != RoutingPolicy.EXPLICIT:
+                # Phase T: rule-based choice at signal time from the accounts' current state.
+                account, label = await self._route_by_policy(session, dep, policy, accounts, now)
+            else:
+                account, label = await routing_for_deployment(session, tenant_id, dep.broker_name, dep.broker_account_id)
+                if dep.mode == ExecutionMode.LIVE.value:
+                    dep.last_route = (f"account #{account.id} ({account.broker_name}/{account.account_label}) by EXPLICIT"
+                                      if account is not None else "primary credential by EXPLICIT")
+            routes[dep.id] = (account, label)
+        self._routes = routes
         if app_config.STREAMING_QUOTES_ENABLED:
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
 
@@ -337,6 +349,11 @@ class TradingWorker:
         live_keys = {_adapter_key(d.broker_name, routes.get(d.id, (None, "primary"))[1]) for d in deployments if d.mode == "LIVE" and d.broker_name}
         live_broker = next((a for n, a in adapters.items() if n in live_keys), None)
         live_broker_name = next((n.split("@")[0] for n, a in adapters.items() if a is live_broker), None)
+        # Phase T: a tenant with several broker accounts has every exit resolved from the trade's
+        # own account (position_monitor.broker_for_trade, cached per cycle) instead of funnelled
+        # through the first LIVE session found. One account: that session, as before.
+        exit_broker = live_broker if len(accounts) <= 1 else None
+        session.info.pop("trade_brokers", None)
 
         # Phase G1: while the tenant is flagged "broker uncertain", reconcile every cycle so the
         # LIVE block lifts on its own the moment the books agree (and stays while they do not).
@@ -353,16 +370,16 @@ class TradingWorker:
         # positions on venues still inside their session are monitored as before.
         due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
         if due_square_off:
-            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, live_broker, user.id, families=due_square_off)
+            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user.id, families=due_square_off)
         monitored = open_families - due_square_off
         if monitored:
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=live_broker, user_id=user.id, families=monitored)
+            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
-        if live_broker is not None and tenant_row is not None:
+        # Phase T: checked per account, against that account's own order book.
+        if tenant_row is not None:
             try:
-                guard = await verify_protective_stops(session, tenant_row, live_broker, user_id=user.id)
-                report.stops_rearmed += guard["rearmed"]
+                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id)
             except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
                 logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
         tenant_started = time.monotonic()
@@ -593,9 +610,10 @@ class TradingWorker:
         # Phase M / V4.13: the operator can switch a broker off platform-wide (exits still run).
         if (dep.broker_name or "").lower() in (await platform_controls.status(session))["disabled_brokers"]:
             return None, account_id, f"LIVE entry skipped: broker {dep.broker_name} is disabled by the platform operator"
-        broker = adapters.get(_adapter_key(dep.broker_name or "", label))
+        routed_broker = account.broker_name if account is not None else (dep.broker_name or "")
+        broker = adapters.get(_adapter_key(routed_broker, label))
         if broker is None:
-            return None, account_id, f"LIVE entry skipped: no usable {dep.broker_name} session - log in again from Settings"
+            return None, account_id, f"LIVE entry skipped: no usable {routed_broker} session - log in again from Settings"
         uncertain = broker_uncertain_reason(await session.get(Tenant, dep.tenant_id))
         if uncertain:
             # execute_signal_for_user would refuse this too (as a REJECTED order per signal
@@ -750,6 +768,60 @@ class TradingWorker:
             )
             return
         await session.commit()
+
+    async def _guard_stops(self, session: AsyncSession, tenant: Tenant, accounts: List, adapters: Dict[str, BrokerInterface],
+                           user_id: int) -> int:
+        """Phase P1 per account (Phase T): one session holds one order book, so each account's open
+        LIVE trades are checked against its own; trades recorded before accounts were tracked go
+        with the default account of their broker. An account without a usable session this cycle
+        is skipped - re-arming needs the session the position lives in, never another."""
+        rearmed = 0
+        for account in accounts:
+            adapter = adapters.get(_adapter_key(account.broker_name, account.account_label))
+            if adapter is None:
+                continue
+            guard = await verify_protective_stops(session, tenant, adapter, user_id=user_id, account_id=account.id,
+                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1)
+            rearmed += guard["rearmed"]
+        return rearmed
+
+    async def _route_by_policy(self, session: AsyncSession, dep: StrategyDeploymentRecord, policy: RoutingPolicy, accounts: List,
+                               now: datetime):
+        """Phase T: pick the account for one LIVE deployment by its policy. Candidates are the
+        tenant's accounts at the deployment's broker, or at every broker when the deployment
+        routes across brokers. The decision text is stored on the deployment."""
+        candidates = [a for a in accounts if dep.route_across_brokers or a.broker_name == dep.broker_name]
+        explicit = await get_account(session, dep.tenant_id, dep.broker_account_id) if dep.broker_account_id else None
+        default = await default_account(session, dep.tenant_id, dep.broker_name) if dep.broker_name else None
+        open_counts: Dict[int, int] = {}
+        if policy == RoutingPolicy.FEWEST_POSITIONS:
+            rows = await session.execute(
+                select(TradeRecord.broker_account_id, func.count()).where(
+                    TradeRecord.tenant_id == dep.tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value,
+                ).group_by(TradeRecord.broker_account_id))
+            open_counts = {aid: int(n) for aid, n in rows if aid is not None}
+        choice = choose_account(candidates, policy, now=now, open_positions=open_counts, explicit=explicit, default=default)
+        dep.last_route = choice.note[:200]
+        if choice.fell_back:
+            logger.info("Deployment %s: %s", dep.id, choice.note)
+        return choice.account, choice.label
+
+    async def _refresh_accounts(self, session: AsyncSession, accounts: List, adapters: Dict[str, BrokerInterface], now: datetime) -> None:
+        """Phase T: keep each account's balance/margin fresh enough for the capital policies -
+        one `get_balance` per account per ACCOUNT_REFRESH_SECONDS through the session the worker
+        already holds. A failed pull is recorded on the row by `sync_account`, never raised."""
+        for account in accounts:
+            adapter = adapters.get(_adapter_key(account.broker_name, account.account_label))
+            if adapter is None or account.status != "ACTIVE":
+                continue
+            attempted = self._last_account_refresh.get(account.id)
+            if attempted is not None and (now - attempted).total_seconds() < ACCOUNT_REFRESH_SECONDS:
+                continue
+            last = account.last_sync_at
+            if last is not None and (now - (last if last.tzinfo else last.replace(tzinfo=timezone.utc))).total_seconds() < ACCOUNT_REFRESH_SECONDS:
+                continue
+            self._last_account_refresh[account.id] = now
+            await sync_account(session, account, adapter)
 
     async def _stream_quotes(self, session: AsyncSession, tenant_id: int, adapters: Dict[str, BrokerInterface], data_broker: BrokerInterface,
                              deployments: List[StrategyDeploymentRecord], report: CycleReport) -> None:

@@ -244,7 +244,8 @@ async def execute_structure(
             "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
             "leg_group_id": group_id, "leg_role": leg.role, "option_strategy": structure.strategy.value, "group_meta": json.dumps(group_meta),
         }
-        record = await persist_trade(session, user, trade, mode=mode, broker_order_id=broker_order_id, deployment_id=deployment_id, contract_meta=meta)
+        record = await persist_trade(session, user, trade, mode=mode, broker_order_id=broker_order_id, deployment_id=deployment_id, contract_meta=meta,
+                                     account_id=account_id)
         order.trade_id = record.id
         order.reasons_json = json.dumps(notes)
         await transition_order(session, order, OrderStatus.POSITION_OPEN, detail=f"Position opened (trade #{record.id}, group {group_id[:8]})")

@@ -428,6 +428,9 @@ class StrategyDeploymentRecord(Base):
     spread_width: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     target_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_credit_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Phase U: the free-form structure's legs (JSON list of {right, role, strike_rule,
+    # strike_offset, ratio}) when option_strategy is CUSTOM - see app/instruments/spreads.py.
+    custom_legs: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Phase I2: route this deployment's LIVE orders to one broker account (NULL = the broker's default).
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True)
     # Phase T (V3.1-3.5): how the account is chosen at signal time - EXPLICIT / MOST_MARGIN /

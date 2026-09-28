@@ -142,7 +142,8 @@ async def execute_structure(
                         description=f"{structure.strategy.value} on {structure.underlying_symbol}", lot_size=float(lot), tick_size=0.05)
     # Phase R: `risk_per_unit` is the max loss of a defined-risk credit structure, the debit of a
     # debit structure, or the stop distance of an undefined-risk short straddle/strangle.
-    basis = abs(metrics.net_credit)
+    # A ratio spread can be entered for (almost) nothing: the sizer still needs an entry > 0.
+    basis = abs(metrics.net_credit) or 0.05
     sizing_signal = signal.model_copy(update={
         "symbol": structure.underlying_symbol, "direction": SignalDirection.SHORT, "entry": basis,
         "stop_loss": round(basis + metrics.risk_per_unit, 2), "target1": None, "target2": None, "risk_reward": None,
@@ -170,12 +171,17 @@ async def execute_structure(
         notes.append(note)
         lots = min(lots, cap)
     quantity = lots * lot
-    notes.append(f"{lots} lot(s) x {lot} = {quantity} per leg")
+    ratios = {leg.contract.tradingsymbol: leg.ratio for leg in structure.legs}
+    if structure.max_ratio > 1:
+        notes.append(f"{lots} lot(s) x {lot} = {quantity} per 1x leg; ratio legs x{structure.max_ratio} = {quantity * structure.max_ratio}")
+    else:
+        notes.append(f"{lots} lot(s) x {lot} = {quantity} per leg")
 
     # Phase I1: the risk hierarchy, with the structure's max loss per unit as the risk per unit
-    # and the short legs' premium as the order value.
+    # and the short legs' premium as the order value. Quantity is the largest leg's (Phase U ratios).
     verdict = await evaluate_hierarchy(session, RiskContext(
-        tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=structure.underlying_symbol, quantity=quantity,
+        tenant_id=user.tenant_id, user_id=user.id, strategy_id=strategy_id, symbol=structure.underlying_symbol,
+        quantity=quantity * structure.max_ratio,
         entry=basis, stop_loss=None, capital=cfg.capital, mode=mode, order_id=orders[0].id, account_id=account_id,
         risk_per_unit=metrics.risk_per_unit, deployment_id=deployment_id,
     ), user=user)
@@ -185,12 +191,13 @@ async def execute_structure(
         await _reject_all(session, orders, reasons)
         return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
 
-    for order in orders:
-        order.quantity = quantity
+    for order, leg in zip(orders, structure.legs):
+        order.quantity = quantity * leg.ratio
 
     group_id = uuid.uuid4().hex
     group_meta = metrics.as_dict()
-    group_meta.update({"lots": lots, "quantity": quantity, "underlying_symbol": structure.underlying_symbol})
+    # `quantity` is the 1x leg's; the position monitor weights each leg by its own quantity / this.
+    group_meta.update({"lots": lots, "quantity": quantity, "underlying_symbol": structure.underlying_symbol, "ratios": ratios})
     fills: Dict[str, Tuple[float, Optional[str]]] = {}
 
     if execution_mode == ExecutionMode.PAPER:
@@ -228,7 +235,7 @@ async def execute_structure(
         if metrics.debit and leg.role == "LONG":
             stop = round(fill_price * (1 - min(stop_credit_pct if stop_credit_pct is not None else 50.0, 100.0) / 100.0), 2)
         trade = Trade(symbol=leg.contract.tradingsymbol, strategy_id=strategy_id, direction=leg.contract.trade_direction,
-                      entry_time=now, entry_price=fill_price, quantity=quantity, stop_loss=stop,
+                      entry_time=now, entry_price=fill_price, quantity=quantity * leg.ratio, stop_loss=stop,
                       expected_price=expected, entry_latency_ms=latency_ms)
         if broker_order_id:
             order.broker_order_id = broker_order_id
@@ -262,6 +269,14 @@ async def execute_structure(
 
 def _economics_note(metrics: StructureMetrics, lot: int) -> str:
     be = ", ".join(f"{b:g}" for b in metrics.breakevens) or "n/a"
+    if metrics.pnl_stop is not None:
+        # Phase U: payoff-priced structure, exits as P&L per unit.
+        side = f"net credit {metrics.net_credit:g}" if metrics.net_credit >= 0 else f"net debit {-metrics.net_credit:g}"
+        loss = f"max loss {metrics.max_loss:g}/unit ({metrics.max_loss * lot:,.0f}/lot)" if metrics.max_loss is not None else \
+            f"UNDEFINED max loss - sized off the stop ({metrics.risk_per_unit:g}/unit, {metrics.risk_per_unit * lot:,.0f}/lot)"
+        profit = f"max profit {metrics.max_profit:g}/unit" if metrics.max_profit is not None else "profit open-ended"
+        return (f"{side[0].upper()}{side[1:]}/unit, {loss}, {profit}, breakeven {be}; "
+                f"exit at P&L >= {metrics.pnl_target:g} or <= {metrics.pnl_stop:g} per unit")
     if metrics.debit:
         debit = -metrics.net_credit
         return (f"Net debit {debit:g}/unit ({debit * lot:,.0f}/lot) = max loss, profit open-ended, breakeven {be}; "
@@ -292,7 +307,8 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
     for leg in structure.short_legs:
         probe = BrokerOrderRequest(
             symbol=leg.contract.instrument_key if "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
-            exchange=leg.contract.exchange, transaction_type=OrderSide.SELL, quantity=structure.lot_size, order_type="MARKET", product="MIS",
+            exchange=leg.contract.exchange, transaction_type=OrderSide.SELL, quantity=structure.lot_size * leg.ratio,
+            order_type="MARKET", product="MIS",
         )
         margin = await broker.get_order_margin(probe)
         if margin is None or margin <= 0:
@@ -319,7 +335,7 @@ async def _place_live_legs(
     for leg in ordered:
         request = BrokerOrderRequest(
             symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
-            quantity=quantity, order_type="MARKET", product="MIS",
+            quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
             tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag),
         )
         try:
@@ -344,7 +360,7 @@ async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strate
             await broker.place_order(BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange,
                 transaction_type=OrderSide.SELL if leg.side == OrderSide.BUY else OrderSide.BUY,
-                quantity=quantity, order_type="MARKET", product="MIS",
+                quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
                 tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag),
             ))
             done += 1

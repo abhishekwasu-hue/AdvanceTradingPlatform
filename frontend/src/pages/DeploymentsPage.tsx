@@ -24,8 +24,12 @@ import {
   type StoredBrokerInfo,
   type StrategyInfo,
   type WorkerStatus,
+  CustomLeg,
   DEBIT_STRUCTURES,
   WINGED_STRUCTURES,
+  PAYOFF_STRUCTURES,
+  WIDTH_STRUCTURES,
+  MAX_CUSTOM_LEGS,
   ROUTING_POLICIES,
   type RoutingPolicy,
 } from "../types";
@@ -98,6 +102,14 @@ export default function DeploymentsPage() {
   // Phase H: multi-leg structure and chain-based strike filters.
   const [structure, setStructure] = useState<OptionStrategy>("SINGLE");
   const [spreadWidth, setSpreadWidth] = useState(2);
+  // Phase U: the free-form leg builder (CUSTOM structure).
+  const [customLegs, setCustomLegs] = useState<CustomLeg[]>([
+    { right: "PE", role: "SHORT", strike_rule: "ATM", strike_offset: 0, ratio: 1 },
+    { right: "PE", role: "LONG", strike_rule: "OTM", strike_offset: 2, ratio: 1 },
+  ]);
+  const updateLeg = (i: number, patch: Partial<CustomLeg>) => { setCustomLegs((cur) => cur.map((l, j) => (j === i ? { ...l, ...patch } : l))); setPreview(null); };
+  const removeLeg = (i: number) => { setCustomLegs((cur) => cur.filter((_, j) => j !== i)); setPreview(null); };
+  const addLeg = () => { setCustomLegs((cur) => [...cur, { right: "CE", role: "SHORT", strike_rule: "OTM", strike_offset: 1, ratio: 1 }]); setPreview(null); };
   const [targetCredit, setTargetCredit] = useState<string>("");
   const [stopCredit, setStopCredit] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
@@ -143,6 +155,7 @@ export default function DeploymentsPage() {
     return {
       ...base, spread_width: spreadWidth,
       target_credit_pct: targetCredit ? Number(targetCredit) : null, stop_credit_pct: stopCredit ? Number(stopCredit) : null,
+      custom_legs: structure === "CUSTOM" ? customLegs : null,
     };
   }
 
@@ -405,6 +418,10 @@ export default function DeploymentsPage() {
                   <option value="LONG_STRADDLE">Long straddle (either, debit)</option>
                   <option value="LONG_STRANGLE">Long strangle (either, debit)</option>
                   <option value="CALENDAR_SPREAD">Calendar spread (either, debit)</option>
+                  <option value="CALL_RATIO_SPREAD">Call ratio spread 1:2 (LONG, undefined risk above)</option>
+                  <option value="PUT_RATIO_SPREAD">Put ratio spread 1:2 (SHORT, undefined risk below)</option>
+                  <option value="LONG_BUTTERFLY">Long butterfly 1:2:1 (either, debit)</option>
+                  <option value="CUSTOM">Custom legs (builder)</option>
                 </select>
               </div>
             )}
@@ -449,14 +466,14 @@ export default function DeploymentsPage() {
                   </div>
                 ) : (
                   <>
-                    {WINGED_STRUCTURES.includes(structure) && (
+                    {WIDTH_STRUCTURES.includes(structure) && (
                       <div>
-                        <label className="block text-xs text-muted mb-1">Wing width (steps)</label>
+                        <label className="block text-xs text-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}</label>
                         <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => { setSpreadWidth(Number(e.target.value)); setPreview(null); }} />
                       </div>
                     )}
                     <div>
-                      <label className="block text-xs text-muted mb-1">Target / stop (% of {DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
+                      <label className="block text-xs text-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk basis" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
                       <div className="flex gap-1">
                         <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)}
                           title={DEBIT_STRUCTURES.includes(structure) ? "take profit once the structure is worth this % more than the debit" : "take profit once this % of the credit is captured"} />
@@ -475,7 +492,41 @@ export default function DeploymentsPage() {
               </div>
             )}
           </div>
-          {kind === "OPTION" && (
+          {kind === "OPTION" && structure === "CUSTOM" && (
+            <div className="mt-2 rounded border border-border bg-panel2/40 p-2 text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-muted">Legs (2-{MAX_CUSTOM_LEGS}, one expiry; strikes relative to the spot at signal time)</span>
+                <button disabled={customLegs.length >= MAX_CUSTOM_LEGS} onClick={addLeg} className="rounded border border-border hover:bg-panel2 px-2 py-0.5 disabled:opacity-50">+ leg</button>
+              </div>
+              <div className="space-y-1">
+                {customLegs.map((leg, i) => (
+                  <div key={i} className="grid grid-cols-6 gap-1 items-center">
+                    <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}>
+                      <option value="SHORT">Sell</option>
+                      <option value="LONG">Buy</option>
+                    </select>
+                    <input type="number" min={1} max={4} className="rounded bg-panel2 border border-border px-1 py-1" value={leg.ratio} title="ratio (lots of this leg per lot of the structure)" onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })} />
+                    <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule, strike_offset: e.target.value === "ATM" ? 0 : Math.max(1, leg.strike_offset) })}>
+                      <option value="ATM">ATM</option>
+                      <option value="ITM">ITM</option>
+                      <option value="OTM">OTM</option>
+                    </select>
+                    <input type="number" min={0} max={20} disabled={leg.strike_rule === "ATM"} className="rounded bg-panel2 border border-border px-1 py-1 disabled:opacity-40" value={leg.strike_offset} title="strike steps from ATM" onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) || 0 })} />
+                    <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}>
+                      <option value="CE">CE</option>
+                      <option value="PE">PE</option>
+                    </select>
+                    <button disabled={customLegs.length <= 2} onClick={() => removeLeg(i)} className="text-danger hover:underline disabled:opacity-40">remove</button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1 text-[11px] text-muted">
+                Max loss, max profit and breakevens come from the expiry payoff of these legs. A side with no protection (more sold than bought) is undefined risk:
+                lots are sized off the loss the stop accepts and the group closes beyond that side's breakeven.
+              </div>
+            </div>
+          )}
+          {kind === "OPTION" && structure !== "CUSTOM" && (
             <div className="mt-2 text-xs">
               <button onClick={() => setShowFilters(!showFilters)} className="text-sky-400 hover:underline">
                 {showFilters ? "Hide" : "Show"} strike filters {strikeFilters() ? "(active)" : ""}
@@ -504,6 +555,8 @@ export default function DeploymentsPage() {
                 {kind === "OPTION"
                   ? structure === "SINGLE"
                     ? "The strategy signals on the underlying; at signal time the contract is picked from the instrument master and the spot. Exits follow the strategy's underlying levels, with the premium " + (position === "BUY" ? "stop" : "ceiling") + " as a safety net."
+                    : PAYOFF_STRUCTURES.includes(structure)
+                      ? "Priced off the expiry payoff of its legs: max loss, max profit and breakevens are computed, not assumed. Legs carry ratios (1:2 for a ratio spread, 1:2:1 for a butterfly). Sized off the max loss when defined, else off the loss the stop accepts; closed as one position on the P&L target/stop, beyond an unprotected side's breakeven, or at square-off."
                     : DEBIT_STRUCTURES.includes(structure)
                       ? "A debit structure bought at signal time; the debit is the max loss and what the lots are sized off. Closed as one position when it is worth the target % more, has lost the stop % of the debit, or at square-off."
                       : WINGED_STRUCTURES.includes(structure)
@@ -546,12 +599,19 @@ export default function DeploymentsPage() {
                       <div className="text-warn mt-1">{st.error}</div>
                     ) : (
                       <div className="mt-1 space-y-0.5 text-slate-300">
-                        {st.legs.map((l) => <div key={l.tradingsymbol}>{l.side} {l.tradingsymbol} <span className="text-muted">({l.role.toLowerCase()} leg)</span></div>)}
+                        {st.legs.map((l) => <div key={l.tradingsymbol}>{l.side} {(l.ratio ?? 1) > 1 ? `${l.ratio}x ` : ""}{l.tradingsymbol} <span className="text-muted">({l.role.toLowerCase()} leg)</span></div>)}
                         <div className="text-muted">expiry {st.expiry} · lot {st.lot_size} · {st.width_points} pts wide</div>
                         {st.metrics ? (
                           <div className="text-[11px] mt-1">
-                            credit <span className="text-accent">{st.metrics.net_credit}</span>/unit · max loss <span className="text-danger">{st.metrics.max_loss}</span>/unit ({(st.metrics.max_loss * st.lot_size).toLocaleString()}/lot)
-                            · breakeven {st.metrics.breakevens.join(" / ")} · exit at value ≤ {st.metrics.target_value} or ≥ {st.metrics.stop_value}
+                            {st.metrics.net_credit >= 0 ? "credit" : "debit"} <span className="text-accent">{Math.abs(st.metrics.net_credit)}</span>/unit · max loss{" "}
+                            {st.metrics.max_loss === null || st.metrics.max_loss === undefined
+                              ? <span className="text-danger">UNDEFINED (sized off the stop, {st.metrics.risk_per_unit}/unit)</span>
+                              : <><span className="text-danger">{st.metrics.max_loss}</span>/unit ({(st.metrics.max_loss * st.lot_size).toLocaleString()}/lot)</>}
+                            {st.metrics.max_profit !== null && st.metrics.max_profit !== undefined ? <> · max profit {st.metrics.max_profit}/unit</> : null}
+                            · breakeven {st.metrics.breakevens.join(" / ")}
+                            {st.metrics.pnl_stop !== undefined
+                              ? <> · exit at P&L ≥ {st.metrics.pnl_target} or ≤ {st.metrics.pnl_stop} per unit</>
+                              : <> · exit at value ≤ {st.metrics.target_value} or ≥ {st.metrics.stop_value}</>}
                           </div>
                         ) : st.metrics_error ? <div className="text-warn text-[11px] mt-1">{st.metrics_error}</div> : null}
                       </div>

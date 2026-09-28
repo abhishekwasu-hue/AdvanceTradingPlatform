@@ -2910,3 +2910,44 @@ time from what the accounts look like now:
 
 Migration `b4d6f8a1c3e5` adds `routing_policy`, `route_across_brokers`, `last_route` on
 deployments, `default_routing_policy` on tenants and the indexed `broker_account_id` on trades.
+
+## Phase U: Ratio spreads, long butterfly and the free-form leg builder (sections 23-25)
+
+Phases H2 and R gave each structure a hand-written rule for its economics. The three items the
+gap analysis still listed under sections 23-25 cannot be priced that way: a ratio spread's max
+loss depends on how many more it sells than buys, a butterfly's on its wings and debit, and a
+free-form leg set on whatever the user put in it. `app/instruments/payoff.py` prices them from
+the expiry payoff instead:
+
+* **`analyse(legs)`** takes `PayoffLeg(right, role, strike, premium, ratio)` for a same-expiry
+  set and evaluates the piecewise-linear P&L per unit at S = 0 and at every strike. The slope
+  beyond the highest strike (the CE legs' signed ratios) says whether the upside is bounded,
+  the slope below the lowest strike (the PE legs') whether the downside is; the roots are the
+  breakevens. `max_loss` is None when either side is unbounded, `max_profit` when the upside
+  is; `peak` is the best finite outcome.
+* **Structures** (`OptionStrategy`): `CALL_RATIO_SPREAD` (buy 1 CE at the rule strike, sell 2
+  `spread_width` steps higher; LONG signals only; undefined risk above), `PUT_RATIO_SPREAD`
+  (the mirror on SHORT signals), `LONG_BUTTERFLY` (buy wing / sell 2 ATM / buy wing, CE on a
+  LONG lean, PE on a SHORT one; a debit with defined risk) and `CUSTOM`, whose legs come from
+  the deployment's `custom_legs` (2-6 of `{right, role, strike_rule, strike_offset, ratio}`,
+  all on the deployment's expiry rule; strike filters do not apply; two legs resolving to one
+  contract are refused rather than netted).
+* **Leg ratios.** `ResolvedLeg.ratio` (1:2, 1:2:1) multiplies the lot quantity per leg through
+  the executor: one order per leg with its own quantity, LIVE margin probed at the leg's
+  quantity, the unwind and the trade records at the same. `group_meta.quantity` stays the 1x
+  leg's and the position monitor weights each leg by `quantity / that`, so the older
+  structures (all ratios 1) are unchanged.
+* **Exits as P&L per unit.** A ratio spread can be entered for almost nothing, where "50% of
+  the credit" means nothing; these structures carry `pnl_target` / `pnl_stop` in their metrics
+  and `group_exit` judges `net_credit - value` against them. Target and stop are percentages
+  of the *risk basis*: the max loss when defined (stop default 50%, capped at 100%), else the
+  peak profit (stop default 100%: risk what it can make). An unprotected side also gets an
+  underlying exit at that side's breakeven (`underlying_exits`). Sizing divides risk per trade
+  by the max loss when defined, else by the loss the stop accepts, as Phase R did for the
+  short straddle.
+
+A leg set that cannot profit at expiry at the quoted premiums, or a defined-risk set that shows
+no loss (inconsistent quotes), is refused before any order. Migration `c5e7a9b2d4f6` adds
+`strategy_deployments.custom_legs`. The Autopilot form gains the three structures and a leg
+builder (buy/sell, ratio, ATM/ITM/OTM + steps, CE/PE per leg); the preview shows each leg's
+ratio, the computed max loss/profit and the P&L exit levels.

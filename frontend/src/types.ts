@@ -745,6 +745,7 @@ export interface Deployment {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  custom_legs?: CustomLeg[] | null;
   exit_rules?: ExitRules | null;
   broker_account_id?: number | null;
   routing_policy?: RoutingPolicy | null;
@@ -759,9 +760,22 @@ export type StrikeRule = "ATM" | "ITM" | "OTM";
 
 export type OptionStrategy =
   | "SINGLE" | "BULL_PUT_SPREAD" | "BEAR_CALL_SPREAD" | "IRON_CONDOR"
-  | "IRON_BUTTERFLY" | "SHORT_STRADDLE" | "SHORT_STRANGLE" | "LONG_STRADDLE" | "LONG_STRANGLE" | "CALENDAR_SPREAD";
-export const DEBIT_STRUCTURES: OptionStrategy[] = ["LONG_STRADDLE", "LONG_STRANGLE", "CALENDAR_SPREAD"];
+  | "IRON_BUTTERFLY" | "SHORT_STRADDLE" | "SHORT_STRANGLE" | "LONG_STRADDLE" | "LONG_STRANGLE" | "CALENDAR_SPREAD"
+  | "CALL_RATIO_SPREAD" | "PUT_RATIO_SPREAD" | "LONG_BUTTERFLY" | "CUSTOM";
+export const DEBIT_STRUCTURES: OptionStrategy[] = ["LONG_STRADDLE", "LONG_STRANGLE", "CALENDAR_SPREAD", "LONG_BUTTERFLY"];
 export const WINGED_STRUCTURES: OptionStrategy[] = ["BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "IRON_CONDOR", "IRON_BUTTERFLY"];
+// Phase U: economics from the expiry payoff, legs with ratios, exits on P&L per unit.
+export const PAYOFF_STRUCTURES: OptionStrategy[] = ["CALL_RATIO_SPREAD", "PUT_RATIO_SPREAD", "LONG_BUTTERFLY", "CUSTOM"];
+export const WIDTH_STRUCTURES: OptionStrategy[] = [...WINGED_STRUCTURES, "CALL_RATIO_SPREAD", "PUT_RATIO_SPREAD", "LONG_BUTTERFLY"];
+
+export interface CustomLeg {
+  right: "CE" | "PE";
+  role: "SHORT" | "LONG";
+  strike_rule: StrikeRule;
+  strike_offset: number;
+  ratio: number;
+}
+export const MAX_CUSTOM_LEGS = 6;
 
 export interface StrikeFilters {
   min_oi?: number | null;
@@ -789,6 +803,7 @@ export interface ContractRules {
   spread_width?: number;
   target_credit_pct?: number | null;
   stop_credit_pct?: number | null;
+  custom_legs?: CustomLeg[] | null;
 }
 
 export interface StrikeCandidate {
@@ -805,13 +820,19 @@ export interface StrikeCandidate {
 
 export interface StructureMetrics {
   net_credit: number;
-  max_profit: number;
-  max_loss: number;
+  max_profit: number | null;
+  max_loss: number | null;
   breakevens: number[];
   target_value: number;
   stop_value: number;
   short_strikes: Record<string, number>;
-  legs: { role: string; side: string; tradingsymbol: string; strike: number | null; right: string | null; premium: number }[];
+  legs: { role: string; side: string; tradingsymbol: string; strike: number | null; right: string | null; premium: number; ratio?: number }[];
+  debit?: boolean;
+  defined_risk?: boolean;
+  risk_per_unit?: number;
+  underlying_exits?: Record<string, number>;
+  pnl_target?: number;
+  pnl_stop?: number;
 }
 
 export interface StructurePreview {
@@ -821,7 +842,7 @@ export interface StructurePreview {
   expiry: string;
   width_points: number;
   notes: string[];
-  legs: (ResolvedContract & { role: string; side: string })[];
+  legs: (ResolvedContract & { role: string; side: string; ratio?: number })[];
   metrics?: StructureMetrics;
   metrics_error?: string;
 }

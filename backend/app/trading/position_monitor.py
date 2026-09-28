@@ -251,10 +251,24 @@ def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_pri
     """Why a multi-leg group should close now, or None. `prices` maps trade id -> leg price.
     The group's value is what it costs to close it: buy the shorts back, sell the wings."""
     meta = json.loads(legs[0].group_meta or "{}")
-    value = sum(prices[l.id] if l.leg_role == "SHORT" else -prices[l.id] for l in legs)
+    # Phase U: legs may carry ratios (1:2); each is weighted by its quantity against the 1x leg's.
+    base = float(meta.get("quantity") or 0.0)
+
+    def weight(leg: TradeRecord) -> float:
+        return (float(leg.quantity) / base) if base > 0 and leg.quantity else 1.0
+
+    value = sum((prices[l.id] if l.leg_role == "SHORT" else -prices[l.id]) * weight(l) for l in legs)
     stop_value = meta.get("stop_value")
     target_value = meta.get("target_value")
-    if meta.get("debit"):
+    if meta.get("pnl_stop") is not None:
+        # Phase U: payoff-priced structures are judged on mark-to-market P&L per unit - what was
+        # received (or paid) at entry against what closing costs now.
+        pnl = float(meta.get("net_credit") or 0.0) - value
+        if pnl <= meta["pnl_stop"]:
+            return f"Structure stop (P&L {pnl:.2f}/unit <= {meta['pnl_stop']:g})"
+        if meta.get("pnl_target") is not None and pnl >= meta["pnl_target"]:
+            return f"Structure target (P&L {pnl:.2f}/unit >= {meta['pnl_target']:g})"
+    elif meta.get("debit"):
         # Phase R: a debit structure is judged on what selling it brings (longs minus shorts).
         worth = -value
         if stop_value is not None and worth <= stop_value:
@@ -262,10 +276,11 @@ def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_pri
         if target_value is not None and worth >= target_value:
             return f"Structure target (worth {worth:.2f} >= {target_value:g})"
         return None
-    if stop_value is not None and value >= stop_value:
-        return f"Spread stop (value {value:.2f} >= {stop_value:g})"
-    if target_value is not None and value <= target_value:
-        return f"Spread target (value {value:.2f} <= {target_value:g})"
+    else:
+        if stop_value is not None and value >= stop_value:
+            return f"Spread stop (value {value:.2f} >= {stop_value:g})"
+        if target_value is not None and value <= target_value:
+            return f"Spread target (value {value:.2f} <= {target_value:g})"
     if underlying_price is not None:
         exits = meta.get("underlying_exits") or {}
         if "below" in exits and underlying_price <= exits["below"]:

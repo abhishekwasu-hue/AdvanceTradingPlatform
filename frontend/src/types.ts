@@ -1366,6 +1366,26 @@ export interface AiStrategyDraft {
   lineage: { provider: string; model: string; prompt_chars: number; generated_at: string | null };
   disclaimer: string;
   raw_response?: string | null;
+  compliance?: ComplianceReport | null;
+}
+
+// Phase V2: the compliance validator's report on an AI draft.
+export interface ComplianceCheck {
+  rule: string;
+  status: "PASS" | "FAIL" | "WARN" | "N/A";
+  detail: string;
+  fixed: boolean;
+}
+
+export interface ComplianceReport {
+  ok: boolean;
+  checks: ComplianceCheck[];
+  passed: string[];
+  failed: string[];
+  warnings: string[];
+  fixes: string[];
+  user_must_accept: { max_loss_per_trade_text?: string; worst_case_text?: string };
+  evidence?: { total_trades: number; win_rate: number; net_pnl: number; profit_factor: number | null; max_drawdown: number; summary: string; warnings: string[]; strength: "weak" | "adequate" } | null;
 }
 
 export type RegimeKind = "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "VOLATILE" | "QUIET" | "UNKNOWN";

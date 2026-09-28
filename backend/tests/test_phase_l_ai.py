@@ -191,7 +191,10 @@ def test_generator_retries_once_then_review_gate_requires_backtest_before_approv
     assert bt.json()["draft"]["status"] == "BACKTESTED" and bt.json()["run"]["strategy_id"] == f"ai_draft_{draft_id}"
     assert bt.json()["run"]["id"] == bt.json()["draft"]["backtest_run_id"]
 
-    approved = client.post(f"/api/ai/drafts/{draft_id}/approve", headers=headers, json={"name": "Pullback (AI, reviewed)"})
+    # Phase V2: the human must confirm the "user must accept" statement.
+    not_accepted = client.post(f"/api/ai/drafts/{draft_id}/approve", headers=headers, json={"name": "Pullback (AI, reviewed)"})
+    assert not_accepted.status_code == 400 and "accept the risk" in not_accepted.json()["detail"]
+    approved = client.post(f"/api/ai/drafts/{draft_id}/approve", headers=headers, json={"name": "Pullback (AI, reviewed)", "accept_risk": True})
     assert approved.status_code == 200, approved.text
     strategy_id = approved.json()["custom_strategy_id"]
     assert approved.json()["origin"] == f"ai:{draft_id}"

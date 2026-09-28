@@ -48,6 +48,7 @@ class DraftBacktestBody(BaseModel):
 
 class ApproveBody(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=200)
+    accept_risk: bool = Field(default=False, description="Phase V2: the human confirms the 'user must accept' statement")
 
 
 class NoteBody(BaseModel):
@@ -150,7 +151,7 @@ async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(r
     draft = await _draft(session, draft_id, user)
     tenant = await _tenant(session, user)
     try:
-        record = await generator.approve(session, draft, user, tenant, name=body.name)
+        record = await generator.approve(session, draft, user, tenant, name=body.name, accept_risk=body.accept_risk)
     except generator.GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"draft": generator.as_dict(draft), "custom_strategy_id": record.id, "strategy_id": f"custom_{record.id}", "origin": record.origin}

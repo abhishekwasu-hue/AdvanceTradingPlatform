@@ -30,6 +30,8 @@ export default function AiCopilotPage() {
   const [regime, setRegime] = useState<Regime | null>(null);
   const [symbol, setSymbol] = useState("SAMPLE");
   const [busy, setBusy] = useState(false);
+  const [acceptRisk, setAcceptRisk] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -112,13 +114,39 @@ export default function AiCopilotPage() {
                   ))}
                 </div>
               )}
+              {selected.compliance && (
+                <div className={`rounded-lg border p-2 space-y-1 ${selected.compliance.ok ? "border-border bg-panel2/40" : "border-rose-500/50 bg-rose-500/5"}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold">Risk Guardian checklist · {selected.compliance.passed.length} passed{selected.compliance.failed.length ? ` · ${selected.compliance.failed.length} failed` : ""}{selected.compliance.warnings.length ? ` · ${selected.compliance.warnings.length} warning(s)` : ""}</span>
+                    <button onClick={() => setShowChecks(!showChecks)} className="text-sky-400 hover:underline">{showChecks ? "hide" : "show all"}</button>
+                  </div>
+                  {selected.compliance.fixes.length > 0 && <div className="text-amber-300">Auto-fixed: {selected.compliance.fixes.join("; ")}</div>}
+                  {selected.compliance.checks.filter((c) => showChecks || c.status === "FAIL" || c.status === "WARN").map((c) => (
+                    <div key={c.rule} className="flex gap-2">
+                      <span className={`font-mono w-8 shrink-0 ${c.status === "PASS" ? "text-accent" : c.status === "FAIL" ? "text-danger" : c.status === "WARN" ? "text-amber-400" : "text-muted"}`}>{c.rule}</span>
+                      <span className={c.status === "N/A" ? "text-muted" : "text-slate-300"}>{c.detail}</span>
+                    </div>
+                  ))}
+                  {selected.compliance.evidence && (
+                    <div className={selected.compliance.evidence.strength === "weak" ? "text-amber-300" : "text-slate-300"}>Backtest evidence ({selected.compliance.evidence.strength}): {selected.compliance.evidence.summary}</div>
+                  )}
+                  <div className="rounded border border-amber-500/40 bg-amber-500/5 p-2 text-amber-200">
+                    <div className="font-bold">You must accept before approving</div>
+                    <div>{selected.compliance.user_must_accept.max_loss_per_trade_text}</div>
+                    <div className="mt-1">{selected.compliance.user_must_accept.worst_case_text}</div>
+                    {selected.status === "BACKTESTED" && (
+                      <label className="mt-1 flex items-center gap-2 text-slate-200"><input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} /> I accept this maximum loss and worst case.</label>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <input className="rounded bg-panel2 border border-border px-2 py-1 text-xs w-28" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
                 {(selected.status === "DRAFT" || selected.status === "BACKTESTED") && (
                   <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", sampleCandles()); setSelected(r.draft); setMessage(`Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (sample data - upload real candles on the Backtest page for a real read).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on sample data</button>
                 )}
                 {selected.status === "BACKTESTED" && (
-                  <button disabled={busy} onClick={() => run("Approved - it is now one of your strategies. Paper-trade it before LIVE.", async () => { const r = await api.aiApproveDraft(selected.id); setSelected(r.draft); })} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs">Approve as strategy</button>
+                  <button disabled={busy || !acceptRisk || (selected.compliance ? !selected.compliance.ok : false)} title={!acceptRisk ? "Tick the acceptance first" : undefined} onClick={() => run("Approved - it is now one of your strategies. Paper-trade it before LIVE.", async () => { const r = await api.aiApproveDraft(selected.id, undefined, true); setSelected(r.draft); setAcceptRisk(false); })} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Approve as strategy</button>
                 )}
                 {selected.status !== "APPROVED" && selected.status !== "REJECTED" && (
                   <button disabled={busy} onClick={() => run("Rejected.", async () => setSelected(await api.aiRejectDraft(selected.id)))} className="text-xs text-danger hover:underline">Reject</button>

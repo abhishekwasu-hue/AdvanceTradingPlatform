@@ -952,6 +952,8 @@ class AiStrategyDraftRecord(Base):
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Phase V2: the compliance validator's report (checks, fixes, user-must-accept, evidence).
+    compliance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="DRAFT")   # DRAFT / FAILED / BACKTESTED / APPROVED / REJECTED
     backtest_run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id", ondelete="SET NULL"), nullable=True)
     custom_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)

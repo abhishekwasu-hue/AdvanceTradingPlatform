@@ -2992,3 +2992,32 @@ drawdown, state and multiplier per mode, open risk by bucket, active cool-downs,
 events and the ceilings - the Risk page shows it, and Phase V3 feeds it to the AI as runtime
 context. R6 (never add to a loser) holds by construction: one open position per deployment and
 no add-to-position path. Migration `d6f8b1c3e5a7`.
+
+## Phase V2: Compliance validator on AI drafts
+
+The spec's section 3: "do not trust the AI alone". `app/ai/compliance.py` re-checks every draft
+the generator produces, before it can be backtested or approved:
+
+* **Draft-level rules** are checked on the `CustomStrategyConfig`: R1 (a stop before entry), M2
+  (the stop at least `MIN_STOP_ATR_MULT` = 1 x ATR, outside normal noise), M1 (targets ordered
+  and at or above the minimum R:R); a minimum R:R below 1:1 is a warning.
+* **Engine-enforced rules** (R3/R9 size from risk, R4 portfolio cap, R5 daily kill switch, R6,
+  R7, R10 cool-down, M8 events, P2-P4 drawdown ladder) are reported PASS with the tenant's
+  effective values, so the checklist is complete; R8 (defined risk), M4/M5 (break-even,
+  trailing) and M9 (regime filter) are N/A with a pointer to where they are set.
+* **One AI auto-fix round, then deterministic fixes.** `generator.generate` runs the checklist
+  after parsing. A failure on the first attempt goes back to the model with the request ("it
+  violated the risk rules - M2: ..."); on the last attempt the fixes are applied to the config
+  (stop raised to the minimum, targets re-ordered/raised) and listed in `compliance.fixes`,
+  so what is saved is compliant either way and the correction is on the record.
+* **"User must accept."** The report carries the maximum loss per trade in currency and % of
+  capital and the worst case (a gap through the stop at `GAP_MULTIPLE` = 3 x the planned loss,
+  the daily loss limit, the drawdown ladder). `approve` refuses without `accept_risk: true`
+  and quotes the statement; the AI Copilot page shows the checklist and requires the tick.
+* **Evidence, plainly.** When a backtest is attached the metrics are judged (`assess_evidence`:
+  fewer than 30 trades, a losing result, a thin profit factor, a drawdown over 15% of capital)
+  as E1 warnings that stay on the draft - the AI never flatters a strategy. A draft with any
+  FAIL cannot be approved.
+
+Stored in `ai_strategy_drafts.compliance_json` (migration `e7a9c2d4f6b8`) and returned as
+`compliance` on every draft.

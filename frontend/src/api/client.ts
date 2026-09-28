@@ -550,8 +550,8 @@ export const api = {
     request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
       method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }),
     }),
-  aiApproveDraft: (id: number, name?: string) =>
-    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name }) }),
+  aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
+    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name, accept_risk: acceptRisk }) }),
   aiRejectDraft: (id: number, note?: string) => request<AiStrategyDraft>(`/ai/drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),

@@ -466,6 +466,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
   ceiling the operator lowered later. The engine used the ceiling; the tenant should re-save
   its settings. Ceilings: `GET/PUT /api/admin/controls/risk-ceilings` (SUPER_ADMIN + MFA).
 
+### 1.6l AI draft compliance (Phase V2)
+
+- **"Auto-fixed: stop_loss_atr_mult 0.4 -> 1 (M2)"** on a draft: the model's stop sat inside
+  one ATR; the platform raised it. The fix is recorded on the draft and in the checklist.
+- **"Confirm that you accept the risk before approving"**: the approval needs the tick under
+  the "You must accept" statement (API: `accept_risk: true`). This is the spec's requirement
+  that the human states the maximum loss before going live, not a UI nicety.
+- **"Resolve the compliance failures first"**: only possible for a draft generated before this
+  version whose config fails M1/M2 - regenerate it.
+- **Weak evidence warnings (E1)** do not block approval; the human gate decides. They stay on
+  the record so a later review can see what was known at approval time.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

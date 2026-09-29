@@ -11,8 +11,11 @@ import {
   type ConditionOperator,
   type OptionFilter,
   type OptionFilterType,
+  type ScannerRequest,
   type ScannerResult,
   type ScannerSymbolInput,
+  type ScanPlan,
+  type ScanRead,
   type StructureFilter,
   type StructureFilterType,
 } from "../types";
@@ -60,6 +63,34 @@ export default function ScannerPage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScannerResult | null>(null);
+  // Phase Y: describe the scan in plain language; read the matches with the AI.
+  const [aiText, setAiText] = useState("");
+  const [aiPlan, setAiPlan] = useState<ScanPlan | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiRead, setAiRead] = useState<ScanRead | null>(null);
+  const [lastRequest, setLastRequest] = useState<ScannerRequest | null>(null);
+
+  async function planWithAi() {
+    if (aiText.trim().length < 5) return;
+    setAiBusy(true); setError(null);
+    try {
+      const plan = await api.scannerAiPlan(aiText, navigator.language?.slice(0, 2) || "en");
+      setAiPlan(plan);
+      setIndicatorConditions(plan.indicator_conditions);
+      setStructureFilters(plan.structure_filters);
+      setOptionFilters(plan.option_filters);
+      if (plan.timeframe) setTimeframe(plan.timeframe);
+      if (plan.symbols.length) setWatchlist(plan.symbols.join(", "));
+      setResult(null); setAiRead(null);
+    } catch (e) { setError(String(e)); } finally { setAiBusy(false); }
+  }
+
+  async function readWithAi() {
+    if (!lastRequest || !result) return;
+    setAiBusy(true); setError(null);
+    try { setAiRead(await api.scannerAiRead(lastRequest, result, navigator.language?.slice(0, 2) || "en")); }
+    catch (e) { setError(String(e)); } finally { setAiBusy(false); }
+  }
 
   const needsOptionChain = optionFilters.length > 0;
 
@@ -92,6 +123,8 @@ export default function ScannerPage() {
         swing_window: 3,
       };
       const res = await api.runScanner(request);
+      setLastRequest(request);
+      setAiRead(null);
       setResult(res);
     } catch (e) {
       setError(String(e));
@@ -113,6 +146,23 @@ export default function ScannerPage() {
 
       <DemoDataBanner />
       <Disclaimer kind="signals" />
+
+      <Card title="Describe the scan (AI)">
+        <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-start">
+          <textarea rows={2} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" placeholder="e.g. NIFTY and BANKNIFTY stocks in an uptrend near support, RSI(14) above 55, PCR over 1.2, 15min"
+            value={aiText} onChange={(e) => setAiText(e.target.value)} />
+          <button onClick={planWithAi} disabled={aiBusy || aiText.trim().length < 5} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+            {aiBusy ? "Planning…" : "Plan filters with AI"}
+          </button>
+        </div>
+        <p className="text-[11px] text-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
+        {aiPlan && (
+          <div className="mt-2 text-xs space-y-1">
+            <div className="text-slate-200">{aiPlan.explanation} <span className="text-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
+            {aiPlan.warnings.map((w, i) => <div key={i} className="text-amber-300">{w}</div>)}
+          </div>
+        )}
+      </Card>
 
       <Card title="Watchlist">
         <div className="grid sm:grid-cols-[1fr_140px] gap-3">
@@ -264,6 +314,29 @@ export default function ScannerPage() {
 
       {result && (
         <Card title={`Results - ${result.matched_count} of ${result.scanned_count} matched`}>
+          {result.matches.length > 0 && (
+            <div className="mb-2 flex items-center gap-3">
+              <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-xs text-slate-200 disabled:opacity-50">
+                {aiBusy ? "Reading…" : "AI read of these matches"}
+              </button>
+              <span className="text-[11px] text-muted">Ranks the matches from the labels and the regime the platform reads; analysis, never an order.</span>
+            </div>
+          )}
+          {aiRead && (
+            <div className="mb-3 rounded-lg border border-border bg-panel2/40 p-3 text-xs space-y-2">
+              <div className="text-slate-200">{aiRead.summary} <span className="text-muted">· {aiRead.provider}{aiRead.model ? `/${aiRead.model}` : ""}</span></div>
+              {aiRead.ranked.map((r) => (
+                <div key={r.symbol} className="rounded border border-border/60 p-2">
+                  <div className="flex items-center justify-between"><span className="font-bold text-slate-200">{r.symbol} <span className="text-muted font-normal">· regime {r.regime ?? "?"}</span></span><span className={`font-bold ${r.score >= 70 ? "text-accent" : r.score >= 50 ? "text-slate-200" : "text-danger"}`}>{r.score}</span></div>
+                  <div className="text-slate-300 mt-0.5">{r.thesis}</div>
+                  {r.risks && <div className="text-amber-300 mt-0.5">Risks: {r.risks}</div>}
+                  <div className="text-muted mt-0.5">Next: {r.next_step}</div>
+                </div>
+              ))}
+              {aiRead.warnings.map((w, i) => <div key={i} className="text-amber-300">{w}</div>)}
+              <div className="text-[11px] text-muted">{aiRead.disclaimer}</div>
+            </div>
+          )}
           {result.matches.length === 0 ? (
             <div className="text-sm text-muted py-2">No symbols cleared every filter.</div>
           ) : (

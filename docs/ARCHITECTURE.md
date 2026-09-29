@@ -3167,3 +3167,42 @@ without the platform ever holding money.
 
 Migration `b1d3f5a7c9e2` (price/currency/fee on listings, wider subscription status,
 `marketplace_charges`, `marketplace_payouts`). Tests: `tests/test_phase_x_marketplace_revenue.py`.
+
+## Phase Y: The AI scanner (V4.2)
+
+The Market Scanner stays what it was: a deterministic function of candles, chain and filters
+(`app/scanner/engine.py`). Phase Y puts the tenant's LLM on either side of it and nowhere else -
+the master prompt's "scanner is not an order" and "AI is not an order" both hold by construction,
+because neither call touches the execution path.
+
+* **Plan** (`app/scanner/ai.py::plan_scan`, `POST /api/scanner/ai/plan`). Plain language becomes a
+  `ScanPlan`: indicator conditions in the Strategy Builder's `Condition` DSL, structure filters and
+  option filters, plus the timeframe and any symbols the request names. The system prompt lists the
+  real enums (indicators, operators, structure and option filter types, timeframes) so the model
+  cannot invent a filter; `parse_plan` validates each filter on its own and drops a bad one with a
+  warning rather than guessing (volume, fundamentals and news land in the warnings as "cannot be
+  screened"). The page loads the plan into its editors; the user reviews and presses Run on the
+  ordinary `/api/scanner/run`. Without an external provider (none configured, or the plan lacks AI
+  features) `rule_based_plan` does the same job deterministically: the NLU parser for indicator
+  conditions, keyword rules for structure ("uptrend", "near support", "bullish break") and option
+  ("PCR above 1.2", "put writing", "max pain") filters, index words and uppercase tokens for symbols.
+  A model that answers unusably falls back to that parse with a warning naming it.
+* **Read** (`read_scan`, `POST /api/scanner/ai/read`). The scan's request and result go back; for
+  each match the engine's own labels, the close and the regime `classify_regime` reads on that
+  symbol's candles (kind, confidence, the numbers behind it) are handed to the model, never the
+  candles themselves. The model ranks and explains (thesis, what invalidates it, next step);
+  `parse_read` drops symbols the scanner did not match, caps an UNKNOWN-regime symbol at 60, notes
+  matches the model skipped, and the fixed disclaimer rides every answer. `rule_based_read` gives a
+  transparent score when there is no model: 10 per filter category matched, +15 when the regime
+  agrees with the labels' direction, -20 when it conflicts, -10 in a VOLATILE regime, capped at 60
+  when the regime is unknown.
+* **Envelope.** Both endpoints need a trader login, sit behind the `ai_copilot` operator flag,
+  meter `ai_scanner` usage, write audit rows (`ai_scan_planned`, `ai_scan_read`) with the provider
+  and model, count provider calls in `ai_provider_calls`, and record provider errors on the tenant's
+  AI settings like the generator does. Prompts are versioned (`scanner-v1.0`). At most 40 matches
+  are read per call.
+* **UI.** Scanner page: a "Describe the scan (AI)" box that fills the filter editors and shows the
+  plan's explanation, provider and warnings; an "AI read of these matches" button on the results
+  with the ranked list, regime per symbol, risks, next step and disclaimer.
+
+No schema change. Tests: `tests/test_phase_y_ai_scanner.py`.

@@ -48,6 +48,7 @@ from app.notifications.routes import router as notifications_router
 from app.reconciliation.routes import router as reconciliation_router
 from app.accounts.routes import router as accounts_router
 from app.scanner.engine import run_scanner
+from app.scanner.routes import router as scanner_ai_router
 from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
@@ -155,6 +156,7 @@ app.include_router(marketplace_admin_router)
 app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_router)
+app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
 app.include_router(trading_disable_router)

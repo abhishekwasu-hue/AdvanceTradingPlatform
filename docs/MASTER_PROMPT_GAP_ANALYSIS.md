@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase X, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase Y, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -21,7 +21,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
 | 30 TradingView webhook | done | |
 | 31-32 backtest | done (Phase J2 + M4 + W) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records, grid parameter optimisation with out-of-sample ranking (M4). Historical option-chain backtests (W): every option structure on historical bars, priced from recorded chain quotes or Black-Scholes, with the live planner, exits and sizing. |
-| 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis rule-based; LLM provider seam + generator with review gate added (Phase L). Scanner stays rule-based. |
+| 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis rule-based; LLM provider seam + generator with review gate added (Phase L). Scanner: LLM plan from plain language and an AI read of matches (Phase Y), the deterministic engine unchanged. |
 | 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (K4); browser Web Push and SMS through any HTTP gateway (O3). |
 | 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` with invoices/payments (K1). |
 
@@ -53,7 +53,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3 + X) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Paid listings with a frozen platform fee, charges settled by gateway payment link or operator, creator earnings and payouts (X). Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. |
 | V3.13 notifications | done (Phase O3) | Telegram, email, webhook (K4), browser Web Push (VAPID, RFC 8291, no third-party service) and SMS through any HTTP gateway (MSG91/Twilio presets). |
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
-| V4.1-4.3 AI agent, AI scanner, AI generator | done / partial (Phase L) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) still rule-based. |
+| V4.1-4.3 AI agent, AI scanner, AI generator | done (Phase L + Y) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) done in Phase Y: plan + read through the provider seam with deterministic fallbacks. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | done (Phase M2) | Portfolio engine (gross/net notional, concentration, unrealised, risk at stops) at `GET /api/portfolio/exposure`; eight scopes GLOBAL/TENANT/USER/ACCOUNT/PORTFOLIO/STRATEGY/DEPLOYMENT/INSTRUMENT with gross-exposure and symbol-concentration limits. |
 | V4.6-4.8 quant, regime, advanced backtesting | done / partial | Regime engine + filter (L3); Monte Carlo/walk-forward/analytics (J); grid parameter optimisation with out-of-sample ranking and overfit gap (Phase M4). Factor/quant models not built. |
 | V4.9 HA | partial | `/health/live|ready|dependencies`, broker-uncertain block (G), restart-safe worker, PITR (O5). Multi-replica worker and a second region remain infrastructure choices, not code gaps. |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase Y - AI scanner**: **DONE** (ARCHITECTURE.md Phase Y) - plain-language scan plans validated against the real filter enums, ranked and explained reads with the platform's regime, deterministic fallbacks, metering, flag, audit.
 - **Phase X - marketplace revenue share**: **DONE** (ARCHITECTURE.md Phase X) - priced listings, charges through the billing provider seam (Razorpay payment links + manual confirmation), frozen platform fee, creator earnings, encrypted payout destinations, operator settlement, revenue totals, UI.
 - **Phase W - historical option-chain backtests**: **DONE** (ARCHITECTURE.md Phase W) - shared structure planner and exit rule, synthetic expiry calendar and conventions, Black-Scholes and snapshot pricers, option backtest engine (structures, singles, settlement, square-off, sizing), chain recorder with retention, API dispatch and UI.
 - **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2 DONE** (Phase V2) - compliance validator on AI drafts with one AI auto-fix round, deterministic fixes, evidence assessment and the "user must accept" gate. **V3 DONE** (Phase V3) - the versioned guardian system prompt filled from the account's live state, replies in the user's language, the spec schema mapped onto the platform's config plus a deployment suggestion the validator reads.

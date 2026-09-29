@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase V3, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase W, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -20,7 +20,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 28 kill switches, emergency exit | done | Global/tenant/strategy + emergency exit. |
 | 29 SL/target engine | done (Phase J1) | Fixed levels, premium floor/ceiling (F4), trailing %, break-even at R, time exits, spread max risk/profit (H2). ATR-based and structure-based stops remain the strategy's job at signal time. |
 | 30 TradingView webhook | done | |
-| 31-32 backtest | done (Phase J2 + M4) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records, grid parameter optimisation with out-of-sample ranking (M4). Historical option-chain backtests not built. |
+| 31-32 backtest | done (Phase J2 + M4 + W) | Engine + UI, exit rules, analytics views, Monte Carlo, walk-forward, run records, grid parameter optimisation with out-of-sample ranking (M4). Historical option-chain backtests (W): every option structure on historical bars, priced from recorded chain quotes or Black-Scholes, with the live planner, exits and sizing. |
 | 33-36 fundamentals, news, AI analysis, scanner | done | AI analysis rule-based; LLM provider seam + generator with review gate added (Phase L). Scanner stays rule-based. |
 | 37-42 UI, versions, notifications | done | Telegram + email + HMAC-signed webhook (K4); browser Web Push and SMS through any HTTP gateway (O3). |
 | 43-46 schema, indexes, API, security | done | `/api/v1` canonical with `/api` alias. `billing_transactions` with invoices/payments (K1). |
@@ -46,7 +46,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Item | Status | Gaps |
 | --- | --- | --- |
 | V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. |
-| V2.1-2.6 options depth | done (Phase R + U) | Thirteen structures plus the custom leg builder; historical option-chain backtests remain (see §31-32). |
+| V2.1-2.6 options depth | done (Phase R + U + W) | Thirteen structures plus the custom leg builder; historical option-chain backtests with a chain recorder (W). |
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I + T) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; `risk_limits` at six scopes with strictest-wins and `risk_events`. Routing policies EXPLICIT / MOST_MARGIN / LEAST_UTILISED / FEWEST_POSITIONS per deployment or tenant default, optionally across brokers, decided on balances the worker refreshes before routing, recorded on the deployment and on every trade (T); exits and stop re-arms follow the trade's own account. Reconciliation still runs against one session per tenant. |
 | V3.6-3.8 plans, billing, metering | done (Phase K1) | Priced plans with feature flags, subscriptions with trial/grace lifecycle behind a `BillingProvider` (manual provider; a gateway plugs in at the same seam), invoices/payments, usage metering (orders, backtests, webhook events, API calls). Razorpay Subscriptions gateway (hosted checkout, autopay, signed idempotent webhooks) behind the seam; manual remains for bank transfers. |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase W - historical option-chain backtests**: **DONE** (ARCHITECTURE.md Phase W) - shared structure planner and exit rule, synthetic expiry calendar and conventions, Black-Scholes and snapshot pricers, option backtest engine (structures, singles, settlement, square-off, sizing), chain recorder with retention, API dispatch and UI.
 - **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2 DONE** (Phase V2) - compliance validator on AI drafts with one AI auto-fix round, deterministic fixes, evidence assessment and the "user must accept" gate. **V3 DONE** (Phase V3) - the versioned guardian system prompt filled from the account's live state, replies in the user's language, the spec schema mapped onto the platform's config plus a deployment suggestion the validator reads.
 
 - **Phase G - safety and reliability closure** - **DONE** on this branch (ARCHITECTURE.md Phase G, docs/SLO.md). Was: market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.

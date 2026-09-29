@@ -123,3 +123,6 @@ class BacktestResult(BaseModel):
     analytics: Optional[Dict[str, Any]] = None
     exit_rules: Optional[str] = None
     run_id: Optional[int] = None
+    # Phase W: set by the option backtest engine - pricing model, conventions, skipped signals,
+    # per-structure legs (app/backtest/options_engine.py). None for an underlying backtest.
+    options: Optional[Dict[str, Any]] = None

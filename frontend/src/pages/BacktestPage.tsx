@@ -3,9 +3,38 @@ import { api } from "../api/client";
 import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, DemoDataBanner, StatTile, Disclaimer } from "../components/ui";
-import type { BacktestResult, BacktestRunSummary, ExitRules, MonteCarloResult, OHLCVBar, OptimizeResult, StrategyInfo, WalkForwardResult } from "../types";
+import {
+  type BacktestResult, type BacktestRunSummary, type ExitRules, type MonteCarloResult, type OHLCVBar, type OptimizeResult, type StrategyInfo, type WalkForwardResult,
+  type CustomLeg, type ExpiryRule, type OptionBacktestConfig, type OptionChainCoverage, type OptionChainSnapshotRow, type OptionPosition, type OptionPricingModel,
+  type OptionStrategy, type StrikeRule, DEBIT_STRUCTURES, MAX_CUSTOM_LEGS, PAYOFF_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES,
+} from "../types";
 import { useAuth } from "../auth/AuthContext";
 import { generateSampleCandles } from "../utils/sampleData";
+
+const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+/** Parses a chain-recorder CSV (timestamp,expiry,strike,right,ltp[,iv,oi,underlying_ltp]) into upload rows. */
+function parseSnapshotCsv(text: string): OptionChainSnapshotRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const idx = (name: string) => header.indexOf(name);
+  const [ti, ei, si, ri, li, ivi, oii, ui] = ["timestamp", "expiry", "strike", "right", "ltp", "iv", "oi", "underlying_ltp"].map(idx);
+  if ([ti, ei, si, ri, li].some((i) => i < 0)) throw new Error("CSV needs timestamp, expiry, strike, right and ltp columns");
+  const rows: OptionChainSnapshotRow[] = [];
+  for (const line of lines.slice(1)) {
+    const c = line.split(",").map((v) => v.trim());
+    const right = c[ri]?.toUpperCase();
+    if (right !== "CE" && right !== "PE") continue;
+    const row: OptionChainSnapshotRow = { timestamp: c[ti], expiry: c[ei], strike: Number(c[si]), right, ltp: Number(c[li]) };
+    if (ivi >= 0 && c[ivi]) row.iv = Number(c[ivi]);
+    if (oii >= 0 && c[oii]) row.oi = Number(c[oii]);
+    if (ui >= 0 && c[ui]) row.underlying_ltp = Number(c[ui]);
+    if (Number.isFinite(row.strike) && Number.isFinite(row.ltp) && row.ltp > 0) rows.push(row);
+  }
+  return rows;
+}
 
 export default function BacktestPage() {
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
@@ -40,6 +69,72 @@ export default function BacktestPage() {
   }
   const [runs, setRuns] = useState<BacktestRunSummary[]>([]);
   const [robustBusy, setRobustBusy] = useState(false);
+  // Phase W: trade the signals as options.
+  const [tradeAs, setTradeAs] = useState<"UNDERLYING" | "OPTION">("UNDERLYING");
+  const [structure, setStructure] = useState<OptionStrategy>("BULL_PUT_SPREAD");
+  const [position, setPosition] = useState<OptionPosition>("BUY");
+  const [expiryRule, setExpiryRule] = useState<ExpiryRule>("NEAREST");
+  const [strikeRule, setStrikeRule] = useState<StrikeRule>("ATM");
+  const [strikeOffset, setStrikeOffset] = useState(0);
+  const [spreadWidth, setSpreadWidth] = useState(2);
+  const [targetCredit, setTargetCredit] = useState("");
+  const [stopCredit, setStopCredit] = useState("");
+  const [premiumStop, setPremiumStop] = useState("");
+  const [maxLots, setMaxLots] = useState("");
+  const [customLegs, setCustomLegs] = useState<CustomLeg[]>([
+    { right: "PE", role: "SHORT", strike_rule: "ATM", strike_offset: 0, ratio: 1 },
+    { right: "PE", role: "LONG", strike_rule: "OTM", strike_offset: 2, ratio: 1 },
+  ]);
+  const updateLeg = (i: number, patch: Partial<CustomLeg>) => setCustomLegs((cur) => cur.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const [pricing, setPricing] = useState<OptionPricingModel>("synthetic");
+  const [ivPct, setIvPct] = useState("");
+  const [lotSize, setLotSize] = useState("");
+  const [strikeStep, setStrikeStep] = useState("");
+  const [expiryWeekday, setExpiryWeekday] = useState("");
+  const [weeklyExpiry, setWeeklyExpiry] = useState("");
+  const [intraday, setIntraday] = useState(true);
+  const [allowFallback, setAllowFallback] = useState(true);
+  const [uploadedRows, setUploadedRows] = useState<OptionChainSnapshotRow[]>([]);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<OptionChainCoverage[]>([]);
+  const [structureSort, setStructureSort] = useState<"time" | "pnl">("time");
+
+  function optionConfig(): OptionBacktestConfig | null {
+    if (tradeAs !== "OPTION") return null;
+    const cfg: OptionBacktestConfig = {
+      option_strategy: structure, expiry_rule: expiryRule, strike_rule: strikeRule, strike_offset: strikeOffset, spread_width: spreadWidth,
+      pricing, intraday, allow_synthetic_fallback: allowFallback,
+    };
+    if (structure === "SINGLE") { cfg.option_position = position; if (premiumStop) cfg.premium_stop_pct = Number(premiumStop); }
+    else { if (targetCredit) cfg.target_credit_pct = Number(targetCredit); if (stopCredit) cfg.stop_credit_pct = Number(stopCredit); }
+    if (structure === "CUSTOM") cfg.custom_legs = customLegs;
+    if (maxLots) cfg.max_lots = Number(maxLots);
+    if (ivPct) cfg.implied_volatility = Number(ivPct) / 100;
+    if (lotSize) cfg.lot_size = Number(lotSize);
+    if (strikeStep) cfg.strike_step = Number(strikeStep);
+    if (expiryWeekday !== "") cfg.expiry_weekday = Number(expiryWeekday);
+    if (weeklyExpiry !== "") cfg.weekly_expiry = weeklyExpiry === "yes";
+    if (pricing === "uploaded") cfg.option_chain = uploadedRows;
+    return cfg;
+  }
+
+  async function onSnapshotFile(file: File | null) {
+    if (!file) return;
+    try {
+      const rows = parseSnapshotCsv(await file.text());
+      setUploadedRows(rows);
+      setUploadNote(`${rows.length} quotes parsed from ${file.name}`);
+    } catch (e) { setUploadNote(String(e)); setUploadedRows([]); }
+  }
+
+  async function saveUploadedRows() {
+    if (!uploadedRows.length) return;
+    try {
+      const out = await api.uploadOptionChainSnapshots(symbol, uploadedRows);
+      setUploadNote(`${out.written} of ${out.received} quotes stored for ${out.underlying}`);
+      api.optionChainCoverage().then(setCoverage).catch(() => undefined);
+    } catch (e) { setUploadNote(String(e)); }
+  }
 
   function exitRules(): ExitRules | null {
     const r: ExitRules = {};
@@ -60,8 +155,8 @@ export default function BacktestPage() {
     try {
       const primaryTf = selected.timeframes[0];
       const [mc, wf] = await Promise.all([
-        api.backtestMonteCarlo(selected.id, symbol, primaryTf, chartCandles, exitRules()),
-        api.backtestWalkForward(selected.id, symbol, primaryTf, chartCandles, exitRules()),
+        api.backtestMonteCarlo(selected.id, symbol, primaryTf, chartCandles, exitRules(), 1000, optionConfig()),
+        api.backtestWalkForward(selected.id, symbol, primaryTf, chartCandles, exitRules(), 4, optionConfig()),
       ]);
       setMonteCarlo(mc.monte_carlo);
       setWalkForward(wf);
@@ -80,6 +175,9 @@ export default function BacktestPage() {
   }, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(refreshRuns, [user]);
+  useEffect(() => {
+    if (user && tradeAs === "OPTION") api.optionChainCoverage().then(setCoverage).catch(() => setCoverage([]));
+  }, [user, tradeAs]);
 
   const selected = useMemo(() => strategies.find((s) => s.id === strategyId), [strategies, strategyId]);
 
@@ -88,9 +186,11 @@ export default function BacktestPage() {
     setLoading(true);
     setError(null);
     try {
-      const candles = generateSampleCandles(bars, 100, 11);
+      // Option runs price off the underlying level, so the sample series starts near the index's.
+      const startPrice = tradeAs === "OPTION" ? (INDEX_START_PRICES[symbol.trim().toUpperCase()] ?? 1000) : 100;
+      const candles = generateSampleCandles(bars, startPrice, 11);
       const primaryTf = selected.timeframes[0];
-      const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), "sample");
+      const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), "sample", optionConfig());
       setResult(res);
       setChartCandles(candles);
       setMonteCarlo(null);
@@ -195,6 +295,165 @@ export default function BacktestPage() {
             </div>
           </div>
         </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
+          <div className="flex flex-wrap items-center gap-3 mb-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Trade as</div>
+            <select className="rounded bg-panel2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
+              <option value="UNDERLYING">Underlying (cash / index level)</option>
+              <option value="OPTION">Options (historical option-chain backtest)</option>
+            </select>
+            {tradeAs === "OPTION" && <span className="text-[11px] text-muted">Same structures, strikes, expiries, exits and lot sizing a deployment uses - priced bar by bar.</span>}
+          </div>
+          {tradeAs === "OPTION" && (
+            <div className="space-y-3">
+              <div className="grid sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-muted mb-1">Structure</label>
+                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={structure} onChange={(e) => setStructure(e.target.value as OptionStrategy)}>
+                    <option value="SINGLE">Single option</option>
+                    <option value="BULL_PUT_SPREAD">Bull put spread (LONG)</option>
+                    <option value="BEAR_CALL_SPREAD">Bear call spread (SHORT)</option>
+                    <option value="IRON_CONDOR">Iron condor (either)</option>
+                    <option value="IRON_BUTTERFLY">Iron butterfly (either)</option>
+                    <option value="SHORT_STRADDLE">Short straddle (either, undefined risk)</option>
+                    <option value="SHORT_STRANGLE">Short strangle (either, undefined risk)</option>
+                    <option value="LONG_STRADDLE">Long straddle (either, debit)</option>
+                    <option value="LONG_STRANGLE">Long strangle (either, debit)</option>
+                    <option value="CALENDAR_SPREAD">Calendar spread (either, debit)</option>
+                    <option value="CALL_RATIO_SPREAD">Call ratio spread 1:2 (LONG)</option>
+                    <option value="PUT_RATIO_SPREAD">Put ratio spread 1:2 (SHORT)</option>
+                    <option value="LONG_BUTTERFLY">Long butterfly 1:2:1 (either, debit)</option>
+                    <option value="CUSTOM">Custom legs (builder)</option>
+                  </select>
+                </div>
+                {structure === "SINGLE" && (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Position</label>
+                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => setPosition(e.target.value as OptionPosition)}>
+                      <option value="BUY">Buy (CE on LONG, PE on SHORT)</option>
+                      <option value="WRITE">Write (PE on LONG, CE on SHORT)</option>
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs text-muted mb-1">Expiry</label>
+                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => setExpiryRule(e.target.value as ExpiryRule)}>
+                    <option value="NEAREST">Nearest</option><option value="NEXT">Next</option><option value="MONTHLY">Monthly</option>
+                  </select>
+                </div>
+                {structure !== "CUSTOM" && (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Strike</label>
+                    <div className="flex gap-2">
+                      <select className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => setStrikeRule(e.target.value as StrikeRule)}>
+                        <option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option>
+                      </select>
+                      <input type="number" min={0} max={10} className="w-16 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeOffset} onChange={(e) => setStrikeOffset(Number(e.target.value))} title="steps in/out of the money" />
+                    </div>
+                  </div>
+                )}
+                {WIDTH_STRUCTURES.includes(structure) && (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}</label>
+                    <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => setSpreadWidth(Number(e.target.value))} />
+                  </div>
+                )}
+                {structure === "SINGLE" ? (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Premium {position === "BUY" ? "floor" : "ceiling"} %</label>
+                    <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs text-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
+                    <div className="flex gap-2">
+                      <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} />
+                      <input type="number" min={10} max={500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs text-muted mb-1">Max lots</label>
+                  <input type="number" min={1} placeholder="risk-sized" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
+                </div>
+              </div>
+
+              {structure === "CUSTOM" && (
+                <div className="rounded border border-border p-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
+                  <div className="space-y-1 text-xs">
+                    {customLegs.map((leg, i) => (
+                      <div key={i} className="grid grid-cols-6 gap-2 items-center">
+                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}><option value="SHORT">Sell</option><option value="LONG">Buy</option></select>
+                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}><option value="CE">CE</option><option value="PE">PE</option></select>
+                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule })}><option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option></select>
+                        <input type="number" min={0} max={20} className="rounded bg-panel2 border border-border px-1 py-1" value={leg.strike_offset} onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) })} title="steps" />
+                        <input type="number" min={1} max={4} className="rounded bg-panel2 border border-border px-1 py-1" value={leg.ratio} onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })} title="ratio" />
+                        <button className="text-danger text-left" onClick={() => setCustomLegs((cur) => cur.filter((_, j) => j !== i))} disabled={customLegs.length <= 2}>remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="mt-1 text-xs text-brand" disabled={customLegs.length >= MAX_CUSTOM_LEGS} onClick={() => setCustomLegs((cur) => [...cur, { right: "CE", role: "SHORT", strike_rule: "OTM", strike_offset: 1, ratio: 1 }])}>+ add leg</button>
+                </div>
+              )}
+
+              <div className="grid sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-muted mb-1">Premiums from</label>
+                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={pricing} onChange={(e) => setPricing(e.target.value as OptionPricingModel)}>
+                    <option value="synthetic">Synthetic (Black-Scholes)</option>
+                    <option value="snapshots">Recorded chain quotes</option>
+                    <option value="uploaded">Uploaded chain CSV</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Implied volatility % {pricing !== "synthetic" ? "(fallback)" : ""}</label>
+                  <input type="number" min={1} max={300} step="0.5" placeholder="realised vol" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={ivPct} onChange={(e) => setIvPct(e.target.value)} title="blank = annualised realised volatility of the trailing closes" />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Lot size / strike step</label>
+                  <div className="flex gap-2">
+                    <input type="number" min={1} placeholder="auto" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
+                    <input type="number" min={0.05} step="0.05" placeholder="auto" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeStep} onChange={(e) => setStrikeStep(e.target.value)} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">Expiry day / weekly</label>
+                  <div className="flex gap-2">
+                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={expiryWeekday} onChange={(e) => setExpiryWeekday(e.target.value)}>
+                      <option value="">auto</option>{WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={weeklyExpiry} onChange={(e) => setWeeklyExpiry(e.target.value)}>
+                      <option value="">auto</option><option value="yes">weekly</option><option value="no">monthly</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+                <label className="flex items-center gap-1"><input type="checkbox" checked={intraday} onChange={(e) => setIntraday(e.target.checked)} /> intraday (no entries after 15:00, square-off 15:15 IST)</label>
+                {pricing !== "synthetic" && <label className="flex items-center gap-1"><input type="checkbox" checked={allowFallback} onChange={(e) => setAllowFallback(e.target.checked)} /> price legs without a fresh quote synthetically</label>}
+              </div>
+              {pricing === "uploaded" && (
+                <div className="text-xs">
+                  <input type="file" accept=".csv,text/csv" onChange={(e) => onSnapshotFile(e.target.files?.[0] ?? null)} />
+                  <span className="ml-2 text-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
+                  {uploadedRows.length > 0 && user && <button className="ml-2 text-brand" onClick={saveUploadedRows}>store as platform history</button>}
+                  {uploadNote && <div className="text-muted mt-1">{uploadNote}</div>}
+                </div>
+              )}
+              {pricing === "snapshots" && (
+                <div className="text-xs text-muted">
+                  {coverage.length === 0 ? "No recorded chain quotes yet - the worker records the chains of ACTIVE option deployments every few minutes while the market is open." :
+                    <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
+                </div>
+              )}
+              <div className="text-[11px] text-muted">
+                Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
+              </div>
+            </div>
+          )}
+        </div>
       </Card>
 
       {error && <div className="text-sm text-danger">{error}</div>}
@@ -219,6 +478,50 @@ export default function BacktestPage() {
           <Card title="Equity Curve">
             <EquityCurveChart equity={result.equity_curve} />
           </Card>
+
+          {result.options && (
+            <Card title={`Option structures (${result.options.structures_opened})`}>
+              <div className="grid sm:grid-cols-4 gap-3 mb-3">
+                <StatTile label="Structure" value={result.options.structure.replace(/_/g, " ").toLowerCase() + (result.options.position ? ` · ${result.options.position.toLowerCase()}` : "")} />
+                <StatTile label="Lot / strike step" value={`${result.options.lot_size} / ${result.options.strike_step}`} />
+                <StatTile label="Expiries" value={result.options.expiry_calendar} />
+                <StatTile label="Expiry settlements" value={result.options.expiry_settlements} />
+              </div>
+              <div className="text-xs text-slate-300 mb-2">Premiums: {result.options.pricing}
+                {result.options.snapshot_hits != null ? ` · ${result.options.snapshot_hits} recorded quotes used, ${result.options.synthetic_fallbacks ?? 0} synthetic fallbacks` : ""}
+              </div>
+              {Object.keys(result.options.signals_skipped).length > 0 && (
+                <div className="text-xs text-muted mb-2">Signals not traded: {Object.entries(result.options.signals_skipped).map(([k, v]) => `${k} (${v})`).join("; ")}</div>
+              )}
+              <div className="flex items-center gap-2 text-xs mb-1">
+                <span className="text-muted">Sort</span>
+                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "time" ? "bg-panel2" : ""}`} onClick={() => setStructureSort("time")}>time</button>
+                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "pnl" ? "bg-panel2" : ""}`} onClick={() => setStructureSort("pnl")}>P&amp;L</button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-muted uppercase text-[10px] tracking-wide">
+                    <tr className="text-left"><th className="py-1 pr-3">Structure</th><th className="py-1 pr-3">Legs (entry → exit)</th><th className="py-1 pr-3">Lots</th><th className="py-1 pr-3">Credit / debit</th><th className="py-1 pr-3">Max loss</th><th className="py-1 pr-3">Exit</th><th className="py-1 pr-3">P&amp;L</th></tr>
+                  </thead>
+                  <tbody>
+                    {[...result.options.structures].sort((a, b) => (structureSort === "pnl" ? a.pnl - b.pnl : a.entry_time.localeCompare(b.entry_time))).map((st, i) => (
+                      <tr key={i} className="border-t border-border align-top">
+                        <td className="py-1 pr-3 text-slate-200 whitespace-nowrap">{st.label}<div className="text-muted">{st.entry_time.slice(0, 16).replace("T", " ")} → {st.exit_time.slice(0, 16).replace("T", " ")}</div></td>
+                        <td className="py-1 pr-3">{st.legs.map((l, j) => <div key={j}>{l.role === "SHORT" ? "sell" : "buy"} {l.ratio > 1 ? `${l.ratio}x ` : ""}{l.strike} {l.right} @ {l.entry_price.toFixed(2)} → {l.exit_price?.toFixed(2) ?? "-"}</div>)}</td>
+                        <td className="py-1 pr-3">{st.lots}</td>
+                        <td className="py-1 pr-3">{st.net_credit != null ? (st.net_credit >= 0 ? `credit ${st.net_credit.toFixed(2)}` : `debit ${(-st.net_credit).toFixed(2)}`) : "-"}</td>
+                        <td className="py-1 pr-3">{st.max_loss != null ? st.max_loss.toFixed(2) : "undefined"}</td>
+                        <td className="py-1 pr-3">{st.exit_reason}</td>
+                        <td className={`py-1 pr-3 whitespace-nowrap ${st.pnl >= 0 ? "text-accent" : "text-danger"}`}>{st.pnl.toFixed(0)}<div className="text-muted">charges {st.charges.toFixed(0)}</div></td>
+                      </tr>
+                    ))}
+                    {result.options.structures.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-muted">No structure was opened.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-2 text-[11px] text-muted">{result.options.disclaimer}</div>
+            </Card>
+          )}
 
           {result.analytics && (
             <Card title="Analytics">
@@ -344,7 +647,7 @@ export default function BacktestPage() {
                 <tbody>
                   {result.trades.map((t, i) => (
                     <tr key={i} className="border-t border-border">
-                      <td className="py-1 pr-3">{t.direction}</td>
+                      <td className="py-1 pr-3">{t.direction}{result.options ? <span className="text-muted"> · {t.symbol}</span> : null}</td>
                       <td className="py-1 pr-3">{t.entry_price.toFixed(2)}</td>
                       <td className="py-1 pr-3">{t.exit_price?.toFixed(2) ?? "-"}</td>
                       <td className="py-1 pr-3">{t.quantity}</td>

@@ -91,6 +91,7 @@ import type {
   MarketEvent,
   MarketEventRequest,
   RiskCeilings,
+  OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -247,22 +248,28 @@ export const api = {
       { method: "POST", body: JSON.stringify({ symbol, candles }) },
     ),
 
-  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample") =>
+  // Phase W: `options` present = the signals are traded as option structures.
+  backtest: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, dataSource = "sample", options?: OptionBacktestConfig | null) =>
     request<BacktestResult>("/backtest", {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, data_source: dataSource }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, data_source: dataSource, options: options ?? null }),
     }),
-  backtestMonteCarlo: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, runs = 1000) =>
+  backtestMonteCarlo: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, runs = 1000, options?: OptionBacktestConfig | null) =>
     request<{ monte_carlo: MonteCarloResult }>(`/backtest/monte-carlo?runs=${runs}`, {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, options: options ?? null }),
     }),
-  backtestWalkForward: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, folds = 4) =>
+  backtestWalkForward: (strategyId: string, symbol: string, baseTimeframe: string, candles: OHLCVBar[], exitRules?: ExitRules | null, folds = 4, options?: OptionBacktestConfig | null) =>
     request<WalkForwardResult>(`/backtest/walk-forward?folds=${folds}`, {
       method: "POST",
-      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null }),
+      body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, exit_rules: exitRules ?? null, options: options ?? null }),
     }),
   listBacktests: () => request<BacktestRunSummary[]>("/backtests"),
+  optionChainCoverage: () => request<OptionChainCoverage[]>("/backtest/option-chain/coverage"),
+  uploadOptionChainSnapshots: (underlying: string, rows: OptionChainSnapshotRow[]) =>
+    request<{ underlying: string; received: number; written: number }>("/backtest/option-chain/snapshots", {
+      method: "POST", body: JSON.stringify({ underlying, rows }),
+    }),
 
   priceActionStructure: (symbol: string, candles: OHLCVBar[]) =>
     request<MarketStructureResult>("/price-action/structure", {

@@ -491,6 +491,31 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **"deployment: option_strategy dropped"** in a draft's warnings: the model proposed a
   structure the platform does not have; the rest of the suggestion is kept.
 
+### 1.6n Historical option backtests and recorded chains (Phase W)
+
+- **Synthetic vs recorded premiums**: a run's `options.pricing` says which model priced it. Synthetic
+  (Black-Scholes) is for structure mechanics - strikes, expiries, exits, lot sizing - never for
+  claiming an edge; the result and the page say so. Recorded quotes are what the market showed.
+- **Recording**: the worker samples the chains of ACTIVE option deployments every
+  `CHAIN_SNAPSHOT_INTERVAL_MINUTES` (default 5; `0` disables), `CHAIN_SNAPSHOT_ATM_SPAN` strikes
+  either side of the money, market hours only. One extra broker call per underlying per interval
+  from the tenant's own session (its rate budget applies). `GET /api/backtest/option-chain/coverage`
+  shows what exists; `chain_rows_recorded` is on the worker heartbeat report.
+- **Growth**: roughly 50 rows a capture, a few thousand a day per underlying. Retention trims rows
+  older than `RETENTION_CHAIN_SNAPSHOTS_DAYS` (default 400, floor 7). The table is platform-wide;
+  it is not tenant data and not personal data.
+- **"No recorded option-chain quotes ... in the candle span" (400)**: the run asked for
+  `pricing=snapshots` with the fallback off over a span nothing was recorded. Allow the fallback,
+  upload rows (`POST /api/backtest/option-chain/snapshots`, CSV columns timestamp, expiry, strike,
+  right, ltp) or use synthetic pricing.
+- **Wrong expiries in an old year**: conventions default to the exchange's current listings.
+  Override `expiry_weekday` (0 = Monday) and `weekly_expiry` for the period being tested (NIFTY
+  weeklies were Thursdays before September 2025; BANKNIFTY had weeklies until November 2024), and
+  `lot_size` / `strike_step` when those differed.
+- **Signals not traded**: `options.signals_skipped` counts why - the sizer refusing a lot bigger than
+  the risk per trade, no quote for a leg, or quotes that make the structure a debit where a credit
+  is required. Raise capital or risk per trade, widen the recorded strikes, or change the structure.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

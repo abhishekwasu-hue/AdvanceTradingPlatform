@@ -13,7 +13,7 @@
 Both are pure functions; the API layer feeds them the same inputs as `/api/backtest`.
 """
 import random
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 
@@ -67,7 +67,9 @@ def _cumulative(capital: float, pnls: List[float]) -> List[float]:
 
 
 def walk_forward(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, base_tf: str, risk_config: RiskConfig,
-                 folds: int = 4) -> Dict:
+                 folds: int = 4, runner: Optional[Callable[[BaseStrategy, pd.DataFrame], object]] = None) -> Dict:
+    """`runner(strategy, window_df)` runs one window; the default is the underlying engine, the
+    option backtest (Phase W) passes its own so every window prices the same structures."""
     n = len(base_df)
     folds = max(2, min(folds, 12))
     min_hist = strategy.min_history()[strategy.timeframes[0]]
@@ -78,7 +80,7 @@ def walk_forward(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, bas
     for i in range(folds):
         start, end = i * size, (i + 1) * size if i < folds - 1 else n
         part = base_df.iloc[start:end]
-        result = run_backtest(strategy, part, symbol, base_tf, risk_config)
+        result = runner(strategy, part) if runner is not None else run_backtest(strategy, part, symbol, base_tf, risk_config)
         windows.append({
             "window": i + 1, "from": part.index[0].isoformat(), "to": part.index[-1].isoformat(), "bars": len(part),
             "trades": result.total_trades, "net_pnl": result.net_pnl, "win_rate": result.win_rate,

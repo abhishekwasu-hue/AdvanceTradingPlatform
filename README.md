@@ -230,6 +230,16 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Historical option backtests (Phase W)
+
+- **The same structures a deployment trades**, on history: strikes, expiries, credits, group
+  exits and lot sizing come from the live code paths (one planner, one exit rule).
+- **Premiums** from recorded option-chain quotes (the worker samples chains while it runs; rows
+  can be uploaded) or from Black-Scholes off the underlying bars, clearly labelled as an
+  approximation; conventions (lot sizes, strike steps, expiry weekdays) overridable per run.
+- **API and UI**: `options` on the backtest endpoints, Monte Carlo and walk-forward included;
+  the Backtest page's "Trade as: Options" panel and per-structure results.
+
 ## Guardian AI prompt (Phase V3)
 
 - **Versioned system prompt** filled from the account's live state: capital, risk profile,

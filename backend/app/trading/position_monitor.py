@@ -258,6 +258,13 @@ def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_pri
         return (float(leg.quantity) / base) if base > 0 and leg.quantity else 1.0
 
     value = sum((prices[l.id] if l.leg_role == "SHORT" else -prices[l.id]) * weight(l) for l in legs)
+    return structure_exit_reason(meta, value, underlying_price)
+
+
+def structure_exit_reason(meta: dict, value: float, underlying_price: Optional[float]) -> Optional[str]:
+    """The group exit rule on its own (Phase W shares it with the option backtest engine).
+    `value` is the per-unit cost of closing the structure: short legs' prices minus long legs',
+    each weighted by its ratio."""
     stop_value = meta.get("stop_value")
     target_value = meta.get("target_value")
     if meta.get("pnl_stop") is not None:
@@ -281,17 +288,24 @@ def group_exit(legs: List[TradeRecord], prices: Dict[int, float], underlying_pri
             return f"Spread stop (value {value:.2f} >= {stop_value:g})"
         if target_value is not None and value <= target_value:
             return f"Spread target (value {value:.2f} <= {target_value:g})"
-    if underlying_price is not None:
-        exits = meta.get("underlying_exits") or {}
-        if "below" in exits and underlying_price <= exits["below"]:
-            return f"Lower breakeven {exits['below']:g} breached (underlying {underlying_price:.2f})"
-        if "above" in exits and underlying_price >= exits["above"]:
-            return f"Upper breakeven {exits['above']:g} breached (underlying {underlying_price:.2f})"
-        for right, strike in (meta.get("short_strikes") or {}).items():
-            if right == "PE" and underlying_price <= strike:
-                return f"Short {int(strike)} PE breached (underlying {underlying_price:.2f})"
-            if right == "CE" and underlying_price >= strike:
-                return f"Short {int(strike)} CE breached (underlying {underlying_price:.2f})"
+    return underlying_exit_reason(meta, underlying_price)
+
+
+def underlying_exit_reason(meta: dict, underlying_price: Optional[float]) -> Optional[str]:
+    """The underlying-level part of the group exit: breakeven levels of ATM-short and
+    payoff-priced structures, short-strike breaches of the winged ones."""
+    if underlying_price is None:
+        return None
+    exits = meta.get("underlying_exits") or {}
+    if "below" in exits and underlying_price <= exits["below"]:
+        return f"Lower breakeven {exits['below']:g} breached (underlying {underlying_price:.2f})"
+    if "above" in exits and underlying_price >= exits["above"]:
+        return f"Upper breakeven {exits['above']:g} breached (underlying {underlying_price:.2f})"
+    for right, strike in (meta.get("short_strikes") or {}).items():
+        if right == "PE" and underlying_price <= strike:
+            return f"Short {int(strike)} PE breached (underlying {underlying_price:.2f})"
+        if right == "CE" and underlying_price >= strike:
+            return f"Short {int(strike)} CE breached (underlying {underlying_price:.2f})"
     return None
 
 

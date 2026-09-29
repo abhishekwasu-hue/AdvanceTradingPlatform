@@ -29,7 +29,7 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, time as dtime, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
@@ -54,7 +54,9 @@ from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
 from app.core.config import INSTRUMENT_SYNC_EXCHANGES, INSTRUMENT_SYNC_HOUR_IST
+from app.instruments import master
 from app.instruments.master import sync_upstox
+from app.backtest import chain_recorder
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.execution.multileg import execute_structure
@@ -104,6 +106,7 @@ class CycleReport:
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
     retention: Optional[RetentionReport] = None
+    chain_rows_recorded: int = 0   # Phase W
     billing: Optional[Dict[str, int]] = None
     ai_proposals: int = 0
     master_synced: Optional[Dict[str, int]] = None
@@ -118,11 +121,15 @@ def _adapter_key(broker_name: str, account_label: str) -> str:
     return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
 
 
-def _chain_provider(broker: BrokerInterface):
+def _chain_provider(broker: BrokerInterface, cache: Optional[Dict[str, object]] = None):
     """Phase H1: the option chain the strike filters are judged against - the tenant's own
-    broker session, fetched only when a deployment actually carries filters."""
+    broker session, fetched only when a deployment actually carries filters. Phase W: the chain
+    is kept in `cache` (per cycle) so the recorder reuses it instead of fetching again."""
     async def provider(underlying_symbol: str, expiry):
-        return await broker.get_option_chain(underlying_symbol, expiry)
+        chain = await broker.get_option_chain(underlying_symbol, expiry)
+        if cache is not None:
+            cache[underlying_symbol] = chain
+        return chain
     return provider
 
 
@@ -141,6 +148,9 @@ class TradingWorker:
         self._last_token_check: Dict[int, float] = {}
         # IST calendar date of the last retention run (Phase D3) - once a day is plenty.
         self._last_retention_day = None
+        # Phase W: last option-chain capture per underlying (UTC), so a chain is fetched once per interval.
+        self._last_chain_capture: Dict[str, datetime] = {}
+        self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -322,6 +332,7 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
 
@@ -426,6 +437,13 @@ class TradingWorker:
                     report.errors.append(f"deployment {dep.id}: {exc}")
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
+        # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
+        # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
+        try:
+            report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+        except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
+            logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
+
         # Phase L4: the monitoring agent observes this tenant's deployments and raises proposals
         # for a human to decide on. It never acts on its own.
         try:
@@ -525,7 +543,7 @@ class TradingWorker:
             try:
                 contract = await resolve_contract(
                     session, dep.symbol, rules, signal.direction, spot=spot, today=now.astimezone(IST).date(),
-                    chain_provider=_chain_provider(market_data.broker),
+                    chain_provider=_chain_provider(market_data.broker, self._cycle_chains),
                 )
             except ContractResolutionError as exc:
                 dep.last_error = f"Contract not resolved: {exc}"
@@ -571,7 +589,7 @@ class TradingWorker:
         try:
             structure = await resolve_structure(
                 session, dep.symbol, rules, structure_kind, signal.direction, spread_width=dep.spread_width or 2,
-                spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker),
+                spot=spot, today=now.astimezone(IST).date(), chain_provider=_chain_provider(market_data.broker, self._cycle_chains),
                 custom_legs=parse_custom_legs(getattr(dep, "custom_legs", None)),
             )
         except (ContractResolutionError, ValueError) as exc:
@@ -823,6 +841,31 @@ class TradingWorker:
                 continue
             self._last_account_refresh[account.id] = now
             await sync_account(session, account, adapter)
+
+    async def _record_chains(self, session: AsyncSession, deployments: List[StrategyDeploymentRecord], market_data: MarketDataService,
+                             now: datetime, open_families) -> int:
+        """Phase W: record the chains of the underlyings this tenant trades as options."""
+        if not chain_recorder.recording_enabled():
+            return 0
+        interval = timedelta(minutes=chain_recorder.CHAIN_SNAPSHOT_INTERVAL_MINUTES)
+        wanted: Dict[str, str] = {}
+        for dep in deployments:
+            if (dep.instrument_kind or "UNDERLYING") != InstrumentKind.OPTION.value or session_family(dep.exchange) not in open_families:
+                continue
+            underlying = master.underlying_of(dep.symbol)
+            wanted[underlying] = master.INDEX_SYMBOLS.get(underlying, dep.symbol.upper().strip())
+        written = 0
+        for underlying, chain_symbol in wanted.items():
+            last = self._last_chain_capture.get(underlying)
+            if last is not None and now - last < interval:
+                continue
+            self._last_chain_capture[underlying] = now   # once per interval whether or not the fetch works
+            chain = self._cycle_chains.get(chain_symbol)   # already fetched for a strike filter this cycle
+            if chain is None:
+                expiries = await master.expiries(session, underlying, on_or_after=now.astimezone(IST).date())
+                chain = await market_data.broker.get_option_chain(chain_symbol, expiries[0] if expiries else None)
+            written += await chain_recorder.record_chain(session, underlying, chain, now)
+        return written
 
     async def _stream_quotes(self, session: AsyncSession, tenant_id: int, adapters: Dict[str, BrokerInterface], data_broker: BrokerInterface,
                              deployments: List[StrategyDeploymentRecord], report: CycleReport) -> None:

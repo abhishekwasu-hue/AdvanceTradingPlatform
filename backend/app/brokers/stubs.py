@@ -95,11 +95,6 @@ class _StubBrokerAdapter(BrokerInterface):
         raise self._not_implemented("get_margins")
 
 
-class AngelOneBroker(_StubBrokerAdapter):
-    name = "angel_one"
-    docs_url = "https://smartapi.angelbroking.com/docs"
-
-
 class FyersBroker(_StubBrokerAdapter):
     name = "fyers"
     docs_url = "https://myapi.fyers.in/docsv3"

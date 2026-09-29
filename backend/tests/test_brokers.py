@@ -13,7 +13,8 @@ from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.shoonya import ShoonyaBroker
-from app.brokers.stubs import AngelOneBroker, CoinDCXBroker, DhanBroker, FyersBroker
+from app.brokers.angel_one import AngelOneBroker
+from app.brokers.stubs import CoinDCXBroker, DhanBroker, FyersBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 from app.core.enums import OrderSide
@@ -328,8 +329,8 @@ def test_registry_returns_correct_adapter_type():
     zerodha = get_broker_adapter("zerodha", BrokerCredentials(api_key="k", access_token="t"))
     assert isinstance(zerodha, ZerodhaBroker)
 
-    angel = get_broker_adapter("angel_one", BrokerCredentials(api_key="k"))
-    assert isinstance(angel, AngelOneBroker)
+    angel = get_broker_adapter("angel_one", BrokerCredentials(api_key="k", client_id="A1", pin="1234", totp_secret="123456"))
+    assert isinstance(angel, AngelOneBroker)          # Phase AC: a real adapter, no longer a stub
 
 
 def test_registry_raises_for_unknown_broker():
@@ -337,9 +338,9 @@ def test_registry_raises_for_unknown_broker():
         get_broker_adapter("not_a_real_broker", BrokerCredentials())
 
 
-# --- Stub adapters (Angel One / Fyers / Dhan / CoinDCX) -----------------------------
+# --- Stub adapters (Fyers / Dhan / CoinDCX) ----------------------------------------
 
-@pytest.mark.parametrize("cls", [AngelOneBroker, FyersBroker, DhanBroker, CoinDCXBroker])
+@pytest.mark.parametrize("cls", [FyersBroker, DhanBroker, CoinDCXBroker])
 def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
     broker = cls(BrokerCredentials(api_key="k"))
     assert isinstance(broker, BrokerInterface)

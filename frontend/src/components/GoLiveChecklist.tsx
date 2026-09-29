@@ -15,7 +15,7 @@ const ICON = {
   info: <Info size={14} className="text-muted shrink-0 mt-0.5" />,
 };
 const ORDER: Record<ReadinessItem["status"], number> = { todo: 0, warn: 1, info: 2, ok: 3 };
-const PAGE_IDS = new Set(["dashboard", "settings", "instruments", "autopilot", "risk", "positions", "admin"]);
+const PAGE_IDS = new Set(["dashboard", "settings", "instruments", "deployments", "risk-management", "positions", "admin", "account", "team"]);
 
 export default function GoLiveChecklist({ kind, onNavigate }: { kind: "tenant" | "platform"; onNavigate?: (page: Page) => void }) {
   const [target, setTarget] = useState<"PAPER" | "LIVE">("PAPER");

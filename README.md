@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Angel One adapter (Phase AC)
+
+- **Real SmartAPI adapter** replacing the stub: TOTP login from the stored secret, scrip-master symbol
+  resolution, batched quotes, candles, orders with SL-M protective stops, books, positions, holdings,
+  margins, an option chain assembled from the master and quotes, logout. Verified against a mocked
+  transport; the first live confirmation is the operator's.
+
 ## Go-live checklist (Phase AB)
 
 - **Dashboard**: every step still needed before a PAPER run, and the extra ones for LIVE (MFA, verified

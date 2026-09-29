@@ -581,6 +581,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
   deployment.
 - **API**: `GET /api/readiness?target=LIVE`, `GET /api/admin/readiness` (SUPER_ADMIN, MFA session).
 
+### 1.6t Angel One (SmartAPI) setup (Phase AC)
+
+- **Create the app** at smartapi.angelbroking.com (a "Trading API" app); note its API key. Enable TOTP
+  for the client on the SmartAPI portal and keep the base32 secret it shows.
+- **Enter under Settings > Add / update broker credentials** (broker `angel_one`): API Key, Client ID
+  (client code), PIN, TOTP Secret. Nothing goes in `.env`; the platform generates the daily TOTP itself.
+- **Log in** from the Broker session health card; the JWT is stored encrypted and expires around 05:00
+  IST, so the login is a morning step like Upstox's.
+- **Symbols**: use platform symbols (RELIANCE, NIFTY, BANKNIFTY); the adapter maps to `RELIANCE-EQ`,
+  `Nifty 50` and the numeric tokens. Sync the instrument master from the adapter (Instruments page) so
+  option contracts resolve.
+- **Verified against a mocked transport only.** Confirm one PAPER session with real quotes before any
+  LIVE deployment routes to this broker.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

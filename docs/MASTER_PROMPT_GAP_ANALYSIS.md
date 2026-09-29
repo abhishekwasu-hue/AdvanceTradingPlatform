@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AB, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AC, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -10,7 +10,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER; fine-grained scopes (N2); email verification with step-up (N3). |
-| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya real; stubs for others. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) added (Phase M); streaming through `stream_for(adapter)` for Upstox and Zerodha (Phase S), `subscribe_market_data()` documents it. Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
+| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya, Angel One (AC) real; Fyers, Dhan, CoinDCX still stubs. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) added (Phase M); streaming through `stream_for(adapter)` for Upstox and Zerodha (Phase S), `subscribe_market_data()` documents it. Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
 | 10 market data | done (Phase S) | Candles via broker REST with Redis cache; staleness gate on candles and quotes (G1); websocket tick streams for Upstox (Feed V3 protobuf) and Zerodha (Kite ticker) feeding `get_ltp` through a tick cache, REST fallback, behind `STREAMING_QUOTES_ENABLED` (S); research pages (Signals, Scanner, Backtest, Factor Lab) fetch the tenant's broker candles through `/api/market-data/candles` (AA). Verified against fixtures; first live confirmation pending. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; versioned reference `docs/STRATEGY_DSL.md` (Phase N5). |
@@ -78,11 +78,12 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 16 human approval for AI live strategies: **done** (Phase L2) - a draft becomes a strategy only through a human approve call that requires an attached backtest; `custom_strategies.origin`/`ai_approved_by` record it.
 17 partial fills explicit: **done** (F3).
 18 restart reconciles with broker before new signals: **done** (Phase G1 `TradingWorker.reconcile_on_start` before the first cycle).
-19 multi-level risk limits: **missing** (tenant level only).
+19 multi-level risk limits: **done** (Phase I1 `risk_limits` with GLOBAL/TENANT/USER/ACCOUNT/STRATEGY/INSTRUMENT scopes, strictest wins; Phase M portfolio scopes; Phase V1 platform ceilings).
 20 no module silently changes another's risk config: **done**.
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AC - Angel One SmartAPI adapter**: **DONE** (ARCHITECTURE.md Phase AC) - TOTP login, scrip-master resolution with index aliases, batched quotes, candles, order mapping, books, positions, holdings, margins, assembled option chain, error mapping, logout; mocked-transport tests.
 - **Phase AB - go-live checklists**: **DONE** (ARCHITECTURE.md Phase AB) - tenant checklist (PAPER/LIVE) and platform checklist computed from state, with fixes and page/env links; Dashboard and Admin cards.
 - **Phase AA - broker candles for the research pages**: **DONE** (ARCHITECTURE.md Phase AA) - `/api/market-data/sources|candles` through the tenant's own broker session with the worker's cached service, per-symbol errors, lookback-aware cache key, one Data switch on the four research pages.
 - **Phase Z - factor and risk models**: **DONE** (ARCHITECTURE.md Phase Z) - seven documented factors z-scored across the caller's universe with renormalised weights and buckets, a descriptive risk model with weight suggestions, the open book's factor tilt, Factor Lab page.

@@ -92,6 +92,7 @@ import type {
   MarketEventRequest,
   RiskCeilings,
   OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
+  MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -593,12 +594,27 @@ export const api = {
   marketplaceListing: (id: number) => request<MarketplaceListing>(`/marketplace/${id}`),
   marketplaceMine: () => request<MarketplaceListing[]>("/marketplace/listings/mine"),
   marketplaceSubscriptions: () => request<MarketplaceSubscription[]>("/marketplace/subscriptions"),
-  marketplaceCreate: (body: { custom_strategy_id: number; title: string; description: string; methodology?: string | null; backtest_run_id?: number | null; version_number?: number | null }) =>
+  marketplaceCreate: (body: { custom_strategy_id: number; title: string; description: string; methodology?: string | null; backtest_run_id?: number | null; version_number?: number | null; price?: number }) =>
     request<MarketplaceListing>("/marketplace/listings", { method: "POST", body: JSON.stringify(body) }),
+  // Phase X: revenue share.
+  marketplaceSetPrice: (id: number, price: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/price`, { method: "PUT", body: JSON.stringify({ price }) }),
+  marketplaceTerms: () => request<MarketplaceTerms>("/marketplace/terms"),
+  marketplacePurchases: () => request<MarketplaceCharge[]>("/marketplace/purchases"),
+  marketplaceEarnings: () => request<MarketplaceEarnings>("/marketplace/earnings"),
+  marketplaceRequestPayout: (destination: string) => request<MarketplacePayout>("/marketplace/payouts", { method: "POST", body: JSON.stringify({ destination }) }),
+  adminMarketplaceCharges: (status?: string) => request<MarketplaceCharge[]>(`/admin/marketplace/charges${status ? `?status=${status}` : ""}`),
+  adminMarketplaceChargePaid: (id: number, reference: string) => request<MarketplaceCharge>(`/admin/marketplace/charges/${id}/paid`, { method: "POST", body: JSON.stringify({ reference }) }),
+  adminMarketplaceChargeVoid: (id: number, note: string) => request<MarketplaceCharge>(`/admin/marketplace/charges/${id}/void`, { method: "POST", body: JSON.stringify({ note }) }),
+  adminMarketplacePayouts: (status?: string) => request<MarketplacePayout[]>(`/admin/marketplace/payouts${status ? `?status=${status}` : ""}`),
+  adminMarketplacePayoutDestination: (id: number) => request<{ id: number; destination: string }>(`/admin/marketplace/payouts/${id}/destination`),
+  adminMarketplacePayoutSettle: (id: number, paid: boolean, reference?: string, note?: string) =>
+    request<MarketplacePayout>(`/admin/marketplace/payouts/${id}/${paid ? "paid" : "reject"}`, { method: "POST", body: JSON.stringify({ reference, note }) }),
+  adminMarketplaceRevenue: () => request<MarketplaceRevenue>("/admin/marketplace/revenue"),
+  adminMarketplaceTerms: () => request<MarketplaceTerms>("/admin/controls/marketplace-terms"),
+  adminSetMarketplaceTerms: (values: Record<string, number>) => request<MarketplaceTerms>("/admin/controls/marketplace-terms", { method: "PUT", body: JSON.stringify({ values }) }),
   marketplaceSubmit: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/submit`, { method: "POST" }),
   marketplaceUnlist: (id: number) => request<MarketplaceListing>(`/marketplace/listings/${id}/unlist`, { method: "POST" }),
-  marketplaceSubscribe: (id: number) =>
-    request<MarketplaceSubscription & { disclaimer: string; next: string }>(`/marketplace/${id}/subscribe`, { method: "POST" }),
+  marketplaceSubscribe: (id: number) => request<MarketplacePurchaseResponse>(`/marketplace/${id}/subscribe`, { method: "POST" }),
   marketplaceUnsubscribe: (id: number) => request<void>(`/marketplace/${id}/unsubscribe`, { method: "POST" }),
   adminMarketplacePending: () => request<MarketplaceListing[]>("/admin/marketplace/pending"),
   adminMarketplaceReview: (id: number, publish: boolean, note?: string) =>

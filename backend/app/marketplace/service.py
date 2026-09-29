@@ -115,15 +115,33 @@ async def unlist(session: AsyncSession, user: User, listing: MarketplaceListingR
     return listing
 
 
-async def subscribe(session: AsyncSession, user: User, listing: MarketplaceListingRecord) -> MarketplaceSubscriptionRecord:
+def check_subscribable(listing: MarketplaceListingRecord, user: User) -> None:
     if listing.status != "PUBLISHED":
         raise MarketplaceError("This listing is not published")
     if listing.tenant_id == user.tenant_id:
         raise MarketplaceError("This is your own listing")
-    existing = await session.scalar(select(MarketplaceSubscriptionRecord).where(
-        MarketplaceSubscriptionRecord.listing_id == listing.id, MarketplaceSubscriptionRecord.tenant_id == user.tenant_id))
+
+
+async def existing_subscription(session: AsyncSession, listing_id: int, tenant_id: int) -> Optional[MarketplaceSubscriptionRecord]:
+    return await session.scalar(select(MarketplaceSubscriptionRecord).where(
+        MarketplaceSubscriptionRecord.listing_id == listing_id, MarketplaceSubscriptionRecord.tenant_id == tenant_id))
+
+
+async def subscribe(session: AsyncSession, user: User, listing: MarketplaceListingRecord) -> MarketplaceSubscriptionRecord:
+    """A free listing: copy now. A paid one goes through `app/marketplace/billing.py::purchase`
+    (Phase X), which calls `activate` once the charge is paid."""
+    check_subscribable(listing, user)
+    if (listing.price or 0) > 0:
+        raise MarketplaceError("This listing is paid - purchase it first")
+    existing = await existing_subscription(session, listing.id, user.tenant_id)
     if existing is not None and existing.status == "ACTIVE":
         return existing
+    return await activate(session, user, listing, existing)
+
+
+async def activate(session: AsyncSession, user: User, listing: MarketplaceListingRecord,
+                   existing: Optional[MarketplaceSubscriptionRecord]) -> MarketplaceSubscriptionRecord:
+    """Copies the frozen config into the subscriber's strategies and marks the subscription ACTIVE."""
     config = CustomStrategyConfig.model_validate_json(listing.config_json)
     config = config.model_copy(update={"name": f"{config.name} (marketplace #{listing.id})"[:200]})
     copy = CustomStrategyRecord(tenant_id=user.tenant_id, user_id=user.id, name=config.name, config_json=config.model_dump_json())
@@ -166,6 +184,11 @@ def as_dict(listing: MarketplaceListingRecord, *, include_config: bool = False, 
         "subscriber_count": listing.subscriber_count, "published_at": iso(listing.published_at), "created_at": iso(listing.created_at),
         "performance": json.loads(listing.performance_json) if listing.performance_json else None, "disclaimer": DISCLAIMER,
         "creator_tenant_id": listing.tenant_id if mine else None, "custom_strategy_id": listing.custom_strategy_id if mine else None,
+        # Phase X: the one-time price; the fee split is the creator's business.
+        "price": float(listing.price or 0.0), "currency": listing.currency or "INR",
+        "platform_fee_pct": listing.platform_fee_pct if mine else None,
+        "creator_net_per_sale": round(float(listing.price or 0.0) * (1 - (listing.platform_fee_pct or 0.0) / 100.0), 2)
+        if mine and listing.price else None,
     }
     if include_config:
         out["config"] = json.loads(listing.config_json)

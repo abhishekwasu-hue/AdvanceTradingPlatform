@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.billing.razorpay import GatewaySubscription, build_from_config
+from app.billing.razorpay import GatewaySubscription, PaymentLink, build_from_config
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import BillingTransactionRecord, SubscriptionRecord, Tenant, UsageRecord
 from app.notifications.service import notify
@@ -68,6 +68,12 @@ class BillingProvider:
 
     async def cancel(self, session: AsyncSession, subscription: SubscriptionRecord, *, immediately: bool = False) -> None:
         return None
+
+    async def create_payment_link(self, *, amount: float, currency: str, description: str, reference_id: str,
+                                  notes: Optional[Dict[str, str]] = None, customer_email: Optional[str] = None) -> PaymentLink:
+        """Phase X: a one-off charge. Manual provider: no hosted page - the buyer pays the operator
+        out of band and the operator confirms it (`POST /api/admin/marketplace/charges/{id}/paid`)."""
+        return PaymentLink(ref=f"manual:{reference_id}", url=None)
 
 
 _PROVIDER: Optional[object] = None

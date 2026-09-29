@@ -3122,3 +3122,48 @@ W runs the same structures on historical bars.
   (with a CSV upload that can be stored as platform history), IV, conventions, intraday - and an
   "Option structures" card: pricing model, lot/step, calendar, skipped signals and a per-structure
   table with legs, credit/debit, max loss, exit reason and P&L.
+
+## Phase X: Marketplace revenue share and creator payouts (V3.9-3.10)
+
+Phase K2 made the marketplace free: a listing is a frozen strategy version, subscribing copies it,
+unsubscribing keeps the copy. Phase X lets a creator charge for that copy and be paid for it,
+without the platform ever holding money.
+
+* **A one-time price fits the copy semantics.** `marketplace_listings.price` (INR, 0 keeps the
+  listing free) with `platform_fee_pct` frozen at publish from the operator's terms, so a later
+  change of terms never re-prices a live listing. The price can be changed only while the
+  listing is not live (DRAFT/REJECTED/UNLISTED). Terms (`platform_fee_pct` 20, `min_payout` 500,
+  `max_listing_price` 50000) are a platform control (`/api/admin/controls/marketplace-terms`,
+  SUPER_ADMIN) and readable by creators (`GET /api/marketplace/terms`).
+* **Charges** (`marketplace_charges`, `app/marketplace/billing.py`). Buying a paid listing opens
+  one charge (gross, fee, creator net, provider, reference) and a `PENDING_PAYMENT` subscription;
+  `POST /{id}/subscribe` answers 202 with the charge and, under a gateway, the hosted checkout
+  link. The copy is made only when the charge is PAID - by the operator confirming an
+  out-of-band transfer (`POST /api/admin/marketplace/charges/{id}/paid` with the reference,
+  manual provider) or by the gateway's webhook. A repeated purchase returns the same open
+  charge; settling is idempotent; an OPEN charge can be voided (the pending subscription is
+  cancelled, a new purchase opens a fresh charge). Both sides are notified on settlement.
+* **Gateway seam.** `BillingProvider.create_payment_link(amount, currency, description,
+  reference_id, notes, customer_email)`: the manual provider returns no URL; `RazorpayProvider`
+  creates a Razorpay Payment Link (`/v1/payment_links`, `reference_id = mpc-<charge id>`). The
+  existing signed, idempotent webhook (`/api/billing/webhooks/razorpay`) routes `payment_link.*`
+  events to `handle_payment_link_event`, which matches the charge by our reference (or the
+  notes we attached), checks the link id and the amount paid, and settles. Underpaid, unknown
+  or mismatched events are noted, never booked.
+* **Earnings and payouts.** A PAID charge is the creator's earning row (`creator_net`). `GET
+  /api/marketplace/earnings` sums gross, fees, net, available (not yet in a payout), pending and
+  paid out, and lists sales (buyer as a tenant number only) and payouts. An OWNER requests a
+  payout (`POST /api/marketplace/payouts`) of everything available once it reaches the minimum;
+  one request at a time. The destination the creator types (UPI id or IFSC/account) is stored
+  encrypted under the tenant's key (`secrets_store.encrypt_text`) with only a `…1234` hint in
+  clear; the operator reads it through an audited endpoint when making the transfer, then marks
+  the payout PAID with the transfer reference (required) or REJECTED with a note, which releases
+  the earnings. `GET /api/admin/marketplace/revenue` totals the platform's side.
+* **UI.** Marketplace page: price on every card and a "Buy for ₹…" button that shows the checkout
+  link or the manual-payment instruction; "Your purchases" with open charges and pay links; a
+  price field on the publish form with the creator's share; "Creator earnings" with the payout
+  request; for the operator, revenue totals, editable terms, open charges to confirm/void and
+  the payout queue (show destination, mark paid, reject).
+
+Migration `b1d3f5a7c9e2` (price/currency/fee on listings, wider subscription status,
+`marketplace_charges`, `marketplace_payouts`). Tests: `tests/test_phase_x_marketplace_revenue.py`.

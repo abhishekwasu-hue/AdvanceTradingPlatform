@@ -204,3 +204,42 @@ def clamp_config(cfg, ceilings: Dict[str, float]):
         updates["stop_cooldown_minutes"] = int(minimum)
         notes.append(f"stop_cooldown_minutes raised to the platform minimum {minimum:g}")
     return (cfg.model_copy(update=updates) if updates else cfg), notes
+
+
+# --- Phase X: marketplace terms ---------------------------------------------------------------------
+
+KEY_MARKETPLACE_TERMS = "marketplace_terms"
+MARKETPLACE_TERMS_DEFAULT: Dict[str, float] = {
+    "platform_fee_pct": 20.0,        # the platform's share of every paid listing, frozen per listing at publish
+    "min_payout": 500.0,             # a creator can request a payout once this much is available (INR)
+    "max_listing_price": 50000.0,    # the highest one-time price a creator may ask (INR)
+}
+
+
+async def marketplace_terms(session: AsyncSession) -> Dict[str, float]:
+    stored = await _get(session, KEY_MARKETPLACE_TERMS)
+    out = dict(MARKETPLACE_TERMS_DEFAULT)
+    for key in out:
+        if key in stored:
+            try:
+                out[key] = float(stored[key])
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+async def set_marketplace_terms(session: AsyncSession, user: User, values: Dict[str, float]) -> Dict[str, float]:
+    current = await marketplace_terms(session)
+    for key, value in values.items():
+        if key not in MARKETPLACE_TERMS_DEFAULT:
+            raise ValueError(f"Unknown marketplace term '{key}' - known: {sorted(MARKETPLACE_TERMS_DEFAULT)}")
+        number = float(value)
+        if key == "platform_fee_pct" and not 0 <= number <= 90:
+            raise ValueError("platform_fee_pct must be between 0 and 90")
+        if key != "platform_fee_pct" and number < 0:
+            raise ValueError(f"{key} cannot be negative")
+        current[key] = number
+    await _set(session, KEY_MARKETPLACE_TERMS, current, user)
+    await write_audit_log(session, None, user.id, "marketplace_terms_set", ", ".join(f"{k}={v:g}" for k, v in sorted(current.items())))
+    await session.commit()
+    return current

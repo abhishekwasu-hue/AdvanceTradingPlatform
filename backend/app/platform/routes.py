@@ -84,6 +84,20 @@ async def put_risk_ceilings(body: RiskCeilingsBody, user: User = Depends(require
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@admin_router.get("/marketplace-terms")
+async def get_marketplace_terms(session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase X: platform fee, minimum payout and price cap for paid marketplace listings."""
+    return await controls.marketplace_terms(session)
+
+
+@admin_router.put("/marketplace-terms")
+async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    try:
+        return await controls.set_marketplace_terms(session, user, body.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # --- Phase N4: feature flags -----------------------------------------------------------------------
 
 @admin_router.get("/flags")

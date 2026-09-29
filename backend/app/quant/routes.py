@@ -6,7 +6,10 @@
 * `POST /api/quant/exposure` - (login) the tenant's open book's factor tilt: weights from the open
                                trades' notional at the supplied closes, or explicit weights
 
-Pure functions of their input like the scanner and the backtester; no persistence.
+Pure functions of their input like the scanner and the backtester; no persistence. Phase AG: when
+a symbol comes without `fundamentals`, `/factors` and `/exposure` derive `pe, pb, roe_pct,
+debt_to_equity, earnings_growth_pct` from the Fundamentals module's stored company financials
+(`use_fundamentals`, default on), so the value and quality factors exist for covered symbols.
 """
 from typing import Dict, List, Optional
 
@@ -19,7 +22,7 @@ from app.core.models import OHLCVBar, bars_to_dataframe
 from app.db.models import User
 from app.db.session import get_session
 from app.portfolio.engine import open_trades
-from app.quant import factors as factor_model, risk as risk_model
+from app.quant import factors as factor_model, fundamentals_bridge, risk as risk_model
 
 router = APIRouter(prefix="/api/quant", tags=["quant"])
 
@@ -38,6 +41,7 @@ class FactorsBody(BaseModel):
     reversal_lookback: int = Field(default=5, ge=1, le=100)
     vol_lookback: int = Field(default=60, ge=5, le=2000)
     liquidity_lookback: int = Field(default=20, ge=1, le=500)
+    use_fundamentals: bool = Field(default=True, description="fill missing fundamentals from the Fundamentals module's stored financials")
 
 
 class RiskBody(BaseModel):
@@ -52,6 +56,7 @@ class ExposureBody(BaseModel):
     weights: Optional[Dict[str, float]] = Field(default=None, description="signed weights; omitted = the open book's notional weights")
     factor_weights: Optional[Dict[str, float]] = None
     mode: Optional[str] = Field(default=None, pattern="^(PAPER|LIVE)$")
+    use_fundamentals: bool = True
 
 
 def _inputs(symbols: List[QuantSymbol]) -> List[factor_model.FactorInputs]:
@@ -62,14 +67,39 @@ def _inputs(symbols: List[QuantSymbol]) -> List[factor_model.FactorInputs]:
     return out
 
 
+async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.FactorInputs], enabled: bool) -> dict:
+    """Phase AG: derive the value/quality inputs from stored financials for symbols the caller left without fundamentals."""
+    if not enabled:
+        return {"enabled": False, "filled": {}, "note": "fundamentals fill disabled by the caller"}
+    wanted = [i for i in inputs if not i.fundamentals]
+    if not wanted:
+        return {"enabled": True, "filled": {}, "note": "every symbol came with its own fundamentals"}
+    closes = {i.symbol: float(i.df["close"].iloc[-1]) for i in wanted if i.df is not None and not i.df.empty}
+    fills = await fundamentals_bridge.fundamentals_for(session, [i.symbol for i in wanted], closes)
+    for i in wanted:
+        fill = fills.get(i.symbol)
+        if fill is not None and fill.values:
+            i.fundamentals = dict(fill.values)
+    covered = sum(1 for f in fills.values() if f.values)
+    uncovered = [i.symbol for i in wanted if i.symbol not in fills]
+    note = f"value/quality inputs derived from stored financials for {covered} of {len(wanted)} symbol(s) without caller-supplied fundamentals"
+    if uncovered:
+        note += f"; no company profile for {', '.join(uncovered[:10])}{'...' if len(uncovered) > 10 else ''} (add one under Fundamentals)"
+    return {"enabled": True, "filled": {k: v.as_dict() for k, v in fills.items()}, "note": note}
+
+
 @router.post("/factors")
-async def factors(body: FactorsBody) -> dict:
+async def factors(body: FactorsBody, session: AsyncSession = Depends(get_session)) -> dict:
+    inputs = _inputs(body.symbols)
+    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals)
     try:
-        table = factor_model.score_universe(_inputs(body.symbols), body.weights, momentum_lookback=body.momentum_lookback, skip_recent=body.skip_recent,
+        table = factor_model.score_universe(inputs, body.weights, momentum_lookback=body.momentum_lookback, skip_recent=body.skip_recent,
                                             reversal_lookback=body.reversal_lookback, vol_lookback=body.vol_lookback, liquidity_lookback=body.liquidity_lookback)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return table.as_dict()
+    out = table.as_dict()
+    out["fundamentals"] = fundamentals
+    return out
 
 
 @router.post("/risk")
@@ -88,6 +118,7 @@ async def risk(body: RiskBody) -> dict:
 @router.post("/exposure")
 async def exposure(body: ExposureBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     inputs = _inputs(body.symbols)
+    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals)
     try:
         table = factor_model.score_universe(inputs, body.factor_weights)
     except ValueError as exc:
@@ -115,5 +146,5 @@ async def exposure(body: ExposureBody, user: User = Depends(get_current_user), s
             notes.append(f"{skipped} open position(s) on symbols not in the supplied universe were ignored")
         if not weights:
             notes.append("no open positions on the supplied symbols - exposure is empty")
-    return {"weights": weights, "weights_source": source, "exposure": factor_model.exposure(weights, table), "table": table.as_dict(), "notes": notes,
+    return {"weights": weights, "weights_source": source, "exposure": factor_model.exposure(weights, table), "table": table.as_dict(), "notes": notes, "fundamentals": fundamentals,
             "reading": "A tilt above +0.5 or below -0.5 on a factor means the book leans hard on it; a book that is all one bucket carries one bet."}

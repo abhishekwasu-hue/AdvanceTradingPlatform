@@ -39,6 +39,7 @@ export default function QuantPage() {
   const [timeframe, setTimeframe] = useState("15min");   // Phase AA: bar size for broker candles
   const source = useCandleSource(30);
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
+  const [useFundamentals, setUseFundamentals] = useState(true);   // Phase AG: value/quality from stored financials
 
   const symbols = useMemo(() => watchlist.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean), [watchlist]);
 
@@ -55,7 +56,7 @@ export default function QuantPage() {
       const universe = await inputs();
       if (universe.length < 2) throw new Error("Fewer than two symbols returned candles.");
       const [t, r] = await Promise.all([
-        api.quantFactors(universe, weights),
+        api.quantFactors(universe, weights, useFundamentals),
         api.quantRisk(universe, undefined, symbols.includes(benchmark) ? benchmark : symbols[0]),
       ]);
       setTable(t); setRisk(r);
@@ -71,7 +72,7 @@ export default function QuantPage() {
         <h1 className="text-xl font-extrabold text-violet-400">Factor Lab</h1>
         <p className="text-sm font-semibold text-violet-400/60">Cross-sectional factor scores and a descriptive risk model on your watchlist. Ranks and statistics of the supplied window; never a signal or an order.</p>
       </div>
-      <DataSourceBar source={source} note="Value and quality need fundamentals, absent in both modes until supplied." />
+      <DataSourceBar source={source} note="Value and quality come from the Fundamentals module: symbols with a company profile and financials get PE, PB, ROE, debt/equity and PAT growth filled in; the rest carry no value/quality score." />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="signals" />
 
@@ -102,8 +103,24 @@ export default function QuantPage() {
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button onClick={run} disabled={busy} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50">{busy ? "Computing…" : "Score universe"}</button>
-          <span className="text-[11px] text-muted">Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality need fundamentals (PE, PB, ROE, debt/equity, growth), absent in the sample data.</span>
+          <label className="flex items-center gap-1.5 text-xs text-slate-300">
+            <input type="checkbox" checked={useFundamentals} onChange={(e) => setUseFundamentals(e.target.checked)} />
+            Fill value/quality from Fundamentals
+          </label>
+          <span className="text-[11px] text-muted">Weights are renormalised; a factor a symbol has no data for carries no weight in its composite. Value and quality use the latest stored annual financials (PE and PB at the last close of the window).</span>
         </div>
+        {table?.fundamentals && (
+          <div className="mt-2 text-[11px] text-muted">
+            {table.fundamentals.note}
+            {Object.values(table.fundamentals.filled).some((f) => f.missing.length > 0) && (
+              <ul className="mt-1 space-y-0.5">
+                {Object.values(table.fundamentals.filled).filter((f) => f.missing.length > 0).map((f) => (
+                  <li key={f.symbol}><span className="text-slate-300">{f.symbol}</span>{f.period ? ` (${f.period})` : ""}: {f.missing.join("; ")}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </Card>
 
       {error && <div className="text-sm text-danger">{error}</div>}

@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Factor Lab fundamentals (Phase AG)
+
+- **Value and quality factors filled from stored financials**: `/api/quant/factors` and `/exposure` derive
+  PE, PB, ROE, debt/equity and PAT growth from the Fundamentals module's company profiles and financial
+  periods for symbols the caller sends without ratios (`use_fundamentals`, on by default); the response says
+  which symbols were covered and why a ratio is missing. Factor Lab toggle and notes.
+
 ## Dhan adapter (Phase AF)
 
 - **Real Dhan API v2 adapter** replacing the stub: token + client id headers, scrip-master resolution with

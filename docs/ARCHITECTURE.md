@@ -3408,3 +3408,32 @@ Dhan console and stores it with the client id under Settings; the platform re-us
 
 Verified against a mocked transport built from the public docs, not a live account. Only CoinDCX (crypto)
 remains a stub. No schema change. Tests: `tests/test_phase_af_dhan.py`.
+
+## Phase AG: Factor Lab value and quality from the Fundamentals module
+
+Phase Z left the value and quality factors to the caller: `POST /api/quant/factors` only scored them
+when the request carried `pe, pb, roe_pct, debt_to_equity, earnings_growth_pct` per symbol, and the
+Factor Lab page never did. Phase AG derives them from what the Fundamentals module already stores.
+
+* **Bridge** (`app/quant/fundamentals_bridge.py`). `fundamentals_for(session, symbols, closes)` looks
+  each symbol up in `companies` (shared reference data, no tenant scope) and its `financial_periods`,
+  picks the newest ANNUAL period (fallback: newest of any type) and the previous period of the same
+  type, and `derive(...)` computes with the same arithmetic as the fundamentals engines:
+  `pe = close / eps` (eps = stored EPS, else PAT / shares), `pb = close / (equity / shares)`,
+  `roe_pct = PAT / equity * 100` (ProfitabilityEngine), `debt_to_equity = total debt / equity`
+  (BalanceSheetEngine), `earnings_growth_pct` = PAT change against the prior period. `close` is the
+  last close of the candles the caller sent; without candles it falls back to `market_cap / shares`
+  from the company profile. A ratio that cannot be derived (negative EPS or equity, one period
+  only, no price) is left out and reported under `missing` with the reason, so the factor model
+  treats it as absent exactly as before; nothing is guessed.
+* **Routes**. `FactorsBody` and `ExposureBody` gain `use_fundamentals` (default true). Symbols that
+  come with their own `fundamentals` are left untouched; the rest are filled from the bridge. The
+  response carries `fundamentals: {enabled, filled: {symbol: {period, values, missing}}, note}`,
+  where the note counts covered symbols and names those without a company profile.
+* **Factor Lab page**. A "Fill value/quality from Fundamentals" checkbox (on by default), the
+  bridge's note under the weights, and per-symbol reasons for ratios that could not be derived.
+  The DataSource bar's note now says where value and quality come from.
+
+Coverage is whatever the operator has loaded under Fundamentals (profiles + financial periods,
+by hand or through the NSE provider); the Factor Lab does not fetch financials itself. No schema
+change. Tests: `tests/test_phase_ag_quant_fundamentals.py`.

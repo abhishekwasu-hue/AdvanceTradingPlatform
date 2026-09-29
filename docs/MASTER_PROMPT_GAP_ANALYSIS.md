@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AF, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AG, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -55,7 +55,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
 | V4.1-4.3 AI agent, AI scanner, AI generator | done (Phase L + Y) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) done in Phase Y: plan + read through the provider seam with deterministic fallbacks. |
 | V4.4-4.5 portfolio engine, 8-level risk hierarchy | done (Phase M2) | Portfolio engine (gross/net notional, concentration, unrealised, risk at stops) at `GET /api/portfolio/exposure`; eight scopes GLOBAL/TENANT/USER/ACCOUNT/PORTFOLIO/STRATEGY/DEPLOYMENT/INSTRUMENT with gross-exposure and symbol-concentration limits. |
-| V4.6-4.8 quant, regime, advanced backtesting | done (L3 + J + M4 + Z) | Regime engine + filter (L3); Monte Carlo/walk-forward/analytics (J); grid parameter optimisation with out-of-sample ranking and overfit gap (M4); factor scores, risk model (correlation, beta, VaR, inverse-vol and risk-parity weights) and open-book factor exposure (Z). |
+| V4.6-4.8 quant, regime, advanced backtesting | done (L3 + J + M4 + Z) | Regime engine + filter (L3); Monte Carlo/walk-forward/analytics (J); grid parameter optimisation with out-of-sample ranking and overfit gap (M4); factor scores, risk model (correlation, beta, VaR, inverse-vol and risk-parity weights) and open-book factor exposure (Z); value/quality inputs derived from the Fundamentals module's stored financials (AG). |
 | V4.9 HA | partial | `/health/live|ready|dependencies`, broker-uncertain block (G), restart-safe worker, PITR (O5). Multi-replica worker and a second region remain infrastructure choices, not code gaps. |
 | V4.10 DR | done (Phase O5) | Daily verified backups + restore test (E3), WAL archiving, base backups and `pitr_restore.sh` (O5), RPO/RTO table, incident records with measured data loss/downtime (M4). |
 | V4.11 monitoring | done (Phase O4) | Trading, AI provider/proposal/decision and billing payment/transition metrics exported; severities INFO/WARNING/CRITICAL/EMERGENCY (M3); Prometheus alert rules and SLO document (G2). |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AG - Factor Lab value/quality from Fundamentals**: **DONE** (ARCHITECTURE.md Phase AG) - bridge deriving PE, PB, ROE, debt/equity and PAT growth from stored company financials for symbols sent without ratios; `use_fundamentals` flag on factors/exposure; coverage note and missing-ratio reasons; Factor Lab toggle.
 - **Phase AF - Dhan API v2 adapter**: **DONE** (ARCHITECTURE.md Phase AF) - token headers, scrip master with built-in index ids, segment-batched quotes, parallel-array candles, order mapping, books, positions, holdings, funds, native option chain with Greeks, error mapping; mocked-transport tests.
 - **Phase AE - Fyers API v3 adapter**: **DONE** (ARCHITECTURE.md Phase AE) - auth-code exchange, symbol master, batched quotes, candles, order mapping, books, positions, holdings, funds, native option chain, error mapping; mocked-transport tests.
 - **Phase AD - holidays page, real data for AI Copilot and option chains**: **DONE** (ARCHITECTURE.md Phase AD) - `/api/market-data/option-chains` through the tenant's session, Data switch on Scanner chains, Option Chain and AI Copilot, Admin holidays card with bulk paste.

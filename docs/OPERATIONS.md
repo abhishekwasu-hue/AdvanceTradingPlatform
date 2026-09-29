@@ -626,6 +626,15 @@ Never publish a listing without an attached backtest run; the API refuses the su
   underlyings will be slow on Dhan by design.
 - **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
 
+### 1.6x Factor Lab fundamentals coverage (Phase AG)
+
+- The Factor Lab's value and quality factors read the Fundamentals module's stored data: a symbol needs a
+  company profile (`POST /api/fundamentals/companies` or the Fundamentals page) and at least one financial
+  period with PAT, EPS or shares, shareholders' equity and total debt; PAT growth needs two periods of the
+  same type. Symbols without a profile are named in the response note and carry no value/quality score.
+- PE and PB use the last close of the window scored, so intraday and daily runs differ slightly by design.
+- Nothing is fetched on the fly; load or refresh financials under Fundamentals first.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

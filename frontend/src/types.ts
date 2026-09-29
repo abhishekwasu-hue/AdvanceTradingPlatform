@@ -1663,7 +1663,14 @@ export interface FactorRow {
   composite: number | null; rank: number | null; bucket: "LONG" | "SHORT" | "NEUTRAL"; coverage: number;
 }
 
-export interface FactorTable { rows: FactorRow[]; weights: Record<string, number>; bars_per_year: number; universe: number; factors: string[]; warnings: string[] }
+// Phase AG: value/quality inputs derived from the Fundamentals module's stored financials.
+export interface FundamentalsFill { symbol: string; period: string | null; values: Record<string, number>; missing: string[] }
+export interface FundamentalsFillSummary { enabled: boolean; filled: Record<string, FundamentalsFill>; note: string }
+
+export interface FactorTable {
+  rows: FactorRow[]; weights: Record<string, number>; bars_per_year: number; universe: number; factors: string[]; warnings: string[];
+  fundamentals?: FundamentalsFillSummary;
+}
 
 export interface PortfolioRisk {
   vol_annual: number | null; var_95: number | null; cvar_95: number | null; max_drawdown_pct: number | null; diversification_ratio: number | null; bars: number;
@@ -1679,6 +1686,7 @@ export interface QuantRisk {
 
 export interface QuantExposure {
   weights: Record<string, number>; weights_source: string; exposure: Record<string, number | null>; table: FactorTable; notes: string[]; reading: string;
+  fundamentals?: FundamentalsFillSummary;
 }
 
 // Phase AA: broker candles for the research pages.

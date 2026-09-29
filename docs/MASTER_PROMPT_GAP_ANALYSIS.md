@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AE, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AF, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -10,7 +10,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | Section | Status | Notes |
 | --- | --- | --- |
 | 1-7 objective, stack, pipeline, monolith, tenancy, RBAC, auth | done | React/Vite instead of Next.js; int ids instead of uuid. Roles: SUPER_ADMIN/OWNER/USER/STRATEGY_CREATOR/SUPPORT/VIEWER; fine-grained scopes (N2); email verification with step-up (N3). |
-| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya, Angel One (AC), Fyers (AE) real; Dhan and CoinDCX still stubs. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) added (Phase M); streaming through `stream_for(adapter)` for Upstox and Zerodha (Phase S), `subscribe_market_data()` documents it. Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
+| 8-9 BrokerInterface, token security | partial | Upstox, Zerodha, Shoonya, Angel One (AC), Fyers (AE), Dhan (AF) real; only CoinDCX (crypto) still a stub. `get_balance()` / `disconnect()` (Phase G3), `exit_position()` (market square-off default) added (Phase M); streaming through `stream_for(adapter)` for Upstox and Zerodha (Phase S), `subscribe_market_data()` documents it. Tokens envelope-encrypted under per-tenant data keys (Phase N1). |
 | 10 market data | done (Phase S) | Candles via broker REST with Redis cache; staleness gate on candles and quotes (G1); websocket tick streams for Upstox (Feed V3 protobuf) and Zerodha (Kite ticker) feeding `get_ltp` through a tick cache, REST fallback, behind `STREAMING_QUOTES_ENABLED` (S); research pages (Signals, Scanner, Backtest, Factor Lab) fetch the tenant's broker candles through `/api/market-data/candles` (AA). Verified against fixtures; first live confirmation pending. |
 | 11 instrument master | done (Phase F1) | NSE equity/index/F&O; MCX/crypto specs are a static registry, not master rows. `active` flag and ISIN not stored. |
 | 12-14 indicators, DSL, visual builder | done | Rule-based DSL and builder; versioned reference `docs/STRATEGY_DSL.md` (Phase N5). |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AF - Dhan API v2 adapter**: **DONE** (ARCHITECTURE.md Phase AF) - token headers, scrip master with built-in index ids, segment-batched quotes, parallel-array candles, order mapping, books, positions, holdings, funds, native option chain with Greeks, error mapping; mocked-transport tests.
 - **Phase AE - Fyers API v3 adapter**: **DONE** (ARCHITECTURE.md Phase AE) - auth-code exchange, symbol master, batched quotes, candles, order mapping, books, positions, holdings, funds, native option chain, error mapping; mocked-transport tests.
 - **Phase AD - holidays page, real data for AI Copilot and option chains**: **DONE** (ARCHITECTURE.md Phase AD) - `/api/market-data/option-chains` through the tenant's session, Data switch on Scanner chains, Option Chain and AI Copilot, Admin holidays card with bulk paste.
 - **Phase AC - Angel One SmartAPI adapter**: **DONE** (ARCHITECTURE.md Phase AC) - TOTP login, scrip-master resolution with index aliases, batched quotes, candles, order mapping, books, positions, holdings, margins, assembled option chain, error mapping, logout; mocked-transport tests.

@@ -614,6 +614,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `NSE:NIFTYBANK-INDEX`; option contracts resolve through the public symbol master.
 - **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
 
+### 1.6w Dhan setup (Phase AF)
+
+- **Generate the access token** on the Dhan web console (DhanHQ > Access token); note your client id.
+- **Enter under Settings > Add / update broker credentials** (broker `dhan`): Access Token and Client ID. Nothing
+  goes in `.env`. The token expires daily; regenerate and re-enter it as the morning step, then Log in from the
+  session-health card to verify it.
+- **Symbols**: platform symbols map to Dhan security ids through the public scrip master; index ids are built in.
+  Option contracts use the master's trading symbols (for example `NIFTY-Oct2026-26000-CE`).
+- **Rate limits**: Dhan allows one option-chain call every three seconds; the Scanner's chain filters on many
+  underlyings will be slow on Dhan by design.
+- **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

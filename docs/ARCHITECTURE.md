@@ -3383,3 +3383,28 @@ The second stub replaced (`app/brokers/fyers.py`). Fyers is JSON REST split acro
 
 Verified against a mocked transport built from the public docs, not a live account. Dhan and CoinDCX
 remain stubs. No schema change. Tests: `tests/test_phase_ae_fyers.py`.
+
+## Phase AF: Dhan API v2 adapter
+
+The third stub replaced (`app/brokers/dhan.py`). Dhan is JSON REST at one host; every call carries
+`access-token` and `client-id` headers. There is no exchange flow: the user generates the token on the
+Dhan console and stores it with the client id under Settings; the platform re-uses it until 06:00 IST.
+
+* **Identifiers.** Every order, quote and candle needs a numeric `securityId` plus an `exchangeSegment`
+  (`NSE_EQ`, `NSE_FNO`, `IDX_I`, `BSE_EQ`, `MCX_COMM`). The public scrip master (CSV with header) is parsed
+  into platform instruments; `_resolve` maps plain symbols to (segment, id, instrument kind), with the
+  index ids (NIFTY 13, BANKNIFTY 25, ...) resolved without the master.
+* **Data.** `marketfeed/quote` batched by segment (ids grouped per segment, capped per request), keyed back
+  to `EXCHANGE:SYMBOL` with OHLC, depth and `last_trade_time`; `charts/intraday` and `charts/historical`
+  return parallel arrays that are zipped into candles; `optionchain/expirylist` + `optionchain` give the
+  chain with IV, Greeks (delta), OI and OI change (from `previous_oi`), bid/ask per leg.
+* **Orders.** `MARKET`/`LIMIT`/`SL`/`SL-M` -> `MARKET`/`LIMIT`/`STOP_LOSS`/`STOP_LOSS_MARKET`; `MIS`/`CNC`/
+  `NRML` -> `INTRADAY`/`CNC`/`MARGIN`; the tag rides as `correlationId`. Modify reads the order first
+  (Dhan's `PUT` wants the full body); order statuses TRADED/PENDING/TRANSIT/CANCELLED/REJECTED/EXPIRED
+  mapped; trade book, positions (`unrealizedProfit`), holdings (no LTP in the API) and `fundlimit`
+  (Dhan's own `availabelBalance` spelling first) mapped to the platform models.
+* **Errors.** HTTP 4xx / `errorCode` -> `BrokerAPIError` with message and code; DH-90x auth codes and
+  401/403 -> `BrokerAuthenticationError`.
+
+Verified against a mocked transport built from the public docs, not a live account. Only CoinDCX (crypto)
+remains a stub. No schema change. Tests: `tests/test_phase_af_dhan.py`.

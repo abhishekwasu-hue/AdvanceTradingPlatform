@@ -95,11 +95,6 @@ class _StubBrokerAdapter(BrokerInterface):
         raise self._not_implemented("get_margins")
 
 
-class DhanBroker(_StubBrokerAdapter):
-    name = "dhan"
-    docs_url = "https://dhanhq.co/docs/v2/"
-
-
 class CoinDCXBroker(_StubBrokerAdapter):
     """A structural placeholder for crypto trading (see app/instruments/registry.py for the
     CRYPTO contract specs this would eventually route orders for). CoinDCX is one of the larger

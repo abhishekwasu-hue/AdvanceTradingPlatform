@@ -230,6 +230,12 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Dhan adapter (Phase AF)
+
+- **Real Dhan API v2 adapter** replacing the stub: token + client id headers, scrip-master resolution with
+  built-in index ids, segment-batched quotes, parallel-array candles, orders with SL-M stops, books,
+  positions, holdings, funds and the native option chain with Greeks. Verified against a mocked transport.
+
 ## Fyers adapter (Phase AE)
 
 - **Real Fyers API v3 adapter** replacing the stub: auth-code exchange, symbol-master resolution, batched

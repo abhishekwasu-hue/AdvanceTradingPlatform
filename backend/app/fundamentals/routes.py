@@ -10,7 +10,8 @@ sub-engine raises when it has nothing to work with - turned into a 422 here).
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,7 @@ from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, RiskLevel, SignalDirection, ValuationLabel
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
-from app.fundamentals import persistence as db
+from app.fundamentals import ingest, persistence as db
 from app.fundamentals.engines.alerts import AlertEngine
 from app.fundamentals.engines.business_quality import BusinessQualityEngine
 from app.fundamentals.engines.event_impact import EventImpactEngine
@@ -125,10 +126,103 @@ async def add_financial_period(
     symbol: str, period: FinancialPeriod, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> FinancialPeriod:
     company = await _get_company_or_404(session, symbol)
+    company_symbol = company.symbol
     record = db.financial_period_from_model(company.id, period, user.id)
     session.add(record)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=f"Period {period.period_type.value} {period.period_label} already exists for {company_symbol}; import it to update") from exc
     return period
+
+
+# --- Phase AH: bulk import and provider refresh ----------------------------------------------
+
+
+class FinancialsImportBody(BaseModel):
+    csv: Optional[str] = Field(default=None, max_length=2_000_000, description="header-led CSV/TSV, one period per row")
+    periods: Optional[List[FinancialPeriod]] = Field(default=None, max_length=400)
+
+
+@router.post("/companies/{symbol}/financials/import")
+async def import_financials(
+    symbol: str, body: FinancialsImportBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Create-or-update financial periods from a CSV paste or a JSON list; the natural key is (period_type, period_label)."""
+    company = await _get_company_or_404(session, symbol)
+    periods: List[FinancialPeriod] = list(body.periods or [])
+    errors: List[str] = []
+    columns: List[str] = []
+    if body.csv:
+        parsed = ingest.parse_financials_csv(body.csv)
+        periods.extend(parsed.periods)
+        errors.extend(parsed.errors)
+        columns = parsed.columns
+    if not periods and not errors:
+        raise HTTPException(status_code=400, detail="Nothing to import: supply csv text or a periods list")
+    company_symbol = company.symbol
+    summary = await ingest.upsert_financial_periods(session, company, periods, user.id)
+    await session.commit()
+    return {"symbol": company_symbol, **summary.as_dict(), "errors": errors, "columns": columns, "total_rows": len(periods) + len(errors)}
+
+
+class RefreshBody(BaseModel):
+    provider: Optional[str] = Field(default=None, max_length=30)
+    profile: bool = True
+    shareholding: bool = True
+    announcements: bool = True
+    announcement_limit: int = Field(default=20, ge=1, le=100)
+
+
+class BulkRefreshBody(RefreshBody):
+    symbols: List[str] = Field(min_length=1, max_length=50)
+    create_missing: bool = True
+
+
+def _provider_or_400(name: Optional[str]):
+    try:
+        return ingest.provider_for(name)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/providers")
+async def list_providers() -> dict:
+    return {"providers": ingest.provider_names(), "default": ingest.default_provider_name(),
+            "covers": ["profile", "shareholding", "announcements"], "note": "Financial statements are not published as JSON by NSE; import them as CSV."}
+
+
+@router.post("/companies/{symbol}/refresh")
+async def refresh_company(
+    symbol: str, body: RefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Pull profile, shareholding and announcements from the fundamentals provider and store what is new."""
+    company = await _get_company_or_404(session, symbol)
+    provider = _provider_or_400(body.provider)
+    _, summary = await ingest.refresh_from_provider(session, company, company.symbol, provider, user.id, profile=body.profile,
+                                                    shareholding=body.shareholding, announcements=body.announcements, announcement_limit=body.announcement_limit)
+    await session.commit()
+    if summary.errors and not (summary.profile_changed or summary.shareholding_added or summary.announcements_added):
+        raise HTTPException(status_code=502, detail={"message": "provider returned nothing usable", **summary.as_dict()})
+    return summary.as_dict()
+
+
+@router.post("/refresh")
+async def refresh_many(
+    body: BulkRefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Refresh several symbols in one call, creating the company profile from the provider when it is missing."""
+    provider = _provider_or_400(body.provider)
+    results = []
+    for raw in dict.fromkeys(s.upper().strip() for s in body.symbols if s.strip()):
+        company = await db.get_company_by_symbol(session, raw)
+        _, summary = await ingest.refresh_from_provider(session, company, raw, provider, user.id, profile=body.profile, shareholding=body.shareholding,
+                                                        announcements=body.announcements, announcement_limit=body.announcement_limit, create_missing=body.create_missing)
+        results.append(summary.as_dict())
+    await session.commit()
+    return {"provider": getattr(provider, "name", "provider"), "results": results,
+            "created": sum(1 for r in results if r["created_company"]), "failed": sum(1 for r in results if r["errors"] and not r["created_company"] and not r["profile_changed"])}
 
 
 @router.get("/companies/{symbol}/financials", response_model=List[FinancialPeriod])

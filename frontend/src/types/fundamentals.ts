@@ -408,3 +408,10 @@ export function defaultFinancialPeriod(): FinancialPeriod {
     revenue: 0, ebitda: 0, pat: 0, other_income: 0, exceptional_items: 0,
   };
 }
+
+// Phase AH: bulk import and provider refresh.
+export interface FinancialsImportResult { symbol: string; created: number; updated: number; labels: string[]; errors: string[]; columns: string[]; total_rows: number }
+export interface FundamentalsProviders { providers: string[]; default: string; covers: string[]; note: string }
+export interface RefreshSummary {
+  symbol: string; provider: string; created_company: boolean; profile_changed: string[]; shareholding_added: boolean; announcements_added: number; errors: string[];
+}

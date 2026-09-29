@@ -635,6 +635,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - PE and PB use the last close of the window scored, so intraday and daily runs differ slightly by design.
 - Nothing is fetched on the fly; load or refresh financials under Fundamentals first.
 
+### 1.6y Loading fundamentals (Phase AH)
+
+- **From NSE**: on the Fundamentals page type symbols into "Add from NSE" and Fetch, or use
+  `POST /api/fundamentals/refresh {"symbols": [...]}`. That creates the company profile and pulls the
+  shareholding pattern and announcements. NSE serves its JSON only to a browser-like session and may
+  block automated access without notice; a blocked symbol is named in the response, nothing is stored
+  for it. Smoke-test one symbol from the production host before relying on it.
+- **Financial statements**: NSE does not publish them as JSON. Export them from your data source as a
+  CSV with the `FinancialPeriod` column names (see the Financials tab for the required and optional
+  columns) and paste it into "Import financial periods"; re-importing a period updates it.
+- **Provider**: `FUNDAMENTALS_PROVIDER` (default `nse`). A commercial vendor is a new
+  `FundamentalDataProvider` registered through `ingest.set_provider_factory`.
+- The Factor Lab's value/quality factors (Phase AG) read whatever is loaded here.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

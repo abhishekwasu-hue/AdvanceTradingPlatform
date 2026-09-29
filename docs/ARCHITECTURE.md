@@ -3357,3 +3357,29 @@ Three small gaps left after Phase AA/AB, closed together.
   user, add/remove for SUPER_ADMIN); the go-live checklists now point at this card.
 
 No schema change. Tests: `tests/test_phase_ad_real_data.py`.
+
+## Phase AE: Fyers API v3 adapter
+
+The second stub replaced (`app/brokers/fyers.py`). Fyers is JSON REST split across a trading host
+(`/api/v3`) and a data host (`/data`); every authenticated call carries `Authorization: <app_id>:<token>`.
+
+* **Login** is an auth-code exchange like Zerodha's: the user completes the Fyers login page and pastes
+  the returned code into Settings as `request_token`; `authenticate()` exchanges it with
+  `validate-authcode` (`appIdHash = sha256(app_id:secret)`) for the day's token, stored encrypted and
+  re-used until 06:00 IST. Credentials: `api_key` (App ID), `api_secret`, `request_token` or `access_token`.
+* **Symbols.** Fyers tickers are `NSE:SBIN-EQ`, `NSE:NIFTY50-INDEX`, `NSE:NIFTY26OCT26000CE`. The public
+  symbol master (CSV, no header) is parsed by column into platform instruments (epoch expiries, strike,
+  CE/PE, lot, tick, underlying); `_ticker` maps plain symbols and `INDEX_ALIASES` to tickers.
+* **Data.** `quotes` in batches of 50 keyed back to the caller's `EXCHANGE:SYMBOL` (bid/ask, `tt` for the
+  staleness gate); `history` with resolutions `1..60`/`D` and epoch candles in IST; `options-chain-v3`
+  lists expiries and returns the strikes around the money for the chosen one (two calls when a specific
+  or non-front expiry is asked), merged CE/PE with OI, OI change, volume, bid/ask.
+* **Orders.** Types `LIMIT=1`, `MARKET=2`, `SL-M=3`, `SL=4`; sides `1`/`-1`; products `MIS`/`CNC`/`NRML`
+  -> `INTRADAY`/`CNC`/`MARGIN`; tags cut to 20. Modify (`PATCH`) and cancel (`DELETE`) on `orders/sync`.
+  Order book statuses 1/2/4/5/6/7 -> CANCELLED/COMPLETE/OPEN/REJECTED/OPEN/EXPIRED. Trade book, positions,
+  holdings and funds (`fund_limit` ids 1/2/10 = total/utilised/available) mapped to the platform models.
+* **Errors.** `s: "error"` -> `BrokerAPIError` with message and code; codes -8/-15/-16/-17/-50/-300 and any
+  "token" message -> `BrokerAuthenticationError`.
+
+Verified against a mocked transport built from the public docs, not a live account. Dhan and CoinDCX
+remain stubs. No schema change. Tests: `tests/test_phase_ae_fyers.py`.

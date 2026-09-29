@@ -230,6 +230,12 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Fyers adapter (Phase AE)
+
+- **Real Fyers API v3 adapter** replacing the stub: auth-code exchange, symbol-master resolution, batched
+  quotes, candles, orders with SL-M stops, books, positions, holdings, funds and the native option-chain
+  endpoint. Verified against a mocked transport; the first live confirmation is the operator's.
+
 ## Holidays page and real data everywhere (Phase AD)
 
 - **Exchange holidays** are managed from the Admin console (paste the NSE circular); **AI Copilot**, the

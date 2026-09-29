@@ -604,6 +604,16 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Live option chains** on the Scanner and Option Chain pages need a broker session with a valid token,
   like broker candles; a stub broker reports "no option-chain endpoint" per underlying instead of failing.
 
+### 1.6v Fyers setup (Phase AE)
+
+- **Create the app** at myapi.fyers.in (App ID like `ABCD1234-100`, secret key, a redirect URL you control).
+- **Daily login**: open the Fyers auth URL for your app, log in, copy the `auth_code` from the redirect, paste
+  it under Settings > Add / update broker credentials (broker `fyers`) as Request Token with the API Key
+  (App ID) and API Secret, then Log in from the session-health card. The exchanged token lasts the day.
+- **Symbols**: platform symbols (SBIN, NIFTY, BANKNIFTY) map to `NSE:SBIN-EQ`, `NSE:NIFTY50-INDEX`,
+  `NSE:NIFTYBANK-INDEX`; option contracts resolve through the public symbol master.
+- **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

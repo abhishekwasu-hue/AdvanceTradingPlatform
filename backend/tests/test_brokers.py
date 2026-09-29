@@ -14,7 +14,8 @@ from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.angel_one import AngelOneBroker
-from app.brokers.stubs import CoinDCXBroker, DhanBroker, FyersBroker
+from app.brokers.fyers import FyersBroker
+from app.brokers.stubs import CoinDCXBroker, DhanBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 from app.core.enums import OrderSide
@@ -338,9 +339,9 @@ def test_registry_raises_for_unknown_broker():
         get_broker_adapter("not_a_real_broker", BrokerCredentials())
 
 
-# --- Stub adapters (Fyers / Dhan / CoinDCX) ----------------------------------------
+# --- Stub adapters (Dhan / CoinDCX) ---------------------------------------------------
 
-@pytest.mark.parametrize("cls", [FyersBroker, DhanBroker, CoinDCXBroker])
+@pytest.mark.parametrize("cls", [DhanBroker, CoinDCXBroker])
 def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
     broker = cls(BrokerCredentials(api_key="k"))
     assert isinstance(broker, BrokerInterface)

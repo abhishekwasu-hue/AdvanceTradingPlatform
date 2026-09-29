@@ -95,11 +95,6 @@ class _StubBrokerAdapter(BrokerInterface):
         raise self._not_implemented("get_margins")
 
 
-class FyersBroker(_StubBrokerAdapter):
-    name = "fyers"
-    docs_url = "https://myapi.fyers.in/docsv3"
-
-
 class DhanBroker(_StubBrokerAdapter):
     name = "dhan"
     docs_url = "https://dhanhq.co/docs/v2/"

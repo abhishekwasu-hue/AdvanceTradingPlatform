@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## AI scanner (Phase Y)
+
+- **Plain language to filters**: the tenant's LLM (or the deterministic parser) turns a sentence into
+  the scanner's indicator, structure and option filters; the user reviews them and runs the scan.
+- **AI read of the matches**: ranked, explained, with the platform's regime per symbol and a fixed
+  disclaimer. Analysis only; the scanner never places orders.
+
 ## Marketplace revenue share (Phase X)
 
 - **Paid listings**: a one-time price per listing, the platform fee frozen at publish; the buyer's

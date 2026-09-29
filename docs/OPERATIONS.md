@@ -535,6 +535,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Revenue**: `GET /api/admin/marketplace/revenue` - gross, fees, creators' share, paid out, open charges,
   requested payouts.
 
+### 1.6p AI scanner (Phase Y)
+
+- **Which model answered**: every plan and read carries `provider`/`model`/`prompt_version`; `rule_based`
+  means no external provider was used (none configured under Settings, the plan lacks AI features, or
+  the model's answer was unusable - the first warning then names the provider and the error).
+- **Cost**: one provider call per plan and one per read (at most 40 matches); metered as `ai_scanner` in
+  `GET /api/billing/usage`. Candles are never sent to the model - only the labels, closes and regimes.
+- **Kill switch**: the `ai_copilot` feature flag turns both endpoints off; the deterministic scanner keeps
+  working.
+- **"X cannot be screened" warnings** are expected: the scanner has indicator, structure and option-chain
+  filters only. Anything else in the request is reported, not silently dropped.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

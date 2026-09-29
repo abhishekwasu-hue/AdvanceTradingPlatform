@@ -38,6 +38,8 @@ import type {
   RiskConfig,
   ScannerRequest,
   ScannerResult,
+  ScanPlan,
+  ScanRead,
   SessionInfo,
   WebhookTokenResponse,
   SRZone,
@@ -443,6 +445,11 @@ export const api = {
 
   runScanner: (scanRequest: ScannerRequest) =>
     request<ScannerResult>("/scanner/run", { method: "POST", body: JSON.stringify(scanRequest) }),
+  // Phase Y: AI scanner - plan from plain language, read of a result.
+  scannerAiPlan: (text: string, language = "en") =>
+    request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
+  scannerAiRead: (scanRequest: ScannerRequest, result: ScannerResult, language = "en") =>
+    request<ScanRead>("/scanner/ai/read", { method: "POST", body: JSON.stringify({ request: scanRequest, result, language }) }),
 
   listNewsEvents: (filters?: { category?: NewsEventCategory; symbol?: string; since?: string }) => {
     const params = new URLSearchParams();

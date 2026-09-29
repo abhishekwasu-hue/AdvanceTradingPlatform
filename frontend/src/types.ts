@@ -713,6 +713,18 @@ export interface ScannerResult {
   matches: ScannerMatch[];
 }
 
+// Phase Y: the AI scanner.
+export interface ScanPlan {
+  timeframe: string; symbols: string[]; indicator_conditions: Condition[]; structure_filters: StructureFilter[]; option_filters: OptionFilter[];
+  explanation: string; warnings: string[]; provider: string; model: string; prompt_version: string;
+}
+
+export interface RankedSymbol { symbol: string; score: number; thesis: string; risks: string; next_step: string; regime: string | null }
+
+export interface ScanRead {
+  summary: string; ranked: RankedSymbol[]; warnings: string[]; provider: string; model: string; prompt_version: string; disclaimer: string;
+}
+
 export const STRUCTURE_FILTER_LABELS: Record<StructureFilterType, string> = {
   TREND_UPTREND: "Trend: Uptrend",
   TREND_DOWNTREND: "Trend: Downtrend",

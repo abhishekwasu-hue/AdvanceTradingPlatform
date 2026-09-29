@@ -41,6 +41,7 @@ import type {
   ScanPlan,
   ScanRead,
   CandleSourcesResponse,
+  ReadinessChecklist,
   CandlesResponse,
   FactorTable,
   QuantExposure,
@@ -454,6 +455,9 @@ export const api = {
   // Phase Y: AI scanner - plan from plain language, read of a result.
   scannerAiPlan: (text: string, language = "en") =>
     request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
+  // Phase AB: go-live checklists.
+  readiness: (target: "PAPER" | "LIVE" = "PAPER") => request<ReadinessChecklist>(`/readiness?target=${target}`),
+  adminReadiness: () => request<ReadinessChecklist>("/admin/readiness"),
   // Phase AA: broker candles for the research pages.
   marketDataSources: () => request<CandleSourcesResponse>("/market-data/sources"),
   marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string) =>

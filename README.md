@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Go-live checklist (Phase AB)
+
+- **Dashboard**: every step still needed before a PAPER run, and the extra ones for LIVE (MFA, verified
+  email, SEBI algo id), computed from the platform's state with a jump to the page that fixes it.
+- **Admin console**: the operator's list (secrets, SMTP, gateway keys, worker, migrations, Redis, CORS,
+  instrument master, holidays, kill switch), naming the environment variable for each gap.
+
 ## Broker candles on the research pages (Phase AA)
 
 - **One Data switch** on Signals, Scanner, Backtest and Factor Lab: deterministic sample candles, or

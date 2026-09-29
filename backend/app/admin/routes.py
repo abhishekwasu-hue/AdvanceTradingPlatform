@@ -133,6 +133,13 @@ async def list_plans() -> List[PlanResponse]:
     return [PlanResponse(id=p.id, name=p.name, description=p.description, limits=plan_limits(p)) for p in PLANS.values()]
 
 
+@router.get("/readiness")
+async def platform_readiness(session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase AB: the operator's go-live checklist (secrets, SMTP, gateway, worker, migrations, ...)."""
+    from app.platform.readiness import platform_checklist
+    return (await platform_checklist(session)).as_dict()
+
+
 @router.get("/overview", response_model=OverviewResponse)
 async def overview(session: AsyncSession = Depends(get_session)) -> OverviewResponse:
     tenants = list(await session.scalars(select(Tenant)))

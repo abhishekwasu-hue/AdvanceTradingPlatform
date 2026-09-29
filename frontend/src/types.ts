@@ -1688,3 +1688,7 @@ export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; fetched_at: string;
   symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
 }
+
+// Phase AB: go-live checklists.
+export interface ReadinessItem { key: string; title: string; status: "ok" | "todo" | "warn" | "info"; detail: string; fix: string; link: string | null; scope: string }
+export interface ReadinessChecklist { target: string; ready: boolean; summary: { ok: number; todo: number; warn: number; info: number }; items: ReadinessItem[]; checked_at: string; note: string }

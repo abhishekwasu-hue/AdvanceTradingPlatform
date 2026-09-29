@@ -570,6 +570,17 @@ Never publish a listing without an attached backtest run; the API refuses the su
   worker; a 50-symbol scan is at most 100 broker calls the first time and none for the next minute.
   Fetches are metered as `market_data_candles` (billing usage).
 
+### 1.6s Go-live checklist (Phase AB)
+
+- **Where**: Dashboard (each organisation, PAPER or LIVE target) and Admin console (platform). Both are
+  read-only views of the platform's own state; re-check after each step.
+- **Order that works**: platform list first (secrets, Postgres, migrations, Redis, SMTP, CORS, frontend
+  URL), then the worker, then the instrument master and holidays, then each organisation's broker key
+  and login, a PAPER deployment, risk settings and an alert channel. Run PAPER for a few sessions;
+  switch the toggle to LIVE and clear MFA, email verification and the algo id before the first LIVE
+  deployment.
+- **API**: `GET /api/readiness?target=LIVE`, `GET /api/admin/readiness` (SUPER_ADMIN, MFA session).
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

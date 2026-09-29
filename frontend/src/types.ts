@@ -205,7 +205,65 @@ export interface BacktestResult {
   analytics?: BacktestAnalytics | null;
   exit_rules?: string | null;
   run_id?: number | null;
+  // Phase W: present on an option backtest.
+  options?: OptionBacktestSummary | null;
 }
+
+// Phase W: historical option backtests.
+export type OptionPricingModel = "synthetic" | "snapshots" | "uploaded";
+
+export interface OptionBacktestConfig {
+  option_strategy: OptionStrategy;
+  option_position?: OptionPosition;
+  expiry_rule?: ExpiryRule;
+  strike_rule?: StrikeRule;
+  strike_offset?: number;
+  spread_width?: number;
+  target_credit_pct?: number | null;
+  stop_credit_pct?: number | null;
+  premium_stop_pct?: number | null;
+  custom_legs?: CustomLeg[] | null;
+  max_lots?: number | null;
+  lot_size?: number | null;
+  strike_step?: number | null;
+  expiry_weekday?: number | null;
+  weekly_expiry?: boolean | null;
+  pricing?: OptionPricingModel;
+  implied_volatility?: number | null;
+  realised_vol_window?: number;
+  risk_free_rate?: number;
+  snapshot_max_age_minutes?: number;
+  allow_synthetic_fallback?: boolean;
+  option_chain?: OptionChainSnapshotRow[] | null;
+  intraday?: boolean;
+}
+
+export interface OptionChainSnapshotRow {
+  timestamp: string; expiry: string; strike: number; right: "CE" | "PE"; ltp: number;
+  iv?: number | null; oi?: number | null; underlying_ltp?: number | null;
+}
+
+export interface OptionBacktestLeg {
+  right: string; role: "SHORT" | "LONG"; strike: number; expiry: string; ratio: number; quantity: number;
+  entry_price: number; exit_price: number | null;
+}
+
+export interface OptionBacktestStructure {
+  label: string; entry_time: string; exit_time: string; expiry: string; lots: number; direction: string;
+  entry_unit: number; exit_unit: number; exit_reason: string; pnl: number; charges: number;
+  net_credit: number | null; max_loss: number | null; max_profit: number | null; breakevens: number[] | null;
+  legs: OptionBacktestLeg[];
+}
+
+export interface OptionBacktestSummary {
+  engine_version: string; pricing_model: OptionPricingModel; pricing: string; underlying: string; structure: OptionStrategy;
+  position: OptionPosition | null; lot_size: number; strike_step: number; expiry_calendar: string; intraday: boolean;
+  structures_opened: number; expiry_settlements: number; signals_skipped: Record<string, number>;
+  structures: OptionBacktestStructure[]; disclaimer: string;
+  snapshot_hits?: number; synthetic_fallbacks?: number; snapshot_contracts?: number;
+}
+
+export interface OptionChainCoverage { underlying: string; from: string | null; to: string | null; rows: number; expiries: number }
 
 export interface ExitRules {
   trailing_stop_pct?: number | null;

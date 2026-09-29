@@ -1428,3 +1428,28 @@ class InstrumentRecord(Base):
     tick_size: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
     weekly: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     synced_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class OptionChainSnapshotRecord(Base):
+    """Phase W: one quoted option at one moment, sampled from the chains the worker already
+    fetches for its option deployments (app/backtest/chain_recorder.py) so option backtests
+    can be priced from what the market actually quoted. Platform-wide reference data (a NIFTY
+    quote is the same fact for every tenant), sampled every few minutes for the strikes around
+    the money, trimmed by retention after a bounded number of days."""
+
+    __tablename__ = "option_chain_snapshots"
+    __table_args__ = (
+        Index("ix_option_chain_snapshots_lookup", "underlying", "expiry", "captured_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)          # master name: NIFTY
+    expiry: Mapped[date] = mapped_column(Date, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    right: Mapped[str] = mapped_column(String(2), nullable=False)                # CE / PE
+    ltp: Mapped[float] = mapped_column(Float, nullable=False)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload

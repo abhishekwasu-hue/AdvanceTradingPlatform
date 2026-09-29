@@ -3056,3 +3056,69 @@ Architect" template, versioned (`PROMPT_VERSION`) and filled on every request:
 
 Migration `f8b1d3e5a7c9` (prompt_version, context_json, deployment_json on drafts). The
 rule-based fallback provider answers under the same prompt without a deployment block.
+
+## Phase W: Historical option-chain backtests (sections 31-32, V2.1-2.6)
+
+Until now a backtest traded the underlying only; an option deployment's strikes, expiries,
+credits, group exits and lot sizing were exercised live and on paper but never on history. Phase
+W runs the same structures on historical bars.
+
+* **One planner for live and backtest.** `app/instruments/spreads.py` gains `structure_sides`,
+  `plan_side` and `plan_structure`: the strike math of every structure (primary strike per right,
+  wings, the 1:2 ratio short, the butterfly's 1:2:1, the calendar's far leg, custom legs) as a
+  pure function of the spot and a strike ladder. `resolve_structure` now calls it and only adds
+  the instrument-master lookups and chain filters, so a backtest and a deployment cannot pick
+  different strikes for the same rules (`tests/test_phase_w_option_backtest.py` asserts parity).
+  Likewise `position_monitor.structure_exit_reason` / `underlying_exit_reason` are the group exit
+  rule on its own; `group_exit` computes the group's value and delegates.
+* **Pricing** (`app/backtest/options.py`). `OptionPricer.price(right, strike, expiry, spot, at)`
+  with two sources. `SnapshotPricer`: real quotes (recorded or uploaded rows), the latest at or
+  before the bar within `max_age_minutes`; a missing quote refuses the entry unless a fallback is
+  given. `SyntheticPricer`: Black-Scholes (the Greeks module) off the bar's underlying level, the
+  time to the expiry's 15:30 IST close and a `VolatilityModel` - a fixed IV the user asks for or
+  the annualised realised volatility of the trailing closes (floored 8%, capped 150%); at the
+  close of expiry day the premium is the intrinsic value; premiums round to the 0.05 tick. The
+  result carries the model's name and a disclaimer: synthetic premiums have no smile, no bid/ask
+  and no liquidity, so they show structure mechanics, not an edge.
+* **Conventions** are the exchange's current ones and overridable per run, because they changed:
+  lot sizes (NIFTY 75, BANKNIFTY 35, FINNIFTY 65, MIDCPNIFTY 140, SENSEX 20, BANKEX 30), strike
+  steps (50/100/50/25/100/100; stocks by price band), weekly expiries only for NIFTY (Tuesday)
+  and SENSEX (Thursday), everything else monthly on the last Tuesday (BSE: Thursday).
+  `ExpiryCalendar` lists them and moves a holiday expiry to the previous trading day; the API
+  loads the platform's holiday table into it. A NIFTY backtest across 2024 passes
+  `expiry_weekday=3` (Thursday) to match that year's listings.
+* **Engine** (`app/backtest/options_engine.py::run_option_backtest`). The strategy signals on the
+  underlying as before. On a signal: expiry from the calendar and the rule, strikes from a ladder
+  around spot, `plan_structure`, every leg priced, `structure_metrics` (unchanged) for the credit,
+  max loss, breakevens and target/stop levels, then lots exactly as `execute_structure` sizes
+  them - risk per trade over the risk per unit through the risk engine, capped by `max_lots`
+  (a written single option without a cap trades one lot, as live). Fills take the paper broker's
+  slippage. Every later bar: expiry settlement at intrinsic value on expiry day's last bars (a
+  calendar's far leg stays priced), time exits from the shared `ExitRules`, the intraday
+  square-off at 15:15 IST and no entries after 15:00 (the worker's cut-offs; `intraday=False`
+  holds to exit or expiry), the underlying levels (short strikes, breakevens) checked on the bar's
+  low/high and filled at the level, then the structure's own value at the close through
+  `structure_exit_reason`. A SINGLE option mirrors Phase F4: premium floor/ceiling on the option,
+  stop/targets on the underlying. One `Trade` per structure (entry = credit or debit per unit,
+  exit = cost to close, P&L net of per-leg option charges) keeps analytics, Monte Carlo and
+  walk-forward unchanged; `BacktestResult.options` carries the pricing model, conventions, the
+  skipped-signal tally (sizer refusals, no quote, quotes inconsistent) and every structure's legs.
+* **Recorded chains** (`app/backtest/chain_recorder.py`, table `option_chain_snapshots`,
+  migration `a9c1e3f5b7d9`). The worker samples the chains of the underlyings its ACTIVE option
+  deployments trade: one fetch per underlying per `CHAIN_SNAPSHOT_INTERVAL_MINUTES` (default 5;
+  0 disables), `CHAIN_SNAPSHOT_ATM_SPAN` strikes either side of the money (default 12), only
+  while the venue is open, only rows with a real LTP. Platform-wide reference data (a NIFTY quote
+  is the same fact for every tenant), deduplicated across tenants by interval, trimmed by
+  retention after `RETENTION_CHAIN_SNAPSHOTS_DAYS` (default 400). Tenants can also upload rows
+  (`POST /api/backtest/option-chain/snapshots`); coverage and raw rows are readable.
+* **API.** `BacktestBody.options` (an `OptionBacktestBody`: the deployment's option fields plus
+  `pricing` synthetic|snapshots|uploaded, IV, conventions, `intraday`) on `POST /api/backtest`,
+  `/monte-carlo` and `/walk-forward`; one `BacktestRunner` dispatches, so a run record stores
+  `engine_version` `3-options`, the option config under `params._options` and the summary in
+  `metrics.options`. `pricing=snapshots` loads the recorded rows for the candle span and falls
+  back to synthetic when allowed (counted in the result), else refuses with a 400.
+* **UI.** The Backtest page gets "Trade as: Options" - structure, position, expiry/strike rules,
+  width, target/stop or premium floor/ceiling, max lots, the custom-leg builder, pricing source
+  (with a CSV upload that can be stored as platform history), IV, conventions, intraday - and an
+  "Option structures" card: pricing model, lot/step, calendar, skipped signals and a per-structure
+  table with legs, credit/debit, max loss, exit reason and P&L.

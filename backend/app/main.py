@@ -23,8 +23,7 @@ from app.core.models import (
 )
 from app.auth.dependencies import get_current_user_optional
 from app.auth.routes import router as auth_router
-from app.backtest.engine import run_backtest
-from app.backtest.routes import BacktestBody, ExitRulesBody, record_run, router as backtest_router
+from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -193,6 +192,8 @@ class BacktestRequest(BaseModel):
     # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
     exit_rules: Optional[ExitRulesBody] = None
     data_source: str = "uploaded"
+    # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
+    options: Optional[OptionBacktestBody] = None
 
 
 class PaperExecuteResponse(BaseModel):
@@ -382,10 +383,11 @@ async def backtest(
     base_df = bars_to_dataframe(request.candles)
     risk_config = request.risk_config or _default_risk_config
 
-    result = run_backtest(strategy, base_df, request.symbol, request.base_timeframe, risk_config,
-                          exit_rules=request.exit_rules.to_rules() if request.exit_rules else None)
+    body = BacktestBody(**request.model_dump())
+    runner = await BacktestRunner.build(body, risk_config, session)
+    result = runner.run(strategy, base_df)
     # Phase J2: a logged-in caller's run is recorded (strategy, params, data span, metrics).
-    result.run_id = await record_run(session, user, BacktestBody(**request.model_dump()), result)
+    result.run_id = await record_run(session, user, body, result)
     if user is not None:
         await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
     return result

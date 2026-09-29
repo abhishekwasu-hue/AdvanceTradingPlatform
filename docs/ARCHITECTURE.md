@@ -3021,3 +3021,38 @@ the generator produces, before it can be backtested or approved:
 
 Stored in `ai_strategy_drafts.compliance_json` (migration `e7a9c2d4f6b8`) and returned as
 `compliance` on every draft.
+
+## Phase V3: The guardian system prompt, runtime context and schema mapping
+
+`app/ai/prompt.py` replaces the Phase L2 one-paragraph prompt with the spec's "AMW Strategy
+Architect" template, versioned (`PROMPT_VERSION`) and filled on every request:
+
+* **Runtime context** (`build_runtime_context`): capital and currency, the risk profile derived
+  from the risk per trade, the allowed instruments (the requested symbol first), open risk and
+  drawdown from the guardian status (LIVE when the tenant has a live book, else PAPER), a
+  one-line summary of the last ten closed trades (wins/losses, net, stop-outs, a losing
+  streak), the market events of the next seven days, the regime the page read and the user's
+  language. Stored on the draft (`context_json`) with the prompt version, so a later review sees
+  what the model was told. `GET /api/ai/context` shows it to the user first.
+* **The prompt** states what the engine enforces (size from risk, the caps, the cool-down, the
+  drawdown ladder, event days, the 1 x ATR stop floor) as facts the model describes rather
+  than promises it makes, and the non-negotiables for what it may propose: a stop before entry,
+  targets at or above the minimum R:R, defined-risk option selling unless the user explicitly
+  accepts unlimited risk, "no trade" when the regime is wrong, and slowing down on tilt. It
+  answers in the user's language; JSON keys and enums stay English.
+* **Schema mapping.** The spec's STRATEGY_SCHEMA is wider than what the platform deploys, so the
+  answer is `config` (the platform's `CustomStrategyConfig`, unchanged) plus `deployment` - a
+  `DeploymentSuggestion` of Autopilot settings: instrument kind, option structure (any
+  `OptionStrategy`), position, expiry and strike rules, spread width, credit target/stop, exit
+  rules (break-even, trailing, time), regime filter and `next_step`. Parsing is tolerant: an
+  unknown enum, an out-of-range value or an unknown regime is dropped with a warning, never
+  guessed. Sizing, portfolio caps and the ladder are never asked of the model.
+* **Compliance reads the suggestion** (Phase V2 extended): R8 PASS for a bought option or a
+  defined-risk structure, WARN for a short straddle/strangle, ratio spread or naked write; M4/M5
+  PASS when break-even/trailing are proposed; M7 checks a credit structure's capture (30-80%)
+  and stop (<= 200% of the credit) against the spec's 50-70% / 2-3x premium; M9 PASS with a
+  regime filter. The AI Copilot page shows the suggestion as "Suggested Autopilot settings" to
+  copy into the deployment form.
+
+Migration `f8b1d3e5a7c9` (prompt_version, context_json, deployment_json on drafts). The
+rule-based fallback provider answers under the same prompt without a deployment block.

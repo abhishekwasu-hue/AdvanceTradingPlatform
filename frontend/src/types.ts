@@ -1367,6 +1367,28 @@ export interface AiStrategyDraft {
   disclaimer: string;
   raw_response?: string | null;
   compliance?: ComplianceReport | null;
+  // Phase V3
+  deployment?: DeploymentSuggestion | null;
+  deployment_text?: string | null;
+  prompt_version?: string | null;
+  runtime_context?: Record<string, unknown> | null;
+}
+
+// Phase V3: the Autopilot settings the model proposed for the rule set.
+export interface DeploymentSuggestion {
+  symbol: string | null;
+  instrument_kind: InstrumentKind;
+  option_strategy: OptionStrategy;
+  option_position: OptionPosition | null;
+  expiry_rule: ExpiryRule | null;
+  strike_rule: StrikeRule | null;
+  strike_offset: number;
+  spread_width: number;
+  target_credit_pct: number | null;
+  stop_credit_pct: number | null;
+  exit_rules: { trailing_stop_pct: number | null; break_even_at_r: number | null; time_exit_minutes: number | null; time_exit_at: string | null };
+  regime_filter: string[];
+  next_step: "backtest" | "paper_trade" | "small_live";
 }
 
 // Phase V2: the compliance validator's report on an AI draft.

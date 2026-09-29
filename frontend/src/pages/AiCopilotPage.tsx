@@ -81,7 +81,7 @@ export default function AiCopilotPage() {
         <Card title="Generate a strategy draft">
           <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
           <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target." value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
+          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt, { language: (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol !== "SAMPLE" ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
 
           <div className="mt-4">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Recent drafts</div>
@@ -112,6 +112,14 @@ export default function AiCopilotPage() {
                   {(["long_conditions", "short_conditions"] as const).map((side) => selected.config![side].length > 0 && (
                     <div key={side}><span className="text-muted">{side === "long_conditions" ? "LONG when" : "SHORT when"}</span> {selected.config![side].map((c, i) => <span key={i} className="inline-block rounded border border-border px-1.5 py-0.5 mr-1 mb-1">{operandLabel(c.left)} {OPS[c.operator] ?? c.operator} {operandLabel(c.right)}</span>)}</div>
                   ))}
+                </div>
+              )}
+              {selected.deployment && (
+                <div className="rounded-lg border border-border bg-panel2/40 p-2 space-y-0.5">
+                  <div className="font-bold">Suggested Autopilot settings <span className="text-muted font-normal">· next step: {selected.deployment.next_step.replace("_", " ")}{selected.prompt_version ? ` · prompt ${selected.prompt_version}` : ""}</span></div>
+                  <div className="text-slate-300">{selected.deployment_text}</div>
+                  <div className="text-muted">{selected.deployment.instrument_kind}{selected.deployment.option_strategy !== "SINGLE" ? ` · ${selected.deployment.option_strategy}` : selected.deployment.option_position ? ` · ${selected.deployment.option_position}` : ""}{selected.deployment.expiry_rule ? ` · ${selected.deployment.expiry_rule} expiry` : ""}{selected.deployment.strike_rule ? ` · ${selected.deployment.strike_rule}${selected.deployment.strike_offset || ""}` : ""}{selected.deployment.target_credit_pct != null ? ` · target ${selected.deployment.target_credit_pct}% / stop ${selected.deployment.stop_credit_pct ?? "default"}% of credit` : ""}</div>
+                  <div className="text-[11px] text-muted">Copy these into the Autopilot form when you deploy the approved strategy; the engine's sizing and guardian rules apply on top.</div>
                 </div>
               )}
               {selected.compliance && (

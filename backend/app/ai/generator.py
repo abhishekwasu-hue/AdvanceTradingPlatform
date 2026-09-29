@@ -25,10 +25,11 @@ from app.db.models import AiStrategyDraftRecord, BacktestRunRecord, CustomStrate
 from app.plans.limits import check_can_add_custom_strategy
 from app.strategy_engine.declarative import CustomStrategyConfig
 from app.ai.compliance import CheckResult, ComplianceReport, evaluate_config
+from app.ai.prompt import PROMPT_VERSION, DeploymentSuggestion, build_runtime_context, build_system_prompt, parse_suggestion, user_message as prompt_user_message
 from app.core.models import RiskConfig
 from app.observability.metrics import AI_PROVIDER_CALLS
 
-SYSTEM_PROMPT = """You design rule-based intraday trading strategies for Indian equities and index derivatives.
+LEGACY_SYSTEM_PROMPT = """You design rule-based intraday trading strategies for Indian equities and index derivatives.
 Answer with ONE JSON object and nothing else, shaped exactly like:
 {"config": {"name": str, "timeframe": one of ["1min","3min","5min","15min","30min","60min"],
   "long_conditions": [Condition], "short_conditions": [Condition],
@@ -41,6 +42,7 @@ Rules: every condition set is AND-combined; use at most 4 conditions per side; a
 prefer conditions a human can verify on a chart; never promise returns; list what could make the strategy fail
 in "warnings" (regimes, costs, slippage, over-fitting). Output must be valid JSON - no markdown fences."""
 
+SYSTEM_PROMPT = LEGACY_SYSTEM_PROMPT   # Phase V3: superseded by app.ai.prompt.build_system_prompt; kept for reference/tests
 MAX_ATTEMPTS = 2
 
 
@@ -58,24 +60,36 @@ def _extract_json(text: str) -> dict:
 
 
 def parse_answer(text: str) -> Tuple[CustomStrategyConfig, str, List[str]]:
+    config, explanation, warnings, _ = parse_answer_full(text)
+    return config, explanation, warnings
+
+
+def parse_answer_full(text: str) -> Tuple[CustomStrategyConfig, str, List[str], Optional[DeploymentSuggestion]]:
+    """Phase V3: the config plus the deployment suggestion the model attached (None when absent)."""
     data = _extract_json(text)
     config = CustomStrategyConfig.model_validate(data.get("config", data))
     explanation = str(data.get("explanation") or "").strip()
     warnings = [str(w) for w in (data.get("warnings") or []) if str(w).strip()]
-    return config, explanation, warnings
+    suggestion, extra = parse_suggestion(data.get("deployment"))
+    return config, explanation, warnings + extra, suggestion
 
 
 async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: str, *, client: Optional[httpx.AsyncClient] = None,
-                   provider: Optional[LLMProvider] = None) -> AiStrategyDraftRecord:
+                   provider: Optional[LLMProvider] = None, regime: Optional[str] = None, language: str = "en",
+                   symbol: Optional[str] = None) -> AiStrategyDraftRecord:
     provider = provider or await ai_settings.provider_for(session, tenant, client=client)
-    draft = AiStrategyDraftRecord(tenant_id=tenant.id, user_id=user.id, prompt=prompt.strip(), provider=provider.name, model=provider.model)
-    session.add(draft)
-    user_message = f"USER REQUEST:\n{prompt.strip()}"
-    last_error: Optional[str] = None
     cfg, ceilings = await _effective_risk(session, tenant.id)
+    # Phase V3: the versioned guardian prompt, filled from the tenant's live state.
+    context = await build_runtime_context(session, tenant, user, cfg, ceilings, regime=regime, language=language, symbol=symbol)
+    system_prompt = build_system_prompt(context)
+    draft = AiStrategyDraftRecord(tenant_id=tenant.id, user_id=user.id, prompt=prompt.strip(), provider=provider.name, model=provider.model,
+                                  prompt_version=PROMPT_VERSION, context_json=json.dumps(context.as_dict()))
+    session.add(draft)
+    user_message = prompt_user_message(prompt)
+    last_error: Optional[str] = None
     for attempt in range(MAX_ATTEMPTS):
         try:
-            raw = await provider.complete(SYSTEM_PROMPT, user_message if attempt == 0 else f"{user_message}\n\nYour previous answer was invalid: {last_error}. Answer again with valid JSON only.")
+            raw = await provider.complete(system_prompt, user_message if attempt == 0 else f"{user_message}\n\nYour previous answer was invalid: {last_error}. Answer again with valid JSON only.")
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
         except ProviderError as exc:
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
@@ -86,7 +100,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
             return draft
         draft.raw_response = raw
         try:
-            config, explanation, warnings = parse_answer(raw)
+            config, explanation, warnings, suggestion = parse_answer_full(raw)
         except (ValueError, ValidationError) as exc:
             last_error = str(exc)[:400]
             continue
@@ -94,7 +108,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         # (the errors go back with the request); on the last attempt the deterministic fixes
         # apply, so what is saved is compliant either way and the fixes are on the record.
         final_attempt = attempt == MAX_ATTEMPTS - 1
-        config, report = evaluate_config(config, cfg, ceilings, autofix=final_attempt)
+        config, report = evaluate_config(config, cfg, ceilings, autofix=final_attempt, suggestion=suggestion, currency=context.currency)
         if report.failed and not final_attempt:
             last_error = f"it violated the risk rules - {report.failure_text()}"
             continue
@@ -102,6 +116,7 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         draft.explanation = explanation or None
         draft.warnings_json = json.dumps(warnings)
         draft.compliance_json = json.dumps(report.as_dict())
+        draft.deployment_json = suggestion.model_dump_json() if suggestion is not None else None
         draft.status = "DRAFT"
         break
     else:
@@ -130,6 +145,15 @@ def draft_compliance(draft: AiStrategyDraftRecord) -> Optional[ComplianceReport]
     return report
 
 
+def draft_suggestion(draft: AiStrategyDraftRecord) -> Optional[DeploymentSuggestion]:
+    if not draft.deployment_json:
+        return None
+    try:
+        return DeploymentSuggestion.model_validate_json(draft.deployment_json)
+    except ValidationError:
+        return None
+
+
 def draft_config(draft: AiStrategyDraftRecord) -> CustomStrategyConfig:
     if not draft.config_json:
         raise GenerationError("This draft has no valid strategy configuration")
@@ -149,7 +173,7 @@ async def attach_backtest(session: AsyncSession, draft: AiStrategyDraftRecord, r
     except ValueError:
         metrics = {}
     cfg, ceilings = await _effective_risk(session, draft.tenant_id)
-    _, report = evaluate_config(draft_config(draft), cfg, ceilings, backtest=metrics)
+    _, report = evaluate_config(draft_config(draft), cfg, ceilings, backtest=metrics, suggestion=draft_suggestion(draft))
     draft.compliance_json = json.dumps(report.as_dict())
     await session.commit()
     await session.refresh(draft)
@@ -205,6 +229,10 @@ def as_dict(draft: AiStrategyDraftRecord, *, include_raw: bool = False) -> dict:
         "config": json.loads(draft.config_json) if draft.config_json else None, "explanation": draft.explanation,
         "warnings": json.loads(draft.warnings_json or "[]"), "backtest_run_id": draft.backtest_run_id,
         "compliance": json.loads(draft.compliance_json) if draft.compliance_json else None,
+        "deployment": json.loads(draft.deployment_json) if getattr(draft, "deployment_json", None) else None,
+        "deployment_text": (draft_suggestion(draft).describe() if getattr(draft, "deployment_json", None) and draft_suggestion(draft) else None),
+        "prompt_version": getattr(draft, "prompt_version", None),
+        "runtime_context": json.loads(draft.context_json) if getattr(draft, "context_json", None) else None,
         "custom_strategy_id": draft.custom_strategy_id, "strategy_id": f"custom_{draft.custom_strategy_id}" if draft.custom_strategy_id else None,
         "approved_by": draft.approved_by, "approved_at": draft.approved_at.isoformat() if draft.approved_at else None,
         "created_at": draft.created_at.isoformat() if draft.created_at else None,

@@ -84,9 +84,11 @@ def _money(value: float) -> str:
 
 
 def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Optional[Dict[str, float]] = None, *,
-                    backtest: Optional[dict] = None, autofix: bool = False, currency: str = "INR") -> Tuple[CustomStrategyConfig, ComplianceReport]:
+                    backtest: Optional[dict] = None, autofix: bool = False, currency: str = "INR",
+                    suggestion=None) -> Tuple[CustomStrategyConfig, ComplianceReport]:
     """Run the checklist. With `autofix`, the draft-level failures are corrected in the returned
-    config and reported as PASS with `fixed=True` plus a line in `fixes`."""
+    config and reported as PASS with `fixed=True` plus a line in `fixes`. `suggestion` (Phase V3,
+    a `DeploymentSuggestion`) lets R8, M4, M5, M7 and M9 judge what the model proposed to deploy."""
     report = ComplianceReport()
     ceilings = ceilings or {}
     updates: dict = {}
@@ -136,16 +138,42 @@ def evaluate_config(config: CustomStrategyConfig, cfg: RiskConfig, ceilings: Opt
     check("R5", True, f"daily loss limit {float(cfg.max_daily_loss_pct):g}% of capital engages the kill switch - no new trades that day")
     check("R6", True, "never add to a losing position - by construction (one open position per deployment)")
     check("R7", True, "a stop only moves the favourable way (exit rules only tighten; break-even and trailing never widen)")
-    check("R8", None, "")   # placeholder replaced below
-    report.checks[-1] = CheckResult("R8", "N/A", "directional rule set on the underlying; option structures are chosen on the deployment, where undefined-risk ones are flagged and sized off the stop")
+    if suggestion is not None and suggestion.instrument_kind.value == "OPTION":
+        if suggestion.undefined_risk:
+            report.checks.append(CheckResult("R8", "WARN", f"proposed {suggestion.option_strategy.value.lower().replace('_', ' ')} has undefined risk on one side: "
+                                             "the engine sizes it off the loss the stop accepts and the structure card says UNDEFINED - accept that explicitly or pick a defined-risk structure"))
+        elif suggestion.option_strategy.value == "SINGLE":
+            report.checks.append(CheckResult("R8", "PASS", "proposed a bought option: the premium paid is the maximum loss"))
+        else:
+            report.checks.append(CheckResult("R8", "PASS", f"proposed {suggestion.option_strategy.value.lower().replace('_', ' ')}: defined risk, sized on max loss"))
+    else:
+        report.checks.append(CheckResult("R8", "N/A", "directional rule set on the underlying; option structures are chosen on the deployment, where undefined-risk ones are flagged and sized off the stop"))
     check("R10", True, f"no re-entry in an underlying for {int(cfg.stop_cooldown_minutes)} min after a stop-out")
     check("M8", True, f"market-events calendar: BLOCK days refuse entries, SIZE_CUT days cut risk per trade (default {float(cfg.event_size_cut_pct):g}%)")
     check("P2", True, f"drawdown ladder: risk per trade halved {float(cfg.dd_level_1_pct):g}% below the equity peak")
     check("P3", True, f"drawdown ladder: new entries paused {float(cfg.dd_level_2_pct):g}% below the equity peak")
     check("P4", True, "the size multiplier never exceeds 1 - a winning streak never raises size on its own")
-    report.checks.append(CheckResult("M4", "N/A", "break-even at R is an exit rule set on the deployment (Autopilot form), default off"))
-    report.checks.append(CheckResult("M5", "N/A", "trailing stop is an exit rule set on the deployment, default off"))
-    report.checks.append(CheckResult("M9", "N/A", "regime filter is set on the deployment; the regime engine reads the market, the deployment decides"))
+    exits = getattr(suggestion, "exit_rules", None)
+    if exits is not None and exits.break_even_at_r:
+        report.checks.append(CheckResult("M4", "PASS", f"proposed break-even at {exits.break_even_at_r:g}R: once ahead by that much the trade cannot turn into a loss"))
+    else:
+        report.checks.append(CheckResult("M4", "N/A", "break-even at R is an exit rule set on the deployment (Autopilot form), default off"))
+    if exits is not None and exits.trailing_stop_pct:
+        report.checks.append(CheckResult("M5", "PASS", f"proposed trailing stop {exits.trailing_stop_pct:g}% to let winners run"))
+    else:
+        report.checks.append(CheckResult("M5", "N/A", "trailing stop is an exit rule set on the deployment, default off"))
+    if suggestion is not None and suggestion.is_credit_structure:
+        target, stop = suggestion.target_credit_pct, suggestion.stop_credit_pct
+        target_ok = target is None or 30.0 <= float(target) <= 80.0
+        stop_ok = stop is None or float(stop) <= 200.0
+        detail = (f"credit structure: profit capture {target if target is not None else 'default 50'}% of the credit, "
+                  f"stop at {stop if stop is not None else 'default 100'}% loss of the credit (short premium x{1 + (float(stop) if stop is not None else 100.0) / 100.0:g})")
+        report.checks.append(CheckResult("M7", "PASS" if target_ok and stop_ok else "WARN",
+                                         detail if target_ok and stop_ok else detail + " - the spec wants 50-70% capture and a stop at 2-3x the premium"))
+    if suggestion is not None and suggestion.regime_filter:
+        report.checks.append(CheckResult("M9", "PASS", f"proposed regime filter: enter only in {'/'.join(suggestion.regime_filter)}"))
+    else:
+        report.checks.append(CheckResult("M9", "N/A", "regime filter is set on the deployment; the regime engine reads the market, the deployment decides"))
 
     # --- the statement the human must accept -------------------------------------------------
     capital = float(cfg.capital)

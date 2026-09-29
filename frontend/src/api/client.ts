@@ -543,7 +543,16 @@ export const api = {
   aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
-  aiGenerate: (prompt: string) => request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt }) }),
+  aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}) =>
+    request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }) }),
+  aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {
+    const params = new URLSearchParams();
+    if (language) params.set("language", language);
+    if (regime) params.set("regime", regime);
+    if (symbol) params.set("symbol", symbol);
+    const qs = params.toString();
+    return request<{ prompt_version: string; context: Record<string, unknown> }>(`/ai/context${qs ? `?${qs}` : ""}`);
+  },
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample") =>

@@ -954,6 +954,11 @@ class AiStrategyDraftRecord(Base):
     warnings_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     # Phase V2: the compliance validator's report (checks, fixes, user-must-accept, evidence).
     compliance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase V3: which prompt template answered, the runtime context it was filled with, and the
+    # deployment settings the model suggested (mapped onto the Autopilot form).
+    prompt_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deployment_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="DRAFT")   # DRAFT / FAILED / BACKTESTED / APPROVED / REJECTED
     backtest_run_id: Mapped[int | None] = mapped_column(ForeignKey("backtest_runs.id", ondelete="SET NULL"), nullable=True)
     custom_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)

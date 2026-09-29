@@ -36,6 +36,10 @@ class ProviderBody(BaseModel):
 
 class GenerateBody(BaseModel):
     prompt: str = Field(min_length=10, max_length=4000)
+    # Phase V3: the reply language, the regime the page read and the symbol the idea is about.
+    language: str = Field(default="en", min_length=2, max_length=5, pattern=r"^[A-Za-z-]+$")
+    regime: Optional[str] = Field(default=None, max_length=20)
+    symbol: Optional[str] = Field(default=None, max_length=50)
 
 
 class DraftBacktestBody(BaseModel):
@@ -93,8 +97,22 @@ async def delete_provider(user: User = Depends(require_owner), session: AsyncSes
 async def generate_draft(body: GenerateBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     await require_flag(session, "ai_copilot", user.tenant_id)  # Phase N4 operator kill flag
     tenant = await _tenant(session, user)
-    draft = await generator.generate(session, tenant, user, body.prompt)
+    regime = body.regime.upper() if body.regime and body.regime.upper() in REGIMES else None
+    draft = await generator.generate(session, tenant, user, body.prompt, regime=regime, language=body.language, symbol=body.symbol)
     return generator.as_dict(draft)
+
+
+@router.get("/context")
+async def runtime_context(language: str = Query(default="en", max_length=5), regime: Optional[str] = Query(default=None, max_length=20),
+                          symbol: Optional[str] = Query(default=None, max_length=50),
+                          user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase V3: what the AI will be told about this account right now (transparency), and the
+    prompt version it will answer under."""
+    from app.ai.prompt import PROMPT_VERSION, build_runtime_context
+    tenant = await _tenant(session, user)
+    cfg, ceilings = await generator._effective_risk(session, tenant.id)
+    context = await build_runtime_context(session, tenant, user, cfg, ceilings, regime=(regime or "").upper() or None, language=language, symbol=symbol)
+    return {"prompt_version": PROMPT_VERSION, "context": context.as_dict()}
 
 
 @router.get("/drafts")

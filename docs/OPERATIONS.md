@@ -466,6 +466,31 @@ Never publish a listing without an attached backtest run; the API refuses the su
   ceiling the operator lowered later. The engine used the ceiling; the tenant should re-save
   its settings. Ceilings: `GET/PUT /api/admin/controls/risk-ceilings` (SUPER_ADMIN + MFA).
 
+### 1.6l AI draft compliance (Phase V2)
+
+- **"Auto-fixed: stop_loss_atr_mult 0.4 -> 1 (M2)"** on a draft: the model's stop sat inside
+  one ATR; the platform raised it. The fix is recorded on the draft and in the checklist.
+- **"Confirm that you accept the risk before approving"**: the approval needs the tick under
+  the "You must accept" statement (API: `accept_risk: true`). This is the spec's requirement
+  that the human states the maximum loss before going live, not a UI nicety.
+- **"Resolve the compliance failures first"**: only possible for a draft generated before this
+  version whose config fails M1/M2 - regenerate it.
+- **Weak evidence warnings (E1)** do not block approval; the human gate decides. They stay on
+  the record so a later review can see what was known at approval time.
+
+### 1.6m AI prompt and context (Phase V3)
+
+- **Prompt version** is on every draft (`prompt_version`) and in `GET /api/ai/context`. Change
+  the template only by bumping `PROMPT_VERSION` in `app/ai/prompt.py`; drafts keep the version
+  that answered them.
+- **"What will the AI be told?"**: `GET /api/ai/context?language=mr&regime=RANGING&symbol=...`
+  returns exactly the runtime block - capital, open risk, drawdown, recent trades, events. No
+  broker or AI credential ever enters the prompt.
+- **A reply in the wrong language**: the page sends the browser language; pass `language`
+  explicitly on `POST /api/ai/drafts` to override. The JSON is always English.
+- **"deployment: option_strategy dropped"** in a draft's warnings: the model proposed a
+  structure the platform does not have; the rest of the suggestion is kept.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

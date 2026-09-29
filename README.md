@@ -230,6 +230,22 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Guardian AI prompt (Phase V3)
+
+- **Versioned system prompt** filled from the account's live state: capital, risk profile,
+  open risk, drawdown, recent trades, upcoming events, market regime, language.
+- **Schema mapped onto the platform**: the rule set the backtester runs plus suggested
+  Autopilot settings (structure, expiry/strike rules, credit target/stop, exits, regime filter),
+  parsed tolerantly and re-checked by the compliance validator.
+
+## AI draft compliance (Phase V2)
+
+- **Every AI draft is re-checked** against the Risk Guardian checklist: draft rules fixed
+  deterministically after one AI auto-fix round, engine rules reported with live values,
+  backtest evidence judged plainly.
+- **Explicit acceptance**: approval requires the human to confirm the maximum loss per trade
+  and the worst case the report states.
+
 ## Risk Guardian rules (Phase V1)
 
 - **Engine-enforced trader discipline**, whatever built the strategy: cool-down after a

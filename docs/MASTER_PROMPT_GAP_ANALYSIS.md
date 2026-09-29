@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase V1, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase V3, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -38,7 +38,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | 53 governance | partial | Retention, erasure, audit immutability done. AI/ML lineage only for what exists. |
 | 54 performance | done (Phase O4) | SLO-1 thresholds enforced by `scripts/loadtest.py`; measured baseline in docs/PERFORMANCE.md (worst p95 150 ms at 20 users on a 2-vCPU sandbox). |
 | 55 docs | done | Architecture/operations/README, OpenAPI, ten ADRs (`docs/adr/`) and the versioned DSL reference (Phase N5). |
-| 56 conversational builder | done (Phase L) | LLM-backed generator (Anthropic/OpenAI/rule-based) emitting the DSL behind the backtest + approval gate, with lineage. |
+| 56 conversational builder | done (Phase L + V2 + V3) | LLM-backed generator (Anthropic/OpenAI/rule-based) emitting the DSL behind the backtest + approval gate, with lineage; the Risk Guardian prompt filled from the account's live state (V3), a server-side compliance validator with one auto-fix round and the explicit risk acceptance before approval (V2). |
 | 57-61 global, multi-asset, brokers, performance engineering | mostly done | Per-exchange sessions (O2); tenant base currency, instrument quote currency, FX rates and converted portfolio exposure (P3); financial-year tax report with STT/CTT/crypto TDS estimates (P2). FIU-IND reporting is an exchange-side duty (documented). **Hot-path split remains an architecture option, not a gap in behaviour.** |
 
 ## Part III - V1-V4
@@ -83,7 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
-- **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2** (compliance validator on AI drafts with one auto-fix round and a "user must accept" statement) and **V3** (the new system prompt, schema mapping and runtime context) follow.
+- **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2 DONE** (Phase V2) - compliance validator on AI drafts with one AI auto-fix round, deterministic fixes, evidence assessment and the "user must accept" gate. **V3 DONE** (Phase V3) - the versioned guardian system prompt filled from the account's live state, replies in the user's language, the spec schema mapped onto the platform's config plus a deployment suggestion the validator reads.
 
 - **Phase G - safety and reliability closure** - **DONE** on this branch (ARCHITECTURE.md Phase G, docs/SLO.md). Was: market-data staleness gate before signals and exits; "broker uncertain" tenant flag set on a FAILED/timeout order that blocks new LIVE entries until reconciliation passes; reconciliation on worker start before the first cycle; broker-call circuit breaker (error-rate window -> pause submissions platform-wide, distinct from the kill switch); written SLOs with the metrics that measure them; `/health/live|ready|dependencies` aliases; `get_balance`/`disconnect` on BrokerInterface; disclaimers on backtest/AI/score screens.
 - **Phase H - options depth** - **DONE** on this branch (ARCHITECTURE.md Phase H). Was: strike-selection filters from the option chain (liquidity, OI, IV, delta), multi-leg deployments (bull put, bear call, iron condor) with max-loss/max-profit/breakeven/margin sizing and group exits, Greeks per position.

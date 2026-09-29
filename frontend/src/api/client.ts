@@ -543,15 +543,24 @@ export const api = {
   aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
-  aiGenerate: (prompt: string) => request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt }) }),
+  aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}) =>
+    request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }) }),
+  aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {
+    const params = new URLSearchParams();
+    if (language) params.set("language", language);
+    if (regime) params.set("regime", regime);
+    if (symbol) params.set("symbol", symbol);
+    const qs = params.toString();
+    return request<{ prompt_version: string; context: Record<string, unknown> }>(`/ai/context${qs ? `?${qs}` : ""}`);
+  },
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample") =>
     request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
       method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }),
     }),
-  aiApproveDraft: (id: number, name?: string) =>
-    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name }) }),
+  aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
+    request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name, accept_risk: acceptRisk }) }),
   aiRejectDraft: (id: number, note?: string) => request<AiStrategyDraft>(`/ai/drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),

@@ -40,6 +40,12 @@ import type {
   ScannerResult,
   ScanPlan,
   ScanRead,
+  CandleSourcesResponse,
+  CandlesResponse,
+  FactorTable,
+  QuantExposure,
+  QuantRisk,
+  QuantSymbolInput,
   SessionInfo,
   WebhookTokenResponse,
   SRZone,
@@ -448,6 +454,17 @@ export const api = {
   // Phase Y: AI scanner - plan from plain language, read of a result.
   scannerAiPlan: (text: string, language = "en") =>
     request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
+  // Phase AA: broker candles for the research pages.
+  marketDataSources: () => request<CandleSourcesResponse>("/market-data/sources"),
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null }) }),
+  // Phase Z: factor and risk models.
+  quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>) =>
+    request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null }) }),
+  quantRisk: (symbols: QuantSymbolInput[], weights?: Record<string, number>, benchmark?: string) =>
+    request<QuantRisk>("/quant/risk", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, benchmark: benchmark ?? null }) }),
+  quantExposure: (symbols: QuantSymbolInput[], weights?: Record<string, number>) =>
+    request<QuantExposure>("/quant/exposure", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null }) }),
   scannerAiRead: (scanRequest: ScannerRequest, result: ScannerResult, language = "en") =>
     request<ScanRead>("/scanner/ai/read", { method: "POST", body: JSON.stringify({ request: scanRequest, result, language }) }),
 

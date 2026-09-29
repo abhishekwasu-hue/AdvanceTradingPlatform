@@ -3,9 +3,10 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import CandleChart, { directionMarker, type PriceLineSpec } from "../components/CandleChart";
 import SignalCard from "../components/SignalCard";
-import { Card, DemoDataBanner, Disclaimer } from "../components/ui";
+import { Card, Disclaimer } from "../components/ui";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
-import { buildTimeframeData, generateSampleCandles } from "../utils/sampleData";
+import { buildTimeframeData } from "../utils/sampleData";
 
 export default function SignalsPage() {
   const { user } = useAuth();
@@ -14,6 +15,8 @@ export default function SignalsPage() {
   const [symbol, setSymbol] = useState("NIFTY");
   const [seed, setSeed] = useState(7);
   const [bars, setBars] = useState(356);
+  const source = useCandleSource();            // Phase AA
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EnrichedSignal | null>(null);
@@ -44,7 +47,11 @@ export default function SignalsPage() {
     setError(null);
     setExecuteMsg(null);
     try {
-      const base = generateSampleCandles(bars, 100, seed);
+      // Strategies read every timeframe off one-minute bars, so broker mode fetches 1min.
+      const fetched = await source.fetch([symbol], "1min", { count: bars, startPriceFor: () => 100, seedFor: () => seed });
+      setDataWarnings(fetched.warnings);
+      const base = fetched.candles[symbol.trim().toUpperCase()];
+      if (!base?.length) throw new Error(`No candles for ${symbol}`);
       const primaryTf = selected.timeframes[0];
       const data = buildTimeframeData(base, selected.timeframes);
       const primaryCandles = data[primaryTf];
@@ -111,7 +118,8 @@ export default function SignalsPage() {
         <p className="text-sm font-semibold text-sky-400/60">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
       </div>
 
-      <DemoDataBanner />
+      <DataSourceBar source={source} note="Bars and seed apply to sample data only." />
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card>

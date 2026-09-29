@@ -547,6 +547,29 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **"X cannot be screened" warnings** are expected: the scanner has indicator, structure and option-chain
   filters only. Anything else in the request is reported, not silently dropped.
 
+### 1.6q Factor Lab (Phase Z)
+
+- **Pure endpoints**: `/api/quant/factors` and `/api/quant/risk` compute on the candles in the request and
+  store nothing; no login, no metering. `/api/quant/exposure` reads the tenant's open trades for weights.
+- **Warnings are the contract**: "no data for value, quality" means the caller sent no fundamentals;
+  "need at least 20 overlapping bars" means the symbols' timestamps barely overlap - align the candle
+  windows before comparing.
+- **Sample data**: the page scores deterministic sample candles until a data source feeds it real
+  histories (the backtest CSV/ broker candles); the demo banner says so.
+
+### 1.6r Broker candles on the research pages (Phase AA)
+
+- **Prerequisite**: a broker whose API key is stored under Settings > Brokers and whose session token
+  is VALID today. Until then the Data switch on Signals, Scanner, Backtest and Factor Lab stays on
+  Sample and the Broker option shows why it is disabled.
+- **409 "No broker session with a valid token"**: log in to the broker (Upstox OAuth from Settings);
+  tokens expire every trading day, so this is the morning routine, not a fault.
+- **Per-symbol errors** ("Instrument NSE:XYZ not found"): use the broker's trading symbols; indices are
+  `NIFTY`/`BANKNIFTY` on Upstox as mapped by the instrument master.
+- **Rate**: candles are cached 60 s platform-wide per broker/symbol/interval/lookback, shared with the
+  worker; a 50-symbol scan is at most 100 broker calls the first time and none for the next minute.
+  Fetches are metered as `market_data_candles` (billing usage).
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

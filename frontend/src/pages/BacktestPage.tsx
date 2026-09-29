@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
 import EquityCurveChart from "../components/EquityCurveChart";
-import { Card, DemoDataBanner, StatTile, Disclaimer } from "../components/ui";
+import { Card, StatTile, Disclaimer } from "../components/ui";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import {
   type BacktestResult, type BacktestRunSummary, type ExitRules, type MonteCarloResult, type OHLCVBar, type OptimizeResult, type StrategyInfo, type WalkForwardResult,
   type CustomLeg, type ExpiryRule, type OptionBacktestConfig, type OptionChainCoverage, type OptionChainSnapshotRow, type OptionPosition, type OptionPricingModel,
   type OptionStrategy, type StrikeRule, DEBIT_STRUCTURES, MAX_CUSTOM_LEGS, PAYOFF_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES,
 } from "../types";
 import { useAuth } from "../auth/AuthContext";
-import { generateSampleCandles } from "../utils/sampleData";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -41,6 +41,8 @@ export default function BacktestPage() {
   const [strategyId, setStrategyId] = useState("");
   const [symbol, setSymbol] = useState("NIFTY");
   const [bars, setBars] = useState(600);
+  const source = useCandleSource(30);          // Phase AA
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -188,9 +190,12 @@ export default function BacktestPage() {
     try {
       // Option runs price off the underlying level, so the sample series starts near the index's.
       const startPrice = tradeAs === "OPTION" ? (INDEX_START_PRICES[symbol.trim().toUpperCase()] ?? 1000) : 100;
-      const candles = generateSampleCandles(bars, startPrice, 11);
       const primaryTf = selected.timeframes[0];
-      const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), "sample", optionConfig());
+      const fetched = await source.fetch([symbol], primaryTf, { count: bars, startPriceFor: () => startPrice, seedFor: () => 11 });
+      setDataWarnings(fetched.warnings);
+      const candles = fetched.candles[symbol.trim().toUpperCase()];
+      if (!candles?.length) throw new Error(`No candles for ${symbol}`);
+      const res = await api.backtest(selected.id, symbol, primaryTf, candles, exitRules(), fetched.label, optionConfig());
       setResult(res);
       setChartCandles(candles);
       setMonteCarlo(null);
@@ -230,7 +235,8 @@ export default function BacktestPage() {
         <p className="text-sm font-semibold text-teal-400/60">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
       </div>
 
-      <DemoDataBanner />
+      <DataSourceBar source={source} note="Bars below applies to sample data; broker candles use the lookback." />
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="backtest" />
 
       <Card>

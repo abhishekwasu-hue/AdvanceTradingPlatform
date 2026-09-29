@@ -69,9 +69,9 @@ export function DemoDataBanner() {
     <div className="mb-4 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2.5 text-xs text-warn">
       <Info size={14} className="shrink-0 mt-0.5" />
       <span>
-        Using deterministic sample OHLCV data - no live broker is connected yet (credential
-        endpoints are intentionally disabled until encrypted secrets storage exists). Every
-        strategy, score and chart below is computed for real by the backend against this data.
+        Using deterministic sample OHLCV data. Every strategy, score and chart below is computed for
+        real by the backend against this data; pages with a Data switch can use your broker's candles
+        instead once a broker is logged in under Settings.
       </span>
     </div>
   );

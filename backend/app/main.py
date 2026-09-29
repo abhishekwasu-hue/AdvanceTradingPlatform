@@ -49,6 +49,7 @@ from app.reconciliation.routes import router as reconciliation_router
 from app.accounts.routes import router as accounts_router
 from app.scanner.engine import run_scanner
 from app.scanner.routes import router as scanner_ai_router
+from app.quant.routes import router as quant_router
 from app.scanner.models import ScannerRequest, ScannerResult
 from app.price_action.candlestick_patterns import detect_patterns
 from app.price_action.market_structure import analyze_market_structure
@@ -78,6 +79,7 @@ from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
+from app.market_data.candles_routes import router as market_candles_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
@@ -157,6 +159,8 @@ app.include_router(api_keys_router)
 app.include_router(public_api_router)
 app.include_router(ai_router)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
+app.include_router(quant_router)        # Phase Z: factor and risk models
+app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
 app.include_router(trading_disable_router)

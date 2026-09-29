@@ -1654,3 +1654,37 @@ export interface OptimizeResult {
   metric: string; split: number; in_sample_bars: number; out_of_sample_bars: number; combinations: number;
   best: OptimizeRow | null; robust_count: number; results: OptimizeRow[]; note: string;
 }
+
+// Phase Z: factor and risk models.
+export interface QuantSymbolInput { symbol: string; candles: OHLCVBar[]; fundamentals?: Record<string, number> | null }
+
+export interface FactorRow {
+  symbol: string; close: number; bars: number; raw: Record<string, number | null>; z: Record<string, number | null>;
+  composite: number | null; rank: number | null; bucket: "LONG" | "SHORT" | "NEUTRAL"; coverage: number;
+}
+
+export interface FactorTable { rows: FactorRow[]; weights: Record<string, number>; bars_per_year: number; universe: number; factors: string[]; warnings: string[] }
+
+export interface PortfolioRisk {
+  vol_annual: number | null; var_95: number | null; cvar_95: number | null; max_drawdown_pct: number | null; diversification_ratio: number | null; bars: number;
+}
+
+export interface QuantRisk {
+  bars: number; symbols: string[]; bars_per_year: number; correlation: Record<string, Record<string, number | null>>;
+  volatility: Record<string, number | null>; betas: Record<string, number | null>; benchmark: string | null;
+  weights_used: Record<string, number>; weights_source: string; portfolio: PortfolioRisk; risk_contributions: Record<string, number | null>;
+  suggested: { inverse_volatility: Record<string, number>; risk_parity: Record<string, number>; inverse_volatility_portfolio: PortfolioRisk; risk_parity_portfolio: PortfolioRisk };
+  max_drawdown_pct: Record<string, number | null>; warnings: string[]; disclaimer: string;
+}
+
+export interface QuantExposure {
+  weights: Record<string, number>; weights_source: string; exposure: Record<string, number | null>; table: FactorTable; notes: string[]; reading: string;
+}
+
+// Phase AA: broker candles for the research pages.
+export interface CandleSource { broker: string; account_label: string; token_status: string; token_expires_at: string | null; usable: boolean }
+export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
+export interface CandlesResponse {
+  source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; fetched_at: string;
+  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
+}

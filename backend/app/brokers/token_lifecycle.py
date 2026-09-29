@@ -45,6 +45,8 @@ TOKEN_DAILY_EXPIRY_IST: Dict[str, time] = {
     "zerodha": time(6, 0),
     "shoonya": time(6, 0),
     "angel_one": time(5, 0),     # SmartAPI JWTs are invalidated in the early morning
+    "fyers": time(6, 0),
+    "dhan": time(6, 0),
 }
 _DEFAULT_EXPIRY_IST = time(6, 0)
 

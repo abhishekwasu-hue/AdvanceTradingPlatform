@@ -3357,3 +3357,83 @@ Three small gaps left after Phase AA/AB, closed together.
   user, add/remove for SUPER_ADMIN); the go-live checklists now point at this card.
 
 No schema change. Tests: `tests/test_phase_ad_real_data.py`.
+
+## Phase AE: Fyers API v3 adapter
+
+The second stub replaced (`app/brokers/fyers.py`). Fyers is JSON REST split across a trading host
+(`/api/v3`) and a data host (`/data`); every authenticated call carries `Authorization: <app_id>:<token>`.
+
+* **Login** is an auth-code exchange like Zerodha's: the user completes the Fyers login page and pastes
+  the returned code into Settings as `request_token`; `authenticate()` exchanges it with
+  `validate-authcode` (`appIdHash = sha256(app_id:secret)`) for the day's token, stored encrypted and
+  re-used until 06:00 IST. Credentials: `api_key` (App ID), `api_secret`, `request_token` or `access_token`.
+* **Symbols.** Fyers tickers are `NSE:SBIN-EQ`, `NSE:NIFTY50-INDEX`, `NSE:NIFTY26OCT26000CE`. The public
+  symbol master (CSV, no header) is parsed by column into platform instruments (epoch expiries, strike,
+  CE/PE, lot, tick, underlying); `_ticker` maps plain symbols and `INDEX_ALIASES` to tickers.
+* **Data.** `quotes` in batches of 50 keyed back to the caller's `EXCHANGE:SYMBOL` (bid/ask, `tt` for the
+  staleness gate); `history` with resolutions `1..60`/`D` and epoch candles in IST; `options-chain-v3`
+  lists expiries and returns the strikes around the money for the chosen one (two calls when a specific
+  or non-front expiry is asked), merged CE/PE with OI, OI change, volume, bid/ask.
+* **Orders.** Types `LIMIT=1`, `MARKET=2`, `SL-M=3`, `SL=4`; sides `1`/`-1`; products `MIS`/`CNC`/`NRML`
+  -> `INTRADAY`/`CNC`/`MARGIN`; tags cut to 20. Modify (`PATCH`) and cancel (`DELETE`) on `orders/sync`.
+  Order book statuses 1/2/4/5/6/7 -> CANCELLED/COMPLETE/OPEN/REJECTED/OPEN/EXPIRED. Trade book, positions,
+  holdings and funds (`fund_limit` ids 1/2/10 = total/utilised/available) mapped to the platform models.
+* **Errors.** `s: "error"` -> `BrokerAPIError` with message and code; codes -8/-15/-16/-17/-50/-300 and any
+  "token" message -> `BrokerAuthenticationError`.
+
+Verified against a mocked transport built from the public docs, not a live account. Dhan and CoinDCX
+remain stubs. No schema change. Tests: `tests/test_phase_ae_fyers.py`.
+
+## Phase AF: Dhan API v2 adapter
+
+The third stub replaced (`app/brokers/dhan.py`). Dhan is JSON REST at one host; every call carries
+`access-token` and `client-id` headers. There is no exchange flow: the user generates the token on the
+Dhan console and stores it with the client id under Settings; the platform re-uses it until 06:00 IST.
+
+* **Identifiers.** Every order, quote and candle needs a numeric `securityId` plus an `exchangeSegment`
+  (`NSE_EQ`, `NSE_FNO`, `IDX_I`, `BSE_EQ`, `MCX_COMM`). The public scrip master (CSV with header) is parsed
+  into platform instruments; `_resolve` maps plain symbols to (segment, id, instrument kind), with the
+  index ids (NIFTY 13, BANKNIFTY 25, ...) resolved without the master.
+* **Data.** `marketfeed/quote` batched by segment (ids grouped per segment, capped per request), keyed back
+  to `EXCHANGE:SYMBOL` with OHLC, depth and `last_trade_time`; `charts/intraday` and `charts/historical`
+  return parallel arrays that are zipped into candles; `optionchain/expirylist` + `optionchain` give the
+  chain with IV, Greeks (delta), OI and OI change (from `previous_oi`), bid/ask per leg.
+* **Orders.** `MARKET`/`LIMIT`/`SL`/`SL-M` -> `MARKET`/`LIMIT`/`STOP_LOSS`/`STOP_LOSS_MARKET`; `MIS`/`CNC`/
+  `NRML` -> `INTRADAY`/`CNC`/`MARGIN`; the tag rides as `correlationId`. Modify reads the order first
+  (Dhan's `PUT` wants the full body); order statuses TRADED/PENDING/TRANSIT/CANCELLED/REJECTED/EXPIRED
+  mapped; trade book, positions (`unrealizedProfit`), holdings (no LTP in the API) and `fundlimit`
+  (Dhan's own `availabelBalance` spelling first) mapped to the platform models.
+* **Errors.** HTTP 4xx / `errorCode` -> `BrokerAPIError` with message and code; DH-90x auth codes and
+  401/403 -> `BrokerAuthenticationError`.
+
+Verified against a mocked transport built from the public docs, not a live account. Only CoinDCX (crypto)
+remains a stub. No schema change. Tests: `tests/test_phase_af_dhan.py`.
+
+## Phase AG: Factor Lab value and quality from the Fundamentals module
+
+Phase Z left the value and quality factors to the caller: `POST /api/quant/factors` only scored them
+when the request carried `pe, pb, roe_pct, debt_to_equity, earnings_growth_pct` per symbol, and the
+Factor Lab page never did. Phase AG derives them from what the Fundamentals module already stores.
+
+* **Bridge** (`app/quant/fundamentals_bridge.py`). `fundamentals_for(session, symbols, closes)` looks
+  each symbol up in `companies` (shared reference data, no tenant scope) and its `financial_periods`,
+  picks the newest ANNUAL period (fallback: newest of any type) and the previous period of the same
+  type, and `derive(...)` computes with the same arithmetic as the fundamentals engines:
+  `pe = close / eps` (eps = stored EPS, else PAT / shares), `pb = close / (equity / shares)`,
+  `roe_pct = PAT / equity * 100` (ProfitabilityEngine), `debt_to_equity = total debt / equity`
+  (BalanceSheetEngine), `earnings_growth_pct` = PAT change against the prior period. `close` is the
+  last close of the candles the caller sent; without candles it falls back to `market_cap / shares`
+  from the company profile. A ratio that cannot be derived (negative EPS or equity, one period
+  only, no price) is left out and reported under `missing` with the reason, so the factor model
+  treats it as absent exactly as before; nothing is guessed.
+* **Routes**. `FactorsBody` and `ExposureBody` gain `use_fundamentals` (default true). Symbols that
+  come with their own `fundamentals` are left untouched; the rest are filled from the bridge. The
+  response carries `fundamentals: {enabled, filled: {symbol: {period, values, missing}}, note}`,
+  where the note counts covered symbols and names those without a company profile.
+* **Factor Lab page**. A "Fill value/quality from Fundamentals" checkbox (on by default), the
+  bridge's note under the weights, and per-symbol reasons for ratios that could not be derived.
+  The DataSource bar's note now says where value and quality come from.
+
+Coverage is whatever the operator has loaded under Fundamentals (profiles + financial periods,
+by hand or through the NSE provider); the Factor Lab does not fetch financials itself. No schema
+change. Tests: `tests/test_phase_ag_quant_fundamentals.py`.

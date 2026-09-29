@@ -6,7 +6,9 @@ from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerCredentials
 from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.angel_one import AngelOneBroker
-from app.brokers.stubs import CoinDCXBroker, DhanBroker, FyersBroker
+from app.brokers.dhan import DhanBroker
+from app.brokers.fyers import FyersBroker
+from app.brokers.stubs import CoinDCXBroker
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 

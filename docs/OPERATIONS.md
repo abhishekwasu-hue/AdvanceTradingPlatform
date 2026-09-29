@@ -604,6 +604,37 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Live option chains** on the Scanner and Option Chain pages need a broker session with a valid token,
   like broker candles; a stub broker reports "no option-chain endpoint" per underlying instead of failing.
 
+### 1.6v Fyers setup (Phase AE)
+
+- **Create the app** at myapi.fyers.in (App ID like `ABCD1234-100`, secret key, a redirect URL you control).
+- **Daily login**: open the Fyers auth URL for your app, log in, copy the `auth_code` from the redirect, paste
+  it under Settings > Add / update broker credentials (broker `fyers`) as Request Token with the API Key
+  (App ID) and API Secret, then Log in from the session-health card. The exchanged token lasts the day.
+- **Symbols**: platform symbols (SBIN, NIFTY, BANKNIFTY) map to `NSE:SBIN-EQ`, `NSE:NIFTY50-INDEX`,
+  `NSE:NIFTYBANK-INDEX`; option contracts resolve through the public symbol master.
+- **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
+
+### 1.6w Dhan setup (Phase AF)
+
+- **Generate the access token** on the Dhan web console (DhanHQ > Access token); note your client id.
+- **Enter under Settings > Add / update broker credentials** (broker `dhan`): Access Token and Client ID. Nothing
+  goes in `.env`. The token expires daily; regenerate and re-enter it as the morning step, then Log in from the
+  session-health card to verify it.
+- **Symbols**: platform symbols map to Dhan security ids through the public scrip master; index ids are built in.
+  Option contracts use the master's trading symbols (for example `NIFTY-Oct2026-26000-CE`).
+- **Rate limits**: Dhan allows one option-chain call every three seconds; the Scanner's chain filters on many
+  underlyings will be slow on Dhan by design.
+- **Verified against a mocked transport only.** Run a PAPER session with real quotes before any LIVE routing.
+
+### 1.6x Factor Lab fundamentals coverage (Phase AG)
+
+- The Factor Lab's value and quality factors read the Fundamentals module's stored data: a symbol needs a
+  company profile (`POST /api/fundamentals/companies` or the Fundamentals page) and at least one financial
+  period with PAT, EPS or shares, shareholders' equity and total debt; PAT growth needs two periods of the
+  same type. Symbols without a profile are named in the response note and carry no value/quality score.
+- PE and PB use the last close of the window scored, so intraday and daily runs differ slightly by design.
+- Nothing is fetched on the fly; load or refresh financials under Fundamentals first.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

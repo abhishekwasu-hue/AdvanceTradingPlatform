@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Database, FlaskConical } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { CandleSource, OHLCVBar } from "../types";
+import type { CandleSource, OHLCVBar, OptionChain } from "../types";
 import { generateSampleCandles } from "../utils/sampleData";
 
 /** Phase AA: one switch for every research page - deterministic sample candles, or the tenant's
@@ -30,6 +30,8 @@ export interface CandleSourceState {
   loading: boolean;
   label: string;
   fetch: (symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (symbol: string) => number; seedFor?: (symbol: string) => number }) => Promise<FetchedCandles>;
+  /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
+  fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
 
 export function hashSymbol(symbol: string): number {
@@ -89,7 +91,27 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     }
   }
 
-  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch };
+  async function fetchChains(underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) {
+    const clean = Array.from(new Set(underlyings.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+    if (mode === "sample") {
+      return { chains: Object.fromEntries(clean.map((s) => [s, sampleFor(s)])), warnings: [] as string[] };
+    }
+    setLoading(true);
+    try {
+      const res = await api.marketDataOptionChains(clean, expiry, broker || undefined);
+      const chains: Record<string, OptionChain> = {};
+      const warnings = [...res.warnings];
+      for (const [symbol, entry] of Object.entries(res.symbols)) {
+        if (entry.chain && entry.rows > 0) chains[symbol] = entry.chain;
+        else if (entry.error) warnings.push(`${symbol} chain: ${entry.error}`);
+      }
+      return { chains, warnings };
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains };
 }
 
 export function DataSourceBar({ source, note }: { source: CandleSourceState; note?: string }) {

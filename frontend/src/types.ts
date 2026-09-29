@@ -1692,3 +1692,10 @@ export interface CandlesResponse {
 // Phase AB: go-live checklists.
 export interface ReadinessItem { key: string; title: string; status: "ok" | "todo" | "warn" | "info"; detail: string; fix: string; link: string | null; scope: string }
 export interface ReadinessChecklist { target: string; ready: boolean; summary: { ok: number; todo: number; warn: number; info: number }; items: ReadinessItem[]; checked_at: string; note: string }
+
+// Phase AD: broker option chains and exchange holidays.
+export interface OptionChainsResponse {
+  source: { broker: string; account_label: string }; expiry: string | null; fetched_at: string;
+  symbols: Record<string, { chain: OptionChain | null; rows: number; error: string | null }>; warnings: string[]; note: string;
+}
+export interface MarketHoliday { id: number; exchange: string; holiday_date: string; description: string }

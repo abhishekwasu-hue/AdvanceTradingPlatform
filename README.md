@@ -230,6 +230,12 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Holidays page and real data everywhere (Phase AD)
+
+- **Exchange holidays** are managed from the Admin console (paste the NSE circular); **AI Copilot**, the
+  **Scanner's option-chain filters** and the **Option Chain** page now take the same Data switch as the
+  other research pages, reading the broker's live candles and chains through your own session.
+
 ## Angel One adapter (Phase AC)
 
 - **Real SmartAPI adapter** replacing the stub: TOTP login from the stored secret, scrip-master symbol

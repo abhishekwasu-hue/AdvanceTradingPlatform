@@ -3336,3 +3336,24 @@ No schema change. Tests: `tests/test_phase_ac_angel_one.py`.
 **Phase AB follow-up.** The checklist's page links now use real page ids (`deployments`,
 `risk-management`, `account` for MFA and email, `team` for the algo id) and say that holidays have
 no page yet.
+
+## Phase AD: Holidays page, real data for AI Copilot and the option chain
+
+Three small gaps left after Phase AA/AB, closed together.
+
+* **Broker option chains** (`POST /api/market-data/option-chains`). Up to 20 underlyings through the
+  tenant's own broker session (the same picker as `/candles`), returned in the `OptionChain` shape the
+  scanner, the chain analyser and the strike selector already consume. Each underlying succeeds or
+  fails on its own; a stub broker reports "no option-chain endpoint"; fetches are metered as
+  `market_data_chains`. The Data switch now offers the live chain on the **Scanner** (option-chain
+  filters in Broker mode read it; sample chain otherwise) and on the **Option Chain** page (LTP and
+  tilt shape the sample chain only).
+* **AI Copilot** gets the same Data switch: the draft backtest runs on broker candles at the draft's
+  timeframe and the regime card classifies the chosen symbol's five-minute candles, with the labels
+  saying which data was used.
+* **Exchange holidays** get a page: `components/HolidaysCard.tsx` on the Admin console lists a year
+  per exchange (everyone can read), and a SUPER_ADMIN pastes the annual NSE circular as
+  `YYYY-MM-DD description` lines to load it, or removes a row. The API is unchanged (list for any
+  user, add/remove for SUPER_ADMIN); the go-live checklists now point at this card.
+
+No schema change. Tests: `tests/test_phase_ad_real_data.py`.

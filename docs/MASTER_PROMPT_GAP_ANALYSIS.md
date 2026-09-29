@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AC, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AD, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AD - holidays page, real data for AI Copilot and option chains**: **DONE** (ARCHITECTURE.md Phase AD) - `/api/market-data/option-chains` through the tenant's session, Data switch on Scanner chains, Option Chain and AI Copilot, Admin holidays card with bulk paste.
 - **Phase AC - Angel One SmartAPI adapter**: **DONE** (ARCHITECTURE.md Phase AC) - TOTP login, scrip-master resolution with index aliases, batched quotes, candles, order mapping, books, positions, holdings, margins, assembled option chain, error mapping, logout; mocked-transport tests.
 - **Phase AB - go-live checklists**: **DONE** (ARCHITECTURE.md Phase AB) - tenant checklist (PAPER/LIVE) and platform checklist computed from state, with fixes and page/env links; Dashboard and Admin cards.
 - **Phase AA - broker candles for the research pages**: **DONE** (ARCHITECTURE.md Phase AA) - `/api/market-data/sources|candles` through the tenant's own broker session with the worker's cached service, per-symbol errors, lookback-aware cache key, one Data switch on the four research pages.

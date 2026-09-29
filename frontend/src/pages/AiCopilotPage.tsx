@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
 import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
-import { generateSampleCandles } from "../utils/sampleData";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -46,7 +46,15 @@ export default function AiCopilotPage() {
     try { await fn(); if (label) setMessage(label); refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
   }
 
-  const sampleCandles = () => generateSampleCandles(600, 100, 11);
+  // Phase AD: sample candles or the tenant's broker candles for the draft backtest and the regime read.
+  const source = useCandleSource(30);
+  const candlesFor = async (timeframe: string) => {
+    const r = await source.fetch([symbol], timeframe, { count: 600, startPriceFor: () => 100, seedFor: () => 11 });
+    const c = r.candles[symbol.trim().toUpperCase()];
+    if (!c?.length) throw new Error(`No candles for ${symbol}`);
+    return c;
+  };
+  const dataLabel = source.mode === "broker" ? "broker candles" : "sample data";
 
   if (!user) return <Card><p className="text-sm text-muted">Log in to use the AI Copilot.</p></Card>;
 
@@ -60,6 +68,7 @@ export default function AiCopilotPage() {
         <p className="text-sm font-semibold text-purple-400/60">Drafts, not decisions: the AI writes rules and proposes actions; you backtest, approve or reject. Nothing trades without your explicit approval.</p>
       </div>
       <Disclaimer kind="ai" />
+      <DataSourceBar source={source} />
 
       {open.length > 0 && (
         <Card title={`Proposals waiting for you (${open.length})`}>
@@ -151,7 +160,7 @@ export default function AiCopilotPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <input className="rounded bg-panel2 border border-border px-2 py-1 text-xs w-28" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
                 {(selected.status === "DRAFT" || selected.status === "BACKTESTED") && (
-                  <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", sampleCandles()); setSelected(r.draft); setMessage(`Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (sample data - upload real candles on the Backtest page for a real read).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on sample data</button>
+                  <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", await candlesFor(selected.config?.timeframe ?? "1min")); setSelected(r.draft); setMessage(`Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (${dataLabel}${source.mode === "sample" ? " - switch Data to broker candles for a real read" : ""}).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on {dataLabel}</button>
                 )}
                 {selected.status === "BACKTESTED" && (
                   <button disabled={busy || !acceptRisk || (selected.compliance ? !selected.compliance.ok : false)} title={!acceptRisk ? "Tick the acceptance first" : undefined} onClick={() => run("Approved - it is now one of your strategies. Paper-trade it before LIVE.", async () => { const r = await api.aiApproveDraft(selected.id, undefined, true); setSelected(r.draft); setAcceptRisk(false); })} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Approve as strategy</button>
@@ -169,9 +178,9 @@ export default function AiCopilotPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card title="Market regime (sample read)">
+        <Card title={`Market regime (${dataLabel})`}>
           <p className="text-xs text-muted mb-2">The same classifier the Autopilot uses for a deployment's regime filter: ADX for trend strength, EMA20/50 for direction, ATR against its median for volatility.</p>
-          <button disabled={busy} onClick={() => run(null, async () => setRegime(await api.aiRegime(sampleCandles())))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs"><Activity size={12} className="inline mr-1" />Classify sample candles</button>
+          <button disabled={busy} onClick={() => run(null, async () => setRegime(await api.aiRegime(await candlesFor("5min"))))} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs"><Activity size={12} className="inline mr-1" />Classify {symbol} ({dataLabel})</button>
           {regime && (
             <div className="mt-2 text-xs">
               <div className="font-bold text-sm">{regime.kind.replace("_", " ")} <span className="text-muted font-normal">confidence {regime.confidence}</span></div>

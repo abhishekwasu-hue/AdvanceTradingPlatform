@@ -21,7 +21,7 @@ import {
   type StructureFilterType,
 } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
-import type { OHLCVBar } from "../types";
+import type { OHLCVBar, OptionChain } from "../types";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -42,16 +42,14 @@ function hashSeed(symbol: string): number {
 /** Builds one symbol's sample candles + option chain deterministically from its own name, so
  * every watchlist entry gets a different (but reproducible) price path and option-chain tilt.
  */
-function buildSymbolInput(symbol: string, timeframe: string, includeOptionChain: boolean, candles: OHLCVBar[]): ScannerSymbolInput {
+function sampleChainFor(symbol: string, candles: OHLCVBar[]): OptionChain {
   const seed = hashSeed(symbol);
   const lastClose = candles[candles.length - 1].close;
-  const tilt = OPTION_TILTS[seed % OPTION_TILTS.length];
-  return {
-    symbol,
-    timeframe,
-    candles,
-    option_chain: includeOptionChain ? generateSampleOptionChain(symbol, lastClose, tilt) : null,
-  };
+  return generateSampleOptionChain(symbol, lastClose, OPTION_TILTS[seed % OPTION_TILTS.length]);
+}
+
+function buildSymbolInput(symbol: string, timeframe: string, candles: OHLCVBar[], chain: OptionChain | null): ScannerSymbolInput {
+  return { symbol, timeframe, candles, option_chain: chain };
 }
 
 export default function ScannerPage() {
@@ -119,9 +117,11 @@ export default function ScannerPage() {
     setResult(null);
     try {
       const fetched = await source.fetch(symbols, timeframe, { count: 300, seedFor: hashSeed, startPriceFor: (s) => 100 + (hashSeed(s) % 900) });
-      setDataWarnings(fetched.warnings);
+      const withCandles = symbols.filter((s) => fetched.candles[s]);
+      const chains = needsOptionChain ? await source.fetchChains(withCandles, (s) => sampleChainFor(s, fetched.candles[s])) : { chains: {} as Record<string, OptionChain>, warnings: [] as string[] };
+      setDataWarnings([...fetched.warnings, ...chains.warnings]);
       const request = {
-        symbols: symbols.filter((s) => fetched.candles[s]).map((s) => buildSymbolInput(s, timeframe, needsOptionChain, fetched.candles[s])),
+        symbols: withCandles.map((s) => buildSymbolInput(s, timeframe, fetched.candles[s], needsOptionChain ? chains.chains[s] ?? null : null)),
         indicator_conditions: indicatorConditions,
         structure_filters: structureFilters,
         option_filters: optionFilters,
@@ -149,7 +149,7 @@ export default function ScannerPage() {
         </p>
       </div>
 
-      <DataSourceBar source={source} note="Option-chain filters use a sample chain in both modes." />
+      <DataSourceBar source={source} note="Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise." />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="signals" />
 

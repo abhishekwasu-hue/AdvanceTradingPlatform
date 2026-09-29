@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
+import GoLiveChecklist from "../components/GoLiveChecklist";
+import type { Page } from "../components/Sidebar";
 import type { StrategyInfo, WorkerStatus } from "../types";
 
 const ENGINES: {
@@ -34,7 +36,7 @@ const TONE_CLASSES: Record<string, string> = {
   teal: "bg-teal-500/10 text-teal-400 border-teal-500/30",
 };
 
-export default function DashboardPage() {
+export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page) => void } = {}) {
   const { user } = useAuth();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [brokers, setBrokers] = useState<string[]>([]);
@@ -96,6 +98,8 @@ export default function DashboardPage() {
         <StatTile icon={BarChart3} label="MTF Combos" value={mtf.length || "…"} accentClass="text-sky-400" />
         <StatTile icon={Link2} label="Broker Adapters" value={brokers.length || "…"} accentClass="text-orange-400" />
       </div>
+
+      {user && <GoLiveChecklist kind="tenant" onNavigate={onNavigate} />}
 
       {user && worker && (
         <div className={`rounded-lg border px-3 py-2 text-xs ${worker.running ? "border-border bg-panel2 text-muted" : "border-danger/40 bg-danger/10 text-danger"}`}>

@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AA, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AB, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -45,7 +45,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 | Item | Status | Gaps |
 | --- | --- | --- |
-| V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. |
+| V1 acceptance (real Upstox account end to end) | **blocked on operator** | Needs credentials via Settings. The Dashboard go-live checklist (Phase AB) lists every remaining step per organisation; the Admin console lists the platform's. |
 | V2.1-2.6 options depth | done (Phase R + U + W) | Thirteen structures plus the custom leg builder; historical option-chain backtests with a chain recorder (W). |
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I + T) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; `risk_limits` at six scopes with strictest-wins and `risk_events`. Routing policies EXPLICIT / MOST_MARGIN / LEAST_UTILISED / FEWEST_POSITIONS per deployment or tenant default, optionally across brokers, decided on balances the worker refreshes before routing, recorded on the deployment and on every trade (T); exits and stop re-arms follow the trade's own account. Reconciliation still runs against one session per tenant. |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AB - go-live checklists**: **DONE** (ARCHITECTURE.md Phase AB) - tenant checklist (PAPER/LIVE) and platform checklist computed from state, with fixes and page/env links; Dashboard and Admin cards.
 - **Phase AA - broker candles for the research pages**: **DONE** (ARCHITECTURE.md Phase AA) - `/api/market-data/sources|candles` through the tenant's own broker session with the worker's cached service, per-symbol errors, lookback-aware cache key, one Data switch on the four research pages.
 - **Phase Z - factor and risk models**: **DONE** (ARCHITECTURE.md Phase Z) - seven documented factors z-scored across the caller's universe with renormalised weights and buckets, a descriptive risk model with weight suggestions, the open book's factor tilt, Factor Lab page.
 - **Phase Y - AI scanner**: **DONE** (ARCHITECTURE.md Phase Y) - plain-language scan plans validated against the real filter enums, ranked and explained reads with the platform's regime, deterministic fallbacks, metering, flag, audit.

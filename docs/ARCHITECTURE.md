@@ -3268,3 +3268,29 @@ Phase AA gives those pages the same data path, behind one switch.
   (recorded chains are the backtester's job).
 
 No schema change. Tests: `tests/test_phase_aa_market_data_api.py`.
+
+## Phase AB: Go-live checklists
+
+The V1 acceptance row has read "blocked on operator" for a while: the code exists, but the steps
+that need a human (broker key in Settings, a broker login, a running worker, an alert channel, a
+deployment, MFA for LIVE, ...) were scattered across pages and runbooks. `app/platform/readiness.py`
+computes them from the platform's own state and never changes anything.
+
+* **Tenant checklist** (`GET /api/readiness?target=PAPER|LIVE`, login). Broker key stored and a
+  session token valid today; instrument master synced within three days; worker heartbeat;
+  exchange holidays loaded; an active deployment (and none failing repeatedly); risk settings or
+  scoped limits; an enabled out-of-app alert channel (and its last error); no kill switch engaged
+  and no reconciliation block; for LIVE also MFA, a verified email and the SEBI algo id; the AI
+  provider key as optional. Each item carries `status` (`ok`, `todo` blocks the target, `warn` is
+  allowed but unwise, `info` optional), what was found, the fix, a page id to jump to and its
+  scope. Items that are `warn` for PAPER (risk, alerts) become `todo` for LIVE.
+* **Platform checklist** (`GET /api/admin/readiness`, SUPER_ADMIN with MFA). Environment declared,
+  JWT secret not the development default, secrets encryption key, Postgres, migrations at head,
+  Redis, worker, CORS restricted, public frontend URL (OAuth redirect), platform SMTP, push keys,
+  payment gateway keys when Razorpay is selected, metrics token, instrument master, holidays,
+  global kill switch, organisations blocked on reconciliation, streaming flag. `link` names the
+  environment variable to set.
+* **UI.** `components/GoLiveChecklist.tsx` on the Dashboard (PAPER/LIVE toggle, blockers first,
+  "Open settings" jumps) and on the Admin console (platform list).
+
+No schema change. Tests: `tests/test_phase_ab_readiness.py`.

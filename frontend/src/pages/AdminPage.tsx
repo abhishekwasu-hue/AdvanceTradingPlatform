@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
+import GoLiveChecklist from "../components/GoLiveChecklist";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 
 const STATUSES = ["active", "suspended"];
@@ -96,6 +97,8 @@ export default function AdminPage() {
 
       {error && <div className="text-sm text-danger">{error}</div>}
       {message && <div className="text-sm text-accent">{message}</div>}
+
+      <GoLiveChecklist kind="platform" />
 
       <Card title="Global kill switch">
         {overview?.global_kill_switch_engaged ? (

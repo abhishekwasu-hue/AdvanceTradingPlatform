@@ -107,7 +107,7 @@ function AppShell() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar page={page} onChange={setPage} />
         <main className="flex-1 overflow-y-auto p-6 max-w-6xl">
-          {page === "dashboard" && <DashboardPage />}
+          {page === "dashboard" && <DashboardPage onNavigate={setPage} />}
           {page === "strategies" && <StrategiesPage />}
           {page === "strategy-builder" && <StrategyBuilderPage />}
           {page === "deployments" && <DeploymentsPage />}

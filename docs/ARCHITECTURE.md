@@ -3206,3 +3206,36 @@ because neither call touches the execution path.
   with the ranked list, regime per symbol, risks, next step and disclaimer.
 
 No schema change. Tests: `tests/test_phase_y_ai_scanner.py`.
+
+## Phase Z: Factor and risk models (V4.6-4.8)
+
+The last open quant item. `app/quant/` is pure: the same universe and the same weights always
+give the same numbers, and nothing here sizes or places a trade - the risk engine does that.
+
+* **Factors** (`factors.py`). Seven documented factors per symbol from its own candles (momentum
+  with the recent bars skipped, short-term reversal, low volatility, ADX-signed trend, log traded
+  value as liquidity) and, when the caller supplies ratios, value (earnings and book yield) and
+  quality (ROE plus half the growth minus ten times leverage). Each factor is standardised across
+  the universe the caller sent (`zscores`, winsorised at +-3; a universe without spread scores 0),
+  blended by explicit weights into a composite. A factor a symbol lacks data for is None and
+  carries no weight in that symbol's composite (the remaining weights renormalise), so short
+  histories lower `coverage` instead of inventing scores; a factor nobody has data for is named in
+  the warnings. Rows are ranked; the top and bottom quintile are the LONG/SHORT buckets (none under
+  three symbols). `exposure(weights, table)` is the signed weighted z per factor - a book's tilt.
+* **Risk** (`risk.py`). Log returns on the inner join of timestamps (`returns_matrix`), then
+  correlation, betas to a chosen benchmark, annualised volatility (annualisation from the bar
+  spacing), and for a weight vector: annualised portfolio volatility, historical one-bar 95% VaR
+  and CVaR as fractions of the book, the worst drawdown of the weighted path, a diversification
+  ratio and each symbol's risk contribution. Two suggestions: inverse-volatility weights and a
+  long-only risk-parity approximation (equal risk contribution by iterative rescaling). Fewer than
+  20 overlapping bars is a warning and empty statistics, never a guess.
+* **API** (`routes.py`): `POST /api/quant/factors` and `POST /api/quant/risk` take candles (plus
+  optional fundamentals, weights, benchmark, lookbacks) like the scanner - pure, no login;
+  `POST /api/quant/exposure` (login) scores the supplied universe and weights the tenant's open
+  trades by notional at the supplied closes (long positive, short negative; positions on symbols
+  outside the universe are counted and ignored) or takes explicit weights.
+* **UI.** "Factor Lab" under Research: watchlist, factor-weight sliders, the ranked table with
+  z-scores coloured and coverage, the risk card with equal / inverse-vol / risk-parity weight
+  choices, portfolio statistics, per-symbol vol, beta and drawdown, and a correlation grid.
+
+No schema change. Tests: `tests/test_phase_z_quant.py`.

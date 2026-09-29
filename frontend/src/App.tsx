@@ -20,6 +20,7 @@ import OptionChainPage from "./pages/OptionChainPage";
 import OrdersPage from "./pages/OrdersPage";
 import PortfolioPage from "./pages/PortfolioPage";
 import PositionsPage from "./pages/PositionsPage";
+import QuantPage from "./pages/QuantPage";
 import RiskManagementPage from "./pages/RiskManagementPage";
 import ScannerPage from "./pages/ScannerPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -114,6 +115,7 @@ function AppShell() {
           {page === "signals" && <SignalsPage />}
           {page === "scanner" && <ScannerPage />}
           {page === "news-events" && <NewsEventsPage />}
+          {page === "quant" && <QuantPage />}
           {page === "backtest" && <BacktestPage />}
           {page === "marketplace" && <MarketplacePage />}
           {page === "ai-copilot" && <AiCopilotPage />}

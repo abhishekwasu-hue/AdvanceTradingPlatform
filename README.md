@@ -230,6 +230,14 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Factor Lab (Phase Z)
+
+- **Cross-sectional factor scores**: momentum, reversal, low volatility, trend, liquidity, and value
+  and quality from supplied ratios; z-scored across the universe, weighted into a composite, ranked
+  into long/short buckets with coverage per symbol.
+- **Risk model**: correlations, betas, volatilities, portfolio VaR/CVaR/drawdown, inverse-volatility
+  and risk-parity weight suggestions, and the open book's factor tilt. Descriptive only.
+
 ## AI scanner (Phase Y)
 
 - **Plain language to filters**: the tenant's LLM (or the deterministic parser) turns a sentence into

@@ -1654,3 +1654,29 @@ export interface OptimizeResult {
   metric: string; split: number; in_sample_bars: number; out_of_sample_bars: number; combinations: number;
   best: OptimizeRow | null; robust_count: number; results: OptimizeRow[]; note: string;
 }
+
+// Phase Z: factor and risk models.
+export interface QuantSymbolInput { symbol: string; candles: OHLCVBar[]; fundamentals?: Record<string, number> | null }
+
+export interface FactorRow {
+  symbol: string; close: number; bars: number; raw: Record<string, number | null>; z: Record<string, number | null>;
+  composite: number | null; rank: number | null; bucket: "LONG" | "SHORT" | "NEUTRAL"; coverage: number;
+}
+
+export interface FactorTable { rows: FactorRow[]; weights: Record<string, number>; bars_per_year: number; universe: number; factors: string[]; warnings: string[] }
+
+export interface PortfolioRisk {
+  vol_annual: number | null; var_95: number | null; cvar_95: number | null; max_drawdown_pct: number | null; diversification_ratio: number | null; bars: number;
+}
+
+export interface QuantRisk {
+  bars: number; symbols: string[]; bars_per_year: number; correlation: Record<string, Record<string, number | null>>;
+  volatility: Record<string, number | null>; betas: Record<string, number | null>; benchmark: string | null;
+  weights_used: Record<string, number>; weights_source: string; portfolio: PortfolioRisk; risk_contributions: Record<string, number | null>;
+  suggested: { inverse_volatility: Record<string, number>; risk_parity: Record<string, number>; inverse_volatility_portfolio: PortfolioRisk; risk_parity_portfolio: PortfolioRisk };
+  max_drawdown_pct: Record<string, number | null>; warnings: string[]; disclaimer: string;
+}
+
+export interface QuantExposure {
+  weights: Record<string, number>; weights_source: string; exposure: Record<string, number | null>; table: FactorTable; notes: string[]; reading: string;
+}

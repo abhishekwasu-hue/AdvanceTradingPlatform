@@ -14,7 +14,7 @@ symbol failures are reported next to the symbols that worked. Fetches are metere
 `market_data_candles` so plans can price them later; nothing is persisted here.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -60,6 +60,23 @@ def _source(record: BrokerCredentialRecord) -> dict:
             "token_expires_at": record.token_expires_at.isoformat() if record.token_expires_at else None, "usable": token_is_usable(record)}
 
 
+async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str) -> BrokerCredentialRecord:
+    """The named broker session, or the first usable one; 404/409 with the fix location otherwise."""
+    records = await _records(session, tenant_id)
+    if broker:
+        wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
+        if not wanted:
+            raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{broker}' ({account_label})")
+        if not token_is_usable(wanted[0]):
+            raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it under Settings > Brokers.")
+        return wanted[0]
+    usable = [r for r in records if token_is_usable(r)]
+    if not usable:
+        raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key under Settings > Brokers "
+                                                    "(it is stored encrypted, never in the environment) and log in to it, then try again.")
+    return usable[0]
+
+
 def _frame_to_bars(df) -> List[OHLCVBar]:
     df = df.dropna(subset=["open", "close"])
     return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
@@ -77,20 +94,7 @@ async def sources(user: User = Depends(get_current_user), session: AsyncSession 
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
-    records = await _records(session, user.tenant_id)
-    if body.broker:
-        wanted = [r for r in records if r.broker_name == body.broker.lower() and r.account_label == (body.account_label or "primary")]
-        if not wanted:
-            raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{body.broker}' ({body.account_label})")
-        if not token_is_usable(wanted[0]):
-            raise HTTPException(status_code=409, detail=f"Broker '{body.broker}' has no valid session token today. Log in to it under Settings > Brokers.")
-        record = wanted[0]
-    else:
-        usable = [r for r in records if token_is_usable(r)]
-        if not usable:
-            raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key under Settings > Brokers "
-                                                        "(it is stored encrypted, never in the environment) and log in to it, then try again.")
-        record = usable[0]
+    record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
 
     warnings: List[str] = []
     daily = body.timeframe == "day"
@@ -130,3 +134,45 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             "base_interval": base_interval, "lookback_days": lookback, "fetched_at": datetime.now(timezone.utc).isoformat(),
             "symbols": out, "warnings": warnings,
             "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
+
+
+class ChainsBody(BaseModel):
+    underlyings: List[str] = Field(min_length=1, max_length=20)
+    expiry: Optional[date] = Field(default=None, description="omitted = the nearest expiry the broker returns")
+    broker: Optional[str] = None
+    account_label: str = Field(default="primary", max_length=50)
+
+
+@router.post("/option-chains")
+async def option_chains(body: ChainsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase AD: the broker's live option chain for up to 20 underlyings through the tenant's own
+    session, in the same `OptionChain` shape the scanner, the chain analyser and the strike
+    selector consume. Each underlying succeeds or fails on its own."""
+    record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+    adapter = build_adapter(record)
+    out: Dict[str, dict] = {}
+    warnings: List[str] = []
+    fetched = 0
+    for raw in body.underlyings:
+        underlying = raw.strip().upper()
+        if not underlying or underlying in out:
+            continue
+        try:
+            chain = await adapter.get_option_chain(underlying, body.expiry)
+            out[underlying] = {"chain": chain.model_dump(mode="json"), "rows": len(chain.rows), "error": None}
+            fetched += 1
+            if not chain.rows:
+                warnings.append(f"{underlying}: the broker returned an empty chain")
+        except NotImplementedError:
+            out[underlying] = {"chain": None, "rows": 0, "error": f"{record.broker_name} has no option-chain endpoint in this adapter"}
+        except Exception as exc:  # noqa: BLE001 - one underlying must not lose the others
+            logger.info("Option chain fetch failed for %s via %s: %s", underlying, record.broker_name, exc)
+            out[underlying] = {"chain": None, "rows": 0, "error": f"{type(exc).__name__}: {exc}"[:300]}
+    if fetched:
+        await meter(session, user.tenant_id, "market_data_chains", quantity=fetched, source="api",
+                    metadata={"broker": record.broker_name, "expiry": body.expiry.isoformat() if body.expiry else None}, commit=True)
+    else:
+        warnings.append("every underlying failed - check the symbols are index/stock names the broker's option master knows")
+    return {"source": {"broker": record.broker_name, "account_label": record.account_label}, "expiry": body.expiry.isoformat() if body.expiry else None,
+            "fetched_at": datetime.now(timezone.utc).isoformat(), "symbols": out, "warnings": warnings,
+            "note": "Live chain through your own broker session; option-chain filters and the analyser read it exactly as they read a sample chain."}

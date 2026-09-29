@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import { Card, DemoDataBanner, StatTile } from "../components/ui";
+import { Card, StatTile } from "../components/ui";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { OptionChainAnalysis } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
 
@@ -18,12 +19,17 @@ export default function OptionChainPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<OptionChainAnalysis | null>(null);
+  const source = useCandleSource();            // Phase AD: live chain through the broker session
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
 
   async function analyze() {
     setLoading(true);
     setError(null);
     try {
-      const chain = generateSampleOptionChain(underlying, ltp, tilt);
+      const fetched = await source.fetchChains([underlying], () => generateSampleOptionChain(underlying, ltp, tilt));
+      setDataWarnings(fetched.warnings);
+      const chain = fetched.chains[underlying.trim().toUpperCase()];
+      if (!chain) throw new Error(`No option chain for ${underlying}`);
       const result = await api.analyzeOptionChain(chain);
       setAnalysis(result);
     } catch (e) {
@@ -40,7 +46,8 @@ export default function OptionChainPage() {
         <p className="text-sm font-semibold text-fuchsia-400/60">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
       </div>
 
-      <DemoDataBanner />
+      <DataSourceBar source={source} note="Underlying LTP and tilt shape the sample chain only." />
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
 
       <Card>
         <div className="grid sm:grid-cols-4 gap-3 items-end">

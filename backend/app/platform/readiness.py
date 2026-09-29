@@ -134,7 +134,7 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
     holidays = int(await session.scalar(select(func.count()).select_from(MarketHolidayRecord).where(MarketHolidayRecord.holiday_date >= year_start.date())) or 0)
     items.append(Item("holidays", "Exchange holiday calendar loaded", "ok" if holidays else "warn",
                       f"{holidays} holiday(s) from {now.year} onwards" if holidays else "No holidays recorded for this year",
-                      "" if holidays else "Load the NSE holiday list with POST /api/market-holidays (OWNER; no page yet) so the worker stays idle on closed days.", None))
+                      "" if holidays else "Ask a platform admin to load the NSE holiday list (Admin console > Exchange holidays) so the worker stays idle on closed days.", "admin"))
 
     # 5. Deployments ------------------------------------------------------------------------------
     deployments = list(await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.tenant_id == tenant.id)))
@@ -247,7 +247,7 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
     year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
     holidays = int(await session.scalar(select(func.count()).select_from(MarketHolidayRecord).where(MarketHolidayRecord.holiday_date >= year_start.date())) or 0)
     items.append(Item("holidays", "Exchange holiday calendar loaded", "ok" if holidays else "warn", f"{holidays} from {now.year}",
-                      "" if holidays else "Load the NSE holiday list (POST /api/market-holidays).", None))
+                      "" if holidays else "Load the NSE holiday list under Admin console > Exchange holidays (paste the annual NSE circular).", "admin"))
     global_switch = await session.scalar(select(KillSwitchRecord).where(KillSwitchRecord.scope == "GLOBAL", KillSwitchRecord.engaged.is_(True)))
     items.append(Item("global_kill_switch", "Global kill switch disengaged", "ok" if not global_switch else "warn", "disengaged" if not global_switch else (global_switch.reason or "engaged"),
                       "" if not global_switch else "Disengage from the Admin console once the cause is resolved.", "admin"))

@@ -595,6 +595,15 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Verified against a mocked transport only.** Confirm one PAPER session with real quotes before any
   LIVE deployment routes to this broker.
 
+### 1.6u Exchange holidays (Phase AD)
+
+- **Where**: Admin console > Exchange holidays (SUPER_ADMIN to edit; everyone can read). Pick the exchange and
+  year, paste the NSE annual circular as `YYYY-MM-DD description` lines, add. Duplicates are skipped and reported.
+- **Why it matters**: without the list the worker treats every weekday as a trading day and the
+  go-live checklist warns. Load next year's list each December when NSE publishes it.
+- **Live option chains** on the Scanner and Option Chain pages need a broker session with a valid token,
+  like broker candles; a stub broker reports "no option-chain endpoint" per underlying instead of failing.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

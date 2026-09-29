@@ -41,6 +41,8 @@ import type {
   ScanPlan,
   ScanRead,
   CandleSourcesResponse,
+  MarketHoliday,
+  OptionChainsResponse,
   ReadinessChecklist,
   CandlesResponse,
   FactorTable,
@@ -455,6 +457,13 @@ export const api = {
   // Phase Y: AI scanner - plan from plain language, read of a result.
   scannerAiPlan: (text: string, language = "en") =>
     request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
+  // Phase AD: broker option chains and exchange holidays.
+  marketDataOptionChains: (underlyings: string[], expiry?: string, broker?: string) =>
+    request<OptionChainsResponse>("/market-data/option-chains", { method: "POST", body: JSON.stringify({ underlyings, expiry: expiry ?? null, broker: broker ?? null }) }),
+  marketHolidays: (year?: number, exchange = "NSE") => request<MarketHoliday[]>(`/market-holidays?exchange=${exchange}${year ? `&year=${year}` : ""}`),
+  addMarketHoliday: (body: { exchange: string; holiday_date: string; description: string }) =>
+    request<MarketHoliday>("/market-holidays", { method: "POST", body: JSON.stringify(body) }),
+  deleteMarketHoliday: (id: number) => request<void>(`/market-holidays/${id}`, { method: "DELETE" }),
   // Phase AB: go-live checklists.
   readiness: (target: "PAPER" | "LIVE" = "PAPER") => request<ReadinessChecklist>(`/readiness?target=${target}`),
   adminReadiness: () => request<ReadinessChecklist>("/admin/readiness"),

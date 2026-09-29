@@ -3294,3 +3294,45 @@ computes them from the platform's own state and never changes anything.
   "Open settings" jumps) and on the Admin console (platform list).
 
 No schema change. Tests: `tests/test_phase_ab_readiness.py`.
+
+## Phase AC: Angel One SmartAPI adapter
+
+The first of the four structural broker stubs replaced with a real adapter (`app/brokers/angel_one.py`).
+SmartAPI is plain JSON REST: every call carries the app's `X-PrivateKey` plus client-identification
+headers, authenticated calls a `Authorization: Bearer <jwtToken>` from `loginByPassword` (client code,
+trading PIN, TOTP). The adapter generates the TOTP from the enrolment secret with `pyotp`, so the
+credentials the tenant stores under Settings (encrypted, never in the environment) are the same four
+fields every morning: API key, client code, PIN, TOTP secret. A stored `access_token` is re-used until
+the broker's daily expiry (05:00 IST in `TOKEN_DAILY_EXPIRY_IST`).
+
+* **Symbols.** The platform speaks plain trading symbols; Angel names cash equities `RELIANCE-EQ`,
+  indices `Nifty 50`/`Nifty Bank`, and every order and quote needs the numeric `symboltoken` from the
+  public scrip master. `get_instruments` parses the master (strike and tick in paise, expiry
+  `26SEP2026`) into the platform's `Instrument`, strips `-EQ`, and keeps a symbol map that `_resolve`
+  and `INDEX_ALIASES` use. The instrument-master sync (Phase F1) can ingest it through
+  `sync_from_adapter`.
+* **Quotes and candles.** One quote endpoint in `LTP` or `FULL` mode, batches of 50 tokens, keyed
+  back to the caller's `EXCHANGE:SYMBOL`; depth gives bid/ask; `exchTradeTime` feeds the staleness
+  gate. Candles from `getCandleData` with the platform's interval names mapped to SmartAPI's and
+  IST timestamps parsed as aware datetimes.
+* **Orders.** `MARKET`/`LIMIT` are `NORMAL` variety, `SL`/`SL-M` are `STOPLOSS` with
+  `STOPLOSS_LIMIT`/`STOPLOSS_MARKET`; products `MIS`/`CNC`/`NRML` map to `INTRADAY`/`DELIVERY`/
+  `CARRYFORWARD`; tags are cut to 20 characters. Modify and cancel read the order book first for the
+  variety and identifiers SmartAPI requires. Order book, trade book, positions, holdings (both the
+  old list and the new `holdings` shape) and RMS are mapped to the platform models; positions come
+  back with platform product codes.
+* **Option chain.** SmartAPI has no chain endpoint: the chain is the NFO scrip-master rows for the
+  underlying at the chosen (or nearest) expiry, priced with the quote API around the money (41
+  strikes when the chain is large), merged CE/PE by strike.
+* **Errors.** `status: false` becomes `BrokerAPIError` with the broker's message and code; the
+  AG8xxx/AB8050-1 session codes and HTTP 401/403 become `BrokerAuthenticationError`, which the token
+  lifecycle turns into "log in again". `disconnect` calls `logout` and forgets the token either way.
+
+Endpoint paths and field names follow the public SmartAPI docs as of training cutoff and are
+verified against a mocked transport, not a live account; the first live confirmation is the
+operator's, exactly as for Upstox. Fyers, Dhan and CoinDCX remain structural stubs.
+No schema change. Tests: `tests/test_phase_ac_angel_one.py`.
+
+**Phase AB follow-up.** The checklist's page links now use real page ids (`deployments`,
+`risk-management`, `account` for MFA and email, `team` for the algo id) and say that holidays have
+no page yet.

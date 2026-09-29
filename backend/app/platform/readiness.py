@@ -134,31 +134,31 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
     holidays = int(await session.scalar(select(func.count()).select_from(MarketHolidayRecord).where(MarketHolidayRecord.holiday_date >= year_start.date())) or 0)
     items.append(Item("holidays", "Exchange holiday calendar loaded", "ok" if holidays else "warn",
                       f"{holidays} holiday(s) from {now.year} onwards" if holidays else "No holidays recorded for this year",
-                      "" if holidays else "Load the NSE holiday list (Settings > Market holidays, or POST /api/market-holidays) so the worker stays idle on closed days.", "settings"))
+                      "" if holidays else "Load the NSE holiday list with POST /api/market-holidays (OWNER; no page yet) so the worker stays idle on closed days.", None))
 
     # 5. Deployments ------------------------------------------------------------------------------
     deployments = list(await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.tenant_id == tenant.id)))
     active = [d for d in deployments if d.status == "ACTIVE"]
     by_mode = {m: sum(1 for d in active if d.mode == m) for m in ("PAPER", "LIVE")}
     if active:
-        items.append(Item("deployment", "A deployment is active", "ok", f"{len(active)} active (PAPER {by_mode['PAPER']}, LIVE {by_mode['LIVE']})", link="autopilot"))
+        items.append(Item("deployment", "A deployment is active", "ok", f"{len(active)} active (PAPER {by_mode['PAPER']}, LIVE {by_mode['LIVE']})", link="deployments"))
     else:
         items.append(Item("deployment", "A deployment is active", "todo", f"{len(deployments)} deployment(s), none active",
-                          "Create a PAPER deployment on the Autopilot page and start it. Run paper for at least a few sessions before LIVE.", "autopilot"))
+                          "Create a PAPER deployment on the Autopilot page and start it. Run paper for at least a few sessions before LIVE.", "deployments"))
     failing = [d for d in active if (d.consecutive_failures or 0) >= 3]
     if failing:
         items.append(Item("deployment_errors", "Deployments evaluating without errors", "warn", f"{len(failing)} with 3+ consecutive failures: {failing[0].last_error or ''}"[:200],
-                          "Open the deployment on Autopilot and read its last error.", "autopilot"))
+                          "Open the deployment on Autopilot and read its last error.", "deployments"))
 
     # 6. Risk configuration -----------------------------------------------------------------------
     settings = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == tenant.id))
     limits = int(await session.scalar(select(func.count()).select_from(RiskLimitRecord).where(RiskLimitRecord.tenant_id == tenant.id, RiskLimitRecord.enabled.is_(True))) or 0)
     if settings or limits:
         detail = (f"capital {settings.capital:,.0f}, {settings.risk_per_trade_pct}% per trade, {settings.max_daily_loss_pct}% daily loss cap" if settings else "") + (f"; {limits} scoped limit(s)" if limits else "")
-        items.append(Item("risk", "Risk limits set", "ok", detail.strip("; "), link="risk"))
+        items.append(Item("risk", "Risk limits set", "ok", detail.strip("; "), link="risk-management"))
     else:
         items.append(Item("risk", "Risk limits set", "warn" if not live else "todo", "Platform defaults only (0.5% per trade, 3% daily loss, 3 open positions)",
-                          "Review capital, per-trade risk and the daily loss cap on the Risk page before trading real money.", "risk"))
+                          "Review capital, per-trade risk and the daily loss cap on the Risk page before trading real money.", "risk-management"))
 
     # 7. Alerts -----------------------------------------------------------------------------------
     channels = list(await session.scalars(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant.id, AlertChannelRecord.enabled.is_(True))))
@@ -176,9 +176,9 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
                                                                           (KillSwitchRecord.tenant_id == tenant.id) | (KillSwitchRecord.scope == "GLOBAL"))))
     if switches:
         items.append(Item("kill_switch", "No kill switch engaged", "warn", "; ".join(f"{s.scope}: {s.reason or 'no reason'}" for s in switches)[:200],
-                          "Disengage on the Risk page (tenant/strategy) once the cause is understood; GLOBAL is the operator's.", "risk"))
+                          "Disengage on the Risk page (tenant/strategy) once the cause is understood; GLOBAL is the operator's.", "risk-management"))
     else:
-        items.append(Item("kill_switch", "No kill switch engaged", "ok", "none engaged", link="risk"))
+        items.append(Item("kill_switch", "No kill switch engaged", "ok", "none engaged", link="risk-management"))
     if tenant.broker_uncertain_since:
         items.append(Item("broker_uncertain", "Broker state reconciled", "warn", f"LIVE entries blocked since {tenant.broker_uncertain_since:%Y-%m-%d %H:%M} UTC: {tenant.broker_uncertain_reason or ''}"[:200],
                           "The worker re-reconciles each cycle; check the broker session and positions.", "positions"))
@@ -187,11 +187,11 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
 
     # 9. Account hygiene (LIVE) -------------------------------------------------------------------
     items.append(Item("mfa", "MFA enabled on your account", "ok" if user.mfa_enabled else ("todo" if live else "info"),
-                      "enabled" if user.mfa_enabled else "not enabled", "" if user.mfa_enabled else "Enable TOTP MFA under Settings > Security; LIVE deployments and broker credential changes require a step-up.", "settings", scope="LIVE"))
+                      "enabled" if user.mfa_enabled else "not enabled", "" if user.mfa_enabled else "Enable TOTP MFA on the Account page; LIVE deployments and broker credential changes require a step-up.", "account", scope="LIVE"))
     items.append(Item("email_verified", "Email verified", "ok" if user.email_verified_at else ("todo" if live else "info"),
-                      "verified" if user.email_verified_at else "not verified", "" if user.email_verified_at else "Verify your email from the link in your inbox (needs platform SMTP) so resets and alerts reach you.", "settings", scope="LIVE"))
+                      "verified" if user.email_verified_at else "not verified", "" if user.email_verified_at else "Verify your email from the link in your inbox (needs platform SMTP; resend from the Account page) so resets and alerts reach you.", "account", scope="LIVE"))
     items.append(Item("algo_id", "SEBI algo id set for order tagging", "ok" if tenant.algo_id else ("todo" if live else "info"),
-                      tenant.algo_id or "not set", "" if tenant.algo_id else "Set the exchange-registered algo id under Settings > Compliance; every LIVE order is tagged with it.", "settings", scope="LIVE"))
+                      tenant.algo_id or "not set", "" if tenant.algo_id else "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.", "team", scope="LIVE"))
 
     # 10. Optional --------------------------------------------------------------------------------
     ai = await session.scalar(select(AiProviderConfigRecord).where(AiProviderConfigRecord.tenant_id == tenant.id))
@@ -247,7 +247,7 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
     year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
     holidays = int(await session.scalar(select(func.count()).select_from(MarketHolidayRecord).where(MarketHolidayRecord.holiday_date >= year_start.date())) or 0)
     items.append(Item("holidays", "Exchange holiday calendar loaded", "ok" if holidays else "warn", f"{holidays} from {now.year}",
-                      "" if holidays else "Load the NSE holiday list (POST /api/market-holidays).", "settings"))
+                      "" if holidays else "Load the NSE holiday list (POST /api/market-holidays).", None))
     global_switch = await session.scalar(select(KillSwitchRecord).where(KillSwitchRecord.scope == "GLOBAL", KillSwitchRecord.engaged.is_(True)))
     items.append(Item("global_kill_switch", "Global kill switch disengaged", "ok" if not global_switch else "warn", "disengaged" if not global_switch else (global_switch.reason or "engaged"),
                       "" if not global_switch else "Disengage from the Admin console once the cause is resolved.", "admin"))

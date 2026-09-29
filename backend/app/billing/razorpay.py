@@ -40,6 +40,14 @@ class GatewayError(RuntimeError):
 
 
 @dataclass
+class PaymentLink:
+    """Phase X: a one-off payment request. `url` is the hosted page the payer opens; None under
+    the manual provider, where the operator confirms the payment instead."""
+    ref: str
+    url: Optional[str] = None
+
+
+@dataclass
 class GatewaySubscription:
     ref: str
     checkout_url: Optional[str] = None
@@ -126,6 +134,18 @@ class RazorpayProvider:
         })
         return GatewaySubscription(ref=updated.get("id", subscription.provider_ref), checkout_url=updated.get("short_url") or subscription.checkout_url)
 
+    async def create_payment_link(self, *, amount: float, currency: str, description: str, reference_id: str,
+                                  notes: Optional[Dict[str, str]] = None, customer_email: Optional[str] = None) -> PaymentLink:
+        """Phase X: Razorpay Payment Links - one hosted page per marketplace charge. `reference_id`
+        comes back on the `payment_link.paid` webhook so the charge is matched without guessing."""
+        body: Dict[str, Any] = {"amount": _paise(amount), "currency": currency, "accept_partial": False, "description": description[:255],
+                                "reference_id": reference_id[:40], "notes": notes or {}, "reminder_enable": True}
+        if customer_email:
+            body["customer"] = {"email": customer_email}
+            body["notify"] = {"email": True}
+        created = await self._request("POST", "/payment_links", body)
+        return PaymentLink(ref=created["id"], url=created.get("short_url"))
+
     async def cancel(self, session: AsyncSession, subscription: SubscriptionRecord, *, immediately: bool = False) -> None:
         if not subscription.provider_ref or not subscription.provider_ref.startswith("sub_"):
             return
@@ -148,6 +168,10 @@ class RazorpayProvider:
 
 def subscription_entity(payload: dict) -> dict:
     return ((payload.get("payload") or {}).get("subscription") or {}).get("entity") or {}
+
+
+def payment_link_entity(payload: dict) -> dict:
+    return ((payload.get("payload") or {}).get("payment_link") or {}).get("entity") or {}
 
 
 def payment_entity(payload: dict) -> dict:

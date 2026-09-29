@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Marketplace revenue share (Phase X)
+
+- **Paid listings**: a one-time price per listing, the platform fee frozen at publish; the buyer's
+  copy is made only once the charge is paid (Razorpay payment link or operator-confirmed transfer).
+- **Creator earnings and payouts**: per-sale ledger, payout requests above a minimum with the
+  destination stored encrypted, settled or rejected by the operator with a reference.
+
 ## Historical option backtests (Phase W)
 
 - **The same structures a deployment trades**, on history: strikes, expiries, credits, group

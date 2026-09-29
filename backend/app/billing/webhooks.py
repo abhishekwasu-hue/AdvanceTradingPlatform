@@ -60,6 +60,10 @@ async def handle_razorpay(session: AsyncSession, provider: RazorpayProvider, bod
 
 
 async def _apply(session: AsyncSession, event_type: str, payload: dict, sub: Optional[SubscriptionRecord], tenant: Optional[Tenant]) -> str:
+    if event_type.startswith("payment_link."):
+        # Phase X: a marketplace purchase paid through a hosted payment link.
+        from app.marketplace import billing as marketplace_billing
+        return await marketplace_billing.handle_payment_link_event(session, event_type, payload)
     if sub is None or tenant is None:
         return "ignored: no matching subscription"
     payment = payment_entity(payload)

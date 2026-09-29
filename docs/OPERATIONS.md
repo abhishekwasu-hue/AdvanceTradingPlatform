@@ -516,6 +516,25 @@ Never publish a listing without an attached backtest run; the API refuses the su
   the risk per trade, no quote for a leg, or quotes that make the structure a debit where a credit
   is required. Raise capital or risk per trade, widen the recorded strikes, or change the structure.
 
+### 1.6o Marketplace revenue share (Phase X)
+
+- **Terms**: `PUT /api/admin/controls/marketplace-terms` (Admin page or the Marketplace page's admin card)
+  sets `platform_fee_pct`, `min_payout`, `max_listing_price`. A published listing keeps the fee it was
+  published under; changing the fee only affects listings published afterwards.
+- **Manual provider (no gateway)**: a purchase opens a charge and the buyer is told to pay the operator
+  quoting the charge number. Confirm it under "Open charges" (Mark paid, with the UTR/UPI reference);
+  the buyer's copy is made at that moment. Void a charge the buyer abandoned.
+- **Razorpay**: the buyer gets a hosted payment link; `payment_link.paid` settles the charge through the
+  same signed webhook as subscriptions. Enable the `payment_link.paid` event on the Razorpay webhook.
+  A webhook result reading "ignored: paid X < charge Y" means a partial payment - refund it at Razorpay
+  or confirm manually once the balance arrives.
+- **Payouts**: creators request everything available (>= `min_payout`), one request at a time. Open
+  "Show destination" (audited), make the transfer, "Mark paid" with the reference. Reject with a note if
+  the destination is unusable; the earnings become available again. The platform never holds funds:
+  charges and payouts are ledgers of real transfers.
+- **Revenue**: `GET /api/admin/marketplace/revenue` - gross, fees, creators' share, paid out, open charges,
+  requested payouts.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

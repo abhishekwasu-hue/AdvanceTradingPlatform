@@ -1374,6 +1374,41 @@ export interface MarketplaceListing {
   disclaimer: string;
   custom_strategy_id: number | null;
   config?: Record<string, unknown>;
+  // Phase X: one-time price (0 = free); the fee split only on the creator's own listings.
+  price: number;
+  currency: string;
+  platform_fee_pct?: number | null;
+  creator_net_per_sale?: number | null;
+}
+
+export interface MarketplaceCharge {
+  id: number; listing_id: number; listing_title: string | null; amount: number; currency: string;
+  status: "OPEN" | "PAID" | "VOID"; provider: string; checkout_url: string | null; payment_ref: string | null;
+  paid_at: string | null; created_at: string | null; platform_fee_pct: number; platform_fee: number; creator_net: number;
+  payout_id: number | null; buyer_tenant_id?: number;
+}
+
+export interface MarketplacePayout {
+  id: number; tenant_id: number; amount: number; currency: string; status: "REQUESTED" | "PAID" | "REJECTED";
+  destination_hint: string; reference: string | null; note: string | null; created_at: string | null; settled_at: string | null;
+}
+
+export interface MarketplaceEarnings {
+  currency: string; sales: number; gross: number; platform_fees: number; net: number; available: number; pending_payout: number;
+  paid_out: number; min_payout: number; platform_fee_pct: number; can_request_payout: boolean;
+  sales_rows: MarketplaceCharge[]; payouts: MarketplacePayout[];
+}
+
+export interface MarketplaceTerms { platform_fee_pct: number; min_payout: number; max_listing_price: number }
+
+export interface MarketplacePurchaseResponse {
+  id: number; listing_id: number; status: string; custom_strategy_id: number | null; strategy_id: string | null;
+  charge?: MarketplaceCharge; checkout_url?: string | null; disclaimer: string; next: string;
+}
+
+export interface MarketplaceRevenue {
+  currency: string; sales: number; gross: number; platform_fees: number; creator_net: number; open_charges: number;
+  payouts_requested: number; payouts_requested_amount: number; paid_out: number; terms: MarketplaceTerms;
 }
 
 export interface MarketplaceSubscription {

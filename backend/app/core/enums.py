@@ -34,6 +34,8 @@ class NotificationType(str, Enum):
     SECURITY = "SECURITY"
     # Phase L4: the monitoring agent proposed an action that needs a human decision.
     AI_PROPOSAL = "AI_PROPOSAL"
+    # Phase X: marketplace sales, purchases confirmed, payouts settled.
+    MARKETPLACE = "MARKETPLACE"
 
 
 class NotificationSeverity(str, Enum):

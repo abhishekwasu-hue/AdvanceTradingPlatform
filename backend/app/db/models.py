@@ -881,6 +881,11 @@ class MarketplaceListingRecord(Base):
     published_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+    # Phase X: a one-time price (0 = free) and the platform's share, frozen when the listing is
+    # published so a later change of terms never re-prices a live listing.
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    platform_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class MarketplaceSubscriptionRecord(Base):
@@ -892,8 +897,58 @@ class MarketplaceSubscriptionRecord(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # subscriber
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     custom_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)  # the subscriber's copy
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ACTIVE")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")   # PENDING_PAYMENT / ACTIVE / CANCELLED
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class MarketplaceChargeRecord(Base):
+    """Phase X (V3.9-3.10 revenue share): one purchase of a paid listing - what the subscriber
+    owes or paid, split into the platform's fee and the creator's net. A PAID charge is the
+    creator's earning row; `payout_id` says which payout carried it to them."""
+
+    __tablename__ = "marketplace_charges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("marketplace_listings.id", ondelete="CASCADE"), nullable=False, index=True)
+    creator_tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # the buyer
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    subscription_id: Mapped[int | None] = mapped_column(ForeignKey("marketplace_subscriptions.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    platform_fee_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    platform_fee: Mapped[float] = mapped_column(Float, nullable=False)
+    creator_net: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(8), nullable=False, default="OPEN")   # OPEN / PAID / VOID
+    provider: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
+    provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)    # the gateway's payment link id
+    checkout_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    payment_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)     # the payment id / transfer reference
+    paid_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    payout_id: Mapped[int | None] = mapped_column(ForeignKey("marketplace_payouts.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class MarketplacePayoutRecord(Base):
+    """Phase X: a creator's request to be paid its available earnings, settled by the operator
+    (bank/UPI transfer outside the platform; the reference is recorded here). The destination
+    the creator typed is stored encrypted under the tenant's key; only a hint is kept in clear."""
+
+    __tablename__ = "marketplace_payouts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # the creator
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="REQUESTED")   # REQUESTED / PAID / REJECTED
+    destination_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    destination_hint: Mapped[str] = mapped_column(String(40), nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    settled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 
 
 class ApiKeyRecord(Base):

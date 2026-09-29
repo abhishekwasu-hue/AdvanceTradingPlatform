@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase W, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase X, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -50,7 +50,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 | V2.10 analytics views | done (Phase J2) | Monthly, day-of-week, hour-of-day, exit-reason, direction, holding, slippage, costs, streaks, ratios, drawdown curve. Strategy comparison = compare saved runs in the Backtest page's history. |
 | V3.1-3.5 multi-account, routing, risk hierarchy | done (Phase I + T) | Labelled credentials give several accounts per broker; `broker_accounts` with sync/enable/default; `risk_limits` at six scopes with strictest-wins and `risk_events`. Routing policies EXPLICIT / MOST_MARGIN / LEAST_UTILISED / FEWEST_POSITIONS per deployment or tenant default, optionally across brokers, decided on balances the worker refreshes before routing, recorded on the deployment and on every trade (T); exits and stop re-arms follow the trade's own account. Reconciliation still runs against one session per tenant. |
 | V3.6-3.8 plans, billing, metering | done (Phase K1) | Priced plans with feature flags, subscriptions with trial/grace lifecycle behind a `BillingProvider` (manual provider; a gateway plugs in at the same seam), invoices/payments, usage metering (orders, backtests, webhook events, API calls). Razorpay Subscriptions gateway (hosted checkout, autopay, signed idempotent webhooks) behind the seam; manual remains for bank transfers. |
-| V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. Revenue share / creator payouts not built. |
+| V3.9-3.12 marketplace, public API, developer portal | done (Phase K2-K3 + X) | Listings freeze one version, need documented performance, are operator-reviewed; subscribing copies into the subscriber's strategies. Paid listings with a frozen platform fee, charges settled by gateway payment link or operator, creator earnings and payouts (X). Scoped, hashed, rate-limited API keys; `/api/public/v1/*`; `GET /docs` + `docs/PUBLIC_API.md`. |
 | V3.13 notifications | done (Phase O3) | Telegram, email, webhook (K4), browser Web Push (VAPID, RFC 8291, no third-party service) and SMS through any HTTP gateway (MSG91/Twilio presets). |
 | V3.14 rule 2 `get_balance/disconnect` | done (Phase G3) | `POST /api/broker/{name}/disconnect` revokes the session at the broker. |
 | V4.1-4.3 AI agent, AI scanner, AI generator | done / partial (Phase L) | Monitoring agent with PROPOSED→APPROVED→EXECUTED/REJECTED/EXPIRED state machine and human approval (L4); LLM-backed generator behind backtest+approval gate with lineage (L2); provider seam Anthropic/OpenAI/rule-based with encrypted per-tenant keys (L1). AI scanner (V4.2) still rule-based. |
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase X - marketplace revenue share**: **DONE** (ARCHITECTURE.md Phase X) - priced listings, charges through the billing provider seam (Razorpay payment links + manual confirmation), frozen platform fee, creator earnings, encrypted payout destinations, operator settlement, revenue totals, UI.
 - **Phase W - historical option-chain backtests**: **DONE** (ARCHITECTURE.md Phase W) - shared structure planner and exit rule, synthetic expiry calendar and conventions, Black-Scholes and snapshot pricers, option backtest engine (structures, singles, settlement, square-off, sizing), chain recorder with retention, API dispatch and UI.
 - **Phase V - Risk Guardian** (from the AI strategy builder spec): **V1 DONE** (ARCHITECTURE.md Phase V1) - cool-down after a stop-out, drawdown ladder, event blackouts, portfolio risk with correlated buckets, platform ceilings, all in the engine. **V2 DONE** (Phase V2) - compliance validator on AI drafts with one AI auto-fix round, deterministic fixes, evidence assessment and the "user must accept" gate. **V3 DONE** (Phase V3) - the versioned guardian system prompt filled from the account's live state, replies in the user's language, the spec schema mapped onto the platform's config plus a deployment suggestion the validator reads.
 

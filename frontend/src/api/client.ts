@@ -40,6 +40,8 @@ import type {
   ScannerResult,
   ScanPlan,
   ScanRead,
+  CandleSourcesResponse,
+  CandlesResponse,
   FactorTable,
   QuantExposure,
   QuantRisk,
@@ -452,6 +454,10 @@ export const api = {
   // Phase Y: AI scanner - plan from plain language, read of a result.
   scannerAiPlan: (text: string, language = "en") =>
     request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
+  // Phase AA: broker candles for the research pages.
+  marketDataSources: () => request<CandleSourcesResponse>("/market-data/sources"),
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null }) }),
   // Phase Z: factor and risk models.
   quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>) =>
     request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null }) }),

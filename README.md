@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Broker candles on the research pages (Phase AA)
+
+- **One Data switch** on Signals, Scanner, Backtest and Factor Lab: deterministic sample candles, or
+  real candles through your own broker session (`POST /api/market-data/candles`, the worker's cached
+  market-data service, resampled from one-minute bars). Broker mode unlocks once a broker is logged in
+  under Settings; per-symbol failures are reported beside the symbols that worked.
+
 ## Factor Lab (Phase Z)
 
 - **Cross-sectional factor scores**: momentum, reversal, low volatility, trend, liquidity, and value

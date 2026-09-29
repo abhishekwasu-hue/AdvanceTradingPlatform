@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
-import { Card, DemoDataBanner, Disclaimer } from "../components/ui";
+import { Card, Disclaimer } from "../components/ui";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import { ConditionListEditor } from "./StrategyBuilderPage";
 import {
   OPTION_FILTER_LABELS,
@@ -19,7 +20,8 @@ import {
   type StructureFilter,
   type StructureFilterType,
 } from "../types";
-import { generateSampleCandles, generateSampleOptionChain } from "../utils/sampleData";
+import { generateSampleOptionChain } from "../utils/sampleData";
+import type { OHLCVBar } from "../types";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -40,10 +42,8 @@ function hashSeed(symbol: string): number {
 /** Builds one symbol's sample candles + option chain deterministically from its own name, so
  * every watchlist entry gets a different (but reproducible) price path and option-chain tilt.
  */
-function buildSymbolInput(symbol: string, timeframe: string, includeOptionChain: boolean): ScannerSymbolInput {
+function buildSymbolInput(symbol: string, timeframe: string, includeOptionChain: boolean, candles: OHLCVBar[]): ScannerSymbolInput {
   const seed = hashSeed(symbol);
-  const startPrice = 100 + (seed % 900);
-  const candles = generateSampleCandles(300, startPrice, seed);
   const lastClose = candles[candles.length - 1].close;
   const tilt = OPTION_TILTS[seed % OPTION_TILTS.length];
   return {
@@ -68,6 +68,9 @@ export default function ScannerPage() {
   const [aiPlan, setAiPlan] = useState<ScanPlan | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRead, setAiRead] = useState<ScanRead | null>(null);
+  // Phase AA: sample candles or the tenant's broker candles; option chains stay sample either way.
+  const source = useCandleSource();
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [lastRequest, setLastRequest] = useState<ScannerRequest | null>(null);
 
   async function planWithAi() {
@@ -115,8 +118,10 @@ export default function ScannerPage() {
     setError(null);
     setResult(null);
     try {
+      const fetched = await source.fetch(symbols, timeframe, { count: 300, seedFor: hashSeed, startPriceFor: (s) => 100 + (hashSeed(s) % 900) });
+      setDataWarnings(fetched.warnings);
       const request = {
-        symbols: symbols.map((s) => buildSymbolInput(s, timeframe, needsOptionChain)),
+        symbols: symbols.filter((s) => fetched.candles[s]).map((s) => buildSymbolInput(s, timeframe, needsOptionChain, fetched.candles[s])),
         indicator_conditions: indicatorConditions,
         structure_filters: structureFilters,
         option_filters: optionFilters,
@@ -144,7 +149,8 @@ export default function ScannerPage() {
         </p>
       </div>
 
-      <DemoDataBanner />
+      <DataSourceBar source={source} note="Option-chain filters use a sample chain in both modes." />
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card title="Describe the scan (AI)">

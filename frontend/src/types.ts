@@ -1680,3 +1680,11 @@ export interface QuantRisk {
 export interface QuantExposure {
   weights: Record<string, number>; weights_source: string; exposure: Record<string, number | null>; table: FactorTable; notes: string[]; reading: string;
 }
+
+// Phase AA: broker candles for the research pages.
+export interface CandleSource { broker: string; account_label: string; token_status: string; token_expires_at: string | null; usable: boolean }
+export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
+export interface CandlesResponse {
+  source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; fetched_at: string;
+  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
+}

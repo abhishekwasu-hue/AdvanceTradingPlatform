@@ -3239,3 +3239,32 @@ give the same numbers, and nothing here sizes or places a trade - the risk engin
   choices, portfolio statistics, per-symbol vol, beta and drawdown, and a correlation grid.
 
 No schema change. Tests: `tests/test_phase_z_quant.py`.
+
+## Phase AA: Broker candles for the research pages
+
+Since Phase A2 the worker has fetched real candles through each tenant's own broker session, but
+the Signals, Scanner, Backtest and Factor Lab pages still scored candles generated in the browser.
+Phase AA gives those pages the same data path, behind one switch.
+
+* **API** (`app/market_data/candles_routes.py`). `GET /api/market-data/sources` lists the tenant's
+  stored broker sessions and whether each can serve data today (`token_is_usable`).
+  `POST /api/market-data/candles` takes up to 50 symbols, an exchange, a timeframe (1/3/5/15/30/60
+  minutes or day) and a lookback, picks the named broker or the first usable session, and runs the
+  worker's own `MarketDataService` (history plus today's intraday, Redis-cached for 60 s). Intraday
+  timeframes are resampled from one-minute bars anchored to the 09:15 open exactly as the worker
+  does; `day` is fetched as daily bars. Lookbacks are clamped (30 days intraday, 730 daily) with a
+  warning. Each symbol succeeds or fails on its own; a failure is reported next to it, never as a
+  500. No usable session is a 409 that says where to fix it (Settings > Brokers). Fetches are
+  metered per symbol as `market_data_candles`. Credentials are decrypted in memory to build the
+  adapter and never returned.
+* **Cache key.** `MarketDataService.get_candles` now suffixes the cache key with the lookback when
+  it differs from the worker's default, so a 5-day worker fetch is never served as a 30-day one.
+* **UI.** `components/DataSource.tsx`: `useCandleSource()` owns the choice (Sample or Broker
+  candles, which broker, lookback) and does the fetching; `DataSourceBar` renders it on the four
+  pages. Sample mode is unchanged and never touches the network. Broker mode is disabled, with the
+  reason, until a broker with a valid session exists. Backtest runs record `broker:<name>` as their
+  data source. Signals fetches one-minute bars because strategies read every timeframe off them;
+  Factor Lab gets a bar-size selector. Option chains on the Scanner stay sample in both modes
+  (recorded chains are the backtester's job).
+
+No schema change. Tests: `tests/test_phase_aa_market_data_api.py`.

@@ -1,19 +1,13 @@
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
-import { Card, DemoDataBanner, Disclaimer, StatTile } from "../components/ui";
+import { Card, Disclaimer, StatTile } from "../components/ui";
+import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { FactorTable, QuantRisk, QuantSymbolInput } from "../types";
-import { generateSampleCandles } from "../utils/sampleData";
 
 const FACTOR_LABELS: Record<string, string> = {
   momentum: "Momentum", reversal: "Reversal", low_volatility: "Low volatility", trend: "Trend", liquidity: "Liquidity", value: "Value", quality: "Quality",
 };
 const DEFAULT_WEIGHTS: Record<string, number> = { momentum: 30, reversal: 10, low_volatility: 20, trend: 20, liquidity: 10, value: 5, quality: 5 };
-
-function hashSeed(symbol: string): number {
-  let h = 0;
-  for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) | 0;
-  return Math.abs(h) || 1;
-}
 
 function zClass(z: number | null): string {
   if (z == null) return "text-muted";
@@ -42,21 +36,24 @@ export default function QuantPage() {
   const [table, setTable] = useState<FactorTable | null>(null);
   const [risk, setRisk] = useState<QuantRisk | null>(null);
   const [weightsMode, setWeightsMode] = useState<"equal" | "inverse_volatility" | "risk_parity">("equal");
+  const [timeframe, setTimeframe] = useState("15min");   // Phase AA: bar size for broker candles
+  const source = useCandleSource(30);
+  const [dataWarnings, setDataWarnings] = useState<string[]>([]);
 
   const symbols = useMemo(() => watchlist.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean), [watchlist]);
 
-  function inputs(): QuantSymbolInput[] {
-    return symbols.map((s) => {
-      const seed = hashSeed(s);
-      return { symbol: s, candles: generateSampleCandles(320, 100 + (seed % 900), seed) };
-    });
+  async function inputs(): Promise<QuantSymbolInput[]> {
+    const fetched = await source.fetch(symbols, timeframe, { count: 320 });
+    setDataWarnings(fetched.warnings);
+    return Object.entries(fetched.candles).map(([symbol, candles]) => ({ symbol, candles }));
   }
 
   async function run() {
     if (symbols.length < 2) { setError("Enter at least two symbols."); return; }
     setBusy(true); setError(null);
     try {
-      const universe = inputs();
+      const universe = await inputs();
+      if (universe.length < 2) throw new Error("Fewer than two symbols returned candles.");
       const [t, r] = await Promise.all([
         api.quantFactors(universe, weights),
         api.quantRisk(universe, undefined, symbols.includes(benchmark) ? benchmark : symbols[0]),
@@ -74,14 +71,21 @@ export default function QuantPage() {
         <h1 className="text-xl font-extrabold text-violet-400">Factor Lab</h1>
         <p className="text-sm font-semibold text-violet-400/60">Cross-sectional factor scores and a descriptive risk model on your watchlist. Ranks and statistics of the supplied window; never a signal or an order.</p>
       </div>
-      <DemoDataBanner />
+      <DataSourceBar source={source} note="Value and quality need fundamentals, absent in both modes until supplied." />
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card title="Universe and factor weights">
-        <div className="grid sm:grid-cols-[1fr_160px] gap-3 mb-3">
+        <div className="grid sm:grid-cols-[1fr_120px_160px] gap-3 mb-3">
           <div>
             <label className="block text-xs text-muted mb-1">Symbols (comma-separated)</label>
             <input className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={watchlist} onChange={(e) => setWatchlist(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1">Bar size</label>
+            <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+              {["1min", "5min", "15min", "60min", "day"].map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-muted mb-1">Benchmark (for betas)</label>

@@ -83,6 +83,10 @@ class MarketDataService:
     ) -> List[OHLCVBar]:
         """Recent history plus today's bars so far, ascending, from cache when fresh."""
         key = _cache_key(self.broker.name, exchange, symbol, interval)
+        if self.lookback_days != DEFAULT_LOOKBACK_DAYS:
+            # Phase AA: the research pages ask for longer windows than the worker; a 5-day
+            # worker fetch must not be served back as a 30-day one (or the reverse).
+            key = f"{key}:{self.lookback_days}d"
         cached = await cache_get(key)
         if cached:
             try:

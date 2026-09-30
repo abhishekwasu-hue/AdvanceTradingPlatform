@@ -661,6 +661,17 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - The Upstox master still drives contract resolution (`INSTRUMENT_SYNC_EXCHANGES`), so it must be synced
   even when no tenant trades through Upstox.
 
+### 1.6aa First live confirmation of a broker session (Phase AJ)
+
+- After entering a broker's key under Settings and logging in, press **Read-only check** on that account
+  card. It probes profile, funds, instruments, a NIFTY quote, the nearest NIFTY option (resolved and quoted
+  through the worker's own symbol translation), positions and today's order book. It never places, modifies or
+  cancels an order.
+- Green on all eight steps is the adapter's first live confirmation; do it once per broker before the first
+  PAPER session and again after any adapter upgrade. A red `profile` means the token; a red `derivatives` or
+  `contract_quote` means the scrip master or symbol translation, and its message names the contract.
+- Each run is audited as `broker_smoke_test` with its summary.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

@@ -558,6 +558,10 @@ export interface StoredBrokerInfo {
   account_label?: string;
 }
 
+// Phase AJ: read-only broker smoke test.
+export interface SmokeStep { name: string; status: "ok" | "fail" | "skip"; detail: string; ms: number }
+export interface SmokeReport { broker: string; account_label: string; ok: boolean; summary: string; started_at: string; steps: SmokeStep[]; read_only: boolean }
+
 // Phase I2: broker accounts
 export interface BrokerAccount {
   id: number;

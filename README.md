@@ -230,6 +230,15 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Fundamentals ingestion (Phase AH)
+
+- **Bulk financials import**: paste a CSV of financial periods on the Fundamentals page (or
+  `POST /api/fundamentals/companies/{symbol}/financials/import`); periods are created or updated on
+  (type, label), bad rows are listed with their reason.
+- **Provider refresh**: "Add from NSE" / "Refresh from NSE" pull the company profile, shareholding pattern
+  and announcements through the fundamentals provider seam (`FUNDAMENTALS_PROVIDER`, default `nse`);
+  `POST /api/fundamentals/refresh` does a whole watchlist and creates missing profiles.
+
 ## Factor Lab fundamentals (Phase AG)
 
 - **Value and quality factors filled from stored financials**: `/api/quant/factors` and `/exposure` derive

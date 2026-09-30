@@ -3437,3 +3437,42 @@ Factor Lab page never did. Phase AG derives them from what the Fundamentals modu
 Coverage is whatever the operator has loaded under Fundamentals (profiles + financial periods,
 by hand or through the NSE provider); the Factor Lab does not fetch financials itself. No schema
 change. Tests: `tests/test_phase_ag_quant_fundamentals.py`.
+
+## Phase AH: Fundamentals ingestion (bulk financials import, provider refresh)
+
+Phase AG made the Factor Lab read stored financials; Phase AH makes those financials easier to
+get in. Before it, a company's periods were typed one at a time through the form, a duplicate
+label was a 500 from the unique constraint, and the NSE provider (`providers/nse.py`) existed
+but nothing called it.
+
+* **CSV import** (`app/fundamentals/ingest.py: parse_financials_csv`). A header-led CSV or TSV,
+  one period per row, columns named after `FinancialPeriod` fields (case-insensitive; common
+  aliases such as `sales`, `net_profit`, `equity`, `debt`, `shares` map; unknown columns are
+  ignored). Numbers accept thousands separators and bracketed negatives; dates accept ISO,
+  `DD-MM-YYYY`, `DD-Mon-YYYY` and `Mon YYYY` (month end); `period_type` accepts `FY`, `annual`,
+  `Q`, `quarterly`, `TTM`. Rows that fail are reported with their line number and reason; the
+  good rows still import.
+* **Upsert** (`upsert_financial_periods`). The natural key is (`period_type`, `period_label`):
+  a re-import corrects numbers instead of failing. `POST /companies/{symbol}/financials/import`
+  takes `csv` text or a JSON `periods` list and returns created/updated counts, labels and
+  errors. The one-period form route now answers 409 on a duplicate and points at the import.
+* **Provider refresh** (`refresh_from_provider`, `provider_for`). `POST /companies/{symbol}/refresh`
+  pulls the profile, latest shareholding pattern and recent announcements from the fundamentals
+  provider (`FUNDAMENTALS_PROVIDER`, default `nse`; `GET /providers` lists them) and stores what
+  is new: profile fields the provider carries are merged (hand-entered description, website and
+  segments survive; the provider's citation becomes the profile's source), a shareholding
+  snapshot is added once per `as_of_date`, announcements are de-duplicated on (date, headline).
+  Each part fails on its own and is named in `errors`; a refresh that lands nothing is a 502.
+  `POST /refresh` does the same for up to 50 symbols and creates the company profile from the
+  provider when it is missing (`create_missing`), so a watchlist becomes Fundamentals coverage
+  in one call.
+* **Fundamentals page**. "Add from NSE" symbols box next to Add Company, "Refresh from NSE" on
+  the Profile tab with the change summary, "Import financial periods (CSV)" on the Financials
+  tab with the rejected rows listed.
+
+NSE's public JSON has no financial statements, so P&L, balance sheet and cash flow always come
+through the CSV import or the form; the provider covers profile, shareholding and announcements.
+Nothing fabricates a number. The NSE adapter itself is still verified against mocked responses
+only (its own docstring explains the sandbox egress block); the ingest layer is tested with a
+mocked provider injected through `set_provider_factory`. No schema change. Tests:
+`tests/test_phase_ah_fundamentals_ingest.py`.

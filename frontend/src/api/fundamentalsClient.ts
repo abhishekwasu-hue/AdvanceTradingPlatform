@@ -10,13 +10,16 @@ import type {
   EventImpactResult,
   FinalCompanyReport,
   FinancialPeriod,
+  FinancialsImportResult,
   FundamentalScoreResult,
+  FundamentalsProviders,
   FusionResult,
   PeerMetrics,
   PostEarningsAnalysis,
   PreEarningsAnalysis,
   QualitativeFactor,
   RedFlag,
+  RefreshSummary,
   SWOTResult,
   ScenarioResult,
   SectorMetric,
@@ -39,6 +42,15 @@ export const fundamentalsApi = {
   listFinancials: (symbol: string) => request<FinancialPeriod[]>(`/fundamentals/companies/${symbol}/financials`),
   addFinancialPeriod: (symbol: string, period: FinancialPeriod) =>
     request<FinancialPeriod>(`/fundamentals/companies/${symbol}/financials`, { method: "POST", body: JSON.stringify(period) }),
+
+  // Phase AH: bulk import and provider refresh.
+  importFinancials: (symbol: string, csv: string) =>
+    request<FinancialsImportResult>(`/fundamentals/companies/${symbol}/financials/import`, { method: "POST", body: JSON.stringify({ csv }) }),
+  listProviders: () => request<FundamentalsProviders>("/fundamentals/providers"),
+  refreshCompany: (symbol: string, opts?: { profile?: boolean; shareholding?: boolean; announcements?: boolean }) =>
+    request<RefreshSummary>(`/fundamentals/companies/${symbol}/refresh`, { method: "POST", body: JSON.stringify(opts ?? {}) }),
+  refreshMany: (symbols: string[]) =>
+    request<{ provider: string; results: RefreshSummary[]; created: number; failed: number }>("/fundamentals/refresh", { method: "POST", body: JSON.stringify({ symbols }) }),
 
   listShareholding: (symbol: string) => request<ShareholdingSnapshot[]>(`/fundamentals/companies/${symbol}/shareholding`),
   addShareholding: (symbol: string, snapshot: ShareholdingSnapshot) =>

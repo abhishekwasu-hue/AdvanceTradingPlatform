@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AG, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AH, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -83,6 +83,7 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AH - Fundamentals ingestion**: **DONE** (ARCHITECTURE.md Phase AH) - header-led CSV/TSV import of financial periods with upsert on (type, label) and per-row errors; NSE provider wired to `POST /companies/{symbol}/refresh` and bulk `POST /refresh` (profile merge, shareholding snapshot, de-duplicated announcements, create-missing); provider registry behind `FUNDAMENTALS_PROVIDER`; Fundamentals page import/refresh UI.
 - **Phase AG - Factor Lab value/quality from Fundamentals**: **DONE** (ARCHITECTURE.md Phase AG) - bridge deriving PE, PB, ROE, debt/equity and PAT growth from stored company financials for symbols sent without ratios; `use_fundamentals` flag on factors/exposure; coverage note and missing-ratio reasons; Factor Lab toggle.
 - **Phase AF - Dhan API v2 adapter**: **DONE** (ARCHITECTURE.md Phase AF) - token headers, scrip master with built-in index ids, segment-batched quotes, parallel-array candles, order mapping, books, positions, holdings, funds, native option chain with Greeks, error mapping; mocked-transport tests.
 - **Phase AE - Fyers API v3 adapter**: **DONE** (ARCHITECTURE.md Phase AE) - auth-code exchange, symbol master, batched quotes, candles, order mapping, books, positions, holdings, funds, native option chain, error mapping; mocked-transport tests.

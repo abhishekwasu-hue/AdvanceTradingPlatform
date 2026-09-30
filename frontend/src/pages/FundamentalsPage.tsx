@@ -18,6 +18,7 @@ import {
   type EventImpactResult,
   type FinalCompanyReport,
   type FinancialPeriod,
+  type FinancialsImportResult,
   type FundamentalScoreResult,
   type FusionResult,
   type GrowthAnalysis,
@@ -27,6 +28,7 @@ import {
   type ProfitabilityAnalysis,
   type QuarterlyResultAnalysis,
   type RedFlag,
+  type RefreshSummary,
   type SWOTResult,
   type ScenarioResult,
   type SectorMetric,
@@ -67,6 +69,13 @@ export default function FundamentalsPage() {
 
   const [periods, setPeriods] = useState<FinancialPeriod[]>([]);
   const [newPeriod, setNewPeriod] = useState<FinancialPeriod>(defaultFinancialPeriod());
+  // Phase AH: CSV import and provider refresh.
+  const [importCsv, setImportCsv] = useState("");
+  const [importResult, setImportResult] = useState<FinancialsImportResult | null>(null);
+  const [refreshResult, setRefreshResult] = useState<RefreshSummary | null>(null);
+  const [refreshBusy, setRefreshBusy] = useState(false);
+  const [bulkSymbols, setBulkSymbols] = useState("");
+  const [bulkResult, setBulkResult] = useState<{ created: number; failed: number; results: RefreshSummary[] } | null>(null);
 
   const [growth, setGrowth] = useState<GrowthAnalysis | null>(null);
   const [profitability, setProfitability] = useState<ProfitabilityAnalysis | null>(null);
@@ -154,6 +163,38 @@ export default function FundamentalsPage() {
     } catch (e) {
       setError(String(e));
     }
+  }
+
+  async function handleImportCsv() {
+    setError(null); setImportResult(null);
+    try {
+      const r = await fundamentalsApi.importFinancials(symbol, importCsv);
+      setImportResult(r);
+      setPeriods(await fundamentalsApi.listFinancials(symbol));
+      if (r.errors.length === 0) setImportCsv("");
+    } catch (e) { setError(String(e)); }
+  }
+
+  async function handleRefresh() {
+    setError(null); setRefreshResult(null); setRefreshBusy(true);
+    try {
+      const r = await fundamentalsApi.refreshCompany(symbol);
+      setRefreshResult(r);
+      refreshCompanies();
+    } catch (e) { setError(String(e)); } finally { setRefreshBusy(false); }
+  }
+
+  async function handleBulkRefresh() {
+    setError(null); setBulkResult(null); setRefreshBusy(true);
+    try {
+      const symbols = bulkSymbols.split(/[\s,]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+      if (!symbols.length) throw new Error("Enter one or more NSE symbols.");
+      const r = await fundamentalsApi.refreshMany(symbols);
+      setBulkResult(r);
+      refreshCompanies();
+      const first = r.results.find((x) => x.created_company || x.profile_changed.length);
+      if (first) setSymbol(first.symbol);
+    } catch (e) { setError(String(e)); } finally { setRefreshBusy(false); }
   }
 
   async function handleAddPeriod() {
@@ -376,7 +417,20 @@ export default function FundamentalsPage() {
           >
             {showNewCompanyForm ? "Cancel" : "+ Add Company"}
           </button>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-xs text-muted mb-1">Add from NSE (symbols)</label>
+              <input placeholder="TCS, INFY, HDFCBANK" className="w-56 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={bulkSymbols} onChange={(e) => setBulkSymbols(e.target.value.toUpperCase())} disabled={!user} />
+            </div>
+            <button onClick={handleBulkRefresh} disabled={!user || refreshBusy || !bulkSymbols.trim()} title={user ? "Creates the profile from NSE and pulls shareholding + announcements" : "Log in to add companies"} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-sm disabled:opacity-50">{refreshBusy ? "Fetching…" : "Fetch"}</button>
+          </div>
         </div>
+        {bulkResult && (
+          <div className="mt-2 text-xs text-muted">
+            NSE: {bulkResult.created} created, {bulkResult.failed} failed.
+            {bulkResult.results.filter((r) => r.errors.length).map((r) => <div key={r.symbol} className="text-amber-300">{r.symbol}: {r.errors.join("; ")}</div>)}
+          </div>
+        )}
 
         {showNewCompanyForm && (
           <div className="mt-3 grid sm:grid-cols-3 gap-2">
@@ -427,6 +481,16 @@ export default function FundamentalsPage() {
               {selectedCompany.source && (
                 <div className="mt-3 text-xs text-muted">Source: {selectedCompany.source.source} (retrieved {selectedCompany.source.retrieved_date})</div>
               )}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button onClick={handleRefresh} disabled={!user || refreshBusy} title={user ? undefined : "Log in to refresh"} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs disabled:opacity-50">{refreshBusy ? "Refreshing…" : "Refresh from NSE"}</button>
+                <span className="text-[11px] text-muted">Pulls the profile, latest shareholding pattern and recent announcements; financial statements are not published as JSON by NSE, import them on the Financials tab.</span>
+              </div>
+              {refreshResult && (
+                <div className="mt-2 text-xs text-muted">
+                  Profile fields changed: {refreshResult.profile_changed.length ? refreshResult.profile_changed.join(", ") : "none"}; shareholding {refreshResult.shareholding_added ? "added" : "unchanged"}; {refreshResult.announcements_added} new announcement(s).
+                  {refreshResult.errors.map((e, i) => <div key={i} className="text-amber-300">{e}</div>)}
+                </div>
+              )}
             </Card>
           )}
 
@@ -453,6 +517,18 @@ export default function FundamentalsPage() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </Card>
+
+              <Card title="Import financial periods (CSV)">
+                <p className="text-xs text-muted mb-2">Paste a header-led CSV or TSV, one period per row. Required columns: period_type (ANNUAL/QUARTER/TTM), period_label, period_end_date, revenue, ebitda, pat. Optional: eps, shares_outstanding, total_debt, cash_and_equivalents, shareholders_equity, total_assets, cfo, capex, current_assets, current_liabilities, interest_expense, ebit and the other FinancialPeriod fields. Existing periods with the same type and label are updated.</p>
+                <textarea className="w-full h-32 rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono" placeholder={"period_type,period_label,period_end_date,revenue,ebitda,pat,eps,shares_outstanding,total_debt,shareholders_equity\nANNUAL,FY24,2024-03-31,1200,300,100,20,50,280,500"} value={importCsv} onChange={(e) => setImportCsv(e.target.value)} disabled={!user} />
+                <div className="mt-2 flex items-center gap-3">
+                  <button onClick={handleImportCsv} disabled={!user || !importCsv.trim()} title={user ? undefined : "Log in to import"} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">Import</button>
+                  {importResult && <span className="text-xs text-muted">{importResult.created} created, {importResult.updated} updated{importResult.errors.length ? `, ${importResult.errors.length} row(s) rejected` : ""}.</span>}
+                </div>
+                {importResult && importResult.errors.length > 0 && (
+                  <ul className="mt-2 text-xs text-amber-300 space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
                 )}
               </Card>
 

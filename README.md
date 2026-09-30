@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Completion: CoinDCX, real defaults, go-live runbook (Phase AK)
+
+- **CoinDCX spot adapter** replaces the last stub: signed private calls, INR markets, ticker quotes, public
+  candles, market/limit/stop-limit orders with step-floored fractional quantities, wallet-derived positions
+  and margins. Keys are permanent (no daily login). Every registered broker now has real I/O.
+- **`docs/GO_LIVE.md`**: the ordered operator sequence from a fresh deploy to the first LIVE order.
+
 ## Read-only broker check (Phase AJ)
 
 - **First live confirmation without an order**: "Read-only check" on a broker account (or
@@ -286,6 +293,8 @@ npm run dev
   transport; the first live confirmation is the operator's.
 
 ## Go-live checklist (Phase AB)
+
+See also `docs/GO_LIVE.md` for the full ordered runbook (Phase AK).
 
 - **Dashboard**: every step still needed before a PAPER run, and the extra ones for LIVE (MFA, verified
   email, SEBI algo id), computed from the platform's state with a jump to the page that fixes it.

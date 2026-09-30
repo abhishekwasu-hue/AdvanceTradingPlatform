@@ -95,13 +95,5 @@ class _StubBrokerAdapter(BrokerInterface):
         raise self._not_implemented("get_margins")
 
 
-class CoinDCXBroker(_StubBrokerAdapter):
-    """A structural placeholder for crypto trading (see app/instruments/registry.py for the
-    CRYPTO contract specs this would eventually route orders for). CoinDCX is one of the larger
-    INR crypto exchanges with a documented public API; unlike the equity brokers above, no crypto
-    exchange adapter has real, tested I/O yet - wire one in here (or swap in a different exchange
-    entirely) before enabling CRYPTO in ExecutionMode.LIVE.
-    """
-
-    name = "coindcx"
-    docs_url = "https://docs.coindcx.com/"
+# No concrete stub remains: every registered broker (Upstox, Zerodha, Shoonya, Angel One, Fyers, Dhan, CoinDCX)
+# has real I/O. `_StubBrokerAdapter` stays as the template for the next venue before its adapter is written.

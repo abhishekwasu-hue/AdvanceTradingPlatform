@@ -230,6 +230,12 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Designer dashboard (Phase AM)
+
+- The Dashboard is a colour-coded one-glance screen: gradient hero with status pills and primary actions, six KPI tiles
+  (P&L, win rate, open positions, deployments, broker funds, strategies), P&L-by-strategy bars, strategy-mix and
+  long/short exposure rings, running deployments, open positions, latest alerts, the go-live checklist and the engine cards.
+
 ## Reconciliation per broker account (Phase AL)
 
 - Each broker account's LIVE positions are compared with that account's own session; the tenant's LIVE block

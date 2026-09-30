@@ -3598,3 +3598,16 @@ and UNTRACKED at the other.
   in that account's own order book (as the per-cycle guard already did since Phase T).
 
 No schema change. Tests: `tests/test_phase_al_account_reconciliation.py`.
+
+## Phase AM: designer dashboard
+
+`frontend/src/pages/DashboardPage.tsx` rebuilt as the operator's one-glance screen, every family of
+facts in its own colour: gradient hero with backend / Autopilot / market / exposure-warning pills and
+the three primary actions (Deploy, Positions, AI Copilot); six colour-coded KPI tiles (net P&L
+emerald or rose, win rate sky, open positions violet, deployments amber, broker funds orange,
+strategies fuchsia) that navigate to their page; P&L by strategy bars signed by colour; strategy-mix
+and long/short exposure rings (inline SVG, no chart library); running deployments, open positions
+and the latest alerts by severity; the go-live checklist; engine cards on tinted gradients. Every
+number is the backend's (`/analytics/summary`, `/portfolio/exposure`, `/positions`, `/deployments`,
+`/accounts`, `/notifications`, `/worker/status`), refreshed every 30 s; logged out, the page shows
+the engine facts only. No backend change.

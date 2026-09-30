@@ -18,6 +18,7 @@ class ReconciliationItem(BaseModel):
     status: ReconciliationStatus
     internal_trade_ids: List[int] = []
     detail: str = ""
+    account_label: Optional[str] = None   # Phase AL: which broker account the row was checked in
 
 
 class ReconciliationReport(BaseModel):
@@ -25,3 +26,5 @@ class ReconciliationReport(BaseModel):
     checked_at: str
     items: List[ReconciliationItem]
     mismatched_count: int
+    account_label: Optional[str] = None   # Phase AL: one account's run; None when merged or pre-accounts
+    accounts: List[str] = []              # Phase AL: labels covered by a merged report

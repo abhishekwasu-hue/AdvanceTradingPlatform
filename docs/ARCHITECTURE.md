@@ -3570,3 +3570,31 @@ The last items between the master prompt and "everything the code can do is done
 As for every adapter: verified against a mocked transport built from the public docs, not a live
 account; the Read-only check on a real key is the first live confirmation. No schema change.
 Tests: `tests/test_phase_ak_coindcx.py`.
+
+## Phase AL: reconciliation per broker account
+
+The last named residual in the gap analysis (V3.1-3.5: "reconciliation still runs against one
+session per tenant"). A tenant with two accounts used to have its whole LIVE book compared with
+whichever session was asked, so a position in the hedge account read as MISSING at the primary one
+and UNTRACKED at the other.
+
+* `reconciliation.service.trades_in_account(session, tenant_id, account, include_unassigned)` -
+  the open trades that sit in one account: those recorded with its id (Phase T), plus, for the
+  broker's default account, trades recorded before accounts were tracked whose deployment trades
+  through that broker or that were entered by hand.
+* `run_reconciliation(..., account=, include_unassigned=, settle=)` - with an account, only its
+  trades are compared with its session; the report and its items carry `account_label`.
+  `settle=False` records the run (audit rows, metrics, `last_reconciled_at`) without touching the
+  tenant flag.
+* `reconcile_accounts(session, tenant, [(account, adapter), ...])` - every account against its own
+  session, then one settlement of the tenant's `broker_uncertain` flag on the joint result: clean
+  everywhere clears it, any mismatch sets it with each line tagged `[label]`; an account whose
+  positions could not be fetched has already flagged the tenant and the flag stands.
+* `POST /api/reconciliation/{broker}` reconciles every account stored at that broker (merged report,
+  `accounts` list, items labelled) or one with `?account_label=`; a fetch failure on any account is
+  a 502 naming it.
+* Worker: `reconcile_on_start` and the while-uncertain cycle run `reconcile_accounts` over the
+  ACTIVE accounts with a usable session, and the start-up stop guard checks each account's stops
+  in that account's own order book (as the per-cycle guard already did since Phase T).
+
+No schema change. Tests: `tests/test_phase_al_account_reconciliation.py`.

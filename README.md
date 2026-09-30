@@ -230,6 +230,12 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Reconciliation per broker account (Phase AL)
+
+- Each broker account's LIVE positions are compared with that account's own session; the tenant's LIVE block
+  settles on the joint result, with mismatch lines tagged by account. Closes the last named gap in
+  `docs/MASTER_PROMPT_GAP_ANALYSIS.md`.
+
 ## Completion: CoinDCX, real defaults, go-live runbook (Phase AK)
 
 - **CoinDCX spot adapter** replaces the last stub: signed private calls, INR markets, ticker quotes, public

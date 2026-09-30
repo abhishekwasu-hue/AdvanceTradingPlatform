@@ -1070,6 +1070,7 @@ export interface ReconciliationItem {
   status: "MATCHED" | "QUANTITY_MISMATCH" | "MISSING_AT_BROKER" | "UNTRACKED_AT_BROKER";
   internal_trade_ids: number[];
   detail: string;
+  account_label?: string | null;
 }
 
 export interface ReconciliationReport {
@@ -1077,6 +1078,8 @@ export interface ReconciliationReport {
   checked_at: string;
   items: ReconciliationItem[];
   mismatched_count: number;
+  account_label?: string | null;
+  accounts?: string[];
 }
 
 export interface WorkerStatus {

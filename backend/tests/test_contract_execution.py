@@ -138,19 +138,28 @@ def test_order_plan_for_bought_written_and_future():
     assert plan.order_signal.stop_loss == pytest.approx(24580.0 + 52.0) and plan.order_signal.target1 == pytest.approx(24580.0 - 98.0)
 
 
-def test_contract_ltp_prefers_instrument_key_then_symbol():
+def test_contract_ltp_prefers_instrument_key_on_upstox_then_symbol():
     _load_master()
     ce = _resolve(BUY)
-    broker = _FnoBroker(premium=95.5)
+
+    # Phase AI: only Upstox understands its own `NSE_FO|...` keys, so only an Upstox broker is offered the key first.
+    class UpstoxLike(_FnoBroker):
+        name = "upstox"
+    broker = UpstoxLike(premium=95.5)
     assert _run(contract_ltp(broker, ce)) == 95.5
     assert broker.quoted[0] == (ce.instrument_key, "NFO")
 
-    class NoKey(_FnoBroker):
+    class NoKey(UpstoxLike):
         async def get_ltp_for_symbol(self, symbol, exchange="NSE"):
             if "|" in symbol:
                 raise KeyError("unknown key")
             return 77.0
     assert _run(contract_ltp(NoKey(), ce)) == 77.0
+
+    # Any other broker gets the tradingsymbol straight away (its ContractSymbolBroker wrapper translates it).
+    other = _FnoBroker(premium=95.5)
+    assert _run(contract_ltp(other, ce)) == 95.5
+    assert other.quoted == [(ce.tradingsymbol, "NFO")]
 
     class Dead(_FnoBroker):
         async def get_ltp_for_symbol(self, symbol, exchange="NSE"):

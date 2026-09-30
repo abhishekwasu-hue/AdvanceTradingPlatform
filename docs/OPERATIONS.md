@@ -649,6 +649,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `FundamentalDataProvider` registered through `ingest.set_provider_factory`.
 - The Factor Lab's value/quality factors (Phase AG) read whatever is loaded here.
 
+### 1.6z F&O on non-Upstox brokers (Phase AI)
+
+- Contract symbols are stored and shown platform-wide in the Upstox master's spelling
+  (`NIFTY 26000 CE 30 OCT 26`). On Zerodha, Angel One, Fyers, Dhan and Shoonya the adapter wrapper
+  translates them into that broker's own symbol from its instrument list before every order, stop, exit,
+  margin probe and quote, and translates positions and order books back.
+- An entry refused with "lists no instrument for NIFTY ... on NFO" means the broker's master has no such
+  contract (expiry not yet listed, strike outside the broker's band, master download failed). Check the
+  broker's scrip master for that expiry; nothing is guessed.
+- The Upstox master still drives contract resolution (`INSTRUMENT_SYNC_EXCHANGES`), so it must be synced
+  even when no tenant trades through Upstox.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

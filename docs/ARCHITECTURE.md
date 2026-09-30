@@ -3476,3 +3476,41 @@ Nothing fabricates a number. The NSE adapter itself is still verified against mo
 only (its own docstring explains the sandbox egress block); the ingest layer is tested with a
 mocked provider injected through `set_provider_factory`. No schema change. Tests:
 `tests/test_phase_ah_fundamentals_ingest.py`.
+
+## Phase AI: contract symbols per broker
+
+Derived contracts are resolved from the Upstox instrument master (Phase F), so a resolved
+contract's `tradingsymbol` is spelt Upstox's way (`NIFTY 26000 CE 30 OCT 26`, `NIFTY FUT 30 OCT 26`)
+and that spelling is what the trade record, the position monitor and reconciliation match on.
+Every other broker names the same contract differently and only accepts its own spelling:
+Zerodha and Fyers `NIFTY26OCT26000CE`, Angel One `NIFTY30OCT2626000CE`, Dhan `NIFTY-OCT2026-26000-CE`,
+Shoonya `NIFTY30OCT26C26000`. Until this phase the Upstox spelling was sent as-is to whichever
+broker the tenant trades through, so an F&O entry, stop, exit or margin probe on any non-Upstox
+account failed at that adapter's symbol lookup.
+
+* **Translator** (`app/brokers/contract_symbols.py`). `ContractSymbolBroker` wraps a non-Upstox
+  adapter (same `BrokerInterface`, adapter internals still reachable, so the tick streams keep
+  working) and translates at the boundary in both directions without knowing any broker's
+  format. Outbound, a symbol that parses as an Upstox contract (`parse_contract` ->
+  `ContractKey(underlying, expiry, right, strike)`) is matched to the broker's own instrument
+  list by attributes (`contract_keys(instrument)`: master name or symbol prefix, expiry in any
+  master's date format, CE/PE/FUT from the type or the symbol's own suffix, Shoonya's `C`/`P`
+  and `F` included) and the broker's `tradingsymbol` is sent: orders, stop orders, exits, margin
+  probes, LTP and quotes (list keys mapped back to the caller's keys), candles, subscriptions.
+  Inbound, positions, order-book and trade-book rows whose symbol is one of those instruments
+  come back in the platform's spelling (`ContractKey.canonical`), so the monitor, reconciliation
+  and the journal keep matching on one string. A contract the broker does not list is refused
+  with `BrokerAPIError` naming the contract, never guessed. Non-contract symbols (`RELIANCE`,
+  `NIFTY 50`) pass through untouched and never trigger a master download.
+* **Wiring**. `token_lifecycle.build_adapter` wraps every non-Upstox adapter
+  (`wrap_contract_symbols`), so the worker, the position monitor, the stop guard, the account
+  sync and every route that builds a tenant adapter get the translation without changes. The
+  worker's rate limiter wraps outside it.
+* **Upstox-only keys**. `contract_ltp`, `written_lot_cap` and the multi-leg margin probe used to
+  try the Upstox `NSE_FO|...` instrument key on any broker; they now do so only when the broker
+  is Upstox (`_is_upstox`).
+
+The index is built from the adapter's own cached instrument list per derivatives exchange and
+rebuilt when that list refreshes or a lookup misses once. Verified against fixtures of each
+broker's spelling, not live accounts. No schema change. Tests:
+`tests/test_phase_ai_contract_symbols.py`.

@@ -34,7 +34,7 @@ from app.brokers.models import BrokerOrderRequest
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
-from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp
+from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
@@ -329,7 +329,7 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
     per_lot = 0.0
     for leg in structure.short_legs:
         probe = BrokerOrderRequest(
-            symbol=leg.contract.instrument_key if "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
+            symbol=leg.contract.instrument_key if _is_upstox(broker) and "|" in (leg.contract.instrument_key or "") else leg.contract.tradingsymbol,
             exchange=leg.contract.exchange, transaction_type=OrderSide.SELL, quantity=structure.lot_size * leg.ratio,
             order_type="MARKET", product="MIS",
         )

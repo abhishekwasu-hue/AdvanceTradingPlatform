@@ -19,7 +19,7 @@ exit on them (F4); the contract's price levels are what the broker-side SL-M and
 """
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest
@@ -48,11 +48,17 @@ class OrderPlan:
     notes: list = field(default_factory=list)
 
 
+def _is_upstox(broker: Any) -> bool:
+    """Phase AI: only Upstox understands its own `NSE_FO|...` instrument keys; every other broker gets the
+    tradingsymbol, which its ContractSymbolBroker wrapper translates into that broker's spelling."""
+    return getattr(broker, "name", "") == "upstox"
+
+
 async def contract_ltp(broker: BrokerInterface, contract: ResolvedContract) -> float:
     """The contract's last price. Upstox resolves by instrument key (`NSE_FO|...` passes through
     its symbol resolver untouched); other brokers by tradingsymbol on the derivatives exchange."""
     attempts = []
-    if "|" in (contract.instrument_key or ""):
+    if _is_upstox(broker) and "|" in (contract.instrument_key or ""):
         attempts.append(contract.instrument_key)
     attempts.append(contract.tradingsymbol)
     last_error: Optional[Exception] = None
@@ -122,7 +128,7 @@ async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -
     margin requirement for one lot against `MARGIN_SAFETY` of available margin. Unknown margin
     is a refusal, not a guess."""
     probe = BrokerOrderRequest(
-        symbol=contract.instrument_key if "|" in (contract.instrument_key or "") else contract.tradingsymbol,
+        symbol=contract.instrument_key if _is_upstox(broker) and "|" in (contract.instrument_key or "") else contract.tradingsymbol,
         exchange=contract.exchange, transaction_type=OrderSide.SELL, quantity=contract.lot_size, order_type="MARKET", product="MIS",
     )
     per_lot = await broker.get_order_margin(probe)

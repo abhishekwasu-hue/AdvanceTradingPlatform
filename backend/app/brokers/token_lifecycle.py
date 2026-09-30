@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
+from app.brokers.contract_symbols import wrap_contract_symbols
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import get_broker_adapter
@@ -91,7 +92,10 @@ def load_credentials(record: BrokerCredentialRecord) -> BrokerCredentials:
 
 
 def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncClient] = None) -> BrokerInterface:
-    return get_broker_adapter(record.broker_name, load_credentials(record), client)
+    """The tenant's adapter for this credential row. Phase AI: non-Upstox adapters are wrapped so
+    derived-contract symbols (spelt the Upstox master's way platform-wide) go out in the broker's
+    own spelling and come back in the platform's."""
+    return wrap_contract_symbols(get_broker_adapter(record.broker_name, load_credentials(record), client))
 
 
 async def get_credential_record(

@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Contract symbols per broker (Phase AI)
+
+- **F&O on every broker**: derived contracts keep the Upstox master's spelling platform-wide, and a
+  wrapper on every non-Upstox adapter translates them into that broker's own symbol (orders, stops, exits,
+  margin probes, quotes) and back (positions, order books) by matching instrument attributes, never by
+  guessing a format. Unlisted contracts are refused with a clear error.
+
 ## Fundamentals ingestion (Phase AH)
 
 - **Bulk financials import**: paste a CSV of financial periods on the Fundamentals page (or

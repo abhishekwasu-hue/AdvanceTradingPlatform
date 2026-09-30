@@ -14,6 +14,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
+from app.brokers.smoke import run_smoke
 from app.brokers.token_lifecycle import (
     build_adapter,
     OAUTH_BROKERS,
@@ -196,6 +197,26 @@ async def disconnect_broker(
     record.token_expires_at = None
     await write_audit_log(session, user.tenant_id, user.id, "broker_disconnected", f"{name}: {detail}")
     await session.commit()
+
+
+@router.post("/{name}/smoke-test")
+async def smoke_test_broker(
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
+) -> dict:
+    """Phase AJ: read-only probes of this stored session - profile, funds, instruments, an index quote, one
+    option contract resolved and quoted through the worker's own symbol translation, positions and today's
+    order book. Never places, modifies or cancels an order. The report is a checklist, not an exception:
+    a broker that rejects the token shows up as a failed `profile` line."""
+    _ensure_known_broker(name)
+    label = _clean_label(account_label)
+    record = await get_credential_record(session, user.tenant_id, name, label)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
+    adapter = build_adapter(record)
+    report = await run_smoke(adapter, account_label=label)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_smoke_test", f"{name}/{label}: {'ok' if report.ok else 'FAILED'} - {report.summary}")
+    await session.commit()
+    return report.as_dict()
 
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile)

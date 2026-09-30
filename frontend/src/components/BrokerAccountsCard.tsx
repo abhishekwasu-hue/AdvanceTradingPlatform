@@ -1,7 +1,7 @@
 import { RefreshCw, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { BrokerAccount } from "../types";
+import type { BrokerAccount, SmokeReport } from "../types";
 import { Card } from "./ui";
 
 /**
@@ -13,6 +13,21 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
   const [accounts, setAccounts] = useState<BrokerAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
+  // Phase AJ: read-only smoke test per account.
+  const [smoke, setSmoke] = useState<Record<number, SmokeReport | null>>({});
+  const [smokeBusy, setSmokeBusy] = useState<number | null>(null);
+
+  async function runSmoke(a: BrokerAccount) {
+    setSmokeBusy(a.id); setError(null);
+    try {
+      const r = await api.brokerSmokeTest(a.broker_name, a.account_label);
+      setSmoke((prev) => ({ ...prev, [a.id]: r }));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSmokeBusy(null);
+    }
+  }
 
   function refresh() {
     api.listAccounts().then(setAccounts).catch((e) => setError(String(e)));
@@ -59,6 +74,9 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
                   <button onClick={() => act(a.id, () => api.syncAccount(a.id))} disabled={busy === a.id} className="flex items-center gap-1 text-brand hover:underline disabled:opacity-50">
                     <RefreshCw size={11} className={busy === a.id ? "animate-spin" : ""} /> Sync
                   </button>
+                  <button onClick={() => runSmoke(a)} disabled={smokeBusy === a.id} title="Read-only: profile, funds, instruments, an index quote, one option contract through the worker's symbol translation, positions, order book. Places nothing." className="text-slate-200 hover:underline disabled:opacity-50">
+                    {smokeBusy === a.id ? "Checking…" : "Read-only check"}
+                  </button>
                   {!a.is_default && <button onClick={() => act(a.id, () => api.setDefaultAccount(a.id))} className="text-muted hover:underline">Make default</button>}
                   <button onClick={() => act(a.id, () => api.setAccountStatus(a.id, a.status !== "ACTIVE"))} className={`${a.status === "ACTIVE" ? "text-warn" : "text-accent"} hover:underline`}>
                     {a.status === "ACTIVE" ? "Disable" : "Enable"}
@@ -72,6 +90,22 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
                 <span>unrealised <span className={a.unrealized_pnl != null && a.unrealized_pnl < 0 ? "text-danger" : "text-slate-200"}>{money(a.unrealized_pnl)}</span></span>
                 <span>{a.last_sync_at ? `synced ${new Date(a.last_sync_at).toLocaleString()}` : "never synced"}{a.last_sync_error ? ` · ${a.last_sync_error}` : ""}</span>
               </div>
+              {smoke[a.id] && (
+                <div className={`mt-2 rounded border px-2 py-1.5 ${smoke[a.id]!.ok ? "border-accent/40" : "border-danger/40"}`}>
+                  <div className={`font-semibold ${smoke[a.id]!.ok ? "text-accent" : "text-danger"}`}>
+                    Read-only check {smoke[a.id]!.ok ? "passed" : "failed"} · {smoke[a.id]!.summary} · {new Date(smoke[a.id]!.started_at).toLocaleTimeString()}
+                  </div>
+                  <ul className="mt-1 space-y-0.5">
+                    {smoke[a.id]!.steps.map((st) => (
+                      <li key={st.name} className="flex gap-2">
+                        <span className={`w-10 shrink-0 font-semibold ${st.status === "ok" ? "text-accent" : st.status === "fail" ? "text-danger" : "text-muted"}`}>{st.status}</span>
+                        <span className="w-28 shrink-0 text-slate-200">{st.name.replace("_", " ")}</span>
+                        <span className="text-muted">{st.detail}{st.ms ? ` (${st.ms} ms)` : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ))}
         </div>

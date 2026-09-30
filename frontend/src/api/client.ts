@@ -104,6 +104,7 @@ import type {
   RiskCeilings,
   OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
   MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
+  SmokeReport,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -437,6 +438,9 @@ export const api = {
 
   authenticateBroker: (name: string) =>
     request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
+  // Phase AJ: read-only probes of a stored broker session (never places an order).
+  brokerSmokeTest: (name: string, accountLabel = "primary") =>
+    request<SmokeReport>(`/broker/${name}/smoke-test?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST" }),
 
   listNotifications: (unreadOnly = false) =>
     request<NotificationEntry[]>(`/notifications${unreadOnly ? "?unread_only=true" : ""}`),

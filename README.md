@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Read-only broker check (Phase AJ)
+
+- **First live confirmation without an order**: "Read-only check" on a broker account (or
+  `POST /api/broker/{name}/smoke-test`) probes profile, funds, instruments, a NIFTY quote, the nearest NIFTY
+  option through the worker's symbol translation, positions and the order book, and reports each step with
+  timing and the exact error. Audited; never places, modifies or cancels anything.
+
 ## Contract symbols per broker (Phase AI)
 
 - **F&O on every broker**: derived contracts keep the Upstox master's spelling platform-wide, and a

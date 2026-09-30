@@ -3514,3 +3514,26 @@ The index is built from the adapter's own cached instrument list per derivatives
 rebuilt when that list refreshes or a lookup misses once. Verified against fixtures of each
 broker's spelling, not live accounts. No schema change. Tests:
 `tests/test_phase_ai_contract_symbols.py`.
+
+## Phase AJ: read-only broker smoke test
+
+Every adapter, and the Phase AI symbol translator, is verified against mocked transports; the
+gap analysis has carried "first live confirmation pending" since the first adapter landed. Phase
+AJ gives the operator that confirmation from Settings without risking an order.
+
+* **Probes** (`app/brokers/smoke.py: run_smoke`). Eight read-only steps against the stored
+  session, each timed and isolated so one failure never stops the next: `profile`, `funds`,
+  `instruments` (NSE list), `quote` (NIFTY 50 with the exchange timestamp's age against the
+  staleness gate), `derivatives` (NFO list, the nearest NIFTY call at or after today and nearest
+  the spot), `contract_quote` (that contract's premium fetched through the same
+  `ContractSymbolBroker` translation the worker uses, so the broker's own spelling is proven),
+  `positions`, `orders`. A failed step carries the exception type and message; a step with
+  nothing to do (no contract listed) is `skip`. `ok` means profile, funds and quote passed.
+  Nothing places, modifies or cancels an order.
+* **Route**. `POST /api/broker/{name}/smoke-test?account_label=` (trader role) builds the tenant's
+  adapter for that credential row, runs the probes, writes a `broker_smoke_test` audit line with
+  the summary and returns the report (`read_only: true`). A rejected token is a failed `profile`
+  line, not a 500.
+* **Settings**. "Read-only check" on each broker account card shows the step list with timings.
+
+No schema change. Tests: `tests/test_phase_aj_smoke.py`.

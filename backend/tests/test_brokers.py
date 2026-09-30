@@ -16,7 +16,8 @@ from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.angel_one import AngelOneBroker
 from app.brokers.dhan import DhanBroker
 from app.brokers.fyers import FyersBroker
-from app.brokers.stubs import CoinDCXBroker
+from app.brokers.coindcx import CoinDCXBroker
+from app.brokers.stubs import _StubBrokerAdapter
 from app.brokers.upstox import UpstoxBroker
 from app.brokers.zerodha import ZerodhaBroker
 from app.core.enums import OrderSide
@@ -340,14 +341,16 @@ def test_registry_raises_for_unknown_broker():
         get_broker_adapter("not_a_real_broker", BrokerCredentials())
 
 
-# --- Stub adapters (CoinDCX) ------------------------------------------------------------
+# --- Stub template -------------------------------------------------------------------------
 
-@pytest.mark.parametrize("cls", [CoinDCXBroker])
-def test_stub_brokers_implement_interface_but_raise_until_wired(cls):
-    broker = cls(BrokerCredentials(api_key="k"))
+def test_stub_template_implements_interface_but_raises_until_wired():
+    class _Next(_StubBrokerAdapter):
+        name = "nextvenue"
+    broker = _Next(BrokerCredentials(api_key="k"))
     assert isinstance(broker, BrokerInterface)
     with pytest.raises(NotImplementedError):
         run(broker.get_profile())
+    assert isinstance(get_broker_adapter("coindcx", BrokerCredentials(api_key="k", api_secret="s")), CoinDCXBroker)
 
 
 def test_upstox_get_ltp_for_symbol_resolves_instrument_key_and_reads_by_token():

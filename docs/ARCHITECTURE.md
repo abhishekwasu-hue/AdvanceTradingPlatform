@@ -3537,3 +3537,36 @@ AJ gives the operator that confirmation from Settings without risking an order.
 * **Settings**. "Read-only check" on each broker account card shows the step list with timings.
 
 No schema change. Tests: `tests/test_phase_aj_smoke.py`.
+
+## Phase AK: completion - CoinDCX adapter, real defaults, go-live runbook
+
+The last items between the master prompt and "everything the code can do is done".
+
+* **CoinDCX spot adapter** (`app/brokers/coindcx.py`) replaces the final structural stub, built
+  from the public API docs: HMAC-SHA256 signed private calls (`X-AUTH-APIKEY` /
+  `X-AUTH-SIGNATURE` over the exact JSON body with a millisecond timestamp), `users/info`,
+  `users/balances`, `markets_details` (INR spot markets only, inactive dropped, the market's
+  `pair` kept for candles), `ticker` (bid/ask/volume/timestamp), public `market_data/candles`
+  (sorted oldest first), `orders/create` (MARKET -> `market_order`, LIMIT -> `limit_order`, SL and
+  SL-M -> `stop_limit`; the protective stop's limit sits `STOP_LIMIT_SLIPPAGE` past the trigger so
+  it behaves like a stop-market; quantities floored to the market's step; the platform's order tag
+  is the `client_order_id`), `orders/edit` (price only, anything else refused with a clear message),
+  `orders/cancel`, `active_orders`, `trade_history`. Positions and holdings are the non-INR wallet
+  balances (spot has no position ledger; average price is unknown, reported as 0); margins are the
+  INR wallet (`balance` available, `locked_balance` used). No option chain. Exchange `CRYPTO`
+  (alias `COINDCX`); symbols are the market names, the same as the platform's crypto contract specs.
+  `stubs.py` keeps only the `_StubBrokerAdapter` template.
+* **Permanent keys** (`token_lifecycle.PERMANENT_KEY_BROKERS`): CoinDCX's key/secret is long-lived,
+  so a successful login stores no daily expiry (`default_token_expiry` returns None and
+  `token_is_usable` already reads None as "no expiry"). Every other broker keeps its IST expiry.
+* **Smoke test venues** (`smoke.VENUE_PROFILES`): the read-only check quotes `BTCINR` on `CRYPTO`,
+  reads the `CRYPTO` instrument list and skips the derivatives probes for CoinDCX.
+* **AI Copilot** defaults to `NIFTY 50` instead of a `SAMPLE` sentinel; sample mode still
+  synthesises candles for whatever symbol is typed.
+* **Go-live runbook** (`docs/GO_LIVE.md`): the ordered operator sequence from a fresh deploy to the
+  first LIVE order, cross-referencing the Dashboard and Admin checklists (Phase AB) and the
+  read-only broker check (Phase AJ).
+
+As for every adapter: verified against a mocked transport built from the public docs, not a live
+account; the Read-only check on a real key is the first live confirmation. No schema change.
+Tests: `tests/test_phase_ak_coindcx.py`.

@@ -50,6 +50,9 @@ TOKEN_DAILY_EXPIRY_IST: Dict[str, time] = {
     "dhan": time(6, 0),
 }
 _DEFAULT_EXPIRY_IST = time(6, 0)
+# Brokers whose credential is a long-lived API key/secret rather than a daily session token: once a
+# login proves the key, the stored session has no expiry (token_is_usable reads None as "no expiry").
+PERMANENT_KEY_BROKERS = {"coindcx"}
 
 OAUTH_STATE_TTL_MINUTES = 10
 UPSTOX_AUTHORIZE_URL = "https://api.upstox.com/v2/login/authorization/dialog"
@@ -70,8 +73,11 @@ def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def default_token_expiry(broker_name: str, now: Optional[datetime] = None) -> datetime:
-    """The next daily invalidation instant for this broker strictly after `now`, as aware UTC."""
+def default_token_expiry(broker_name: str, now: Optional[datetime] = None) -> Optional[datetime]:
+    """The next daily invalidation instant for this broker strictly after `now`, as aware UTC; None for a
+    broker whose API key never expires on a clock (PERMANENT_KEY_BROKERS)."""
+    if broker_name in PERMANENT_KEY_BROKERS:
+        return None
     now_ist = (now or _utcnow()).astimezone(IST)
     expiry_time = TOKEN_DAILY_EXPIRY_IST.get(broker_name, _DEFAULT_EXPIRY_IST)
     candidate = datetime.combine(now_ist.date(), expiry_time, tzinfo=IST)

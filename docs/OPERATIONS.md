@@ -672,6 +672,19 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `contract_quote` means the scrip master or symbol translation, and its message names the contract.
 - Each run is audited as `broker_smoke_test` with its summary.
 
+### 1.6ab CoinDCX setup (Phase AK)
+
+- **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,
+  ideally, your server's IP allow-listed. **Enter under Settings > Add / update broker credentials**
+  (broker `coindcx`): API Key and API Secret. Nothing goes in `.env`.
+- Press **Log in** once (it proves the key with `users/info`) and then **Read-only check**. The key does not
+  expire daily, so no morning login is needed; revoke it on the CoinDCX side to end the session.
+- Symbols are the market names (`BTCINR`, `ETHINR`); deployments use exchange `CRYPTO`, which trades 24x7 on
+  the worker's crypto clock (Phase O2). Quantities are fractional and floored to the market's step.
+- Protective stops are stop-limit orders with the limit 0.5% past the trigger (CoinDCX has no stop-market);
+  in a gap the fill may be worse than the trigger, exactly as with an exchange stop-market.
+- Verified against a mocked transport only; the Read-only check on your key is the first live confirmation.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

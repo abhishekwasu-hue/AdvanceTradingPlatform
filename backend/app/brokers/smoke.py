@@ -25,6 +25,8 @@ from app.instruments.master import INDEX_SYMBOLS, derivatives_exchange, underlyi
 
 STEP_TIMEOUT_SECONDS = 25.0
 CRITICAL_STEPS = ("profile", "funds", "quote")
+# Venues that are not NSE-shaped: what to quote, which instrument list to read, and that there are no derivatives.
+VENUE_PROFILES = {"coindcx": {"quote_symbol": "BTCINR", "quote_exchange": "CRYPTO", "instrument_exchange": "CRYPTO", "derivatives": False}}
 
 
 @dataclass
@@ -97,6 +99,12 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
     """Read-only probes against a live broker session. Never places, modifies or cancels an order."""
     report = SmokeReport(broker=getattr(adapter, "name", "broker"), account_label=account_label)
     today = today or datetime.now(timezone.utc).date()
+    venue = VENUE_PROFILES.get(report.broker, {})
+    if venue and underlying_symbol == "NIFTY 50":
+        underlying_symbol = venue["quote_symbol"]
+    quote_exchange = venue.get("quote_exchange", "NSE")
+    instrument_exchange = venue.get("instrument_exchange", "NSE")
+    has_derivatives = venue.get("derivatives", True)
     underlying = underlying_of(underlying_symbol)
     state: dict = {}
 
@@ -109,15 +117,15 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
         return f"available cash {m.available_cash:,.2f}, available margin {m.available_margin:,.2f}, used {m.used_margin:,.2f}"
 
     async def instruments() -> str:
-        rows = await adapter.get_instruments("NSE")
+        rows = await adapter.get_instruments(instrument_exchange)
         if not rows:
-            raise RuntimeError("NSE instrument list came back empty")
+            raise RuntimeError(f"{instrument_exchange} instrument list came back empty")
         state["nse"] = len(rows)
-        return f"{len(rows)} NSE instruments"
+        return f"{len(rows)} {instrument_exchange} instruments"
 
     async def quote() -> str:
         now = datetime.now(timezone.utc)
-        q = await adapter.get_quote_for_symbol(underlying_symbol, "NSE")
+        q = await adapter.get_quote_for_symbol(underlying_symbol, quote_exchange)
         if q is not None and q.ltp > 0:
             state["spot"] = float(q.ltp)
             age = _age_seconds(q.timestamp, now)
@@ -125,7 +133,7 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
                 return f"{underlying_symbol} {q.ltp:,.2f} (no exchange timestamp)"
             note = "" if age <= QUOTE_MAX_STALE_SECONDS else f"; older than the {QUOTE_MAX_STALE_SECONDS}s staleness gate - fine outside market hours"
             return f"{underlying_symbol} {q.ltp:,.2f}, exchange time {int(age)}s ago{note}"
-        ltp = float(await adapter.get_ltp_for_symbol(underlying_symbol, "NSE"))
+        ltp = float(await adapter.get_ltp_for_symbol(underlying_symbol, quote_exchange))
         if ltp <= 0:
             raise RuntimeError(f"LTP for {underlying_symbol} is {ltp}")
         state["spot"] = ltp
@@ -166,8 +174,12 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
         rows = await adapter.get_order_book()
         return f"{len(rows)} order(s) in today's book"
 
-    for name, fn in (("profile", profile), ("funds", funds), ("instruments", instruments), ("quote", quote), ("derivatives", derivatives)):
+    for name, fn in (("profile", profile), ("funds", funds), ("instruments", instruments), ("quote", quote)):
         await _step(report, name, fn, timeout=timeout)
+    if has_derivatives:
+        await _step(report, "derivatives", derivatives, timeout=timeout)
+    else:
+        report.steps.append(Step("derivatives", "skip", f"{report.broker} is a spot venue - no derivatives list"))
     if state.get("contract"):
         await _step(report, "contract_quote", contract_quote, timeout=timeout)
     else:

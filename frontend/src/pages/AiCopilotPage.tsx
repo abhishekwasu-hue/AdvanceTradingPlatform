@@ -28,7 +28,7 @@ export default function AiCopilotPage() {
   const [selected, setSelected] = useState<AiStrategyDraft | null>(null);
   const [actions, setActions] = useState<AiAction[]>([]);
   const [regime, setRegime] = useState<Regime | null>(null);
-  const [symbol, setSymbol] = useState("SAMPLE");
+  const [symbol, setSymbol] = useState("NIFTY 50");   // Phase AK: a real default; sample mode still synthesises candles for any symbol
   const [busy, setBusy] = useState(false);
   const [acceptRisk, setAcceptRisk] = useState(false);
   const [showChecks, setShowChecks] = useState(false);
@@ -90,7 +90,7 @@ export default function AiCopilotPage() {
         <Card title="Generate a strategy draft">
           <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
           <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target." value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt, { language: (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol !== "SAMPLE" ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
+          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt, { language: (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
 
           <div className="mt-4">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Recent drafts</div>

@@ -66,7 +66,7 @@ from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
 from app.observability.metrics import MARKET_DATA_STALE
-from app.reconciliation.service import broker_uncertain_reason, run_reconciliation
+from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
 from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenant_keys
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import credential_for_account, default_account, get_account, list_accounts, routing_for_deployment, sync_account
@@ -368,14 +368,22 @@ class TradingWorker:
 
         # Phase G1: while the tenant is flagged "broker uncertain", reconcile every cycle so the
         # LIVE block lifts on its own the moment the books agree (and stays while they do not).
+        # Phase AL: every account against its own session, settled together - a position in one
+        # account is never "missing" because another account was asked.
         tenant_row = await session.get(Tenant, tenant_id)
-        if tenant_row is not None and tenant_row.broker_uncertain_since is not None and live_broker is not None:
-            try:
-                await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
-                                         user_id=user.id, source="worker")
-                report.reconciled += 1
-            except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
-                logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
+        if tenant_row is not None and tenant_row.broker_uncertain_since is not None:
+            pairs = [(a, adapters[_adapter_key(a.broker_name, a.account_label)]) for a in accounts
+                     if a.status == "ACTIVE" and _adapter_key(a.broker_name, a.account_label) in adapters]
+            if pairs:
+                reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user.id, source="worker")
+                report.reconciled += 1 if reports else 0
+            elif live_broker is not None:
+                try:
+                    await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
+                                             user_id=user.id, source="worker")
+                    report.reconciled += 1
+                except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
+                    logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
         open_families = getattr(self, "_open_families", None) or {"NSE"}
         # Phase O2: each venue squares off on its own clock (NSE 15:15, MCX 23:15, crypto never);
         # positions on venues still inside their session are monitored as before.
@@ -641,53 +649,47 @@ class TradingWorker:
         return broker, account_id, None
 
     async def reconcile_on_start(self) -> int:
-        """Reconcile every tenant holding an open LIVE trade against that trade's broker before
-        the first cycle (safety rule 18). A mismatch flags the tenant (LIVE entries blocked) and
-        raises a CRITICAL notification; a clean run clears any stale flag. Returns tenants checked."""
+        """Reconcile every tenant holding an open LIVE trade against its broker accounts before
+        the first cycle (safety rule 18). Phase AL: each account against its own session, the
+        tenant flag settled on the joint result; then each account's protective stops are checked
+        in that account's order book. A mismatch flags the tenant (LIVE entries blocked) and raises
+        a CRITICAL notification; a clean run clears any stale flag. Returns accounts checked."""
         checked = 0
         now = datetime.now(timezone.utc)
         async with self.session_factory() as session:
-            live_trades = list(await session.scalars(
-                select(TradeRecord).where(TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value)
-            ))
-            by_tenant: Dict[int, List[TradeRecord]] = {}
-            for trade in live_trades:
-                by_tenant.setdefault(trade.tenant_id, []).append(trade)
-            for tenant_id, trades in by_tenant.items():
+            tenant_ids = sorted({row for row in await session.scalars(
+                select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value).distinct()
+            )})
+            for tenant_id in tenant_ids:
                 tenant = await session.get(Tenant, tenant_id)
                 if tenant is None:
                     continue
-                # A trade records its deployment, the deployment its broker; a trade opened from
-                # the console has neither, so fall back to every broker the tenant has stored.
-                dep_ids = {t.deployment_id for t in trades if t.deployment_id is not None}
-                broker_names = set()
-                if dep_ids:
-                    deps = await session.scalars(select(StrategyDeploymentRecord).where(StrategyDeploymentRecord.id.in_(dep_ids)))
-                    broker_names = {d.broker_name for d in deps if d.broker_name}
-                if not broker_names:
-                    records = await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id))
-                    broker_names = {r.broker_name for r in records}
                 user = await self._acting_user(session, tenant_id, [])
-                if user is None or not broker_names:
-                    logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no broker/user to check with", tenant_id)
+                accounts = [a for a in await list_accounts(session, tenant_id) if a.status == "ACTIVE"]
+                if user is None or not accounts:
+                    logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no broker account/user to check with", tenant_id)
                     continue
-                for broker_name in sorted(broker_names):
-                    adapter = await self._usable_adapter(session, tenant_id, broker_name, user.id, now)
+                pairs = []
+                for account in accounts:
+                    adapter = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                     if adapter is None:
-                        logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no usable %s session",
-                                       tenant_id, broker_name)
+                        logger.warning("Start-up reconciliation: tenant %s has open LIVE trades but no usable %s/%s session",
+                                       tenant_id, account.broker_name, account.account_label)
                         continue
+                    pairs.append((account, adapter))
+                if not pairs:
+                    continue
+                reports = await reconcile_accounts(session, tenant, pairs, user_id=user.id, source="startup")
+                for r in reports:
+                    logger.info("Start-up reconciliation: tenant %s %s/%s -> %d mismatch(es)", tenant_id, r.broker_name, r.account_label, r.mismatched_count)
+                for account, adapter in pairs:
                     try:
-                        report = await run_reconciliation(session, tenant, broker_name, adapter, user_id=user.id, source="startup")
-                        logger.info("Start-up reconciliation: tenant %s %s -> %d mismatch(es)", tenant_id, broker_name, report.mismatched_count)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.error("Start-up reconciliation: tenant %s %s failed: %s", tenant_id, broker_name, exc)
-                    try:
-                        guard = await verify_protective_stops(session, tenant, adapter, user_id=user.id, source="startup")
+                        guard = await verify_protective_stops(session, tenant, adapter, user_id=user.id, source="startup", account_id=account.id,
+                                                              include_unassigned=bool(account.is_default) or len(accounts) == 1)
                         if guard["rearmed"] or guard["failed"]:
-                            logger.warning("Start-up stop guard: tenant %s %s -> %s", tenant_id, broker_name, guard)
+                            logger.warning("Start-up stop guard: tenant %s %s/%s -> %s", tenant_id, account.broker_name, account.account_label, guard)
                     except Exception as exc:  # noqa: BLE001
-                        logger.error("Start-up stop guard: tenant %s %s failed: %s", tenant_id, broker_name, exc)
+                        logger.error("Start-up stop guard: tenant %s %s/%s failed: %s", tenant_id, account.broker_name, account.account_label, exc)
                     checked += 1
         return checked
 

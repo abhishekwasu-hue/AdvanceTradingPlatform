@@ -80,10 +80,11 @@ export default function BrokerUncertainBanner() {
         <div className="rounded border border-border bg-panel2 px-2 py-1.5">
           <div className="flex items-center gap-1.5 font-semibold text-slate-200">
             {report.mismatched_count === 0 ? <ShieldCheck size={12} className="text-accent" /> : <AlertOctagon size={12} className="text-danger" />}
-            {report.broker_name}: {report.mismatched_count} mismatch(es) across {report.items.length} symbol(s)
+            {report.broker_name}{report.accounts && report.accounts.length > 0 ? ` (${report.accounts.join(", ")})` : ""}: {report.mismatched_count} mismatch(es) across {report.items.length} symbol(s)
           </div>
           {report.items.filter((i) => i.status !== "MATCHED").map((i) => (
-            <div key={i.symbol} className="text-muted">
+            <div key={`${i.account_label ?? ""}:${i.symbol}`} className="text-muted">
+              {i.account_label && <span className="text-slate-400">[{i.account_label}] </span>}
               <span className="font-mono text-slate-300">{i.symbol}</span> {i.status}: {i.detail}
             </div>
           ))}

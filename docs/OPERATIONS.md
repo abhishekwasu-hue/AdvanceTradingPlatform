@@ -685,6 +685,14 @@ Never publish a listing without an attached backtest run; the API refuses the su
   in a gap the fill may be worse than the trigger, exactly as with an exchange stop-market.
 - Verified against a mocked transport only; the Read-only check on your key is the first live confirmation.
 
+### 1.6ac Reconciliation with several broker accounts (Phase AL)
+
+- Each account is compared with its **own** session; the `[label]` on a mismatch line names the account at
+  fault. Trades recorded before accounts existed count against the broker's default (★) account.
+- **Reconcile <broker>** on the banner runs every account at that broker and settles the block on the joint
+  result; `POST /api/reconciliation/{broker}?account_label=` checks one. A LIVE block lifts only when every
+  account with a usable session is clean; an account whose positions cannot be fetched keeps it standing.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import CandleChart, { directionMarker, type ChartMarker } from "../components/CandleChart";
+import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, Disclaimer } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -477,8 +477,8 @@ export default function BacktestPage() {
             <StatTile label="Expectancy" value={result.expectancy.toFixed(2)} />
           </div>
 
-          <Card title="Price Chart — trade entries &amp; exits">
-            <CandleChart candles={chartCandles} markers={tradeMarkers} />
+          <Card title="Price Chart — strategy indicators, trade entries &amp; exits">
+            <ProChart candles={chartCandles} symbol={symbol} timeframe={selected?.timeframes[0]} markers={tradeMarkers} strategyParams={selected?.default_params} />
           </Card>
 
           <Card title="Equity Curve">

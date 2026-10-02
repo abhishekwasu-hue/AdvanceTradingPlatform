@@ -229,7 +229,7 @@ def test_deployment_api_and_preview_for_new_structures(monkeypatch):
     assert long.json()["option_position"] == "BUY" and "debit" in long.json()["contract_rules"]
 
     monkeypatch.setattr("app.deployments.routes.build_adapter", lambda record, client=None: _CalendarBroker())
-    preview = client.post("/api/deployments/preview-contract", headers=headers, json={
+    preview = client.post(f"/api/deployments/preview-contract?as_of={TODAY.isoformat()}", headers=headers, json={
         "symbol": "NIFTY 50", "instrument_kind": "OPTION", "option_strategy": "CALENDAR_SPREAD", "spot": SPOT,
     }).json()
     for direction, right in (("LONG", "PE"), ("SHORT", "CE")):

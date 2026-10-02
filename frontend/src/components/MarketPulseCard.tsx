@@ -1,0 +1,93 @@
+import { Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import ProChart, { useLiveLtp } from "./ProChart";
+import { useCandleSource } from "./DataSource";
+import type { Page } from "./Sidebar";
+import { Card } from "./ui";
+import type { OHLCVBar } from "../types";
+
+const KEY = "atp_pulse_symbols";
+const DEFAULT = ["NIFTY 50", "NIFTY BANK"];
+
+function readSymbols(): string[] {
+  try { const raw = localStorage.getItem(KEY); const v = raw ? JSON.parse(raw) : null; return Array.isArray(v) && v.length ? v.slice(0, 4) : DEFAULT; } catch { return DEFAULT; }
+}
+
+function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; candles: OHLCVBar[]; broker?: string; onRemove: () => void }) {
+  const live = useLiveLtp(true, symbol, "NSE", broker, 5000);
+  return (
+    <div className="relative rounded-xl border border-border bg-panel2 p-3">
+      <button onClick={onRemove} title="Remove" className="absolute right-2 top-2 z-10 rounded p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
+      <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]} />
+    </div>
+  );
+}
+
+/** Phase AN: live index charts on the Dashboard - 5-minute candles for the day through the tenant's
+ * broker session, the forming candle moving on the live price. Symbols are a per-viewer convenience
+ * kept in the browser (the broker's spelling, e.g. "NIFTY 50", "NIFTY BANK", "RELIANCE"). */
+export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Page) => void }) {
+  const source = useCandleSource(1);
+  const [symbols, setSymbols] = useState<string[]>(readSymbols);
+  const [draft, setDraft] = useState("");
+  const [candles, setCandles] = useState<Record<string, OHLCVBar[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const broker = source.broker || undefined;
+  const usable = source.usable && !!source.broker;
+
+  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(symbols)); } catch { /* per-viewer convenience only */ } }, [symbols]);
+
+  useEffect(() => {
+    if (!usable || symbols.length === 0) { setCandles({}); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await api.marketDataCandles(symbols, "5min", 1, "NSE", broker);
+        if (cancelled) return;
+        const next: Record<string, OHLCVBar[]> = {};
+        for (const s of symbols) next[s] = r.symbols[s.toUpperCase()]?.bars ?? [];
+        setCandles(next);
+        const failed = symbols.filter((s) => r.symbols[s.toUpperCase()]?.error);
+        setError(failed.length ? `${failed.join(", ")}: ${r.symbols[failed[0].toUpperCase()]?.error}` : null);
+      } catch (e) { if (!cancelled) setError(String(e)); }
+    };
+    void load();
+    const id = window.setInterval(load, 60_000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [usable, symbols, broker]);
+
+  const add = () => {
+    const s = draft.trim().toUpperCase();
+    if (!s || symbols.includes(s) || symbols.length >= 4) return;
+    setSymbols([...symbols, s]); setDraft("");
+  };
+
+  return (
+    <Card title="Market pulse · live 5-minute charts">
+      {!usable ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          Live index charts need a broker with a valid session today.
+          {onNavigate && <button onClick={() => onNavigate("settings")} className="text-sky-300 hover:underline">Log in under Settings &gt; Brokers</button>}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            {symbols.map((s) => <PulseChart key={s} symbol={s} candles={candles[s] ?? []} broker={broker} onRemove={() => setSymbols(symbols.filter((x) => x !== s))} />)}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {symbols.length < 4 && (
+              <>
+                <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Add symbol (broker spelling, e.g. RELIANCE)"
+                       className="w-64 rounded bg-panel2 border border-border px-2 py-1 text-slate-200" />
+                <button onClick={add} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><Plus size={12} /> Add</button>
+              </>
+            )}
+            {error && <span className="text-rose-300">{error}</span>}
+            <span className="ml-auto text-muted">candles via {source.broker} · last price every 5 s</span>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}

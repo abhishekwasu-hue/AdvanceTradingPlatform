@@ -45,6 +45,7 @@ import type {
   OptionChainsResponse,
   ReadinessChecklist,
   CandlesResponse,
+  LtpResponse,
   FactorTable,
   QuantExposure,
   QuantRisk,
@@ -473,6 +474,9 @@ export const api = {
   adminReadiness: () => request<ReadinessChecklist>("/admin/readiness"),
   // Phase AA: broker candles for the research pages.
   marketDataSources: () => request<CandleSourcesResponse>("/market-data/sources"),
+  // Phase AN: the live chart's last price (tick > quote with staleness > bare LTP).
+  marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
+    request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),
   marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string) =>
     request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null }) }),
   // Phase Z: factor and risk models.

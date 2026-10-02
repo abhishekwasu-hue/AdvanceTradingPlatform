@@ -3611,3 +3611,43 @@ and the latest alerts by severity; the go-live checklist; engine cards on tinted
 number is the backend's (`/analytics/summary`, `/portfolio/exposure`, `/positions`, `/deployments`,
 `/accounts`, `/notifications`, `/worker/status`), refreshed every 30 s; logged out, the page shows
 the engine facts only. No backend change.
+
+## Phase AN: Pro Chart
+
+TradingView's open-source Lightweight Charts engine was already behind the plain candle chart;
+this phase gives it what a trader expects from a terminal chart, on every page that shows price.
+
+* **`frontend/src/utils/indicators.ts`** - EMA, SMA, Wilder smoothing, RSI, ATR, ADX (+DI/-DI),
+  Supertrend, session VWAP (reset per IST day) and Bollinger bands, written to the backend's own
+  pandas formulas (`app/indicators`), one value per candle and `null` through warm-up.
+  `indicatorsForStrategy(default_params)` turns a strategy's parameters into the indicators it
+  reads (EMA 9/21, Supertrend 10/3, RSI 14 with mid and triggers, ADX 14 with threshold), so the
+  chart draws the lines the engine decided on. `applyLivePrice` folds a last price into the
+  forming candle, or opens the next bar when the price falls in a later timeframe bucket.
+* **`ProChart`** (`frontend/src/components/ProChart.tsx`) - candlesticks with indicator overlays,
+  stacked volume / RSI / ADX panes as separate chart instances whose logical ranges and crosshair
+  are kept in sync, a legend that follows the crosshair (OHLC, volume, every active indicator), a
+  timeframe switcher, indicator toggles, fit, IST on the axis, the same price-line / zone / marker
+  props as before (markers snap to the last bar at or before their time, so a coarser timeframe
+  keeps them). A live price shows LTP, day change and a LIVE / stale badge with the quote's age;
+  a live move updates the last bar in place (oldest first, with a full reload fallback) so the
+  viewport is never reset by a tick. `useLiveLtp` polls the endpoint below every 5 s while the
+  tab is visible.
+* **`GET /api/market-data/ltp`** (`candles_routes.py`) - one symbol's last price through the
+  tenant's own session: a fresh streaming tick first, else the broker's quote with the exchange
+  timestamp and a `stale` flag (a chart may show an old price with its age; an exit decision may
+  not, Phase G1), else the bare LTP; 409 without a usable session, 502 in the broker's words.
+* **Pages**: Signals (strategy indicators on by default, timeframe resampled from the 1-minute
+  base, live in broker mode), Backtest (indicators plus trade markers), Positions
+  (`PositionChartCard`: the position's underlying or instrument with entry / stop / targets, live
+  price and unrealised P&L on the instrument actually held), Dashboard (`MarketPulseCard`: live
+  5-minute index charts, symbols kept per viewer in the browser).
+
+* **Expiry pre-check honours the resolution date** (found while running the suite on a later
+  calendar day): `ResolvedContract.resolved_for` records the trading date a contract was resolved
+  for, and `validate_instrument` judges expiry against it before falling back to the wall clock,
+  so the worker's "as of" date and the tests' fixed dates agree with the Phase Q check.
+  `POST /api/deployments/preview-contract` takes an optional `as_of` date for the same reason.
+
+No schema change. Drawing tools and bar replay are not in Lightweight Charts; they need
+TradingView's licensed Advanced Charts, a separate decision. Tests: `tests/test_phase_an_ltp.py`.

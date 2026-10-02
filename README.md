@@ -230,6 +230,13 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Pro Chart (Phase AN)
+
+- Interactive charts on Signals, Backtest, Positions and the Dashboard: indicator overlays (EMA, SMA, Bollinger, VWAP,
+  Supertrend), volume / RSI / ADX panes that scroll together, a crosshair legend, timeframe switch, the strategy's own
+  indicators on by default, entry / stop / target lines and trade markers, and a live last price that moves the forming
+  candle (`GET /api/market-data/ltp`, tick first, then the broker quote with its age).
+
 ## Designer dashboard (Phase AM)
 
 - The Dashboard is a colour-coded one-glance screen: gradient hero with status pills and primary actions, six KPI tiles

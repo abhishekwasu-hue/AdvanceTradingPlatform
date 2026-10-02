@@ -83,6 +83,8 @@ class ResolvedContract:
     # Phase H1: why this strike (chain filters), for the preview and the order trail.
     selection_notes: Tuple[str, ...] = ()
     selection: Optional[dict] = None
+    # The trading date this contract was resolved for; the execution pre-check judges expiry against it.
+    resolved_for: Optional[date] = None
 
     def as_dict(self) -> dict:
         return {
@@ -159,7 +161,7 @@ async def resolve_contract(
         long = direction == SignalDirection.LONG
         return _resolved(rules, record, underlying, underlying_symbol, right=None,
                          entry_side=OrderSide.BUY if long else OrderSide.SELL,
-                         trade_direction=SignalDirection.LONG if long else SignalDirection.SHORT)
+                         trade_direction=SignalDirection.LONG if long else SignalDirection.SHORT, resolved_for=today)
 
     position = rules.position or OptionPosition.BUY
     right = option_right(direction, position)
@@ -184,7 +186,7 @@ async def resolve_contract(
     buying = position == OptionPosition.BUY
     resolved = _resolved(rules, record, underlying, underlying_symbol, right=right,
                          entry_side=OrderSide.BUY if buying else OrderSide.SELL,
-                         trade_direction=SignalDirection.LONG if buying else SignalDirection.SHORT)
+                         trade_direction=SignalDirection.LONG if buying else SignalDirection.SHORT, resolved_for=today)
     if selection is not None:
         resolved = ResolvedContract(**{**resolved.__dict__, "selection_notes": tuple(selection.notes), "selection": selection.as_dict()})
     return resolved
@@ -209,12 +211,14 @@ async def _apply_strike_filters(
 
 
 def _resolved(rules: ContractRules, record: InstrumentRecord, underlying: str, underlying_symbol: str, *,
-              right: Optional[str], entry_side: OrderSide, trade_direction: SignalDirection) -> ResolvedContract:
+              right: Optional[str], entry_side: OrderSide, trade_direction: SignalDirection,
+              resolved_for: Optional[date] = None) -> ResolvedContract:
     return ResolvedContract(
         kind=rules.kind, underlying=underlying, underlying_symbol=underlying_symbol, tradingsymbol=record.tradingsymbol,
         exchange=record.exchange, instrument_key=record.instrument_key, lot_size=int(record.lot_size or 1),
         tick_size=float(record.tick_size or 0.05), expiry=record.expiry, strike=record.strike, right=right,
         entry_side=entry_side, trade_direction=trade_direction, position=rules.position if rules.kind == InstrumentKind.OPTION else None,
+        resolved_for=resolved_for,
     )
 
 

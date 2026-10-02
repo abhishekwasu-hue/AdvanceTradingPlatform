@@ -2,7 +2,7 @@
 
 The revised master prompt adds Part III (V1-V4 release phasing, V3.14 and V4 now in full), a
 consolidated safety-rule list and a per-module Definition of Done. This file maps every part of
-it onto what is built on `main` through Phase AL, so the next phases are chosen against facts. Status
+it onto what is built on `main` through Phase AN, so the next phases are chosen against facts. Status
 words: **done** (built and tested), **partial** (built, with named gaps), **missing**.
 
 ## Part I - product spec (Sections 1-46)
@@ -83,6 +83,8 @@ words: **done** (built and tested), **partial** (built, with named gaps), **miss
 
 ## Proposed next phases (recommendation order)
 
+- **Phase AN - Pro Chart**: **DONE** (ARCHITECTURE.md Phase AN) - indicator overlays and panes with the backend's formulas, strategy-aware defaults, synced multi-pane Lightweight Charts, live last price endpoint and forming candle, charts on Signals / Backtest / Positions / Dashboard.
+- **Phase AM - designer dashboard**: **DONE** (ARCHITECTURE.md Phase AM) - colour-coded KPI tiles, P&L bars, strategy-mix and exposure rings, live panels.
 - **Phase AL - reconciliation per broker account**: **DONE** (ARCHITECTURE.md Phase AL) - `trades_in_account`, `run_reconciliation(account=, settle=)`, `reconcile_accounts` joint settlement, route per broker or per label with labelled items, worker start-up and while-uncertain runs per account. No named code-side gap remains; what is left (external pentest, cloud IaC for a chosen cloud, live-key acceptance) is the operator's, sequenced in `docs/GO_LIVE.md`.
 - **Phase AK - completion**: **DONE** (ARCHITECTURE.md Phase AK) - CoinDCX spot adapter replaces the last stub (signed calls, markets, ticker, candles, market/limit/stop-limit orders, wallet positions and margins, permanent key), smoke-test venue profile, AI Copilot real default symbol, `docs/GO_LIVE.md` ordered runbook.
 - **Phase AJ - read-only broker smoke test**: **DONE** (ARCHITECTURE.md Phase AJ) - eight timed, isolated probes (profile, funds, instruments, index quote with staleness age, derivatives, one option contract quoted through the symbol translation, positions, orders) behind `POST /api/broker/{name}/smoke-test`, audited, never placing an order; Settings button with the step list.

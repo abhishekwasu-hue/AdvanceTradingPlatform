@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
+import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 
@@ -136,6 +137,8 @@ export default function PositionsPage() {
         </Card>
       )}
 
+      <PositionChartCard positions={positions} />
+
       <Card title="Open positions">
         {positions.length === 0 ? (
           <div className="text-sm text-muted py-4 text-center">No open positions yet - execute a signal from the Signals tab.</div>
@@ -167,7 +170,7 @@ export default function PositionsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted">No live price feed yet - check manually:</span>
+                  <span className="text-xs text-muted">Live price and P&amp;L are on the chart above when a broker is logged in; or check a price by hand:</span>
                   <input
                     type="number"
                     placeholder="Current price"

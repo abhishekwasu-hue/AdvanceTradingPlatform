@@ -693,6 +693,15 @@ Never publish a listing without an attached backtest run; the API refuses the su
   result; `POST /api/reconciliation/{broker}?account_label=` checks one. A LIVE block lifts only when every
   account with a usable session is clean; an account whose positions cannot be fetched keeps it standing.
 
+### 1.6ad Live charts and the broker's quote budget (Phase AN)
+
+- A chart with a live badge polls `GET /api/market-data/ltp` every 5 s while its tab is visible: one quote request per
+  chart per 5 s through the tenant's own session (Dashboard market pulse: one per symbol; Positions: the underlying and,
+  for an option or future, the contract too). Candles behind a chart refresh every 60 s and are cached 60 s platform-wide.
+  With streaming on (Phase S) the tick cache answers and no REST call is made.
+- A `stale` badge means the broker's quote carries an exchange timestamp older than the Phase G1 limit (market closed,
+  or a feed lag); the price is still shown with its age. The worker's exit logic never uses this endpoint.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

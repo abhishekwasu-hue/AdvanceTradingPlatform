@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import CandleChart, { directionMarker, type PriceLineSpec } from "../components/CandleChart";
+import ProChart, { directionMarker, useLiveLtp, type PriceLineSpec } from "../components/ProChart";
 import SignalCard from "../components/SignalCard";
 import { Card, Disclaimer } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -21,6 +21,8 @@ export default function SignalsPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EnrichedSignal | null>(null);
   const [chartCandles, setChartCandles] = useState<OHLCVBar[]>([]);
+  const [baseCandles, setBaseCandles] = useState<OHLCVBar[]>([]);     // Phase AN: 1-minute base for the chart's timeframe switcher
+  const [chartTf, setChartTf] = useState<string>("5min");
   const [zones, setZones] = useState<SRZone[]>([]);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<SignalHistoryEntry[]>([]);
@@ -71,6 +73,8 @@ export default function SignalsPage() {
 
       setResult(enriched);
       setChartCandles(primaryCandles);
+      setBaseCandles(base);
+      setChartTf(primaryTf);
       setZones(relevantZones);
       // Pin the exact candles that produced this signal, so Paper Execute always fires the
       // trade the user is actually looking at - even if they nudge the bars/seed inputs
@@ -110,6 +114,15 @@ export default function SignalsPage() {
     if (!signal || signal.direction === "NO_TRADE") return [];
     return [directionMarker(signal.timestamp, signal.direction, signal.grade)];
   }, [signal]);
+
+  // Phase AN: the chart can show any timeframe resampled from the 1-minute base; the strategy's
+  // primary timeframe is the default. Live price in broker mode moves the forming candle.
+  const displayCandles = useMemo(() => {
+    if (baseCandles.length === 0) return chartCandles;
+    if (selected && chartTf === selected.timeframes[0]) return chartCandles;
+    return buildTimeframeData(baseCandles, [chartTf])[chartTf] ?? chartCandles;
+  }, [baseCandles, chartCandles, chartTf, selected]);
+  const live = useLiveLtp(source.mode === "broker" && !!lastGenerated, lastGenerated?.symbol, "NSE", source.broker || undefined);
 
   return (
     <div className="space-y-4">
@@ -188,8 +201,9 @@ export default function SignalsPage() {
       {error && <div className="text-sm text-danger">{error}</div>}
 
       {chartCandles.length > 0 && (
-        <Card title="Chart — entry / stop loss / targets / support &amp; resistance">
-          <CandleChart candles={chartCandles} priceLines={priceLines} zones={zones} markers={markers} />
+        <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
+          <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf} timeframes={["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
+                    priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={live.ltp} liveError={live.error} />
         </Card>
       )}
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, generator, interview, knowledge, market_memory, monitor, settings as ai_settings
+from app.ai import advisor, generator, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -306,31 +306,51 @@ async def delete_profile(user: User = Depends(get_current_user), session: AsyncS
 class MemoryRefreshBody(BaseModel):
     symbols: Optional[List[str]] = Field(default=None, max_length=market_memory.MAX_WATCH)
     broker: Optional[str] = Field(default=None, max_length=20)
+    language: str = Field(default="mr", pattern=r"^(en|mr)$")
+
+
+def _with_global(out: dict, lang: str) -> dict:
+    out["global_view"] = global_cues.view(lang, out.get("globals", []))
+    out["global_source"] = global_cues.SOURCE_NOTE_MR if lang == "mr" else global_cues.SOURCE_NOTE_EN
+    out["global_gift_note"] = global_cues.GIFT_NOTE_MR if lang == "mr" else global_cues.GIFT_NOTE_EN
+    out["global_enabled"] = global_cues.enabled()
+    return out
 
 
 @router.get("/market-memory")
-async def get_market_memory(symbol: Optional[str] = Query(default=None, max_length=50), user: User = Depends(get_current_user),
-                            session: AsyncSession = Depends(get_session)) -> dict:
-    """The newest market read per watched symbol, the market cues (India VIX, index day change) and
-    each symbol's bias over the last sessions - captured by the worker every 15 minutes."""
+async def get_market_memory(symbol: Optional[str] = Query(default=None, max_length=50), language: str = Query(default="mr", pattern=r"^(en|mr)$"),
+                            user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The newest market read per watched symbol, the market cues (India VIX, index day change), the
+    global cues with what they usually mean for India, and each symbol's bias over the last sessions
+    - captured by the worker every 15 minutes."""
     out = await market_memory.latest(session, user.tenant_id, symbol=symbol)
     out["watchlist"] = await market_memory.watchlist(session, user.tenant_id)
     out["interval_minutes"] = market_memory.INTERVAL_MINUTES
-    return out
+    return _with_global(out, language)
 
 
 @router.post("/market-memory/refresh")
 async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """Reads the market now through this tenant's broker session (the worker does the same on its own)."""
+    """Reads the market now through this tenant's broker session (the worker does the same on its own),
+    and the global cues. Without a broker session the global cues alone are read; with neither, 409."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, user.tenant_id, body.broker, "primary")
-    symbols = [s.strip().upper() for s in body.symbols] if body.symbols else None
-    report = await market_memory.capture(session, user.tenant_id, MarketDataService, build_adapter(record), symbols=symbols)
+    try:
+        record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        report = await market_memory.capture_global(session, user.tenant_id)
+        if not report["globals"]:
+            raise
+        report = {"symbols": 0, "cues": 0, **report, "errors": [f"broker: {exc.detail}"] + report["errors"]}
+    else:
+        symbols = [s.strip().upper() for s in body.symbols] if body.symbols else None
+        report = await market_memory.capture(session, user.tenant_id, MarketDataService, build_adapter(record), symbols=symbols)
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report
-    return out
+    return _with_global(out, body.language)
 
 
 # --- Phase AT the guide ------------------------------------------------------------------------------------

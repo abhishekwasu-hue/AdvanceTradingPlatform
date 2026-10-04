@@ -8,8 +8,11 @@ for each tenant that uses the Copilot, through the tenant's own broker session, 
   strategy interview does (`interview.analyse_market`: today's move and VWAP, regime on 5-minute
   and the higher timeframe, market structure, nearest support / resistance, volatility, bias).
 * **Market cues** - India VIX (fear gauge) and the main indices' day change, from daily candles.
-  These come from the broker the tenant already has; global markets (GIFT Nifty, US indices,
-  crude, dollar) need an outside data feed and are not here yet.
+  These come from the broker the tenant already has.
+* **Global cues** - US index futures and indices, Asia, Brent crude, gold, the dollar, USD/INR and
+  the US 10-year yield from free public sources (`global_cues`), delayed and background only. They
+  are also read before the open (08:00-09:15 IST), when the overnight mood matters most, and need
+  no broker session.
 
 The memory makes the plan faster to trust and richer: it can say how the bias moved over the last
 days and what the fear gauge says, not only what the last few hours of candles show. Reads are
@@ -27,6 +30,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import global_cues
 from app.ai import interview as iv
 from app.ai.interview import tr
 from app.core.models import OHLCVBar, bars_to_dataframe
@@ -109,13 +113,31 @@ def cue_snapshot(tenant_id: int, symbol: str, exchange: str, day_bars: Sequence[
                                 last_price=payload["last"], change_pct=payload["change_pct"], payload_json=json.dumps(payload), captured_at=now)
 
 
+async def capture_global(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None, commit: bool = True) -> dict:
+    """Stores the global cues for one tenant (one shared fetch serves every tenant). Returns
+    {"globals": n, "errors": [...]}; the errors name the markets no free source answered for."""
+    now = now or datetime.now(timezone.utc)
+    quotes, errors = await global_cues.fetch_all()
+    session.add_all(global_cues.snapshot_rows(tenant_id, quotes, now))
+    if commit:
+        await session.commit()
+    return {"globals": len(quotes), "errors": [f"global {e}"[:200] for e in errors]}
+
+
 async def capture(session: AsyncSession, tenant_id: int, market_data_factory, broker, *, now: Optional[datetime] = None,
-                  symbols: Optional[List[str]] = None, include_cues: bool = True) -> dict:
-    """Reads and stores the watched symbols and the cues through `broker`. One failing symbol never
-    stops the others. Returns {"symbols": n, "cues": n, "errors": [...]}."""
+                  symbols: Optional[List[str]] = None, include_cues: bool = True, include_global: bool = True) -> dict:
+    """Reads and stores the watched symbols and the cues through `broker`, and the global cues. One
+    failing symbol never stops the others. Returns {"symbols": n, "cues": n, "globals": n, "errors": [...]}."""
     now = now or datetime.now(timezone.utc)
     source = getattr(broker, "name", "broker")
-    report = {"symbols": 0, "cues": 0, "errors": []}
+    report = {"symbols": 0, "cues": 0, "globals": 0, "errors": []}
+    if include_global:
+        try:
+            got = await capture_global(session, tenant_id, now=now, commit=False)
+            report["globals"], report["errors"] = got["globals"], got["errors"]
+        except Exception as exc:  # noqa: BLE001 - the world's markets are background, never a blocker
+            logger.info("Global cues failed for tenant %s: %s", tenant_id, exc)
+            report["errors"].append(f"global: {type(exc).__name__}: {exc}"[:200])
     intraday = market_data_factory(broker, lookback_days=INTRADAY_LOOKBACK_DAYS)
     for symbol in symbols if symbols is not None else await watchlist(session, tenant_id):
         exchange = exchange_for(symbol)
@@ -167,6 +189,7 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
     rows = list(await session.scalars(query.order_by(MarketSnapshotRecord.captured_at.desc()).limit(5000)))
     symbols: Dict[str, dict] = {}
     cues: Dict[str, dict] = {}
+    globals_: Dict[str, dict] = {}
     history: Dict[str, Dict[str, dict]] = {}
     for r in rows:
         captured = _utc(r.captured_at)
@@ -174,14 +197,20 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
             if r.symbol not in cues and captured >= now - timedelta(days=3):
                 cues[r.symbol] = _row(r)
             continue
+        if r.kind == global_cues.KIND:
+            if r.symbol not in globals_ and captured >= now - timedelta(days=3):
+                globals_[r.symbol] = _row(r)
+            continue
         if r.symbol not in symbols and captured >= now - timedelta(days=3):
             symbols[r.symbol] = _row(r)
         day = captured.astimezone(IST).date().isoformat()
         per_day = history.setdefault(r.symbol, {})
         if day not in per_day and len(per_day) < HISTORY_DAYS:
             per_day[day] = {"date": day, "bias": r.bias, "regime": r.regime, "last_price": r.last_price, "change_pct": r.change_pct}
-    newest = max((s["captured_at"] for s in list(symbols.values()) + list(cues.values())), default=None)
+    newest = max((s["captured_at"] for s in list(symbols.values()) + list(cues.values()) + list(globals_.values())), default=None)
+    order = {m.key: i for i, m in enumerate(global_cues.MARKETS)}
     return {"symbols": list(symbols.values()), "cues": list(cues.values()),
+            "globals": sorted(globals_.values(), key=lambda g: order.get(g["symbol"], 99)),
             "history": {k: sorted(v.values(), key=lambda d: d["date"]) for k, v in history.items()}, "updated_at": newest}
 
 
@@ -196,10 +225,10 @@ def vix_text(lang: str, vix: float) -> str:
 
 
 def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = None) -> List[str]:
-    """Sentences for the plan's "market background" section: the cues and how the symbol's bias
-    moved over the last days. Empty when the memory has nothing fresh."""
+    """Sentences for the plan's "market background" section: the global mood, the cues and how the
+    symbol's bias moved over the last days. Empty when the memory has nothing fresh."""
     now = now or datetime.now(timezone.utc)
-    lines: List[str] = []
+    lines: List[str] = global_cues.view(lang, memory.get("globals", []), now)[:2]
     cues = {c["symbol"]: c for c in memory.get("cues", [])}
     vix = cues.get("INDIA VIX")
     if vix and vix.get("last_price"):
@@ -222,7 +251,10 @@ def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = Non
     if lines and memory.get("updated_at"):
         try:
             age = int((now - datetime.fromisoformat(memory["updated_at"])).total_seconds() // 60)
-            lines.append(tr(lang, f"(Market memory updated {age} min ago from your broker.)", f"(Market चा साठा {age} मिनिटांपूर्वी तुमच्या broker कडून अद्ययावत.)"))
+            note = tr(lang, f"(Market memory updated {age} min ago from your broker", f"(Market चा साठा {age} मिनिटांपूर्वी तुमच्या broker कडून अद्ययावत")
+            if memory.get("globals"):
+                note += tr(lang, f"; global cues: {global_cues.SOURCE_NOTE_EN}", f"; जागतिक संकेत: {global_cues.SOURCE_NOTE_MR}")
+            lines.append(note + ".)")
         except (TypeError, ValueError):
             pass
     return lines

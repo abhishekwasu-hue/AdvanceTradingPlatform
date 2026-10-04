@@ -208,10 +208,24 @@ CONCEPTS: List[Concept] = [
             "leans bullish, below 0.7 bearish - a sentiment read, not a timing signal.",
             "Open interest = एखाद्या strike वर उघडे असलेले option contracts. मोठा call OI अनेकदा resistance, मोठा put OI support दाखवतो. PCR (put OI / call OI) "
             "1 च्या वर तेजीकडे, 0.7 च्या खाली मंदीकडे झुकतो - हे मनःस्थिती दाखवते, entry ची वेळ नाही.", ("support_resistance", "options_basics")),
+    Concept("global_cues", "Global cues", "जागतिक संकेत",
+            ("global", "global cues", "gift nifty", "sgx", "us market", "us futures", "america", "dow", "nasdaq", "s&p", "crude", "brent", "oil", "dollar",
+             "rupee", "usdinr", "usd/inr", "fii", "asia", "nikkei", "जागतिक", "अमेरिका", "अमेरिकन", "कच्चे तेल", "क्रूड", "डॉलर", "रुपया", "गिफ्ट निफ्टी"),
+            "What the world did overnight sets the mood of the Indian open: US index futures and Asian markets up or down usually show in the NIFTY open; "
+            "costlier crude hurts India (it imports most of its oil) - oil marketers, paints, airlines and the rupee; a weaker rupee or a stronger dollar "
+            "tends to make foreign investors (FII) sell. These are tendencies for the first minutes, not signals - the opening range still decides. "
+            "The market memory reads them from free, delayed public data (GIFT Nifty has no free reliable source; US futures stand in for it).",
+            "रात्री जगात काय घडले त्यावरून भारतीय बाजार उघडण्याचा मूड ठरतो: US index futures आणि आशियाई बाजार वर-खाली असतील तर NIFTY च्या open मध्ये ते सहसा दिसते; "
+            "कच्चे तेल महाग झाले तर भारताला त्रास (भारत बहुतेक तेल आयात करतो) - OMC, paint, airline आणि रुपया; रुपया कमजोर किंवा डॉलर मजबूत झाला तर "
+            "परदेशी गुंतवणूकदार (FII) विक्री करण्याची शक्यता. ही पहिल्या काही मिनिटांची प्रवृत्ती आहे, signal नाही - opening range च शेवटी ठरवते. "
+            "Market चा साठा ही माहिती मोफत, उशिराच्या सार्वजनिक data वरून घेतो (GIFT Nifty साठी मोफत भरवशाचा source नाही; त्याऐवजी US futures).",
+            ("gap_risk", "vix", "trend")),
 ]
 BY_ID: Dict[str, Concept] = {c.id: c for c in CONCEPTS}
 
 _TOKEN = re.compile(r"[a-z0-9:+\-]+|[ऀ-ॿ]+")
+GLOBAL_WORDS = ("global", "gift", "sgx", "us market", "us futures", "america", "dow", "nasdaq", "s&p", "crude", "brent", "oil", "dollar", "rupee",
+                "usdinr", "usd/inr", "fii", "nikkei", "hang seng", "asia", "जागतिक", "अमेरिका", "अमेरिकन", "कच्चे तेल", "क्रूड", "डॉलर", "रुपया", "गिफ्ट")
 MARKET_WORDS = ("today", "now", "market", "trend", "आज", "आत्ता", "सध्या", "कल", "बाजार", "काय चाललंय", "why no trade", "trade का नाही", "का नाही")
 
 
@@ -277,11 +291,32 @@ def _market_answer(lang: str, question: str, memory: Optional[dict]) -> Optional
     return " ".join(lines)
 
 
+def _global_answer(lang: str, question: str, memory: Optional[dict]) -> Optional[str]:
+    """A question about the world's markets, answered from the global cues in the market memory."""
+    if not memory or not memory.get("globals"):
+        return None
+    q_low = question.lower()
+    tokens = set(_TOKEN.findall(q_low))
+    if not any((w in tokens) if w.isalpha() and w.isascii() else (w in q_low) for w in GLOBAL_WORDS):
+        return None
+    from app.ai import global_cues
+    lines = global_cues.view(lang, memory["globals"])
+    if not lines:
+        return None
+    quotes = ", ".join(f"{tr(lang, global_cues.BY_KEY[g['symbol']].en, global_cues.BY_KEY[g['symbol']].mr)} {g['change_pct']:+.2f}%"
+                       for g in memory["globals"] if g["symbol"] in global_cues.BY_KEY and g.get("change_pct") is not None)
+    if quotes:
+        lines.append(tr(lang, f"Latest: {quotes}.", f"ताजे आकडे: {quotes}."))
+    lines.append(tr(lang, f"({global_cues.SOURCE_NOTE_EN}; tendencies, not signals.)", f"({global_cues.SOURCE_NOTE_MR}; ही प्रवृत्ती आहे, signal नाही.)"))
+    return " ".join(lines)
+
+
 def answer(question: str, lang: str = "en", memory: Optional[dict] = None) -> dict:
-    """The library's answer: market memory first for a market question, then the matching concepts."""
+    """The library's answer: market memory first for a market or world-markets question, then the
+    matching concepts."""
     lang = "mr" if lang == "mr" else "en"
     concepts = find_concepts(question)
-    market = _market_answer(lang, question, memory)
+    market = " ".join(x for x in (_global_answer(lang, question, memory), _market_answer(lang, question, memory)) if x) or None
     parts: List[str] = []
     if market:
         parts.append(market)
@@ -316,6 +351,8 @@ def ai_context(lang: str, concepts: List[Concept], memory: Optional[dict], profi
         mem_lines.append(f"- {s['symbol']}: bias {s['bias']}, regime {s['regime']}, higher {s['higher_regime']}, structure {s['structure']}, day {s['change_pct']}%")
     for c in (memory or {}).get("cues", [])[:4]:
         mem_lines.append(f"- {c['symbol']}: {c['last_price']} ({c['change_pct']}% on the day)")
+    for g in (memory or {}).get("globals", [])[:11]:
+        mem_lines.append(f"- global {g['symbol']}: {g['last_price']} ({g['change_pct']}% on the day; free delayed data)")
     prof = "unknown" if not profile else ", ".join(f"{k}={v}" for k, v in profile.items() if k in ("experience", "style", "risk", "vehicle", "symbol", "goal"))
     return GUIDE_PROMPT.format(language=tr(lang, "English", "Marathi (Devanagari script)"), profile=prof,
                                memory="\n".join(mem_lines) or "- (no market memory yet)", notes=notes)

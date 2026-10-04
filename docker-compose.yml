@@ -57,6 +57,7 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,6 +92,7 @@ services:
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
       STREAMING_QUOTES_ENABLED: ${STREAMING_QUOTES_ENABLED:-false}
       TICK_MAX_AGE_SECONDS: ${TICK_MAX_AGE_SECONDS:-120}
+      GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"

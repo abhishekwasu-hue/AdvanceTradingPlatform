@@ -355,3 +355,24 @@ def test_oauth_callback_exchange_failure_redirects_with_error(monkeypatch):
     assert parse_qs(urlparse(response.headers["location"]).query)["error"] == ["exchange_failed"]
     status = {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["upstox"]
     assert status["token_status"] == "UNKNOWN"
+
+
+def test_restoring_with_blank_fields_keeps_stored_values():
+    """Pasting today's access token alone must not wipe the API key/secret stored earlier (OAuth
+    then fails with 'needs both api_key and api_secret'); pasted values are trimmed."""
+    headers = _auth("merge-store@example.com")
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k1", "api_secret": "s1"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers,
+                       json={"api_key": "", "api_secret": None, "access_token": "  tok-today \n"}).status_code == 204
+
+    tenant_id = _tenant_of(headers["Authorization"].split()[1])
+
+    async def stored():
+        async with _session_factory() as session:
+            record = (await session.execute(select(BrokerCredentialRecord).where(
+                BrokerCredentialRecord.broker_name == "upstox", BrokerCredentialRecord.tenant_id == tenant_id))).scalar_one()
+            return tl.load_credentials(record)
+
+    creds = asyncio.run(stored())
+    assert (creds.api_key, creds.api_secret, creds.access_token) == ("k1", "s1", "tok-today")
+    assert client.get("/api/broker/upstox/oauth/start", headers=headers).status_code == 200

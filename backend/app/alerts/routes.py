@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_push, merge_secrets, parse_config
 from app.alerts import webpush
+from app.core.validation_errors import safe_validation_message
 from app.alerts.dispatcher import send_via_channel
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
@@ -109,7 +110,8 @@ async def upsert_alert_channel(
         merged = merge_push(request.config, existing_raw) if kind == AlertChannelType.PUSH.value else merge_secrets(kind, request.config, existing_raw)
         config = parse_config(kind, merged)
     except (ValidationError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Never str(exc): pydantic's text includes the rejected input, i.e. the bot token / password.
+        raise HTTPException(status_code=400, detail=safe_validation_message(exc)) from exc
 
     if record is None:
         await check_can_add_alert_channel(session, await load_tenant(session, user.tenant_id))

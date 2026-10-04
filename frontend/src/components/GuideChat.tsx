@@ -2,7 +2,7 @@ import { BookOpen, GraduationCap, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { GuideAnswer, GuideConcept } from "../types";
-import { Card } from "./ui";
+import { CollapsibleCard } from "./ui";
 
 /**
  * Phase AT: ask the guide. Answers come from the concept library (and, for "what is X doing today",
@@ -52,7 +52,7 @@ export default function GuideChat() {
   }
 
   return (
-    <Card title="मार्गदर्शक विचारा · Ask the guide">
+    <CollapsibleCard title="मार्गदर्शक विचारा · Ask the guide" storageKey="guide" subtitle="संकल्पना किंवा आजचा कल विचारा - उघडण्यासाठी क्लिक करा">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
         <GraduationCap size={14} className="text-emerald-300" />
         <span>Trading च्या कोणत्याही संकल्पनेबद्दल, किंवा "आज NIFTY चा कल काय?" असे विचारा - मराठी किंवा English. उत्तरे ज्ञानकोश आणि market च्या साठ्यावरून; Settings मध्ये AI key असेल तर AI उत्तर देतो.</span>
@@ -102,6 +102,6 @@ export default function GuideChat() {
         <button disabled={busy || question.trim().length < 2} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40"><Send size={12} className="mr-1 inline" />विचारा</button>
       </form>
       <div className="mt-1 text-[11px] text-muted">शिक्षणासाठी माहिती - कोणता share घ्यायचा/विकायचा असा सल्ला नाही.</div>
-    </Card>
+    </CollapsibleCard>
   );
 }

@@ -3881,3 +3881,36 @@ Tests: `tests/test_phase_au_global_cues.py`.
   and the position chart.
 
 Tests: `tests/test_chart_history.py`.
+
+## Phase AV: the Copilot home
+
+* **Briefing** (`app/ai/briefing.py`, `GET /api/ai/brief`): `day_type()` turns the market memory into
+  TREND_UP / TREND_DOWN / RANGE / VOLATILE / UNKNOWN (NIFTY's regime, NIFTY BANK as fallback; India VIX
+  20+ forces VOLATILE); `game_plan()` names the strategy families that fit (`interview.regime_fit` >= 2)
+  and those to leave alone (0), the VIX line, the first global-cue line, today's market events and a
+  beginner rule; `your_day()` gives per mode today's realised P&L, trades entered, open positions, loss
+  used / left against `capital x max_daily_loss_pct`, and the current losing streak; each ACTIVE/PAUSED
+  deployment gets a state (ok, paused, closed, error, stale - not evaluated for `WORKER_STALE_MINUTES` while
+  the market is open -, regime - its family does not suit the symbol's regime) with plain reasons; the
+  checklist covers a usable broker token, saved risk settings, a recent worker heartbeat, loss budget,
+  VIX and BLOCK events.
+* **Coach** (`app/ai/coach.py`, `GET /api/ai/coach?days=&mode=`): pure function over the user's closed
+  trades: stats (win rate, average win / loss in rupees and R from the planned stop, expectancy, profit
+  factor, max drawdown, longest losing streak, best / worst day), breakdowns by strategy, entry hour and
+  weekday, the equity series, and flags - revenge (entry within `REVENGE_MINUTES` of a losing exit the same
+  day), overtrading (days over the limit; more trades on losing days), daily loss limit broken, losses
+  beyond `BIG_LOSS_R`, poor payoff, holding losers over twice as long as winners, worst hour, losing
+  strategy, streak over the guard, too small a sample, and a "good discipline" note. A score (100 minus
+  severity points, minus 10 for negative expectancy) gives the grade; the first three high/medium tips are
+  the focus list.
+* **Ask anything** (`app/ai/copilot.py`, `POST /api/ai/copilot`): `intent()` routes by keyword (Marathi
+  and English) to deployments, coach, brief, interview or guide (the default). The reply carries the
+  deterministic answer, the data behind it and an action (which tab to open; the interview opens directly
+  with the message as its prefill). With an external AI provider, `narrate()` answers under
+  `COPILOT_PROMPT` grounded on the same facts; any provider error keeps the rule-based answer.
+* **UI** (`AiCopilotPage`): language toggle, the ask box (`CopilotAsk`), proposals awaiting approval, and
+  tabs - Today (`DailyBriefing` + market memory), Build a strategy (interview, drafts, review), Coach
+  (`TradeCoach`), Guide (`GuideChat`), Advanced (regime, decided proposals). Tab and language are remembered
+  per browser.
+
+Tests: `tests/test_phase_av_copilot_home.py`.

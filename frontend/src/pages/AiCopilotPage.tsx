@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, Compass, ShieldAlert, Sparkles, XCircle } from "lucide-react";
+import { Activity, BookOpen, CheckCircle2, Compass, GraduationCap, Settings2, ShieldAlert, Sparkles, Sun, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -8,6 +8,10 @@ import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
 import MarketMemoryCard from "../components/MarketMemoryCard";
 import GuideChat from "../components/GuideChat";
+import CopilotAsk from "../components/CopilotAsk";
+import DailyBriefing from "../components/DailyBriefing";
+import TradeCoach from "../components/TradeCoach";
+import type { CopilotReply } from "../types";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -22,8 +26,23 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{status}</span>;
 }
 
+type Tab = "today" | "strategy" | "coach" | "guide" | "advanced";
+const TABS: { id: Tab; mr: string; en: string; icon: typeof Sun }[] = [
+  { id: "today", mr: "आज", en: "Today", icon: Sun },
+  { id: "strategy", mr: "Strategy बनवा", en: "Build a strategy", icon: Compass },
+  { id: "coach", mr: "Coach", en: "My trades", icon: GraduationCap },
+  { id: "guide", mr: "मार्गदर्शक", en: "Guide", icon: BookOpen },
+  { id: "advanced", mr: "Advanced", en: "Drafts & agent", icon: Settings2 },
+];
+function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try { const v = localStorage.getItem(key) as T | null; return v && allowed.includes(v) ? v : fallback; } catch { return fallback; }
+}
+function store(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* storage unavailable */ } }
+
 /** Phase L: the AI Copilot - generate a strategy draft, backtest it, approve it (only then does
- * it exist as a strategy); read the market regime; decide on the monitoring agent's proposals. */
+ * it exist as a strategy); read the market regime; decide on the monitoring agent's proposals.
+ * Phase AV: a Copilot home - one ask-anything box, today's briefing, the trade coach and the
+ * guide, with the draft and agent tools under Advanced. */
 export default function AiCopilotPage() {
   const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
@@ -40,7 +59,12 @@ export default function AiCopilotPage() {
   // Phase AP: the interview runs before any strategy is proposed for a vague request.
   const [interviewKey, setInterviewKey] = useState(0);
   const [interviewPrompt, setInterviewPrompt] = useState("");
+  const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "today"));
+  const [lang, setLangState] = useState<"en" | "mr">(() => stored<"en" | "mr">("atp_copilot_lang", ["en", "mr"], "mr"));
+  const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
+  const setLang = (l: "en" | "mr") => { setLangState(l); store("atp_copilot_lang", l); };
   const startInterview = (text: string) => {
+    setTab("strategy");
     setInterviewPrompt(text); setInterviewKey((k) => k + 1);
     window.setTimeout(() => document.getElementById("strategy-interview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
@@ -70,20 +94,71 @@ export default function AiCopilotPage() {
 
   const open = actions.filter((a) => a.status === "PROPOSED");
   const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
+  const onCopilotAction = (reply: CopilotReply) => {
+    if (reply.intent === "interview") startInterview(reply.prompt ?? "");
+    else setTab((reply.action.tab as Tab) ?? "today");
+  };
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-        <p className="text-sm font-semibold text-purple-200">Drafts, not decisions: the AI writes rules and proposes actions; you backtest, approve or reject. Nothing trades without your explicit approval.</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 min-w-[260px]">
+          <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
+          <p className="text-sm text-purple-200">तुमचा अनुभवी trading साथी: आजचा plan, strategy, तुमच्या trades चा coach आणि मार्गदर्शक. निर्णय नेहमी तुमचाच - तुमच्या मंजुरीशिवाय काहीही trade होत नाही.</p>
+        </div>
+        <div className="flex overflow-hidden rounded-lg border border-border text-xs">
+          {(["mr", "en"] as const).map((l) => (
+            <button key={l} onClick={() => setLang(l)} className={`px-2.5 py-1 ${lang === l ? "bg-purple-500/20 text-purple-100" : "text-muted"}`}>{l === "mr" ? "मराठी" : "English"}</button>
+          ))}
+        </div>
       </div>
-      <Disclaimer kind="ai" />
-      <DataSourceBar source={source} />
 
-      <MarketMemoryCard />
+      <CopilotAsk lang={lang} onAction={onCopilotAction} />
 
-      <GuideChat />
+      {open.length > 0 && (
+        <Card title={`तुमच्या निर्णयाची वाट पाहणारे प्रस्ताव · Proposals waiting for you (${open.length})`}>
+          {open.map((a) => (
+            <div key={a.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-2">
+              <div className="flex items-center gap-2 text-sm font-bold"><ShieldAlert size={14} className="text-amber-400" /> {a.action.replace(/_/g, " ")} <span className="text-[11px] text-muted font-normal">· rule {a.rule} · deployment #{a.deployment_id ?? "-"}{a.trade_id ? ` · position #${a.trade_id}` : ""}</span></div>
+              <div className="text-xs text-slate-300 whitespace-pre-wrap mt-1">{a.reason}</div>
+              <div className="text-[11px] text-muted mt-1">evidence: {JSON.stringify(a.evidence)} · expires {a.expires_at ? new Date(a.expires_at).toLocaleString() : "-"}</div>
+              <div className="flex gap-2 mt-2">
+                <button disabled={busy} onClick={() => run("Approved and executed.", () => api.aiApproveAction(a.id))} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs"><CheckCircle2 size={12} className="inline mr-1" />Approve & execute</button>
+                <button disabled={busy} onClick={() => { const note = window.prompt("Why reject? (optional)") ?? ""; void run("Rejected.", () => api.aiRejectAction(a.id, note || undefined)); }} className="rounded border border-rose-500/40 text-rose-400 px-3 py-1 text-xs"><XCircle size={12} className="inline mr-1" />Reject</button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
 
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+                    className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${active ? "border-purple-400 text-purple-100" : "border-transparent text-muted hover:text-slate-200"}`}>
+              <Icon size={14} />{lang === "mr" ? t.mr : t.en}
+              {t.id === "strategy" && drafts.some((d) => d.status === "BACKTESTED") && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "today" && (
+        <div className="space-y-4">
+          <DailyBriefing lang={lang} />
+          <MarketMemoryCard />
+        </div>
+      )}
+
+      {tab === "coach" && <TradeCoach lang={lang} />}
+
+      {tab === "guide" && <GuideChat plain />}
+
+      {tab === "strategy" && (
+        <div className="space-y-4">
+          <DataSourceBar source={source} />
       <div id="strategy-interview">
         <Card title="Strategy मुलाखत · Build my strategy with me">
           {interviewKey === 0 ? (
@@ -103,22 +178,6 @@ export default function AiCopilotPage() {
         </Card>
       </div>
 
-      {open.length > 0 && (
-        <Card title={`Proposals waiting for you (${open.length})`}>
-          {open.map((a) => (
-            <div key={a.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-2">
-              <div className="flex items-center gap-2 text-sm font-bold"><ShieldAlert size={14} className="text-amber-400" /> {a.action.replace(/_/g, " ")} <span className="text-[11px] text-muted font-normal">· rule {a.rule} · deployment #{a.deployment_id ?? "-"}{a.trade_id ? ` · position #${a.trade_id}` : ""}</span></div>
-              <div className="text-xs text-slate-300 whitespace-pre-wrap mt-1">{a.reason}</div>
-              <div className="text-[11px] text-muted mt-1">evidence: {JSON.stringify(a.evidence)} · expires {a.expires_at ? new Date(a.expires_at).toLocaleString() : "-"}</div>
-              <div className="flex gap-2 mt-2">
-                <button disabled={busy} onClick={() => run("Approved and executed.", () => api.aiApproveAction(a.id))} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs"><CheckCircle2 size={12} className="inline mr-1" />Approve & execute</button>
-                <button disabled={busy} onClick={() => { const note = window.prompt("Why reject? (optional)") ?? ""; void run("Rejected.", () => api.aiRejectAction(a.id, note || undefined)); }} className="rounded border border-rose-500/40 text-rose-400 px-3 py-1 text-xs"><XCircle size={12} className="inline mr-1" />Reject</button>
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
       <div className="grid lg:grid-cols-2 gap-4">
         <Card title="Generate a strategy draft">
           <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
@@ -126,7 +185,7 @@ export default function AiCopilotPage() {
           <button disabled={busy || prompt.trim().length < 10} onClick={() => run(null, async () => {
             // Phase AP: "give me a strategy" with no rules in it starts the interview instead of guessing.
             const s = await api.aiInterviewStart(prompt);
-            if (s.needs_interview) { setMessage(s.language === "mr" ? "आधी काही प्रश्न - वर Strategy मुलाखत पहा." : "A few questions first - see the strategy interview above."); startInterview(prompt); return; }
+            if (s.needs_interview) { setMessage(s.language === "mr" ? "आधी काही प्रश्न - Strategy मुलाखत पहा." : "A few questions first - see the strategy interview."); startInterview(prompt); return; }
             setMessage("Draft generated - review it on the right.");
             const d = await api.aiGenerate(prompt, { language: s.prefill.language ?? (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
 
@@ -215,6 +274,12 @@ export default function AiCopilotPage() {
         </Card>
       </div>
 
+        </div>
+      )}
+
+      {tab === "advanced" && (
+        <div className="space-y-4">
+          <DataSourceBar source={source} />
       <div className="grid lg:grid-cols-2 gap-4">
         <Card title={`Market regime (${dataLabel})`}>
           <p className="text-xs text-muted mb-2">The same classifier the Autopilot uses for a deployment's regime filter: ADX for trend strength, EMA20/50 for direction, ATR against its median for volatility.</p>
@@ -243,6 +308,10 @@ export default function AiCopilotPage() {
         </Card>
       </div>
 
+        </div>
+      )}
+
+      <Disclaimer kind="ai" />
       {error && <div className="text-sm text-danger">{error}</div>}
       {message && <div className="text-sm text-accent">{message}</div>}
     </div>

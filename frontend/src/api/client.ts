@@ -1,4 +1,7 @@
 import type {
+  CoachReview,
+  CopilotReply,
+  DailyBrief,
   GuideAnswer,
   GuideConcept,
   MarketMemory,
@@ -640,6 +643,12 @@ export const api = {
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   aiMarketMemoryRefresh: (symbols?: string[]) =>
     request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
+  // Phase AV: the Copilot home.
+  aiBrief: (language: "en" | "mr") => request<DailyBrief>(`/ai/brief?language=${language}`),
+  aiCoach: (language: "en" | "mr", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>
+    request<CoachReview>(`/ai/coach?language=${language}&days=${days}&mode=${mode}`),
+  aiCopilot: (message: string, language?: "en" | "mr") =>
+    request<CopilotReply>("/ai/copilot", { method: "POST", body: JSON.stringify({ message, language: language ?? null }) }),
   aiAsk: (question: string, language?: "en" | "mr") =>
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),

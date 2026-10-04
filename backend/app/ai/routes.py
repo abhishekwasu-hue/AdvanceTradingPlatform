@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, generator, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
+from app.ai import advisor, briefing, coach, copilot, generator, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -447,3 +447,83 @@ async def reject_action(action_id: int, body: NoteBody, user: User = Depends(req
         return monitor.as_dict(await monitor.decide(session, row, user, approve=False, note=body.note))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+# --- Phase AV the Copilot home: briefing, coach, ask-anything ----------------------------------------------
+
+async def _coach_review(session: AsyncSession, user: User, lang: str, days: int, mode: str) -> dict:
+    from datetime import timedelta
+    from app.db.models import TradeRecord
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    query = select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id,
+                                      TradeRecord.exit_time.isnot(None), TradeRecord.exit_time >= since)
+    if mode != "ALL":
+        query = query.where(TradeRecord.mode == mode)
+    trades = list(await session.scalars(query.order_by(TradeRecord.exit_time).limit(5000)))
+    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    return coach.review(trades, lang, cfg, days=days, mode=mode)
+
+
+@router.get("/brief")
+async def daily_brief(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_session)) -> dict:
+    """Today's briefing: the day type and game plan, the session, your P&L and risk budget, why each
+    deployment is or is not trading, and the pre-trade checklist."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    return await briefing.build(session, user, language)
+
+
+@router.get("/coach")
+async def trade_coach(language: str = Query(default="mr", pattern=r"^(en|mr)$"), days: int = Query(default=30, ge=1, le=365),
+                      mode: str = Query(default="ALL", pattern=r"^(ALL|PAPER|LIVE)$"), user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_session)) -> dict:
+    """The trade coach: your closed trades' numbers, breakdowns and behaviour flags with fixes."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    return await _coach_review(session, user, language, days, mode)
+
+
+class CopilotBody(BaseModel):
+    message: str = Field(min_length=2, max_length=1000)
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+
+
+@router.post("/copilot")
+async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """One box for everything: routes the message to the briefing, the coach, the deployments, the
+    strategy interview or the guide, and answers - by the AI grounded on those facts when an external
+    provider is configured, from the rules otherwise."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    lang = body.language or interview.detect_language(body.message)
+    name = copilot.intent(body.message)
+    out: dict = {"intent": name, "language": lang, "action": copilot.action_for(lang, name), "source": "rules"}
+    if name == "guide":
+        memory = await market_memory.latest(session, user.tenant_id)
+        guide = knowledge.answer(body.message, lang, memory)
+        out.update(answer=guide["answer"], concepts=guide["concepts"], related=guide["related"], used_market_memory=guide["used_market_memory"])
+        facts = [guide["answer"]]
+    elif name == "coach":
+        review = await _coach_review(session, user, lang, 30, "ALL")
+        facts = coach.summary_lines(lang, review)
+        out.update(answer="\n".join(facts), coach={"stats": review["stats"], "grade": review["grade"], "score": review["score"], "flags": review["flags"][:4]})
+    elif name == "interview":
+        start = interview.start(body.message)
+        facts = [start["intro"]]
+        out.update(answer=start["intro"], prefill=start["prefill"], prompt=body.message)
+    else:
+        brief = await briefing.build(session, user, lang)
+        facts = briefing.deployment_lines(lang, brief) if name == "deployments" else briefing.summary_lines(lang, brief)
+        if name == "deployments":
+            facts = briefing.summary_lines(lang, brief)[:2] + facts
+        out.update(answer="\n".join(facts), brief={"day_type": brief["day_type"], "plan": brief["plan"], "checklist": brief["checklist"],
+                                                   "deployments": brief["deployments"]})
+    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    if provider.name != "rule_based" and name != "interview":
+        text = await copilot.narrate(provider, lang, name, body.message, facts)
+        await ai_settings.mark_used(session, user.tenant_id, error=None if text else "AI provider unavailable; answered from the rules")
+        await session.commit()
+        if text:
+            out.update(answer=text, source="ai")
+        else:
+            out["note"] = "AI provider unavailable; answered from the rules"
+    return out
+

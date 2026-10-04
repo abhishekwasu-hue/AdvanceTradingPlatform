@@ -3651,3 +3651,55 @@ this phase gives it what a trader expects from a terminal chart, on every page t
 
 No schema change. Drawing tools and bar replay are not in Lightweight Charts; they need
 TradingView's licensed Advanced Charts, a separate decision. Tests: `tests/test_phase_an_ltp.py`.
+
+## Phase AP: strategy interview
+
+`app/ai/interview.py` makes the AI Copilot ask before it answers. A request with no rule in it
+(no indicator or crossover - "give me a trading strategy", "ट्रेडिंग स्ट्रॅटेजी सांगा") starts an
+interview instead of a draft; a rule description still goes straight to the Phase L2 generator.
+
+* **`POST /api/ai/interview/start`** `{prompt}` - `needs_interview`, the language (Devanagari ->
+  Marathi), the answers the text already gives (symbol, style, vehicle, capital in lakh / k,
+  experience, view) and the twelve questions, each with English and Marathi text, options and a
+  "why we ask" line. Deterministic; no model call.
+* **`POST /api/ai/interview/plan`** `{answers, base_timeframe, candles, data_source}` - the plan,
+  every sentence in the chosen language:
+  * *Market read* (`analyse_market`): today's change from the session open and the session VWAP,
+    the regime (Phase L3 classifier) on 5-minute bars and on the highest of 60/30/15 minutes with
+    60+ bars, market structure (swings, last BOS/CHoCH), the nearest support and resistance zones
+    (the S/R engine), volatility, and a bias from those votes. A view that disagrees with the bias
+    is a warning: the plan follows the market.
+  * *Strategy choice*: every inbuilt strategy carries a profile (family trend / momentum /
+    breakout / reversion, the styles it suits, a plain description in both languages). Fit =
+    regime fit x 2 + goal; the three best fits are then walked over the last 500 bars (1,500 on
+    1-minute data) with the chart-run evaluator (`evaluate_on_candles`, now shared with
+    `/api/strategies/{id}/chart-run`) and profit factor / net P&L add to the score. Running every
+    strategy would take tens of seconds - the backtest engine re-evaluates the strategy on the
+    growing history at every bar - so the walk is limited to the best fits and runs off the event
+    loop (`run_in_threadpool`; chart-run now does the same).
+  * *Risk plan* (`risk_plan`, a `RiskConfig`): risk per trade from the answer, capped by
+    experience (0.5% new, 1% learning) and the platform ceiling; daily loss limit at most three
+    losing trades and never under two; trades per day by style; one open position for a
+    beginner, a 45-minute cool-down and a tighter drawdown ladder; minimum R:R 2 for option buying
+    (premium decay), 1.5 otherwise.
+  * *Capital allocation*: the trading capital is 25% / 50% / 80% of what was declared by
+    experience; the rest is reserve. Raise it only after 30+ paper trades with a positive
+    expectancy.
+  * *Contract* (`contract_plan`): a beginner asking to sell options gets option buying; an index
+    traded "itself" is futures for the experienced and an ITM option for a beginner; option
+    buying is one strike in the money on the next weekly expiry for non-experts (expiry-day
+    theta); option selling for the experienced is the defined-risk spread for the bias (bull put,
+    bear call, iron condor when neutral).
+  * *Deployment*: a `DeploymentCreateRequest` body in PAPER with the contract, exit rules
+    (break-even at 1R / 1.5R, close by 15:10 intraday) and the regime filter of the strategy's
+    family - the create API accepts it unchanged.
+  * `ai_prompt`: the interview and market read written as one request for the external AI, used
+    by "Ask the AI for a custom rule set" (the ordinary review gate applies to that draft).
+* **UI** (`components/StrategyInterview.tsx` on the AI Copilot page): a chat that asks one question
+  at a time with option chips (capital chips and a free amount; index chips or any F&O symbol),
+  Back, then "Read the market and build my plan" on the page's data source. The plan shows the
+  sections, warnings and four buttons: apply risk settings (confirmed first), deploy in PAPER,
+  open the chart, ask the AI. "Generate draft" with a vague request opens the interview.
+
+No schema change. Tests: `tests/test_phase_ap_interview.py`.
+

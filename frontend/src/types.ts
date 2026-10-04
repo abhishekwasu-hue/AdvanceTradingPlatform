@@ -1735,3 +1735,47 @@ export interface OptionChainsResponse {
   symbols: Record<string, { chain: OptionChain | null; rows: number; error: string | null }>; warnings: string[]; note: string;
 }
 export interface MarketHoliday { id: number; exchange: string; holiday_date: string; description: string }
+
+// Phase AP: the strategy interview.
+export interface InterviewOption { value: string; en: string; mr: string }
+export interface InterviewQuestion {
+  id: string;
+  kind: "choice" | "number" | "symbol";
+  en: string;
+  mr: string;
+  why_en: string;
+  why_mr: string;
+  options: InterviewOption[];
+  default: string | null;
+}
+export interface InterviewStart {
+  needs_interview: boolean;
+  language: "en" | "mr";
+  prefill: Record<string, string>;
+  remaining: string[];
+  questions: InterviewQuestion[];
+  intro: string;
+}
+export interface InterviewCandidate {
+  strategy_id: string;
+  name: string;
+  family: string;
+  timeframes: string[];
+  description: string;
+  regime_fit: number;
+  score: number;
+  evidence: { tested: boolean; total_trades: number; win_rate: number; net_pnl: number; profit_factor: number | null; text: string };
+}
+export interface InterviewPlan {
+  language: "en" | "mr";
+  answers: Record<string, string | number>;
+  market: { last_price: number; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; regime: Regime; higher_regime: Regime; higher_timeframe: string; work_timeframe: string; today: { change_pct: number; trend: string } };
+  recommended: InterviewCandidate | null;
+  alternatives: InterviewCandidate[];
+  risk_config: RiskConfig;
+  deployment: DeploymentCreateRequest | null;
+  sections: { id: string; title: string; lines: string[] }[];
+  warnings: string[];
+  ai_prompt: string;
+  disclaimer: string;
+}

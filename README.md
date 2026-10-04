@@ -236,6 +236,19 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Strategy interview (Phase AP)
+
+A beginner who types "give me a strategy" / "ट्रेडिंग स्ट्रॅटेजी सांगा" in the AI Copilot is not handed a list: the
+Copilot first asks about them, in Marathi or English, one question at a time with a line on why it matters (experience,
+capital, loss per trade and per day, trading style, instrument and symbol, options buy/sell, time, goal, market view;
+what the message already said is not asked again). It then reads the market on sample or broker candles - today's move
+and VWAP, the higher-timeframe trend, the regime, market structure, nearest support / resistance, volatility - and builds
+a plan: the best-fitting inbuilt strategy with evidence from walking it over the same candles, risk management, capital
+allocation (a beginner trades 25% of capital), reward:risk and exits, the contract to trade (beginners never sell naked
+options or trade index futures) and a PAPER deployment. **Apply risk settings**, **Deploy in PAPER** and **Ask the AI for
+a custom rule set** are buttons; nothing is applied on its own. API: `POST /api/ai/interview/start`,
+`POST /api/ai/interview/plan` (docs/ARCHITECTURE.md, Phase AP).
+
 ## Strategies on the chart (Phase AO)
 
 Every Pro Chart has a **Strategies** button (in full screen and the new-tab chart too). Each of the

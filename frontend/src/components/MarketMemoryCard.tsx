@@ -1,0 +1,114 @@
+import { Brain, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import type { MarketMemory } from "../types";
+import { Card } from "./ui";
+
+/**
+ * Phase AR: what the Copilot already knows about the market - read by the worker every 15 minutes
+ * through your broker: each watched symbol's bias, regime and structure, how the bias moved over
+ * the last sessions, and the market cues (India VIX, index day change).
+ */
+const BIAS: Record<string, { mr: string; cls: string }> = {
+  BULLISH: { mr: "तेजी", cls: "text-emerald-300" },
+  BEARISH: { mr: "मंदी", cls: "text-rose-300" },
+  NEUTRAL: { mr: "तटस्थ", cls: "text-amber-200" },
+};
+const REGIME_MR: Record<string, string> = {
+  TRENDING_UP: "वरचा trend", TRENDING_DOWN: "खालचा trend", RANGING: "sideways", VOLATILE: "अस्थिर", QUIET: "शांत", UNKNOWN: "-",
+};
+
+function vixLabel(v: number): { text: string; cls: string } {
+  if (v < 12) return { text: "खूप शांत", cls: "text-sky-300" };
+  if (v < 16) return { text: "सामान्य", cls: "text-emerald-300" };
+  if (v < 20) return { text: "वाढलेला", cls: "text-amber-300" };
+  return { text: "जास्त भीती", cls: "text-rose-300" };
+}
+
+function ago(iso: string | null): string {
+  if (!iso) return "-";
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  return min < 60 ? `${min} मि. पूर्वी` : `${Math.round(min / 60)} तास पूर्वी`;
+}
+
+export default function MarketMemoryCard() {
+  const [memory, setMemory] = useState<MarketMemory | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => api.aiMarketMemory().then(setMemory).catch((e) => setError(String(e)));
+  useEffect(() => { void load(); }, []);
+
+  async function refresh() {
+    setBusy(true); setError(null);
+    try { setMemory(await api.aiMarketMemoryRefresh()); } catch (e) {
+      const text = String(e).replace(/^Error:\s*/, "");
+      const m = text.match(/\{.*\}/s);
+      let detail = text;
+      if (m) { try { detail = JSON.parse(m[0]).detail ?? text; } catch { /* keep text */ } }
+      setError(detail);
+    } finally { setBusy(false); }
+  }
+
+  const vix = memory?.cues.find((c) => c.symbol === "INDIA VIX");
+  const others = memory?.cues.filter((c) => c.symbol !== "INDIA VIX") ?? [];
+  return (
+    <Card title="Market चा साठा · Market memory">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+        <Brain size={14} className="text-purple-300" />
+        <span>Worker दर {memory?.interval_minutes ?? 15} मिनिटांनी तुमच्या broker कडून market वाचून साठवतो. Plan बनवताना Copilot हीच माहिती वापरतो.</span>
+        <span className="ml-auto">अद्ययावत: <b className="text-slate-200">{ago(memory?.updated_at ?? null)}</b></span>
+        <button disabled={busy} onClick={() => void refresh()} className="rounded border border-border px-2 py-0.5 text-slate-100 hover:bg-panel2 disabled:opacity-50">
+          <RefreshCw size={11} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />आत्ता वाचा
+        </button>
+      </div>
+      {error && <div className="mb-2 text-xs text-danger">{error}</div>}
+      {memory && memory.cues.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2 text-xs">
+          {vix && vix.last_price != null && (
+            <span className="rounded-lg border border-border bg-panel2/60 px-2 py-1">
+              India VIX <b className="text-slate-50">{vix.last_price.toFixed(2)}</b>{" "}
+              <span className={vixLabel(vix.last_price).cls}>{vixLabel(vix.last_price).text}</span>
+              <span className="text-muted"> ({(vix.change_pct ?? 0) >= 0 ? "+" : ""}{(vix.change_pct ?? 0).toFixed(1)}%)</span>
+            </span>
+          )}
+          {others.map((c) => (
+            <span key={c.symbol} className="rounded-lg border border-border bg-panel2/60 px-2 py-1">
+              {c.symbol} <b className={(c.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{(c.change_pct ?? 0) >= 0 ? "+" : ""}{(c.change_pct ?? 0).toFixed(2)}%</b>
+            </span>
+          ))}
+        </div>
+      )}
+      {!memory || memory.symbols.length === 0 ? (
+        <div className="text-xs text-muted">
+          अजून साठा रिकामा आहे. Broker (Upstox) login असेल तर "आत्ता वाचा" दाबा; नाहीतर market चालू असताना worker आपोआप भरेल.
+          {memory?.watchlist && <span> लक्ष ठेवायचे symbols: {memory.watchlist.join(", ")}.</span>}
+        </div>
+      ) : (
+        <table className="w-full text-xs">
+          <thead><tr className="text-left text-muted">
+            <th className="py-1">Symbol</th><th>भाव</th><th>आज</th><th>कल</th><th>स्थिती (5m / मोठा)</th><th>Structure</th><th>गेले दिवस</th>
+          </tr></thead>
+          <tbody>
+            {memory.symbols.map((s) => {
+              const b = BIAS[s.bias ?? "NEUTRAL"] ?? BIAS.NEUTRAL;
+              const trail = memory.history[s.symbol] ?? [];
+              return (
+                <tr key={s.symbol} className="border-t border-border/60">
+                  <td className="py-1 font-semibold text-slate-100">{s.symbol}</td>
+                  <td>{s.last_price?.toLocaleString("en-IN") ?? "-"}</td>
+                  <td className={(s.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{(s.change_pct ?? 0) >= 0 ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%</td>
+                  <td className={`font-bold ${b.cls}`}>{b.mr}</td>
+                  <td className="text-slate-200">{REGIME_MR[s.regime ?? "UNKNOWN"] ?? s.regime} / {REGIME_MR[s.higher_regime ?? "UNKNOWN"] ?? s.higher_regime}</td>
+                  <td className="text-slate-300">{s.structure ?? "-"}</td>
+                  <td>{trail.map((d) => <span key={d.date} title={d.date} className={`mr-1 ${(BIAS[d.bias ?? "NEUTRAL"] ?? BIAS.NEUTRAL).cls}`}>●</span>)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-2 text-[11px] text-muted">जागतिक संकेत (GIFT Nifty, US बाजार, crude, डॉलर) साठी बाहेरचा data feed लागतो - अजून जोडलेला नाही.</div>
+    </Card>
+  );
+}

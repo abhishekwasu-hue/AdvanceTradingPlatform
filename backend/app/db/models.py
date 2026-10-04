@@ -1038,6 +1038,32 @@ class TraderProfileRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
 
 
+class MarketSnapshotRecord(Base):
+    """Phase AR: the Copilot's market memory - the market read (trend, regime, structure,
+    support/resistance, bias) of a watched symbol, or a market cue (India VIX, index day change),
+    captured by the worker every 15 minutes through the tenant's own broker session. Tenant-scoped:
+    the data comes through the tenant's broker licence. Reference data, pruned by retention."""
+
+    __tablename__ = "market_snapshots"
+    __table_args__ = (Index("ix_market_snapshots_lookup", "tenant_id", "symbol", "captured_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="SYMBOL")   # SYMBOL | CUE
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False, default="5min")
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bias: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    higher_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    structure: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
 class AiActionRecord(Base):
     """Phase L4: the monitoring agent's action-state machine (V4.1): the agent PROPOSES, a human
     APPROVES or REJECTS, the system EXECUTES; unanswered proposals EXPIRE. Nothing here ever

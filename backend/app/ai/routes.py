@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, generator, interview, monitor, settings as ai_settings
+from app.ai import advisor, generator, interview, market_memory, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -239,8 +239,10 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
     from app.platform.controls import risk_ceilings
     df = _df_for(body)
     ceilings = await risk_ceilings(session)
+    memory = await market_memory.latest(session, user.tenant_id)   # Phase AR: background for the plan
     # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
-    result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings, data_source=body.data_source)
+    result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,
+                                     data_source=body.data_source, memory=memory)
     await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
     return result
 
@@ -297,6 +299,38 @@ async def get_profile(user: User = Depends(get_current_user), session: AsyncSess
 async def delete_profile(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
     """Forget everything the Copilot learnt about this trader."""
     await advisor.delete_profile(session, user)
+
+
+# --- Phase AR market memory ----------------------------------------------------------------------------
+
+class MemoryRefreshBody(BaseModel):
+    symbols: Optional[List[str]] = Field(default=None, max_length=market_memory.MAX_WATCH)
+    broker: Optional[str] = Field(default=None, max_length=20)
+
+
+@router.get("/market-memory")
+async def get_market_memory(symbol: Optional[str] = Query(default=None, max_length=50), user: User = Depends(get_current_user),
+                            session: AsyncSession = Depends(get_session)) -> dict:
+    """The newest market read per watched symbol, the market cues (India VIX, index day change) and
+    each symbol's bias over the last sessions - captured by the worker every 15 minutes."""
+    out = await market_memory.latest(session, user.tenant_id, symbol=symbol)
+    out["watchlist"] = await market_memory.watchlist(session, user.tenant_id)
+    out["interval_minutes"] = market_memory.INTERVAL_MINUTES
+    return out
+
+
+@router.post("/market-memory/refresh")
+async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Reads the market now through this tenant's broker session (the worker does the same on its own)."""
+    from app.brokers.token_lifecycle import build_adapter
+    from app.market_data.candles_routes import _pick_record
+    from app.market_data.service import MarketDataService
+    record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    symbols = [s.strip().upper() for s in body.symbols] if body.symbols else None
+    report = await market_memory.capture(session, user.tenant_id, MarketDataService, build_adapter(record), symbols=symbols)
+    out = await market_memory.latest(session, user.tenant_id)
+    out["report"] = report
+    return out
 
 
 # --- L3 regime -------------------------------------------------------------------------------------

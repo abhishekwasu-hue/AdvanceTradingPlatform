@@ -6,6 +6,7 @@ import { Card, Disclaimer } from "../components/ui";
 import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
+import MarketMemoryCard from "../components/MarketMemoryCard";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -77,6 +78,8 @@ export default function AiCopilotPage() {
       </div>
       <Disclaimer kind="ai" />
       <DataSourceBar source={source} />
+
+      <MarketMemoryCard />
 
       <div id="strategy-interview">
         <Card title="Strategy मुलाखत · Build my strategy with me">

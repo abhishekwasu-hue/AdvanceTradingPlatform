@@ -1,4 +1,5 @@
 import type {
+  MarketMemory,
   InterviewPlan,
   InterviewStart,
   ContractPreview,
@@ -633,6 +634,9 @@ export const api = {
   aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null, match: number) =>
     request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId, match }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
+  aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
+  aiMarketMemoryRefresh: (symbols?: string[]) =>
+    request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),

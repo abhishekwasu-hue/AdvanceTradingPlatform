@@ -121,6 +121,11 @@ machine (Windows + Docker Desktop/WSL2): all images pull and build cleanly, migr
 automatically, and both services come up healthy. See "Docker Deployment" in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full verification note.
 
+On Windows, `.gitattributes` keeps the `.sh` scripts LF so the `backup` service's `sh` can run
+them. A checkout made before that file existed still has CRLF copies (the `backup` container
+restarts with exit code 2); refresh them once with
+`git rm -r --cached scripts && git checkout -- scripts`, then `docker compose up -d backup`.
+
 ### Option B: run backend and frontend directly
 
 ```bash

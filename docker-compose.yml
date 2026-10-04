@@ -94,6 +94,14 @@ services:
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"
+    # The image's HEALTHCHECK probes the API on :8000, which the worker does not serve; probe the
+    # worker's own metrics server instead (127.0.0.1, not localhost: no IPv6 surprises).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${WORKER_METRICS_PORT:-9102}/metrics', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy

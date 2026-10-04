@@ -124,7 +124,7 @@ export default function RiskManagementPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-red-400">Risk Management</h1>
-        <p className="text-sm font-semibold text-red-400/60">
+        <p className="text-sm font-semibold text-red-200">
           Position sizing and daily-loss/trade-count/consecutive-loss guards the Risk Engine
           checks before every paper-execute order. Anonymous calls always use the platform
           default; these apply only to your own logged-in orders.
@@ -135,7 +135,7 @@ export default function RiskManagementPage() {
         <div className="grid sm:grid-cols-2 gap-4">
           {FIELDS.map((f) => (
             <div key={f.key}>
-              <label className="block text-xs text-muted mb-1">{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-muted/70"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
+              <label className="block text-xs text-muted mb-1">{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
               <input
                 type="number"
                 step={f.step ?? "1"}
@@ -152,7 +152,7 @@ export default function RiskManagementPage() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {GUARDIAN_FIELDS.map((f) => (
             <div key={f.key}>
-              <label className="block text-xs text-muted mb-1" title={f.help}>{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-muted/70"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
+              <label className="block text-xs text-muted mb-1" title={f.help}>{f.label}{f.ceiling && ceilings ? <span className="text-[10px] text-muted"> · ceiling {ceilings[f.ceiling]}</span> : null}</label>
               <input
                 type="number"
                 step={f.step ?? "1"}

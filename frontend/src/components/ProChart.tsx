@@ -35,7 +35,7 @@ const IST = "Asia/Kolkata";
 const COLORS = {
   up: "#22c55e", down: "#ef4444", emaFast: "#38bdf8", emaSlow: "#f59e0b", sma: "#a78bfa", bb: "#64748b", vwap: "#e879f9",
   stUp: "#22c55e", stDown: "#ef4444", rsi: "#38bdf8", adx: "#f59e0b", plusDi: "#22c55e", minusDi: "#ef4444", volUp: "rgba(34,197,94,0.45)", volDown: "rgba(239,68,68,0.45)",
-  grid: "#1a2333", border: "#243044", text: "#8a94a8",
+  grid: "#1a2333", border: "#243044", text: "#c2cad8",
 };
 const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" } as const;
 
@@ -352,7 +352,7 @@ export default function ProChart({
       {/* Legend */}
       {bar && !compact && (
         <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-muted">
-          <span className="text-slate-400">{fmtIst(times[idx as number], true)}</span>
+          <span className="text-slate-300">{fmtIst(times[idx as number], true)}</span>
           <span>O <b className="text-slate-200">{fmt(bar.open)}</b></span><span>H <b className="text-slate-200">{fmt(bar.high)}</b></span>
           <span>L <b className="text-slate-200">{fmt(bar.low)}</b></span>
           <span>C <b className={prev && bar.close < prev.close ? "text-rose-300" : "text-emerald-300"}>{fmt(bar.close)}</b></span>

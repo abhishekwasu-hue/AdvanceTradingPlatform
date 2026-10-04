@@ -66,7 +66,7 @@ export default function OrdersPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-orange-400">Orders</h1>
-        <p className="text-sm font-semibold text-orange-400/60">
+        <p className="text-sm font-semibold text-orange-200">
           Every entry and exit fill from your paper trades, most recent first - a broker-style order blotter view.
         </p>
       </div>

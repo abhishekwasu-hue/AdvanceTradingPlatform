@@ -69,7 +69,7 @@ export default function GoLiveChecklist({ kind, onNavigate }: { kind: "tenant" |
                   {it.link && onNavigate && PAGE_IDS.has(it.link) && (
                     <button onClick={() => onNavigate(it.link as Page)} className="text-brand hover:underline">Open {it.link}</button>
                   )}
-                  {it.link && !PAGE_IDS.has(it.link) && <code className="text-[10px] text-slate-400">{it.link}</code>}
+                  {it.link && !PAGE_IDS.has(it.link) && <code className="text-[10px] text-slate-300">{it.link}</code>}
                 </div>
               )}
             </div>

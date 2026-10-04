@@ -232,7 +232,7 @@ export default function BacktestPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-teal-400">Backtesting</h1>
-        <p className="text-sm font-semibold text-teal-400/60">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
+        <p className="text-sm font-semibold text-teal-200">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
       </div>
 
       <DataSourceBar source={source} note="Bars below applies to sample data; broker candles use the lookback." />

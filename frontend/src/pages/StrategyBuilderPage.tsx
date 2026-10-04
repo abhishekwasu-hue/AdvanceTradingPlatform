@@ -217,7 +217,7 @@ export default function StrategyBuilderPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-purple-400">Strategy Builder</h1>
-        <p className="text-sm font-semibold text-purple-400/60">
+        <p className="text-sm font-semibold text-purple-200">
           Compose entry rules from indicators - no code. Every rule set produces a real signal
           through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest).
         </p>

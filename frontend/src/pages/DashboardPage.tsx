@@ -65,9 +65,9 @@ function KpiTile({ icon: Icon, tone, label, value, sub, onClick }: { icon: Lucid
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${t.grad}`} />
       <div className="relative flex items-start justify-between gap-2">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300">{label}</div>
           <div className={`font-tabular mt-1.5 text-2xl font-extrabold leading-none ${t.text}`}>{value}</div>
-          {sub && <div className="mt-1.5 text-[11px] text-slate-400">{sub}</div>}
+          {sub && <div className="mt-1.5 text-[11px] text-slate-300">{sub}</div>}
         </div>
         <div className={`shrink-0 rounded-xl ${t.bg} ${t.text} p-2.5`}><Icon size={18} /></div>
       </div>
@@ -97,7 +97,7 @@ function Ring({ segments, size = 128, label, sub }: { segments: { value: number;
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className={`font-tabular font-extrabold text-slate-100 ${String(label).length > 4 ? "text-sm" : "text-xl"}`}>{label}</div>
-        {sub && <div className="text-[10px] uppercase tracking-wider text-slate-400">{sub}</div>}
+        {sub && <div className="text-[10px] uppercase tracking-wider text-slate-300">{sub}</div>}
       </div>
     </div>
   );
@@ -116,7 +116,7 @@ function Bars({ rows, valueLabel, signed = false }: { rows: { key: string; value
               <div className={`h-2.5 rounded-full ${TONE[tone].bar} transition-all`} style={{ width: `${Math.max(3, (Math.abs(r.value) / max) * 100)}%` }} />
             </div>
             <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? (r.value >= 0 ? "text-emerald-300" : "text-rose-300") : TONE[tone].text}`}>{valueLabel(r.value)}</div>
-            {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-slate-500">{r.hint}</div>}
+            {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-slate-300">{r.hint}</div>}
           </div>
         );
       })}
@@ -194,7 +194,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
               {user ? "Your book, your automation and your alerts on one screen. Numbers refresh every 30 seconds." : "Log in to see your book; the engines below are live either way."}
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-              <span className={`rounded-full border px-2.5 py-1 ${healthy ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : healthy === false ? "border-rose-400/50 bg-rose-500/15 text-rose-200" : "border-border text-slate-400"}`}>
+              <span className={`rounded-full border px-2.5 py-1 ${healthy ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : healthy === false ? "border-rose-400/50 bg-rose-500/15 text-rose-200" : "border-border text-slate-300"}`}>
                 <Server size={11} className="inline -mt-0.5 mr-1" />Backend {healthy === null ? "…" : healthy ? "online" : "offline"}
               </span>
               {user && (
@@ -256,7 +256,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           {user && byStrategy.length > 0 ? (
             <Bars signed rows={byStrategy.map((g, i) => ({ key: g.key, value: g.net_pnl, tone: PALETTE[i % PALETTE.length], hint: `${g.trades} tr · ${pct(g.win_rate, 0)}` }))} valueLabel={(v) => money(v)} />
           ) : (
-            <div className="flex h-32 items-center justify-center text-xs text-slate-500">{user ? "No closed trades yet - the first PAPER session fills this in." : "Log in to see your strategies' P&L."}</div>
+            <div className="flex h-32 items-center justify-center text-xs text-slate-300">{user ? "No closed trades yet - the first PAPER session fills this in." : "Log in to see your strategies' P&L."}</div>
           )}
         </Card>
         <Card title="Strategy mix">
@@ -283,20 +283,20 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                   <div className="text-xs space-y-1">
                     <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /><span className="text-slate-300">Long</span><span className="ml-auto font-tabular text-emerald-300">{money(exposure.long_notional)}</span></div>
                     <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-400" /><span className="text-slate-300">Short</span><span className="ml-auto font-tabular text-rose-300">{money(exposure.short_notional)}</span></div>
-                    <div className="text-slate-500">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={exposure.unrealised_pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(exposure.unrealised_pnl)}</span></div>
+                    <div className="text-slate-300">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={exposure.unrealised_pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(exposure.unrealised_pnl)}</span></div>
                   </div>
                 </div>
                 <Bars rows={bySymbol.map((s, i) => ({ key: s.symbol, value: s.notional, tone: PALETTE[i % PALETTE.length], hint: `${s.positions} pos` }))} valueLabel={(v) => money(v)} />
               </>
             ) : (
-              <div className="flex h-32 items-center justify-center text-xs text-slate-500">No open positions - exposure is empty.</div>
+              <div className="flex h-32 items-center justify-center text-xs text-slate-300">No open positions - exposure is empty.</div>
             )}
           </Card>
 
           {/* Deployments */}
           <Card title="Running deployments">
             {deployments.length === 0 ? (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-slate-500">
+              <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-slate-300">
                 Nothing deployed yet.
                 {onNavigate && <button onClick={() => onNavigate("deployments")} className="rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1.5 font-bold text-white">Deploy the first one</button>}
               </div>
@@ -306,8 +306,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                   <li key={d.id} className="flex items-center gap-2 rounded-xl border border-border bg-panel2 px-3 py-2 text-xs">
                     <span className={`rounded-md px-1.5 py-0.5 font-bold ${d.mode === "LIVE" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>{d.mode}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold text-slate-100">{d.strategy_id} <span className="text-slate-400">on</span> {d.symbol}</div>
-                      <div className="truncate text-[10px] text-slate-500">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
+                      <div className="truncate font-semibold text-slate-100">{d.strategy_id} <span className="text-slate-300">on</span> {d.symbol}</div>
+                      <div className="truncate text-[10px] text-slate-300">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
                     </div>
                     <span className={`h-2 w-2 rounded-full ${TONE[STATUS_TONE[d.status] ?? "sky"].bar}`} title={d.status} />
                   </li>
@@ -321,14 +321,14 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           <div className="space-y-4">
             <Card title="Open positions">
               {positions.length === 0 ? (
-                <div className="text-xs text-slate-500">Flat. Nothing at risk right now.</div>
+                <div className="text-xs text-slate-300">Flat. Nothing at risk right now.</div>
               ) : (
                 <ul className="space-y-1.5">
                   {positions.slice(0, 5).map((p) => (
                     <li key={p.id} className="flex items-center gap-2 text-xs">
                       <span className={`rounded-md px-1.5 py-0.5 font-bold ${p.direction === "LONG" ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>{p.direction === "LONG" ? "L" : "S"}</span>
                       <span className="min-w-0 flex-1 truncate font-semibold text-slate-100">{p.symbol}</span>
-                      <span className="font-tabular text-slate-400">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
+                      <span className="font-tabular text-slate-300">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
                       <span className={`rounded px-1 text-[10px] ${p.mode === "LIVE" ? "text-emerald-300" : "text-sky-300"}`}>{p.mode}</span>
                     </li>
                   ))}
@@ -338,15 +338,15 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
             </Card>
             <Card title={`Latest alerts${unread ? ` · ${unread} unread` : ""}`}>
               {alerts.length === 0 ? (
-                <div className="text-xs text-slate-500">Quiet. Entries, exits and risk events will show here.</div>
+                <div className="text-xs text-slate-300">Quiet. Entries, exits and risk events will show here.</div>
               ) : (
                 <ul className="space-y-1.5">
                   {alerts.map((a) => (
                     <li key={a.id} className="flex items-start gap-2 text-xs">
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE[SEVERITY[a.severity] ?? "sky"].bar}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`truncate ${a.read ? "text-slate-400" : "font-semibold text-slate-100"}`}>{a.title}</div>
-                        <div className="text-[10px] text-slate-500">{a.event_type} · {ago(a.created_at)}</div>
+                        <div className={`truncate ${a.read ? "text-slate-300" : "font-semibold text-slate-100"}`}>{a.title}</div>
+                        <div className="text-[10px] text-slate-300">{a.event_type} · {ago(a.created_at)}</div>
                       </div>
                     </li>
                   ))}
@@ -370,7 +370,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                 <div className="relative">
                   <div className={`mb-2 inline-flex rounded-xl ${t.bg} ${t.text} p-2`}><Icon size={16} /></div>
                   <div className="text-sm font-bold text-slate-100">{title}</div>
-                  <div className="mt-0.5 text-xs leading-relaxed text-slate-400">{description}</div>
+                  <div className="mt-0.5 text-xs leading-relaxed text-slate-300">{description}</div>
                 </div>
               </div>
             );

@@ -84,7 +84,7 @@ export default function BrokerUncertainBanner() {
           </div>
           {report.items.filter((i) => i.status !== "MATCHED").map((i) => (
             <div key={`${i.account_label ?? ""}:${i.symbol}`} className="text-muted">
-              {i.account_label && <span className="text-slate-400">[{i.account_label}] </span>}
+              {i.account_label && <span className="text-slate-300">[{i.account_label}] </span>}
               <span className="font-mono text-slate-300">{i.symbol}</span> {i.status}: {i.detail}
             </div>
           ))}

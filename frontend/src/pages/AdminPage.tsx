@@ -81,7 +81,7 @@ export default function AdminPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-rose-400">Admin Console</h1>
-        <p className="text-sm font-semibold text-rose-400/60">
+        <p className="text-sm font-semibold text-rose-200">
           Every organisation on the platform: plans, suspension, what the worker is running, the
           platform-wide audit trail, and the global kill switch. Every change here lands on the
           affected tenant's own audit trail and notifies them.

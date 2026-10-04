@@ -61,7 +61,7 @@ export default function PortfolioPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-rose-400">Portfolio</h1>
-        <p className="text-sm font-semibold text-rose-400/60">Capital deployed across open positions and cumulative realized P&amp;L.</p>
+        <p className="text-sm font-semibold text-rose-200">Capital deployed across open positions and cumulative realized P&amp;L.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}

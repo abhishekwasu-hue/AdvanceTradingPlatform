@@ -431,3 +431,89 @@ def test_shoonya_maps_slm_to_noren_sl_mkt_with_trigger():
     assert captured["prctyp"] == "SL-MKT"
     assert captured["trgprc"] == "99.5"
     assert captured["trantype"] == "S"
+
+
+def test_upstox_find_instrument_resolves_index_spellings():
+    """Upstox lists indices under NSE_INDEX with its own trading symbol ("NIFTY", "BANKNIFTY") and
+    display name ("Nifty 50"); the platform and Kite say "NIFTY 50" / "NIFTY BANK". Live charts
+    failed with 'Instrument NSE:NIFTY 50 not found' until the lookup understood both."""
+    from app.brokers.models import Instrument
+    from app.brokers.upstox import find_instrument
+
+    rows = [
+        Instrument(instrument_token="NSE_INDEX|Nifty 50", exchange="NSE", tradingsymbol="NIFTY", name="Nifty 50", segment="NSE_INDEX", instrument_type="INDEX"),
+        Instrument(instrument_token="NSE_INDEX|Nifty Bank", exchange="NSE", tradingsymbol="BANKNIFTY", name="Nifty Bank", segment="NSE_INDEX", instrument_type="INDEX"),
+        Instrument(instrument_token="NSE_FO|1", exchange="NSE", tradingsymbol="NIFTY FUT 30 OCT 26", name="NIFTY", segment="NSE_FO", instrument_type="FUT", expiry="2026-10-30"),
+        Instrument(instrument_token="NSE_EQ|INE002A01018", exchange="NSE", tradingsymbol="RELIANCE", name="RELIANCE INDUSTRIES LTD", segment="NSE_EQ", instrument_type="EQ"),
+    ]
+    key = lambda s: (find_instrument(rows, s) or Instrument(instrument_token="-", exchange="", tradingsymbol="")).instrument_token
+    assert key("NIFTY 50") == "NSE_INDEX|Nifty 50"
+    assert key("Nifty 50") == "NSE_INDEX|Nifty 50"
+    assert key("NIFTY BANK") == "NSE_INDEX|Nifty Bank"
+    assert key("BANKNIFTY") == "NSE_INDEX|Nifty Bank"
+    assert key("NIFTY") == "NSE_INDEX|Nifty 50"
+    assert key("reliance") == "NSE_EQ|INE002A01018"
+    assert key("RELIANCE") == "NSE_EQ|INE002A01018"
+    assert find_instrument(rows, "NIFTY IT") is None
+
+    # A master whose index rows carry Kite-style symbols keeps resolving exactly.
+    kite_style = [Instrument(instrument_token="NSE_INDEX|Nifty 50", exchange="NSE", tradingsymbol="NIFTY 50", name="Nifty 50", segment="NSE_INDEX", instrument_type="INDEX")]
+    assert find_instrument(kite_style, "NIFTY 50").instrument_token == "NSE_INDEX|Nifty 50"
+
+
+def _upstox_chain_entry(strike, spot):
+    side = {"market_data": {"ltp": 10.0, "oi": 100.0, "prev_oi": 90.0, "volume": 5.0}, "option_greeks": {"iv": 12.0, "delta": 0.5}}
+    return {"strike_price": strike, "underlying_spot_price": spot, "expiry": "", "call_options": side, "put_options": side}
+
+
+def test_upstox_option_chain_defaults_to_nearest_expiry():
+    """Upstox rejects /option/chain without expiry_date ('Required request parameter
+    expiry_date ... is not present'); with no expiry asked for, the adapter sends the nearest
+    upcoming one from the master's option rows (underlying_symbol = NIFTY)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    past, near, far = today - timedelta(days=7), today + timedelta(days=3), today + timedelta(days=10)
+    # Upstox stamps an expiry at 23:59:59 IST of the expiry day.
+    ms = lambda d: int(datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=ZoneInfo("Asia/Kolkata")).timestamp() * 1000)
+    master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_INDEX|Nifty 50", "exchange": "NSE", "segment": "NSE_INDEX", "trading_symbol": "NIFTY", "name": "Nifty 50", "instrument_type": "INDEX"},
+        *[{"instrument_key": f"NSE_FO|{i}", "exchange": "NSE", "segment": "NSE_FO", "trading_symbol": f"NIFTY {i}", "underlying_symbol": "NIFTY",
+           "instrument_type": "CE", "expiry": ms(d), "strike_price": 24000} for i, d in enumerate((far, past, near))],
+    ]).encode())
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=master)
+        assert request.url.path.endswith("/option/chain")
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"status": "success", "data": [_upstox_chain_entry(24000, 24010.5)]})
+
+    broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    chain = run(broker.get_option_chain("NIFTY"))
+    assert seen == {"instrument_key": "NSE_INDEX|Nifty 50", "expiry_date": near.isoformat()}
+    assert chain.expiry == near.isoformat() and chain.underlying_ltp == 24010.5 and len(chain.rows) == 1
+
+
+def test_upstox_option_chain_falls_back_to_contract_listing_for_expiry():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    near = datetime.now(ZoneInfo("Asia/Kolkata")).date() + timedelta(days=2)
+    master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_INDEX|Nifty Bank", "exchange": "NSE", "segment": "NSE_INDEX", "trading_symbol": "BANKNIFTY", "name": "Nifty Bank", "instrument_type": "INDEX"},
+    ]).encode())
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=master)
+        if request.url.path.endswith("/option/contract"):
+            assert request.url.params["instrument_key"] == "NSE_INDEX|Nifty Bank"
+            return httpx.Response(200, json={"status": "success", "data": [{"expiry": near.isoformat()}, {"expiry": (near + timedelta(days=7)).isoformat()}]})
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"status": "success", "data": [_upstox_chain_entry(52000, 52010.0)]})
+
+    broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    run(broker.get_option_chain("NIFTY BANK"))
+    assert seen == {"instrument_key": "NSE_INDEX|Nifty Bank", "expiry_date": near.isoformat()}

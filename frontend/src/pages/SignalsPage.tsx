@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "../components/ProChart";
 import SignalCard from "../components/SignalCard";
 import { Card, Disclaimer } from "../components/ui";
@@ -117,11 +118,16 @@ export default function SignalsPage() {
 
   // Phase AN: the chart can show any timeframe resampled from the 1-minute base; the strategy's
   // primary timeframe is the default. Live price in broker mode moves the forming candle.
+  // With broker candles each chart timeframe loads its own history (and older pages on scroll-back);
+  // sample candles are resampled from the 1-minute base.
+  const brokerMode = source.mode === "broker" && !!lastGenerated;
+  const brokerChart = useBrokerChart({ enabled: brokerMode, symbol: lastGenerated?.symbol, timeframe: chartTf, exchange: "NSE", broker: source.broker || undefined });
   const displayCandles = useMemo(() => {
-    if (baseCandles.length === 0) return chartCandles;
+    if (brokerMode && brokerChart.candles.length > 0) return brokerChart.candles;
+    if (baseCandles.length === 0 || chartTf === "day") return chartCandles;
     if (selected && chartTf === selected.timeframes[0]) return chartCandles;
     return buildTimeframeData(baseCandles, [chartTf])[chartTf] ?? chartCandles;
-  }, [baseCandles, chartCandles, chartTf, selected]);
+  }, [brokerMode, brokerChart.candles, baseCandles, chartCandles, chartTf, selected]);
   const live = useLiveLtp(source.mode === "broker" && !!lastGenerated, lastGenerated?.symbol, "NSE", source.broker || undefined);
 
   return (
@@ -202,10 +208,12 @@ export default function SignalsPage() {
 
       {chartCandles.length > 0 && (
         <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
-          <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf} timeframes={["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
-                    priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={live.ltp} liveError={live.error}
+          <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf}
+                    timeframes={brokerMode ? ["1min", "5min", "15min", "30min", "60min", "day"] : ["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
+                    priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={chartTf === "day" ? null : live.ltp} liveError={live.error}
                     openUrl={source.mode === "broker" && lastGenerated ? chartWindowUrl(lastGenerated.symbol, chartTf, "NSE", source.broker || undefined) : undefined}
-                    deployable={source.mode === "broker" && !!lastGenerated} />
+                    deployable={source.mode === "broker" && !!lastGenerated}
+                    onLoadOlder={brokerMode ? brokerChart.loadOlder : undefined} loadingOlder={brokerChart.loadingOlder} olderExhausted={brokerChart.exhausted} />
         </Card>
       )}
 

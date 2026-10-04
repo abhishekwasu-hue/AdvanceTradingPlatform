@@ -486,8 +486,9 @@ export const api = {
   // Phase AN: the live chart's last price (tick > quote with staleness > bare LTP).
   marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
     request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),
-  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string) =>
-    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null }) }),
+  /** `before` (YYYY-MM-DD, IST): older history ending the day before it - a chart scrolled back past its oldest bar. */
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null }) }),
   // Phase Z: factor and risk models.
   quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>, useFundamentals = true) =>
     request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, use_fundamentals: useFundamentals }) }),

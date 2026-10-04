@@ -125,13 +125,20 @@ export interface ProChartProps {
   /** The chart is of a real broker symbol: the strategy panel offers Deploy (PAPER) switches. */
   deployable?: boolean;
   exchange?: string;
+  /** Broker charts: called when the chart is scrolled back to its oldest bars, to load the page before them. */
+  onLoadOlder?: () => void;
+  /** Shown while an older page loads, and once the broker has nothing older. */
+  loadingOlder?: boolean;
+  olderExhausted?: boolean;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
-  deployable = false, exchange = "NSE",
+  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false,
 }: ProChartProps) {
+  const onLoadOlderRef = useRef(onLoadOlder);
+  onLoadOlderRef.current = onLoadOlder;
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
   const [winH, setWinH] = useState(() => window.innerHeight);
@@ -204,6 +211,7 @@ export default function ProChart({
   const priceLineRefs = useRef<IPriceLine[]>([]);
   const dataKey = useRef<string>("");
   const lastShape = useRef<{ len: number; lastTime: number }>({ len: 0, lastTime: 0 });
+  const prevFirstTime = useRef<number>(0);
   const syncing = useRef(false);
 
   // Build the charts once per pane layout.
@@ -258,6 +266,12 @@ export default function ProChart({
       src.timeScale().subscribeVisibleLogicalRangeChange(handler);
       unsubs.push(() => src.timeScale().unsubscribeVisibleLogicalRangeChange(handler));
     }
+    // Scrolled back to the oldest bars: ask for the page before them (broker charts).
+    const nearStart = (range: LogicalRange | null) => {
+      if (range && range.from < 10 && onLoadOlderRef.current) onLoadOlderRef.current();
+    };
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange(nearStart);
+    unsubs.push(() => mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(nearStart));
     // Crosshair follows across panes and feeds the legend.
     for (const src of all) {
       const handler = (p: MouseEventParams) => {
@@ -289,8 +303,10 @@ export default function ProChart({
   // Feed data. A fresh symbol/length reset calls setData + fitContent; a live move updates the last bar only.
   useEffect(() => {
     const s = series.current; const main = charts.current.main;
-    if (!s.candles || !main || display.length === 0) return;
-    const key = `${display[0].timestamp}|${symbol ?? ""}|${timeframe ?? ""}`;
+    if (!s.candles || !main) return;
+    if (display.length === 0) { dataKey.current = ""; lastShape.current = { len: 0, lastTime: 0 }; return; }
+    const chartKey = `${symbol ?? ""}|${timeframe ?? ""}`;
+    const key = `${display[0].timestamp}|${chartKey}`;
     const candleData = display.map((c, i) => ({ time: times[i], open: c.open, high: c.high, low: c.low, close: c.close }));
     // Incremental only when this is the same series grown by at most one bar (a live tick moved
     // or opened the forming candle); anything else is a new dataset. Lightweight Charts refuses an
@@ -308,10 +324,16 @@ export default function ProChart({
         incremental = false;
       }
     }
+    // The same chart reloaded (older history prepended, a minute's refresh): keep the user's view,
+    // shifted by the bars added on the left. A new symbol or timeframe fits all candles instead.
+    const sameChart = !incremental && prev.len > 0 && dataKey.current.endsWith(`|${chartKey}`);
+    const keepRange = sameChart ? main.timeScale().getVisibleLogicalRange() : null;
+    const prevFirst = prevFirstTime.current;
     if (!incremental) {
       s.candles.setData(candleData);
       dataKey.current = key;
     }
+    prevFirstTime.current = times[0];
     lastShape.current = { len: display.length, lastTime: times[times.length - 1] };
     const setLine = (name: string, data: Series | null, color?: (i: number) => string | undefined) => {
       const ser = s[name]; if (!ser) return;
@@ -344,8 +366,12 @@ export default function ProChart({
       return best < 0 ? null : { time: times[best], position: m.position, color: m.color, shape: m.shape, text: m.text };
     }).filter((m): m is NonNullable<typeof m> => m !== null).sort((a, b) => a.time - b.time);
     (s.candles as ISeriesApi<"Candlestick">).setMarkers(snapped);
-    if (!incremental) for (const c of Object.values(charts.current)) c?.timeScale().fitContent();
-  }, [display, times, ind, priceLines, zones, markers, symbol, timeframe]);
+    if (keepRange) {
+      const added = Math.max(0, timeIndex.get(prevFirst) ?? 0);
+      const range = { from: keepRange.from + added, to: keepRange.to + added };
+      for (const c of Object.values(charts.current)) c?.timeScale().setVisibleLogicalRange(range);
+    } else if (!incremental) for (const c of Object.values(charts.current)) c?.timeScale().fitContent();
+  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe]);
 
   const idx = hover != null ? timeIndex.get(hover) ?? null : display.length - 1;
   const bar = idx != null ? display[idx] : undefined;
@@ -379,6 +405,9 @@ export default function ProChart({
           </span>
         )}
         {liveError && <span className="max-w-[22rem] truncate text-[10px] text-rose-300" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
+        {onLoadOlder && (loadingOlder
+          ? <span className="text-[10px] text-sky-300">जुना data येत आहे…</span>
+          : olderExhausted ? <span className="text-[10px] text-muted" title="The broker has no older history for this timeframe">इतकाच इतिहास उपलब्ध</span> : null)}
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (

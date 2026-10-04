@@ -14,7 +14,7 @@ match the broker's own charts. That keeps the broker calls to two per symbol per
 """
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -30,6 +30,7 @@ from app.observability.metrics import MARKET_DATA_STALE
 logger = logging.getLogger(__name__)
 
 DEFAULT_CANDLE_CACHE_TTL_SECONDS = 60
+HISTORY_CACHE_TTL_SECONDS = 3600   # older history pages (get_history): past bars do not change
 DEFAULT_LOOKBACK_DAYS = 5
 DAILY_MIN_LOOKBACK_DAYS = 400   # Phase AS: about 270 sessions - enough for a 200-day average
 
@@ -99,6 +100,25 @@ class MarketDataService:
         bars = await self._fetch(symbol, exchange, interval, now)
         if bars:
             await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), self.cache_ttl_seconds)
+        return bars
+
+    async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:
+        """Completed bars for the `lookback_days` calendar days ending the day before `before` (IST) -
+        what a chart loads when it is scrolled back past its oldest bar. Past bars never change, so
+        they are cached for HISTORY_CACHE_TTL_SECONDS under their own date range."""
+        before = min(before, datetime.now(timezone.utc).astimezone(IST).date())   # never today's forming bars
+        start = datetime.combine(before - timedelta(days=self.lookback_days), dtime(0, 0), tzinfo=IST)
+        end = datetime.combine(before - timedelta(days=1), dtime(23, 59), tzinfo=IST)
+        key = f"{_cache_key(self.broker.name, exchange, symbol, interval)}:hist:{start.date()}:{end.date()}"
+        cached = await cache_get(key)
+        if cached:
+            try:
+                return [OHLCVBar.model_validate(item) for item in json.loads(cached)]
+            except (ValueError, TypeError):
+                logger.warning("Discarding unreadable cached history for %s", key)
+        bars = merge_bars(await self.broker.get_historical_data(symbol, exchange, interval, start, end))
+        if bars:
+            await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), HISTORY_CACHE_TTL_SECONDS)
         return bars
 
     def _lookback(self, interval: str) -> int:

@@ -328,7 +328,7 @@ export default function ProChart({
             <Radio size={10} className={live.stale ? "" : "animate-pulse"} /> {live.stale ? `stale · ${live.age_seconds != null ? Math.round(live.age_seconds / 60) + "m old" : "no exchange time"}` : `LIVE${live.age_seconds != null ? ` · ${Math.round(live.age_seconds)}s` : ""}`}
           </span>
         )}
-        {liveError && <span className="text-[10px] text-rose-300" title={liveError}>live price unavailable</span>}
+        {liveError && <span className="max-w-[22rem] truncate text-[10px] text-rose-300" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (
@@ -372,7 +372,7 @@ export default function ProChart({
       {showVolume && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px] text-muted">Volume</span><div ref={volRef} className="w-full" /></div>}
       {showRsi && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.rsi }}>RSI {settings.rsiPeriod}</span><div ref={rsiRef} className="w-full" /></div>}
       {showAdx && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.adx }}>ADX {settings.adxPeriod} · threshold {settings.adxMin}</span><div ref={adxRef} className="w-full" /></div>}
-      {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-muted">No candles yet.</div>}
+      {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-muted">No candles yet - the broker returned none for this window (market closed, or the session token has expired).</div>}
     </div>
   );
 }

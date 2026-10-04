@@ -1,0 +1,4 @@
+# Shell scripts run inside Linux containers (the backup service's POSIX sh, deploy.sh). A Windows
+# checkout with core.autocrlf would otherwise turn them CRLF and `sh` fails on `set -eu\r`
+# ("illegal option -", exit 2), leaving the backup container in a restart loop.
+*.sh text eol=lf

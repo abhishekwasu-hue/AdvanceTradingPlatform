@@ -93,6 +93,21 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
     )
 
 
+def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCredentialRecord]) -> BrokerCredentials:
+    """A field left blank keeps its stored value, so pasting today's access token does not wipe the
+    API key/secret saved yesterday. Values are trimmed (a pasted trailing space fails the broker
+    login). Clearing a field means deleting the credential and storing it again."""
+    fresh = {k: v.strip() if isinstance(v, str) else v for k, v in incoming.model_dump(exclude_none=True).items()}
+    fresh = {k: v for k, v in fresh.items() if v != ""}
+    stored: dict = {}
+    if existing is not None:
+        try:
+            stored = load_credentials(existing).model_dump(exclude_none=True)
+        except Exception:  # unreadable old payload (e.g. key rotated): start from what was sent
+            stored = {}
+    return BrokerCredentials(**{**stored, **fresh})
+
+
 @router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
@@ -112,9 +127,10 @@ async def store_broker_credentials(
     """
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
+    existing = await get_credential_record(session, user.tenant_id, name, account_label)
+    credentials = _merge_with_stored(credentials, existing)
     encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id)
 
-    existing = await get_credential_record(session, user.tenant_id, name, account_label)
     if existing:
         existing.encrypted_payload = encrypted
         existing.user_id = user.id

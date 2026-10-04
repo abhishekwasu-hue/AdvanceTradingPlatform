@@ -215,6 +215,11 @@ export default function SettingsPage() {
             <input className="w-full sm:w-64 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={accountLabel} onChange={(e) => setAccountLabel(e.target.value)} placeholder="primary" />
           </div>
 
+          <p className="text-xs text-slate-400">
+            Fill only what you are changing - a field left blank keeps its stored value (e.g. paste just today's
+            Access Token and the saved API key/secret stay). Values are encrypted on save and never shown again.
+          </p>
+
           <div className="grid sm:grid-cols-2 gap-3">
             {CRED_FIELDS.map((f) => (
               <div key={f.key}>

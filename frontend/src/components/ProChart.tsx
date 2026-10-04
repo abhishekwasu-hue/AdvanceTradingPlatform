@@ -2,7 +2,7 @@ import {
   ColorType, CrosshairMode, LineStyle, createChart,
   type IChartApi, type IPriceLine, type ISeriesApi, type LogicalRange, type MouseEventParams, type UTCTimestamp,
 } from "lightweight-charts";
-import { ExternalLink, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
+import { ExternalLink, Layers, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { LtpResponse, OHLCVBar, SRZone } from "../types";
@@ -11,6 +11,7 @@ import {
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
 } from "../utils/indicators";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
+import { useChartStrategies } from "./ChartStrategies";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
@@ -121,11 +122,15 @@ export interface ProChartProps {
   openUrl?: string;
   /** Fills the window and hides the expand button (the new-tab chart page). */
   fullWindow?: boolean;
+  /** The chart is of a real broker symbol: the strategy panel offers Deploy (PAPER) switches. */
+  deployable?: boolean;
+  exchange?: string;
 }
 
 export default function ProChart({
-  candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines = [], zones = [], markers = [], height = 380,
+  candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
+  deployable = false, exchange = "NSE",
 }: ProChartProps) {
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
@@ -138,9 +143,30 @@ export default function ProChart({
   }, []);
   const big = expanded || fullWindow;
   const compact = compactProp && !big;
+
+  // Phase AO: strategies drawn on (and deployed from) the chart.
+  const strat = useChartStrategies({ enabled: !compact, candles, symbol, timeframe, exchange, deployable, onTimeframeChange });
+  const markers = useMemo(() => [...markersProp, ...strat.markers], [markersProp, strat.markers]);
+  const priceLines = useMemo(() => [...priceLinesProp, ...strat.priceLines], [priceLinesProp, strat.priceLines]);
+  useEffect(() => {
+    // A strategy switched on brings its own indicators onto the chart (EMA periods, Supertrend, RSI, ADX...).
+    if (strat.shownParams.length === 0) return;
+    const ids = new Set<IndicatorId>();
+    let merged: Partial<IndicatorSettings> = {};
+    for (const params of strat.shownParams) {
+      const d = indicatorsForStrategy(params);
+      d.ids.forEach((i) => ids.add(i));
+      // Only what this strategy changes from the defaults, so two strategies do not reset each other.
+      for (const k of Object.keys(d.settings) as (keyof IndicatorSettings)[]) {
+        if (d.settings[k] !== DEFAULT_SETTINGS[k]) merged = { ...merged, [k]: d.settings[k] };
+      }
+    }
+    setActive((prev) => new Set([...prev, ...ids]));
+    setSettings((prev) => ({ ...prev, ...merged }));
+  }, [strat.shownParams]);
   const derived = useMemo(() => indicatorsForStrategy(strategyParams), [strategyParams]);
   const [active, setActive] = useState<Set<IndicatorId>>(() => new Set(defaultIndicators ?? derived.ids));
-  const [settings] = useState<IndicatorSettings>(() => ({ ...DEFAULT_SETTINGS, ...derived.settings }));
+  const [settings, setSettings] = useState<IndicatorSettings>(() => ({ ...DEFAULT_SETTINGS, ...derived.settings }));
   const [hover, setHover] = useState<number | null>(null);
   useEffect(() => { setActive(new Set(defaultIndicators ?? derived.ids)); }, [derived, defaultIndicators]);
 
@@ -368,6 +394,10 @@ export default function ProChart({
                 {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
               </button>
             ))}
+            <button onClick={() => strat.setOpen(!strat.open)} title="Strategies on this chart: draw their trades, deploy them"
+                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "border-border text-slate-200 hover:bg-panel2"}`}>
+              <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
+            </button>
             <button onClick={fit} title="Fit all candles" className="rounded p-1 text-muted hover:text-slate-200"><Scan size={12} /></button>
           </div>
         )}
@@ -386,6 +416,8 @@ export default function ProChart({
           )}
         </div>
       </div>
+
+      {strat.panel}
 
       {/* Legend */}
       {bar && !compact && (

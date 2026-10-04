@@ -100,7 +100,7 @@ history, risk settings, custom strategies, and broker credentials to PostgreSQL 
 across sessions. See [`frontend/README.md`](frontend/README.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
-be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the seven inbuilt scalping
+be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the eleven inbuilt
 strategies and how to call them.
 
 ## Quick start
@@ -235,6 +235,17 @@ npm run dev
   (expected vs fill, slippage, latency) are recorded.
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
+
+## Strategies on the chart (Phase AO)
+
+Every Pro Chart has a **Strategies** button (in full screen and the new-tab chart too). Each of the
+eleven inbuilt strategies gets two switches: **Chart** draws its entries and exits on the candles on
+screen (the backtest engine, via `POST /api/strategies/{id}/chart-run`), its last signal's entry /
+stop / target lines and its indicators, with its win rate and P&L on that data; **Deploy** (on a
+broker-symbol chart) creates or resumes a PAPER deployment on that symbol, off pauses it. Four new
+indicator-combination strategies join the seven scalpers: MACD + EMA trend, Bollinger + RSI
+reversion, VWAP + Supertrend and the opening range breakout (docs/STRATEGIES.md). Market pulse's
+"Add symbol" offers a list of NSE indices and F&O stocks.
 
 ## Pro Chart (Phase AN)
 

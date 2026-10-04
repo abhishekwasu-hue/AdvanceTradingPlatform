@@ -15,6 +15,7 @@ import type {
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
+  ChartRunResponse,
   Deployment,
   DeploymentCreateRequest,
   ContractSpec,
@@ -238,6 +239,9 @@ export const api = {
   health: () => request<{ status: string }>("/system/health"),
 
   listStrategies: () => request<StrategyInfo[]>("/strategies"),
+  // Phase AO: the strategy's entries/exits on the chart's own candles (not recorded as a backtest run).
+  strategyChartRun: (strategyId: string, symbol: string, timeframe: string, candles: OHLCVBar[]) =>
+    request<ChartRunResponse>(`/strategies/${encodeURIComponent(strategyId)}/chart-run`, { method: "POST", body: JSON.stringify({ symbol, timeframe, candles }) }),
 
   generateSignal: (strategyId: string, symbol: string, candles: Record<string, OHLCVBar[]>) =>
     request<Signal>(`/strategies/${strategyId}/signal`, {

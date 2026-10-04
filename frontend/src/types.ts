@@ -185,6 +185,22 @@ export interface Trade {
   charges: number;
 }
 
+/** Phase AO: a strategy walked over the candles a chart is showing (POST /strategies/{id}/chart-run). */
+export interface ChartRunResponse {
+  strategy_id: string;
+  strategy_name: string;
+  strategy_timeframes: string[];
+  compatible: boolean;
+  reason: string | null;
+  bars_used: number;
+  trades: Trade[];
+  total_trades: number;
+  win_rate: number;
+  net_pnl: number;
+  profit_factor: number | null;
+  last_signal: Signal | null;
+}
+
 export interface BacktestResult {
   strategy_id: string;
   symbol: string;

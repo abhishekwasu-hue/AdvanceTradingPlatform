@@ -62,7 +62,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         {error && <span className="text-rose-300">{error}</span>}
       </div>
       <ProChart candles={candles} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
-                live={timeframe === "day" ? null : live.ltp} liveError={live.error} fullWindow
+                live={timeframe === "day" ? null : live.ltp} liveError={live.error} fullWindow deployable exchange={exchange}
                 defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume", "rsi"]} />
     </div>
   );

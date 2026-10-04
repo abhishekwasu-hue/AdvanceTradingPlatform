@@ -44,6 +44,40 @@ _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
 logger = logging.getLogger(__name__)
 
+# Index spellings other brokers (and this platform's UI) use, mapped to the trading symbol Upstox's
+# instrument master gives the same index. Upstox lists indices under segment NSE_INDEX with a
+# display name ("Nifty 50") that differs from Kite's tradingsymbol ("NIFTY 50").
+_INDEX_ALIASES = {
+    "NIFTY 50": "NIFTY", "NIFTY50": "NIFTY", "NIFTY BANK": "BANKNIFTY", "BANK NIFTY": "BANKNIFTY",
+    "NIFTY FIN SERVICE": "FINNIFTY", "NIFTY FINANCIAL SERVICES": "FINNIFTY",
+    "NIFTY MID SELECT": "MIDCPNIFTY", "NIFTY MIDCAP SELECT": "MIDCPNIFTY",
+}
+
+
+def find_instrument(instruments: List[Instrument], symbol: str) -> Optional[Instrument]:
+    """The instrument a plain symbol names: exact trading symbol first, then case-insensitive,
+    then an index by its display name ("NIFTY 50" -> NSE_INDEX|Nifty 50), then a known alias."""
+    exact = next((i for i in instruments if i.tradingsymbol == symbol), None)
+    if exact is not None:
+        return exact
+    wanted = " ".join(symbol.split()).upper()
+    folded = next((i for i in instruments if (i.tradingsymbol or "").upper() == wanted), None)
+    if folded is not None:
+        return folded
+
+    def is_index(i: Instrument) -> bool:
+        return (i.instrument_type or "").upper() == "INDEX" or (i.segment or "").upper().endswith("_INDEX")
+
+    by_name = next((i for i in instruments if is_index(i) and " ".join((i.name or "").split()).upper() == wanted), None)
+    if by_name is not None:
+        return by_name
+    alias = _INDEX_ALIASES.get(wanted)
+    if alias:
+        return next((i for i in instruments if is_index(i) and (i.tradingsymbol or "").upper() == alias), None) \
+            or next((i for i in instruments if (i.tradingsymbol or "").upper() == alias and i.expiry is None), None)
+    return None
+
+
 class UpstoxBroker(BrokerInterface):
     """Upstox API v2 adapter.
 
@@ -144,7 +178,7 @@ class UpstoxBroker(BrokerInterface):
         if "|" in symbol:
             return Instrument(instrument_token=symbol, exchange=exchange, tradingsymbol=symbol)
         instruments = await self.get_instruments(exchange)
-        match = next((i for i in instruments if i.tradingsymbol == symbol), None)
+        match = find_instrument(instruments, symbol)
         if match is None:
             raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in Upstox instrument master")
         return match
@@ -232,9 +266,9 @@ class UpstoxBroker(BrokerInterface):
     ) -> List[OHLCVBar]:
         upstox_interval = UPSTOX_INTERVAL_MAP.get(interval, interval)
         instruments = await self.get_instruments(exchange)
-        match = next((i for i in instruments if i.tradingsymbol == symbol), None)
+        match = find_instrument(instruments, symbol)
         if match is None:
-            raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
+            raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in Upstox instrument master")
 
         data = await self._request(
             "GET",
@@ -248,7 +282,7 @@ class UpstoxBroker(BrokerInterface):
 
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
         instruments = await self.get_instruments("NSE")
-        underlying_match = next((i for i in instruments if i.tradingsymbol == underlying), None)
+        underlying_match = find_instrument(instruments, underlying)
         instrument_key = underlying_match.instrument_token if underlying_match else underlying
 
         params = {"instrument_key": instrument_key}
@@ -288,7 +322,7 @@ class UpstoxBroker(BrokerInterface):
         # (e.g. "NSE_EQ|INE002A01018"), so resolve it here rather than making every caller know
         # Upstox-specific identifiers.
         instruments = await self.get_instruments(order.exchange)
-        match = next((i for i in instruments if i.tradingsymbol == order.symbol), None)
+        match = find_instrument(instruments, order.symbol)
         if match is None:
             raise BrokerAPIError(f"Instrument {order.exchange}:{order.symbol} not found in Upstox instrument master")
 

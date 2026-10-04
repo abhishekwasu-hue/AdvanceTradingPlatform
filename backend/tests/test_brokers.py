@@ -431,3 +431,31 @@ def test_shoonya_maps_slm_to_noren_sl_mkt_with_trigger():
     assert captured["prctyp"] == "SL-MKT"
     assert captured["trgprc"] == "99.5"
     assert captured["trantype"] == "S"
+
+
+def test_upstox_find_instrument_resolves_index_spellings():
+    """Upstox lists indices under NSE_INDEX with its own trading symbol ("NIFTY", "BANKNIFTY") and
+    display name ("Nifty 50"); the platform and Kite say "NIFTY 50" / "NIFTY BANK". Live charts
+    failed with 'Instrument NSE:NIFTY 50 not found' until the lookup understood both."""
+    from app.brokers.models import Instrument
+    from app.brokers.upstox import find_instrument
+
+    rows = [
+        Instrument(instrument_token="NSE_INDEX|Nifty 50", exchange="NSE", tradingsymbol="NIFTY", name="Nifty 50", segment="NSE_INDEX", instrument_type="INDEX"),
+        Instrument(instrument_token="NSE_INDEX|Nifty Bank", exchange="NSE", tradingsymbol="BANKNIFTY", name="Nifty Bank", segment="NSE_INDEX", instrument_type="INDEX"),
+        Instrument(instrument_token="NSE_FO|1", exchange="NSE", tradingsymbol="NIFTY FUT 30 OCT 26", name="NIFTY", segment="NSE_FO", instrument_type="FUT", expiry="2026-10-30"),
+        Instrument(instrument_token="NSE_EQ|INE002A01018", exchange="NSE", tradingsymbol="RELIANCE", name="RELIANCE INDUSTRIES LTD", segment="NSE_EQ", instrument_type="EQ"),
+    ]
+    key = lambda s: (find_instrument(rows, s) or Instrument(instrument_token="-", exchange="", tradingsymbol="")).instrument_token
+    assert key("NIFTY 50") == "NSE_INDEX|Nifty 50"
+    assert key("Nifty 50") == "NSE_INDEX|Nifty 50"
+    assert key("NIFTY BANK") == "NSE_INDEX|Nifty Bank"
+    assert key("BANKNIFTY") == "NSE_INDEX|Nifty Bank"
+    assert key("NIFTY") == "NSE_INDEX|Nifty 50"
+    assert key("reliance") == "NSE_EQ|INE002A01018"
+    assert key("RELIANCE") == "NSE_EQ|INE002A01018"
+    assert find_instrument(rows, "NIFTY IT") is None
+
+    # A master whose index rows carry Kite-style symbols keeps resolving exactly.
+    kite_style = [Instrument(instrument_token="NSE_INDEX|Nifty 50", exchange="NSE", tradingsymbol="NIFTY 50", name="Nifty 50", segment="NSE_INDEX", instrument_type="INDEX")]
+    assert find_instrument(kite_style, "NIFTY 50").instrument_token == "NSE_INDEX|Nifty 50"

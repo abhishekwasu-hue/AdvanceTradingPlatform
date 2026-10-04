@@ -236,6 +236,29 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Copilot home (Phase AV)
+
+The AI Copilot page is now organised like a trading mentor's desk:
+
+- **Ask your Copilot** - one box for everything, in Marathi or English. "आज काय करू?", "मला intraday strategy सांगा",
+  "माझे trades कसे आहेत?", "माझा autopilot trade का करत नाही?", "Stop-loss कुठे ठेवावा?" are routed to the right part
+  (today's briefing, the strategy interview, the coach, your deployments, the guide) and answered from the platform's own
+  facts - by your AI provider, grounded on those facts, when an AI key is set in Settings.
+- **Today** - the day type (trending up / down, sideways, volatile) from the market memory with its game plan (which
+  strategy families fit today and which to leave alone, VIX sizing, the global mood, events), your day (P&L, loss budget
+  used, trades and open positions against your limits), a pre-trade checklist (broker session, own risk settings, worker
+  running, loss budget, VIX, blocking events) and, for every deployment, **why it is or is not trading** (market closed,
+  paused, errors, the worker not evaluating, or today's regime not suiting the strategy - in which case no trade is the
+  correct result).
+- **Coach** - your closed trades read like a mentor would: win rate, expectancy in rupees and R, profit factor,
+  drawdown, a discipline grade, P&L by strategy and by hour, the equity line, and behaviour flags with one fix each -
+  revenge trades (an entry within 15 minutes of a loss), overtrading, broken daily loss limits, losses far beyond the stop,
+  small winners against big losers, holding losers longer than winners, a losing hour or strategy.
+- **Build a strategy**, **Guide**, and **Advanced** (drafts, market regime, the monitoring agent's decided proposals).
+  Proposals waiting for your approval stay above the tabs.
+
+API: `GET /api/ai/brief`, `GET /api/ai/coach?days=&mode=`, `POST /api/ai/copilot`.
+
 ## Global cues (Phase AU)
 
 The market memory now also reads the world: S&P 500 and Nasdaq futures and indices, Nikkei, Hang Seng, Brent crude,

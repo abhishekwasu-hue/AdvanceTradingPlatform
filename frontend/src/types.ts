@@ -1854,3 +1854,50 @@ export interface GuideAnswer {
   used_market_memory: boolean;
   note?: string;
 }
+
+// Phase AV: the Copilot home - daily briefing, trade coach, ask-anything.
+export type DayKind = "TREND_UP" | "TREND_DOWN" | "RANGE" | "VOLATILE" | "UNKNOWN";
+export interface BriefDeployment {
+  id: number; strategy_id: string; symbol: string; timeframe: string; mode: string; status: string; holding: string | null;
+  family: string | null; regime: string | null; state: "ok" | "paused" | "closed" | "error" | "stale" | "regime";
+  last_evaluated_at: string | null; last_signal_at: string | null; why: string[];
+}
+export interface BriefDay {
+  realised_pnl: number; trades_today: number; max_trades: number; open_positions: number; max_open: number;
+  loss_limit: number; loss_used: number; loss_left: number; consecutive_losses: number; max_consecutive_losses: number; active: boolean;
+}
+export interface DailyBrief {
+  as_of: string; language: "en" | "mr"; experience: string | null;
+  session: { open: boolean; text: string; next_open: string | null; holidays_next_7_days: string[] };
+  day_type: { kind: DayKind; regime: string; symbol: string | null; bias: string | null; change_pct: number | null; higher_regime: string | null; vix: number | null };
+  plan: { headline: string; lines: string[]; fit_families: string[]; avoid_families: string[] };
+  global_mood: { label: "POSITIVE" | "NEGATIVE" | "MIXED"; score: number; drivers: string[] } | null;
+  market_updated_at: string | null;
+  market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
+  events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];
+  you: { PAPER: BriefDay; LIVE: BriefDay };
+  deployments: BriefDeployment[];
+  checklist: { id: string; ok: boolean | null; text: string }[];
+}
+export interface CoachFlag { id: string; severity: "high" | "medium" | "low" | "good"; title: string; text: string; tip: string; evidence: (string | number)[] }
+export interface CoachGroup { key: string; trades: number; wins: number; win_rate: number; net_pnl: number; avg_pnl: number; label?: string }
+export interface CoachReview {
+  period: { days: number | null; mode: string; from: string | null; to: string | null };
+  stats: {
+    trades: number; wins?: number; losses?: number; win_rate?: number; net_pnl?: number; avg_win?: number; avg_loss?: number;
+    profit_factor?: number | null; expectancy?: number; expectancy_r?: number | null; avg_win_r?: number | null; avg_loss_r?: number | null;
+    max_drawdown?: number; longest_losing_streak?: number; trading_days?: number; best_day?: number; worst_day?: number;
+  };
+  flags: CoachFlag[]; focus: string[]; score: number | null; grade: string | null;
+  by_strategy: CoachGroup[]; by_hour: CoachGroup[]; by_weekday: CoachGroup[]; equity: number[];
+}
+export interface CopilotReply {
+  intent: "interview" | "coach" | "deployments" | "brief" | "guide";
+  language: "en" | "mr"; answer: string; source: "rules" | "ai"; note?: string;
+  action: { tab: string; label: string };
+  prefill?: Record<string, unknown>; prompt?: string;
+  concepts?: GuideConcept[]; related?: { id: string; title: string }[];
+  coach?: { stats: CoachReview["stats"]; grade: string | null; score: number | null; flags: CoachFlag[] };
+  brief?: { day_type: DailyBrief["day_type"]; plan: DailyBrief["plan"]; checklist: DailyBrief["checklist"]; deployments: BriefDeployment[] };
+}
+

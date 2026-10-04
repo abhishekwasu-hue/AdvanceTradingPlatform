@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import ProChart, { directionMarker, useLiveLtp, type PriceLineSpec } from "../components/ProChart";
+import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "../components/ProChart";
 import SignalCard from "../components/SignalCard";
 import { Card, Disclaimer } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -203,7 +203,8 @@ export default function SignalsPage() {
       {chartCandles.length > 0 && (
         <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
           <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf} timeframes={["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
-                    priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={live.ltp} liveError={live.error} />
+                    priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={live.ltp} liveError={live.error}
+                    openUrl={source.mode === "broker" && lastGenerated ? chartWindowUrl(lastGenerated.symbol, chartTf, "NSE", source.broker || undefined) : undefined} />
         </Card>
       )}
 

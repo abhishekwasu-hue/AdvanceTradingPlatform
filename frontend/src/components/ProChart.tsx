@@ -2,7 +2,7 @@ import {
   ColorType, CrosshairMode, LineStyle, createChart,
   type IChartApi, type IPriceLine, type ISeriesApi, type LogicalRange, type MouseEventParams, type UTCTimestamp,
 } from "lightweight-charts";
-import { Maximize2, Radio } from "lucide-react";
+import { ExternalLink, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { LtpResponse, OHLCVBar, SRZone } from "../types";
@@ -13,6 +13,13 @@ import {
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
+
+/** URL of the full-window chart for a broker symbol (opened in a new browser tab; see ChartWindow). */
+export function chartWindowUrl(symbol: string, timeframe = "5min", exchange = "NSE", broker?: string): string {
+  const q = new URLSearchParams({ chart: symbol, tf: timeframe, exchange });
+  if (broker) q.set("broker_name", broker);
+  return `${window.location.pathname}?${q.toString()}`;
+}
 export { directionMarker } from "./CandleChart";
 
 /**
@@ -110,12 +117,27 @@ export interface ProChartProps {
   /** Mini mode: no toolbar, no panes, small legend. */
   compact?: boolean;
   title?: string;
+  /** Shows an "open in a new tab" button for this URL (broker charts: chartWindowUrl). */
+  openUrl?: string;
+  /** Fills the window and hides the expand button (the new-tab chart page). */
+  fullWindow?: boolean;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines = [], zones = [], markers = [], height = 380,
-  strategyParams, defaultIndicators, live, liveError, compact = false, title,
+  strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
 }: ProChartProps) {
+  // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
+  const [expanded, setExpanded] = useState(false);
+  const [winH, setWinH] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const onResize = () => setWinH(window.innerHeight);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setExpanded(false); };
+    window.addEventListener("resize", onResize); window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("resize", onResize); window.removeEventListener("keydown", onKey); };
+  }, []);
+  const big = expanded || fullWindow;
+  const compact = compactProp && !big;
   const derived = useMemo(() => indicatorsForStrategy(strategyParams), [strategyParams]);
   const [active, setActive] = useState<Set<IndicatorId>>(() => new Set(defaultIndicators ?? derived.ids));
   const [settings] = useState<IndicatorSettings>(() => ({ ...DEFAULT_SETTINGS, ...derived.settings }));
@@ -144,6 +166,8 @@ export default function ProChart({
   const showVolume = active.has("volume") && !compact;
   const showRsi = !!ind.rsi;
   const showAdx = !!ind.adx;
+  const paneCount = (showVolume ? 1 : 0) + (showRsi ? 1 : 0) + (showAdx ? 1 : 0);
+  const chartHeight = big ? Math.max(height, winH - paneCount * 90 - (fullWindow ? 170 : 130)) : height;
 
   const mainRef = useRef<HTMLDivElement>(null);
   const volRef = useRef<HTMLDivElement>(null);
@@ -168,7 +192,7 @@ export default function ProChart({
       return c;
     };
     const paneH = compact ? 0 : 90;
-    const mainChart = mk(main, height, !(showVolume || showRsi || showAdx), true) as IChartApi;
+    const mainChart = mk(main, chartHeight, !(showVolume || showRsi || showAdx), true) as IChartApi;
     const volChart = showVolume ? mk(volRef.current, paneH, !(showRsi || showAdx)) : undefined;
     const rsiChart = showRsi ? mk(rsiRef.current, paneH, !showAdx) : undefined;
     const adxChart = showAdx ? mk(adxRef.current, paneH, true) : undefined;
@@ -234,7 +258,7 @@ export default function ProChart({
       charts.current = {}; series.current = {}; priceLineRefs.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height, compact, showVolume, showRsi, showAdx, settings.rsiHigh, settings.rsiMid, settings.rsiLow, settings.adxMin]);
+  }, [chartHeight, compact, showVolume, showRsi, showAdx, settings.rsiHigh, settings.rsiMid, settings.rsiLow, settings.adxMin]);
 
   // Feed data. A fresh symbol/length reset calls setData + fitContent; a live move updates the last bar only.
   useEffect(() => {
@@ -313,7 +337,7 @@ export default function ProChart({
   const fit = () => { for (const c of Object.values(charts.current)) c?.timeScale().fitContent(); };
 
   return (
-    <div className="w-full">
+    <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-bg p-4" : "w-full"}>
       {/* Header: symbol, last price, change, live badge, timeframe pills, indicator toggles */}
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
         {(title || symbol) && <span className={`font-bold text-slate-100 ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
@@ -344,9 +368,23 @@ export default function ProChart({
                 {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
               </button>
             ))}
-            <button onClick={fit} title="Fit all candles" className="rounded p-1 text-muted hover:text-slate-200"><Maximize2 size={12} /></button>
+            <button onClick={fit} title="Fit all candles" className="rounded p-1 text-muted hover:text-slate-200"><Scan size={12} /></button>
           </div>
         )}
+        <div className={`${compact ? "ml-auto" : ""} flex items-center gap-1`}>
+          {openUrl && (
+            <a href={openUrl} target="_blank" rel="noopener" title="Open this chart in a new browser tab"
+               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-panel2">
+              <ExternalLink size={11} /> New tab
+            </a>
+          )}
+          {!fullWindow && (
+            <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Back to normal size (Esc)" : "Open the chart full screen"}
+                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-panel2">
+              {expanded ? <><Minimize2 size={11} /> Close</> : <><Maximize2 size={11} /> Full screen</>}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Legend */}

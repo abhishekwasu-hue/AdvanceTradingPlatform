@@ -1,7 +1,7 @@
 import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import ProChart, { useLiveLtp } from "./ProChart";
+import ProChart, { chartWindowUrl, useLiveLtp } from "./ProChart";
 import { useCandleSource } from "./DataSource";
 import type { Page } from "./Sidebar";
 import { Card } from "./ui";
@@ -18,8 +18,9 @@ function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; can
   const live = useLiveLtp(true, symbol, "NSE", broker, 5000);
   return (
     <div className="relative rounded-xl border border-border bg-panel2 p-3">
-      <button onClick={onRemove} title="Remove" className="absolute right-2 top-2 z-10 rounded p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
-      <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]} />
+      <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-panel p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
+      <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
+                openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} />
     </div>
   );
 }

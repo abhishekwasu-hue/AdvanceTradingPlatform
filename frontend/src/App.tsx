@@ -8,6 +8,7 @@ import AccountPage from "./pages/AccountPage";
 import AdminPage from "./pages/AdminPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import BacktestPage from "./pages/BacktestPage";
+import ChartWindow from "./pages/ChartWindow";
 import MarketplacePage from "./pages/MarketplacePage";
 import AiCopilotPage from "./pages/AiCopilotPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -139,9 +140,11 @@ function AppShell() {
 }
 
 export default function App() {
+  // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
+  const params = new URLSearchParams(window.location.search);
   return (
     <AuthProvider>
-      <AppShell />
+      {params.has("chart") ? <ChartWindow params={params} /> : <AppShell />}
     </AuthProvider>
   );
 }

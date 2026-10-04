@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import ProChart, { directionMarker, useLiveLtp, type PriceLineSpec } from "./ProChart";
+import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "./ProChart";
 import { useCandleSource } from "./DataSource";
 import { Card } from "./ui";
 import type { OHLCVBar, TradeRecord } from "../types";
@@ -107,7 +107,8 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
           {loading && candles.length === 0 && <div className="text-xs text-muted">Fetching candles…</div>}
           <ProChart candles={candles} symbol={chartSymbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
                     priceLines={priceLines} markers={markers} live={live.ltp} liveError={live.error} height={340}
-                    defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume"]} />
+                    defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume"]}
+                    openUrl={chartSymbol ? chartWindowUrl(chartSymbol, timeframe, chartExchange, broker) : undefined} />
         </>
       )}
     </Card>

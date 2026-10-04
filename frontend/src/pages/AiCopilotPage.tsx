@@ -1,10 +1,11 @@
-import { Activity, CheckCircle2, ShieldAlert, Sparkles, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, Compass, ShieldAlert, Sparkles, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
 import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
+import StrategyInterview from "../components/StrategyInterview";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -34,6 +35,13 @@ export default function AiCopilotPage() {
   const [showChecks, setShowChecks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // Phase AP: the interview runs before any strategy is proposed for a vague request.
+  const [interviewKey, setInterviewKey] = useState(0);
+  const [interviewPrompt, setInterviewPrompt] = useState("");
+  const startInterview = (text: string) => {
+    setInterviewPrompt(text); setInterviewKey((k) => k + 1);
+    window.setTimeout(() => document.getElementById("strategy-interview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
 
   function refresh() {
     api.aiDrafts().then(setDrafts).catch((e) => setError(String(e)));
@@ -70,6 +78,25 @@ export default function AiCopilotPage() {
       <Disclaimer kind="ai" />
       <DataSourceBar source={source} />
 
+      <div id="strategy-interview">
+        <Card title="Strategy मुलाखत · Build my strategy with me">
+          {interviewKey === 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-slate-200 flex-1 min-w-[260px]">
+                नवीन आहात? आधी मी तुम्हाला काही प्रश्न विचारतो - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market वाचून (trend, structure, support/resistance) तुमच्यासाठी पूर्ण plan बनवतो: strategy, risk management, भांडवलाचे नियोजन आणि R:R.
+                <span className="block text-xs text-muted mt-1">New to trading? I ask about you first, read the market, then build a complete plan. Marathi or English.</span>
+              </p>
+              <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />सुरू करा / Start</button>
+            </div>
+          ) : (
+            <>
+              <StrategyInterview source={source} startPrompt={interviewPrompt} startKey={interviewKey} onDraft={(d) => { setSelected(d); refresh(); }} />
+              <button onClick={() => startInterview("")} className="mt-2 text-xs text-sky-300 hover:underline">पुन्हा सुरू करा / Start over</button>
+            </>
+          )}
+        </Card>
+      </div>
+
       {open.length > 0 && (
         <Card title={`Proposals waiting for you (${open.length})`}>
           {open.map((a) => (
@@ -89,8 +116,13 @@ export default function AiCopilotPage() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card title="Generate a strategy draft">
           <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
-          <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target." value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-          <button disabled={busy || prompt.trim().length < 10} onClick={() => run("Draft generated - review it on the right.", async () => { const d = await api.aiGenerate(prompt, { language: (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
+          <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target. Or simply: ट्रेडिंग स्ट्रॅटेजी सांगा" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <button disabled={busy || prompt.trim().length < 10} onClick={() => run(null, async () => {
+            // Phase AP: "give me a strategy" with no rules in it starts the interview instead of guessing.
+            const s = await api.aiInterviewStart(prompt);
+            if (s.needs_interview) { setMessage(s.language === "mr" ? "आधी काही प्रश्न - वर Strategy मुलाखत पहा." : "A few questions first - see the strategy interview above."); startInterview(prompt); return; }
+            setMessage("Draft generated - review it on the right.");
+            const d = await api.aiGenerate(prompt, { language: s.prefill.language ?? (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
 
           <div className="mt-4">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Recent drafts</div>

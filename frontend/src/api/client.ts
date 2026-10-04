@@ -1,4 +1,6 @@
 import type {
+  InterviewPlan,
+  InterviewStart,
   ContractPreview,
   ContractRules,
   ContractNoteIngest,
@@ -619,6 +621,11 @@ export const api = {
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
     request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name, accept_risk: acceptRisk }) }),
   aiRejectDraft: (id: number, note?: string) => request<AiStrategyDraft>(`/ai/drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  // Phase AP: the strategy interview.
+  aiInterviewStart: (prompt: string) =>
+    request<InterviewStart>("/ai/interview/start", { method: "POST", body: JSON.stringify({ prompt }) }),
+  aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string) =>
+    request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({ answers, base_timeframe: baseTimeframe, candles, data_source: dataSource }) }),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),

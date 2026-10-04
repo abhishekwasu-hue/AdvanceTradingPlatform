@@ -13,6 +13,7 @@ import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,33 +72,40 @@ async def chart_run(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    base = timeframe_minutes(body.timeframe)
-    if base is None:
+    if timeframe_minutes(body.timeframe) is None:
         raise HTTPException(status_code=400, detail=f"Unknown timeframe {body.timeframe!r}")
+    # A bar-by-bar walk is seconds of CPU on a long history: run it off the event loop.
+    return await run_in_threadpool(evaluate_on_candles, strategy, bars_to_dataframe(body.candles[-MAX_BARS:]), body.timeframe, body.symbol,
+                                   body.risk_config or RiskConfig())
+
+
+def evaluate_on_candles(strategy, df, timeframe: str, symbol: str, risk: RiskConfig) -> ChartRunResponse:
+    """Walks `strategy` over `df` (candles at `timeframe`) - shared by the chart-run endpoint and
+    the AI Copilot's strategy interview (Phase AP), which ranks strategies on the same evidence."""
+    base = timeframe_minutes(timeframe)
     out = ChartRunResponse(strategy_id=strategy.id, strategy_name=strategy.name, strategy_timeframes=list(strategy.timeframes), compatible=True)
     needed = [timeframe_minutes(tf) for tf in strategy.timeframes]
-    if body.timeframe != "day" and any(n is None or n < base or n % base for n in needed):
+    if timeframe != "day" and any(n is None or n < base or n % base for n in needed):
         out.compatible = False
         finest = min(n for n in needed if n is not None) if any(needed) else None
         out.reason = (f"{strategy.name} trades on {'/'.join(strategy.timeframes)} candles; switch the chart to "
-                      f"{finest}m or finer to see it" if finest else f"{strategy.name} cannot run on {body.timeframe} candles")
+                      f"{finest}m or finer to see it" if finest else f"{strategy.name} cannot run on {timeframe} candles")
         return out
-    if body.timeframe == "day" and strategy.timeframes != ["day"]:
+    if timeframe == "day" and strategy.timeframes != ["day"]:
         out.compatible = False
         out.reason = f"{strategy.name} is intraday ({'/'.join(strategy.timeframes)}); switch the chart to an intraday timeframe"
         return out
 
-    candles = body.candles[-MAX_BARS:]
-    df = bars_to_dataframe(candles)
+    df = df.iloc[-MAX_BARS:]
     out.bars_used = len(df)
-    frames = {tf: (df if tf == body.timeframe else resample_ohlc(df, tf)) for tf in strategy.timeframes}
+    frames = {tf: (df if tf == timeframe else resample_ohlc(df, tf)) for tf in strategy.timeframes}
     short = [f"{need} x {tf} (have {len(frames[tf])})" for tf, need in strategy.min_history().items() if len(frames.get(tf, [])) < need]
     if short:
         out.reason = f"Not enough candles yet: needs {', '.join(short)} - load more history or a finer timeframe"
         return out
 
-    result = run_backtest(strategy, df, body.symbol.upper(), body.timeframe, body.risk_config or RiskConfig())
+    result = run_backtest(strategy, df, symbol.upper(), timeframe, risk)
     out.trades, out.total_trades, out.win_rate = result.trades, result.total_trades, result.win_rate
     out.net_pnl, out.profit_factor = result.net_pnl, result.profit_factor
-    out.last_signal = strategy.analyze(frames, body.symbol.upper())
+    out.last_signal = strategy.analyze(frames, symbol.upper())
     return out

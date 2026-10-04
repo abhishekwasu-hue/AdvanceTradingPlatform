@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import generator, monitor, settings as ai_settings
+from app.ai import generator, interview, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -182,6 +183,45 @@ async def reject_draft(draft_id: int, body: NoteBody, user: User = Depends(requi
         return generator.as_dict(await generator.reject(session, draft, user, body.note))
     except generator.GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# --- Phase AP strategy interview --------------------------------------------------------------------
+
+class InterviewStartBody(BaseModel):
+    prompt: str = Field(default="", max_length=4000)
+
+
+class InterviewPlanBody(BaseModel):
+    answers: interview.InterviewAnswers
+    base_timeframe: str = Field(default="5min", max_length=10)
+    candles: List[OHLCVBar] = Field(min_length=interview.MIN_BARS, max_length=20_000)
+    data_source: str = Field(default="sample", max_length=30)
+
+
+@router.get("/interview/questions")
+async def interview_questions(user: User = Depends(get_current_user)) -> dict:
+    return {"questions": [q.as_dict() for q in interview.QUESTIONS]}
+
+
+@router.post("/interview/start")
+async def interview_start(body: InterviewStartBody, user: User = Depends(get_current_user)) -> dict:
+    """Is the request vague (interview first) or a rule description (generate directly)? Plus the
+    answers the text already gives, so they are not asked again."""
+    return interview.start(body.prompt)
+
+
+@router.post("/interview/plan")
+async def interview_plan(body: InterviewPlanBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The professional's plan for this trader: market read, strategy choice with evidence, risk
+    settings, capital allocation, R:R, contract and a PAPER deployment - shown, never applied."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    from app.platform.controls import risk_ceilings
+    if interview.timeframe_minutes(body.base_timeframe) is None or body.base_timeframe == "day":
+        raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
+    df = interview.frame_from_candles(body.candles[-interview.MAX_BARS:])
+    ceilings = await risk_ceilings(session)
+    # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
+    return await run_in_threadpool(interview.build_plan, body.answers, df, body.base_timeframe, ceilings=ceilings, data_source=body.data_source)
 
 
 # --- L3 regime -------------------------------------------------------------------------------------

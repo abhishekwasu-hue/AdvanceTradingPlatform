@@ -236,6 +236,17 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Options, feedback and memory (Phase AQ)
+
+The interview's plan now comes the way a good shopkeeper shows clothes: **three options** - Safe (less risk, fewer
+trades, bigger reward per trade), Balanced (your own answers) and Active (more opportunities, same safety rules) - each
+with **how closely it matches you** and, separately, **how well it suits today's market**. "**Not this**" asks why (too
+risky, too many trades, reward too small, I don't understand it, calmer bigger moves, no time to watch, not this
+strategy); the reasons become preferences and the next three options are rebuilt from them, so the match climbs round by
+round. Your answers and what the Copilot learnt are kept in a trader profile, so next time it offers to skip the
+questions ("Forget me" deletes it). API: `POST /api/ai/interview/refine`, `POST /api/ai/interview/choose`,
+`GET|DELETE /api/ai/profile`.
+
 ## Strategy interview (Phase AP)
 
 A beginner who types "give me a strategy" / "ट्रेडिंग स्ट्रॅटेजी सांगा" in the AI Copilot is not handed a list: the

@@ -1022,6 +1022,22 @@ class AiStrategyDraftRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 
 
+class TraderProfileRecord(Base):
+    """Phase AQ: what the AI Copilot remembers about one trader - the interview answers, the
+    preferences learnt from the options they turned down (and why), and the options they chose -
+    so the next plan starts from them instead of from scratch."""
+
+    __tablename__ = "trader_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    answers_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    preferences_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
 class AiActionRecord(Base):
     """Phase L4: the monitoring agent's action-state machine (V4.1): the agent PROPOSES, a human
     APPROVES or REJECTS, the system EXECUTES; unanswered proposals EXPIRE. Nothing here ever

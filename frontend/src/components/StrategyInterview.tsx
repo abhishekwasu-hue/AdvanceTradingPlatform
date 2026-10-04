@@ -1,7 +1,7 @@
-import { ArrowLeft, Bot, CandlestickChart, Compass, Rocket, ShieldCheck, Sparkles, User } from "lucide-react";
+import { ArrowLeft, Bot, CandlestickChart, Check, Compass, History, Rocket, ShieldCheck, Sparkles, ThumbsDown, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { AiStrategyDraft, InterviewPlan, InterviewQuestion, InterviewStart, OHLCVBar } from "../types";
+import type { AiStrategyDraft, FeedbackOption, InterviewPlan, InterviewQuestion, InterviewStart, OHLCVBar } from "../types";
 import { FNO_INDICES, FNO_STOCKS } from "../utils/fnoSymbols";
 import type { CandleSourceState } from "./DataSource";
 import { chartWindowUrl } from "./ProChart";
@@ -11,6 +11,10 @@ import { chartWindowUrl } from "./ProChart";
  * themselves first (in Marathi or English), then the platform reads the market and builds a plan:
  * strategy with evidence, risk management, capital allocation, R:R, the contract to trade and a
  * PAPER deployment. Nothing is applied until the trader presses a button.
+ *
+ * Phase AQ: the plan comes as three options (safe / balanced / active) with a match %; "not this
+ * one" asks why, and the next round is rebuilt from the reasons, so the match climbs. The answers
+ * and what was learnt are remembered, so the next visit can skip the questions.
  */
 
 type Lang = "en" | "mr";
@@ -47,6 +51,11 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [offerProfile, setOfferProfile] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<string[]>([]);
+  const fetched = useRef<{ tf: string; candles: OHLCVBar[]; label: string } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const lang: Lang = (answers.language as Lang) || start?.language || "mr";
@@ -56,7 +65,8 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   useEffect(() => {
     if (!startKey) return;
     let cancelled = false;
-    setPlan(null); setError(null); setDone(null); setStep(0); setCustom("");
+    setPlan(null); setError(null); setDone(null); setStep(0); setCustom(""); setSelected(null); setRejecting(null); setReasons([]);
+    fetched.current = null;
     api.aiInterviewStart(startPrompt).then((s) => {
       if (cancelled) return;
       const prefill = { ...s.prefill };
@@ -70,6 +80,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
           + known.map((k) => `${k} = ${prefill[k]}`).join(", ") });
       }
       setLog(intro);
+      setOfferProfile(!!s.profile);
     }).catch((e) => setError(cleanError(e)));
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,6 +111,23 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     setStep((s) => s + 1);
   }
 
+  /** Phase AQ: skip the questions - last visit's answers, with anything the new message said on top. */
+  function applyProfile() {
+    if (!start?.profile) return;
+    const saved = Object.fromEntries(Object.entries(start.profile.answers).map(([k, v]) => [k, String(v)]));
+    setAnswers({ ...saved, ...start.prefill });
+    setStep(queue.length);
+    setOfferProfile(false);
+    setLog((prev) => [...prev, { from: "me", text: L(lang, "Yes, use my answers from last time", "हो, मागची उत्तरे वापरा") }]);
+  }
+
+  async function forgetProfile() {
+    await act(L(lang, "Forgetting…", "विसरत आहे…"), async () => {
+      await api.aiProfileDelete(); setOfferProfile(false);
+      return L(lang, "Your saved answers and preferences are deleted.", "तुमची साठवलेली उत्तरे आणि आवडी काढून टाकल्या.");
+    });
+  }
+
   function back() {
     if (step === 0) return;
     const prevId = queue[step - 1];
@@ -122,15 +150,41 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     return { tf, candles: entry.bars, label: `broker:${r.source.broker}` };
   }
 
+  function answersBody(): Record<string, string | number> {
+    const body: Record<string, string | number> = { ...answers };
+    if (body.capital) body.capital = Number(String(body.capital).replace(/[^\d.]/g, ""));
+    if (body.daily_loss) body.daily_loss = Number(body.daily_loss);
+    return body;
+  }
+
   async function buildPlan() {
     setBusy(L(lang, "Reading the market and testing strategies…", "Market वाचत आहे आणि strategies तपासत आहे…")); setError(null); setDone(null);
     try {
-      const { tf, candles, label } = await candlesFor(answers.style || "intraday");
-      const body: Record<string, string | number> = { ...answers };
-      if (body.capital) body.capital = Number(String(body.capital).replace(/[^\d.]/g, ""));
-      if (body.daily_loss) body.daily_loss = Number(body.daily_loss);
-      setPlan(await api.aiInterviewPlan(body, tf, candles.slice(-3000), label));
+      const data = await candlesFor(answers.style || "intraday");
+      fetched.current = { ...data, candles: data.candles.slice(-3000) };
+      const result = await api.aiInterviewPlan(answersBody(), data.tf, fetched.current.candles, data.label);
+      setPlan(result); setSelected(result.best_option ?? "balanced");
     } catch (e) { setError(cleanError(e)); } finally { setBusy(null); }
+  }
+
+  /** "Not this one, because..." -> the next three options. */
+  async function refine(option: InterviewPlan) {
+    const f = fetched.current;
+    if (!f || !option.option || reasons.length === 0) return;
+    setBusy(L(lang, "Finding options closer to what you want…", "तुमच्या पसंतीच्या जवळचे पर्याय शोधत आहे…")); setError(null); setDone(null);
+    try {
+      const result = await api.aiInterviewRefine(answersBody(), f.tf, f.candles, f.label, reasons, option.option.id, option.recommended?.strategy_id ?? null);
+      // Feedback may change answers (style, time, vehicle): keep the page in step with the server.
+      setAnswers(Object.fromEntries(Object.entries(result.answers).map(([k, v]) => [k, String(v)])));
+      setPlan(result); setSelected(result.best_option ?? "balanced"); setRejecting(null); setReasons([]);
+    } catch (e) { setError(cleanError(e)); } finally { setBusy(null); }
+  }
+
+  async function choose(option: InterviewPlan) {
+    if (!option.option) return;
+    setSelected(option.option.id);
+    try { await api.aiInterviewChoose(answersBody(), option.option.id, option.recommended?.strategy_id ?? null, option.option.match); } catch { /* remembering is best effort */ }
+    setDone(L(lang, `"${option.option.label}" chosen - details and buttons below.`, `"${option.option.label}" निवडला - तपशील आणि बटणे खाली.`));
   }
 
   async function act(label: string, fn: () => Promise<string>) {
@@ -151,7 +205,22 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
             {m.from === "me" && <User size={16} className="mt-0.5 shrink-0 text-sky-300" />}
           </div>
         ))}
-        {current && (
+        {offerProfile && start.profile && step === 0 && (
+          <div className="flex gap-2">
+            <History size={16} className="mt-0.5 shrink-0 text-amber-300" />
+            <div className="max-w-[90%] rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-slate-100">
+              {L(lang, "Welcome back! I remember your answers from last time", "पुन्हा स्वागत! मागच्या वेळची तुमची उत्तरे मला आठवतात")}
+              {" "}(₹{Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN")}, {String(start.profile.answers.style ?? "")}, {String(start.profile.answers.symbol ?? "")}).
+              {" "}{L(lang, "Use them and go straight to the options?", "तीच वापरून थेट पर्याय दाखवू का?")}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button onClick={applyProfile} className="rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-500">{L(lang, "Yes, use them", "हो, तीच वापरा")}</button>
+                <button onClick={() => setOfferProfile(false)} className="rounded border border-border px-3 py-1 text-xs text-slate-100 hover:bg-panel2">{L(lang, "No, ask me again", "नाही, पुन्हा विचारा")}</button>
+                <button onClick={() => void forgetProfile()} className="text-xs text-rose-300 hover:underline">{L(lang, "Forget me", "मला विसरा")}</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {current && !offerProfile && (
           <div className="flex gap-2">
             <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />
             <div className="max-w-[90%] space-y-1.5 rounded-lg bg-panel3 px-3 py-2 text-sm">
@@ -220,7 +289,106 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
         {done && <span className="text-emerald-300">{done}</span>}
       </div>
 
-      {plan && <PlanView plan={plan} lang={plan.language} busy={!!busy} onAct={act} onDraft={onDraft} broker={source.mode === "broker" ? source.broker : undefined} />}
+      {plan && plan.options && (
+        <OptionsView plan={plan} lang={plan.language} selected={selected} busy={!!busy} rejecting={rejecting} reasons={reasons}
+                     onChoose={(o) => void choose(o)} onReject={(id) => { setRejecting(rejecting === id ? null : id); setReasons([]); }}
+                     onToggleReason={(code) => setReasons((r) => (r.includes(code) ? r.filter((c) => c !== code) : [...r, code]))}
+                     onRefine={(o) => void refine(o)} />
+      )}
+      {plan && (() => {
+        const shown = plan.options?.find((o) => o.option?.id === selected) ?? plan;
+        return <PlanView plan={shown} lang={plan.language} busy={!!busy} onAct={act} onDraft={onDraft} broker={source.mode === "broker" ? source.broker : undefined} />;
+      })()}
+    </div>
+  );
+}
+
+const OPTION_STYLE: Record<string, string> = {
+  safe: "border-emerald-500/50 bg-emerald-500/5",
+  balanced: "border-sky-500/50 bg-sky-500/5",
+  active: "border-amber-500/50 bg-amber-500/5",
+};
+
+function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose, onReject, onToggleReason, onRefine }: {
+  plan: InterviewPlan; lang: Lang; selected: string | null; busy: boolean; rejecting: string | null; reasons: string[];
+  onChoose: (o: InterviewPlan) => void; onReject: (id: string) => void; onToggleReason: (code: string) => void; onRefine: (o: InterviewPlan) => void;
+}) {
+  const history = plan.preferences?.match_history ?? [];
+  const feedback: FeedbackOption[] = plan.feedback_options ?? [];
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="font-extrabold text-slate-50">{L(lang, "Three options for you", "तुमच्यासाठी तीन पर्याय")}</span>
+        {history.length > 1 && (
+          <span className="text-xs text-emerald-300">{L(lang, "Match so far: ", "आत्तापर्यंत जुळणी: ")}{history.slice(-5).map((m) => `${m}%`).join(" → ")}</span>
+        )}
+      </div>
+      {plan.changes && plan.changes.length > 0 && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-emerald-100">
+          <b>{L(lang, "Changed from your feedback:", "तुमच्या सांगण्यावरून बदल:")}</b>
+          <ul className="mt-1 list-disc pl-5">{plan.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
+        </div>
+      )}
+      <div className="grid gap-3 md:grid-cols-3">
+        {(plan.options ?? []).map((o) => {
+          const meta = o.option!;
+          const isBest = plan.best_option === meta.id;
+          const isSel = selected === meta.id;
+          return (
+            <div key={meta.id} className={`rounded-lg border p-3 ${OPTION_STYLE[meta.id]} ${isSel ? "ring-2 ring-purple-400" : ""}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-base font-extrabold text-slate-50">{meta.label}</div>
+                  <div className="text-xs text-slate-300">{meta.summary}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-black text-slate-50">{meta.match}%</div>
+                  <div className="text-[10px] text-muted">{L(lang, "matches you", "तुमच्या पसंतीशी")}</div>
+                </div>
+              </div>
+              {isBest && <div className="mt-1 inline-block rounded-full bg-purple-500/30 px-2 py-0.5 text-[11px] font-bold text-purple-100">{L(lang, "Closest to you", "सर्वात जुळणारा")}</div>}
+              {meta.headline && (
+                <ul className="mt-2 space-y-0.5 text-xs text-slate-100">
+                  <li>📈 {meta.headline.strategy}</li>
+                  <li>🛡️ {L(lang, "Risk per trade", "एका trade चा risk")} {meta.headline.risk_pct}%</li>
+                  <li>🔁 {L(lang, "Up to", "दिवसाला")} {meta.headline.trades_per_day} {L(lang, "trades a day", "trades पर्यंत")}</li>
+                  <li>🎯 {L(lang, "Reward:risk at least", "किमान reward:risk")} 1:{meta.headline.min_rr}</li>
+                </ul>
+              )}
+              <div className="mt-2 flex items-center gap-2 text-[11px]">
+                <span className="text-slate-300">{L(lang, "Suits today's market", "आजच्या market ला अनुकूल")}</span>
+                <div className="h-1.5 flex-1 rounded bg-panel3"><div className={`h-1.5 rounded ${meta.market_fit >= 60 ? "bg-emerald-400" : meta.market_fit >= 40 ? "bg-amber-400" : "bg-rose-400"}`} style={{ width: `${meta.market_fit}%` }} /></div>
+                <span className="font-semibold text-slate-100">{meta.market_fit}%</span>
+              </div>
+              <div className="mt-1 text-[11px] text-muted">{meta.match_reasons.join(" · ")}</div>
+              <div className="mt-2 flex gap-2">
+                <button disabled={busy} onClick={() => onChoose(o)} className="rounded bg-purple-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
+                  <Check size={12} className="mr-1 inline" />{isSel ? L(lang, "Showing", "दिसत आहे") : L(lang, "Choose this", "हा निवडा")}
+                </button>
+                <button disabled={busy} onClick={() => onReject(meta.id)} className="rounded border border-rose-500/50 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">
+                  <ThumbsDown size={12} className="mr-1 inline" />{L(lang, "Not this", "हे नको")}
+                </button>
+              </div>
+              {rejecting === meta.id && (
+                <div className="mt-2 space-y-1.5 rounded border border-border bg-panel2/60 p-2">
+                  <div className="text-xs font-semibold text-slate-100">{L(lang, "Why not? (pick one or more)", "का नको? (एक किंवा जास्त निवडा)")}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {feedback.map((f) => (
+                      <button key={f.code} onClick={() => onToggleReason(f.code)}
+                              className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-rose-400 bg-rose-500/30 text-white" : "border-border text-slate-200"}`}>
+                        {lang === "mr" ? f.mr : f.en}
+                      </button>
+                    ))}
+                  </div>
+                  <button disabled={busy || reasons.length === 0} onClick={() => onRefine(o)} className="rounded bg-sky-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40">
+                    {L(lang, "Show me better options", "पुढचे पर्याय दाखवा")}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

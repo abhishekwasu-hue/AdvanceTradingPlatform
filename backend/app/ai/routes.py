@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import generator, interview, monitor, settings as ai_settings
+from app.ai import advisor, generator, interview, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -196,32 +196,107 @@ class InterviewPlanBody(BaseModel):
     base_timeframe: str = Field(default="5min", max_length=10)
     candles: List[OHLCVBar] = Field(min_length=interview.MIN_BARS, max_length=20_000)
     data_source: str = Field(default="sample", max_length=30)
+    # Phase AQ: None = the preferences saved in the trader's profile.
+    preferences: Optional[advisor.Preferences] = None
+
+
+class InterviewRefineBody(InterviewPlanBody):
+    feedback: List[str] = Field(min_length=1, max_length=len(advisor.FEEDBACK_CODES))
+    option_id: Optional[str] = Field(default=None, max_length=20)
+    strategy_id: Optional[str] = Field(default=None, max_length=100)
+
+
+class InterviewChooseBody(BaseModel):
+    answers: interview.InterviewAnswers
+    option_id: str = Field(max_length=20)
+    strategy_id: Optional[str] = Field(default=None, max_length=100)
+    match: int = Field(default=0, ge=0, le=100)
 
 
 @router.get("/interview/questions")
 async def interview_questions(user: User = Depends(get_current_user)) -> dict:
-    return {"questions": [q.as_dict() for q in interview.QUESTIONS]}
+    return {"questions": [q.as_dict() for q in interview.QUESTIONS], "feedback_options": advisor.feedback_options()}
 
 
 @router.post("/interview/start")
-async def interview_start(body: InterviewStartBody, user: User = Depends(get_current_user)) -> dict:
+async def interview_start(body: InterviewStartBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Is the request vague (interview first) or a rule description (generate directly)? Plus the
-    answers the text already gives, so they are not asked again."""
-    return interview.start(body.prompt)
+    answers the text already gives, so they are not asked again, and the saved profile (Phase AQ)."""
+    out = interview.start(body.prompt)
+    saved, prefs = await advisor.load_profile(session, user)
+    out["profile"] = None if saved is None else {"answers": saved, "preferences": prefs.model_dump()}
+    return out
+
+
+def _df_for(body: InterviewPlanBody):
+    if interview.timeframe_minutes(body.base_timeframe) is None or body.base_timeframe == "day":
+        raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
+    return interview.frame_from_candles(body.candles[-interview.MAX_BARS:])
+
+
+async def _options(session: AsyncSession, user: User, answers: interview.InterviewAnswers, prefs: advisor.Preferences,
+                   body: InterviewPlanBody) -> dict:
+    from app.platform.controls import risk_ceilings
+    df = _df_for(body)
+    ceilings = await risk_ceilings(session)
+    # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
+    result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings, data_source=body.data_source)
+    await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
+    return result
 
 
 @router.post("/interview/plan")
 async def interview_plan(body: InterviewPlanBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """The professional's plan for this trader: market read, strategy choice with evidence, risk
-    settings, capital allocation, R:R, contract and a PAPER deployment - shown, never applied."""
+    """The professional's plan as three options (safe / balanced / active) with a match % each:
+    market read, strategy with evidence, risk settings, capital allocation, R:R, contract and a
+    PAPER deployment - shown, never applied. The answers are remembered in the trader profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    from app.platform.controls import risk_ceilings
-    if interview.timeframe_minutes(body.base_timeframe) is None or body.base_timeframe == "day":
-        raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
-    df = interview.frame_from_candles(body.candles[-interview.MAX_BARS:])
-    ceilings = await risk_ceilings(session)
-    # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
-    return await run_in_threadpool(interview.build_plan, body.answers, df, body.base_timeframe, ceilings=ceilings, data_source=body.data_source)
+    _df_for(body)
+    prefs = body.preferences
+    if prefs is None:
+        _, prefs = await advisor.load_profile(session, user)
+    # A new plan starts a new conversation: the match history counts this conversation's rounds.
+    prefs = prefs.model_copy(update={"match_history": []})
+    return await _options(session, user, body.answers, prefs, body)
+
+
+@router.post("/interview/refine")
+async def interview_refine(body: InterviewRefineBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """"Not this one, because..." - the reasons become preferences and the options are rebuilt."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    bad = [c for c in body.feedback if c not in advisor.FEEDBACK_CODES]
+    if bad:
+        raise HTTPException(status_code=400, detail=f"Unknown feedback {bad}; valid: {list(advisor.FEEDBACK_CODES)}")
+    _df_for(body)
+    prefs = body.preferences
+    if prefs is None:
+        _, prefs = await advisor.load_profile(session, user)
+    answers, prefs, changes = advisor.apply_feedback(body.answers, prefs, body.feedback, body.strategy_id, body.option_id)
+    result = await _options(session, user, answers, prefs, body)
+    result["changes"] = changes
+    return result
+
+
+@router.post("/interview/choose")
+async def interview_choose(body: InterviewChooseBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Remembers the option the trader picked; the next round leans towards it."""
+    _, prefs = await advisor.load_profile(session, user)
+    prefs.chosen = (prefs.chosen + [{"at": datetime.now(timezone.utc).isoformat(), "option": body.option_id,
+                                     "strategy_id": body.strategy_id, "match": body.match}])[-20:]
+    await advisor.save_profile(session, user, body.answers, prefs)
+    return {"preferences": prefs.model_dump()}
+
+
+@router.get("/profile")
+async def get_profile(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    saved, prefs = await advisor.load_profile(session, user)
+    return {"answers": saved, "preferences": prefs.model_dump()}
+
+
+@router.delete("/profile", status_code=204)
+async def delete_profile(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    """Forget everything the Copilot learnt about this trader."""
+    await advisor.delete_profile(session, user)
 
 
 # --- L3 regime -------------------------------------------------------------------------------------

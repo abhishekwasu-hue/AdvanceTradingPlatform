@@ -1755,7 +1755,31 @@ export interface InterviewStart {
   remaining: string[];
   questions: InterviewQuestion[];
   intro: string;
+  /** Phase AQ: what the Copilot remembers from last time (null on a first visit). */
+  profile: { answers: Record<string, string | number>; preferences: InterviewPreferences } | null;
 }
+// Phase AQ: options, feedback and the remembered profile.
+export interface InterviewPreferences {
+  risk_bias: number;
+  trades_bias: number;
+  reward_bias: number;
+  simplicity: number;
+  rejected: string[];
+  chosen: { option: string; strategy_id: string | null; match: number }[];
+  match_history: number[];
+}
+export interface InterviewOptionMeta {
+  id: "safe" | "balanced" | "active";
+  label: string;
+  summary: string;
+  /** How close to what this trader asked for (feedback moves it). */
+  match: number;
+  /** How well it suits today's market and its recent evidence (the market's say). */
+  market_fit: number;
+  match_reasons: string[];
+  headline: { strategy: string; risk_pct: number; trades_per_day: number; min_rr: number } | null;
+}
+export interface FeedbackOption { code: string; en: string; mr: string }
 export interface InterviewCandidate {
   strategy_id: string;
   name: string;
@@ -1778,4 +1802,10 @@ export interface InterviewPlan {
   warnings: string[];
   ai_prompt: string;
   disclaimer: string;
+  option?: InterviewOptionMeta;
+  options?: InterviewPlan[];
+  best_option?: string;
+  preferences?: InterviewPreferences;
+  feedback_options?: FeedbackOption[];
+  changes?: string[];
 }

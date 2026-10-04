@@ -128,7 +128,7 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted/70">
+            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               {group.title}
             </div>
             {group.items.map((item) => {
@@ -140,11 +140,11 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
                   onClick={() => onChange(item.id)}
                   className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors border-r-2 ${
                     active
-                      ? "bg-panel2 text-slate-50 border-brand"
-                      : "text-muted border-transparent hover:text-slate-200 hover:bg-panel2/50"
+                      ? "bg-brand/15 text-white font-semibold border-brand"
+                      : "text-slate-200 font-medium border-transparent hover:text-white hover:bg-panel2"
                   }`}
                 >
-                  <Icon size={16} strokeWidth={2} className={active ? "text-brand" : ""} />
+                  <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-slate-300"} />
                   {item.label}
                 </button>
               );
@@ -155,7 +155,7 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
       <button
         onClick={() => onChange("account")}
         className={`px-4 py-3 border-t border-border text-left text-xs transition-colors ${
-          page === "account" ? "bg-panel2 text-slate-100" : "text-muted hover:text-slate-200 hover:bg-panel2/50"
+          page === "account" ? "bg-panel2 text-white" : "text-slate-200 hover:text-white hover:bg-panel2"
         }`}
       >
         <div className="flex items-center gap-2">

@@ -236,11 +236,24 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Global cues (Phase AU)
+
+The market memory now also reads the world: S&P 500 and Nasdaq futures and indices, Nikkei, Hang Seng, Brent crude,
+gold, the dollar index, USD/INR and the US 10-year yield - from **free public data** (Yahoo Finance, with Stooq as a
+fallback; no key, delayed about 15 minutes). The worker reads them from 08:00 IST (before the open, without a broker
+session) and every 15 minutes while NSE is open. The **जागतिक संकेत** section of the market-memory card shows each move
+coloured by what it usually means for India (crude or the dollar rising is red), an overall mood (positive / mixed /
+negative) and plain-language notes ("US futures down: NIFTY often opens lower - let the first 15 minutes settle"). Plans
+put the global mood first in their Market background, and the guide answers "crude वाढले तर काय?" from it. GIFT Nifty has
+no free reliable source, so the US futures stand in for the overnight mood. The data is background only - never an input
+to a signal, an order or a risk check - and the free endpoints are unofficial; a commercial deployment should switch to a
+licensed feed. `GLOBAL_CUES_ENABLED=false` turns it off.
+
 ## Ask the guide (Phase AT)
 
 The AI Copilot page has a **मार्गदर्शक विचारा / Ask the guide** chat. Ask about any trading concept in Marathi or English -
 "RSI म्हणजे काय?", "Stop-loss कुठे ठेवावा?", "Theta म्हणजे काय?", "Position size किती घ्यावा?" - and the answer comes from a
-bilingual library of 32 concepts (trend, structure, support / resistance, every indicator the strategies use, stops, sizing,
+bilingual library of 33 concepts (trend, structure, support / resistance, every indicator the strategies use, stops, sizing,
 R:R and expectancy, drawdown, discipline, options and Greeks, IV, VIX, intraday vs swing, gap risk, paper trading,
 backtesting, OI / PCR), each explaining how this platform applies it. "आज NIFTY BANK चा कल काय?" is answered from the market
 memory. With an AI provider set in Settings, the AI answers instead, grounded on the same notes, the market memory and your
@@ -266,8 +279,7 @@ your trader profile and active deployments): trend, regime, structure, support /
 cues India VIX (the fear gauge) and the index day changes. The AI Copilot page shows it as **Market चा साठा** (with each
 symbol's bias over the last sessions and a "read now" button), and every plan gets a **Market background** section: what
 VIX says, the last session, the bias trail ("three sessions running" / "changing every session"), and a warning for
-beginners when VIX is 20 or higher. Global markets (GIFT Nifty, US indices, crude, dollar) need an outside data feed and
-are not included yet. API: `GET /api/ai/market-memory`, `POST /api/ai/market-memory/refresh`.
+beginners when VIX is 20 or higher. API: `GET /api/ai/market-memory`, `POST /api/ai/market-memory/refresh`.
 
 ## Options, feedback and memory (Phase AQ)
 
@@ -310,6 +322,10 @@ reversion, VWAP + Supertrend and the opening range breakout (docs/STRATEGIES.md)
   Supertrend), volume / RSI / ADX panes that scroll together, a crosshair legend, timeframe switch, the strategy's own
   indicators on by default, entry / stop / target lines and trade markers, and a live last price that moves the forming
   candle (`GET /api/market-data/ltp`, tick first, then the broker quote with its age).
+- Broker charts (the new-tab chart, Signals in broker mode, the position chart) load each timeframe's own history
+  automatically - 1m: 5 days, 5m: 10, 15m: 20, 30m / 60m: 30, day: 2 years - and **scrolling back past the oldest bar
+  loads the page before it** (`POST /api/market-data/candles` with `before`), until the broker has nothing older. The
+  minute refresh merges the newest bars without losing the older pages or your zoom.
 
 ## Designer dashboard (Phase AM)
 

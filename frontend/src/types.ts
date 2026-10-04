@@ -1719,7 +1719,7 @@ export interface QuantExposure {
 export interface CandleSource { broker: string; account_label: string; token_status: string; token_expires_at: string | null; usable: boolean }
 export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
 export interface CandlesResponse {
-  source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; fetched_at: string;
+  source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
   symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
 }
 
@@ -1817,7 +1817,7 @@ export interface InterviewPlan {
 export interface MemorySnapshot {
   symbol: string;
   exchange: string;
-  kind: "SYMBOL" | "CUE";
+  kind: "SYMBOL" | "CUE" | "GLOBAL";
   source: string;
   last_price: number | null;
   change_pct: number | null;
@@ -1833,9 +1833,15 @@ export interface MarketMemory {
   cues: MemorySnapshot[];
   history: Record<string, { date: string; bias: string | null; regime: string | null; last_price: number | null; change_pct: number | null }[]>;
   updated_at: string | null;
+  globals?: MemorySnapshot[];
   watchlist?: string[];
   interval_minutes?: number;
-  report?: { symbols: number; cues: number; errors: string[] };
+  report?: { symbols: number; cues: number; globals?: number; errors: string[] };
+  // Phase AU: what the world's markets usually mean for India, and where the data comes from.
+  global_view?: string[];
+  global_source?: string;
+  global_gift_note?: string;
+  global_enabled?: boolean;
 }
 
 // Phase AT: the guide.

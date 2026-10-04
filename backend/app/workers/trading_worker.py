@@ -124,6 +124,12 @@ def _just_closed(now: datetime) -> bool:
     return ist.weekday() < 5 and dtime(15, 30) <= ist.time() < dtime(16, 30)
 
 
+def _pre_open(now: datetime) -> bool:
+    """08:00-09:15 IST on a weekday: the overnight global cues are what a trader reads before the open."""
+    ist = now.astimezone(IST)
+    return ist.weekday() < 5 and dtime(8, 0) <= ist.time() < dtime(9, 15)
+
+
 def _adapter_key(broker_name: str, account_label: str) -> str:
     return broker_name if (account_label or "primary") == "primary" else f"{broker_name}@{account_label}"
 
@@ -247,10 +253,11 @@ class TradingWorker:
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
                 # Phase AR: the Copilot's market memory - every 15 minutes while NSE is open and in
-                # the hour after the close (the day's final read). Never blocks trading.
-                if nse.is_open or _just_closed(now):
+                # the hour after the close (the day's final read); before the open only the global
+                # cues (no broker read). Never blocks trading.
+                if nse.is_open or _just_closed(now) or _pre_open(now):
                     try:
-                        report.memory_snapshots = await self._market_memory(session, now)
+                        report.memory_snapshots = await self._market_memory(session, now, broker_reads=nse.is_open or _just_closed(now))
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Market memory failed")
                         report.errors.append(f"market memory: {exc}")
@@ -297,9 +304,10 @@ class TradingWorker:
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
 
-    async def _market_memory(self, session: AsyncSession, now: datetime) -> int:
+    async def _market_memory(self, session: AsyncSession, now: datetime, broker_reads: bool = True) -> int:
         """Phase AR: snapshots for every tenant whose traders use the Copilot (a trader profile
-        exists), through the tenant's first usable broker session."""
+        exists), through the tenant's first usable broker session; the global cues need no broker
+        (and are all there is before the open, `broker_reads=False`)."""
         from app.ai import market_memory
         from app.db.models import TraderProfileRecord
         written = 0
@@ -310,9 +318,13 @@ class TradingWorker:
             self._last_memory[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
+                    if not broker_reads:
+                        written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
+                        continue
                     await ensure_tenant_key(session, tenant_id)
                     user = await self._acting_user(session, tenant_id, [])
                     if user is None:
+                        written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     broker = None
                     for account in await list_accounts(session, tenant_id):
@@ -321,9 +333,10 @@ class TradingWorker:
                             if broker is not None:
                                 break
                     if broker is None:
+                        written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)
-                    written += result["symbols"] + result["cues"]
+                    written += result["symbols"] + result["cues"] + result["globals"]
                 except Exception:  # noqa: BLE001 - one tenant's memory must not stop the others
                     logger.exception("Market memory for tenant %s failed", tenant_id)
         return written

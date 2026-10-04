@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
+import { useBrokerChart } from "./chartHistory";
 import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "./ProChart";
 import { useCandleSource } from "./DataSource";
 import { Card } from "./ui";
-import type { OHLCVBar, TradeRecord } from "../types";
+import type { TradeRecord } from "../types";
 
-const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min"];
+const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
 /**
  * Phase AN: the chart behind an open position. Pick a position; the card fetches broker candles
@@ -17,9 +17,6 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
   const source = useCandleSource(2);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState("5min");
-  const [candles, setCandles] = useState<OHLCVBar[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (positions.length === 0) { setSelectedId(null); return; }
@@ -33,25 +30,9 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
   const broker = source.broker || undefined;
   const usable = source.usable && !!source.broker;
 
-  useEffect(() => {
-    if (!usable || !chartSymbol) { setCandles([]); return; }
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true); setError(null);
-      try {
-        const lookback = timeframe === "60min" ? 10 : 5;  // >= 5 so a weekend or holiday never leaves it empty
-        const r = await api.marketDataCandles([chartSymbol], timeframe, lookback, chartExchange, broker);
-        if (cancelled) return;
-        const entry = r.symbols[chartSymbol.toUpperCase()];
-        if (!entry || entry.error) throw new Error(entry?.error ?? `No candles for ${chartSymbol}`);
-        setCandles(entry.bars);
-      } catch (e) { if (!cancelled) { setError(String(e)); setCandles([]); } }
-      finally { if (!cancelled) setLoading(false); }
-    };
-    void load();
-    const id = window.setInterval(load, 60_000);
-    return () => { cancelled = true; window.clearInterval(id); };
-  }, [usable, chartSymbol, chartExchange, timeframe, broker]);
+  // Each timeframe loads its own history; scrolling back loads older pages.
+  const chart = useBrokerChart({ enabled: usable && !!chartSymbol, symbol: chartSymbol, timeframe, exchange: chartExchange, broker });
+  const { candles, loading, error } = chart;
 
   const live = useLiveLtp(usable && !!chartSymbol, chartSymbol, chartExchange, broker);
   const contractLive = useLiveLtp(usable && derivative && !!p, p?.symbol, p?.exchange ?? "NFO", broker);
@@ -106,10 +87,11 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
           {error && <div className="mb-2 text-xs text-rose-300">{error}</div>}
           {loading && candles.length === 0 && <div className="text-xs text-muted">Fetching candles…</div>}
           <ProChart candles={candles} symbol={chartSymbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
-                    priceLines={priceLines} markers={markers} live={live.ltp} liveError={live.error} height={340}
+                    priceLines={priceLines} markers={markers} live={timeframe === "day" ? null : live.ltp} liveError={live.error} height={340}
                     defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume"]}
                     openUrl={chartSymbol ? chartWindowUrl(chartSymbol, timeframe, chartExchange, broker) : undefined}
-                    deployable={!!chartSymbol} exchange={chartExchange} />
+                    deployable={!!chartSymbol} exchange={chartExchange}
+                    onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} />
         </>
       )}
     </Card>

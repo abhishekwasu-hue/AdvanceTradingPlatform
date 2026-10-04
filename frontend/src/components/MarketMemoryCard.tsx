@@ -1,4 +1,4 @@
-import { Brain, RefreshCw } from "lucide-react";
+import { Brain, Globe2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { MarketMemory } from "../types";
@@ -7,8 +7,22 @@ import { Card } from "./ui";
 /**
  * Phase AR: what the Copilot already knows about the market - read by the worker every 15 minutes
  * through your broker: each watched symbol's bias, regime and structure, how the bias moved over
- * the last sessions, and the market cues (India VIX, index day change).
+ * the last sessions, and the market cues (India VIX, index day change). Phase AU: the global cues
+ * (US futures, Asia, crude, dollar, rupee) from free, delayed public data, read before the open too.
  */
+const GLOBAL: Record<string, { mr: string; inverse?: boolean; neutral?: boolean }> = {
+  SP500_FUT: { mr: "S&P 500 futures" }, NASDAQ_FUT: { mr: "Nasdaq futures" }, SP500: { mr: "S&P 500" }, NASDAQ: { mr: "Nasdaq" },
+  NIKKEI: { mr: "Nikkei (जपान)" }, HANG_SENG: { mr: "Hang Seng" }, BRENT: { mr: "Brent कच्चे तेल", inverse: true },
+  GOLD: { mr: "सोने", neutral: true }, DXY: { mr: "Dollar index", inverse: true }, USDINR: { mr: "USD/INR", inverse: true },
+  US10Y: { mr: "US 10Y yield", inverse: true },
+};
+
+function globalCls(key: string, change: number): string {
+  const g = GLOBAL[key];
+  if (!g || g.neutral || Math.abs(change) < 0.05) return "text-slate-200";
+  const goodForIndia = g.inverse ? change < 0 : change > 0;
+  return goodForIndia ? "text-emerald-300" : "text-rose-300";
+}
 const BIAS: Record<string, { mr: string; cls: string }> = {
   BULLISH: { mr: "तेजी", cls: "text-emerald-300" },
   BEARISH: { mr: "मंदी", cls: "text-rose-300" },
@@ -47,6 +61,7 @@ export default function MarketMemoryCard() {
       let detail = text;
       if (m) { try { detail = JSON.parse(m[0]).detail ?? text; } catch { /* keep text */ } }
       setError(detail);
+      void api.aiMarketMemory().then(setMemory).catch(() => undefined);
     } finally { setBusy(false); }
   }
 
@@ -108,7 +123,35 @@ export default function MarketMemoryCard() {
           </tbody>
         </table>
       )}
-      <div className="mt-2 text-[11px] text-muted">जागतिक संकेत (GIFT Nifty, US बाजार, crude, डॉलर) साठी बाहेरचा data feed लागतो - अजून जोडलेला नाही.</div>
+      <div className="mt-3 border-t border-border/60 pt-2">
+        <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-200"><Globe2 size={13} className="text-sky-300" />जागतिक संकेत</div>
+        {memory?.globals && memory.globals.length > 0 ? (
+          <>
+            <div className="mb-1 flex flex-wrap gap-1.5 text-xs">
+              {memory.globals.map((g) => (
+                <span key={g.symbol} className="rounded-lg border border-border bg-panel2/60 px-2 py-0.5" title={`${g.source} · ${String(g.payload?.as_of ?? "")}`}>
+                  {GLOBAL[g.symbol]?.mr ?? g.symbol}{" "}
+                  <b className={globalCls(g.symbol, g.change_pct ?? 0)}>{(g.change_pct ?? 0) >= 0 ? "+" : ""}{(g.change_pct ?? 0).toFixed(2)}%</b>
+                </span>
+              ))}
+            </div>
+            {memory.global_view && memory.global_view.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-200">
+                {memory.global_view.map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            )}
+          </>
+        ) : (
+          <div className="text-xs text-muted">
+            {memory?.global_enabled === false
+              ? "जागतिक संकेत बंद आहेत (GLOBAL_CUES_ENABLED=false)."
+              : "अजून जागतिक माहिती आलेली नाही. \"आत्ता वाचा\" दाबा; worker सकाळी 08:00 पासून आणि market चालू असताना आपोआप आणतो."}
+          </div>
+        )}
+        <div className="mt-1 text-[11px] text-muted">
+          हिरवा = भारतासाठी सहसा पोषक, लाल = दबाव (उदा. crude किंवा डॉलर वाढणे). {memory?.global_source ?? "मोफत सार्वजनिक माहिती, उशिरा"}. {memory?.global_gift_note ?? ""} ही प्रवृत्ती आहे, signal नाही.
+        </div>
+      </div>
     </Card>
   );
 }

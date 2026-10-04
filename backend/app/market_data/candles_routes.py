@@ -53,6 +53,9 @@ class CandlesBody(BaseModel):
     lookback_days: int = Field(default=5, ge=1, le=DAILY_MAX_LOOKBACK_DAYS)
     broker: Optional[str] = Field(default=None, description="a stored broker; omitted = the first usable session")
     account_label: str = Field(default="primary", max_length=50)
+    # Older history for a chart scrolled to its left edge: the `lookback_days` of completed bars
+    # ending the day before this IST date (no today's bars, no shared 60 s cache - history is final).
+    before: Optional[date] = None
 
 
 async def _records(session: AsyncSession, tenant_id: int) -> List[BrokerCredentialRecord]:
@@ -119,7 +122,10 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         if not symbol or symbol in out:
             continue
         try:
-            bars = await service.get_candles(symbol, exchange, base_interval)
+            if body.before is not None:
+                bars = await service.get_history(symbol, exchange, base_interval, body.before)
+            else:
+                bars = await service.get_candles(symbol, exchange, base_interval)
             if bars and body.timeframe not in ("1min", "day"):
                 bars = _frame_to_bars(build_frames(bars, "1min", [body.timeframe])[body.timeframe])
             out[symbol] = {"bars": [b.model_dump(mode="json") for b in bars], "count": len(bars),
@@ -136,7 +142,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     if not fetched:
         warnings.append("every symbol failed - check the symbols are the broker's trading symbols and the session token is valid")
     return {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
-            "base_interval": base_interval, "lookback_days": lookback, "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),
             "symbols": out, "warnings": warnings,
             "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
 

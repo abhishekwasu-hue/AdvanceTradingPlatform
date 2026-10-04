@@ -3809,7 +3809,7 @@ Tests: `tests/test_phase_as_swing.py`.
 `app/ai/knowledge.py` - the fourth part of the "experienced guide" Copilot: questions answered in the
 trader's language.
 
-* **Concept library** (`CONCEPTS`, 32 entries): id, English and Marathi title and body, keywords in
+* **Concept library** (`CONCEPTS`, 33 entries): id, English and Marathi title and body, keywords in
   both scripts, related concepts. Each body is a short, correct explanation plus how this platform
   applies it (sizing from the stop, the daily loss limit, the regime filter, ATR-floored stops, swing
   products, paper first...). Tests assert every entry is complete in both languages and that related
@@ -3831,3 +3831,53 @@ trader's language.
 
 Tests: `tests/test_phase_at_guide.py`.
 
+## Phase AU: global cues
+
+`app/ai/global_cues.py` - the international part of the Copilot's market memory.
+
+* **Markets** (`MARKETS`): S&P 500 and Nasdaq 100 futures, S&P 500, Nasdaq Composite, Nikkei 225, Hang
+  Seng, Brent, gold, the dollar index, USD/INR, the US 10-year yield - each with its Yahoo and Stooq
+  symbol, its usual effect on Indian equities (+1 up is good, -1 up is bad, 0 shown only) and the move
+  that counts fully in the mood.
+* **Fetch** (`fetch_all`): Yahoo Finance's v8 chart endpoint (`range=5d&interval=1d`, query1 then
+  query2), Stooq's daily CSV when Yahoo has nothing; last price, previous session close, 5-session
+  change and the quote time. One fetch serves every tenant for `CACHE_SECONDS` (600); a market no source
+  answers is reported and left out. `GLOBAL_CUES_ENABLED=false` returns nothing (the test suite sets it).
+  Free, unofficial and delayed: background for the plan and the guide, never a trading input.
+* **Storage**: `market_snapshots` rows with `kind="GLOBAL"`, `exchange="GLOBAL"`, the quote in
+  `payload_json` (no schema change). `market_memory.capture_global` stores them for one tenant;
+  `capture` stores them alongside the broker reads; `latest()` returns them as `globals` (in `MARKETS`
+  order, last 3 days).
+* **Worker**: `_pre_open` (08:00-09:15 IST weekdays) runs the memory job with `broker_reads=False` -
+  global cues only, no broker session; during market hours a tenant without a usable broker session
+  still gets the global cues.
+* **Reading** (`mood`, `view`): a risk-on / risk-off score (each scored market's move against its
+  threshold, capped at one and signed by its effect; US futures replace the cash indices when present;
+  quotes older than `STALE_DAYS` are ignored) and bilingual notes for notable moves - US futures, Brent
+  (both directions), USD/INR, the dollar index - phrased as tendencies, never instructions.
+* **Use**: `describe()` puts the first two global lines at the top of the plan's Market background and
+  names the source; the guide's `_global_answer` answers world-market questions (crude, dollar, rupee,
+  US, GIFT Nifty, FII...) from the memory, and `ai_context` passes the global quotes to the AI; the
+  library gained a `global_cues` concept. API: `GET /api/ai/market-memory` adds `globals`,
+  `global_view`, `global_source`, `global_gift_note`, `global_enabled`; `POST
+  /api/ai/market-memory/refresh` reads the global cues even without a broker session (409 only when
+  neither is available). **UI**: the market-memory card's जागतिक संकेत section.
+
+Tests: `tests/test_phase_au_global_cues.py`.
+
+## Chart history: per-timeframe windows and scroll-back
+
+* **API**: `POST /api/market-data/candles` takes `before` (an IST date). With it the endpoint returns
+  the completed bars of the `lookback_days` calendar days ending the day before (never today's
+  forming bars; a future date is clamped to today) through `MarketDataService.get_history`, cached
+  per date range for `HISTORY_CACHE_TTL_SECONDS` (3600 - past bars do not change). Intraday is still
+  built from one-minute bars, at most 30 days per request.
+* **Frontend** (`components/chartHistory.ts`): `historyDaysFor(tf)` sizes the first load per timeframe;
+  `useBrokerChart` loads it, refreshes the recent days every minute and merges them in (`mergeBars`),
+  and `loadOlder()` asks for the page before the oldest bar, stopping once the broker returns nothing
+  older. `ProChart` calls `onLoadOlder` when the visible range reaches the first ten bars and keeps
+  the user's view when bars are prepended or refreshed (it fits all candles only for a new symbol or
+  timeframe). Used by the new-tab chart, the Signals chart in broker mode (which also gains "day")
+  and the position chart.
+
+Tests: `tests/test_chart_history.py`.

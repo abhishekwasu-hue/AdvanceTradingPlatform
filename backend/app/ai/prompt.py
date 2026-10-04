@@ -299,7 +299,8 @@ If the user asks for something these rules forbid, refuse that part in one or tw
  "warnings": [str] - what could make it fail (regimes, costs, slippage, over-fitting, weak evidence)}}
 Condition = {{"left": Operand, "operator": one of ["GT","LT","GTE","LTE","CROSSES_ABOVE","CROSSES_BELOW"], "right": Operand}}
 Operand = {{"type": "value", "value": number}} or {{"type": "indicator", "indicator": one of
-  ["EMA","SMA","RSI","ADX","PLUS_DI","MINUS_DI","ATR","SUPERTREND","CLOSE","OPEN","HIGH","LOW"], "period": int 1..500}}
+  ["EMA","SMA","RSI","ADX","PLUS_DI","MINUS_DI","ATR","SUPERTREND","CLOSE","OPEN","HIGH","LOW","VWAP","DAY_OPEN","OR_HIGH","OR_LOW","PDH","PDL","PDC","BB_UPPER","BB_MID","BB_LOWER","VOLUME","VOLUME_SMA"], "period": int 1..500, "multiplier": number (SUPERTREND; BB_* standard deviations), "timeframe": optional higher timeframe such as "15min" (completed bars only)}}
+  (OR_HIGH/OR_LOW period = opening-range minutes; PDH/PDL/PDC = previous session high/low/close; VWAP is the session VWAP)
 Rules: conditions on a side are AND-combined; at most 4 per side; at least one side non-empty; conditions a human can verify on a
 chart. For a credit structure use target_credit_pct 50-70 and stop_credit_pct 100-200 (the short premium doubling to tripling).
 For a debit structure or an underlying trade prefer break_even_at_r 2 and a trailing stop. next_step is always "backtest" for a

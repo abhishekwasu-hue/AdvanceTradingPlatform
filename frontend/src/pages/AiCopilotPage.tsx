@@ -1,4 +1,4 @@
-import { Activity, BookOpen, CheckCircle2, Compass, GraduationCap, Settings2, ShieldAlert, Sparkles, Sun, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, Compass, ScanSearch, Settings2, ShieldAlert, Sparkles, Sun, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -7,11 +7,8 @@ import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
 import MarketMemoryCard from "../components/MarketMemoryCard";
-import GuideChat from "../components/GuideChat";
-import CopilotAsk from "../components/CopilotAsk";
 import DailyBriefing from "../components/DailyBriefing";
-import TradeCoach from "../components/TradeCoach";
-import type { CopilotReply } from "../types";
+import StrategistPanel from "../components/StrategistPanel";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -26,12 +23,11 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{status}</span>;
 }
 
-type Tab = "today" | "strategy" | "coach" | "guide" | "advanced";
+type Tab = "strategist" | "today" | "strategy" | "advanced";
 const TABS: { id: Tab; mr: string; en: string; icon: typeof Sun }[] = [
-  { id: "today", mr: "आज", en: "Today", icon: Sun },
-  { id: "strategy", mr: "Strategy बनवा", en: "Build a strategy", icon: Compass },
-  { id: "coach", mr: "Coach", en: "My trades", icon: GraduationCap },
-  { id: "guide", mr: "मार्गदर्शक", en: "Guide", icon: BookOpen },
+  { id: "strategist", mr: "Market अभ्यास → Strategy", en: "Market study → Strategy", icon: ScanSearch },
+  { id: "today", mr: "आजचा market", en: "Today's market", icon: Sun },
+  { id: "strategy", mr: "Strategy मुलाखत", en: "Strategy interview", icon: Compass },
   { id: "advanced", mr: "Advanced", en: "Drafts & agent", icon: Settings2 },
 ];
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -41,8 +37,9 @@ function store(key: string, value: string) { try { localStorage.setItem(key, val
 
 /** Phase L: the AI Copilot - generate a strategy draft, backtest it, approve it (only then does
  * it exist as a strategy); read the market regime; decide on the monitoring agent's proposals.
- * Phase AV: a Copilot home - one ask-anything box, today's briefing, the trade coach and the
- * guide, with the draft and agent tools under Advanced. */
+ * Phase AV/AW: the Copilot is the live-market strategist - it studies the market and builds
+ * validated strategies (default tab); today's market briefing, the strategy interview and the
+ * draft / agent tools sit beside it. The coach and the guide have their own page. */
 export default function AiCopilotPage() {
   const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
@@ -59,7 +56,7 @@ export default function AiCopilotPage() {
   // Phase AP: the interview runs before any strategy is proposed for a vague request.
   const [interviewKey, setInterviewKey] = useState(0);
   const [interviewPrompt, setInterviewPrompt] = useState("");
-  const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "today"));
+  const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist"));
   const [lang, setLangState] = useState<"en" | "mr">(() => stored<"en" | "mr">("atp_copilot_lang", ["en", "mr"], "mr"));
   const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
   const setLang = (l: "en" | "mr") => { setLangState(l); store("atp_copilot_lang", l); };
@@ -94,17 +91,13 @@ export default function AiCopilotPage() {
 
   const open = actions.filter((a) => a.status === "PROPOSED");
   const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
-  const onCopilotAction = (reply: CopilotReply) => {
-    if (reply.intent === "interview") startInterview(reply.prompt ?? "");
-    else setTab((reply.action.tab as Tab) ?? "today");
-  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
           <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-          <p className="text-sm text-purple-200">तुमचा अनुभवी trading साथी: आजचा plan, strategy, तुमच्या trades चा coach आणि मार्गदर्शक. निर्णय नेहमी तुमचाच - तुमच्या मंजुरीशिवाय काहीही trade होत नाही.</p>
+          <p className="text-sm text-purple-200">Live market चा अभ्यास करून आजच्या market साठी strategy बनवणारा, तपासणारा आणि deploy साठी तयार करणारा strategist. निर्णय नेहमी तुमचाच - तुमच्या मंजुरीशिवाय काहीही trade होत नाही.</p>
         </div>
         <div className="flex overflow-hidden rounded-lg border border-border text-xs">
           {(["mr", "en"] as const).map((l) => (
@@ -113,7 +106,7 @@ export default function AiCopilotPage() {
         </div>
       </div>
 
-      <CopilotAsk lang={lang} onAction={onCopilotAction} />
+      <DataSourceBar source={source} />
 
       {open.length > 0 && (
         <Card title={`तुमच्या निर्णयाची वाट पाहणारे प्रस्ताव · Proposals waiting for you (${open.length})`}>
@@ -152,13 +145,10 @@ export default function AiCopilotPage() {
         </div>
       )}
 
-      {tab === "coach" && <TradeCoach lang={lang} />}
-
-      {tab === "guide" && <GuideChat plain />}
+      {tab === "strategist" && <StrategistPanel source={source} lang={lang} />}
 
       {tab === "strategy" && (
         <div className="space-y-4">
-          <DataSourceBar source={source} />
       <div id="strategy-interview">
         <Card title="Strategy मुलाखत · Build my strategy with me">
           {interviewKey === 0 ? (
@@ -279,7 +269,6 @@ export default function AiCopilotPage() {
 
       {tab === "advanced" && (
         <div className="space-y-4">
-          <DataSourceBar source={source} />
       <div className="grid lg:grid-cols-2 gap-4">
         <Card title={`Market regime (${dataLabel})`}>
           <p className="text-xs text-muted mb-2">The same classifier the Autopilot uses for a deployment's regime filter: ADX for trend strength, EMA20/50 for direction, ATR against its median for volatility.</p>

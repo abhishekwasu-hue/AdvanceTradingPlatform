@@ -37,7 +37,8 @@ Answer with ONE JSON object and nothing else, shaped exactly like:
  "explanation": str, "warnings": [str]}
 Condition = {"left": Operand, "operator": one of ["GT","LT","GTE","LTE","CROSSES_ABOVE","CROSSES_BELOW"], "right": Operand}
 Operand = {"type": "value", "value": number} or {"type": "indicator", "indicator": one of
-  ["EMA","SMA","RSI","ADX","PLUS_DI","MINUS_DI","ATR","SUPERTREND","CLOSE","OPEN","HIGH","LOW"], "period": int 1..500}
+  ["EMA","SMA","RSI","ADX","PLUS_DI","MINUS_DI","ATR","SUPERTREND","CLOSE","OPEN","HIGH","LOW","VWAP","DAY_OPEN","OR_HIGH","OR_LOW","PDH","PDL","PDC","BB_UPPER","BB_MID","BB_LOWER","VOLUME","VOLUME_SMA"], "period": int 1..500, "multiplier": number (SUPERTREND; BB_* standard deviations), "timeframe": optional higher timeframe such as "15min" (completed bars only)}
+  (OR_HIGH/OR_LOW period = opening-range minutes; PDH/PDL/PDC = previous session high/low/close; VWAP is the session VWAP)
 Rules: every condition set is AND-combined; use at most 4 conditions per side; at least one side non-empty;
 prefer conditions a human can verify on a chart; never promise returns; list what could make the strategy fail
 in "warnings" (regimes, costs, slippage, over-fitting). Output must be valid JSON - no markdown fences."""

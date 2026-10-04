@@ -14,8 +14,10 @@ import {
   type ParseStrategyResult,
 } from "../types";
 
-const INDICATORS: IndicatorName[] = ["EMA", "SMA", "RSI", "ADX", "PLUS_DI", "MINUS_DI", "ATR", "SUPERTREND", "CLOSE", "OPEN", "HIGH", "LOW"];
-const PERIODLESS = new Set(["CLOSE", "OPEN", "HIGH", "LOW"]);
+const INDICATORS: IndicatorName[] = ["EMA", "SMA", "RSI", "ADX", "PLUS_DI", "MINUS_DI", "ATR", "SUPERTREND", "CLOSE", "OPEN", "HIGH", "LOW",
+  "VWAP", "DAY_OPEN", "OR_HIGH", "OR_LOW", "PDH", "PDL", "PDC", "BB_UPPER", "BB_MID", "BB_LOWER", "VOLUME", "VOLUME_SMA"];
+const PERIODLESS = new Set(["CLOSE", "OPEN", "HIGH", "LOW", "VWAP", "DAY_OPEN", "PDH", "PDL", "PDC", "VOLUME"]);
+const HTF_OPTIONS = ["", "5min", "15min", "30min", "60min"];
 const OPERATORS: { value: ConditionOperator; label: string }[] = [
   { value: "GT", label: ">" },
   { value: "LT", label: "<" },
@@ -58,22 +60,30 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
           {!PERIODLESS.has(operand.indicator) && (
             <input
               type="number"
-              title="period"
+              title={operand.indicator === "OR_HIGH" || operand.indicator === "OR_LOW" ? "opening range, minutes" : "period"}
               className="w-14 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
               value={operand.period}
               onChange={(e) => onChange({ ...operand, period: Number(e.target.value) })}
             />
           )}
-          {operand.indicator === "SUPERTREND" && (
+          {(operand.indicator === "SUPERTREND" || operand.indicator.startsWith("BB_")) && (
             <input
               type="number"
               step="0.1"
-              title="ATR multiplier"
+              title={operand.indicator === "SUPERTREND" ? "ATR multiplier" : "standard deviations"}
               className="w-14 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
               value={operand.multiplier}
               onChange={(e) => onChange({ ...operand, multiplier: Number(e.target.value) })}
             />
           )}
+          <select
+            title="Evaluate on a higher timeframe (completed bars only)"
+            className="rounded bg-panel2 border border-border px-1 py-1 text-[11px] text-muted"
+            value={operand.timeframe ?? ""}
+            onChange={(e) => onChange({ ...operand, timeframe: e.target.value || null })}
+          >
+            {HTF_OPTIONS.map((tf) => <option key={tf} value={tf}>{tf ? `on ${tf}` : "same tf"}</option>)}
+          </select>
         </>
       )}
     </div>

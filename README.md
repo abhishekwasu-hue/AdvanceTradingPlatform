@@ -236,28 +236,44 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
-## Copilot home (Phase AV)
+## AI Copilot: live market strategist (Phase AW)
 
-The AI Copilot page is now organised like a trading mentor's desk:
+The AI Copilot studies the live market and builds today's strategy - it is a strategist, not a chat:
 
-- **Ask your Copilot** - one box for everything, in Marathi or English. "आज काय करू?", "मला intraday strategy सांगा",
-  "माझे trades कसे आहेत?", "माझा autopilot trade का करत नाही?", "Stop-loss कुठे ठेवावा?" are routed to the right part
-  (today's briefing, the strategy interview, the coach, your deployments, the guide) and answered from the platform's own
-  facts - by your AI provider, grounded on those facts, when an AI key is set in Settings.
-- **Today** - the day type (trending up / down, sideways, volatile) from the market memory with its game plan (which
-  strategy families fit today and which to leave alone, VIX sizing, the global mood, events), your day (P&L, loss budget
-  used, trades and open positions against your limits), a pre-trade checklist (broker session, own risk settings, worker
-  running, loss budget, VIX, blocking events) and, for every deployment, **why it is or is not trading** (market closed,
-  paused, errors, the worker not evaluating, or today's regime not suiting the strategy - in which case no trade is the
-  correct result).
-- **Coach** - your closed trades read like a mentor would: win rate, expectancy in rupees and R, profit factor,
+1. **Market study** of the symbol you pick (NIFTY 50, NIFTY BANK, any stock), from your broker's candles: the trend on
+   5m / 15m / 60m / daily (EMA 20/50/200, ADX regime, RSI), today's levels (VWAP, the 15-minute opening range, day
+   open / high / low, the previous day's high / low / close, floor pivots, support / resistance zones, ATR), a weighted
+   bias with confidence, the day's character (trend / range / volatile) and three scenarios with trigger levels.
+2. **Strategy synthesis** - setups that fit that character (trend pullback, opening-range breakout, previous-day level
+   breakout, VWAP reclaim, Supertrend with a higher-timeframe filter, range reversion), in the bias direction when it is
+   clear, written as rules in the platform's own strategy language around today's levels.
+3. **Validation** - every parameter set is simulated on the last ~12 sessions (one position at a time, stop first,
+   costs, flat by 15:15); parameters are chosen on the earlier 70% of sessions and judged on the later sessions they
+   never saw. Each candidate is labelled: held up on unseen data, over-fit risk, too few trades, or no edge. With an AI
+   key in Settings, the AI also writes rule sets from the same study, which go through the identical test.
+4. **Adopt and deploy** - the best three come with rules, exits, today's triggers and risk per trade for your capital;
+   "save as strategy" makes it one of your (versioned, editable) strategies and "deploy in PAPER" starts it on the
+   Autopilot. LIVE stays behind the Go-Live checklist.
+
+The strategy language gained the operands this needs: `VWAP`, `DAY_OPEN`, `OR_HIGH` / `OR_LOW` (opening range, period
+in minutes), `PDH` / `PDL` / `PDC`, Bollinger `BB_UPPER` / `BB_MID` / `BB_LOWER`, `VOLUME` / `VOLUME_SMA`, and a
+higher-timeframe filter on any operand (`EMA(50)` on 15min - completed bars only), all available in the Strategy
+Builder too. The Copilot page also keeps today's market briefing, the strategy interview and the draft / agent tools.
+API: `POST /api/ai/strategist/study`, `POST /api/ai/strategist/build`, `POST /api/ai/strategist/adopt`.
+
+## Coach & Guide (Phase AV)
+
+A separate page (Portfolio > Coach & Guide):
+
+- **Trade coach** - your closed trades read like a mentor would: win rate, expectancy in rupees and R, profit factor,
   drawdown, a discipline grade, P&L by strategy and by hour, the equity line, and behaviour flags with one fix each -
-  revenge trades (an entry within 15 minutes of a loss), overtrading, broken daily loss limits, losses far beyond the stop,
-  small winners against big losers, holding losers longer than winners, a losing hour or strategy.
-- **Build a strategy**, **Guide**, and **Advanced** (drafts, market regime, the monitoring agent's decided proposals).
-  Proposals waiting for your approval stay above the tabs.
+  revenge trades (an entry within 15 minutes of a loss), overtrading, broken daily loss limits, losses far beyond the
+  stop, small winners against big losers, holding losers longer than winners, a losing hour or strategy.
+- **Guide** - the bilingual concept library (Phase AT).
 
-API: `GET /api/ai/brief`, `GET /api/ai/coach?days=&mode=`, `POST /api/ai/copilot`.
+Today's market briefing (day type, game plan, your loss budget, why each deployment is or is not trading, the pre-trade
+checklist) is the "Today's market" tab of the AI Copilot. API: `GET /api/ai/brief`, `GET /api/ai/coach?days=&mode=`,
+`POST /api/ai/copilot` (routes a free-text question to the briefing, the coach, the deployments, the interview or the guide).
 
 ## Global cues (Phase AU)
 

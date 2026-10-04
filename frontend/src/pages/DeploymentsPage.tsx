@@ -278,7 +278,7 @@ export default function DeploymentsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-green-400">Autopilot</h1>
-        <p className="text-sm font-semibold text-green-400/60">
+        <p className="text-sm font-semibold text-green-200">
           Strategy deployments the background worker trades on its own: live broker candles every
           minute, the same risk engine and kill switches as a manual execute, exits monitored
           continuously, everything squared off before 15:20 IST.

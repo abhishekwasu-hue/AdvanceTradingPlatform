@@ -38,3 +38,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #374361;
 }
+
+/* Placeholder text in inputs: the browser default grey was hard to read on the dark inputs. */
+input::placeholder,
+textarea::placeholder {
+  color: #9aa6b8;
+  opacity: 1;
+}

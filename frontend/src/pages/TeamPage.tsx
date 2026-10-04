@@ -122,7 +122,7 @@ export default function TeamPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-orange-400">Team</h1>
-        <p className="text-sm font-semibold text-orange-400/60">
+        <p className="text-sm font-semibold text-orange-200">
           Everyone in your organisation shares the same broker connections, deployments, positions
           and alerts. Owners manage the team; traders and strategy creators can trade and configure;
           viewers see everything and change nothing.

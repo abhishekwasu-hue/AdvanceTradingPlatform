@@ -15,7 +15,7 @@ export default function StrategiesPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-violet-400">Strategy Library</h1>
-        <p className="text-sm font-semibold text-violet-400/60">Every inbuilt auto-executable scalping strategy, straight from the registry.</p>
+        <p className="text-sm font-semibold text-violet-200">Every inbuilt auto-executable scalping strategy, straight from the registry.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}
@@ -30,7 +30,7 @@ export default function StrategiesPage() {
               </span>
             </div>
             <div className="text-sm text-muted mb-3">{s.description}</div>
-            <div className="text-xs text-slate-400 mb-2">Timeframes: {s.timeframes.join(" / ")}</div>
+            <div className="text-xs text-slate-300 mb-2">Timeframes: {s.timeframes.join(" / ")}</div>
             <details className="text-xs text-muted">
               <summary className="cursor-pointer text-slate-300">Default parameters</summary>
               <pre className="mt-2 overflow-x-auto rounded bg-panel2 p-2 text-[11px]">

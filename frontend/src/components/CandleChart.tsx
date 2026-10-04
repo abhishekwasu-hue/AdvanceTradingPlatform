@@ -62,7 +62,7 @@ export default function CandleChart({
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#8a94a8",
+        textColor: "#c2cad8",
         fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       },
       grid: { vertLines: { color: "#1a2333" }, horzLines: { color: "#1a2333" } },

@@ -18,7 +18,9 @@ export default {
         accent: "#22c55e",
         danger: "#ef4444",
         warn: "#f59e0b",
-        muted: "#8a94a8",
+        // Secondary text. Was #8a94a8, which read as faint on the dark panels; brightened so labels,
+        // captions and table headers are easy to read while staying a step below primary text.
+        muted: "#c2cad8",
       },
       fontFamily: {
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],

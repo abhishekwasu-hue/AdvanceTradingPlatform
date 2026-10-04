@@ -65,7 +65,7 @@ export default function AiCopilotPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-        <p className="text-sm font-semibold text-purple-400/60">Drafts, not decisions: the AI writes rules and proposes actions; you backtest, approve or reject. Nothing trades without your explicit approval.</p>
+        <p className="text-sm font-semibold text-purple-200">Drafts, not decisions: the AI writes rules and proposes actions; you backtest, approve or reject. Nothing trades without your explicit approval.</p>
       </div>
       <Disclaimer kind="ai" />
       <DataSourceBar source={source} />

@@ -65,7 +65,7 @@ export default function NotificationsPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-extrabold text-violet-400">Notifications</h1>
-          <p className="text-sm font-semibold text-violet-400/60">
+          <p className="text-sm font-semibold text-violet-200">
             Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches,
             emergency exits, and system failures - shared across your account.
           </p>
@@ -90,7 +90,7 @@ export default function NotificationsPage() {
             {notifications.map((n) => (
               <div
                 key={n.id}
-                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-60" : "border-border bg-panel2/50"}`}
+                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-panel2/50"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">

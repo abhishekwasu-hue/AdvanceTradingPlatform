@@ -147,7 +147,7 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
-        <p className="text-sm font-semibold text-yellow-400/60">
+        <p className="text-sm font-semibold text-yellow-200">
           Broker credentials are encrypted at rest (Fernet) and only ever decrypted in memory
           when you authenticate - never logged, never returned in plaintext by any API response.
         </p>
@@ -211,11 +211,11 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-muted mb-1">Account label <span className="text-muted/70">(a second account at the same broker gets its own label)</span></label>
+            <label className="block text-xs text-muted mb-1">Account label <span className="text-muted">(a second account at the same broker gets its own label)</span></label>
             <input className="w-full sm:w-64 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={accountLabel} onChange={(e) => setAccountLabel(e.target.value)} placeholder="primary" />
           </div>
 
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-300">
             Fill only what you are changing - a field left blank keeps its stored value (e.g. paste just today's
             Access Token and the saved API key/secret stay). Values are encrypted on save and never shown again.
           </p>

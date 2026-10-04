@@ -128,7 +128,7 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">
               {group.title}
             </div>
             {group.items.map((item) => {

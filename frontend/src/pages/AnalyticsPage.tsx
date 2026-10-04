@@ -137,7 +137,7 @@ export default function AnalyticsPage() {
       <TaxReportCard />
       <div>
         <h1 className="text-xl font-extrabold text-lime-400">Analytics</h1>
-        <p className="text-sm font-semibold text-lime-400/60">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>
+        <p className="text-sm font-semibold text-lime-200">Aggregated from your full persisted trade history (Positions/Trade Journal).</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

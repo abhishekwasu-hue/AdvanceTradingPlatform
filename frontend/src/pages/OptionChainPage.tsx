@@ -43,7 +43,7 @@ export default function OptionChainPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-fuchsia-400">Option Chain</h1>
-        <p className="text-sm font-semibold text-fuchsia-400/60">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
+        <p className="text-sm font-semibold text-fuchsia-200">PCR, Max Pain, ATM/ITM/OTM and a bias that never relies on PCR alone.</p>
       </div>
 
       <DataSourceBar source={source} note="Underlying LTP and tilt shape the sample chain only." />

@@ -34,7 +34,7 @@ export default function SystemLogsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-sky-400">System Logs</h1>
-        <p className="text-sm font-semibold text-sky-400/60">
+        <p className="text-sm font-semibold text-sky-200">
           Your own security-relevant event history - register/login, broker credentials
           stored/deleted, broker authentication attempts. Private to your account, not a global
           admin view.

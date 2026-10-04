@@ -86,7 +86,7 @@ export default function PositionsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
-        <p className="text-sm font-semibold text-emerald-400/60">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
+        <p className="text-sm font-semibold text-emerald-200">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
       </div>
 
       {error && <div className="text-sm text-danger">{error}</div>}

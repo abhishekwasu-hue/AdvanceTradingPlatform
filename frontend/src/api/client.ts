@@ -1,4 +1,6 @@
 import type {
+  GuideAnswer,
+  GuideConcept,
   MarketMemory,
   InterviewPlan,
   InterviewStart,
@@ -637,6 +639,10 @@ export const api = {
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   aiMarketMemoryRefresh: (symbols?: string[]) =>
     request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
+  aiAsk: (question: string, language?: "en" | "mr") =>
+    request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
+  aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
+  aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),

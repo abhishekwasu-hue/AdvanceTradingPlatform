@@ -236,6 +236,17 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Ask the guide (Phase AT)
+
+The AI Copilot page has a **मार्गदर्शक विचारा / Ask the guide** chat. Ask about any trading concept in Marathi or English -
+"RSI म्हणजे काय?", "Stop-loss कुठे ठेवावा?", "Theta म्हणजे काय?", "Position size किती घ्यावा?" - and the answer comes from a
+bilingual library of 32 concepts (trend, structure, support / resistance, every indicator the strategies use, stops, sizing,
+R:R and expectancy, drawdown, discipline, options and Greeks, IV, VIX, intraday vs swing, gap risk, paper trading,
+backtesting, OI / PCR), each explaining how this platform applies it. "आज NIFTY BANK चा कल काय?" is answered from the market
+memory. With an AI provider set in Settings, the AI answers instead, grounded on the same notes, the market memory and your
+profile; the library is the fallback. Education only - never a buy/sell call on a security. API: `POST /api/ai/ask`,
+`GET /api/ai/concepts`, `GET /api/ai/concepts/{id}`.
+
 ## Swing trading (Phase AS)
 
 Two daily strategies - **Swing EMA pullback** (buy the dip to EMA 20 in a daily uptrend) and **Swing breakout** (a close

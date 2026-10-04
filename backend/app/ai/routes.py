@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, generator, interview, market_memory, monitor, settings as ai_settings
+from app.ai import advisor, generator, interview, knowledge, market_memory, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -331,6 +331,44 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(ge
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report
     return out
+
+
+# --- Phase AT the guide ------------------------------------------------------------------------------------
+
+class AskBody(BaseModel):
+    question: str = Field(min_length=2, max_length=1000)
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+
+
+@router.get("/concepts")
+async def concepts(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
+    """The guide's concept library (titles), for browsing."""
+    return {"concepts": knowledge.catalogue(language)}
+
+
+@router.get("/concepts/{concept_id}")
+async def concept(concept_id: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
+    found = knowledge.BY_ID.get(concept_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such concept")
+    return found.as_dict(language)
+
+
+@router.post("/ask")
+async def ask(body: AskBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Ask the guide: answered from the concept library and the market memory, or - with an external
+    AI provider configured - by the AI grounded on the same notes, the memory and the trader's profile."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    lang = body.language or interview.detect_language(body.question)
+    memory = await market_memory.latest(session, user.tenant_id)
+    saved, _ = await advisor.load_profile(session, user)
+    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    if provider.name == "rule_based":
+        return knowledge.answer(body.question, lang, memory)
+    result = await knowledge.ai_answer(provider, body.question, lang, memory, saved)
+    await ai_settings.mark_used(session, user.tenant_id, error=result.get("note"))
+    await session.commit()
+    return result
 
 
 # --- L3 regime -------------------------------------------------------------------------------------

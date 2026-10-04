@@ -3804,3 +3804,30 @@ Overnight holding for the swing trader the interview could not serve until now.
 
 Tests: `tests/test_phase_as_swing.py`.
 
+## Phase AT: the guide
+
+`app/ai/knowledge.py` - the fourth part of the "experienced guide" Copilot: questions answered in the
+trader's language.
+
+* **Concept library** (`CONCEPTS`, 32 entries): id, English and Marathi title and body, keywords in
+  both scripts, related concepts. Each body is a short, correct explanation plus how this platform
+  applies it (sizing from the stop, the daily loss limit, the regime filter, ATR-floored stops, swing
+  products, paper first...). Tests assert every entry is complete in both languages and that related
+  ids exist.
+* **Retrieval** (`find_concepts`): keyword scoring over English tokens and Devanagari / multi-word
+  phrases (substring), top matches within 60% of the best score.
+* **Market questions** (`_market_answer`): a question with a market word (today / आज / सध्या / कल /
+  why no trade...) naming a watched symbol (or an alias: बँक निफ्टी, BANKNIFTY...) is answered from the
+  Phase AR memory: bias, regime, higher-timeframe regime, structure, the day's move, what the regime
+  means for the strategies, and the memory's background lines.
+* **AI** (`ai_answer`): with an external provider configured (`ai_settings.provider_for` returns
+  something other than rule-based), the provider answers under `GUIDE_PROMPT` - plain words, at most
+  180 words, the risk side always, no buy/sell calls - with the retrieved notes, the market memory and
+  the trader profile as context; any provider error returns the library answer with a note.
+* **API**: `POST /api/ai/ask` `{question, language?}` (language detected from the script when
+  omitted), `GET /api/ai/concepts`, `GET /api/ai/concepts/{id}`. **UI**: `GuideChat` on the AI
+  Copilot page - suggestion chips, chat history, source badge (library / AI / market memory), related
+  concept chips, a browsable concept list in either language.
+
+Tests: `tests/test_phase_at_guide.py`.
+

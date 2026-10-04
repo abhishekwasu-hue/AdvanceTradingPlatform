@@ -1837,3 +1837,14 @@ export interface MarketMemory {
   interval_minutes?: number;
   report?: { symbols: number; cues: number; errors: string[] };
 }
+
+// Phase AT: the guide.
+export interface GuideConcept { id: string; title: string; body?: string; related?: string[] }
+export interface GuideAnswer {
+  answer: string;
+  source: "library" | "ai";
+  concepts: GuideConcept[];
+  related: { id: string; title: string }[];
+  used_market_memory: boolean;
+  note?: string;
+}

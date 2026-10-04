@@ -4,6 +4,13 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Debian security fixes land in the archive before the python:3.13-slim tag is rebuilt; upgrading
+# the OS packages here keeps the image scanner's fixed-CVE gate green between base-image releases
+# (as `apk upgrade` does for the frontend image).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # requirements first so dependency installs are cached independently of app code changes
 COPY requirements.txt .
 # pip is only needed to install; the running container must not install anything. Removing it

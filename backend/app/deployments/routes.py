@@ -11,7 +11,7 @@ import logging
 import re
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +24,7 @@ from app.brokers.token_lifecycle import build_adapter, get_credential_record, to
 from app.accounts.routing import RoutingPolicy
 from app.accounts.service import get_account
 from app.market_data.calendar import IST
-from datetime import datetime
+from datetime import datetime, date
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
@@ -483,7 +483,8 @@ async def create_deployment(
 
 @router.post("/preview-contract")
 async def preview_contract(
-    request: ContractPreviewRequest, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    request: ContractPreviewRequest, as_of: Optional[date] = Query(default=None, description="preview as of this trading date (default: today, IST)"),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
     """What the rules would trade right now, for both signal directions - the Autopilot form
     shows this before a deployment is created. Uses the supplied spot, else the tenant's broker
@@ -496,8 +497,8 @@ async def preview_contract(
     if spot is None and rules.instrument_kind == InstrumentKind.OPTION:
         spot = await _spot_from_broker(session, user.tenant_id, request.symbol)
         spot_source = "broker" if spot else None
-    today = datetime.now(IST).date()
-    out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()),
+    today = as_of or datetime.now(IST).date()
+    out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()), "as_of": today.isoformat(),
            "spot": spot, "spot_source": spot_source, "contracts": {}}
     chain_provider = None
     adapter = None

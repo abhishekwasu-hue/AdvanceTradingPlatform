@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
 import GoLiveChecklist from "../components/GoLiveChecklist";
+import MarketPulseCard from "../components/MarketPulseCard";
 import type { Page } from "../components/Sidebar";
 import type {
   AnalyticsSummary, BrokerAccount, Deployment, NotificationEntry, PortfolioExposure, StrategyInfo, TradeRecord, WorkerStatus,
@@ -246,6 +247,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
                  sub={`${mtf} multi-timeframe · ${indicator} indicator`} onClick={onNavigate && (() => onNavigate("strategies"))} />
       </div>
+
+      {user && <MarketPulseCard onNavigate={onNavigate} />}
 
       {/* Charts row */}
       <div className="grid lg:grid-cols-3 gap-4">

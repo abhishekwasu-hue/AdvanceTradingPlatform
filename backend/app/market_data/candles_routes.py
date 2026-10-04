@@ -7,6 +7,9 @@ still scored candles generated in the browser. This router gives them the same c
 
 * `GET  /api/market-data/sources` - the tenant's broker sessions and whether each can serve data
 * `POST /api/market-data/candles` - up to 50 symbols at one timeframe through one broker session
+* `GET  /api/market-data/ltp` - one symbol's last price for the chart's forming candle (Phase AN):
+  the streaming tick when one is fresh, else the broker's quote with the exchange timestamp and a
+  `stale` flag, else the bare LTP. Never raises on staleness - a chart shows the price with its age.
 
 The data goes through the tenant's stored credentials (Fernet/envelope-encrypted, never returned),
 so a tenant without a logged-in broker gets a 409 that says what to do, not an empty chart. Per-
@@ -28,7 +31,9 @@ from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
+from app.market_data.freshness import quote_is_stale
 from app.market_data.service import MarketDataService, build_frames
+from app.market_data.stream import tick_cache
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +139,42 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             "base_interval": base_interval, "lookback_days": lookback, "fetched_at": datetime.now(timezone.utc).isoformat(),
             "symbols": out, "warnings": warnings,
             "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
+
+
+@router.get("/ltp")
+async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, account_label: str = "primary",
+              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase AN: the last price of one symbol for a live chart. Tick cache first (the exchange's own
+    last trade when streaming is on), then the broker's quote (with the exchange timestamp, so the
+    chart can say how old it is), then the plain LTP. A stale quote is returned flagged, not refused:
+    unlike an exit decision, a chart is allowed to show yesterday's close with its age."""
+    symbol = symbol.strip().upper()
+    exchange = exchange.strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    record = await _pick_record(session, user.tenant_id, broker, account_label)
+    now = datetime.now(timezone.utc)
+    base = {"symbol": symbol, "exchange": exchange, "source_broker": record.broker_name, "fetched_at": now.isoformat()}
+    tick = await tick_cache.fresh(record.broker_name, exchange, symbol, now)
+    if tick is not None:
+        return {**base, "ltp": float(tick.ltp), "timestamp": tick.best_ts.isoformat(), "age_seconds": round(tick.age_seconds(now), 1),
+                "stale": False, "stale_reason": None, "source": "tick", "bid": None, "ask": None, "volume": None}
+    adapter = build_adapter(record)
+    try:
+        quote = await adapter.get_quote_for_symbol(symbol, exchange)
+        if quote is not None:
+            reason = quote_is_stale(quote.timestamp, now)
+            age = (now - quote.timestamp).total_seconds() if quote.timestamp is not None else None
+            return {**base, "ltp": float(quote.ltp), "timestamp": quote.timestamp.isoformat() if quote.timestamp else None,
+                    "age_seconds": round(age, 1) if age is not None else None, "stale": reason is not None, "stale_reason": reason,
+                    "source": "quote", "bid": quote.bid, "ask": quote.ask, "volume": quote.volume or None}
+        price = await adapter.get_ltp_for_symbol(symbol, exchange)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - the broker's words, as a 502 the chart can show
+        raise HTTPException(status_code=502, detail=f"{record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
+    return {**base, "ltp": float(price), "timestamp": None, "age_seconds": None, "stale": False, "stale_reason": None,
+            "source": "ltp", "bid": None, "ask": None, "volume": None}
 
 
 class ChainsBody(BaseModel):

@@ -1704,6 +1704,11 @@ export interface CandlesResponse {
   symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
 }
 
+export interface LtpResponse {
+  symbol: string; exchange: string; source_broker: string; fetched_at: string; ltp: number; timestamp: string | null; age_seconds: number | null;
+  stale: boolean; stale_reason: string | null; source: "tick" | "quote" | "ltp"; bid: number | null; ask: number | null; volume: number | null;
+}
+
 // Phase AB: go-live checklists.
 export interface ReadinessItem { key: string; title: string; status: "ok" | "todo" | "warn" | "info"; detail: string; fix: string; link: string | null; scope: string }
 export interface ReadinessChecklist { target: string; ready: boolean; summary: { ok: number; todo: number; warn: number; info: number }; items: ReadinessItem[]; checked_at: string; note: string }

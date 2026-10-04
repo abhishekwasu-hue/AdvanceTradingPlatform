@@ -71,7 +71,9 @@ async def validate_instrument(
     live); the index and master checks are LIVE-only so paper deployments on an index spot,
     which the strategy engine and its tests have always allowed, keep working.
     """
-    today = today or datetime.now(IST).date()
+    # The date the contract was resolved for wins over the wall clock (the worker and the tests
+    # resolve "as of" a trading date); the clock is the fallback for callers with no contract.
+    today = today or (getattr(contract, "resolved_for", None) if contract is not None else None) or datetime.now(IST).date()
     refusals: List[str] = []
     notes: List[str] = []
 

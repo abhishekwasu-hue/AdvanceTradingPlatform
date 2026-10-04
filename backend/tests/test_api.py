@@ -6,11 +6,11 @@ from tests.utils import decline_then_rally, make_series
 client = TestClient(app)
 
 
-def test_list_strategies_returns_seven_inbuilt_strategies():
+def test_list_strategies_returns_eleven_inbuilt_strategies():
     response = client.get("/api/strategies")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 7
+    assert len(data) == 11  # seven scalpers + four Phase AO indicator combinations
     ids = {s["id"] for s in data}
     assert "ema_rsi_scalper_1m" in ids
     assert "mtf_1m_5m_trend_pullback" in ids

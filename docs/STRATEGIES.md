@@ -1,6 +1,7 @@
 # Inbuilt Auto-Executable Scalping Strategies
 
-Seven strategies ship inbuilt in the strategy registry (`app/strategy_engine/registry.py`) and
+Eleven strategies ship inbuilt in the strategy registry (seven scalpers plus, from Phase AO, four
+indicator combinations - see the end of this page) (`app/strategy_engine/registry.py`) and
 are auto-executable: each produces a `Signal` with entry/stop-loss/targets/risk-reward/score
 that flows straight through the Risk Engine into the Paper (and eventually Live) execution
 router with no manual chart-reading step required. They're aimed at intraday NIFTY 50 /
@@ -73,7 +74,7 @@ curl -s -X POST localhost:8000/api/strategies/mtf_1m_5m_trend_pullback/paper-exe
   -H 'content-type: application/json' \
   -d '{"symbol": "NIFTY", "candles": {"1min": [...], "5min": [...]}}'
 
-# backtest any of the seven over historical bars
+# backtest any of the eleven over historical bars
 curl -s -X POST localhost:8000/api/backtest \
   -H 'content-type: application/json' \
   -d '{"strategy_id": "supertrend_adx_scalper_1m", "symbol": "BANKNIFTY", "base_timeframe": "1min", "candles": [...]}'
@@ -89,3 +90,30 @@ Every strategy's parameters (EMA/RSI/ADX/ATR periods, thresholds, target R:R, `m
 constructor kwargs with sensible scalping defaults — override per-call via `strategy_params` on
 `/api/backtest`, or by constructing the strategy directly in Python for programmatic tuning /
 walk-forward testing.
+
+
+## Indicator combinations (Phase AO, `app/strategy_engine/combo_strategies.py`)
+
+Four widely used intraday setups, each pairing a trigger with a filter. Single timeframe, 5-minute
+by default (`tf` parameter); stops are ATR- or structure-based and targets come from the shared
+`build_signal` (`target_rr`, `min_rr`).
+
+| id | Trigger | Filter / confirmation | Stop |
+|---|---|---|---|
+| `macd_ema_trend_5m` | MACD(12,26,9) crosses its signal line | close on the same side of EMA(200) | 1.2 x ATR(14) |
+| `bb_rsi_reversion_5m` | close back inside the Bollinger band (20, 2) | previous bar outside the band with RSI(14) <= 30 / >= 70 | beyond the last 3 bars' extreme + 0.2 ATR |
+| `vwap_supertrend_5m` | Supertrend(10,3) flip, or a VWAP reclaim/loss | Supertrend direction and VWAP side agree | Supertrend line +/- 0.2 ATR |
+| `orb_15m_5m` | first close beyond the 09:15-09:30 IST range | volume >= 1.5 x its 20-bar average (skipped for indices, which carry no volume); entries until 14:30 | middle of the range |
+
+Indices have no volume, so the VWAP used by `vwap_supertrend_5m` falls back to the session's running
+mean of the typical price (`session_vwap_or_mean`).
+
+### On the chart
+
+`POST /api/strategies/{id}/chart-run` walks a strategy over the candles a chart is showing with the
+backtest engine (nothing is recorded or metered) and returns its trades, win rate, P&L and the
+signal on the last bar. The Pro Chart's **Strategies** panel switches each strategy on the chart
+(entries, exits and the last signal's entry / stop / target lines, plus its indicators) and, on a
+broker-symbol chart, **Deploy** creates or resumes a PAPER deployment on that symbol (off = pause).
+A strategy runs on its own timeframes, so the chart must be at that timeframe or a finer one that
+divides it; the panel offers the switch when it is not.

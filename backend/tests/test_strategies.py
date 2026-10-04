@@ -77,8 +77,13 @@ def test_mtf_strategy_generates_long_signal_on_sustained_uptrend():
     assert any(d != SignalDirection.NO_TRADE for d in directions)
 
 
-def test_registry_exposes_seven_inbuilt_scalping_strategies():
+def test_registry_exposes_eleven_inbuilt_strategies():
     expected_ids = {
+        # Phase AO: indicator-combination strategies
+        "macd_ema_trend_5m",
+        "bb_rsi_reversion_5m",
+        "vwap_supertrend_5m",
+        "orb_15m_5m",
         "mtf_1m_5m_trend_pullback",
         "mtf_1m_15m_trend_pullback",
         "mtf_5m_30m_trend_pullback",

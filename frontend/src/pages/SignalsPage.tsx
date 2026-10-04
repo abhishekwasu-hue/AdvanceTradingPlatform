@@ -204,7 +204,8 @@ export default function SignalsPage() {
         <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
           <ProChart candles={displayCandles} symbol={lastGenerated?.symbol} timeframe={chartTf} timeframes={["1min", "5min", "15min", "30min", "60min"]} onTimeframeChange={setChartTf}
                     priceLines={priceLines} zones={zones} markers={markers} strategyParams={selected?.default_params} live={live.ltp} liveError={live.error}
-                    openUrl={source.mode === "broker" && lastGenerated ? chartWindowUrl(lastGenerated.symbol, chartTf, "NSE", source.broker || undefined) : undefined} />
+                    openUrl={source.mode === "broker" && lastGenerated ? chartWindowUrl(lastGenerated.symbol, chartTf, "NSE", source.broker || undefined) : undefined}
+                    deployable={source.mode === "broker" && !!lastGenerated} />
         </Card>
       )}
 

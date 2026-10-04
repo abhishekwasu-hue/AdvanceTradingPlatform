@@ -61,3 +61,10 @@ def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> p
         st[i] = final_lower[i] if trend[i] == 1 else final_upper[i]
 
     return pd.DataFrame({"supertrend": st, "trend": trend}, index=df.index)
+
+
+def bollinger(close: pd.Series, period: int = 20, k: float = 2.0) -> pd.DataFrame:
+    """Bollinger bands: SMA mid with upper/lower at k sample standard deviations."""
+    mid = close.rolling(window=period, min_periods=period).mean()
+    sd = close.rolling(window=period, min_periods=period).std(ddof=1)
+    return pd.DataFrame({"mid": mid, "upper": mid + k * sd, "lower": mid - k * sd}, index=close.index)

@@ -30,6 +30,7 @@ from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
+from app.strategy_engine.chart_routes import router as strategy_chart_router
 from app.custom_strategies.routes import router as custom_strategies_router
 from app.fundamentals.routes import router as fundamentals_router
 from app.db.models import CustomStrategyRecord, User
@@ -132,6 +133,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(risk_settings_router)

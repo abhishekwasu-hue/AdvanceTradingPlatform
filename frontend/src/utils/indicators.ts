@@ -205,6 +205,16 @@ export function indicatorsForStrategy(params?: Record<string, unknown> | null): 
     s.emaFast = num(params.ema_fast, s.emaFast); s.emaSlow = num(params.ema_slow, s.emaSlow);
     ids.push("ema_fast", "ema_slow");
   }
+  if ("ema_trend" in params) {
+    // Phase AO MACD + EMA trend: the trend EMA is the line the strategy filters on.
+    s.emaSlow = num(params.ema_trend, s.emaSlow);
+    if (!ids.includes("ema_slow")) ids.push("ema_slow");
+  }
+  if ("bb_period" in params) {
+    s.bbPeriod = num(params.bb_period, s.bbPeriod); s.bbK = num(params.bb_k, s.bbK);
+    ids.push("bollinger");
+  }
+  if (typeof params.__id === "string" && (params.__id.includes("vwap") || params.__id.startsWith("orb"))) ids.push("vwap");
   if ("st_period" in params || "st_mult" in params) {
     s.stPeriod = num(params.st_period, s.stPeriod); s.stMult = num(params.st_mult, s.stMult);
     ids.push("supertrend");
@@ -212,7 +222,7 @@ export function indicatorsForStrategy(params?: Record<string, unknown> | null): 
   ids.push("volume");
   if ("rsi_period" in params) {
     s.rsiPeriod = num(params.rsi_period, s.rsiPeriod); s.rsiMid = num(params.rsi_mid, s.rsiMid);
-    s.rsiLow = num(params.rsi_long_trigger, s.rsiLow); s.rsiHigh = num(params.rsi_short_trigger, s.rsiHigh);
+    s.rsiLow = num(params.rsi_long_trigger ?? params.rsi_low, s.rsiLow); s.rsiHigh = num(params.rsi_short_trigger ?? params.rsi_high, s.rsiHigh);
     ids.push("rsi");
   }
   if ("adx_period" in params) {

@@ -6,6 +6,7 @@ import { useCandleSource } from "./DataSource";
 import type { Page } from "./Sidebar";
 import { Card } from "./ui";
 import type { OHLCVBar } from "../types";
+import { FNO_INDICES, FNO_STOCKS } from "../utils/fnoSymbols";
 
 const KEY = "atp_pulse_symbols";
 const DEFAULT = ["NIFTY 50", "NIFTY BANK"];
@@ -20,7 +21,7 @@ function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; can
     <div className="relative rounded-xl border border-border bg-panel2 p-3">
       <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-panel p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
       <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
-                openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} />
+                openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} deployable />
     </div>
   );
 }
@@ -60,8 +61,8 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
     return () => { cancelled = true; window.clearInterval(id); };
   }, [usable, symbols, broker]);
 
-  const add = () => {
-    const s = draft.trim().toUpperCase();
+  const add = (picked?: string) => {
+    const s = (picked ?? draft).trim().toUpperCase();
     if (!s || symbols.includes(s) || symbols.length >= 4) return;
     setSymbols([...symbols, s]); setDraft("");
   };
@@ -81,9 +82,17 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
             {symbols.length < 4 && (
               <>
-                <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Add symbol (broker spelling, e.g. RELIANCE)"
-                       className="w-64 rounded bg-panel2 border border-border px-2 py-1 text-slate-200" />
-                <button onClick={add} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><Plus size={12} /> Add</button>
+                <select value="" onChange={(e) => { if (e.target.value) add(e.target.value); }} title="NSE indices and F&O stocks"
+                        className="w-48 rounded bg-panel2 border border-border px-2 py-1 text-slate-200">
+                  <option value="">Pick index / F&amp;O stock…</option>
+                  <optgroup label="Indices">{FNO_INDICES.filter((x) => !symbols.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>
+                  <optgroup label="F&O stocks">{FNO_STOCKS.filter((x) => !symbols.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>
+                </select>
+                <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} list="fno-symbols"
+                       placeholder="…or type to search (any broker symbol)"
+                       className="w-56 rounded bg-panel2 border border-border px-2 py-1 text-slate-200" />
+                <datalist id="fno-symbols">{[...FNO_INDICES, ...FNO_STOCKS].map((x) => <option key={x} value={x} />)}</datalist>
+                <button onClick={() => add()} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><Plus size={12} /> Add</button>
               </>
             )}
             {error && <span className="text-rose-300">{error}</span>}

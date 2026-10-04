@@ -3746,3 +3746,36 @@ and memory.
 
 Tests: `tests/test_phase_aq_advisor.py`.
 
+## Phase AR: market memory
+
+`app/ai/market_memory.py` gives the Copilot a store of what the market has been doing, so a plan
+does not depend only on the few hours of candles the page sends.
+
+* **Table** `market_snapshots` (migration `d3f5b7c9e1a2`, tenant-scoped because the data comes
+  through the tenant's broker session): `kind` SYMBOL or CUE, symbol, exchange, source broker, last
+  price, day change, bias, regime, higher-timeframe regime, structure, the full read as JSON,
+  `captured_at`. Pruned by retention after `RETENTION_MARKET_SNAPSHOTS_DAYS` (default 90).
+* **Capture** (`capture`): for each watched symbol (`watchlist`: NIFTY 50, NIFTY BANK, then the
+  symbols in the tenant's trader profiles and ACTIVE deployments; at most 8) 10 days of 1-minute
+  bars, resampled to 5 minutes, through `interview.analyse_market`; and for the cues (India VIX,
+  NIFTY 50, NIFTY BANK, SENSEX) 15 days of daily bars - last close, day change, five-session change.
+  One failing symbol is recorded in the report and never stops the others.
+* **Worker** (`TradingWorker._market_memory`): every 15 minutes while NSE is open and in the hour
+  after the close, for every tenant with a trader profile (the Copilot's users), through the tenant's
+  first ACTIVE account with a usable token. Failures are logged; trading is never affected.
+* **Reads** (`latest`): the newest snapshot per symbol and per cue (last 3 days) and, per symbol, the
+  day's last read for the last 5 IST days. `describe` turns that into the plan's "Market background"
+  lines in the trader's language: the VIX band (below 12 very calm, 12-16 normal, 16-20 elevated, 20+
+  high fear), the last session's index moves, the bias trail and what it means (an established trend
+  vs a choppy market), and the memory's age.
+* **Plan** (`advisor.build_options(..., memory=...)`): the background section is inserted after the
+  market view in every option; with VIX at 20 or more a non-experienced trader gets a "paper-trade or
+  just watch" warning.
+* **API**: `GET /api/ai/market-memory` (latest, cues, history, watchlist) and
+  `POST /api/ai/market-memory/refresh` (capture now through the tenant's broker; 409 without a valid
+  session). **UI**: `MarketMemoryCard` on the AI Copilot page.
+* Global cues (GIFT Nifty, US indices, crude, dollar index) need a data feed outside the brokers; not
+  included.
+
+Tests: `tests/test_phase_ar_market_memory.py`.
+

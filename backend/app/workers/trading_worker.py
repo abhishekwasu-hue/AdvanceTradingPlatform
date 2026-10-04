@@ -115,6 +115,13 @@ class CycleReport:
     open_exchanges: List[str] = field(default_factory=list)
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
+    memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+
+
+def _just_closed(now: datetime) -> bool:
+    """The hour after the NSE close on a weekday (the market memory's final read of the day)."""
+    ist = now.astimezone(IST)
+    return ist.weekday() < 5 and dtime(15, 30) <= ist.time() < dtime(16, 30)
 
 
 def _adapter_key(broker_name: str, account_label: str) -> str:
@@ -170,6 +177,8 @@ class TradingWorker:
         self.streams = StreamManager()
         # Phase T: last balance refresh attempt per broker account (failures throttled too).
         self._last_account_refresh: Dict[int, datetime] = {}
+        # Phase AR: last market-memory capture per tenant (UTC).
+        self._last_memory: Dict[int, datetime] = {}
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -237,6 +246,14 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
+                # Phase AR: the Copilot's market memory - every 15 minutes while NSE is open and in
+                # the hour after the close (the day's final read). Never blocks trading.
+                if nse.is_open or _just_closed(now):
+                    try:
+                        report.memory_snapshots = await self._market_memory(session, now)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Market memory failed")
+                        report.errors.append(f"market memory: {exc}")
                 # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
                 # so contracts/expiries/lot sizes are current before the 09:15 open.
                 ist_now = now.astimezone(IST)
@@ -279,6 +296,37 @@ class TradingWorker:
                 return report
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
+
+    async def _market_memory(self, session: AsyncSession, now: datetime) -> int:
+        """Phase AR: snapshots for every tenant whose traders use the Copilot (a trader profile
+        exists), through the tenant's first usable broker session."""
+        from app.ai import market_memory
+        from app.db.models import TraderProfileRecord
+        written = 0
+        for tenant_id in sorted(set(await session.scalars(select(TraderProfileRecord.tenant_id).distinct()))):
+            last = self._last_memory.get(tenant_id)
+            if last is not None and now - last < timedelta(minutes=market_memory.INTERVAL_MINUTES):
+                continue
+            self._last_memory[tenant_id] = now
+            with bind_log_context(tenant_id=tenant_id):
+                try:
+                    await ensure_tenant_key(session, tenant_id)
+                    user = await self._acting_user(session, tenant_id, [])
+                    if user is None:
+                        continue
+                    broker = None
+                    for account in await list_accounts(session, tenant_id):
+                        if account.status == "ACTIVE":
+                            broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+                            if broker is not None:
+                                break
+                    if broker is None:
+                        continue
+                    result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)
+                    written += result["symbols"] + result["cues"]
+                except Exception:  # noqa: BLE001 - one tenant's memory must not stop the others
+                    logger.exception("Market memory for tenant %s failed", tenant_id)
+        return written
 
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:
         deployments = list(await session.scalars(

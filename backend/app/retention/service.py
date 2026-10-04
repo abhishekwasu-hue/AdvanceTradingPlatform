@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
+    MarketSnapshotRecord,
     OptionChainSnapshotRecord,
     AlertDeliveryRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserSessionRecord,
@@ -72,6 +73,7 @@ def _rules(now: datetime, policy: RetentionPolicy):
         )),
         # Phase W: recorded option-chain quotes - bounded history for option backtests.
         ("option_chain_snapshots", OptionChainSnapshotRecord, OptionChainSnapshotRecord.captured_at < _cutoff(now, policy.chain_snapshots_days)),
+        ("market_snapshots", MarketSnapshotRecord, MarketSnapshotRecord.captured_at < _cutoff(now, policy.market_snapshots_days)),
     ]
 
 

@@ -255,9 +255,14 @@ def match_score(a: InterviewAnswers, p: Preferences, market: dict, pick: Optiona
 
 
 def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf: str, *, ceilings: Optional[Dict[str, float]] = None,
-                  data_source: str = "sample") -> dict:
+                  data_source: str = "sample", memory: Optional[dict] = None) -> dict:
     lang = a.language
     market = iv.analyse_market(df, base_tf, lang)
+    # Phase AR: what the market memory adds - the fear gauge, the last session, the bias trail.
+    from app.ai import market_memory
+    background = market_memory.describe(lang, memory, a.symbol) if memory else []
+    vix = next((c for c in (memory or {}).get("cues", []) if c["symbol"] == "INDIA VIX"), None)
+    high_fear = bool(vix and vix.get("last_price") and float(vix["last_price"]) >= 20)
     # What the trader told us moves the ranking towards the families they prefer.
     bonus: Dict[str, float] = {}
 
@@ -285,6 +290,11 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         cfg, notes, exit_rules = _tilted_config(a, p, oid, ceilings)
         pick = picks[oid]
         plan = iv.compose_plan(a, market, ranked, pick, cfg, notes, data_source, exit_rules=exit_rules)
+        if background:
+            plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "lines": background})
+        if high_fear and a.experience != "experienced":
+            plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are likely. A beginner should paper-trade or just watch until it cools.",
+                                       "India VIX 20 किंवा जास्त आहे - भीती जास्त, gap ची शक्यता. नवशिक्याने VIX कमी होईपर्यंत PAPER मध्येच किंवा फक्त निरीक्षण करावे."))
         match, market_fit, reasons = match_score(a, p, market, pick, cfg, honoured)
         (en_label, en_sub), (mr_label, mr_sub) = OPTION_TEXT[oid]
         plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "match": match,

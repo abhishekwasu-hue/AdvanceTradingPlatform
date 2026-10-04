@@ -78,7 +78,8 @@ def test_policy_floor_and_env(monkeypatch):
 def test_regulatory_tables_are_never_in_the_rules():
     tables = {table for table, _, _ in service._rules(NOW, POLICY)}
     assert tables.isdisjoint(set(NEVER_DELETED))
-    assert tables == {"login_events", "alert_deliveries", "notifications", "user_sessions", "password_resets", "tenant_invites", "option_chain_snapshots"}
+    assert tables == {"login_events", "alert_deliveries", "notifications", "user_sessions", "password_resets", "tenant_invites", "option_chain_snapshots",
+                      "market_snapshots"}
 
 
 def test_run_deletes_only_old_finished_rows_and_audits():

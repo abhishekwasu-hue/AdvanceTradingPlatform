@@ -236,6 +236,17 @@ npm run dev
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
 
+## Market memory (Phase AR)
+
+The Copilot now knows the market before you ask, the way a shopkeeper knows his stock. While NSE is open the worker
+reads, every 15 minutes and through your own broker session, each watched symbol (NIFTY 50, NIFTY BANK, the symbols in
+your trader profile and active deployments): trend, regime, structure, support / resistance and bias - plus the market
+cues India VIX (the fear gauge) and the index day changes. The AI Copilot page shows it as **Market चा साठा** (with each
+symbol's bias over the last sessions and a "read now" button), and every plan gets a **Market background** section: what
+VIX says, the last session, the bias trail ("three sessions running" / "changing every session"), and a warning for
+beginners when VIX is 20 or higher. Global markets (GIFT Nifty, US indices, crude, dollar) need an outside data feed and
+are not included yet. API: `GET /api/ai/market-memory`, `POST /api/ai/market-memory/refresh`.
+
 ## Options, feedback and memory (Phase AQ)
 
 The interview's plan now comes the way a good shopkeeper shows clothes: **three options** - Safe (less risk, fewer

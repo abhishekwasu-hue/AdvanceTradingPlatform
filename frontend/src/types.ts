@@ -1809,3 +1809,28 @@ export interface InterviewPlan {
   feedback_options?: FeedbackOption[];
   changes?: string[];
 }
+
+// Phase AR: the Copilot's market memory.
+export interface MemorySnapshot {
+  symbol: string;
+  exchange: string;
+  kind: "SYMBOL" | "CUE";
+  source: string;
+  last_price: number | null;
+  change_pct: number | null;
+  bias: "BULLISH" | "BEARISH" | "NEUTRAL" | null;
+  regime: string | null;
+  higher_regime: string | null;
+  structure: string | null;
+  captured_at: string | null;
+  payload: Record<string, unknown>;
+}
+export interface MarketMemory {
+  symbols: MemorySnapshot[];
+  cues: MemorySnapshot[];
+  history: Record<string, { date: string; bias: string | null; regime: string | null; last_price: number | null; change_pct: number | null }[]>;
+  updated_at: string | null;
+  watchlist?: string[];
+  interval_minutes?: number;
+  report?: { symbols: number; cues: number; errors: string[] };
+}

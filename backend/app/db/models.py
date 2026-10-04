@@ -304,6 +304,9 @@ class TradeRecord(Base):
     # Execution quality (master prompt V4.14): signal price vs fill, and entry latency.
     expected_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     slippage: Mapped[float | None] = mapped_column(Float, nullable=True)   # fill - expected, signed against the trade
+    # Phase AS: INTRADAY or SWING (held overnight: never squared off at the close; exits and
+    # protective stops use the delivery / carry-forward product).
+    holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
     entry_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Phase H2: legs of one multi-leg structure share a leg_group_id; leg_role SHORT/LONG says
     # which side of the spread the leg is; group_meta (JSON) carries the structure's net credit,
@@ -444,6 +447,8 @@ class StrategyDeploymentRecord(Base):
     # Phase L3: comma-separated regimes (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, QUIET) the
     # deployment may enter in; NULL = any. Judged on the base frame before the strategy runs.
     regime_filter: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # Phase AS: INTRADAY (MIS, squared off at the close) or SWING (CNC / NRML, held overnight).
+    holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

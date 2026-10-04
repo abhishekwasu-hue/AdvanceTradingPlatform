@@ -56,7 +56,7 @@ FEEDBACK_LABELS: Dict[str, Tuple[str, str]] = {
     "too_few_trades": ("Too few opportunities", "संधी खूप कमी"),
     "low_reward": ("Reward is too small", "नफा कमी वाटतो"),
     "not_understood": ("I don't understand this strategy", "ही strategy समजली नाही"),
-    "want_swing": ("I want calmer, bigger moves", "मला शांत, मोठ्या moves हव्या"),
+    "want_swing": ("I want swing - hold for days", "मला swing हवे - काही दिवस धरायचे"),
     "no_time": ("I don't have time to watch", "पाहायला वेळ नाही"),
     "dislike_strategy": ("Not this strategy", "ही strategy नको"),
 }
@@ -96,11 +96,11 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
             p.simplicity = min(p.simplicity + 1, 3)
             changes.append(tr(lang, "Simpler strategies first (one clear trend rule), with plainer explanations.", "आधी सोप्या strategies (एक स्पष्ट trend नियम), सोप्या शब्दांत."))
         elif code == "want_swing":
-            if answers.style != "positional":
-                answers.style = "positional"
-            p.trades_bias = max(p.trades_bias - 1, -3)
-            changes.append(tr(lang, "Switched to calmer trend-following on the bigger timeframe. True overnight swing trading comes in a later phase.",
-                              "मोठ्या timeframe वरच्या शांत trend-following कडे वळवले. रात्रभर ठेवायचे खरे swing trading पुढच्या टप्प्यात येईल."))
+            answers.style = "swing"
+            if answers.vehicle == "option_sell":
+                answers.vehicle = "option_buy"
+            changes.append(tr(lang, "Switched to swing trading on daily candles: fewer, bigger moves held for days (delivery / monthly options).",
+                              "Daily candles वरच्या swing trading कडे वळवले: कमी पण मोठ्या moves, काही दिवस धरून (delivery / monthly options)."))
         elif code == "no_time":
             answers.time = "auto"
             p.trades_bias = max(p.trades_bias - 1, -3)
@@ -119,6 +119,8 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
 def desired(a: InterviewAnswers, p: Preferences) -> dict:
     base_risk = iv.RISK_PCT[a.risk]
     risk = min(max(base_risk * (1 + 0.25 * p.risk_bias), 0.25), iv.RISK_CAP_BY_EXPERIENCE[a.experience])
+    if a.style == "swing":
+        risk = round(risk * iv.SWING_GAP_FACTOR, 2)   # the same gap buffer risk_plan applies
     trades = iv.TRADES_PER_DAY[a.style] - (1 if a.time == "few_checks" else 0) + p.trades_bias
     if a.experience == "new":
         trades = min(trades, 3)
@@ -145,7 +147,7 @@ def _tilted_config(a: InterviewAnswers, p: Preferences, tilt: str, ceilings: Opt
     want = desired(a, p)
     t = TILTS[tilt]
     cap = min(iv.RISK_CAP_BY_EXPERIENCE[a.experience], float((ceilings or {}).get("risk_per_trade_pct", 2.0)))
-    risk = round(min(max(want["risk_pct"] * t["risk"], 0.25), cap), 2)
+    risk = round(min(max(want["risk_pct"] * t["risk"], 0.2), cap), 2)
     trades = max(1, want["trades"] + t["trades"])
     if a.experience == "new":
         trades = min(trades, 4)
@@ -167,7 +169,7 @@ def _tilted_config(a: InterviewAnswers, p: Preferences, tilt: str, ceilings: Opt
     exit_rules = iv.default_exit_rules(a)
     if t["be"] is not None:
         exit_rules["break_even_at_r"] = t["be"]
-    if a.time == "auto" and a.style != "positional":
+    if a.time == "auto" and a.style in ("scalping", "intraday"):
         exit_rules["time_exit_at"] = "15:10"
     return cfg, notes, exit_rules
 

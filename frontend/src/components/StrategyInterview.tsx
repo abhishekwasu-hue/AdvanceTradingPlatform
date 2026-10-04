@@ -140,11 +140,21 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   async function candlesFor(style: string): Promise<{ tf: string; candles: OHLCVBar[]; label: string }> {
     const symbol = (answers.symbol || "NIFTY 50").trim().toUpperCase();
     if (source.mode === "sample") {
-      const r = await source.fetch([symbol], "1min", { count: 3000, startPriceFor: () => 24_000, seedFor: () => 11 });
-      return { tf: "1min", candles: r.candles[symbol] ?? [], label: "sample" };
+      const r = await source.fetch([symbol], "1min", { count: style === "swing" ? 300 : 3000, startPriceFor: () => 24_000, seedFor: () => 11 });
+      const bars = r.candles[symbol] ?? [];
+      if (style !== "swing") return { tf: "1min", candles: bars, label: "sample" };
+      // Sample bars are one minute apart: re-date them one trading day apart for a swing read.
+      const days: string[] = [];
+      const d = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+      while (days.length < bars.length) {
+        d.setUTCDate(d.getUTCDate() - 1);
+        if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) days.unshift(new Date(d).toISOString());
+      }
+      return { tf: "day", candles: bars.map((b, i) => ({ ...b, timestamp: days[i] })), label: "sample" };
     }
-    const tf = style === "scalping" ? "1min" : "5min";
-    const r = await api.marketDataCandles([symbol], tf, tf === "1min" ? 5 : 20, "NSE", source.broker || undefined);
+    // Phase AS: a swing plan reads a year of daily candles.
+    const tf = style === "swing" ? "day" : style === "scalping" ? "1min" : "5min";
+    const r = await api.marketDataCandles([symbol], tf, tf === "day" ? 400 : tf === "1min" ? 5 : 20, "NSE", source.broker || undefined);
     const entry = r.symbols[symbol];
     if (!entry || entry.error || !entry.bars.length) throw new Error(entry?.error ?? `No candles for ${symbol}`);
     return { tf, candles: entry.bars, label: `broker:${r.source.broker}` };

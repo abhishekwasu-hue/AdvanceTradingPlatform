@@ -85,6 +85,10 @@ def evaluate_on_candles(strategy, df, timeframe: str, symbol: str, risk: RiskCon
     base = timeframe_minutes(timeframe)
     out = ChartRunResponse(strategy_id=strategy.id, strategy_name=strategy.name, strategy_timeframes=list(strategy.timeframes), compatible=True)
     needed = [timeframe_minutes(tf) for tf in strategy.timeframes]
+    if timeframe != "day" and "day" in strategy.timeframes:
+        out.compatible = False
+        out.reason = f"{strategy.name} trades daily candles; switch the chart to day to see it"
+        return out
     if timeframe != "day" and any(n is None or n < base or n % base for n in needed):
         out.compatible = False
         finest = min(n for n in needed if n is not None) if any(needed) else None

@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CANDLE_CACHE_TTL_SECONDS = 60
 DEFAULT_LOOKBACK_DAYS = 5
+DAILY_MIN_LOOKBACK_DAYS = 400   # Phase AS: about 270 sessions - enough for a 200-day average
 
 
 def _cache_key(broker_name: str, exchange: str, symbol: str, interval: str) -> str:
@@ -83,10 +84,11 @@ class MarketDataService:
     ) -> List[OHLCVBar]:
         """Recent history plus today's bars so far, ascending, from cache when fresh."""
         key = _cache_key(self.broker.name, exchange, symbol, interval)
-        if self.lookback_days != DEFAULT_LOOKBACK_DAYS:
+        lookback = self._lookback(interval)
+        if lookback != DEFAULT_LOOKBACK_DAYS:
             # Phase AA: the research pages ask for longer windows than the worker; a 5-day
             # worker fetch must not be served back as a 30-day one (or the reverse).
-            key = f"{key}:{self.lookback_days}d"
+            key = f"{key}:{lookback}d"
         cached = await cache_get(key)
         if cached:
             try:
@@ -99,11 +101,20 @@ class MarketDataService:
             await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), self.cache_ttl_seconds)
         return bars
 
+    def _lookback(self, interval: str) -> int:
+        """Phase AS: daily strategies need a year of bars (EMA 200, 52-week levels), not days."""
+        return max(self.lookback_days, DAILY_MIN_LOOKBACK_DAYS) if interval == "day" else self.lookback_days
+
     async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime]) -> List[OHLCVBar]:
         now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
         history_to = now_ist - timedelta(days=1)
-        history_from = now_ist - timedelta(days=self.lookback_days)
+        history_from = now_ist - timedelta(days=self._lookback(interval))
         history = await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
+        if interval == "day":
+            # Phase AS: completed daily bars only - today's bar is still forming, and a swing
+            # strategy decides on closed bars (entries go in the next session).
+            logger.debug("Fetched %d daily candles for %s:%s", len(history), exchange, symbol)
+            return merge_bars(history)
         intraday = await self.broker.get_intraday_candles(symbol, exchange, interval)
         merged = merge_bars(history, intraday)
         logger.debug("Fetched %d candles for %s:%s (%d history, %d intraday)", len(merged), exchange, symbol, len(history), len(intraday))

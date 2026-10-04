@@ -3779,3 +3779,28 @@ does not depend only on the few hours of candles the page sends.
 
 Tests: `tests/test_phase_ar_market_memory.py`.
 
+## Phase AS: swing trading
+
+Overnight holding for the swing trader the interview could not serve until now.
+
+* **Holding** (`holding` on `strategy_deployments` and `trades`, migration `e4a6c8d0f2b3`, default
+  `INTRADAY`): `SWING` deployments read daily candles (`timeframe="day"`, checked by
+  `deployments.routes._check_holding`, which also refuses multi-leg structures and written options and
+  requires SWING for a daily-only strategy). The trade inherits the deployment's holding.
+* **Product** (`app/execution/products.py`): MIS for intraday; CNC for a swing in cash equity, NRML
+  for futures / options. `execute_signal_for_user(holding=...)` builds the router with it (entry and
+  protective stop), the position monitor's exit order uses `product_for_trade`, and the stop guard
+  re-arms a swing stop with the swing product.
+* **Worker**: `_square_off_all` skips SWING trades; a SHORT signal on an UNDERLYING swing deployment
+  is skipped with a reason (delivery cannot be held short overnight).
+* **Market data**: the `day` interval fetches at least `DAILY_MIN_LOOKBACK_DAYS` (400) of completed
+  daily bars and no intraday call (the forming day is not a bar yet); `timeframe_seconds("day")` is a
+  day and the staleness gate allows five missed daily bars (long weekends and holidays).
+* **Strategies**: `swing_ema_pullback_d`, `swing_breakout_d` (docs/STRATEGIES.md). On the chart a
+  daily strategy needs a day chart (chart-run says so instead of resampling minutes into days).
+* **Interview / advisor**: style `swing`; risk per trade x 0.75 (`SWING_GAP_FACTOR`); monthly ITM
+  option buys, no option writes overnight, delivery shares long only; deployment with `holding="SWING"`
+  and no time exit; the `want_swing` feedback now switches to real swing trading.
+
+Tests: `tests/test_phase_as_swing.py`.
+

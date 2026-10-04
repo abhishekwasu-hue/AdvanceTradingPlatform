@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.execution.products import product_for_trade
 from app.audit.log import write_audit_log
 from app.brokers.base import BrokerInterface
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
@@ -82,7 +83,9 @@ async def verify_protective_stops(
         previous = trade.sl_order_id
         try:
             response = await broker.place_stop_loss_order(trade.symbol, exchange_for_trade(trade), side, trade.quantity,
-                                                          trigger_price=float(trade.stop_loss), product=product, tag=tag)
+                                                          trigger_price=float(trade.stop_loss),
+                                                          product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
+                                                          tag=tag)
             trade.sl_order_id = response.order_id
             counts["rearmed"] += 1
             reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"

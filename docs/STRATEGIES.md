@@ -1,7 +1,7 @@
 # Inbuilt Auto-Executable Scalping Strategies
 
-Eleven strategies ship inbuilt in the strategy registry (seven scalpers plus, from Phase AO, four
-indicator combinations - see the end of this page) (`app/strategy_engine/registry.py`) and
+Thirteen strategies ship inbuilt in the strategy registry (seven scalpers, from Phase AO four
+indicator combinations and from Phase AS two daily swing strategies - see the end of this page) (`app/strategy_engine/registry.py`) and
 are auto-executable: each produces a `Signal` with entry/stop-loss/targets/risk-reward/score
 that flows straight through the Risk Engine into the Paper (and eventually Live) execution
 router with no manual chart-reading step required. They're aimed at intraday NIFTY 50 /
@@ -74,7 +74,7 @@ curl -s -X POST localhost:8000/api/strategies/mtf_1m_5m_trend_pullback/paper-exe
   -H 'content-type: application/json' \
   -d '{"symbol": "NIFTY", "candles": {"1min": [...], "5min": [...]}}'
 
-# backtest any of the eleven over historical bars
+# backtest any of the thirteen over historical bars
 curl -s -X POST localhost:8000/api/backtest \
   -H 'content-type: application/json' \
   -d '{"strategy_id": "supertrend_adx_scalper_1m", "symbol": "BANKNIFTY", "base_timeframe": "1min", "candles": [...]}'
@@ -117,3 +117,30 @@ signal on the last bar. The Pro Chart's **Strategies** panel switches each strat
 broker-symbol chart, **Deploy** creates or resumes a PAPER deployment on that symbol (off = pause).
 A strategy runs on its own timeframes, so the chart must be at that timeframe or a finer one that
 divides it; the panel offers the switch when it is not.
+
+## Swing strategies (Phase AS, `app/strategy_engine/swing_strategies.py`)
+
+Daily-candle setups held overnight, for a trader who cannot watch the screen. They decide on
+**closed** daily bars (the market-data service serves completed days for the `day` interval) and are
+deployed with `holding: "SWING"` and `timeframe: "day"`.
+
+| id | Trigger | Filter / confirmation | Stop | Targets |
+|---|---|---|---|---|
+| `swing_ema_pullback_d` | a pullback that touches EMA(20) and closes back above it on a bullish day (mirror for shorts) | EMA(20) above EMA(50) and close above EMA(50); RSI(14) >= 40 | below the 2-day pullback low - 0.25 ATR, at least 1 ATR | 2R / 3R |
+| `swing_breakout_d` | a close beyond the previous 20 sessions' high (low) | ADX(14) >= 20; volume >= 1.5 x the 20-day average (skipped when the symbol has no volume) | back inside the old range by 1 ATR, between 1 and 3 ATR | 2R / 3.5R |
+
+What a swing deployment changes:
+
+* **Product**: CNC (delivery) for cash equity, NRML for futures and bought options - entry, exit and
+  the broker-side protective stop alike (`app/execution/products.py`). Exits of a swing position use
+  the same product as its entry.
+* **No square-off**: the worker's end-of-day square-off skips SWING trades; the stop guard re-arms a
+  day-validity stop each morning if the broker expired it.
+* **Long only in cash**: delivery shares cannot be held short overnight, so a SHORT signal on an
+  UNDERLYING swing deployment is skipped with a reason; take swing shorts on futures or options.
+* **Not allowed**: multi-leg structures and written options overnight.
+* **Data**: daily candles fetch at least 400 days (EMA 200 and 52-week levels need it); the
+  staleness gate allows a long weekend plus a holiday on daily bars.
+* The strategy interview sizes swing risk a quarter smaller than intraday (an overnight gap can open
+  beyond the stop), uses monthly expiries for options and never adds a 15:10 time exit.
+

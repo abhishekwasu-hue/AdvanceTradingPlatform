@@ -9,7 +9,7 @@ deployment would only discover the problem at 09:15 with real money on the line.
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import Literal, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
@@ -212,6 +212,8 @@ class DeploymentCreateRequest(ContractRulesRequest):
     # Phase J1: dynamic exits.
     exit_rules: Optional[ExitRulesRequest] = None
     regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
+    # Phase AS: SWING positions are held overnight (CNC / NRML) and never squared off at the close.
+    holding: Literal["INTRADAY", "SWING"] = "INTRADAY"
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -261,6 +263,7 @@ class DeploymentResponse(BaseModel):
     exit_rules: Optional[dict] = None
     regime_filter: Optional[List[str]] = None
     contract_rules: str = "underlying"
+    holding: str = "INTRADAY"
 
     @classmethod
     def from_record(cls, record: StrategyDeploymentRecord, open_positions: int = 0) -> "DeploymentResponse":
@@ -283,7 +286,22 @@ class DeploymentResponse(BaseModel):
             routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
             last_route=getattr(record, "last_route", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
+            holding=getattr(record, "holding", None) or "INTRADAY",
         )
+
+
+def _check_holding(request: "DeploymentCreateRequest", strategy) -> None:
+    """Phase AS: what a swing (overnight) deployment may and may not be."""
+    daily = list(getattr(strategy, "timeframes", [])) == ["day"]
+    if request.holding == "SWING":
+        if request.option_strategy != OptionStrategy.SINGLE:
+            raise HTTPException(status_code=400, detail="Swing (overnight) holding is for single positions; multi-leg structures stay intraday")
+        if request.option_position == OptionPosition.WRITE:
+            raise HTTPException(status_code=400, detail="Overnight option writing is not offered: swing options are bought, never written")
+        if request.timeframe != "day":
+            raise HTTPException(status_code=400, detail="A swing deployment reads daily candles: set timeframe to 'day'")
+    elif daily:
+        raise HTTPException(status_code=400, detail=f"{strategy.name} trades daily candles and holds overnight: deploy it with holding 'SWING'")
 
 
 def describe_deployment(record: StrategyDeploymentRecord) -> str:
@@ -370,11 +388,14 @@ async def create_deployment(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _check_holding(request, strategy)
 
-    if request.timeframe not in SUPPORTED_BASE_TIMEFRAMES:
+    # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
+    # base-timeframe rules below are for everything else.
+    if request.holding != "SWING" and request.timeframe not in SUPPORTED_BASE_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {list(SUPPORTED_BASE_TIMEFRAMES)}")
     base_minutes = _timeframe_minutes(request.timeframe)
-    for tf in strategy.timeframes:
+    for tf in ([] if request.holding == "SWING" else strategy.timeframes):
         tf_minutes = _timeframe_minutes(tf)
         if tf_minutes is None or base_minutes is None or tf_minutes < base_minutes or tf_minutes % base_minutes != 0:
             raise HTTPException(
@@ -462,6 +483,7 @@ async def create_deployment(
         route_across_brokers=bool(request.route_across_brokers),
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
         regime_filter=",".join(_regime_filter(request)) or None,
+        holding=request.holding,
     )
     session.add(record)
     try:

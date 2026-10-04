@@ -863,6 +863,7 @@ export type ExecutionMode = "PAPER" | "LIVE";
 export interface Deployment {
   id: number;
   regime_filter?: string[] | null;
+  holding?: string;
   strategy_id: string;
   symbol: string;
   exchange: string;
@@ -1009,6 +1010,8 @@ export interface PositionGreeks {
 
 export interface DeploymentCreateRequest extends ContractRules {
   regime_filter?: string[] | null;
+  /** Phase AS: SWING = daily candles, held overnight. */
+  holding?: "INTRADAY" | "SWING";
   strategy_id: string;
   symbol: string;
   exchange: string;

@@ -3703,3 +3703,46 @@ interview instead of a draft; a rule description still goes straight to the Phas
 
 No schema change. Tests: `tests/test_phase_ap_interview.py`.
 
+## Phase AQ: options, feedback and the trader profile
+
+`app/ai/advisor.py` turns the Phase AP plan into a conversation: options, "not this one, because...",
+and memory.
+
+* **Three options** (`build_options`) from one market read and one ranking. Each is a full plan
+  (`interview.compose_plan`, now separate from `build_plan`) with its own `RiskConfig`, exit rules and
+  PAPER deployment:
+  * *safe* - 60% of the desired risk, one trade a day fewer, +0.5 R:R, break-even at 1R; given the
+    calmest of the next-best strategies (trend first, best market fit);
+  * *balanced* - exactly what the trader asked for after their feedback; the best-ranked strategy;
+  * *active* - two more trades a day at the desired risk, R:R 0.25 lower (never under 1.5); the
+    remaining strategy, preferring ones that signal more (momentum / breakout / reversion).
+  The experience caps, platform ceilings and beginner contract guard rails of Phase AP hold for all three.
+* **Two numbers per option**, kept apart on purpose:
+  * `match` (0-97, never 100): closeness to the trader's desired risk, trades a day and R:R
+    (`desired()` = answers + preference biases), a style fit (simplicity, goal and trade-count
+    leanings vs the strategy family) and whether the contract asked for could be honoured; halved for a
+    strategy turned down, +3 for one chosen before. Feedback moves this number.
+  * `market_fit` (0-100): the strategy family's fit with today's regime and its recent evidence - the
+    market's say, which feedback cannot change. `best_option` weighs both 70/30. A calmer option the
+    trader wants can honestly show a low market fit on a choppy day.
+* **Feedback** (`apply_feedback`, `POST /api/ai/interview/refine`): `too_risky` (risk bias -1, option
+  selling -> buying), `more_risk_ok`, `too_many_trades` / `too_few_trades`, `low_reward` (R:R +0.5,
+  trend / breakout favoured), `not_understood` (simplicity +1: trend strategies first),
+  `want_swing` (calmer bigger-timeframe style; true overnight swing is a later phase), `no_time`
+  (automatic, fewer trades) and `dislike_strategy` (never offered again). The biases change the desired
+  targets and add family bonuses to the ranking; the response lists what changed in the trader's language.
+* **Evidence cache**: evidence is measured on one fixed book (1 lakh at 1% risk, so it does not depend
+  on the option) and cached per (strategy, candles, symbol, language) - a refinement round on the same
+  candles reuses the walks (about 2-3 s instead of about 10 s).
+* **Trader profile** (`trader_profiles`, one row per user, migration `c2e4a6b8d0f1`): the answers and the
+  `Preferences` (biases, rejected strategies, chosen options, feedback log, this conversation's match
+  history). Saved on every plan / refine / choose; `POST /api/ai/interview/start` returns it so the page
+  can offer "use my answers from last time"; `GET` / `DELETE /api/ai/profile` show and forget it. A new
+  plan starts a new match history.
+* **UI** (`StrategyInterview.tsx`): a welcome-back offer, three option cards (match %, market-fit bar,
+  headline numbers, the match breakdown, "Closest to you"), "Not this" with reason chips and "Show me
+  better options", the changes made and the match trend (e.g. 88% -> 97%); the chosen option's full plan
+  and buttons below.
+
+Tests: `tests/test_phase_aq_advisor.py`.
+

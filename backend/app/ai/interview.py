@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import copy
 import re
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
+from threading import Lock
 from typing import Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
@@ -513,15 +515,32 @@ def _compatible(strategy, base_tf: str) -> bool:
     return bool(base) and all(n is not None and n >= base and n % base == 0 for n in needed)
 
 
-def _evidence(lang: str, strategy, df: pd.DataFrame, base_tf: str, symbol: str, cfg: RiskConfig) -> Tuple[float, dict, Optional[dict]]:
+# Evidence is measured on one fixed book (1 lakh, 1% risk) so it does not depend on the option
+# being shown, and cached: a refinement round re-uses the walks it already did on the same candles.
+EVIDENCE_RISK = RiskConfig(capital=100_000.0, risk_per_trade_pct=1.0, max_trades_per_day=20, max_consecutive_losses=100)
+_EVIDENCE_CACHE: "OrderedDict[tuple, Tuple[float, dict, Optional[dict]]]" = OrderedDict()
+_EVIDENCE_CACHE_SIZE = 256
+_EVIDENCE_LOCK = Lock()
+
+
+def _evidence_key(strategy_id: str, df: pd.DataFrame, base_tf: str, symbol: str, lang: str) -> tuple:
+    return (strategy_id, base_tf, symbol.upper(), lang, len(df), str(df.index[0]), str(df.index[-1]), round(float(df["close"].iloc[-1]), 4))
+
+
+def _evidence(lang: str, strategy, df: pd.DataFrame, base_tf: str, symbol: str, cfg: Optional[RiskConfig] = None) -> Tuple[float, dict, Optional[dict]]:
+    key = _evidence_key(strategy.id, df, base_tf, symbol, lang)
+    with _EVIDENCE_LOCK:
+        if key in _EVIDENCE_CACHE:
+            _EVIDENCE_CACHE.move_to_end(key)
+            return _EVIDENCE_CACHE[key]
     bars = EVIDENCE_BARS.get(timeframe_minutes(base_tf) or 5, 500)
-    run = evaluate_on_candles(strategy, df.iloc[-bars:], base_tf, symbol, cfg)
+    run = evaluate_on_candles(strategy, df.iloc[-bars:], base_tf, symbol, EVIDENCE_RISK)
     score = 0.0
     if run.total_trades >= 5:
         pf = run.profit_factor if run.profit_factor is not None else (3.0 if run.net_pnl > 0 else 0.0)
         score = min(float(pf), 3.0) + (1.0 if run.net_pnl > 0 else -1.0)
-        text = tr(lang, f"{run.total_trades} trades on recent candles, win rate {run.win_rate:.0f}%, net {_money(run.net_pnl)}",
-                  f"अलीकडच्या candles वर {run.total_trades} trades, win rate {run.win_rate:.0f}%, निव्वळ {_money(run.net_pnl)}")
+        text = tr(lang, f"{run.total_trades} trades on recent candles, win rate {run.win_rate:.0f}%, net {_money(run.net_pnl)} (on ₹1 lakh at 1% risk)",
+                  f"अलीकडच्या candles वर {run.total_trades} trades, win rate {run.win_rate:.0f}%, निव्वळ {_money(run.net_pnl)} (₹1 लाख, 1% risk वर)")
     elif run.reason and not run.total_trades:
         text = tr(lang, "not enough candles to test it here", "इथे तपासायला पुरेसे candles नाहीत")
     else:
@@ -529,10 +548,16 @@ def _evidence(lang: str, strategy, df: pd.DataFrame, base_tf: str, symbol: str, 
         text = tr(lang, f"only {run.total_trades} trade(s) on recent candles - too few to judge", f"अलीकडच्या candles वर फक्त {run.total_trades} trade - ठरवायला खूप कमी")
     evidence = {"tested": True, "total_trades": run.total_trades, "win_rate": run.win_rate, "net_pnl": run.net_pnl,
                 "profit_factor": run.profit_factor, "text": text}
-    return score, evidence, None if run.last_signal is None else run.last_signal.model_dump(mode="json")
+    out = (score, evidence, None if run.last_signal is None else run.last_signal.model_dump(mode="json"))
+    with _EVIDENCE_LOCK:
+        _EVIDENCE_CACHE[key] = out
+        while len(_EVIDENCE_CACHE) > _EVIDENCE_CACHE_SIZE:
+            _EVIDENCE_CACHE.popitem(last=False)
+    return out
 
 
-def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg: RiskConfig) -> List[dict]:
+def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg: RiskConfig, *,
+          exclude: Tuple[str, ...] = (), family_bonus: Optional[Dict[str, float]] = None) -> List[dict]:
     """Fit first (style, regime, goal) for every candidate; the best few are then walked over
     the recent candles for evidence - a backtest per strategy is the slow part."""
     regime = market["regime"]["kind"]
@@ -540,7 +565,7 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
     lang = a.language
     ranked: List[dict] = []
     for sid, p in PROFILES.items():
-        if a.style not in p.styles:
+        if a.style not in p.styles or sid in exclude:
             continue
         try:
             strategy = copy.copy(registry.get(sid))
@@ -552,6 +577,7 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
         if market["volatile"] and a.experience == "new":
             fit = max(fit - 0.5, 0.0)
         goal = 1.0 if (a.goal == "big_trends" and p.family in ("trend", "breakout")) or (a.goal == "steady" and p.family in ("reversion", "momentum")) else 0.0
+        goal += (family_bonus or {}).get(p.family, 0.0)
         ranked.append({
             "strategy_id": sid, "name": strategy.name, "family": p.family, "timeframes": list(strategy.timeframes),
             "description": tr(lang, p.en, p.mr), "regime_fit": fit, "score": round(fit * 2 + goal, 2),
@@ -562,7 +588,7 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
     ranked.sort(key=lambda r: r["score"], reverse=True)
     top = ranked[:EVIDENCE_CANDIDATES]
     with ThreadPoolExecutor(max_workers=EVIDENCE_CANDIDATES) as pool:
-        results = list(pool.map(lambda r: _evidence(lang, r["_strategy"], df, base_tf, a.symbol, cfg), top))
+        results = list(pool.map(lambda r: _evidence(lang, r["_strategy"], df, base_tf, a.symbol), top))
     for r, (score, evidence, last_signal) in zip(top, results):
         r["score"] = round(r["score"] + score, 2)
         r["evidence"], r["last_signal"] = evidence, last_signal
@@ -574,16 +600,30 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
 
 def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings: Optional[Dict[str, float]] = None,
                data_source: str = "sample") -> dict:
-    lang = a.language
-    market = analyse_market(df, base_tf, lang)
+    market = analyse_market(df, base_tf, a.language)
     cfg, risk_notes = risk_plan(a, ceilings)
     ranked = _rank(a, market, df, base_tf, cfg)
+    return compose_plan(a, market, ranked, ranked[0] if ranked else None, cfg, risk_notes, data_source)
+
+
+def default_exit_rules(a: InterviewAnswers) -> dict:
+    return {"break_even_at_r": 1.0 if a.experience == "new" else 1.5,
+            "time_exit_at": "15:10" if a.style in ("scalping", "intraday") else None}
+
+
+def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Optional[dict], cfg: RiskConfig, risk_notes: List[str],
+                 data_source: str, *, exit_rules: Optional[dict] = None, alternatives: Optional[List[dict]] = None,
+                 extra_contract_notes: Optional[List[str]] = None) -> dict:
+    """Every sentence of a plan for one strategy pick and one risk configuration (Phase AQ builds
+    three of these, one per option)."""
+    lang = a.language
     warnings: List[str] = []
     if not ranked:
         warnings.append(tr(lang, "No strategy could be tested on these candles - load more history (a longer lookback) and try again.",
                            "या candles वर एकही strategy तपासता आली नाही - जास्त history (मोठा lookback) घेऊन पुन्हा प्रयत्न करा."))
-    pick = ranked[0] if ranked else None
+    alternatives = [r for r in ranked if pick is None or r["strategy_id"] != pick["strategy_id"]][:2] if alternatives is None else alternatives
     contract, contract_notes, contract_text = contract_plan(a, market["bias"])
+    contract_notes = contract_notes + (extra_contract_notes or [])
 
     # Market sentences.
     t = market["today"]
@@ -637,7 +677,7 @@ def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings:
         if pick["evidence"]["total_trades"] >= 5 and pick["evidence"]["net_pnl"] <= 0:
             warnings.append(tr(lang, "On these candles even the recommended strategy lost money. Paper-trade it and judge it on 30+ trades before any live money.",
                                "या candles वर शिफारस केलेल्या strategy नेही तोटा दाखवला. PAPER मध्ये 30+ trades पाहूनच निर्णय घ्या."))
-        for alt in ranked[1:3]:
+        for alt in alternatives:
             s_lines.append(tr(lang, f"Alternative: {alt['name']} - {alt['evidence']['text']}.", f"पर्याय: {alt['name']} - {alt['evidence']['text']}."))
 
     # Risk and capital sentences.
@@ -664,8 +704,7 @@ def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings:
     ]
     rr = cfg.min_risk_reward
     breakeven_win = 100.0 / (1.0 + rr)
-    exit_rules = {"break_even_at_r": 1.0 if a.experience == "new" else 1.5,
-                  "time_exit_at": "15:10" if a.style in ("scalping", "intraday") else None}
+    exit_rules = exit_rules or default_exit_rules(a)
     rr_lines = [
         tr(lang, f"Minimum reward:risk 1:{rr:g} - a trade that cannot make {rr:g}x its risk is skipped. At 1:{rr:g} you stay profitable even winning only {breakeven_win:.0f}% of trades.",
            f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. 1:{rr:g} वर फक्त {breakeven_win:.0f}% trades जिंकले तरी तोटा होत नाही."),
@@ -704,7 +743,7 @@ def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings:
         deployment = {"strategy_id": pick["strategy_id"], "symbol": a.symbol.upper(), "exchange": "NSE", "timeframe": "1min", "mode": "PAPER",
                       **contract, "exit_rules": exit_rules, "regime_filter": regime_filter}
     return {
-        "language": lang, "answers": a.model_dump(), "market": market, "recommended": pick, "alternatives": ranked[1:3],
+        "language": lang, "answers": a.model_dump(), "market": market, "recommended": pick, "alternatives": alternatives,
         "ranking": [{"strategy_id": r["strategy_id"], "name": r["name"], "score": r["score"]} for r in ranked],
         "risk_config": cfg.model_dump(), "deployment": deployment, "sections": sections, "warnings": warnings,
         "ai_prompt": ai_prompt(a, market, cfg, pick), "disclaimer": DISCLAIMER[lang],

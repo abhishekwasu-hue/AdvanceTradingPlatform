@@ -626,6 +626,13 @@ export const api = {
     request<InterviewStart>("/ai/interview/start", { method: "POST", body: JSON.stringify({ prompt }) }),
   aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string) =>
     request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({ answers, base_timeframe: baseTimeframe, candles, data_source: dataSource }) }),
+  aiInterviewRefine: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string,
+                      feedback: string[], optionId: string, strategyId: string | null) =>
+    request<InterviewPlan>("/ai/interview/refine", { method: "POST", body: JSON.stringify({
+      answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }) }),
+  aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null, match: number) =>
+    request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId, match }) }),
+  aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),

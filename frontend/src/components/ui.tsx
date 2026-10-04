@@ -1,5 +1,5 @@
-import { Info, type LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { ChevronDown, Info, type LucideIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
   return (
@@ -8,6 +8,35 @@ export function Card({ title, children, className = "" }: { title?: string; chil
         <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-3">{title}</div>
       )}
       {children}
+    </div>
+  );
+}
+
+/** A card that folds to its title bar. Closed by default unless `defaultOpen`; the choice is
+ * remembered per browser under `storageKey`. Children mount on first open and then stay mounted
+ * (hidden when folded), so a chat or a form keeps its state. */
+export function CollapsibleCard({ title, subtitle, children, storageKey, defaultOpen = false, className = "" }: {
+  title: string; subtitle?: string; children: ReactNode; storageKey: string; defaultOpen?: boolean; className?: string;
+}) {
+  const key = `atp_card_open:${storageKey}`;
+  const [open, setOpen] = useState<boolean>(() => {
+    try { const v = localStorage.getItem(key); return v == null ? defaultOpen : v === "1"; } catch { return defaultOpen; }
+  });
+  const [mounted, setMounted] = useState(open);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) setMounted(true);
+    try { localStorage.setItem(key, next ? "1" : "0"); } catch { /* storage unavailable: session only */ }
+  };
+  return (
+    <div className={`rounded-xl border border-border bg-panel shadow-card ${open ? "p-4" : "px-4 py-2.5"} ${className}`}>
+      <button onClick={toggle} aria-expanded={open} className="flex w-full items-center gap-2 text-left">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted">{title}</span>
+        {!open && subtitle && <span className="truncate text-xs text-muted/80">{subtitle}</span>}
+        <ChevronDown size={14} className={`ml-auto shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {mounted && <div className={open ? "mt-3" : "hidden"}>{children}</div>}
     </div>
   );
 }

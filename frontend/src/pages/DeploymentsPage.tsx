@@ -208,13 +208,17 @@ export default function DeploymentsPage() {
     [strategies, strategyId],
   );
 
+  // Phase AS: a daily strategy is a swing deployment - daily candles, held overnight (CNC / NRML).
+  const swing = !!selectedStrategy && selectedStrategy.timeframes.length === 1 && selectedStrategy.timeframes[0] === "day";
+
   async function submit() {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       const created = await api.createDeployment({
-        strategy_id: strategyId, symbol, exchange, timeframe, mode, broker_name: brokerName || null,
+        strategy_id: strategyId, symbol, exchange, timeframe: swing ? "day" : timeframe, mode, broker_name: brokerName || null,
+        holding: swing ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
       });
@@ -357,9 +361,13 @@ export default function DeploymentsPage() {
           </div>
           <div>
             <label className="block text-xs text-muted mb-1">Base candles</label>
-            <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
-              {BASE_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
-            </select>
+            {swing ? (
+              <div className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-100">day · swing: held overnight (CNC / NRML), never squared off at 15:15</div>
+            ) : (
+              <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+                {BASE_TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-xs text-muted mb-1">Broker</label>
@@ -753,7 +761,7 @@ export default function DeploymentsPage() {
                 {deployments.map((d) => (
                   <tr key={d.id} className="border-t border-border align-top">
                     <td className="py-1.5 pr-3 text-muted">{d.id}</td>
-                    <td className="py-1.5 pr-3 font-medium text-slate-200">{d.strategy_id}<div className="text-[10px] text-muted">{d.timeframe} base</div></td>
+                    <td className="py-1.5 pr-3 font-medium text-slate-200">{d.strategy_id}<div className="text-[10px] text-muted">{d.timeframe} base{d.holding === "SWING" ? " · swing (overnight)" : ""}</div></td>
                     <td className="py-1.5 pr-3 text-slate-200">{d.symbol}<div className="text-[10px] text-muted">{d.exchange}{d.instrument_kind !== "UNDERLYING" ? ` · ${d.contract_rules}` : ""}</div></td>
                     <td className="py-1.5 pr-3"><ModeBadge mode={d.mode} /></td>
                     <td className="py-1.5 pr-3 capitalize text-slate-300">{d.broker_name ?? "-"}

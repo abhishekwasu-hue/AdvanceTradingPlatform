@@ -27,6 +27,7 @@ from typing import Dict, Awaitable, Callable, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
@@ -174,7 +175,7 @@ async def _square_off_live(
     try:
         response = await broker.place_order(BrokerOrderRequest(
             symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=trade.quantity,
-            order_type="MARKET", product="MIS",
+            order_type="MARKET", product=product_for_trade(trade),   # Phase AS: the entry's own product
             tag=build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
                                 max_length=getattr(broker, "max_tag_length", None) or 20),
         ))

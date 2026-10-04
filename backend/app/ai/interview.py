@@ -111,7 +111,8 @@ QUESTIONS: List[Question] = [
              "यावरून candle चा timeframe आणि दिवसाला किती trades योग्य ते ठरते.",
              [Option("scalping", "Scalping - minutes, many small trades", "Scalping - काही मिनिटे, अनेक छोटे trades"),
               Option("intraday", "Intraday - hours, closed the same day", "Intraday - काही तास, त्याच दिवशी बंद"),
-              Option("positional", "Calmer intraday - follow the bigger trend, few trades", "शांत intraday - मोठ्या trend सोबत, कमी trades")], "intraday"),
+              Option("positional", "Calmer intraday - follow the bigger trend, few trades", "शांत intraday - मोठ्या trend सोबत, कमी trades"),
+              Option("swing", "Swing - days to weeks, held overnight", "Swing - काही दिवस ते आठवडे (position रात्रभर)")], "intraday"),
     Question("instrument", "choice", "What do you want to trade?", "तुम्हाला काय trade करायचे आहे?",
              "Indices move smoothly and are liquid; a stock can gap on news.",
              "Index सहज हलतो आणि liquidity जास्त असते; stock बातमीवर अचानक gap करू शकतो.",
@@ -155,7 +156,7 @@ class InterviewAnswers(BaseModel):
     capital: float = Field(default=100_000.0, ge=5_000, le=10_000_000_000)
     risk: Literal["conservative", "moderate", "aggressive"] = "conservative"
     daily_loss: float = Field(default=2.0, ge=0.5, le=10.0)
-    style: Literal["scalping", "intraday", "positional"] = "intraday"
+    style: Literal["scalping", "intraday", "positional", "swing"] = "intraday"
     instrument: Literal["index", "fno_stock", "stock"] = "index"
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
     vehicle: Literal["underlying", "option_buy", "option_sell"] = "option_buy"
@@ -179,7 +180,7 @@ _PREFILL_RULES: List[Tuple[str, str, str]] = [
     ("symbol", "NIFTY 50", r"\bnifty\b|निफ्टी"),
     ("style", "scalping", r"scalp|स्कॅल्प|स्काल्प"),
     ("style", "intraday", r"intra\s*-?day|इंट्राडे|इंट्रा\s*डे"),
-    ("style", "positional", r"swing|positional|पोझिशनल|स्विंग"),
+    ("style", "swing", r"swing|positional|पोझिशनल|स्विंग|delivery|डिलिव्हरी"),
     ("vehicle", "option_sell", r"option\s*(sell|writ)|selling|सेलिंग|ऑप्शन\s*सेल|स्प्रेड|spread|iron\s*condor"),
     ("vehicle", "option_buy", r"option\s*buy|buy(ing)?\s*(options?|ce|pe|calls?|puts?)|ऑप्शन\s*(बाय|खरेदी)|कॉल\s*बाय|पुट\s*बाय"),
     ("vehicle", "underlying", r"futures?|फ्युचर|equity|cash\s*market|डिलिव्हरी"),
@@ -386,6 +387,11 @@ PROFILES: Dict[str, Profile] = {
                                          "30 मिनिटांच्या trend सोबत, 5 मिनिटाच्या pullback वर entry."),
     "mtf_5m_60m_trend_pullback": Profile("trend", ("positional",), "Follows the hourly trend, enters on a 5-minute pullback - few, calmer trades.",
                                          "तासाच्या trend सोबत, 5 मिनिटाच्या pullback वर entry - कमी आणि शांत trades."),
+    # Phase AS: daily strategies, held overnight.
+    "swing_ema_pullback_d": Profile("trend", ("swing",), "Daily uptrend: buys the pullback to the 20-day average when it turns back up; holds for days.",
+                                    "Daily uptrend मध्ये 20-दिवसांच्या सरासरीपर्यंत आलेला pullback पुन्हा वर वळला की खरेदी; काही दिवस धरून ठेवतो."),
+    "swing_breakout_d": Profile("breakout", ("swing",), "Buys a close above the 20-day high with a trending ADX and volume; holds for days.",
+                                "20 दिवसांच्या high वरचा close, ADX trend आणि volume सोबत - खरेदी करून काही दिवस धरतो."),
 }
 FAMILY_TEXT = {
     "trend": ("trend following", "trend च्या सोबत"), "momentum": ("momentum", "momentum"),
@@ -416,7 +422,8 @@ def regime_fit(family: str, regime: str, confidence: float = 1.0) -> float:
 RISK_PCT = {"conservative": 0.5, "moderate": 1.0, "aggressive": 1.5}
 RISK_CAP_BY_EXPERIENCE = {"new": 0.5, "learning": 1.0, "experienced": 2.0}
 ALLOCATION = {"new": 0.25, "learning": 0.5, "experienced": 0.8}
-TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2}
+TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2, "swing": 1}
+SWING_GAP_FACTOR = 0.75   # Phase AS: an overnight gap can jump the stop - swing risk is sized a quarter smaller
 OPEN_POSITIONS = {"new": 1, "learning": 2, "experienced": 3}
 
 
@@ -430,6 +437,10 @@ def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) 
     if risk_pct < wanted:
         notes.append(tr(lang, f"Risk per trade capped at {risk_pct:g}% (you chose {wanted:g}%) - a {a.experience} trader starts small; it can rise once the paper record earns it.",
                         f"एका trade चा risk {risk_pct:g}% वर मर्यादित केला (तुम्ही {wanted:g}% निवडले होते) - सुरुवात छोट्या risk ने; PAPER चे निकाल चांगले आले की वाढवता येईल."))
+    if a.style == "swing":
+        risk_pct = round(risk_pct * SWING_GAP_FACTOR, 2)
+        notes.append(tr(lang, f"Swing risk per trade {risk_pct:g}% - a quarter smaller, because an overnight gap can open beyond the stop.",
+                        f"Swing मध्ये एका trade चा risk {risk_pct:g}% - रात्रभरच्या gap मुळे भाव stop च्या पलीकडे उघडू शकतो, म्हणून एक चतुर्थांश कमी."))
     daily = min(a.daily_loss, round(risk_pct * 3, 2), float(ceilings.get("max_daily_loss_pct", 5.0)))
     if daily < risk_pct * 2:
         risk_pct = round(daily / 2, 2)
@@ -475,8 +486,23 @@ def contract_plan(a: InterviewAnswers, bias: str) -> Tuple[dict, List[str], str]
         else:
             return ({"instrument_kind": "FUTURE", "expiry_rule": "NEAREST"}, notes,
                     tr(lang, f"{underlying} futures, nearest expiry", f"{underlying} futures, जवळची expiry"))
+    swing = a.style == "swing"
+    if swing and vehicle == "option_sell":
+        vehicle = "option_buy"
+        notes.append(tr(lang, "Options are never written overnight here - a swing in options is a bought option.",
+                        "इथे options रात्रभर विकले (write) जात नाहीत - options मधला swing म्हणजे option buy."))
     if vehicle == "underlying":
+        if swing:
+            return ({"instrument_kind": "UNDERLYING"}, notes + [tr(lang, "Bought for delivery (CNC) and held until the stop or target; long only - cash shares cannot be held short overnight.",
+                                                                    "Delivery (CNC) ने खरेदी, stop किंवा target पर्यंत धरून; फक्त long - cash shares रात्रभर short ठेवता येत नाहीत.")],
+                    tr(lang, f"{a.symbol.upper()} shares, delivery (swing)", f"{a.symbol.upper()} shares, delivery (swing)"))
         return ({"instrument_kind": "UNDERLYING"}, notes, tr(lang, f"{a.symbol.upper()} shares (intraday)", f"{a.symbol.upper()} shares (intraday)"))
+    if vehicle == "option_buy" and swing:
+        notes.append(tr(lang, "Monthly expiry for a swing: weekly options lose too much value (theta) while you wait days for the move.",
+                        "Swing साठी monthly expiry: काही दिवस वाट पाहताना weekly option चे मूल्य (theta) खूप घटते."))
+        return ({"instrument_kind": "OPTION", "option_position": "BUY", "expiry_rule": "MONTHLY", "strike_rule": "ITM", "strike_offset": 1}, notes,
+                tr(lang, f"Buy one-step in-the-money {underlying} options, monthly expiry, held for days",
+                   f"{underlying} चा एक step ITM option buy, monthly expiry, काही दिवस धरून"))
     if vehicle == "option_buy":
         expiry = "NEXT" if is_index and a.experience != "experienced" else "NEAREST"
         if expiry == "NEXT":
@@ -497,8 +523,8 @@ def contract_plan(a: InterviewAnswers, bias: str) -> Tuple[dict, List[str], str]
 # --- the plan ---------------------------------------------------------------------------------------------
 
 STRUCTURE_MR = {"UPTREND": "वरचा कल (higher high / higher low)", "DOWNTREND": "खालचा कल (lower high / lower low)", "RANGE": "range - स्पष्ट कल नाही"}
-STYLE_EN = {"scalping": "scalping", "intraday": "intraday", "positional": "calmer trend-following intraday"}
-STYLE_MR = {"scalping": "scalping", "intraday": "intraday", "positional": "शांत, trend सोबतच्या intraday"}
+STYLE_EN = {"scalping": "scalping", "intraday": "intraday", "positional": "calmer trend-following intraday", "swing": "swing (overnight)"}
+STYLE_MR = {"scalping": "scalping", "intraday": "intraday", "positional": "शांत, trend सोबतच्या intraday", "swing": "swing (रात्रभर)"}
 
 
 def _money(v: float) -> str:
@@ -713,6 +739,9 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     ]
     if exit_rules["time_exit_at"]:
         rr_lines.append(tr(lang, "Everything still open is closed at 15:10 - no overnight risk.", "15:10 ला उघडे असलेले सगळे trades बंद - रात्रीचा risk नाही."))
+    elif a.style == "swing":
+        rr_lines.append(tr(lang, "Held overnight: the stop sits with the broker (re-armed every morning) and the trade runs for days until the stop or a target.",
+                           "रात्रभर धरले जाते: stop broker कडे असतो (रोज सकाळी पुन्हा लावला जातो) आणि trade stop किंवा target पर्यंत काही दिवस चालतो."))
     k_lines = [contract_text] + contract_notes
     checklist = [
         tr(lang, "Trend and regime agree with the strategy (regime filter)", "Trend आणि market ची स्थिती strategy ला अनुकूल आहे (regime filter)"),
@@ -740,8 +769,10 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     ]
     deployment = None
     if pick:
-        deployment = {"strategy_id": pick["strategy_id"], "symbol": a.symbol.upper(), "exchange": "NSE", "timeframe": "1min", "mode": "PAPER",
-                      **contract, "exit_rules": exit_rules, "regime_filter": regime_filter}
+        swing = a.style == "swing"
+        deployment = {"strategy_id": pick["strategy_id"], "symbol": a.symbol.upper(), "exchange": "NSE", "timeframe": "day" if swing else "1min",
+                      "mode": "PAPER", **contract, "exit_rules": exit_rules, "regime_filter": regime_filter,
+                      "holding": "SWING" if swing else "INTRADAY"}
     return {
         "language": lang, "answers": a.model_dump(), "market": market, "recommended": pick, "alternatives": alternatives,
         "ranking": [{"strategy_id": r["strategy_id"], "name": r["name"], "score": r["score"]} for r in ranked],

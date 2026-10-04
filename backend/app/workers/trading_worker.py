@@ -42,7 +42,7 @@ from app.brokers.token_lifecycle import build_adapter, get_credential_record, to
 from app.cache.client import cache_acquire_lock, cache_release_lock
 from app.core import config as app_config
 from app.core.config import WORKER_CYCLE_SECONDS
-from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy
+from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
@@ -574,6 +574,14 @@ class TradingWorker:
                 # Same (or older) bar already acted on - the strategy is still "in signal", not signalling anew.
                 await session.commit()
                 return False
+        if (getattr(dep, "holding", None) or "INTRADAY") == "SWING" and (dep.instrument_kind or "UNDERLYING") == "UNDERLYING" \
+                and signal.direction == SignalDirection.SHORT:
+            # Phase AS: delivery (CNC) cannot be sold short and carried overnight.
+            dep.last_signal_at = signal_ts
+            dep.last_error = (f"Swing SHORT signal at {signal_ts.isoformat()} skipped: cash equity cannot be held short overnight "
+                              f"(deploy on futures or options to take swing shorts)")
+            await session.commit()
+            return False
         if not entries_allowed:
             dep.last_error = f"Signal at {signal_ts.isoformat()} skipped: no new entries after {NO_NEW_ENTRIES_AFTER.strftime('%H:%M')} IST"
             await session.commit()
@@ -619,7 +627,7 @@ class TradingWorker:
             session, user, mode=dep.mode, strategy_id=dep.strategy_id, signal=signal,
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
-            account_id=account_id, exit_rules=dep.exit_rules,
+            account_id=account_id, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -809,6 +817,8 @@ class TradingWorker:
         for trade in open_trades:
             if families is not None and session_family(exchange_for_trade(trade)) not in families:
                 continue
+            if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
+                continue   # Phase AS: a swing position is held overnight by design
             try:
                 price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
             except Exception as exc:  # noqa: BLE001

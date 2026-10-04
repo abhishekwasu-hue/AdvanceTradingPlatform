@@ -27,7 +27,9 @@ _TF = re.compile(r"^\s*(\d+)\s*(min|m|h|hr|hour|d|day)\s*$", re.IGNORECASE)
 
 
 def timeframe_seconds(timeframe: str) -> int:
-    """'1min' -> 60, '15min' -> 900, '1h'/'60min' -> 3600, '1d' -> 86400. Unknown -> 60."""
+    """'1min' -> 60, '15min' -> 900, '1h'/'60min' -> 3600, '1d'/'day' -> 86400. Unknown -> 60."""
+    if str(timeframe or "").strip().lower() in ("day", "d", "daily"):
+        return 86400
     match = _TF.match(str(timeframe or ""))
     if not match:
         return 60
@@ -63,6 +65,9 @@ def candle_staleness(last_bar_ts: Optional[datetime], timeframe: str, now: datet
     if limit_bars <= 0:
         return None
     step = timeframe_seconds(timeframe)
+    if step >= 86400:
+        # Phase AS: daily bars - the newest closed bar can be a long weekend plus a holiday old.
+        limit_bars = max(limit_bars, 5)
     age = bar_age_seconds(last_bar_ts, now)
     allowed = (limit_bars + 1) * step
     if age <= allowed:

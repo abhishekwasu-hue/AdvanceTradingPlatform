@@ -100,7 +100,7 @@ history, risk settings, custom strategies, and broker credentials to PostgreSQL 
 across sessions. See [`frontend/README.md`](frontend/README.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design and what's still to
-be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the eleven inbuilt
+be built, and [`docs/STRATEGIES.md`](docs/STRATEGIES.md) for the thirteen inbuilt
 strategies and how to call them.
 
 ## Quick start
@@ -235,6 +235,17 @@ npm run dev
   (expected vs fill, slippage, latency) are recorded.
 - **Exits**: the strategy's underlying levels decide, the premium floor/ceiling is the safety net
   (and still works when the index feed is down); futures exit on their own transplanted levels.
+
+## Swing trading (Phase AS)
+
+Two daily strategies - **Swing EMA pullback** (buy the dip to EMA 20 in a daily uptrend) and **Swing breakout** (a close
+above the 20-day high with ADX and volume) - trade closed daily candles and are **held overnight**: a swing deployment
+(`holding: "SWING"`, `timeframe: "day"`) buys delivery (CNC) for shares and NRML for futures / bought options, uses the
+same product for its exit and broker-side stop, and is never squared off at the close. Cash shares cannot be held short
+overnight, so swing shorts need futures or options; written options and multi-leg structures stay intraday. The Strategy
+interview now offers "Swing - days to weeks" (and "मला swing हवे" as feedback): daily candles, a quarter less risk per
+trade for gap risk, monthly expiries for options, no 15:10 exit. The Deployments page switches to swing automatically for
+a daily strategy.
 
 ## Market memory (Phase AR)
 

@@ -19,7 +19,7 @@ def test_feedback_becomes_preferences():
     assert answers.vehicle == "option_buy" and len(changes) == 4 and all(any("ऀ" <= ch <= "ॿ" for ch in c) for c in changes)
     assert p.feedback_log[-1]["codes"] == ["too_risky", "too_many_trades", "dislike_strategy"]
     answers, p, _ = ad.apply_feedback(answers, p, ["want_swing", "no_time"])
-    assert answers.style == "positional" and answers.time == "auto" and p.trades_bias == -3
+    assert answers.style == "swing" and answers.time == "auto" and p.trades_bias == -2
 
 
 def test_desired_targets_follow_the_feedback():

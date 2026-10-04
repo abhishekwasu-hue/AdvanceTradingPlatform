@@ -4,6 +4,7 @@ from app.strategy_engine.base import BaseStrategy
 from app.strategy_engine.combo_strategies import build_combo_strategies
 from app.strategy_engine.indicator_strategies import build_indicator_strategies
 from app.strategy_engine.mtf_strategy import build_mtf_strategies
+from app.strategy_engine.swing_strategies import build_swing_strategies
 
 
 class StrategyRegistry:
@@ -11,7 +12,7 @@ class StrategyRegistry:
 
     def __init__(self) -> None:
         self._strategies: Dict[str, BaseStrategy] = {}
-        for strategy in build_mtf_strategies() + build_indicator_strategies() + build_combo_strategies():
+        for strategy in build_mtf_strategies() + build_indicator_strategies() + build_combo_strategies() + build_swing_strategies():
             self.register(strategy)
 
     def register(self, strategy: BaseStrategy) -> None:

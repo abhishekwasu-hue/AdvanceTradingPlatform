@@ -10,7 +10,7 @@ def test_list_strategies_returns_eleven_inbuilt_strategies():
     response = client.get("/api/strategies")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 11  # seven scalpers + four Phase AO indicator combinations
+    assert len(data) == 13  # seven scalpers + four Phase AO indicator combinations + two Phase AS swing
     ids = {s["id"] for s in data}
     assert "ema_rsi_scalper_1m" in ids
     assert "mtf_1m_5m_trend_pullback" in ids

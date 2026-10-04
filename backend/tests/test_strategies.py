@@ -77,8 +77,11 @@ def test_mtf_strategy_generates_long_signal_on_sustained_uptrend():
     assert any(d != SignalDirection.NO_TRADE for d in directions)
 
 
-def test_registry_exposes_eleven_inbuilt_strategies():
+def test_registry_exposes_thirteen_inbuilt_strategies():
     expected_ids = {
+        # Phase AS: daily swing strategies (held overnight)
+        "swing_ema_pullback_d",
+        "swing_breakout_d",
         # Phase AO: indicator-combination strategies
         "macd_ema_trend_5m",
         "bb_rsi_reversion_5m",

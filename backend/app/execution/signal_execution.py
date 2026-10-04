@@ -28,6 +28,7 @@ from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarch
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine.routes import get_tenant_risk_config
+from app.execution.products import product_for
 from app.trading.persistence import build_trading_day_state, persist_trade
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ async def execute_signal_for_user(
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
+    holding: str = "INTRADAY",
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -250,6 +252,8 @@ async def execute_signal_for_user(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
             exchange=order_exchange,
             algo_id=tenant.algo_id if tenant is not None else None,
+            # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike.
+            product=product_for(holding, contract.kind.value if contract is not None else "UNDERLYING", order_exchange),
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->
@@ -340,6 +344,7 @@ async def execute_signal_for_user(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
                 contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules, account_id=account_id,
+                holding=holding,
             )
             order.trade_id = trade_record.id
             update_log_context(trade_id=trade_record.id)

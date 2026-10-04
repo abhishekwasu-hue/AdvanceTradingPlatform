@@ -3908,9 +3908,45 @@ Tests: `tests/test_chart_history.py`.
   deterministic answer, the data behind it and an action (which tab to open; the interview opens directly
   with the message as its prefill). With an external AI provider, `narrate()` answers under
   `COPILOT_PROMPT` grounded on the same facts; any provider error keeps the rule-based answer.
-* **UI** (`AiCopilotPage`): language toggle, the ask box (`CopilotAsk`), proposals awaiting approval, and
-  tabs - Today (`DailyBriefing` + market memory), Build a strategy (interview, drafts, review), Coach
-  (`TradeCoach`), Guide (`GuideChat`), Advanced (regime, decided proposals). Tab and language are remembered
-  per browser.
+* **UI**: `DailyBriefing` is the "Today's market" tab of `AiCopilotPage`; `TradeCoach` and `GuideChat`
+  live on `CoachGuidePage` (Phase AW moved them off the Copilot, which became the strategist). The
+  ask-anything endpoint stays available to API clients.
 
 Tests: `tests/test_phase_av_copilot_home.py`.
+
+## Phase AW: the Copilot strategist
+
+* **Strategy language** (`strategy_engine/declarative.py`): new operands `VWAP` (session VWAP; a symbol
+  without volume gets the session's running average price), `DAY_OPEN`, `OR_HIGH` / `OR_LOW` (opening range,
+  `period` = minutes, visible only from the close of the bar that completes it), `PDH` / `PDL` / `PDC`
+  (previous IST session), `BB_UPPER` / `BB_MID` / `BB_LOWER` (`multiplier` = standard deviations), `VOLUME`,
+  `VOLUME_SMA`; and `timeframe` on any operand: computed on bars resampled from the base candles (09:15-anchored)
+  and mapped back so a base bar sees only the last higher-timeframe bar that had closed by its own close - live
+  and backtests see the same values, never the future. `Condition.holds_series` evaluates a condition on every
+  bar at once (causal) for screening. Existing configs are unchanged (`timeframe` defaults to None).
+* **Study** (`ai/market_study.py`): from 1-minute candles (plus daily when the broker gives them): per-timeframe
+  reads (5m/15m/60m/day: EMA 20/50/200, regime, RSI, ADX, trend label), levels (day open/high/low, 15-minute
+  opening range, VWAP, previous day H/L/C, floor pivots), the ladder of named levels with distances, a weighted
+  bias (`TF_WEIGHT`: higher timeframes count more; VWAP side and market structure vote too) with confidence,
+  the character (VOLATILE when VIX >= 20 or the regime is volatile; TREND when the bias is clear; RANGE
+  otherwise) and bull / bear / range scenarios at the nearest levels.
+* **Strategist** (`ai/strategist.py`): `TEMPLATES` (trend pullback, opening-range breakout, previous-day
+  breakout, VWAP reclaim, Supertrend + HTF filter, range reversion), each with the characters it fits and a small
+  parameter grid; sides follow the bias when its confidence is >= 50. `simulate()` mirrors the engine's exit
+  priority (stop, target 2, target 1) with entry at the signal close, ATR stop, `COST_PCT` costs, no entries after
+  14:45, square-off at 15:15, `MAX_TRADES_PER_DAY`. `split_sessions()` keeps the first `IS_FRACTION` of sessions
+  for tuning and the rest for out-of-sample judgement; ranking is 0.6 x out-of-sample + 0.4 x in-sample
+  expectancy (R) with a bonus when both are positive; verdicts: robust / overfit / weak / untested / thin.
+  `plan_for()` adds rules in words, exits, today's trigger levels, risk per trade and a stop in points for the
+  tenant's risk settings, the config and a PAPER deployment payload. With an external AI provider,
+  `ai_proposals()` asks for up to two rule sets in the same schema (`AI_PROMPT`); `parse_ai()` keeps only those
+  that validate, and they are simulated and judged like the templates.
+* **API**: `POST /api/ai/strategist/study` and `/build` (`symbol`, optional 1-minute `candles` for sample mode,
+  else the tenant's broker: 12 days of 1-minute bars and 400 of daily; `style` intraday = 5m base / 15m filter,
+  scalping = 1m / 5m; `direction` auto / long / short / both); `POST /api/ai/strategist/adopt` saves a candidate
+  as a versioned custom strategy (`origin="ai-strategist"`, audited) and returns its PAPER deployment payload.
+* **UI**: `StrategistPanel` is the Copilot's first tab (symbol, style, direction; study cards, the level ladder,
+  scenarios, candidate cards with in-sample vs unseen-session evidence, save and deploy-in-PAPER buttons); the
+  Strategy Builder offers the new operands and a higher-timeframe selector.
+
+Tests: `tests/test_phase_aw_strategist.py`.

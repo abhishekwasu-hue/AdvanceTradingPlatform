@@ -611,7 +611,9 @@ export interface BrokerCredentialsInput {
 // --- Custom strategy / Strategy Builder ---
 
 export type ConditionOperator = "GT" | "LT" | "GTE" | "LTE" | "CROSSES_ABOVE" | "CROSSES_BELOW";
-export type IndicatorName = "EMA" | "SMA" | "RSI" | "ADX" | "PLUS_DI" | "MINUS_DI" | "ATR" | "SUPERTREND" | "CLOSE" | "OPEN" | "HIGH" | "LOW";
+export type IndicatorName = "EMA" | "SMA" | "RSI" | "ADX" | "PLUS_DI" | "MINUS_DI" | "ATR" | "SUPERTREND" | "CLOSE" | "OPEN" | "HIGH" | "LOW"
+  // Phase AW: session levels, bands and volume.
+  | "VWAP" | "DAY_OPEN" | "OR_HIGH" | "OR_LOW" | "PDH" | "PDL" | "PDC" | "BB_UPPER" | "BB_MID" | "BB_LOWER" | "VOLUME" | "VOLUME_SMA";
 
 export interface Operand {
   type: "value" | "indicator";
@@ -619,6 +621,8 @@ export interface Operand {
   indicator: IndicatorName;
   period: number;
   multiplier: number;
+  /** Phase AW: evaluate on a higher timeframe (completed bars only); null/undefined = the strategy's own. */
+  timeframe?: string | null;
 }
 
 export interface Condition {
@@ -1899,5 +1903,39 @@ export interface CopilotReply {
   concepts?: GuideConcept[]; related?: { id: string; title: string }[];
   coach?: { stats: CoachReview["stats"]; grade: string | null; score: number | null; flags: CoachFlag[] };
   brief?: { day_type: DailyBrief["day_type"]; plan: DailyBrief["plan"]; checklist: DailyBrief["checklist"]; deployments: BriefDeployment[] };
+}
+
+// Phase AW: the Copilot strategist - live market study and validated strategies.
+export interface StudyTimeframe {
+  timeframe: string; bars: number; close: number | null; ema20: number | null; ema50: number | null; ema200: number | null;
+  rsi: number | null; adx: number | null; regime: string; trend: "UP" | "DOWN" | "MIXED"; trend_text: string; above_ema200: boolean | null;
+}
+export interface MarketStudy {
+  symbol: string; last_price: number; as_of: string; timeframes: StudyTimeframe[];
+  levels: Record<string, number | null>;
+  ladder: { name: string; key: string; price: number; distance_pct: number | null }[];
+  atr_5m: number | null; atr_day: number | null; atr_5m_pct: number | null;
+  regime: string; higher_regime: string; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; bias_score: number; confidence: number;
+  character: "TREND" | "RANGE" | "VOLATILE";
+  scenarios: { id: "bull" | "bear" | "range"; trigger: number | null; trigger_name?: string; target?: number; low?: number; high?: number; text: string }[];
+  lines: string[]; vix: number | null; data_source?: string;
+}
+export interface SimMetrics {
+  trades: number; win_rate: number; expectancy_r: number; profit_factor: number | null; total_r: number; max_dd_r: number;
+  avg_win_r: number | null; avg_loss_r: number | null;
+}
+export interface StrategyCandidate {
+  id: string; name: string; family: string; direction: "LONG" | "SHORT" | "BOTH"; timeframe: string; why: string;
+  params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
+  triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
+  in_sample: SimMetrics; out_of_sample: SimMetrics; all: SimMetrics; oos_sessions: string[];
+  verdict: "robust" | "overfit" | "weak" | "untested" | "thin"; verdict_text: string;
+  trades: { date: string; dir: string; entry: number; exit: number; reason: string; pts: number; r: number }[];
+  config: CustomStrategyConfig; source: "template" | "ai";
+}
+export interface StrategistResult {
+  study: MarketStudy; style: string; base_timeframe: string; higher_timeframe: string; sides: string[];
+  candidates: StrategyCandidate[]; best: string | null; notes: string[]; tested: number; data_source: string;
+  ai_candidates: number; provider: string;
 }
 

@@ -47,7 +47,7 @@ def test_parse_plan_keeps_valid_filters_and_drops_the_rest_with_warnings():
         "timeframe": "2h", "symbols": ["reliance", " tcs "],
         "indicator_conditions": [
             {"left": {"type": "indicator", "indicator": "RSI", "period": 14}, "operator": "GT", "right": {"type": "value", "value": 55}},
-            {"left": {"type": "indicator", "indicator": "VOLUME", "period": 20}, "operator": "GT", "right": {"type": "value", "value": 1}},
+            {"left": {"type": "indicator", "indicator": "MACD_HIST", "period": 20}, "operator": "GT", "right": {"type": "value", "value": 1}},
         ],
         "structure_filters": [{"filter_type": "TREND_UPTREND"}, {"filter_type": "NEAR_VWAP"}],
         "option_filters": [{"filter_type": "PCR", "operator": "GT", "value": 1.2}, {"filter_type": "PCR"}, {"filter_type": "BIAS_BULLISH"}],

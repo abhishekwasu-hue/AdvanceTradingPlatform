@@ -1,4 +1,6 @@
 import type {
+  StrategistResult,
+  MarketStudy,
   CoachReview,
   CopilotReply,
   DailyBrief,
@@ -643,6 +645,13 @@ export const api = {
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   aiMarketMemoryRefresh: (symbols?: string[]) =>
     request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
+  // Phase AW: the strategist.
+  aiStrategistStudy: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; language: "en" | "mr" }) =>
+    request<MarketStudy>("/ai/strategist/study", { method: "POST", body: JSON.stringify(body) }),
+  aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr" }) =>
+    request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body) }),
+  aiStrategistAdopt: (name: string, config: CustomStrategyConfig, symbol: string) =>
+    request<{ strategy_id: string; name: string; deployment: DeploymentCreateRequest }>("/ai/strategist/adopt", { method: "POST", body: JSON.stringify({ name, config, symbol }) }),
   // Phase AV: the Copilot home.
   aiBrief: (language: "en" | "mr") => request<DailyBrief>(`/ai/brief?language=${language}`),
   aiCoach: (language: "en" | "mr", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>

@@ -1,4 +1,5 @@
 import {
+  GraduationCap,
   BarChart3,
   Bell,
   Bot,
@@ -38,6 +39,7 @@ export type Page =
   | "backtest"
   | "marketplace"
   | "ai-copilot"
+  | "coach"
   | "option-chain"
   | "instruments"
   | "positions"
@@ -95,6 +97,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "portfolio", label: "Portfolio", icon: Briefcase },
       { id: "orders", label: "Orders", icon: ClipboardList },
       { id: "analytics", label: "Analytics", icon: BarChart3 },
+      { id: "coach", label: "Coach & Guide", icon: GraduationCap },
       { id: "risk-management", label: "Risk Management", icon: ShieldAlert },
     ],
   },

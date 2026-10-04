@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, briefing, coach, copilot, generator, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
+from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -526,4 +526,118 @@ async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user),
         else:
             out["note"] = "AI provider unavailable; answered from the rules"
     return out
+
+
+# --- Phase AW the strategist: live market study -> validated strategies ----------------------------------
+
+class StrategistBody(BaseModel):
+    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    exchange: str = Field(default="NSE", max_length=10)
+    broker: Optional[str] = Field(default=None, max_length=20)
+    candles: Optional[List[OHLCVBar]] = Field(default=None, description="1-minute candles (sample mode); omitted = fetched from your broker")
+    style: str = Field(default="intraday", pattern=r"^(intraday|scalping)$")
+    direction: str = Field(default="auto", pattern=r"^(auto|long|short|both)$")
+    language: str = Field(default="mr", pattern=r"^(en|mr)$")
+
+
+async def _strategist_frames(session: AsyncSession, user: User, body: StrategistBody):
+    """1-minute candles (and daily ones from the broker) for the study."""
+    if body.candles:
+        return interview.frame_from_candles(body.candles[-6000:]), None, "candles"
+    from app.brokers.token_lifecycle import build_adapter
+    from app.market_data.candles_routes import _pick_record
+    from app.market_data.service import MarketDataService
+    record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    adapter = build_adapter(record)
+    symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
+    try:
+        bars = await MarketDataService(adapter, lookback_days=12).get_candles(symbol, exchange, "1min")
+    except Exception as exc:  # noqa: BLE001 - say what the broker said
+        raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
+    if not bars:
+        raise HTTPException(status_code=422, detail=f"{record.broker_name} returned no candles for {symbol}")
+    day = None
+    try:
+        day_bars = await MarketDataService(adapter, lookback_days=400).get_candles(symbol, exchange, "day")
+        day = bars_to_dataframe(day_bars) if day_bars else None
+        if day is not None and day.index.tz is None:
+            day.index = day.index.tz_localize("UTC")
+    except Exception:  # noqa: BLE001 - daily bars only add the daily trend and previous-day levels
+        day = None
+    df = bars_to_dataframe(bars)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    return df, day, f"broker:{record.broker_name}"
+
+
+@router.post("/strategist/study")
+async def strategist_study(body: StrategistBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The live market study of one symbol: multi-timeframe trend, levels, bias, scenarios."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    df, day, source = await _strategist_frames(session, user, body)
+    memory = await market_memory.latest(session, user.tenant_id)
+    try:
+        out = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    out["data_source"] = source
+    return out
+
+
+@router.post("/strategist/build")
+async def strategist_build(body: StrategistBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Study the market, then write, tune and validate strategies for it (walk-forward on the recent
+    sessions) and return the best three as ready-to-adopt plans. With an AI provider, its own rule sets
+    are validated alongside."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    df, day, source = await _strategist_frames(session, user, body)
+    memory = await market_memory.latest(session, user.tenant_id)
+    try:
+        study = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    extra = []
+    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    if provider.name != "rule_based":
+        extra = await strategist.ai_proposals(provider, study, body.style)
+        await ai_settings.mark_used(session, user.tenant_id, error=None)
+        await session.commit()
+    result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
+                                     extra_configs=extra)
+    return {"study": study, **result, "data_source": source, "ai_candidates": len(extra), "provider": provider.name}
+
+
+class AdoptBody(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    config: dict
+    symbol: str = Field(default="NIFTY 50", max_length=50)
+
+
+@router.post("/strategist/adopt", status_code=201)
+async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    """Save a strategist candidate as one of your custom strategies (versioned), ready to deploy in PAPER."""
+    from app.audit.log import write_audit_log
+    from app.custom_strategies import versioning
+    from app.db.models import CustomStrategyRecord
+    from app.plans.limits import check_can_add_custom_strategy
+    from app.strategy_engine.declarative import CustomStrategyConfig
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    try:
+        config = CustomStrategyConfig.model_validate({**body.config, "name": body.name.strip()})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid strategy: {exc}"[:300]) from exc
+    tenant = await _tenant(session, user)
+    await check_can_add_custom_strategy(session, tenant)
+    record = CustomStrategyRecord(tenant_id=tenant.id, user_id=user.id, name=config.name, config_json=config.model_dump_json(),
+                                  origin="ai-strategist", ai_approved_by=user.id)
+    session.add(record)
+    await session.flush()
+    await versioning.create_version(session, record, config, user, source="ai-strategist")
+    await write_audit_log(session, tenant.id, user.id, "ai_strategist_adopted", f"strategy {record.id} ({config.name}) for {body.symbol}")
+    await session.commit()
+    strategy_id = f"custom:{record.id}"
+    return {"strategy_id": strategy_id, "name": config.name,
+            "deployment": {"strategy_id": strategy_id, "symbol": body.symbol.strip().upper(), "exchange": "NSE", "timeframe": config.timeframe,
+                           "mode": "PAPER", "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}}
 

@@ -11,6 +11,7 @@ import BacktestPage from "./pages/BacktestPage";
 import ChartWindow from "./pages/ChartWindow";
 import MarketplacePage from "./pages/MarketplacePage";
 import AiCopilotPage from "./pages/AiCopilotPage";
+import CoachGuidePage from "./pages/CoachGuidePage";
 import DashboardPage from "./pages/DashboardPage";
 import DeploymentsPage from "./pages/DeploymentsPage";
 import FundamentalsPage from "./pages/FundamentalsPage";
@@ -126,6 +127,7 @@ function AppShell() {
           {page === "portfolio" && <PortfolioPage />}
           {page === "orders" && <OrdersPage />}
           {page === "analytics" && <AnalyticsPage />}
+          {page === "coach" && <CoachGuidePage />}
           {page === "risk-management" && <RiskManagementPage />}
           {page === "settings" && <SettingsPage />}
           {page === "system-logs" && <SystemLogsPage />}

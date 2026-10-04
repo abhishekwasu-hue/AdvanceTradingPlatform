@@ -3,6 +3,7 @@ import logging
 import json
 import time
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Optional, Tuple
 
 import httpx
@@ -43,6 +44,8 @@ _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
 
 
 logger = logging.getLogger(__name__)
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 # Index spellings other brokers (and this platform's UI) use, mapped to the trading symbol Upstox's
 # instrument master gives the same index. Upstox lists indices under segment NSE_INDEX with a
@@ -280,14 +283,39 @@ class UpstoxBroker(BrokerInterface):
             for c in data.get("candles", [])
         ]
 
+    async def _nearest_option_expiry(
+        self, instruments: List[Instrument], underlying: str, underlying_match: Optional[Instrument], instrument_key: str,
+    ) -> date:
+        """The nearest option expiry on or after today (IST) for this underlying: from the cached
+        instrument master's CE/PE rows, else from Upstox's /option/contract listing."""
+        today = datetime.now(_IST).date()
+        names = {" ".join(underlying.split()).upper()}
+        if underlying_match is not None:
+            names.add((underlying_match.tradingsymbol or "").upper())
+        alias = _INDEX_ALIASES.get(" ".join(underlying.split()).upper())
+        if alias:
+            names.add(alias)
+        expiries = sorted({
+            d for i in instruments
+            if (i.instrument_type or "").upper() in ("CE", "PE") and (i.name or "").upper() in names
+            and (d := normalise_expiry(i.expiry)) is not None and d >= today
+        })
+        if not expiries:
+            contracts = await self._request("GET", "/option/contract", params={"instrument_key": instrument_key})
+            expiries = sorted({d for c in (contracts or []) if (d := normalise_expiry(c.get("expiry"))) is not None and d >= today})
+        if not expiries:
+            raise BrokerAPIError(f"No upcoming option expiry for {underlying} in the Upstox instrument master")
+        return expiries[0]
+
     async def get_option_chain(self, underlying: str, expiry: Optional[date] = None) -> OptionChain:
         instruments = await self.get_instruments("NSE")
         underlying_match = find_instrument(instruments, underlying)
         instrument_key = underlying_match.instrument_token if underlying_match else underlying
 
-        params = {"instrument_key": instrument_key}
-        if expiry is not None:
-            params["expiry_date"] = expiry.isoformat()
+        if expiry is None:
+            # Upstox's /option/chain refuses a call without expiry_date; default to the nearest one.
+            expiry = await self._nearest_option_expiry(instruments, underlying, underlying_match, instrument_key)
+        params = {"instrument_key": instrument_key, "expiry_date": expiry.isoformat()}
         data = await self._request("GET", "/option/chain", params=params)
 
         rows = []

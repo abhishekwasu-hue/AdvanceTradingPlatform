@@ -459,3 +459,61 @@ def test_upstox_find_instrument_resolves_index_spellings():
     # A master whose index rows carry Kite-style symbols keeps resolving exactly.
     kite_style = [Instrument(instrument_token="NSE_INDEX|Nifty 50", exchange="NSE", tradingsymbol="NIFTY 50", name="Nifty 50", segment="NSE_INDEX", instrument_type="INDEX")]
     assert find_instrument(kite_style, "NIFTY 50").instrument_token == "NSE_INDEX|Nifty 50"
+
+
+def _upstox_chain_entry(strike, spot):
+    side = {"market_data": {"ltp": 10.0, "oi": 100.0, "prev_oi": 90.0, "volume": 5.0}, "option_greeks": {"iv": 12.0, "delta": 0.5}}
+    return {"strike_price": strike, "underlying_spot_price": spot, "expiry": "", "call_options": side, "put_options": side}
+
+
+def test_upstox_option_chain_defaults_to_nearest_expiry():
+    """Upstox rejects /option/chain without expiry_date ('Required request parameter
+    expiry_date ... is not present'); with no expiry asked for, the adapter sends the nearest
+    upcoming one from the master's option rows (underlying_symbol = NIFTY)."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    past, near, far = today - timedelta(days=7), today + timedelta(days=3), today + timedelta(days=10)
+    # Upstox stamps an expiry at 23:59:59 IST of the expiry day.
+    ms = lambda d: int(datetime(d.year, d.month, d.day, 23, 59, 59, tzinfo=ZoneInfo("Asia/Kolkata")).timestamp() * 1000)
+    master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_INDEX|Nifty 50", "exchange": "NSE", "segment": "NSE_INDEX", "trading_symbol": "NIFTY", "name": "Nifty 50", "instrument_type": "INDEX"},
+        *[{"instrument_key": f"NSE_FO|{i}", "exchange": "NSE", "segment": "NSE_FO", "trading_symbol": f"NIFTY {i}", "underlying_symbol": "NIFTY",
+           "instrument_type": "CE", "expiry": ms(d), "strike_price": 24000} for i, d in enumerate((far, past, near))],
+    ]).encode())
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=master)
+        assert request.url.path.endswith("/option/chain")
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"status": "success", "data": [_upstox_chain_entry(24000, 24010.5)]})
+
+    broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    chain = run(broker.get_option_chain("NIFTY"))
+    assert seen == {"instrument_key": "NSE_INDEX|Nifty 50", "expiry_date": near.isoformat()}
+    assert chain.expiry == near.isoformat() and chain.underlying_ltp == 24010.5 and len(chain.rows) == 1
+
+
+def test_upstox_option_chain_falls_back_to_contract_listing_for_expiry():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    near = datetime.now(ZoneInfo("Asia/Kolkata")).date() + timedelta(days=2)
+    master = gzip.compress(json.dumps([
+        {"instrument_key": "NSE_INDEX|Nifty Bank", "exchange": "NSE", "segment": "NSE_INDEX", "trading_symbol": "BANKNIFTY", "name": "Nifty Bank", "instrument_type": "INDEX"},
+    ]).encode())
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "assets.upstox.com" in str(request.url):
+            return httpx.Response(200, content=master)
+        if request.url.path.endswith("/option/contract"):
+            assert request.url.params["instrument_key"] == "NSE_INDEX|Nifty Bank"
+            return httpx.Response(200, json={"status": "success", "data": [{"expiry": near.isoformat()}, {"expiry": (near + timedelta(days=7)).isoformat()}]})
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"status": "success", "data": [_upstox_chain_entry(52000, 52010.0)]})
+
+    broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=_mock_client(handler, UpstoxBroker.BASE_URL))
+    run(broker.get_option_chain("NIFTY BANK"))
+    assert seen == {"instrument_key": "NSE_INDEX|Nifty Bank", "expiry_date": near.isoformat()}

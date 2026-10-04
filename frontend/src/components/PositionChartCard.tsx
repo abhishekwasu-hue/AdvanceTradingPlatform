@@ -39,7 +39,7 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
     const load = async () => {
       setLoading(true); setError(null);
       try {
-        const lookback = timeframe === "60min" ? 10 : timeframe === "30min" ? 5 : 2;
+        const lookback = timeframe === "60min" ? 10 : 5;  // >= 5 so a weekend or holiday never leaves it empty
         const r = await api.marketDataCandles([chartSymbol], timeframe, lookback, chartExchange, broker);
         if (cancelled) return;
         const entry = r.symbols[chartSymbol.toUpperCase()];

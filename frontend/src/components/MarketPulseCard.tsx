@@ -43,7 +43,9 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
     let cancelled = false;
     const load = async () => {
       try {
-        const r = await api.marketDataCandles(symbols, "5min", 1, "NSE", broker);
+        // 5 calendar days: the last session is always in it, also on a weekend or after a holiday
+        // (1 day returned nothing on a Sunday or a Monday morning).
+        const r = await api.marketDataCandles(symbols, "5min", 5, "NSE", broker);
         if (cancelled) return;
         const next: Record<string, OHLCVBar[]> = {};
         for (const s of symbols) next[s] = r.symbols[s.toUpperCase()]?.bars ?? [];

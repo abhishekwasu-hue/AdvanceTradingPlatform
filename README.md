@@ -123,8 +123,9 @@ automatically, and both services come up healthy. See "Docker Deployment" in
 
 On Windows, `.gitattributes` keeps the `.sh` scripts LF so the `backup` service's `sh` can run
 them. A checkout made before that file existed still has CRLF copies (the `backup` container
-restarts with exit code 2); refresh them once with
-`git rm -r --cached scripts && git checkout -- scripts`, then `docker compose up -d backup`.
+restarts with exit code 2); delete them and check them out again once (`del /q scripts\backup\*.sh
+scripts\deploy.sh` then `git checkout HEAD -- scripts`; `git ls-files --eol scripts` should show
+`w/lf`), then `docker compose restart backup`.
 
 ### Option B: run backend and frontend directly
 

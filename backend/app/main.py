@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -32,6 +33,7 @@ from app.custom_strategies.resolver import custom_strategy_info, resolve_strateg
 from app.custom_strategies.routes import router as custom_strategies_router
 from app.fundamentals.routes import router as fundamentals_router
 from app.db.models import CustomStrategyRecord, User
+from app.core.validation_errors import request_validation_handler
 from app.db.session import get_session, init_models
 from app.execution.order_persistence import get_order_by_idempotency_key
 from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
@@ -110,6 +112,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=_lifespan,
 )
+# 422s keep FastAPI's shape but never echo the rejected input (it may be a credential).
+app.add_exception_handler(RequestValidationError, request_validation_handler)
 
 # The Vite dev server proxies /api to this service in development, but CORS is still enabled
 # for direct access (a separately-hosted frontend build, API docs "try it out", etc). Defaults to

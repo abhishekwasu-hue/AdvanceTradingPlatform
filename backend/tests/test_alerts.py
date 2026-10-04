@@ -268,3 +268,18 @@ def test_worker_cycle_drains_outbox(monkeypatch):
     # The worker drains the whole platform's outbox, so earlier tests' leftovers ride along.
     assert "[CRITICAL] From the worker" in [m["Subject"] for m in sent]
     assert _deliveries(me["tenant_id"])[0].status == "SENT"
+
+
+def test_validation_errors_never_echo_the_secret():
+    """A rejected bot token must not come back in the error text (it lands on screen and in logs);
+    neither may a credential in a body that fails request validation (FastAPI's default 422)."""
+    headers, _ = _auth("alert-noecho@example.com")
+    secret = "AAGLIFsecretPartNoColon_xyz123"
+    r = _put(headers, "telegram", {"bot_token": secret, "chat_id": "1"})
+    assert r.status_code == 400
+    assert secret not in r.text and "bot_token" in r.text and "BotFather" in r.text
+
+    r = client.put("/api/alert-channels/telegram", headers=headers, json={"enabled": True, "config": secret})
+    assert r.status_code == 422
+    assert secret not in r.text
+    assert r.json()["detail"][0]["loc"][-1] == "config"

@@ -4038,13 +4038,16 @@ Tests: `tests/test_phase_bc_sentiment.py`.
 * **Flag** `telegram_inbound` (default **off**, `platform/controls.py`); the owner then switches it on per organisation
   from Settings > Alert delivery > Telegram (`PUT /api/telegram/inbound`, `require_owner`). The outbound Telegram
   alert channel (Phase B0) is a prerequisite: inbound reuses its bot token and stores `inbound_enabled`,
-  `allowed_chat_ids` and a random `inbound_secret` in the same encrypted channel config (`alerts/channels.py`).
+  `allowed_chat_ids` and a random `inbound_secret` in the same encrypted channel config (`alerts/channels.py`); the
+  generic alert-channel PUT drops those keys and carries the stored ones over (`TELEGRAM_INBOUND_FIELDS`), so only
+  the owner endpoint ever sets them.
 * **Webhook** `POST /api/telegram/webhook/{webhook_token}` (`telegram_inbound/routes.py`): no login - Telegram cannot
   carry one - so the credential is the tenant's `webhook_token` in the path **and** the
   `X-Telegram-Bot-Api-Secret-Token` header Telegram echoes back (compared with `hmac.compare_digest`). Unknown token
-  or wrong secret -> 401 (audit `telegram_inbound_rejected`); channel missing or inbound off -> 403. Updates from
-  chats outside the whitelist (the alert chat id plus `allowed_chat_ids`) are ignored and audited; 20 updates per
-  minute per chat. `POST /api/telegram/inbound/register` calls Telegram `setWebhook` with the secret.
+  or wrong secret -> 401 (audit `telegram_inbound_rejected`); channel missing, inbound off or the flag off -> 403.
+  Updates from chats outside the whitelist (the alert chat id plus `allowed_chat_ids`) are ignored and audited (at
+  most 5 audit rows per chat per hour, then the application log); 20 updates per minute per chat, checked first. The
+  operator's `ai_copilot` kill flag binds `/brief`, `/risk` and free text here as on the web. `POST /api/telegram/inbound/register` calls Telegram `setWebhook` with the secret.
 * **Commands** (`telegram_inbound/service.py`): `/brief`, `/positions`, `/risk`, `/news`, `/levels`, `/thesis`,
   `/why`, `/help`; free text goes to the Copilot ask-anything router (`ai/routes.copilot_answer`) as the owner,
   in the owner's language. Every handled update is metered (`telegram_inbound`). Nothing here places an order.
@@ -4054,7 +4057,8 @@ Tests: `tests/test_phase_bc_sentiment.py`.
   (Phase C3 step-up). Each button is a `telegram_callbacks` row: random nonce in `callback_data` (`p:<nonce>`),
   an HMAC-SHA256 signature over tenant/action/nonce/decision with `JWT_SECRET_KEY`, expiring with the proposal (24 h), single use.
   `decide_from_callback()` re-checks tenant, signature, chat, expiry, use and `telegram_allowed()` **at press
-  time** (a deployment switched to LIVE after the buttons went out is refused), then runs the same
+  time** and claims the nonce with a conditional UPDATE (the sibling button retires with it, so two deliveries
+  cannot both decide) (a deployment switched to LIVE after the buttons went out is refused), then runs the same
   `monitor.decide`/`execute` the web uses, with the decision note naming the chat; audit `telegram_decision`,
   replays audited as `telegram_callback_replayed`. `notifications.ai_action_id` links the alert to the proposal.
 * **Migration** `c8d0e2f4a6b8`: `telegram_callbacks` + `notifications.ai_action_id`.

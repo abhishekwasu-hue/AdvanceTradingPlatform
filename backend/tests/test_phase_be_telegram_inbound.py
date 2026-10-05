@@ -177,7 +177,7 @@ def test_buttons_decide_paper_proposals_once_and_refuse_live_replay_tamper_expir
     assert _run(dep_status()) == "PAUSED"
     assert telegram.calls[-2]["method"] == "answerCallbackQuery" and telegram.calls[-1]["method"] == "editMessageText"
     assert "Already decided" in _post(t, _callback("987654", approve)).json()["reply"]                    # replay
-    assert "Could not decide" in _post(t, _callback("987654", reject)).json()["reply"]                   # the other button is dead too
+    assert "Already decided" in _post(t, _callback("987654", reject)).json()["reply"]                    # the sibling button died with the claim
     assert "telegram_callback_replayed" in _audit_events(t["tenant_id"]) and "telegram_decision" in _audit_events(t["tenant_id"])
 
     # Tampered signature, expired row, foreign tenant, LIVE deployment.
@@ -222,9 +222,77 @@ def test_buttons_decide_paper_proposals_once_and_refuse_live_replay_tamper_expir
             await session.commit()
     _run(forged())
     assert "LIVE" in _post(t, _callback("987654", "p:forgedlive")).json()["reply"] and _action(live_action).status == "PROPOSED"
-    _propose(t, action="EXIT_POSITION", dep_id=dep_id)
+    exit_action = _propose(t, action="EXIT_POSITION", dep_id=dep_id)
     _dispatch(t, telegram)
     assert "reply_markup" not in [c for c in telegram.calls if c["method"] == "sendMessage"][-1]        # exits: web only
+
+    async def forged_exit():
+        async with _session_factory() as session:
+            session.add(TelegramCallbackRecord(tenant_id=t["tenant_id"], action_id=exit_action, nonce="forgedexit", decision="approve", chat_id="987654",
+                                               signature=tg._signature(t["tenant_id"], exit_action, "forgedexit", "approve"),
+                                               expires_at=datetime.now(UTC) + timedelta(hours=1), created_at=datetime.now(UTC)))
+            await session.commit()
+    _run(forged_exit())
+    assert "web only" in _post(t, _callback("987654", "p:forgedexit")).json()["reply"] and _action(exit_action).status == "PROPOSED"   # press-time refusal
+
+
+def test_alert_channel_put_cannot_touch_inbound_and_kill_flags_bind_telegram(monkeypatch):
+    telegram = _Telegram()
+    _flag(True)
+    t = _tenant("be-bypass@example.com")
+    monkeypatch.setattr(tg, "http_client", telegram.client)
+    # The generic channel PUT drops the inbound keys: no whitelist, no secret, no inbound without the owner endpoint.
+    sneaky = {**TELEGRAM, "inbound_enabled": True, "allowed_chat_ids": ["4242"], "inbound_secret": "attacker-chosen"}
+    assert client.put("/api/alert-channels/telegram", headers=t["headers"], json={"config": sneaky}).status_code == 200
+    status = client.get("/api/telegram/inbound/status", headers=t["headers"]).json()
+    assert status["inbound_enabled"] is False and status["has_secret"] is False and status["allowed_chat_ids"] == ["987654"]
+
+    async def token():
+        async with _session_factory() as session:
+            from app.db.models import Tenant
+            return (await session.get(Tenant, t["tenant_id"])).webhook_token
+    tok = _run(token())
+    assert client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": "attacker-chosen"}, json=_message("4242", "/help")).status_code == 403
+
+    # Properly configured inbound survives a later channel re-save (chat id change) with its secret intact.
+    client.put("/api/telegram/inbound", headers=t["headers"], json={"enabled": True, "allowed_chat_ids": ["555"]})
+    before = client.get("/api/telegram/inbound/status", headers=t["headers"]).json()
+    assert client.put("/api/alert-channels/telegram", headers=t["headers"], json={"config": {"bot_token": "", "chat_id": "987654", "inbound_enabled": False}}).status_code == 200
+    after = client.get("/api/telegram/inbound/status", headers=t["headers"]).json()
+    assert after["inbound_enabled"] is True and after["has_secret"] is True and after["allowed_chat_ids"] == before["allowed_chat_ids"]
+
+    async def secret():
+        async with _session_factory() as session:
+            rec = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == t["tenant_id"]))
+            return decrypt_raw(rec)["inbound_secret"]
+    sec = _run(secret())
+    assert sec != "attacker-chosen"
+    ok = client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": sec}, json=_message("987654", "/help")).json()
+    assert ok["handled"] == "message"
+
+    # The platform's telegram_inbound flag binds the webhook itself, not only the settings endpoints.
+    _flag(False)
+    assert client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": sec}, json=_message("987654", "/help")).status_code == 403
+    _flag(True)
+
+    # The operator's ai_copilot kill flag binds Telegram free text and /brief too.
+    async def ai_flag(on):
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            flags = dict(current.get("flags") or {})
+            flags["ai_copilot"] = {"on": on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(ai_flag(False))
+    try:
+        off = client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": sec}, json=_message("987654", "what is the market doing?")).json()
+        assert "switched off" in off["reply"]
+        assert "switched off" in client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": sec}, json=_message("987654", "/brief")).json()["reply"]
+        assert "No open positions" in client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": sec}, json=_message("987654", "/positions")).json()["reply"]
+    finally:
+        _run(ai_flag(True))
+    # Command replies are plain text (no parse_mode), so an ampersand in a symbol is never double-escaped.
+    assert "parse_mode" not in telegram.calls[-1]
 
 
 def test_register_webhook_and_flag_off(monkeypatch):

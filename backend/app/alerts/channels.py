@@ -17,6 +17,9 @@ def severity_reaches(severity: str, floor: str) -> bool:
     return SEVERITY_RANK.get(severity, 0) >= SEVERITY_RANK.get(floor, 1)
 
 
+TELEGRAM_INBOUND_FIELDS = ("inbound_enabled", "allowed_chat_ids", "inbound_secret")   # Phase BE: set only by telegram_inbound.service.configure
+
+
 class TelegramConfig(BaseModel):
     """A bot created with @BotFather and the chat (a user or a group the bot is in) to post to.
     Find the chat id by messaging the bot and reading /getUpdates, or via @userinfobot."""

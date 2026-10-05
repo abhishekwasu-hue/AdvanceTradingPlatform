@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from typing import Deque, Dict, List, Optional, Tuple
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import briefing, market_memory, monitor, sentiment
@@ -54,6 +54,7 @@ TELEGRAM_API = "https://api.telegram.org"
 TIMEOUT_SECONDS = 10.0
 RATE_LIMIT = 20
 RATE_WINDOW_SECONDS = 60.0
+AUDIT_STRANGERS_PER_HOUR = 5     # a stranger's messages are audited this often per chat, then only logged
 METRIC = "telegram_inbound"
 TELEGRAM_ACTIONS = ("PAUSE_DEPLOYMENT", "REDUCE_RISK", "REVIEW_STRATEGY")      # EXIT_POSITION and anything LIVE: web + authenticator only
 CALLBACK_PREFIX = "p:"
@@ -123,7 +124,10 @@ async def _call(cfg: TelegramConfig, method: str, payload: dict, client: Optiona
     own = client is None
     client = client or http_client()
     try:
-        response = await client.post(f"{TELEGRAM_API}/bot{cfg.bot_token}/{method}", json=payload)
+        try:
+            response = await client.post(f"{TELEGRAM_API}/bot{cfg.bot_token}/{method}", json=payload)
+        except httpx.HTTPError as exc:                    # the network is not Telegram's answer; never a 500 to Telegram
+            return {"ok": False, "description": f"transport: {type(exc).__name__}"}
         try:
             data = response.json()
         except ValueError:
@@ -136,11 +140,17 @@ async def _call(cfg: TelegramConfig, method: str, payload: dict, client: Optiona
             await client.aclose()
 
 
-async def reply(cfg: TelegramConfig, chat_id: str, text: str, client: Optional[httpx.AsyncClient] = None, reply_markup: Optional[dict] = None) -> dict:
-    payload = {"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True}
+async def reply(cfg: TelegramConfig, chat_id: str, text: str, client: Optional[httpx.AsyncClient] = None, reply_markup: Optional[dict] = None,
+                parse_mode: Optional[str] = "HTML") -> dict:
+    payload = {"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    return await _call(cfg, "sendMessage", payload, client)
+    answer = await _call(cfg, "sendMessage", payload, client)
+    if not answer.get("ok", False):
+        logger.warning("Telegram sendMessage to chat %s failed: %s", chat_id, str(answer.get("description", ""))[:200])
+    return answer
 
 
 # --- guards --------------------------------------------------------------------------------------------
@@ -150,6 +160,22 @@ def secret_ok(header_value: Optional[str], cfg: TelegramConfig) -> bool:
 
 def chat_allowed(cfg: TelegramConfig, chat_id: str) -> bool:
     return str(chat_id) == str(cfg.chat_id) or str(chat_id) in {str(c) for c in cfg.allowed_chat_ids}
+
+
+_stranger_audits: Dict[Tuple[int, str], Deque[float]] = defaultdict(deque)
+
+
+def audit_stranger(tenant_id: int, chat_id: str, now: Optional[float] = None) -> bool:
+    """True when this rejection should go to the hash-chained audit log (the first few per chat per
+    hour); the rest go to the application log so a stranger cannot flood the audit chain."""
+    now = now if now is not None else time.monotonic()
+    bucket = _stranger_audits[(tenant_id, str(chat_id))]
+    while bucket and now - bucket[0] > 3600.0:
+        bucket.popleft()
+    if len(bucket) >= AUDIT_STRANGERS_PER_HOUR:
+        return False
+    bucket.append(now)
+    return True
 
 
 def rate_limited(tenant_id: int, chat_id: str, now: Optional[float] = None) -> bool:
@@ -178,10 +204,11 @@ async def telegram_allowed(session: AsyncSession, action: AiActionRecord) -> Tup
     """PAPER deployments and the reduce/pause/review actions only."""
     if action.action not in TELEGRAM_ACTIONS:
         return False, "This kind of proposal is decided on the web only (with your authenticator)."
-    if action.deployment_id is not None:
-        dep = await session.get(StrategyDeploymentRecord, action.deployment_id)
-        if dep is None or dep.mode != "PAPER":
-            return False, "LIVE proposals are decided on the web with your authenticator, never over Telegram."
+    if action.deployment_id is None:
+        return False, "Proposals without a deployment are decided on the web only."
+    dep = await session.get(StrategyDeploymentRecord, action.deployment_id)
+    if dep is None or dep.tenant_id != action.tenant_id or dep.mode != "PAPER":
+        return False, "LIVE proposals are decided on the web with your authenticator, never over Telegram."
     return True, ""
 
 
@@ -205,8 +232,8 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
     """Resolves one button press: nonce -> signed row -> the same decide/execute path the web uses. Returns the text to show."""
     now = now or datetime.now(timezone.utc)
     nonce = data[len(CALLBACK_PREFIX):] if data.startswith(CALLBACK_PREFIX) else ""
-    row = await session.scalar(select(TelegramCallbackRecord).where(TelegramCallbackRecord.nonce == nonce)) if nonce else None
-    if row is None or row.tenant_id != tenant.id:
+    row = await session.scalar(select(TelegramCallbackRecord).where(TelegramCallbackRecord.nonce == nonce, TelegramCallbackRecord.tenant_id == tenant.id)) if nonce else None
+    if row is None:
         await write_audit_log(session, tenant.id, None, "telegram_callback_rejected", f"unknown or foreign nonce from chat {chat_id}")
         await session.commit()
         return "This button is not valid for this organisation."
@@ -239,8 +266,18 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
     user = await acting_user(session, tenant.id)
     if user is None:
         return "No active user to record the decision."
-    row.used_at = now
-    row.used_by = user.id
+    # Claim the nonce atomically: two deliveries of the same (or the sibling) button race here, and
+    # only the one whose conditional UPDATE lands gets to decide.
+    claimed = await session.execute(update(TelegramCallbackRecord).where(TelegramCallbackRecord.id == row.id, TelegramCallbackRecord.used_at.is_(None))
+                                    .values(used_at=now, used_by=user.id))
+    await session.commit()
+    if claimed.rowcount != 1:
+        await write_audit_log(session, tenant.id, None, "telegram_callback_replayed", f"nonce={nonce[:6]} claimed concurrently")
+        await session.commit()
+        return "Already decided - this button was used before."
+    siblings = await session.execute(update(TelegramCallbackRecord).where(TelegramCallbackRecord.action_id == row.action_id, TelegramCallbackRecord.tenant_id == tenant.id,
+                                                                          TelegramCallbackRecord.id != row.id, TelegramCallbackRecord.used_at.is_(None)).values(used_at=now))
+    del siblings
     await session.commit()
     try:
         action = await monitor.decide(session, action, user, approve=(row.decision == "approve"), note=f"via Telegram chat {chat_id}", now=now)
@@ -272,7 +309,7 @@ async def _positions_text(session: AsyncSession, tenant_id: int, lang: str) -> s
         return tr(lang, "No open positions.", "कोणतीही open position नाही.")
     lines = [tr(lang, f"Open positions ({len(rows)}):", f"Open positions ({len(rows)}):")]
     for t in rows:
-        lines.append(f"#{t.id} {t.mode} {t.direction} {html.escape(t.symbol)} x{t.quantity:g} @ {t.entry_price:,.2f} SL {t.stop_loss:,.2f}"
+        lines.append(f"#{t.id} {t.mode} {t.direction} {t.symbol} x{t.quantity:g} @ {t.entry_price:,.2f} SL {t.stop_loss:,.2f}"
                      + (f" T1 {t.target1:,.2f}" if t.target1 else ""))
     return "\n".join(lines)
 
@@ -281,9 +318,9 @@ async def _why_text(session: AsyncSession, tenant_id: int, trade_id: int, lang: 
     t = await session.get(TradeRecord, trade_id)
     if t is None or t.tenant_id != tenant_id:
         return tr(lang, "No such trade.", "असा trade नाही.")
-    parts = [f"#{t.id} {t.mode} {t.direction} {html.escape(t.symbol)} ({html.escape(t.strategy_id)}) entered {t.entry_time:%d %b %H:%M} at {t.entry_price:,.2f}, SL {t.stop_loss:,.2f}"]
+    parts = [f"#{t.id} {t.mode} {t.direction} {t.symbol} ({t.strategy_id}) entered {t.entry_time:%d %b %H:%M} at {t.entry_price:,.2f}, SL {t.stop_loss:,.2f}"]
     if t.exit_time:
-        parts.append(f"exited {t.exit_time:%d %b %H:%M} at {t.exit_price:,.2f} ({html.escape(t.exit_reason or '')}), P&L {t.pnl:+,.2f}" if t.exit_price is not None else "exited")
+        parts.append(f"exited {t.exit_time:%d %b %H:%M} at {t.exit_price:,.2f} ({t.exit_reason or ''}), P&L {t.pnl:+,.2f}" if t.exit_price is not None else "exited")
     else:
         parts.append(tr(lang, "still open; the worker watches the stop and targets.", "अजून open; worker stop आणि targets पाहतो आहे."))
     return "\n".join(parts)
@@ -312,7 +349,7 @@ async def _news_text(session: AsyncSession, tenant_id: int, lang: str) -> str:
     lines = [tr(lang, "Feed (unverified, severity >= 3):", "Feed (unverified, तीव्रता >= 3):")]
     for it in items[:8]:
         c = it["classification"]
-        lines.append(f"[{c.get('severity')}] {html.escape(it['headline'][:120])} - {html.escape(it['source'])}")
+        lines.append(f"[{c.get('severity')}] {it['headline'][:120]} - {it['source']}")
     return "\n".join(lines)
 
 
@@ -349,6 +386,10 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
     arg = arg.strip()
     if cmd in ("/help", "/start"):
         return help_text(lang)
+    from app.platform.controls import flag_enabled
+    if cmd in ("/brief", "/risk") or not cmd.startswith("/"):
+        if not await flag_enabled(session, "ai_copilot", tenant.id):          # the operator's AI kill flag binds Telegram too
+            return tr(lang, "The AI Copilot is switched off on this platform right now.", "AI Copilot या platform वर सध्या बंद आहे.")
     if cmd == "/brief":
         brief = await briefing.build(session, user, lang)
         return "\n".join(briefing.summary_lines(lang, brief))
@@ -383,12 +424,16 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
     callback = update.get("callback_query")
     if callback:
         chat_id = str(((callback.get("message") or {}).get("chat") or {}).get("id") or (callback.get("from") or {}).get("id") or "")
-        if not chat_allowed(cfg, chat_id):
-            await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"callback from non-whitelisted chat {chat_id}")
-            await session.commit()
-            return {"handled": "ignored", "reason": "chat not whitelisted"}
         if rate_limited(tenant.id, chat_id):
+            await _call(cfg, "answerCallbackQuery", {"callback_query_id": callback.get("id"), "text": "Slow down - try again in a minute."}, client)
             return {"handled": "rate_limited"}
+        if not chat_allowed(cfg, chat_id):
+            if audit_stranger(tenant.id, chat_id):
+                await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"callback from non-whitelisted chat {chat_id}")
+                await session.commit()
+            else:
+                logger.warning("Telegram callback from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
+            return {"handled": "ignored", "reason": "chat not whitelisted"}
         text = await decide_from_callback(session, tenant, cfg, str(callback.get("data") or ""), chat_id, now=now)
         await meter(session, tenant.id, METRIC, 1, source="telegram", metadata={"kind": "callback"})
         await session.commit()
@@ -402,11 +447,14 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
         chat_id = str((message.get("chat") or {}).get("id") or "")
         text = str(message.get("text") or "")
         if not chat_allowed(cfg, chat_id):
-            await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"message from non-whitelisted chat {chat_id}: {text[:60]!r}")
-            await session.commit()
+            if not rate_limited(tenant.id, chat_id) and audit_stranger(tenant.id, chat_id):
+                await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"message from non-whitelisted chat {chat_id}: {text[:60]!r}")
+                await session.commit()
+            else:
+                logger.warning("Telegram message from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
         if rate_limited(tenant.id, chat_id):
-            await reply(cfg, chat_id, tr(_lang(text), "Slow down - 20 messages a minute.", "थोडे थांबा - मिनिटाला 20 messages."), client)
+            await reply(cfg, chat_id, tr(_lang(text), "Slow down - 20 messages a minute.", "थोडे थांबा - मिनिटाला 20 messages."), client, parse_mode=None)
             return {"handled": "rate_limited"}
         user = await acting_user(session, tenant.id)
         if user is None:
@@ -418,7 +466,7 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
             answer = tr(_lang(text), f"Could not answer: {type(exc).__name__}", f"उत्तर देता आले नाही: {type(exc).__name__}")
         await meter(session, tenant.id, METRIC, 1, source="telegram", metadata={"kind": "message", "command": text.split(" ")[0][:20] if text.startswith("/") else "text"})
         await session.commit()
-        await reply(cfg, chat_id, html.escape(answer) if "<b>" not in answer else answer, client)
+        await reply(cfg, chat_id, answer, client, parse_mode=None)          # plain text: command output is never HTML
         return {"handled": "message", "reply": answer}
     return {"handled": "ignored", "reason": "no message"}
 
@@ -435,5 +483,6 @@ async def send_proposal_buttons(session: AsyncSession, channel: AlertChannelReco
         return False
     answer = await reply(cfg, cfg.chat_id, text_html, client, reply_markup=keyboard)
     if not answer.get("ok", False):
+        await session.rollback()                      # the nonce rows go with the failed send; the retry mints new ones
         raise RuntimeError(f"Telegram API: {answer.get('description') or 'send failed'}")
     return True

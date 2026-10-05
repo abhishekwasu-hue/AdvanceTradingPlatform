@@ -522,7 +522,10 @@ export type NotificationEventType =
   | "DAILY_LOSS_LIMIT"
   | "EMERGENCY_EXIT"
   | "SYSTEM_FAILURE"
-  | "SECURITY";
+  | "SECURITY"
+  | "AI_PROPOSAL"
+  | "MARKETPLACE"
+  | "EOD_SUMMARY";
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 

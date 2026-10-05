@@ -1,0 +1,86 @@
+# Phase AX: production overlay for one compose host (the first PAPER days on a 2 vCPU / 4 GB
+# droplet, ADR-0011). Same images and topology as docker-compose.yml, plus:
+#   * Caddy in front: HTTPS for ${DOMAIN} with an automatic Let's Encrypt certificate, /api/* to
+#     the API, everything else to the frontend, /metrics not reachable from the internet;
+#   * the API bound to 127.0.0.1 only (deploy.sh and the host still reach it), the frontend not
+#     published at all - the only public ports are Caddy's 80/443;
+#   * an off-site copy of the backups and the WAL archive to an S3-compatible bucket (DigitalOcean
+#     Spaces) with rclone, hourly (scripts/backup/offsite_sync.sh).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   scripts/deploy.sh production          # pull/build -> migration guard -> rolling restart -> health
+#
+# Needs Docker Compose v2.24+ (the `!override` tags). Secrets stay in the host's .env, never in
+# this file or in chat (.env.example lists the DOMAIN / ACME_EMAIL / OFFSITE_* variables).
+services:
+  # The database and the cache are reachable from the host only (the base file publishes them
+  # for local development); nothing but Caddy listens on the public interface.
+  postgres:
+    ports: !override
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6379:6379"
+
+  backend:
+    environment:
+      ENVIRONMENT: production
+      ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
+      FRONTEND_URL: https://${DOMAIN}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+
+  frontend:
+    ports: !override []
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env (Let's Encrypt expiry notices)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  # Off-site copy of what the backup service writes. `copy` for the dumps (an off-site file is
+  # never deleted by a local retention run or a mistake on the host), `sync` for the WAL archive
+  # (mirrors the base-backup pruning so it cannot grow without bound).
+  offsite:
+    image: rclone/rclone:1
+    entrypoint: ["sh", "/scripts/offsite_sync.sh"]
+    environment:
+      OFFSITE_REMOTE: ${OFFSITE_REMOTE:-spaces:atp-backups}
+      OFFSITE_INTERVAL_SECONDS: ${OFFSITE_INTERVAL_SECONDS:-3600}
+      RCLONE_CONFIG_SPACES_TYPE: s3
+      RCLONE_CONFIG_SPACES_PROVIDER: DigitalOcean
+      RCLONE_CONFIG_SPACES_ENDPOINT: ${OFFSITE_S3_ENDPOINT:-blr1.digitaloceanspaces.com}
+      RCLONE_CONFIG_SPACES_ACCESS_KEY_ID: ${OFFSITE_S3_ACCESS_KEY:-}
+      RCLONE_CONFIG_SPACES_SECRET_ACCESS_KEY: ${OFFSITE_S3_SECRET_KEY:-}
+      RCLONE_CONFIG_SPACES_ACL: private
+    volumes:
+      - ./scripts/backup:/scripts:ro
+      - backups:/backups:ro
+      - wal_archive:/wal_archive:ro
+    depends_on:
+      - backup
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

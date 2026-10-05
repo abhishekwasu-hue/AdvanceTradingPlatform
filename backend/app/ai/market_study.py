@@ -72,9 +72,13 @@ def levels(df_1m: pd.DataFrame, day: Optional[pd.DataFrame]) -> dict:
     out: Dict[str, Optional[float]] = {}
     if len(session):
         out.update(day_open=_r(session["open"].iloc[0]), day_high=_r(session["high"].max()), day_low=_r(session["low"].min()))
-        first = idx[dates == today][0]
-        orng = session[idx[dates == today] < first + pd.Timedelta(minutes=15)]
-        if len(orng) and (idx[-1] - first) >= pd.Timedelta(minutes=14):
+        # Minutes since the session's first bar, as plain floats: no Timedelta arithmetic on the
+        # index, which NumPy 2 / pandas 3 deprecate for generic (unit-less) timedeltas.
+        today_idx = idx[dates == today]
+        first = today_idx[0]
+        minutes_in = (today_idx - first).total_seconds().to_numpy() / 60.0
+        orng = session[minutes_in < 15]
+        if len(orng) and (idx[-1] - first).total_seconds() >= 14 * 60:
             out.update(or_high=_r(orng["high"].max()), or_low=_r(orng["low"].min()))
         tp = (session["high"] + session["low"] + session["close"]) / 3.0
         vol = session["volume"].astype(float)

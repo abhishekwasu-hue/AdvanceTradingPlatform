@@ -702,6 +702,24 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - A `stale` badge means the broker's quote carries an exchange timestamp older than the Phase G1 limit (market closed,
   or a feed lag); the price is still shown with its age. The worker's exit logic never uses this endpoint.
 
+### 1.6ae First PAPER day: the check script, the EOD summary, the production overlay (Phase AX)
+
+- **`backend/scripts/first_paper_day_check.py`** (run inside the backend container, see `docs/GO_LIVE_MR.md` §3):
+  read-only. It prints the platform and organisation checklists narrowed to a PAPER day, today's NSE session, the
+  read-only broker smoke test on every stored session with a VALID token, whether the active deployments are being
+  evaluated (market open only) and, with `--send-test-alert`, one test message per alert channel. Exit 0 = no ❌,
+  1 = a blocker, 2 = no organisation could be chosen (`--tenant <id|email>`). `--no-smoke` skips the broker probes,
+  `--json` prints the report, `--lang en` switches the summary lines. Nothing it does changes trading state.
+- **EOD summary**: from 15:35 IST on weekdays the worker raises one `EOD_SUMMARY` notification per organisation with an
+  active/paused deployment or a trade today: signals, entries, exits with reasons, net P&L of the day's exits,
+  positions still open after the square-off, reconciliation state, worker errors. INFO on a clean day, WARNING when
+  a position is still open, a deployment is paused or erroring, or the organisation is broker-uncertain - so a
+  Telegram channel with a WARNING floor gets it only when something needs a look; set the floor to INFO to get it daily.
+- **Production overlay** `docker-compose.prod.yml` (ADR-0011): Caddy on 80/443 with an automatic certificate for
+  `DOMAIN`, the API bound to 127.0.0.1, the frontend unpublished, `/metrics` hidden from the internet, and the `offsite`
+  service copying `backups/` and the WAL archive to an S3-compatible bucket hourly (`scripts/backup/offsite_sync.sh`;
+  `--once` for a manual pass). `scripts/deploy.sh production` includes the overlay. Needs Compose v2.24+.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

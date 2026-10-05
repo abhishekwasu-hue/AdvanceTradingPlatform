@@ -36,6 +36,8 @@ class NotificationType(str, Enum):
     AI_PROPOSAL = "AI_PROPOSAL"
     # Phase X: marketplace sales, purchases confirmed, payouts settled.
     MARKETPLACE = "MARKETPLACE"
+    # Phase AX: the worker's end-of-day summary of the session (signals, trades, exits, errors).
+    EOD_SUMMARY = "EOD_SUMMARY"
 
 
 class NotificationSeverity(str, Enum):

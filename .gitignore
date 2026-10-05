@@ -12,3 +12,6 @@ dist/
 *.local
 .vite/
 *.tsbuildinfo
+
+# Redis dump files (a local redis-server writes these into the cwd)
+*.rdb

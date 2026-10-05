@@ -16,7 +16,7 @@ set -eu
 ENV_NAME="${1:-staging}"; REF="${2:-}"
 case "$ENV_NAME" in
   staging)    FILES="-f docker-compose.yml -f docker-compose.staging.yml"; PROJECT="atp-staging"; API="http://localhost:18000" ;;
-  production) FILES="-f docker-compose.yml"; PROJECT="atp"; API="http://localhost:8000" ;;
+  production) FILES="-f docker-compose.yml -f docker-compose.prod.yml"; PROJECT="atp"; API="http://localhost:8000" ;;   # Phase AX: Caddy + off-site copy
   *) echo "usage: scripts/deploy.sh staging|production [git ref]" >&2; exit 2 ;;
 esac
 COMPOSE="docker compose $FILES -p $PROJECT"

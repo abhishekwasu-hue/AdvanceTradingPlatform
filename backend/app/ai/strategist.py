@@ -343,7 +343,7 @@ def operand_words(lang: str, o: Operand) -> str:
     text = tr(lang, en, mr).format(p=o.period, m=f"{o.multiplier:g}")
     if o.timeframe:
         tf_en, tf_mr = TIMEFRAME_WORDS.get(o.timeframe, (o.timeframe, o.timeframe))
-        text = tr(lang, f"{text} on {tf_en}", f"{tf_mr} वरचा {text}")
+        text = tr(lang, f"{text} on {tf_en} candles", f"{text} ({tf_mr} candles)")
     return text
 
 
@@ -353,49 +353,65 @@ def rule_words(lang: str, c: Condition) -> str:
     return tr(lang, en, mr).format(l=operand_words(lang, c.left), r=operand_words(lang, c.right))
 
 
-SYMBOL_WORDS: Tuple[Tuple[str, str], ...] = (        # (regex on the lower-cased request, symbol) - longest first
-    (r"bank\s*nifty|banknifty|बँक\s*निफ्टी|बँकनिफ्टी|बैंक\s*निफ्टी|nifty\s*bank", "NIFTY BANK"),
+SYMBOL_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (   # longest / most specific first
+    (r"bank\s*nifty|banknifty|बँक\s*निफ्टी|बँकनिफ्टी|बैंक\s*निफ्टी|नि?फ़?्टी\s*बँक|nifty\s*bank", "NIFTY BANK"),
     (r"fin\s*nifty|finnifty|फिन\s*निफ्टी|nifty\s*fin", "NIFTY FIN SERVICE"),
-    (r"midcap\s*nifty|midcpnifty|मिडकॅप", "NIFTY MID SELECT"),
+    (r"midcap\s*nifty|midcpnifty|nifty\s*midcap|मिडकॅप", "NIFTY MID SELECT"),
     (r"sensex|सेन्सेक्स", "SENSEX"),
-    (r"nifty\s*50|\bnifty\b|निफ्टी", "NIFTY 50"),
-)
-STYLE_WORDS = ((r"scalp|स्कॅल्प|स्काल्प|1\s*min|एक\s*मिनिट|1\s*मिनिट", "scalping"), (r"intraday|इंट्राडे|5\s*min|5\s*मिनिट|पाच\s*मिनिट", "intraday"))
-DIRECTION_REQUEST_WORDS = (
-    (r"both|दोन्ही|दोन्ही|long\s*(and|&|\+)\s*short", "both"),
-    (r"only\s*long|long\s*only|फक्त\s*long|फक्त\s*खरेदी|buy\s*only|only\s*buy|तेजी\s*(साठी|च्या|ची|चा)|bullish|लाँग", "long"),
-    (r"only\s*short|short\s*only|फक्त\s*short|फक्त\s*विक्री|sell\s*only|only\s*sell|मंदी\s*(साठी|च्या|ची|चा)|bearish|शॉर्ट", "short"),
+    (r"nifty\s*50|\bnifty\b|निफ्टी|नीफ्टी|निफ़्टी", "NIFTY 50"),
+))
+STYLE_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
+    (r"scalp|स्कॅल्प|स्काल्प|1\s*min|एक\s*मिनिट|1\s*मिनिट", "scalping"), (r"intraday|इंट्राडे|5\s*min|5\s*मिनिट|पाच\s*मिनिट", "intraday")))
+DIRECTION_REQUEST_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
+    (r"both|दोन्ही|long\s*(and|&|\+)\s*short", "both"),
+    (r"only\s*long|long\s*only|फक्त\s*long|फक्त\s*खरेदी|buy\s*only|only\s*buy|तेजी|bullish|लाँग", "long"),
+    (r"only\s*short|short\s*only|फक्त\s*short|फक्त\s*विक्री|sell\s*only|only\s*sell|मंदी|bearish|शॉर्ट", "short"),
     (r"\blong\b|खरेदी", "long"), (r"\bshort\b|विक्री", "short"),
-)
+))
+# Upper-case words that are never a ticker (request grammar, platform words, indicator names).
+TICKER_STOP_WORDS = frozenset("""LONG SHORT BOTH ONLY BUY SELL AND THE FOR WITH ON IN AT TO OF USE MY PLEASE GIVE MAKE BUILD STUDY TODAY NOW SIDES SIDE
+INTRADAY SCALPING SCALP SCALPER SWING PAPER LIVE TRADE TRADES TRADING STRATEGY STOP TARGET DAY MIN MINS MINUTE MINUTES HOUR CANDLE CANDLES
+VWAP EMA SMA RSI ATR ADX BB NSE BSE MCX NFO FNO OPTION OPTIONS FUTURE FUTURES CE PE CALL PUT BULLISH BEARISH NEUTRAL AUTO MARKET BIAS LEVEL LEVELS""".split())
+_TICKER = re.compile(r"\b([A-Z][A-Z&-]{2,19})\b")
 _DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
+def _is_grammar_word(word: str) -> bool:
+    low = word.lower()
+    return word in TICKER_STOP_WORDS or any(p.search(low) for p, _ in STYLE_WORDS) or any(p.search(low) for p, _ in DIRECTION_REQUEST_WORDS)
 
 
 def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
     """A plain-words request in Marathi or English - `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
     sides` - into the strategist's inputs. Returns what was matched so the UI can show it; anything not
-    said keeps the default (symbol as given, intraday, direction decided by the market, language by script)."""
+    said keeps the default (symbol as given, intraday, direction decided by the market). `language` is
+    "mr" only when the request carries Devanagari (`matched["language"]` says it was detected); a Latin-only
+    request leaves the caller's language alone."""
     raw = (text or "").strip()
     norm = raw.translate(_DEVANAGARI_DIGITS)
     low = norm.lower()
-    lang = "mr" if re.search(r"[\u0900-\u097F]", raw) else "en"
     matched: Dict[str, str] = {}
+    lang = "en"
+    if re.search(r"[\u0900-\u097F]", raw):
+        lang, matched["language"] = "mr", "mr"
     symbol = default_symbol
     for pattern, name in SYMBOL_WORDS:
-        if re.search(pattern, low):
+        if pattern.search(low):
             symbol, matched["symbol"] = name, name
             break
     else:
-        ticker = re.search(r"\b([A-Z][A-Z&-]{2,19})\b", norm)
-        if ticker and ticker.group(1) not in {"LONG", "SHORT", "BOTH", "ONLY", "BUY", "SELL", "AND", "THE", "FOR", "WITH", "VWAP", "EMA", "RSI", "ATR", "ADX", "NSE", "BSE", "MIN"}:
-            symbol, matched["symbol"] = ticker.group(1), ticker.group(1)
+        for m in _TICKER.finditer(norm):            # the first all-caps word that is not request grammar
+            if not _is_grammar_word(m.group(1)):
+                symbol, matched["symbol"] = m.group(1), m.group(1)
+                break
     style = "intraday"
     for pattern, name in STYLE_WORDS:
-        if re.search(pattern, low):
+        if pattern.search(low):
             style, matched["style"] = name, name
             break
     direction = "auto"
     for pattern, name in DIRECTION_REQUEST_WORDS:
-        if re.search(pattern, low):
+        if pattern.search(low):
             direction, matched["direction"] = name, name
             break
     return {"symbol": symbol, "style": style, "direction": direction, "language": lang, "matched": matched, "text": raw[:200]}

@@ -59,3 +59,10 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
   can only change which study runs, never an order. Unmatched words fall back to the form's values and the UI shows
   exactly what was understood before anything runs.
 
+### BF - self-review findings fixed before merge
+- Ticker fallback took only the first all-caps word and gave up on grammar words, so `SHORT ONLY ON RELIANCE` lost the
+  symbol and `INTRADAY BOTH` made INTRADAY the symbol; now the first all-caps word that is not request grammar wins.
+- A Latin-only request no longer flips a Marathi UI to English; the build runs from the form (a hand correction
+  after the parse wins) and only the detected script travels along; Marathi index variants (`निफ्टी बँक`, `नीफ्टी`,
+  bare `तेजी`/`मंदी`) recognised; debounce race guarded; timeframe grammar in rule words fixed.
+

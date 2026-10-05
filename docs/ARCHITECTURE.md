@@ -3962,8 +3962,11 @@ Tests: `tests/test_phase_aw_strategist.py`.
 * **Requests in words** (`strategist.parse_request`): `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
   sides`, `निफ्टी मध्ये मंदीसाठी ५ मिनिट` → symbol (index aliases in both scripts, else an upper-case ticker),
   style (scalp / 1 min → scalping, else intraday), direction (long / short / both; खरेदी-विक्री, तेजी-मंदी),
-  language (Devanagari → mr). Devanagari digits are normalised. Whatever the request does not name keeps the
-  form's value; `matched` says what was understood. `POST /api/ai/strategist/parse` previews it;
+  language (Devanagari → mr; a Latin-only request keeps the form's language, since tickers are Latin). Devanagari
+  digits are normalised; all-caps grammar words (INTRADAY, LONG, PAPER, indicator names...) are never a ticker.
+  Whatever the request does not name keeps the form's value; `matched` says what was understood. Negations are
+  not understood - the UI says so and shows the parsed fields to correct before anything runs; the build itself
+  runs from the form, so a hand correction always wins. `POST /api/ai/strategist/parse` previews it;
   `request` on `/strategist/study` and `/strategist/build` applies it (response carries `request_parsed` and
   the effective `language`). No AI call: the parser is a deterministic table.
 * **UI**: a "say it in words" box above the symbol/style/direction controls fills them from the parse (chips

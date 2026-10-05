@@ -2033,6 +2033,6 @@ export interface StrategistResult {
 /** Phase BF: what the strategist understood from a plain-words request. */
 export interface StrategistRequestParsed {
   symbol: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr";
-  matched: Partial<Record<"symbol" | "style" | "direction", string>>; text: string; summary?: string;
+  matched: Partial<Record<"symbol" | "style" | "direction" | "language", string>>; text: string; summary?: string;
 }
 

@@ -564,17 +564,19 @@ class StrategistBody(BaseModel):
         if not (self.request or "").strip():
             return self, None
         parsed = strategist.parse_request(self.request, default_symbol=self.symbol)
-        update = {"language": parsed["language"]}
+        update = {"language": "mr"} if parsed["language"] == "mr" else {}       # Latin-only text keeps the form's language
         for key in ("symbol", "style", "direction"):
             if key in parsed["matched"]:
                 update[key] = parsed[key]
-        parsed["summary"] = strategist.request_summary(parsed["language"], {**parsed, **{k: update.get(k, getattr(self, k)) for k in ("symbol", "style", "direction")}})
-        return self.model_copy(update=update), parsed
+        effective = self.model_copy(update=update)
+        parsed["summary"] = strategist.request_summary(effective.language, {**parsed, **{k: getattr(effective, k) for k in ("symbol", "style", "direction")}})
+        return effective, parsed
 
 
 class StrategistParseBody(BaseModel):
     request: str = Field(min_length=1, max_length=300)
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    language: str = Field(default="mr", pattern=r"^(en|mr)$")
 
 
 async def _strategist_frames(session: AsyncSession, user: User, body: StrategistBody):
@@ -613,7 +615,7 @@ async def strategist_parse(body: StrategistParseBody, user: User = Depends(get_c
     style, direction, language - so the trader can see and correct it before the study runs."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     parsed = strategist.parse_request(body.request, default_symbol=body.symbol)
-    parsed["summary"] = strategist.request_summary(parsed["language"], parsed)
+    parsed["summary"] = strategist.request_summary(parsed["language"] if parsed["language"] == "mr" else body.language, parsed)
     return parsed
 
 

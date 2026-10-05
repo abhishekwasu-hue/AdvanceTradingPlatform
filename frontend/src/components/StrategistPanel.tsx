@@ -171,7 +171,7 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
               {showTechnical || !c.rules_text ? (
                 <div className="flex flex-wrap gap-1">{c.rules[side].map((r) => <span key={r} className="rounded border border-border bg-panel2/70 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">{r}</span>)}</div>
               ) : (
-                <ul className="list-disc pl-4 text-slate-200">{c.rules_text[side].map((r, i) => <li key={r} title={c.rules[side][i]}>{r}</li>)}</ul>
+                <ul className="list-disc pl-4 text-slate-200">{c.rules_text[side].map((r, i) => <li key={`${side}-${i}`} title={c.rules[side][i]}>{r}</li>)}</ul>
               )}
             </div>
           ))}
@@ -238,15 +238,17 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
   useEffect(() => {
     const text = requestText.trim();
     if (!text) { setParsed(null); return; }
+    let active = true;
     const handle = setTimeout(() => {
-      api.aiStrategistParse(text, symbol).then((p) => {
+      api.aiStrategistParse(text, symbol, lang).then((p) => {
+        if (!active) return;                       // a newer request or a cleared box wins
         setParsed(p);
         if (p.matched.symbol) setSymbol(p.symbol);
         if (p.matched.style) setStyle(p.style);
         if (p.matched.direction) setDirection(p.direction);
-      }).catch(() => setParsed(null));
+      }).catch(() => { if (active) setParsed(null); });
     }, 400);
-    return () => clearTimeout(handle);
+    return () => { active = false; clearTimeout(handle); };
   }, [requestText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
@@ -258,8 +260,10 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         const r = await source.fetch([sym], "1min", { count: 375 * 12, startPriceFor: () => (sym.includes("BANK") ? 52_000 : sym.includes("NIFTY") ? 24_500 : 1_500), seedFor: () => 7 });
         candles = sessionize(r.candles[sym] ?? []);
       }
-      setResult(await api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction, language: lang,
-                                              request: requestText.trim() || undefined }));
+      // The parse already filled the form, so the form (which the trader may have corrected by hand) is what runs;
+      // only the detected script travels along so a Marathi request is answered in Marathi.
+      setResult(await api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction,
+                                              language: parsed?.matched.language === "mr" ? "mr" : lang }));
     } catch (e) {
       const text = String(e).replace(/^Error:\s*/, "");
       const m = text.match(/\{.*\}/s);
@@ -281,7 +285,7 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         </div>
         <label className="mb-3 block text-xs text-muted">
           <span className="flex items-center gap-1"><MessageSquareText size={12} />{L("शब्दांत सांगा (मराठी किंवा English)", "Say it in words (Marathi or English)")}</span>
-          <input value={requestText} onChange={(e) => setRequestText(e.target.value)} placeholder={L("उदा. बँक निफ्टी फक्त long scalping", "e.g. Bank Nifty long only scalping")}
+          <input value={requestText} onChange={(e) => setRequestText(e.target.value)} placeholder={L("उदा. बँक निफ्टी फक्त long scalping (नकार समजत नाही - खाली तपासा)", "e.g. Bank Nifty long only scalping (no negations - check the fields below)")}
                  className="mt-0.5 block w-full rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100" />
           {parsed && (
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">

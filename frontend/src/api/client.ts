@@ -663,8 +663,8 @@ export const api = {
   aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr"; request?: string }) =>
     request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body) }),
   // Phase BF: what a plain-words request (Marathi or English) means to the strategist.
-  aiStrategistParse: (text: string, symbol: string) =>
-    request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol }) }),
+  aiStrategistParse: (text: string, symbol: string, language: "en" | "mr" = "mr") =>
+    request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol, language }) }),
   aiStrategistAdopt: (name: string, config: CustomStrategyConfig, symbol: string) =>
     request<{ strategy_id: string; name: string; deployment: DeploymentCreateRequest }>("/ai/strategist/adopt", { method: "POST", body: JSON.stringify({ name, config, symbol }) }),
   // Phase AV: the Copilot home.

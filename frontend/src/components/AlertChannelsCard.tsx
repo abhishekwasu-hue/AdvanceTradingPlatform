@@ -2,7 +2,7 @@ import { BellRing, Mail, MessageSquare, Send, Smartphone, Webhook } from "lucide
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
-import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity } from "../types";
+import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
 
@@ -22,6 +22,10 @@ export default function AlertChannelsCard() {
   const [busy, setBusy] = useState(false);
 
   const [tg, setTg] = useState({ bot_token: "", chat_id: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
+  // Phase BE: two-way Telegram - commands (/brief /positions /risk ...) and Approve/Reject buttons on
+  // PAPER monitor proposals. Off by default; LIVE decisions stay on the web with the authenticator.
+  const [inbound, setInbound] = useState<TelegramInboundStatus | null>(null);
+  const [inboundChats, setInboundChats] = useState("");
   const [wh, setWh] = useState({ url: "", secret: "", event_types: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
   const [sms, setSms] = useState({
     preset: "msg91", url: "", headers: "", body_template: "", to_numbers: "", content_type: "application/json",
@@ -59,6 +63,7 @@ export default function AlertChannelsCard() {
       }
     }).catch((e) => setError(String(e)));
     api.listAlertDeliveries(10).then(setDeliveries).catch(() => {});
+    api.telegramInboundStatus().then((s) => { setInbound(s); setInboundChats(s.allowed_chat_ids.join(", ")); }).catch(() => setInbound(null));
   }
 
   useEffect(refresh, []);
@@ -169,6 +174,33 @@ export default function AlertChannelsCard() {
             <button disabled={busy || !stored("TELEGRAM")} onClick={() => test("TELEGRAM")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
             {stored("TELEGRAM") && <button disabled={busy} onClick={() => run("Telegram channel removed.", () => api.deleteAlertChannel("telegram"))} className="text-xs text-danger hover:underline">Remove</button>}
           </div>
+          {stored("TELEGRAM") && inbound && (
+            <div className="mt-2 border-t border-border pt-2 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-200">Two-way Telegram (commands + PAPER approvals)</span>
+                <span className={inbound.inbound_enabled ? "text-accent" : "text-muted"}>{inbound.inbound_enabled ? "on" : "off"}</span>
+              </div>
+              {inbound.flag_enabled === false && <div className="text-[11px] text-amber-400">Feature flag <code>telegram_inbound</code> is off for this organisation - ask the platform admin to enable it.</div>}
+              <p className="text-[11px] text-muted">
+                Chat commands: /brief /positions /risk /news /levels /thesis /why, or ask a question. Approve/Reject buttons appear on
+                monitor proposals for <b>PAPER</b> deployments only ({inbound.telegram_actions.join(", ")}); exits and every LIVE decision stay on the web with your authenticator.
+              </p>
+              <input className={input} placeholder="Allowed chat ids (comma separated; the alert chat id is always allowed)" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
+              <div className="flex flex-wrap items-center gap-2">
+                <button disabled={busy || inbound.flag_enabled === false} onClick={() => run(inbound.inbound_enabled ? "Two-way Telegram switched off." : "Two-way Telegram switched on - now register the webhook.",
+                  () => api.telegramInboundConfigure({ enabled: !inbound.inbound_enabled, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
+                  className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">{inbound.inbound_enabled ? "Turn off" : "Turn on"}</button>
+                <button disabled={busy || !inbound.inbound_enabled} onClick={() => run("Allowed chats saved.",
+                  () => api.telegramInboundConfigure({ enabled: true, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
+                  className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Save chats</button>
+                <button disabled={busy || !inbound.inbound_enabled || !inbound.has_secret} onClick={() => run("Webhook registered with Telegram.", async () => {
+                  const r = await api.telegramInboundRegister();
+                  if (!r.ok) throw new Error(r.description ?? "Telegram refused the webhook");
+                })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Register webhook</button>
+              </div>
+              <div className="text-[11px] text-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">

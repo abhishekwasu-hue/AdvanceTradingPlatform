@@ -20,6 +20,7 @@ import type {
   AlertChannel,
   AlertChannelUpsert,
   AlertDelivery,
+  TelegramInboundStatus,
   AnalyticsSummary,
   AuditLogEntry,
   BacktestResult,
@@ -734,6 +735,13 @@ export const api = {
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),
 
   listAlertDeliveries: (limit = 20) => request<AlertDelivery[]>(`/alert-channels/deliveries?limit=${limit}`),
+
+  // Phase BE: Telegram inbound (commands + PAPER approval buttons) - owner-only settings.
+  telegramInboundStatus: () => request<TelegramInboundStatus>("/telegram/inbound/status"),
+  telegramInboundConfigure: (body: { enabled: boolean; allowed_chat_ids: string[] }) =>
+    request<TelegramInboundStatus>("/telegram/inbound", { method: "PUT", body: JSON.stringify(body) }),
+  telegramInboundRegister: () =>
+    request<{ ok: boolean; description?: string | null; webhook_url: string }>("/telegram/inbound/register", { method: "POST" }),
 
   // --- Team ---
 

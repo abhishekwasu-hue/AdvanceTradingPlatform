@@ -4033,3 +4033,31 @@ Tests: `tests/test_phase_bb_news_feed.py`.
 
 Tests: `tests/test_phase_bc_sentiment.py`.
 
+## Phase BE: Telegram inbound (commands and PAPER approvals)
+
+* **Flag** `telegram_inbound` (default **off**, `platform/controls.py`); the owner then switches it on per organisation
+  from Settings > Alert delivery > Telegram (`PUT /api/telegram/inbound`, `require_owner`). The outbound Telegram
+  alert channel (Phase B0) is a prerequisite: inbound reuses its bot token and stores `inbound_enabled`,
+  `allowed_chat_ids` and a random `inbound_secret` in the same encrypted channel config (`alerts/channels.py`).
+* **Webhook** `POST /api/telegram/webhook/{webhook_token}` (`telegram_inbound/routes.py`): no login - Telegram cannot
+  carry one - so the credential is the tenant's `webhook_token` in the path **and** the
+  `X-Telegram-Bot-Api-Secret-Token` header Telegram echoes back (compared with `hmac.compare_digest`). Unknown token
+  or wrong secret -> 401 (audit `telegram_inbound_rejected`); channel missing or inbound off -> 403. Updates from
+  chats outside the whitelist (the alert chat id plus `allowed_chat_ids`) are ignored and audited; 20 updates per
+  minute per chat. `POST /api/telegram/inbound/register` calls Telegram `setWebhook` with the secret.
+* **Commands** (`telegram_inbound/service.py`): `/brief`, `/positions`, `/risk`, `/news`, `/levels`, `/thesis`,
+  `/why`, `/help`; free text goes to the Copilot ask-anything router (`ai/routes.copilot_answer`) as the owner,
+  in the owner's language. Every handled update is metered (`telegram_inbound`). Nothing here places an order.
+* **Approval buttons**: when the dispatcher sends a monitor proposal (ADR-0006) to Telegram it adds Approve/Reject
+  inline buttons **only** for `PAUSE_DEPLOYMENT`, `REDUCE_RISK` and `REVIEW_STRATEGY` on **PAPER** deployments
+  (`TELEGRAM_ACTIONS`, `telegram_allowed()`); exits and every LIVE decision stay on the web with the authenticator
+  (Phase C3 step-up). Each button is a `telegram_callbacks` row: random nonce in `callback_data` (`p:<nonce>`),
+  an HMAC-SHA256 signature over tenant/action/nonce/decision with `JWT_SECRET_KEY`, expiring with the proposal (24 h), single use.
+  `decide_from_callback()` re-checks tenant, signature, chat, expiry, use and `telegram_allowed()` **at press
+  time** (a deployment switched to LIVE after the buttons went out is refused), then runs the same
+  `monitor.decide`/`execute` the web uses, with the decision note naming the chat; audit `telegram_decision`,
+  replays audited as `telegram_callback_replayed`. `notifications.ai_action_id` links the alert to the proposal.
+* **Migration** `c8d0e2f4a6b8`: `telegram_callbacks` + `notifications.ai_action_id`.
+
+Tests: `tests/test_phase_be_telegram_inbound.py`.
+

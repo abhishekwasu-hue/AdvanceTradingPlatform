@@ -15,7 +15,10 @@ const DIR: Record<string, { mr: string; cls: string; icon: typeof ArrowUpRight }
   BEARISH: { mr: "मंदी", cls: "text-rose-300 border-rose-500/40", icon: ArrowDownRight },
   NEUTRAL: { mr: "तटस्थ", cls: "text-amber-200 border-amber-500/40", icon: ArrowRight },
 };
-const FACTOR_MR: Record<string, string> = { structure: "Structure", trend: "Trend कल", higher_regime: "मोठा timeframe", sentiment: "Market sentiment", news: "बातम्या", global: "जागतिक संकेत" };
+const FACTOR: Record<string, { mr: string; en: string }> = {
+  structure: { mr: "Structure", en: "Structure" }, trend: { mr: "Trend कल", en: "Trend bias" }, higher_regime: { mr: "मोठा timeframe", en: "Higher timeframe" },
+  sentiment: { mr: "Market sentiment", en: "Market sentiment" }, news: { mr: "बातम्या", en: "News" }, global: { mr: "जागतिक संकेत", en: "Global cues" },
+};
 
 function detail(e: unknown): string {
   const text = String(e).replace(/^Error:\s*/, "");
@@ -41,7 +44,7 @@ export default function ThesisCard({ lang = "mr" }: { lang?: "mr" | "en" }) {
       setHistory(await api.aiThesisHistory(symbol));
     } catch (e) {
       const d = detail(e);
-      if (/503|feature|flag|unavailable/i.test(d)) { setOff(true); setThesis(null); } else { setError(d); setThesis(null); }
+      if (/^503\b/.test(String(e).replace(/^Error:\s*/, "")) && /market_thesis/.test(String(e))) { setOff(true); setThesis(null); } else { setError(d); setThesis(null); }
     } finally { setBusy(false); }
   }
   useEffect(() => { void load(); }, [symbol, lang]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -84,7 +87,7 @@ export default function ThesisCard({ lang = "mr" }: { lang?: "mr" | "en" }) {
             {thesis.agreement.matrix.map((r) => (
               <span key={r.factor} title={r.value == null ? "no data" : JSON.stringify(r.value)}
                     className={`rounded border px-1.5 py-0.5 ${!r.available ? "border-border text-muted line-through" : r.direction > 0 ? "border-emerald-500/40 text-emerald-200" : r.direction < 0 ? "border-rose-500/40 text-rose-200" : "border-border text-slate-200"}`}>
-                {FACTOR_MR[r.factor] ?? r.factor} {!r.available ? "?" : r.direction > 0 ? "↑" : r.direction < 0 ? "↓" : "→"} <span className="text-muted">×{r.weight.toFixed(2)}</span>
+                {FACTOR[r.factor] ? (lang === "mr" ? FACTOR[r.factor].mr : FACTOR[r.factor].en) : r.factor} {!r.available ? "?" : r.direction > 0 ? "↑" : r.direction < 0 ? "↓" : "→"} <span className="text-muted">×{r.weight.toFixed(2)}</span>
               </span>
             ))}
           </div>

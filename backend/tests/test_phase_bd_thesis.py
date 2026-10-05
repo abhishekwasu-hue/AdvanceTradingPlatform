@@ -92,6 +92,9 @@ def test_factors_agreement_scenarios_and_shadow_multiplier_are_deterministic_and
     assert scen["bull"]["target"] == 25550.0 and scen["bear"]["target"] == 24500.0 and scen["bull"]["invalidation"] == 24850.0      # measured move = the zone span
     no_zones = th.scenarios(_snapshot(sup=None, res=None, atr_pct=1.0), "mr")
     assert no_zones["bull"]["trigger"] == 25250.0 and no_zones["bear"]["trigger"] == 24750.0 and "तेजी" in no_zones["bull"]["text"]
+    inverted = th.scenarios(_snapshot(sup=(25300.0, 25350.0), res=(24900.0, 24950.0), atr_pct=1.0), "en")   # zones on the wrong side -> ATR stand-ins
+    assert inverted["bear"]["trigger"] == 24750.0 < 25000.0 < inverted["bull"]["trigger"] == 25250.0 and inverted["base"]["low"] < inverted["base"]["high"]
+    assert th.scenarios({"symbol": "X", "last_price": 100.0, "payload": {"support": {"source": "zone"}, "resistance": {}}}, "en")["bull"]["trigger"] == 100.6
 
     # The shadow multiplier only ever goes down, and an event blackout zeroes it.
     base = th.shadow_multiplier(agree, snap, 13.0, [])
@@ -136,6 +139,9 @@ def test_numbers_check_accepts_only_numbers_from_the_inputs():
     assert ok and bad == []
     ok, bad = th.numbers_check("A break of 25,300 opens 26000.", thesis)
     assert not ok and bad == ["25,300", "26000"]
+    ok, bad = th.numbers_check("Target Rs.26000 or x27000 by @28000.", thesis)                    # glued prefixes do not hide a number
+    assert not ok and bad == ["26000", "27000", "28000"]
+    assert not th.numbers_check("Expect a 1.5x move.", thesis)[0]                                  # factor weights are not evidence
     assert all(line and not line.startswith("None") for line in thesis["lines"]) and thesis["narrative_source"] == "rules"
 
     class _Provider:
@@ -249,6 +255,8 @@ def test_capture_daily_builds_one_thesis_per_symbol_per_day_and_telegram_thesis_
     assert built == 2 and sorted(r.symbol for r in rows) == ["NIFTY 50", "RELIANCE"]
     built, rows = _run(capture(NOW + timedelta(hours=2)))
     assert built == 0 and len(rows) == 2                                                             # same IST day: nothing new
+    built, rows = _run(capture(NOW + timedelta(days=1)))
+    assert built == 0 and len(rows) == 2                                                             # yesterday's reads never become today's thesis
 
     # Telegram /thesis renders the same lines (flag on), plain text.
     from app.db.models import Tenant

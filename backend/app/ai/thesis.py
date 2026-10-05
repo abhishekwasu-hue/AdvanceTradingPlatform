@@ -138,8 +138,14 @@ def scenarios(snapshot: dict, lang: str) -> dict:
     atr_pct = float(payload.get("atr_pct") or 0.0) or 0.6
     unit = last * atr_pct / 100.0
     sup, res = payload.get("support") or None, payload.get("resistance") or None
-    bull_trigger = float(res["high"]) if res else round(last + unit, 2)
-    bear_trigger = float(sup["low"]) if sup else round(last - unit, 2)
+    res_high = float(res.get("high") or 0.0) if isinstance(res, dict) else 0.0
+    sup_low = float(sup.get("low") or 0.0) if isinstance(sup, dict) else 0.0
+    # A zone that does not sit on its own side of the price (stale or inverted read) is replaced by the ATR stand-in,
+    # so bear_trigger < last < bull_trigger always holds and the scenarios stay readable.
+    res = res if res_high > last else None
+    sup = sup if 0 < sup_low < last else None
+    bull_trigger = res_high if res else round(last + unit, 2)
+    bear_trigger = sup_low if sup else round(last - unit, 2)
     span = max(bull_trigger - bear_trigger, unit)
     bull_target, bear_target = round(bull_trigger + span, 2), round(bear_trigger - span, 2)
     bull_name = tr(lang, "resistance", "resistance") if res else tr(lang, "one ATR above", "एक ATR वर")
@@ -264,7 +270,7 @@ def view(lang: str, thesis: dict) -> List[str]:
 
 
 # --- the optional narrative with the numbers check ------------------------------------------------
-_NUMBER = re.compile(r"(?<![\w.])[-+]?\d[\d,]*(?:\.\d+)?%?")
+_NUMBER = re.compile(r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?%?")
 
 NARRATIVE_PROMPT = (
     "You write a short (4-6 sentences) market thesis for a retail trader in {language}. Use ONLY the facts in the JSON below. "
@@ -279,7 +285,7 @@ def numbers_in(obj) -> set:
     found: set = set()
 
     def norm(value: float) -> List[str]:
-        out = {f"{value:.2f}".rstrip("0").rstrip("."), f"{value:.1f}".rstrip("0").rstrip("."), str(int(value)) if float(value).is_integer() else f"{value:g}"}
+        out = {f"{value:.2f}".rstrip("0").rstrip("."), f"{value:.1f}".rstrip("0").rstrip("."), str(int(value)) if float(value).is_integer() else f"{value:.4f}".rstrip("0").rstrip(".")}
         return [o for o in out if o]
 
     def walk(v):
@@ -306,8 +312,9 @@ def numbers_in(obj) -> set:
 
 def numbers_check(text: str, thesis: dict) -> Tuple[bool, List[str]]:
     """True when every number in `text` is one of the thesis numbers (inputs, scenarios, confidence)."""
+    agree = thesis["agreement"]
     allowed = numbers_in({"symbol": thesis["symbol"], "inputs": thesis["inputs"], "scenarios": thesis["scenarios"], "confidence": thesis["confidence"],
-                          "agreement": thesis["agreement"], "shadow": thesis["shadow"]["size_multiplier"]})
+                          "agreement": {k: agree.get(k) for k in ("agreeing", "with_opinion", "share", "coverage")}, "shadow": thesis["shadow"]["size_multiplier"]})
     bad = []
     for raw in _NUMBER.findall(text or ""):
         cleaned = raw.replace(",", "").rstrip("%").lstrip("+")
@@ -315,7 +322,7 @@ def numbers_check(text: str, thesis: dict) -> Tuple[bool, List[str]]:
             value = float(cleaned)
         except ValueError:
             continue
-        candidates = {f"{value:.2f}".rstrip("0").rstrip("."), f"{value:.1f}".rstrip("0").rstrip("."), f"{value:g}", str(int(value)) if value.is_integer() else ""}
+        candidates = {f"{value:.2f}".rstrip("0").rstrip("."), f"{value:.1f}".rstrip("0").rstrip("."), f"{value:.4f}".rstrip("0").rstrip("."), str(int(value)) if value.is_integer() else ""}
         if not (candidates & allowed):
             bad.append(raw)
     return (not bad), bad
@@ -362,9 +369,11 @@ def record_to_dict(row: ThesisRecord) -> dict:
     return body
 
 
-async def latest_record(session: AsyncSession, tenant_id: int, symbol: str) -> Optional[ThesisRecord]:
-    return await session.scalar(select(ThesisRecord).where(ThesisRecord.tenant_id == tenant_id, ThesisRecord.symbol == symbol)
-                                .order_by(ThesisRecord.created_at.desc(), ThesisRecord.id.desc()).limit(1))
+async def latest_record(session: AsyncSession, tenant_id: int, symbol: str, lang: Optional[str] = None) -> Optional[ThesisRecord]:
+    query = select(ThesisRecord).where(ThesisRecord.tenant_id == tenant_id, ThesisRecord.symbol == symbol)
+    if lang:
+        query = query.where(ThesisRecord.lang == lang)
+    return await session.scalar(query.order_by(ThesisRecord.created_at.desc(), ThesisRecord.id.desc()).limit(1))
 
 
 async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str = "mr", now: Optional[datetime] = None, memory: Optional[dict] = None,
@@ -402,9 +411,10 @@ async def current(session: AsyncSession, tenant_id: int, symbol: str, *, lang: s
                   news_items: Optional[List[dict]] = None, provider=None) -> Optional[dict]:
     """Today's stored thesis when it is fresh (STALE_MINUTES) and in the asked language; otherwise a new build."""
     now = now or datetime.now(timezone.utc)
+    lang = "mr" if lang == "mr" else "en"
     symbol = symbol.strip().upper()
-    row = await latest_record(session, tenant_id, symbol)
-    if row is not None and not refresh and row.day == _ist_day(now) and row.lang == lang and now - _utc(row.created_at) < timedelta(minutes=STALE_MINUTES):
+    row = await latest_record(session, tenant_id, symbol, lang)
+    if row is not None and not refresh and row.day == _ist_day(now) and now - _utc(row.created_at) < timedelta(minutes=STALE_MINUTES):
         return record_to_dict(row)
     return await build(session, tenant_id, symbol, lang=lang, now=now, news_items=news_items, provider=provider)
 
@@ -415,7 +425,7 @@ async def history(session: AsyncSession, tenant_id: int, symbol: Optional[str] =
     if symbol:
         query = query.where(ThesisRecord.symbol == symbol.strip().upper())
     rows = list(await session.scalars(query.order_by(ThesisRecord.created_at.desc(), ThesisRecord.id.desc()).limit(limit)))
-    scored = [r for r in rows if r.score is not None]
+    scored = list(await session.scalars(query.where(ThesisRecord.score.is_not(None))))        # the whole record, not the page
     hits = sum(1 for r in scored if r.score > 0)
     misses = sum(1 for r in scored if r.score < 0)
     return {"items": [{"id": r.id, "symbol": r.symbol, "day": r.day.isoformat(), "direction": r.direction, "confidence": r.confidence, "agreement": r.agreement,
@@ -450,7 +460,7 @@ async def score_due(session: AsyncSession, tenant_id: int, *, now: Optional[date
     rows = list(await session.scalars(select(ThesisRecord).where(ThesisRecord.tenant_id == tenant_id, ThesisRecord.scored_at.is_(None), ThesisRecord.day < today)))
     scored = 0
     for row in rows:
-        day_end = datetime.combine(row.day + timedelta(days=1), datetime.min.time(), tzinfo=IST)
+        day_end = datetime.combine(row.day + timedelta(days=1), datetime.min.time(), tzinfo=IST).astimezone(timezone.utc)
         reads = list(await session.scalars(select(MarketSnapshotRecord).where(
             MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.kind == KIND, MarketSnapshotRecord.symbol == row.symbol,
             MarketSnapshotRecord.captured_at >= day_end).order_by(MarketSnapshotRecord.captured_at.asc()).limit(200)))
@@ -484,6 +494,9 @@ async def capture_daily(session: AsyncSession, tenant_id: int, memory: dict, *, 
     for snap in memory.get("symbols", []):
         if snap["symbol"] in have:
             continue
+        captured = snap.get("captured_at")
+        if not captured or datetime.fromisoformat(captured).astimezone(IST).date() != today:
+            continue                                  # a stale read (yesterday's last) must not become today's thesis
         if await build(session, tenant_id, snap["symbol"], lang="mr", now=now, memory=memory, news_items=news_items, store=True, commit=False) is not None:
             built += 1
     if built and commit:

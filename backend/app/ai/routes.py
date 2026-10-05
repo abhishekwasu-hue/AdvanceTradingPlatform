@@ -508,7 +508,10 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
         raise HTTPException(status_code=422, detail="Symbol too long")
     provider = None
     if narrate:
-        provider = await ai_settings.provider_for(session, await _tenant(session, user))
+        try:
+            provider = await ai_settings.provider_for(session, await _tenant(session, user))
+        except ProviderError:                       # a stale provider record: the rule-based narrative, with the reason
+            provider = None
     news_items = []
     from app.news_feed import service as news_feed_service
     if await news_feed_service.enabled(session, user.tenant_id):

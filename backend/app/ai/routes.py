@@ -310,6 +310,8 @@ class MemoryRefreshBody(BaseModel):
 
 
 def _with_global(out: dict, lang: str) -> dict:
+    from app.ai import sentiment
+    out["sentiment_view"] = sentiment.view(lang, out.get("sentiment"))     # Phase BC
     out["global_view"] = global_cues.view(lang, out.get("globals", []))
     out["global_source"] = global_cues.SOURCE_NOTE_MR if lang == "mr" else global_cues.SOURCE_NOTE_EN
     out["global_gift_note"] = global_cues.GIFT_NOTE_MR if lang == "mr" else global_cues.GIFT_NOTE_EN
@@ -347,7 +349,16 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(ge
         report = {"symbols": 0, "cues": 0, **report, "errors": [f"broker: {exc.detail}"] + report["errors"]}
     else:
         symbols = [s.strip().upper() for s in body.symbols] if body.symbols else None
-        report = await market_memory.capture(session, user.tenant_id, MarketDataService, build_adapter(record), symbols=symbols)
+        adapter = build_adapter(record)
+        report = await market_memory.capture(session, user.tenant_id, MarketDataService, adapter, symbols=symbols)
+        try:                                                                 # Phase BC: sentiment on the same read
+            from app.ai import sentiment
+            from app.news_feed import service as news_feed_service
+            memory = await market_memory.latest(session, user.tenant_id)
+            news_items = await news_feed_service.items(session, user.tenant_id, hours=sentiment.NEWS_HOURS) if await news_feed_service.enabled(session, user.tenant_id) else []
+            await sentiment.capture(session, user.tenant_id, adapter, memory, news_items=news_items)
+        except Exception as exc:  # noqa: BLE001
+            report["errors"] = list(report.get("errors", [])) + [f"sentiment: {type(exc).__name__}: {exc}"[:200]]
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report
     return _with_global(out, body.language)

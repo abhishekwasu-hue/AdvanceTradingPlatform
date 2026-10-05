@@ -1,7 +1,7 @@
-import { Brain, Globe2, RefreshCw } from "lucide-react";
+import { Brain, Gauge, Globe2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { MarketMemory } from "../types";
+import type { MarketMemory, SentimentRead } from "../types";
 import { Card } from "./ui";
 
 /**
@@ -43,6 +43,49 @@ function ago(iso: string | null): string {
   if (!iso) return "-";
   const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
   return min < 60 ? `${min} मि. पूर्वी` : `${Math.round(min / 60)} तास पूर्वी`;
+}
+
+const COMPONENT_MR: Record<string, string> = { pcr: "PCR/OI", vix: "VIX", breadth: "रुंदी", global: "जागतिक", fii_dii: "FII/DII" };
+const LABEL_MR: Record<string, { text: string; cls: string }> = {
+  RISK_ON: { text: "तेजीचा कल", cls: "text-emerald-300" },
+  RISK_OFF: { text: "सावधगिरीचा कल", cls: "text-rose-300" },
+  NEUTRAL: { text: "तटस्थ", cls: "text-amber-200" },
+  UNKNOWN: { text: "वाचलेला नाही", cls: "text-muted" },
+};
+
+/** Phase BC: the -100..+100 market sentiment as a centred bar with its components; deterministic, inputs shown on hover. */
+export function SentimentGauge({ read, lines }: { read: SentimentRead | null | undefined; lines?: string[] }) {
+  if (!read || read.label === "UNKNOWN") {
+    return <div className="text-xs text-muted">Market sentiment अजून वाचलेला नाही (option chain आणि quotes साठी broker session लागतो).</div>;
+  }
+  const label = LABEL_MR[read.label] ?? LABEL_MR.UNKNOWN;
+  const pct = Math.max(-100, Math.min(100, read.score));
+  return (
+    <div className="text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <Gauge size={13} className="text-purple-300" />
+        <span className="font-semibold text-slate-200">Market sentiment</span>
+        <b className={`font-tabular ${label.cls}`}>{pct >= 0 ? "+" : ""}{pct.toFixed(0)}</b>
+        <span className={label.cls}>{label.text}</span>
+        <span className="text-muted">· coverage {(read.coverage * 100).toFixed(0)}%</span>
+        {read.news && <span className="text-muted">· news {read.news.score >= 0 ? "+" : ""}{read.news.score.toFixed(0)} ({read.news.items}, unverified)</span>}
+      </div>
+      <div className="relative mt-1 h-2 w-full rounded bg-slate-700/60" role="img" aria-label={`Market sentiment ${pct.toFixed(0)} of 100`}>
+        <div className="absolute left-1/2 top-0 h-2 w-px bg-slate-400" />
+        <div className={`absolute top-0 h-2 rounded ${pct >= 0 ? "bg-emerald-400" : "bg-rose-400"}`}
+             style={pct >= 0 ? { left: "50%", width: `${pct / 2}%` } : { right: "50%", width: `${-pct / 2}%` }} />
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {Object.entries(read.components).map(([key, c]) => (
+          <span key={key} title={JSON.stringify(c.input ?? "no data")}
+                className={`rounded border px-1.5 py-0.5 ${c.score == null ? "border-border text-muted line-through" : "border-border text-slate-200"}`}>
+            {COMPONENT_MR[key] ?? key} {c.score == null ? "-" : `${c.score >= 0 ? "+" : ""}${c.score.toFixed(0)}`}{c.score != null && <span className="text-muted"> ×{c.weight.toFixed(2)}</span>}
+          </span>
+        ))}
+      </div>
+      {lines && lines.length > 0 && <ul className="mt-1 list-disc pl-4 text-muted">{lines.slice(0, 3).map((l) => <li key={l}>{l}</li>)}</ul>}
+    </div>
+  );
 }
 
 export default function MarketMemoryCard() {
@@ -123,6 +166,9 @@ export default function MarketMemoryCard() {
           </tbody>
         </table>
       )}
+      <div className="mt-3 border-t border-border/60 pt-2">
+        <SentimentGauge read={memory?.sentiment} lines={memory?.sentiment_view} />
+      </div>
       <div className="mt-3 border-t border-border/60 pt-2">
         <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-200"><Globe2 size={13} className="text-sky-300" />जागतिक संकेत</div>
         {memory?.globals && memory.globals.length > 0 ? (

@@ -17,6 +17,9 @@ whose terms are unclear is **off** until the operator confirms it (Admin, or the
 | Economic Times - Markets RSS | Phase BB news feed | publisher RSS offered for personal, non-commercial syndication; no body stored, link back to the publisher | headline, link, time | **off** |
 | Moneycontrol - Market reports RSS | Phase BB news feed | publisher RSS; no body stored, link back | headline, link, time | **off** |
 | Paid news provider | Phase BB seam (`NewsProvider`, not implemented) | per contract | - | off |
+| NSE daily FII/DII activity page | Phase BC sentiment (`fii_dii` component) | NSE website terms restrict automated access; no documented API terms | - | **off** (`FII_DII_SOURCE` unset) |
+| NSDL FPI monitor | Phase BC alternative for FII flows | public statistics, monthly/fortnightly cadence - too slow for a daily score | - | not wired |
+| Tenant's broker option chain and heavyweight quotes | Phase BC sentiment (PCR/OI, breadth) | the tenant's own API agreement | SENTIMENT snapshot (score, components) in market memory | on with a broker session |
 
 ## Phase BB rules
 

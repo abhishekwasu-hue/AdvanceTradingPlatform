@@ -1906,6 +1906,21 @@ export interface MarketMemory {
   global_source?: string;
   global_gift_note?: string;
   global_enabled?: boolean;
+  // Phase BC: the deterministic market sentiment read stored with the memory.
+  sentiment?: SentimentRead | null;
+  sentiment_view?: string[];
+}
+
+export interface SentimentComponent { score: number | null; weight: number; configured_weight: number; input: unknown }
+export interface SentimentRead {
+  score: number;
+  label: "RISK_ON" | "RISK_OFF" | "NEUTRAL" | "UNKNOWN";
+  components: Record<"pcr" | "vix" | "breadth" | "global" | "fii_dii", SentimentComponent>;
+  missing: string[];
+  coverage: number;
+  news: { score: number; items: number; label: "RISK_ON" | "RISK_OFF" | "NEUTRAL" } | null;
+  as_of: string;
+  source: string;
 }
 
 // Phase AT: the guide.
@@ -1936,6 +1951,8 @@ export interface DailyBrief {
   day_type: { kind: DayKind; regime: string; symbol: string | null; bias: string | null; change_pct: number | null; higher_regime: string | null; vix: number | null };
   plan: { headline: string; lines: string[]; fit_families: string[]; avoid_families: string[] };
   global_mood: { label: "POSITIVE" | "NEGATIVE" | "MIXED"; score: number; drivers: string[] } | null;
+  sentiment?: SentimentRead | null;
+  sentiment_view?: string[];
   market_updated_at: string | null;
   market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
   events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];

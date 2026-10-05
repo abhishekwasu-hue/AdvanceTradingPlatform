@@ -94,6 +94,13 @@ export default function DailyBriefing({ lang }: { lang: "en" | "mr" }) {
             </span>
           ))}
           {vix != null && <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100">India VIX <b>{vix.toFixed(1)}</b></span>}
+          {brief.sentiment && brief.sentiment.label !== "UNKNOWN" && (
+            <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100" title={(brief.sentiment_view ?? []).join(" ")}>Sentiment{" "}
+              <b className={brief.sentiment.label === "RISK_ON" ? "text-emerald-300" : brief.sentiment.label === "RISK_OFF" ? "text-rose-300" : "text-amber-200"}>
+                {brief.sentiment.score >= 0 ? "+" : ""}{brief.sentiment.score.toFixed(0)}
+              </b>
+            </span>
+          )}
           {brief.global_mood && (
             <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100">जागतिक संकेत{" "}
               <b className={brief.global_mood.label === "POSITIVE" ? "text-emerald-300" : brief.global_mood.label === "NEGATIVE" ? "text-rose-300" : "text-amber-200"}>

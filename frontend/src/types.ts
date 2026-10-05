@@ -2042,6 +2042,8 @@ export interface SimMetrics {
 export interface StrategyCandidate {
   id: string; name: string; family: string; direction: "LONG" | "SHORT" | "BOTH"; timeframe: string; why: string;
   params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
+  // Phase BF: the same rules in the trader's words (mr/en), the direction and timeframe in words, a one-line summary.
+  rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;
   triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
   in_sample: SimMetrics; out_of_sample: SimMetrics; all: SimMetrics; oos_sessions: string[];
   verdict: "robust" | "overfit" | "weak" | "untested" | "thin"; verdict_text: string;
@@ -2052,5 +2054,11 @@ export interface StrategistResult {
   study: MarketStudy; style: string; base_timeframe: string; higher_timeframe: string; sides: string[];
   candidates: StrategyCandidate[]; best: string | null; notes: string[]; tested: number; data_source: string;
   ai_candidates: number; provider: string;
+  request_parsed?: StrategistRequestParsed | null; language?: "en" | "mr";
+}
+/** Phase BF: what the strategist understood from a plain-words request. */
+export interface StrategistRequestParsed {
+  symbol: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr";
+  matched: Partial<Record<"symbol" | "style" | "direction" | "language", string>>; text: string; summary?: string;
 }
 

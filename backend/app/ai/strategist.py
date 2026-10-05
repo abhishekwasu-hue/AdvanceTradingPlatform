@@ -314,6 +314,115 @@ def _rule_text(lang: str, c: Condition) -> str:
     return c.label()
 
 
+# --- the strategist in the trader's language (Phase BF) -----------------------------------------------------------
+OPERAND_WORDS: Dict[str, Tuple[str, str]] = {
+    "CLOSE": ("close", "close भाव"), "OPEN": ("open", "open भाव"), "HIGH": ("high", "high"), "LOW": ("low", "low"),
+    "VWAP": ("VWAP", "VWAP"), "DAY_OPEN": ("today's open", "आजचा open"), "PDH": ("yesterday's high", "कालचा high"),
+    "PDL": ("yesterday's low", "कालचा low"), "PDC": ("yesterday's close", "कालचा close"), "VOLUME": ("volume", "volume"),
+    "VOLUME_SMA": ("average volume ({p})", "सरासरी volume ({p})"), "EMA": ("EMA({p})", "EMA({p})"), "SMA": ("SMA({p})", "SMA({p})"),
+    "RSI": ("RSI({p})", "RSI({p})"), "ADX": ("ADX({p})", "ADX({p})"), "PLUS_DI": ("+DI({p})", "+DI({p})"), "MINUS_DI": ("-DI({p})", "-DI({p})"),
+    "ATR": ("ATR({p})", "ATR({p})"), "SUPERTREND": ("Supertrend({p}, {m})", "Supertrend({p}, {m})"),
+    "OR_HIGH": ("opening-range high ({p} min)", "opening range high ({p} मिनिट)"), "OR_LOW": ("opening-range low ({p} min)", "opening range low ({p} मिनिट)"),
+    "BB_UPPER": ("upper Bollinger band ({p}, {m}σ)", "वरचा Bollinger band ({p}, {m}σ)"), "BB_MID": ("Bollinger middle band ({p})", "Bollinger मधला band ({p})"),
+    "BB_LOWER": ("lower Bollinger band ({p}, {m}σ)", "खालचा Bollinger band ({p}, {m}σ)"),
+}
+OPERATOR_WORDS: Dict[str, Tuple[str, str]] = {
+    "GT": ("{l} above {r}", "{l} {r} च्या वर"), "GTE": ("{l} at or above {r}", "{l} {r} च्या वर किंवा बरोबर"),
+    "LT": ("{l} below {r}", "{l} {r} च्या खाली"), "LTE": ("{l} at or below {r}", "{l} {r} च्या खाली किंवा बरोबर"),
+    "CROSSES_ABOVE": ("{l} crosses above {r}", "{l} {r} च्या वर ओलांडतो"), "CROSSES_BELOW": ("{l} crosses below {r}", "{l} {r} च्या खाली ओलांडतो"),
+}
+DIRECTION_WORDS = {"LONG": ("LONG only", "फक्त LONG"), "SHORT": ("SHORT only", "फक्त SHORT"), "BOTH": ("both sides", "दोन्ही बाजू")}
+TIMEFRAME_WORDS = {"1min": ("1-minute", "1 मिनिट"), "5min": ("5-minute", "5 मिनिट"), "15min": ("15-minute", "15 मिनिट"), "60min": ("hourly", "1 तास"), "day": ("daily", "दैनिक")}
+
+
+def operand_words(lang: str, o: Operand) -> str:
+    """One operand in words: `EMA(50) on 15-minute`, `कालचा high`, `30`."""
+    if o.type == "value":
+        return f"{o.value:g}"
+    en, mr = OPERAND_WORDS.get(o.indicator, (o.indicator, o.indicator))
+    text = tr(lang, en, mr).format(p=o.period, m=f"{o.multiplier:g}")
+    if o.timeframe:
+        tf_en, tf_mr = TIMEFRAME_WORDS.get(o.timeframe, (o.timeframe, o.timeframe))
+        text = tr(lang, f"{text} on {tf_en} candles", f"{text} ({tf_mr} candles)")
+    return text
+
+
+def rule_words(lang: str, c: Condition) -> str:
+    """One condition in the trader's words, e.g. `close crosses above the opening-range high (15 min)`."""
+    en, mr = OPERATOR_WORDS[c.operator]
+    return tr(lang, en, mr).format(l=operand_words(lang, c.left), r=operand_words(lang, c.right))
+
+
+SYMBOL_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (   # longest / most specific first
+    (r"bank\s*nifty|banknifty|बँक\s*निफ्टी|बँकनिफ्टी|बैंक\s*निफ्टी|नि?फ़?्टी\s*बँक|nifty\s*bank", "NIFTY BANK"),
+    (r"fin\s*nifty|finnifty|फिन\s*निफ्टी|nifty\s*fin", "NIFTY FIN SERVICE"),
+    (r"midcap\s*nifty|midcpnifty|nifty\s*midcap|मिडकॅप", "NIFTY MID SELECT"),
+    (r"sensex|सेन्सेक्स", "SENSEX"),
+    (r"nifty\s*50|\bnifty\b|निफ्टी|नीफ्टी|निफ़्टी", "NIFTY 50"),
+))
+STYLE_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
+    (r"scalp|स्कॅल्प|स्काल्प|1\s*min|एक\s*मिनिट|1\s*मिनिट", "scalping"), (r"intraday|इंट्राडे|5\s*min|5\s*मिनिट|पाच\s*मिनिट", "intraday")))
+DIRECTION_REQUEST_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
+    (r"both|दोन्ही|long\s*(and|&|\+)\s*short", "both"),
+    (r"only\s*long|long\s*only|फक्त\s*long|फक्त\s*खरेदी|buy\s*only|only\s*buy|तेजी|bullish|लाँग", "long"),
+    (r"only\s*short|short\s*only|फक्त\s*short|फक्त\s*विक्री|sell\s*only|only\s*sell|मंदी|bearish|शॉर्ट", "short"),
+    (r"\blong\b|खरेदी", "long"), (r"\bshort\b|विक्री", "short"),
+))
+# Upper-case words that are never a ticker (request grammar, platform words, indicator names).
+TICKER_STOP_WORDS = frozenset("""LONG SHORT BOTH ONLY BUY SELL AND THE FOR WITH ON IN AT TO OF USE MY PLEASE GIVE MAKE BUILD STUDY TODAY NOW SIDES SIDE
+INTRADAY SCALPING SCALP SCALPER SWING PAPER LIVE TRADE TRADES TRADING STRATEGY STOP TARGET DAY MIN MINS MINUTE MINUTES HOUR CANDLE CANDLES
+VWAP EMA SMA RSI ATR ADX BB NSE BSE MCX NFO FNO OPTION OPTIONS FUTURE FUTURES CE PE CALL PUT BULLISH BEARISH NEUTRAL AUTO MARKET BIAS LEVEL LEVELS""".split())
+_TICKER = re.compile(r"\b([A-Z][A-Z&-]{2,19})\b")
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
+def _is_grammar_word(word: str) -> bool:
+    low = word.lower()
+    return word in TICKER_STOP_WORDS or any(p.search(low) for p, _ in STYLE_WORDS) or any(p.search(low) for p, _ in DIRECTION_REQUEST_WORDS)
+
+
+def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
+    """A plain-words request in Marathi or English - `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
+    sides` - into the strategist's inputs. Returns what was matched so the UI can show it; anything not
+    said keeps the default (symbol as given, intraday, direction decided by the market). `language` is
+    "mr" only when the request carries Devanagari (`matched["language"]` says it was detected); a Latin-only
+    request leaves the caller's language alone."""
+    raw = (text or "").strip()
+    norm = raw.translate(_DEVANAGARI_DIGITS)
+    low = norm.lower()
+    matched: Dict[str, str] = {}
+    lang = "en"
+    if re.search(r"[\u0900-\u097F]", raw):
+        lang, matched["language"] = "mr", "mr"
+    symbol = default_symbol
+    for pattern, name in SYMBOL_WORDS:
+        if pattern.search(low):
+            symbol, matched["symbol"] = name, name
+            break
+    else:
+        for m in _TICKER.finditer(norm):            # the first all-caps word that is not request grammar
+            if not _is_grammar_word(m.group(1)):
+                symbol, matched["symbol"] = m.group(1), m.group(1)
+                break
+    style = "intraday"
+    for pattern, name in STYLE_WORDS:
+        if pattern.search(low):
+            style, matched["style"] = name, name
+            break
+    direction = "auto"
+    for pattern, name in DIRECTION_REQUEST_WORDS:
+        if pattern.search(low):
+            direction, matched["direction"] = name, name
+            break
+    return {"symbol": symbol, "style": style, "direction": direction, "language": lang, "matched": matched, "text": raw[:200]}
+
+
+def request_summary(lang: str, parsed: dict) -> str:
+    style_en, style_mr = ("scalping (1-minute, 5-minute filter)", "scalping (1 मिनिट, 5 मिनिट filter)") if parsed["style"] == "scalping" else ("intraday (5-minute, 15-minute filter)", "intraday (5 मिनिट, 15 मिनिट filter)")
+    direction = {"long": ("LONG only", "फक्त LONG"), "short": ("SHORT only", "फक्त SHORT"), "both": ("both sides", "दोन्ही बाजू"), "auto": ("direction from the market's bias", "दिशा market च्या bias नुसार")}[parsed["direction"]]
+    return tr(lang, f"Understood: {parsed['symbol']}, {style_en}, {direction[0]}.", f"समजले: {parsed['symbol']}, {style_mr}, {direction[1]}.")
+
+
 def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> dict:
     t: Template = r["template"]
     cfg: CustomStrategyConfig = r["config"]
@@ -335,11 +444,17 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> 
         "id": t.id, "name": tr(lang, t.en, t.mr), "family": t.family, "direction": side, "timeframe": cfg.timeframe,
         "why": tr(lang, t.why_en, t.why_mr), "params": r["params"],
         "rules": {"long": [c.label() for c in cfg.long_conditions], "short": [c.label() for c in cfg.short_conditions]},
+        "rules_text": {"long": [rule_words(lang, c) for c in cfg.long_conditions], "short": [rule_words(lang, c) for c in cfg.short_conditions]},
+        "direction_text": tr(lang, *DIRECTION_WORDS[side]), "timeframe_text": tr(lang, *TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))),
         "exits": tr(lang, f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); targets {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; flat by 15:15.",
                     f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); target {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; 15:15 पर्यंत सगळे बंद."),
         "triggers": triggers, "stop_points": stop_pts, "risk_amount": risk_amount, "quantity_hint": qty,
         "in_sample": r["in_sample"], "out_of_sample": r["out_of_sample"], "all": r["all"], "oos_sessions": r["oos_sessions"],
         "verdict": verdict, "verdict_text": verdict_text, "trades": r["trades"],
+        "summary": tr(lang, f"{tr(lang, t.en, t.mr)}: {DIRECTION_WORDS[side][0]} on {TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))[0]} candles, "
+                            f"{len(cfg.long_conditions) + len(cfg.short_conditions)} rules, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}",
+                    f"{tr(lang, t.en, t.mr)}: {TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))[1]} candles वर {DIRECTION_WORDS[side][1]}, "
+                            f"{len(cfg.long_conditions) + len(cfg.short_conditions)} नियम, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}"),
         "config": json.loads(cfg.model_dump_json()),
         "deployment": {"strategy_id": None, "symbol": symbol.upper(), "exchange": "NSE", "timeframe": cfg.timeframe, "mode": "PAPER",
                        "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}},

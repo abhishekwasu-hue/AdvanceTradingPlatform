@@ -3951,6 +3951,30 @@ Tests: `tests/test_phase_av_copilot_home.py`.
 
 Tests: `tests/test_phase_aw_strategist.py`.
 
+### Phase BF: the strategist in the trader's language
+
+* **Rules in words** (`strategist.rule_words` / `operand_words`): every candidate carries `rules_text` next to the
+  technical `rules` - `close crosses above opening-range high (15 min)` / `close भाव opening range high (15 मिनिट)
+  च्या वर ओलांडतो`, `EMA(9) above EMA(50) on 15-minute` / `EMA(9) 15 मिनिट वरचा EMA(50) च्या वर` - plus
+  `direction_text`, `timeframe_text` and a one-line `summary` (name, side, timeframe, rule count, stop, verdict)
+  in the reply language. The word tables (`OPERAND_WORDS`, `OPERATOR_WORDS`) cover every operand the strategy
+  language has; the technical label stays available (the UI shows it on hover / toggle).
+* **Requests in words** (`strategist.parse_request`): `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
+  sides`, `निफ्टी मध्ये मंदीसाठी ५ मिनिट` → symbol (index aliases in both scripts, else an upper-case ticker),
+  style (scalp / 1 min → scalping, else intraday), direction (long / short / both; खरेदी-विक्री, तेजी-मंदी),
+  language (Devanagari → mr; a Latin-only request keeps the form's language, since tickers are Latin). Devanagari
+  digits are normalised; all-caps grammar words (INTRADAY, LONG, PAPER, indicator names...) are never a ticker.
+  Whatever the request does not name keeps the form's value; `matched` says what was understood. Negations are
+  not understood - the UI says so and shows the parsed fields to correct before anything runs; the build itself
+  runs from the form, so a hand correction always wins. `POST /api/ai/strategist/parse` previews it;
+  `request` on `/strategist/study` and `/strategist/build` applies it (response carries `request_parsed` and
+  the effective `language`). No AI call: the parser is a deterministic table.
+* **UI**: a "say it in words" box above the symbol/style/direction controls fills them from the parse (chips
+  show what was understood); candidate cards show the rules in words with a toggle to the technical form; the
+  card's labels follow the Copilot language.
+
+Tests: `tests/test_phase_bf_strategist_language.py`.
+
 ## Phase AX: the first PAPER day
 
 Operator-facing closure for the first real session (real Upstox account, real data, PAPER only).

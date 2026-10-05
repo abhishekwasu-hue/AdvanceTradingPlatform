@@ -1,7 +1,7 @@
-import { CheckCircle2, CircleAlert, Crosshair, FlaskConical, Layers, Loader2, Rocket, Save, ScanSearch, Target, TrendingDown, TrendingUp, Waves, Zap } from "lucide-react";
-import { useState } from "react";
+import { CheckCircle2, CircleAlert, Crosshair, FlaskConical, Layers, Loader2, MessageSquareText, Rocket, Save, ScanSearch, Target, TrendingDown, TrendingUp, Waves, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { MarketStudy, OHLCVBar, StrategistResult, StrategyCandidate } from "../types";
+import type { MarketStudy, OHLCVBar, StrategistRequestParsed, StrategistResult, StrategyCandidate } from "../types";
 import type { CandleSourceState } from "./DataSource";
 import { Card } from "./ui";
 
@@ -12,12 +12,12 @@ import { Card } from "./ui";
  * each ready to save as a strategy and deploy in PAPER.
  */
 const SYMBOLS = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "RELIANCE", "HDFCBANK", "INFY"];
-const VERDICT: Record<StrategyCandidate["verdict"], { mr: string; cls: string }> = {
-  robust: { mr: "नवीन data वरही टिकली", cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" },
-  overfit: { mr: "Over-fit धोका", cls: "border-amber-500/50 bg-amber-500/10 text-amber-200" },
-  thin: { mr: "Trades कमी", cls: "border-border bg-panel2 text-muted" },
-  untested: { mr: "नवीन data वर trade नाही", cls: "border-border bg-panel2 text-muted" },
-  weak: { mr: "फायदा दिसत नाही", cls: "border-rose-500/50 bg-rose-500/10 text-rose-200" },
+const VERDICT: Record<StrategyCandidate["verdict"], { mr: string; en: string; cls: string }> = {
+  robust: { mr: "नवीन data वरही टिकली", en: "Held up on unseen data", cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" },
+  overfit: { mr: "Over-fit धोका", en: "Over-fit risk", cls: "border-amber-500/50 bg-amber-500/10 text-amber-200" },
+  thin: { mr: "Trades कमी", en: "Too few trades", cls: "border-border bg-panel2 text-muted" },
+  untested: { mr: "नवीन data वर trade नाही", en: "No trades on unseen data", cls: "border-border bg-panel2 text-muted" },
+  weak: { mr: "फायदा दिसत नाही", en: "No edge", cls: "border-rose-500/50 bg-rose-500/10 text-rose-200" },
 };
 const CHAR: Record<MarketStudy["character"], { mr: string; icon: typeof Waves; cls: string }> = {
   TREND: { mr: "Trend चा दिवस", icon: TrendingUp, cls: "text-emerald-300" },
@@ -129,7 +129,9 @@ function Metrics({ label, m }: { label: string; m: StrategyCandidate["in_sample"
   );
 }
 
-function CandidateCard({ c, best, symbol, onAdopted }: { c: StrategyCandidate; best: boolean; symbol: string; onAdopted: (msg: string) => void }) {
+function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: StrategyCandidate; best: boolean; symbol: string; onAdopted: (msg: string) => void; lang?: "en" | "mr" }) {
+  const L = (mr: string, en: string) => (lang === "mr" ? mr : en);
+  const [showTechnical, setShowTechnical] = useState(false);
   const [saved, setSaved] = useState<{ strategy_id: string; deployment: Parameters<typeof api.createDeployment>[0] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,11 +155,11 @@ function CandidateCard({ c, best, symbol, onAdopted }: { c: StrategyCandidate; b
   return (
     <div className={`rounded-xl border p-4 ${best ? "border-purple-400/60 bg-purple-500/[0.07]" : "border-border bg-panel"}`}>
       <div className="flex flex-wrap items-center gap-2">
-        {best && <span className="rounded bg-purple-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-100">सर्वोत्तम</span>}
+        {best && <span className="rounded bg-purple-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-100">{L("सर्वोत्तम", "Best")}</span>}
         <span className="text-base font-extrabold text-slate-50">{c.name}</span>
-        <span className={`rounded border px-1.5 py-0.5 text-[11px] ${c.direction === "LONG" ? "border-emerald-500/40 text-emerald-300" : c.direction === "SHORT" ? "border-rose-500/40 text-rose-300" : "border-border text-slate-300"}`}>{c.direction === "LONG" ? "फक्त LONG" : c.direction === "SHORT" ? "फक्त SHORT" : "दोन्ही बाजू"}</span>
-        <span className="text-[11px] text-muted">{c.timeframe}{c.source === "ai" ? " · AI ने सुचवलेली" : ""}</span>
-        <span className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] ${v.cls}`}>{v.mr}</span>
+        <span className={`rounded border px-1.5 py-0.5 text-[11px] ${c.direction === "LONG" ? "border-emerald-500/40 text-emerald-300" : c.direction === "SHORT" ? "border-rose-500/40 text-rose-300" : "border-border text-slate-300"}`}>{c.direction_text ?? (c.direction === "LONG" ? L("फक्त LONG", "LONG only") : c.direction === "SHORT" ? L("फक्त SHORT", "SHORT only") : L("दोन्ही बाजू", "both sides"))}</span>
+        <span className="text-[11px] text-muted">{c.timeframe_text ?? c.timeframe}{c.source === "ai" ? L(" · AI ने सुचवलेली", " · proposed by your AI") : ""}</span>
+        <span className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] ${v.cls}`}>{lang === "mr" ? v.mr : v.en}</span>
       </div>
       <p className="mt-1.5 text-xs text-slate-300">{c.why}</p>
 
@@ -165,24 +167,29 @@ function CandidateCard({ c, best, symbol, onAdopted }: { c: StrategyCandidate; b
         <div className="space-y-1.5 text-xs">
           {(["long", "short"] as const).map((side) => c.rules[side].length > 0 && (
             <div key={side}>
-              <div className={`mb-0.5 font-semibold ${side === "long" ? "text-emerald-300" : "text-rose-300"}`}>{side === "long" ? "LONG जेव्हा" : "SHORT जेव्हा"}</div>
-              <div className="flex flex-wrap gap-1">{c.rules[side].map((r) => <span key={r} className="rounded border border-border bg-panel2/70 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">{r}</span>)}</div>
+              <div className={`mb-0.5 font-semibold ${side === "long" ? "text-emerald-300" : "text-rose-300"}`}>{side === "long" ? L("LONG जेव्हा", "LONG when") : L("SHORT जेव्हा", "SHORT when")}</div>
+              {showTechnical || !c.rules_text ? (
+                <div className="flex flex-wrap gap-1">{c.rules[side].map((r) => <span key={r} className="rounded border border-border bg-panel2/70 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">{r}</span>)}</div>
+              ) : (
+                <ul className="list-disc pl-4 text-slate-200">{c.rules_text[side].map((r, i) => <li key={`${side}-${i}`} title={c.rules[side][i]}>{r}</li>)}</ul>
+              )}
             </div>
           ))}
+          {c.rules_text && <button onClick={() => setShowTechnical((v) => !v)} className="text-[11px] text-sky-300 hover:underline">{showTechnical ? L("शब्दांत दाखवा", "Show in words") : L("तांत्रिक नियम दाखवा", "Show technical rules")}</button>}
           <div className="text-slate-300"><Target size={12} className="mr-1 inline text-sky-300" />{c.exits}</div>
           {c.triggers.length > 0 && (
-            <div className="text-slate-300"><Crosshair size={12} className="mr-1 inline text-amber-300" />आजचे trigger: {c.triggers.map((t) => `${t.name} ${fmt(t.price)}`).join(" · ")}</div>
+            <div className="text-slate-300"><Crosshair size={12} className="mr-1 inline text-amber-300" />{L("आजचे trigger", "Today's triggers")}: {c.triggers.map((t) => `${t.name} ${fmt(t.price)}`).join(" · ")}</div>
           )}
           <div className="text-slate-300">
-            Risk प्रति trade: <b>₹{fmt(c.risk_amount, 0)}</b>{c.stop_points ? <> · stop ≈ {fmt(c.stop_points)} points{c.quantity_hint ? <> · सुमारे {c.quantity_hint} qty</> : null}</> : null}
+            {L("Risk प्रति trade", "Risk per trade")}: <b>₹{fmt(c.risk_amount, 0)}</b>{c.stop_points ? <> · stop ≈ {fmt(c.stop_points)} points{c.quantity_hint ? <> · {L("सुमारे", "about")} {c.quantity_hint} qty</> : null}</> : null}
           </div>
         </div>
         <div>
           <table className="w-full text-xs">
-            <thead><tr className="text-muted"><th className="text-left font-normal">तपासणी</th><th className="text-right font-normal">Trades</th><th className="text-right font-normal">Win</th><th className="text-right font-normal">अपेक्षित</th><th className="text-right font-normal">PF</th></tr></thead>
+            <thead><tr className="text-muted"><th className="text-left font-normal">{L("तपासणी", "Check")}</th><th className="text-right font-normal">Trades</th><th className="text-right font-normal">Win</th><th className="text-right font-normal">{L("अपेक्षित", "Expectancy")}</th><th className="text-right font-normal">PF</th></tr></thead>
             <tbody>
-              <Metrics label="Tune केलेली सत्रे" m={c.in_sample} />
-              <Metrics label="नवीन सत्रे (कधी न पाहिलेली)" m={c.out_of_sample} />
+              <Metrics label={L("Tune केलेली सत्रे", "Tuning sessions")} m={c.in_sample} />
+              <Metrics label={L("नवीन सत्रे (कधी न पाहिलेली)", "Unseen sessions")} m={c.out_of_sample} />
             </tbody>
           </table>
           <div className="mt-1.5 text-[11px] text-slate-400">{c.verdict_text}</div>
@@ -199,13 +206,13 @@ function CandidateCard({ c, best, symbol, onAdopted }: { c: StrategyCandidate; b
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {!saved ? (
           <button disabled={busy} onClick={() => void adopt()} className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-            {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}Strategy म्हणून जतन करा
+            {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}{L("Strategy म्हणून जतन करा", "Save as a strategy")}
           </button>
         ) : (
           <>
-            <span className="text-xs text-emerald-300"><CheckCircle2 size={13} className="mr-1 inline" />जतन झाली: {saved.strategy_id}</span>
+            <span className="text-xs text-emerald-300"><CheckCircle2 size={13} className="mr-1 inline" />{L("जतन झाली", "Saved")}: {saved.strategy_id}</span>
             <button disabled={busy} onClick={() => void deploy()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-              <Rocket size={12} className="mr-1 inline" />PAPER मध्ये deploy करा
+              <Rocket size={12} className="mr-1 inline" />{L("PAPER मध्ये deploy करा", "Deploy in PAPER")}
             </button>
           </>
         )}
@@ -223,6 +230,26 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StrategistResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // Phase BF: a plain-words request ("बँक निफ्टी फक्त long scalping") the backend parses; the chips show what it understood.
+  const [requestText, setRequestText] = useState("");
+  const [parsed, setParsed] = useState<StrategistRequestParsed | null>(null);
+  const L = (mr: string, en: string) => (lang === "mr" ? mr : en);
+
+  useEffect(() => {
+    const text = requestText.trim();
+    if (!text) { setParsed(null); return; }
+    let active = true;
+    const handle = setTimeout(() => {
+      api.aiStrategistParse(text, symbol, lang).then((p) => {
+        if (!active) return;                       // a newer request or a cleared box wins
+        setParsed(p);
+        if (p.matched.symbol) setSymbol(p.symbol);
+        if (p.matched.style) setStyle(p.style);
+        if (p.matched.direction) setDirection(p.direction);
+      }).catch(() => { if (active) setParsed(null); });
+    }, 400);
+    return () => { active = false; clearTimeout(handle); };
+  }, [requestText]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
     setBusy(true); setError(null); setMessage(null);
@@ -233,7 +260,10 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         const r = await source.fetch([sym], "1min", { count: 375 * 12, startPriceFor: () => (sym.includes("BANK") ? 52_000 : sym.includes("NIFTY") ? 24_500 : 1_500), seedFor: () => 7 });
         candles = sessionize(r.candles[sym] ?? []);
       }
-      setResult(await api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction, language: lang }));
+      // The parse already filled the form, so the form (which the trader may have corrected by hand) is what runs;
+      // only the detected script travels along so a Marathi request is answered in Marathi.
+      setResult(await api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction,
+                                              language: parsed?.matched.language === "mr" ? "mr" : lang }));
     } catch (e) {
       const text = String(e).replace(/^Error:\s*/, "");
       const m = text.match(/\{.*\}/s);
@@ -253,6 +283,17 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
             <div className="text-[11px] text-muted">Copilot अनेक timeframes वरचा trend, आजचे levels आणि scenarios वाचतो, आजच्या market साठी strategies लिहितो, त्या मागच्या सत्रांवर tune करतो आणि कधीही न पाहिलेल्या सत्रांवर तपासतो.</div>
           </div>
         </div>
+        <label className="mb-3 block text-xs text-muted">
+          <span className="flex items-center gap-1"><MessageSquareText size={12} />{L("शब्दांत सांगा (मराठी किंवा English)", "Say it in words (Marathi or English)")}</span>
+          <input value={requestText} onChange={(e) => setRequestText(e.target.value)} placeholder={L("उदा. बँक निफ्टी फक्त long scalping (नकार समजत नाही - खाली तपासा)", "e.g. Bank Nifty long only scalping (no negations - check the fields below)")}
+                 className="mt-0.5 block w-full rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100" />
+          {parsed && (
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">
+              <span className="text-slate-300">{parsed.summary}</span>
+              {(["symbol", "style", "direction"] as const).map((k) => parsed.matched[k] && <span key={k} className="rounded-full border border-purple-400/50 bg-purple-500/15 px-2 py-0.5 text-purple-100">{parsed.matched[k]}</span>)}
+            </div>
+          )}
+        </label>
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs text-muted">Symbol
             <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} className="mt-0.5 block w-44 rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100" />
@@ -291,7 +332,7 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
             <ul className="mb-3 space-y-0.5 text-xs text-muted">{result.notes.map((n) => <li key={n}>• {n}</li>)}</ul>
             {message && <div className="mb-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{message}</div>}
             <div className="space-y-3">
-              {result.candidates.map((c) => <CandidateCard key={c.id + c.direction} c={c} best={c.id === result.best} symbol={result.study.symbol} onAdopted={setMessage} />)}
+              {result.candidates.map((c) => <CandidateCard key={c.id + c.direction} c={c} best={c.id === result.best} symbol={result.study.symbol} onAdopted={setMessage} lang={result.language ?? lang} />)}
               {result.candidates.length === 0 && <div className="text-sm text-muted">या candles वर कोणतीही strategy trade घेत नाही - आज थांबणे हाच निर्णय.</div>}
             </div>
             <div className="mt-3 text-[11px] text-muted">चाचणी: प्रत्येक strategy एका वेळी एक position, signal च्या candle च्या close ला entry, आधी stop (pessimistic), खर्च 0.03%, 15:15 ला सगळे बंद. मागचे निकाल भविष्याची हमी नाहीत; आधी PAPER, मग Go-Live checklist नंतरच LIVE.</div>

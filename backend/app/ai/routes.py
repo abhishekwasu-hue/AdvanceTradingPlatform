@@ -2,7 +2,7 @@
 regime classifier and the monitoring agent's action queue. Every mutating call is a human's."""
 import copy
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -596,6 +596,27 @@ class StrategistBody(BaseModel):
     style: str = Field(default="intraday", pattern=r"^(intraday|scalping)$")
     direction: str = Field(default="auto", pattern=r"^(auto|long|short|both)$")
     language: str = Field(default="mr", pattern=r"^(en|mr)$")
+    # Phase BF: a plain-words request in Marathi or English ("बँक निफ्टी फक्त long scalping"); whatever it
+    # names overrides the fields above, and its script sets the reply language.
+    request: Optional[str] = Field(default=None, max_length=300)
+
+    def resolved(self) -> Tuple["StrategistBody", Optional[dict]]:
+        if not (self.request or "").strip():
+            return self, None
+        parsed = strategist.parse_request(self.request, default_symbol=self.symbol)
+        update = {"language": "mr"} if parsed["language"] == "mr" else {}       # Latin-only text keeps the form's language
+        for key in ("symbol", "style", "direction"):
+            if key in parsed["matched"]:
+                update[key] = parsed[key]
+        effective = self.model_copy(update=update)
+        parsed["summary"] = strategist.request_summary(effective.language, {**parsed, **{k: getattr(effective, k) for k in ("symbol", "style", "direction")}})
+        return effective, parsed
+
+
+class StrategistParseBody(BaseModel):
+    request: str = Field(min_length=1, max_length=300)
+    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    language: str = Field(default="mr", pattern=r"^(en|mr)$")
 
 
 async def _strategist_frames(session: AsyncSession, user: User, body: StrategistBody):
@@ -628,10 +649,21 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
     return df, day, f"broker:{record.broker_name}"
 
 
+@router.post("/strategist/parse")
+async def strategist_parse(body: StrategistParseBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase BF: what the strategist understood from a plain-words request (Marathi or English) - symbol,
+    style, direction, language - so the trader can see and correct it before the study runs."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    parsed = strategist.parse_request(body.request, default_symbol=body.symbol)
+    parsed["summary"] = strategist.request_summary(parsed["language"] if parsed["language"] == "mr" else body.language, parsed)
+    return parsed
+
+
 @router.post("/strategist/study")
 async def strategist_study(body: StrategistBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """The live market study of one symbol: multi-timeframe trend, levels, bias, scenarios."""
     await require_flag(session, "ai_copilot", user.tenant_id)
+    body, parsed = body.resolved()
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
@@ -639,6 +671,7 @@ async def strategist_study(body: StrategistBody, user: User = Depends(get_curren
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     out["data_source"] = source
+    out["request_parsed"] = parsed
     return out
 
 
@@ -648,6 +681,7 @@ async def strategist_build(body: StrategistBody, user: User = Depends(get_curren
     sessions) and return the best three as ready-to-adopt plans. With an AI provider, its own rule sets
     are validated alongside."""
     await require_flag(session, "ai_copilot", user.tenant_id)
+    body, parsed = body.resolved()
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
@@ -663,7 +697,8 @@ async def strategist_build(body: StrategistBody, user: User = Depends(get_curren
         await session.commit()
     result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
                                      extra_configs=extra)
-    return {"study": study, **result, "data_source": source, "ai_candidates": len(extra), "provider": provider.name}
+    return {"study": study, **result, "data_source": source, "ai_candidates": len(extra), "provider": provider.name, "request_parsed": parsed,
+            "language": body.language}
 
 
 class AdoptBody(BaseModel):

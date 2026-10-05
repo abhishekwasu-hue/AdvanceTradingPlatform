@@ -86,7 +86,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     "backtest_optimizer": "Parameter optimisation grid runs",
     "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
     "self_signup": "Public registration (off: invite-only)",
+    "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
 }
+# Phase BB: flags that start OFF until the operator turns them on (everything else is a kill flag).
+DEFAULT_OFF_FLAGS = frozenset({"news_feed"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
@@ -94,7 +97,7 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     result: Dict[str, Dict] = {}
     for name, description in FEATURE_FLAGS.items():
         entry = stored.get(name) or {}
-        result[name] = {"on": bool(entry.get("on", True)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
+        result[name] = {"on": bool(entry.get("on", name not in DEFAULT_OFF_FLAGS)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
                         "description": description}
     return result
 

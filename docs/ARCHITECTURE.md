@@ -3974,3 +3974,38 @@ Operator-facing closure for the first real session (real Upstox account, real da
   `ai/market_study.py` no longer does Timedelta arithmetic on the index (NumPy 2 / pandas 3 deprecation).
 
 Tests: `tests/test_phase_ax_first_paper_day.py`.
+
+## Phase BB: the live news feed
+
+* **Sources** (`news_feed/sources.py`): a registry of public syndication feeds with the publisher, the one-line
+  terms note and a default (RBI and SEBI on; NSE/BSE announcements and publisher RSS off until the operator
+  confirms their terms - `docs/DATA_SOURCES.md`). RSS 2.0 / Atom parsed with the standard library; bodies capped
+  at 512 KB, documents declaring a DOCTYPE/entity refused; `MAX_ITEMS_PER_FETCH` per feed. `FeedItem` carries the
+  headline, link, time and a dedupe hash; the feed's summary is used in memory for classification only.
+* **Classification** (`news_feed/classify.py`): keyword rules -> `{type, scope, symbols, direction, severity 1-5,
+  horizon, confidence, one_line_mr, one_line_en, method}`; index heavyweights scope an item to a sector. The AI
+  path sends up to 20 headlines inside `<untrusted_data>` with a schema-only instruction; `parse_ai` keeps items
+  that match the enums exactly and drops everything else (ids, out-of-range severities, prose).
+* **Service** (`news_feed/service.py`): `ingest()` fetches every enabled source once, stores new items as
+  `news_events` rows (`origin=FEED`, `verified=false`, `source_url`, `dedupe_hash` unique, `feed_id`,
+  `published_at`, shared `classification_json`), raises `NEWS_ALERT` notifications (WARNING; CRITICAL at 5) to
+  every interested organisation for keyword severity >= 4, and a monitoring-agent proposal only when a second
+  source corroborates. `classify_for_tenant()` runs one batched call with the organisation's own provider key,
+  caches per (tenant, item) in `news_classifications`, meters `ai_news_classify`, and proposes on AI severity >= 4.
+  `propose()` caps proposals at one per event per organisation (`rule = NEWS:<hash>`): REDUCE_RISK at 4,
+  PAUSE_DEPLOYMENT (new entries only) at 5; `monitor.raise_proposals` notifies, a human decides.
+  `cadence_seconds()` is 300 within +/- 60 minutes of a global `market_events` row today, else 900.
+* **Worker**: when the `news_feed` flag is on (default **off**, `DEFAULT_OFF_FLAGS`), each cycle checks the
+  cadence, ingests once for everyone, then classifies for each organisation with an enabled key
+  (`CycleReport.news_items`, `news_classified`).
+* **API** `/api/news-feed`: `status` (flag, sources with terms, last run, cadence), `PUT sources/{id}` and
+  `POST refresh` (SUPER_ADMIN, audited), `items` (feed rows with the caller's AI classification merged),
+  `POST classify` (metered). `/api/news-events` responses now carry `origin`, `verified`, `source_url`,
+  `feed_id`, `published_at`, `classification`; `?origin=FEED|MANUAL` filters.
+* **Retention**: `news_feed_days` (`RETENTION_NEWS_FEED_DAYS`, default 365) deletes aged FEED rows only.
+* **UI**: News & Events shows the feed sources card (operator toggles, fetch now), an origin filter, the
+  "unverified feed" badge and a severity chip on every feed row.
+* ADR-0012 records why classification runs with the organisation's key today and the platform-level option.
+
+Tests: `tests/test_phase_bb_news_feed.py`.
+

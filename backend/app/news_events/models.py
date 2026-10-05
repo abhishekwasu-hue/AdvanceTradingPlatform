@@ -40,3 +40,11 @@ class NewsEventResponse(NewsEvent):
     id: int
     created_by: Optional[int] = None
     created_at: datetime
+    # Phase BB: MANUAL (a person's cited entry) or FEED (public feed item, never verified by the
+    # platform - shown as "unverified feed"); the shared keyword classification when present.
+    origin: str = "MANUAL"
+    verified: bool = True
+    source_url: Optional[str] = None
+    feed_id: Optional[str] = None
+    published_at: Optional[datetime] = None
+    classification: Optional[dict] = None

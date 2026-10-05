@@ -26,6 +26,12 @@ def news_event_to_response(record: NewsEventRecord) -> NewsEventResponse:
         source=SourceCitation.model_validate_json(record.source_json),
         created_by=record.created_by,
         created_at=record.created_at,
+        origin=record.origin or "MANUAL",
+        verified=bool(record.verified) if record.verified is not None else True,
+        source_url=record.source_url,
+        feed_id=record.feed_id,
+        published_at=record.published_at,
+        classification=json.loads(record.classification_json) if record.classification_json else None,
     )
 
 
@@ -39,6 +45,7 @@ def news_event_from_model(event: NewsEvent, created_by: Optional[int]) -> NewsEv
         sentiment=event.sentiment.value,
         source_json=event.source.model_dump_json(),
         created_by=created_by,
+        origin="MANUAL", verified=True, source_url=event.source.source_url,
     )
 
 
@@ -47,10 +54,13 @@ async def list_news_event_records(
     category: Optional[NewsEventCategory] = None,
     symbol: Optional[str] = None,
     since: Optional[date] = None,
+    origin: Optional[str] = None,
 ) -> List[NewsEventRecord]:
     stmt = select(NewsEventRecord).order_by(NewsEventRecord.event_date.desc(), NewsEventRecord.id.desc())
     if category is not None:
         stmt = stmt.where(NewsEventRecord.category == category.value)
+    if origin:
+        stmt = stmt.where(NewsEventRecord.origin == origin.upper())
     if since is not None:
         stmt = stmt.where(NewsEventRecord.event_date >= since)
     records = list(await session.scalars(stmt))

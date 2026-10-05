@@ -44,6 +44,7 @@ class RetentionPolicy:
     batch_size: int
     chain_snapshots_days: int = 400   # Phase W: recorded option-chain quotes (reference data, not personal)
     market_snapshots_days: int = 90   # Phase AR: the Copilot's market memory (reference data, not personal)
+    news_feed_days: int = 365         # Phase BB: unverified FEED rows in news_events (MANUAL entries are never deleted here)
 
     def as_dict(self) -> dict:
         return {
@@ -51,7 +52,7 @@ class RetentionPolicy:
             "alert_deliveries_days": self.alert_deliveries_days, "notifications_days": self.notifications_days,
             "sessions_days": self.sessions_days, "password_resets_days": self.password_resets_days,
             "invites_days": self.invites_days, "batch_size": self.batch_size, "chain_snapshots_days": self.chain_snapshots_days,
-            "market_snapshots_days": self.market_snapshots_days,
+            "market_snapshots_days": self.market_snapshots_days, "news_feed_days": self.news_feed_days,
             "never_deleted": list(NEVER_DELETED),
         }
 
@@ -68,4 +69,5 @@ def load_policy() -> RetentionPolicy:
         batch_size=max(100, int(os.environ.get("RETENTION_BATCH_SIZE", "5000"))),
         chain_snapshots_days=_days("RETENTION_CHAIN_SNAPSHOTS_DAYS", 400),
         market_snapshots_days=_days("RETENTION_MARKET_SNAPSHOTS_DAYS", 90),
+        news_feed_days=_days("RETENTION_NEWS_FEED_DAYS", 365),
     )

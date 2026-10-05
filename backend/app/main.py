@@ -44,6 +44,7 @@ from app.instruments.registry import get_contract_spec, list_contract_specs
 from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
+from app.news_feed.routes import router as news_feed_router
 from app.option_chain.analysis import analyze_option_chain
 from app.option_chain.leg_greeks import compute_strategy_greeks
 from app.option_chain.models import OptionChainAnalysis, OptionLegInput, StrategyGreeksResult
@@ -147,6 +148,7 @@ app.include_router(backtest_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)
+app.include_router(news_feed_router)  # Phase BB: live news feed
 app.include_router(workers_router)
 app.include_router(deployments_router)
 app.include_router(alerts_router)

@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy.sql import false
+from sqlalchemy.sql import false, true
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -1496,6 +1496,36 @@ class NewsEventRecord(Base):
     sentiment: Mapped[str] = mapped_column(String(20), nullable=False)
     source_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+    # Phase BB: where the row came from. MANUAL rows are a person's cited entry (verified by that
+    # person); FEED rows come from a public feed (app/news_feed), carry the item's URL, are never
+    # verified by the platform and are shown as "unverified feed". `dedupe_hash` keeps one row per
+    # feed item; `classification_json` is the shared keyword classification (no tenant key used).
+    origin: Mapped[str] = mapped_column(String(10), nullable=False, default="MANUAL", server_default="MANUAL", index=True)
+    source_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    dedupe_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    feed_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    classification_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NewsClassificationRecord(Base):
+    """Phase BB: one organisation's AI classification of one feed item, made with that
+    organisation's own provider key and kept for it alone (tenant-scoped, unlike the shared
+    keyword classification on the news row). Unique per (tenant, item) so a headline is never
+    sent to the provider twice for the same organisation."""
+
+    __tablename__ = "news_classifications"
+    __table_args__ = (UniqueConstraint("tenant_id", "news_event_id", name="uq_news_classification_tenant_item"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    news_event_id: Mapped[int] = mapped_column(ForeignKey("news_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    severity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    classification_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 

@@ -496,6 +496,14 @@ async def thesis_history(symbol: Optional[str] = Query(default=None, max_length=
     return await thesis.history(session, user.tenant_id, symbol, limit=limit)
 
 
+@router.get("/thesis/report")
+async def thesis_report(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Phase BD-2: this week's thesis scoreboard as the Friday notification would state it (read-only preview)."""
+    await require_flag(session, thesis.FLAG, user.tenant_id)
+    report = await thesis.weekly_report(session, user.tenant_id)
+    return report or {"scored": 0, "lines": ["No thesis scored in the last 7 days yet."], "title": None}
+
+
 @router.get("/thesis/{symbol}")
 async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), refresh: bool = Query(default=False),
                      narrate: bool = Query(default=False, description="ask the organisation's own AI provider for a narrative (numbers-checked)"),

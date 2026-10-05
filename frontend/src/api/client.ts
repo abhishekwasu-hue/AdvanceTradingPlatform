@@ -122,6 +122,10 @@ import type {
   MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
   SmokeReport,
   NewsFeedItem,
+  NewsVerdict,
+  NewsTrust,
+  NewsFeedbackSummary,
+  ThesisWeeklyReport,
   NewsFeedSource,
   NewsFeedStatus,
 } from "../types";
@@ -531,6 +535,12 @@ export const api = {
   setNewsFeedSource: (id: string, on: boolean) => request<{ sources: NewsFeedSource[] }>(`/news-feed/sources/${id}`, { method: "PUT", body: JSON.stringify({ on }) }),
   refreshNewsFeed: () => request<NewsFeedStatus["last_run"]>("/news-feed/refresh", { method: "POST" }),
   newsFeedItems: (hours = 24, minSeverity = 1) => request<NewsFeedItem[]>(`/news-feed/items?hours=${hours}&min_severity=${minSeverity}`),
+  // Phase BD-2: verdicts on feed items and the organisation's news trust; the weekly thesis scoreboard.
+  newsFeedback: (itemId: number, verdict: NewsVerdict, note?: string) =>
+    request<{ item_id: number; verdict: NewsVerdict; trust: NewsTrust }>(`/news-feed/items/${itemId}/feedback`, { method: "POST", body: JSON.stringify({ verdict, note }) }),
+  newsFeedbackMine: (ids: number[]) => request<{ verdicts: Record<string, NewsVerdict> }>(`/news-feed/feedback/mine?ids=${ids.join(",")}`),
+  newsFeedbackSummary: () => request<NewsFeedbackSummary>("/news-feed/feedback/summary"),
+  aiThesisReport: () => request<ThesisWeeklyReport>("/ai/thesis/report"),
   classifyNewsFeed: () => request<{ classified: number; proposals: number; skipped?: string }>("/news-feed/classify", { method: "POST" }),
 
   listInstruments: () => request<ContractSpec[]>("/instruments"),

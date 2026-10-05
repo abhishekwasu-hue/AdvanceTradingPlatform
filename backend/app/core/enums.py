@@ -40,6 +40,8 @@ class NotificationType(str, Enum):
     EOD_SUMMARY = "EOD_SUMMARY"
     # Phase BB: a high-severity item from the live news feed (unverified feed data).
     NEWS_ALERT = "NEWS_ALERT"
+    # Phase BD-2: the weekly market-thesis scoreboard (shadow overlay evaluation, read-only).
+    THESIS_REPORT = "THESIS_REPORT"
 
 
 class NotificationSeverity(str, Enum):

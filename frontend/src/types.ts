@@ -861,6 +861,19 @@ export interface NewsFeedStatus {
   note: string;
 }
 
+/** Phase BD-2: a member's verdict on a feed item and the organisation's news trust. */
+export type NewsVerdict = "useful" | "noise" | "wrong_direction";
+export interface NewsTrust { ratings: number; trust: number; applied: boolean; useful: number; noise: number; wrong_direction: number; note: string | null }
+export interface NewsFeedbackSummary {
+  window_days: number; trust: NewsTrust;
+  by_source: { key: string; useful: number; noise: number; wrong_direction: number; total: number; useful_share: number | null }[];
+  by_category: { key: string; useful: number; noise: number; wrong_direction: number; total: number; useful_share: number | null }[];
+}
+export interface ThesisWeeklyReport {
+  scored: number; hits?: number; misses?: number; flat?: number; hit_rate?: number; avg_shadow?: number; pending?: number; unknown?: number;
+  title: string | null; lines: string[];
+}
+
 export interface NewsFeedItem {
   id: number;
   headline: string;

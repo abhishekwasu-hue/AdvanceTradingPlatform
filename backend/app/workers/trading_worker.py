@@ -173,6 +173,7 @@ class TradingWorker:
         self._last_billing_day = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
+        self._last_thesis_report_day = None
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -280,6 +281,16 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
+                from app.ai import thesis as thesis_module
+                if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
+                    self._last_thesis_report_day = ist_now.date()
+                    try:
+                        await thesis_module.send_weekly_reports(session, now=now)
+                    except Exception as exc:  # noqa: BLE001 - a report must never break trading
+                        logger.exception("Thesis weekly report failed")
+                        report.errors.append(f"thesis report: {exc}")
+                        await session.rollback()
                 # Phase BB: the live news feed - one fetch for every organisation (flag `news_feed`,
                 # off by default), then each organisation's own AI classification. Never trades.
                 try:

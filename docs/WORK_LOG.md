@@ -116,3 +116,13 @@ LIVE शी संबंधित काहीही बदललेलं न�
 ### Branches
 - `main` = सगळं merged; `claude/gracious-rubin-cjrkhg` main शी sync. Feature branches: `claude/bc-sentiment`, `claude/be-telegram-inbound`, `claude/bd-lite-thesis`, `claude/bf-strategist-language` (merged; हटवता येतील).
 
+## Continuation - 2026-10-06 (after the morning report)
+
+### BD-2 - decisions
+- "Continue" without a new brief: picked the two Phase BD items still open that need no operator decision and change no
+  sizing - the weekly thesis scoreboard notification and the news feedback table. The overlay stays shadow; the
+  report is what the operator will judge it on.
+- News trust is deterministic (useful share over 90 days, floor 0.25, neutral until 10 verdicts) and tenant-scoped;
+  it only scales the thesis news factor's strength, so the worst a wrong verdict can do is change a reading.
+- The weekly report is idempotent per ISO week and flag-gated like the thesis itself.
+

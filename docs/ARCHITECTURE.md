@@ -4119,3 +4119,21 @@ Tests: `tests/test_phase_be_telegram_inbound.py`.
 
 Tests: `tests/test_phase_bd_thesis.py`.
 
+### Phase BD-2: thesis evaluation - weekly scoreboard and news feedback
+
+* **News feedback** (`news_feed/feedback.py`, table `news_feedback`, migration `e0f2a4b6c8d0`): any member marks a
+  feed item `useful`, `noise` or `wrong_direction` (`POST /api/news-feed/items/{id}/feedback`, one verdict per member
+  per item, re-voting replaces); `GET /api/news-feed/feedback/mine` for the UI, `GET /api/news-feed/feedback/summary`
+  for precision per source and per category over 90 days. The organisation's **news trust** is the useful share,
+  floored at 0.25, and 1.0 until 10 verdicts exist; `thesis.factor_rows()` multiplies the news factor's strength
+  by it (shown as `trust` in the matrix value and on the card). Tenant-scoped: one organisation's verdicts never
+  touch another's thesis. Behind the `news_feed` flag.
+* **Weekly scoreboard** (`thesis.weekly_report` / `send_weekly_reports`): on Friday from 15:40 IST the worker raises
+  one `THESIS_REPORT` notification per organisation with the `market_thesis` flag on and something scored in the
+  last 7 days - hit rate overall and per symbol, the average shadow multiplier ("recorded only, never applied"),
+  how many theses are unscored. Idempotent per ISO week (title prefix `Thesis scoreboard YYYY-Www:`), read-only;
+  `GET /api/ai/thesis/report` previews it. The overlay stays shadow: this report is the evidence the operator reads
+  before deciding anything about it.
+
+Tests: `tests/test_phase_bd2_thesis_eval.py`.
+

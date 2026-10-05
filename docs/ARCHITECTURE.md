@@ -4065,3 +4065,33 @@ Tests: `tests/test_phase_bc_sentiment.py`.
 
 Tests: `tests/test_phase_be_telegram_inbound.py`.
 
+## Phase BD-lite: market thesis (shadow overlay only)
+
+* **Thesis** (`ai/thesis.py`): for one watched symbol, from what the platform already knows - the market memory read
+  (bias, structure, higher-timeframe regime, support/resistance, ATR%), the Phase BC sentiment, the Phase BB feed
+  items about the symbol, the global mood and today's macro events. `factor_rows()` gives each factor a direction,
+  strength and weight (`WEIGHTS`); `agreement()` the weighted net, the direction (|net| >= 0.3), a confidence scaled
+  by input coverage, and how many of the factors with an opinion agree. `scenarios()` builds bull / base / bear from
+  the support and resistance zones (trigger, measured-move target, invalidation; ATR% stands in when a zone is
+  missing). Every number in the output is in the inputs.
+* **Shadow multiplier** (`shadow_multiplier()`, <= 1.0, monotone): what a reduce-only overlay *would* do - 0.75 when
+  the direction is unclear, factors disagree (at most two-thirds agree) or inputs are thin; x0.75 when VIX >= 20 or
+  the regime is volatile; x(1 - cut) for a SIZE_CUT event; 0 for a BLOCK event. It is **recorded and shown, never
+  applied**: no execution, risk, guardian, trading, broker or deployment code imports the thesis module and no
+  deployment setting names it (`tests/test_phase_bd_thesis.py` scans the source for both). The worker only builds
+  and scores.
+* **Narrative**: the rule-based sentences (mr/en) are always there; `GET /api/ai/thesis/{symbol}?narrate=true` asks
+  the organisation's own provider for prose and accepts it only when every number in it is one of the thesis
+  numbers (`numbers_check()`, one retry naming the offending numbers, then the rules). The facts JSON is passed as
+  data with the `</untrusted_data` escape used elsewhere.
+* **Storage and scoring**: `thesis_records` (migration `d9e1f3a5b7c9`) keeps one row per build; `current()` serves a
+  stored thesis younger than 15 minutes in the same language, else builds. The worker (`_market_memory`, flag per
+  tenant) builds one thesis per watched symbol per IST day and runs `score_due()`: a thesis is scored against the
+  symbol's last read on the next session (+1 right direction, -1 wrong, 0 neither, 0.3% move threshold; UNKNOWN
+  after 5 days without a read). `GET /api/ai/thesis/history` returns the rows and the scoreboard (hit rate).
+* **Flag** `market_thesis` (default **off**). Telegram `/thesis SYMBOL` renders the same lines when the flag is on.
+* **UI**: the Copilot "Today's market" tab shows the thesis card (direction, agreement matrix, scenarios, shadow
+  multiplier marked "not applied", scoreboard).
+
+Tests: `tests/test_phase_bd_thesis.py`.
+

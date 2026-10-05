@@ -52,3 +52,12 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
   failed send); strangers are rate-limited before the audit log and audited at most 5 times per chat per hour;
   command replies are plain text (no HTML double-escaping); transport errors to Telegram become `ok: false`.
 
+### BD-lite - decisions
+- Built as "lite" per the night instruction: the thesis, agreement matrix, scenarios, numbers-check and scoring are
+  real; the reduce-only overlay is computed and stored as `shadow` only. No deployment setting (`thesis_overlay_mode`
+  from the full plan) was introduced - a setting that can change sizing is exactly what "safe default" rules out
+  while nobody is watching. A source-scan test keeps execution/risk/guardian code from importing the thesis.
+- Scoring uses the symbol's last market-memory read of the next session (0.3% threshold) because that is data the
+  platform already has for every tenant; a candle-based scoring can replace it later without a schema change.
+- Flag `market_thesis` default off; the worker builds and scores only for tenants with the flag on.
+

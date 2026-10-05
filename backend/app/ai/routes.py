@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings
+from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import get_current_user, require_owner, require_trader
@@ -483,6 +483,43 @@ async def daily_brief(language: str = Query(default="mr", pattern=r"^(en|mr)$"),
     deployment is or is not trading, and the pre-trade checklist."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     return await briefing.build(session, user, language)
+
+
+# --- Phase BD-lite: the market thesis (shadow overlay only) --------------------------------------------
+
+@router.get("/thesis/history")
+async def thesis_history(symbol: Optional[str] = Query(default=None, max_length=50), limit: int = Query(default=30, ge=1, le=200),
+                         user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Stored theses newest first and the scoreboard (hit rate over the scored ones). The shadow
+    multiplier is reported, never applied."""
+    await require_flag(session, thesis.FLAG, user.tenant_id)
+    return await thesis.history(session, user.tenant_id, symbol, limit=limit)
+
+
+@router.get("/thesis/{symbol}")
+async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), refresh: bool = Query(default=False),
+                     narrate: bool = Query(default=False, description="ask the organisation's own AI provider for a narrative (numbers-checked)"),
+                     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The thesis of one watched symbol from the market memory: direction, agreement matrix, bull/base/bear
+    scenarios, the shadow size multiplier (recorded, never applied) and the rule-based sentences. 404
+    until the memory has a read of the symbol."""
+    await require_flag(session, thesis.FLAG, user.tenant_id)
+    if len(symbol) > 50:
+        raise HTTPException(status_code=422, detail="Symbol too long")
+    provider = None
+    if narrate:
+        provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    news_items = []
+    from app.news_feed import service as news_feed_service
+    if await news_feed_service.enabled(session, user.tenant_id):
+        news_items = await news_feed_service.items(session, user.tenant_id, hours=24)
+    out = await thesis.current(session, user.tenant_id, symbol, lang=language, refresh=refresh or narrate, news_items=news_items, provider=provider)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"No market read of {symbol.upper()} yet - add it to the watchlist and refresh the market memory")
+    if narrate and out.get("narrative_source") == "model":
+        await ai_settings.mark_used(session, user.tenant_id)
+        await session.commit()
+    return out
 
 
 @router.get("/coach")

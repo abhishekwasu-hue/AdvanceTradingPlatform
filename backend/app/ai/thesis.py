@@ -165,7 +165,7 @@ def shadow_multiplier(agree: dict, snapshot: dict, vix: Optional[float], events:
     if agree["direction"] == "NEUTRAL":
         multiplier = min(multiplier, 0.75)
         reasons.append("no clear direction")
-    if agree["conflict"] and agree["share"] < 0.67:
+    if agree["conflict"] and agree["agreeing"] * 3 <= agree["with_opinion"] * 2:      # at most two-thirds agree
         multiplier = min(multiplier, 0.75)
         reasons.append("factors disagree")
     if agree["coverage"] < 0.5:
@@ -306,8 +306,8 @@ def numbers_in(obj) -> set:
 
 def numbers_check(text: str, thesis: dict) -> Tuple[bool, List[str]]:
     """True when every number in `text` is one of the thesis numbers (inputs, scenarios, confidence)."""
-    allowed = numbers_in({"inputs": thesis["inputs"], "scenarios": thesis["scenarios"], "confidence": thesis["confidence"], "agreement": thesis["agreement"],
-                          "shadow": thesis["shadow"]["size_multiplier"]})
+    allowed = numbers_in({"symbol": thesis["symbol"], "inputs": thesis["inputs"], "scenarios": thesis["scenarios"], "confidence": thesis["confidence"],
+                          "agreement": thesis["agreement"], "shadow": thesis["shadow"]["size_multiplier"]})
     bad = []
     for raw in _NUMBER.findall(text or ""):
         cleaned = raw.replace(",", "").rstrip("%").lstrip("+")

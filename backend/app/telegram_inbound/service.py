@@ -372,7 +372,7 @@ async def _thesis_text(session: AsyncSession, tenant_id: int, symbol: str, lang:
     if symbol and await flag_enabled(session, thesis.FLAG, tenant_id):          # Phase BD-lite: the full thesis when the flag is on
         built = await thesis.current(session, tenant_id, symbol, lang=lang)
         if built is not None:
-            return "\n".join(html.escape(line) for line in built["lines"])
+            return "\n".join(built["lines"])
     memory = await market_memory.latest(session, tenant_id)
     lines = await _levels_text(session, tenant_id, symbol, lang), *sentiment.view(lang, memory.get("sentiment"))[:2]
     return "\n".join(lines) + "\n" + tr(lang, "(Scenarios need the market thesis feature; ask the platform admin.)", "(Scenario साठी market thesis feature लागते; platform admin ला सांगा.)")

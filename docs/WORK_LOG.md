@@ -52,6 +52,23 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
   failed send); strangers are rate-limited before the audit log and audited at most 5 times per chat per hour;
   command replies are plain text (no HTML double-escaping); transport errors to Telegram become `ok: false`.
 
+### BD-lite - decisions
+- Built as "lite" per the night instruction: the thesis, agreement matrix, scenarios, numbers-check and scoring are
+  real; the reduce-only overlay is computed and stored as `shadow` only. No deployment setting (`thesis_overlay_mode`
+  from the full plan) was introduced - a setting that can change sizing is exactly what "safe default" rules out
+  while nobody is watching. A source-scan test keeps execution/risk/guardian code from importing the thesis.
+- Scoring uses the symbol's last market-memory read of the next session (0.3% threshold) because that is data the
+  platform already has for every tenant; a candle-based scoring can replace it later without a schema change.
+- Flag `market_thesis` default off; the worker builds and scores only for tenants with the flag on.
+
+### BD-lite (PR #53) - self-review findings fixed before merge
+- Numbers check: a number glued to a prefix (`Rs.26000`, `x26000`) escaped the regex; the lookbehind now only
+  avoids re-matching the tail of a number. Factor weights/strengths are no longer "allowed numbers".
+- Worker: `news_items` is bound per tenant before the sentiment block (a failure there could have handed the
+  previous tenant's classified items to this tenant's thesis); the thesis log line named the wrong job.
+- Scenarios fall back to the ATR stand-in when a zone sits on the wrong side of the price (inverted/stale read);
+  `capture_daily` ignores reads from an earlier day; the scoreboard counts every scored thesis, not the page;
+  stored theses are picked per language; Telegram trailer tells "no read yet" apart from "flag off".
 ### Strategist language PR (Phase BF) - decisions
 - Interpreted narrowly as planned: the strategist's output fully in the trader's language (rules in words,
   direction/timeframe words, summary; verdicts/notes/study were already bilingual) and a deterministic Marathi/English

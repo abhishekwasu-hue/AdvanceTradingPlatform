@@ -9,6 +9,7 @@ import StrategyInterview from "../components/StrategyInterview";
 import MarketMemoryCard from "../components/MarketMemoryCard";
 import DailyBriefing from "../components/DailyBriefing";
 import StrategistPanel from "../components/StrategistPanel";
+import ThesisCard from "../components/ThesisCard";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -142,6 +143,7 @@ export default function AiCopilotPage() {
         <div className="space-y-4">
           <DailyBriefing lang={lang} />
           <MarketMemoryCard />
+          <ThesisCard lang={lang} />
         </div>
       )}
 

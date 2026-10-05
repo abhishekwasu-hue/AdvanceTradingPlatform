@@ -1607,3 +1607,29 @@ class OptionChainSnapshotRecord(Base):
     oi: Mapped[float | None] = mapped_column(Float, nullable=True)
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
+
+class ThesisRecord(Base):
+    """Phase BD-lite: one market thesis of one symbol at one moment (direction, confidence, agreement,
+    scenarios, inputs) with the *shadow* size multiplier the reduce-only overlay would have used - stored
+    so the next session can score it. Nothing in execution, risk or the guardian reads this table."""
+
+    __tablename__ = "thesis_records"
+    __table_args__ = (Index("ix_thesis_records_lookup", "tenant_id", "symbol", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False, index=True)                 # IST day the thesis was made
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)                # BULLISH | BEARISH | NEUTRAL
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    agreement: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)      # share of factors agreeing
+    shadow_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lang: Mapped[str] = mapped_column(String(5), nullable=False, default="mr")
+    narrative_source: Mapped[str] = mapped_column(String(10), nullable=False, default="rules")   # rules | model
+    thesis_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    scored_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)            # BULL | BEAR | RANGE | UNKNOWN
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)                 # +1 right, -1 wrong, 0 neither
+    score_detail_json: Mapped[str | None] = mapped_column(Text, nullable=True)

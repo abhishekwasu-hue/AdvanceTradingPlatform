@@ -22,6 +22,8 @@ import type {
   AlertChannelUpsert,
   AlertDelivery,
   TelegramInboundStatus,
+  MarketThesis,
+  ThesisHistory,
   AnalyticsSummary,
   AuditLogEntry,
   BacktestResult,
@@ -655,6 +657,11 @@ export const api = {
     request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId, match }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
+  // Phase BD-lite: the market thesis (shadow overlay only) and its scoreboard.
+  aiThesis: (symbol: string, language: "mr" | "en" = "mr", refresh = false) =>
+    request<MarketThesis>(`/ai/thesis/${encodeURIComponent(symbol)}?language=${language}${refresh ? "&refresh=true" : ""}`),
+  aiThesisHistory: (symbol?: string, limit = 30) =>
+    request<ThesisHistory>(`/ai/thesis/history?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`),
   aiMarketMemoryRefresh: (symbols?: string[]) =>
     request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
   // Phase AW: the strategist.

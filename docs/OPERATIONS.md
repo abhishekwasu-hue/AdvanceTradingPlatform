@@ -772,6 +772,19 @@ Never publish a listing without an attached backtest run; the API refuses the su
   on, and the audit log for rejected secrets (a bot token change at BotFather needs the channel re-saved and the
   webhook re-registered).
 
+### 1.6ai Market thesis (Phase BD-lite)
+
+- **Default off.** Platform admin enables `market_thesis` (Admin > Controls); then the Copilot "Today's market" tab
+  shows the thesis card and `/thesis NIFTY 50` works on Telegram. Needs a market read of the symbol (watchlist +
+  market memory).
+- **Shadow only.** The "shadow x0.75 (not applied)" figure is what a reduce-only overlay would have done. Nothing
+  reads it: no order, risk check or deployment changes because of a thesis. Turning the overlay into a real control
+  is a separate, later decision taken on the scoreboard, not a setting anyone can flip today.
+- **Scoreboard**: the worker scores every thesis against the symbol's last read of the next session (+1 / -1 / 0).
+  Judge the thesis by `hit_rate` over at least a few weeks before trusting it for anything.
+- **Narrative**: `?narrate=true` uses the organisation's own AI key (metered as usual) and is refused when the model
+  invents a number; the rule-based sentences are then shown and `narrative_note` says why.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

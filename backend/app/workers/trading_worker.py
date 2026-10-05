@@ -50,6 +50,7 @@ from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
+from app.workers import eod_summary
 from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
@@ -116,6 +117,7 @@ class CycleReport:
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -166,6 +168,8 @@ class TradingWorker:
         self._cycle_chains: Dict[str, object] = {}   # chains fetched this tenant cycle, by underlying symbol
         # IST calendar date of the last billing lifecycle sweep (Phase K1): trials, dues, grace.
         self._last_billing_day = None
+        # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
+        self._last_eod_summary_day = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
         # agent wants classified even without a filter (those with open positions).
         self._regimes: Dict[int, str] = {}
@@ -261,9 +265,18 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Market memory failed")
                         report.errors.append(f"market memory: {exc}")
+                # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
+                # notification per organisation with a deployment or a trade today. Read-only.
+                ist_now = now.astimezone(IST)
+                if eod_summary.eod_due(now) and self._last_eod_summary_day != ist_now.date():
+                    self._last_eod_summary_day = ist_now.date()      # a failure retries tomorrow, not every minute
+                    try:
+                        report.eod_summaries = await eod_summary.send_all(session, now)
+                    except Exception as exc:  # noqa: BLE001 - a report must never break trading
+                        logger.exception("EOD summary failed")
+                        report.errors.append(f"eod summary: {exc}")
                 # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
                 # so contracts/expiries/lot sizes are current before the 09:15 open.
-                ist_now = now.astimezone(IST)
                 if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:
                     try:
                         report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)

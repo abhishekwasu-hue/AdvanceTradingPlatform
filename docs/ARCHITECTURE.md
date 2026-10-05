@@ -3950,3 +3950,27 @@ Tests: `tests/test_phase_av_copilot_home.py`.
   Strategy Builder offers the new operands and a higher-timeframe selector.
 
 Tests: `tests/test_phase_aw_strategist.py`.
+
+## Phase AX: the first PAPER day
+
+Operator-facing closure for the first real session (real Upstox account, real data, PAPER only).
+
+* **Hosting decision** (ADR-0011): one 2 vCPU / 4 GB droplet, Postgres in compose for the PAPER days, hourly off-site
+  copy of the dumps and the WAL archive to an S3 bucket, Caddy as the only public edge, a separate broker app for the
+  platform. `docker-compose.prod.yml` + `deploy/Caddyfile` + `scripts/backup/offsite_sync.sh`; `scripts/deploy.sh
+  production` uses the overlay.
+* **Marathi runbook** `docs/GO_LIVE_MR.md`: the ordered operator sequence from the empty droplet to the five-day
+  PAPER acceptance, with the exact clicks/commands, expected output and the fix for each failure. Secrets live in the
+  host's `.env` and in Settings only.
+* **First-day check** (`platform/first_day.py`, `scripts/first_paper_day_check.py`): reuses the Phase AB checklists,
+  adds the Phase AJ read-only broker smoke test per usable session, today's session, deployment evaluation freshness
+  and (opt-in) one test message per alert channel; ✅/⚠️/❌/⏭️ with fixes, exit code for scripts, never a write.
+* **EOD summary** (`workers/eod_summary.py`): `eod_due()` from 15:35 IST on weekdays; `build()` reads the IST day's
+  signals, entries, exits (reasons, net P&L), positions still open, deployment states, reconciliation and the worker's
+  last error for one organisation; `send_all()` raises one `EOD_SUMMARY` notification per organisation (INFO / WARNING)
+  through `notifications.notify`, so the existing dispatcher delivers it to Telegram/email. The worker runs it once per
+  IST day (`CycleReport.eod_summaries`).
+* **Housekeeping**: the Redis dump files are out of the repository (`*.rdb` ignored); the opening-range window in
+  `ai/market_study.py` no longer does Timedelta arithmetic on the index (NumPy 2 / pandas 3 deprecation).
+
+Tests: `tests/test_phase_ax_first_paper_day.py`.

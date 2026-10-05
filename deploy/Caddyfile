@@ -1,0 +1,31 @@
+# Phase AX: the public edge for one compose host (docker-compose.prod.yml). Caddy obtains and
+# renews the certificate for {$DOMAIN} on its own; nothing to install or rotate by hand.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Prometheus scrapes the API's /metrics from inside the host, never through the internet.
+	@metrics path /metrics /metrics/*
+	respond @metrics 404
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

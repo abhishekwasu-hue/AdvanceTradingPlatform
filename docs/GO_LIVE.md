@@ -5,6 +5,9 @@ master prompt is built (see `MASTER_PROMPT_GAP_ANALYSIS.md`); what remains is th
 person with the keys. The Dashboard go-live checklist (per organisation) and the Admin console checklist
 (platform) compute most of these from live state and link to the page that fixes each one.
 
+Marathi step-by-step version with commands and expected output: `docs/GO_LIVE_MR.md` (Phase AX); the morning
+check for the first PAPER day is `backend/scripts/first_paper_day_check.py`.
+
 ## 0. Before the first deploy (platform operator)
 
 1. **Secrets in the environment**, never in the repo or in chat: `JWT_SECRET_KEY`, `SECRETS_ENCRYPTION_KEY`

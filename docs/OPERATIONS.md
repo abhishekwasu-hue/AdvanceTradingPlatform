@@ -784,6 +784,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   Judge the thesis by `hit_rate` over at least a few weeks before trusting it for anything.
 - **Narrative**: `?narrate=true` uses the organisation's own AI key (metered as usual) and is refused when the model
   invents a number; the rule-based sentences are then shown and `narrative_note` says why.
+- **Weekly scoreboard (Phase BD-2)**: every Friday after the close a `THESIS_REPORT` notification (INFO; reaches the
+  Telegram/email channels whose floor is INFO) states the week's hit rate per symbol and the average shadow
+  multiplier. A Friday the worker was down is not caught up (the report is Friday-only); the API preview always works. Read it
+  for a few weeks before thinking about the overlay. `GET /api/ai/thesis/report` shows the same text any day.
+- **News feedback (Phase BD-2)**: on the News page, members mark feed items useful / noise / wrong direction. After
+  10 verdicts the organisation's "news trust" (useful share, floor 0.25) scales the thesis news factor; the
+  summary endpoint shows precision per source so a noisy source can be switched off in the feed settings.
 
 ### 1.7 Trading worker runbook
 

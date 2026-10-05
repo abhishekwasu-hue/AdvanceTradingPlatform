@@ -50,6 +50,7 @@ from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
+from app.ai import thesis as thesis_module
 from app.workers import eod_summary
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
@@ -173,6 +174,7 @@ class TradingWorker:
         self._last_billing_day = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
+        self._last_thesis_report_day = None
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -280,6 +282,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
+                if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
+                    self._last_thesis_report_day = ist_now.date()
+                    try:
+                        await thesis_module.send_weekly_reports(session, now=now)
+                    except Exception as exc:  # noqa: BLE001 - a report must never break trading
+                        logger.exception("Thesis weekly report failed")
+                        report.errors.append(f"thesis report: {exc}")
+                        await session.rollback()
                 # Phase BB: the live news feed - one fetch for every organisation (flag `news_feed`,
                 # off by default), then each organisation's own AI classification. Never trades.
                 try:

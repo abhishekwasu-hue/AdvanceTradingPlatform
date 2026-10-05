@@ -10,6 +10,8 @@ import {
   type NewsEventResponse,
   type NewsFeedStatus,
   type NewsSentiment,
+  type NewsTrust,
+  type NewsVerdict,
 } from "../types";
 
 /** Phase BB: feed items are unverified - a severity chip and the badge say so on every row. */
@@ -82,6 +84,31 @@ export default function NewsEventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewsEvent>(defaultNewsEvent());
   const [submitting, setSubmitting] = useState(false);
+  // Phase BD-2: this member's verdicts on feed items (useful / noise / wrong direction) and the organisation's news trust.
+  const [verdicts, setVerdicts] = useState<Record<string, NewsVerdict>>({});
+  const [trust, setTrust] = useState<NewsTrust | null>(null);
+
+  const [feedOn, setFeedOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    api.newsFeedStatus().then((st) => {
+      setFeedOn(st.enabled);
+      if (st.enabled) api.newsFeedbackSummary().then((r) => setTrust(r.trust)).catch(() => setTrust(null));
+    }).catch(() => setFeedOn(false));
+  }, [user]);
+  useEffect(() => {
+    const feedIds = events.filter((e) => e.origin === "FEED").map((e) => e.id);
+    if (!feedIds.length || !user || !feedOn) { setVerdicts({}); return; }
+    api.newsFeedbackMine(feedIds).then((r) => setVerdicts(r.verdicts)).catch(() => setVerdicts({}));
+  }, [events, user, feedOn]);
+
+  async function vote(id: number, verdict: NewsVerdict) {
+    try {
+      const r = await api.newsFeedback(id, verdict);
+      setVerdicts((v) => ({ ...v, [String(id)]: r.verdict }));
+      setTrust(r.trust);
+    } catch (e) { setError(String(e)); }
+  }
 
   function refresh() {
     setLoading(true);
@@ -123,7 +150,7 @@ export default function NewsEventsPage() {
         <p className="text-sm font-semibold text-pink-200">
           Structured, cited entries for RBI policy decisions, the Union Budget, government
           policy changes, corporate news, and other market-moving events. Entries a person adds must
-          cite a source. Items marked <span className="rounded border border-amber-400/50 bg-amber-500/10 px-1 text-amber-200">unverified feed</span> come
+          cite a source.{trust && <span className="ml-1 text-slate-300">News trust: <b>{trust.trust.toFixed(2)}</b> ({trust.ratings} verdict{trust.ratings === 1 ? "" : "s"}{trust.applied ? ", applied to the thesis" : `, ${trust.note}`}).</span>} Items marked <span className="rounded border border-amber-400/50 bg-amber-500/10 px-1 text-amber-200">unverified feed</span> come
           from a publisher's own public feed (RBI, SEBI, ...): headline and link only, never checked by the platform - read the source before acting.
         </p>
       </div>
@@ -220,6 +247,16 @@ export default function NewsEventsPage() {
                     <button onClick={() => handleDelete(e.id)} className="text-xs text-danger hover:underline shrink-0">
                       Delete
                     </button>
+                  )}
+                  {user && feedOn && e.origin === "FEED" && (
+                    <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
+                      {(["useful", "noise", "wrong_direction"] as NewsVerdict[]).map((v) => (
+                        <button key={v} onClick={() => void vote(e.id, v)}
+                                className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-purple-400/60 bg-purple-500/20 text-purple-100" : "border-border text-muted hover:text-slate-200"}`}>
+                          {v === "useful" ? "👍 useful" : v === "noise" ? "👎 noise" : "↔ wrong direction"}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>

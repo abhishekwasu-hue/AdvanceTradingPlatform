@@ -1633,3 +1633,21 @@ class ThesisRecord(Base):
     outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)            # BULL | BEAR | RANGE | UNKNOWN
     score: Mapped[float | None] = mapped_column(Float, nullable=True)                 # +1 right, -1 wrong, 0 neither
     score_detail_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class NewsFeedbackRecord(Base):
+    """Phase BD-2: one member's verdict on one feed item - was it useful, noise, or classified in the
+    wrong direction. Tenant-scoped (the item itself is shared); one verdict per member per item,
+    re-voting replaces it. Feeds the organisation's "news trust" that scales the thesis news factor."""
+
+    __tablename__ = "news_feedback"
+    __table_args__ = (UniqueConstraint("tenant_id", "news_event_id", "user_id", name="uq_news_feedback_member_item"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    news_event_id: Mapped[int] = mapped_column(ForeignKey("news_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    verdict: Mapped[str] = mapped_column(String(16), nullable=False)             # useful | noise | wrong_direction
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+

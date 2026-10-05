@@ -55,7 +55,7 @@ def _direction_word(lang: str, direction: str) -> str:
 
 
 # --- the factors -----------------------------------------------------------------------------------
-def factor_rows(snapshot: dict, sentiment: Optional[dict], news_items: List[dict], globals_: List[dict], now: datetime) -> List[dict]:
+def factor_rows(snapshot: dict, sentiment: Optional[dict], news_items: List[dict], globals_: List[dict], now: datetime, news_trust: float = 1.0) -> List[dict]:
     """One row per factor: direction (-1/0/+1), weight, strength 0..1 and a note. Missing inputs are
     rows with `available: False` so the matrix shows what the thesis did *not* know."""
     rows: List[dict] = []
@@ -92,8 +92,9 @@ def factor_rows(snapshot: dict, sentiment: Optional[dict], news_items: List[dict
             total += DIRECTION_SIGN.get(str(cls.get("direction", "NEUTRAL")).upper(), 0.0) * w
             weight += w
         net = total / weight if weight else 0.0
+        trust = max(0.0, min(1.0, float(news_trust)))                   # Phase BD-2: the organisation's own verdicts on the feed
         rows.append({"factor": "news", "weight": WEIGHTS["news"], "available": True, "direction": 1 if net >= 0.34 else -1 if net <= -0.34 else 0,
-                     "strength": min(1.0, abs(net)), "value": {"items": len(news_items), "net": round(net, 2)}})
+                     "strength": min(1.0, abs(net)) * trust, "value": {"items": len(news_items), "net": round(net, 2), "trust": round(trust, 2)}})
     else:
         rows.append({"factor": "news", "weight": WEIGHTS["news"], "available": False, "direction": 0, "strength": 0.0, "value": None})
 
@@ -227,8 +228,8 @@ def news_for(items: List[dict], symbol: str) -> List[dict]:
 
 
 # --- building -----------------------------------------------------------------------------------------
-def compose(symbol: str, snapshot: dict, memory: dict, news_items: List[dict], events: List[dict], lang: str, now: datetime) -> dict:
-    rows = factor_rows(snapshot, memory.get("sentiment"), news_items, memory.get("globals", []), now)
+def compose(symbol: str, snapshot: dict, memory: dict, news_items: List[dict], events: List[dict], lang: str, now: datetime, news_trust: float = 1.0) -> dict:
+    rows = factor_rows(snapshot, memory.get("sentiment"), news_items, memory.get("globals", []), now, news_trust)
     agree = agreement(rows)
     vix_row = next((c for c in memory.get("cues", []) if c.get("symbol") == "INDIA VIX"), None)
     vix = float(vix_row["last_price"]) if vix_row and vix_row.get("last_price") else None
@@ -388,7 +389,9 @@ async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str
     if snapshot is None:
         return None
     events = await events_for(session, tenant_id, symbol, _ist_day(now))
-    thesis = compose(symbol, snapshot, memory, news_for(news_items or [], symbol), events, lang, now)
+    from app.news_feed import feedback
+    trust = (await feedback.trust(session, tenant_id, now=now))["trust"] if news_items else 1.0
+    thesis = compose(symbol, snapshot, memory, news_for(news_items or [], symbol), events, lang, now, trust)
     if provider is not None and getattr(provider, "name", "rule_based") != "rule_based":
         text, why = await narrate(provider, thesis, lang)
         if text:
@@ -502,3 +505,76 @@ async def capture_daily(session: AsyncSession, tenant_id: int, memory: dict, *, 
     if built and commit:
         await session.commit()
     return built
+
+
+# --- the weekly scoreboard report (Phase BD-2) ----------------------------------------------------------
+REPORT_WEEKDAY = 4              # Friday
+REPORT_AT_IST = (15, 40)        # after the EOD summary
+
+
+def report_due(now: datetime) -> bool:
+    ist = now.astimezone(IST)
+    return ist.weekday() == REPORT_WEEKDAY and (ist.hour, ist.minute) >= REPORT_AT_IST
+
+
+def report_title(now: datetime) -> str:
+    year, week, _ = now.astimezone(IST).isocalendar()
+    return f"Thesis scoreboard {year}-W{week:02d}:"
+
+
+async def weekly_report(session: AsyncSession, tenant_id: int, *, now: Optional[datetime] = None, days: int = 7) -> Optional[dict]:
+    """The week's scored theses for one organisation: hit rate overall and per symbol, what the shadow
+    overlay would have done on average, how many are still unscored. None when nothing was scored."""
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    rows = list(await session.scalars(select(ThesisRecord).where(ThesisRecord.tenant_id == tenant_id, ThesisRecord.created_at >= since)))
+    scored = [r for r in rows if r.score is not None]
+    if not scored:
+        return None
+    per_symbol: Dict[str, Dict[str, float]] = {}
+    for r in scored:
+        b = per_symbol.setdefault(r.symbol, {"scored": 0, "hits": 0, "misses": 0})
+        b["scored"] += 1
+        b["hits"] += int(r.score > 0)
+        b["misses"] += int(r.score < 0)
+    hits = sum(1 for r in scored if r.score > 0)
+    misses = sum(1 for r in scored if r.score < 0)
+    avg_shadow = round(sum(r.shadow_multiplier for r in scored) / len(scored), 2)
+    unknown = sum(1 for r in rows if r.outcome == "UNKNOWN")
+    pending = sum(1 for r in rows if r.scored_at is None)
+    lines = [f"{len(scored)} thesis(es) scored this week: {hits} right, {misses} wrong, {len(scored) - hits - misses} flat - hit rate {hits / len(scored):.0%}."]
+    for symbol, b in sorted(per_symbol.items()):
+        lines.append(f"- {symbol}: {int(b['hits'])}/{int(b['scored'])} right" + (f", {int(b['misses'])} wrong" if b["misses"] else ""))
+    lines.append(f"Shadow overlay would have sized at {avg_shadow:.2f}x on average - recorded only, never applied.")
+    if unknown or pending:
+        lines.append(f"Unscored: {pending} waiting for the next session, {unknown} without a later read.")
+    lines.append("A thesis is a reading, never a signal. Judge the overlay on weeks of this, not days.")
+    return {"tenant_id": tenant_id, "scored": len(scored), "hits": hits, "misses": misses, "flat": len(scored) - hits - misses,
+            "hit_rate": round(hits / len(scored), 2), "avg_shadow": avg_shadow, "per_symbol": per_symbol, "unknown": unknown, "pending": pending,
+            "title": f"{report_title(now)} {hits}/{len(scored)} right ({hits / len(scored):.0%}), shadow {avg_shadow:.2f}x", "lines": lines}
+
+
+async def send_weekly_reports(session: AsyncSession, *, now: Optional[datetime] = None) -> int:
+    """One THESIS_REPORT notification per organisation with the flag on and something scored; idempotent per ISO week."""
+    from app.core.enums import NotificationSeverity, NotificationType
+    from app.db.models import NotificationRecord
+    from app.notifications.service import notify
+    from app.platform.controls import flag_enabled
+    now = now or datetime.now(timezone.utc)
+    sent = 0
+    tenants = sorted(set(await session.scalars(select(ThesisRecord.tenant_id).where(ThesisRecord.created_at >= now - timedelta(days=7)).distinct())))
+    for tenant_id in tenants:
+        if not await flag_enabled(session, FLAG, tenant_id):
+            continue
+        already = await session.scalar(select(NotificationRecord.id).where(
+            NotificationRecord.tenant_id == tenant_id, NotificationRecord.event_type == NotificationType.THESIS_REPORT.value,
+            NotificationRecord.title.like(f"{report_title(now)}%")).limit(1))
+        if already is not None:
+            continue
+        report = await weekly_report(session, tenant_id, now=now)
+        if report is None:
+            continue
+        await notify(session, tenant_id, NotificationType.THESIS_REPORT, title=report["title"], message="\n".join(report["lines"]), severity=NotificationSeverity.INFO)
+        sent += 1
+    return sent
+

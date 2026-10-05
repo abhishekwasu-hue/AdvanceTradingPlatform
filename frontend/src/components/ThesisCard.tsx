@@ -89,7 +89,7 @@ export default function ThesisCard({ lang = "mr" }: { lang?: "mr" | "en" }) {
                     className={`rounded border px-1.5 py-0.5 ${!r.available ? "border-border text-muted line-through" : r.direction > 0 ? "border-emerald-500/40 text-emerald-200" : r.direction < 0 ? "border-rose-500/40 text-rose-200" : "border-border text-slate-200"}`}>
                 {FACTOR[r.factor] ? (lang === "mr" ? FACTOR[r.factor].mr : FACTOR[r.factor].en) : r.factor} {!r.available ? "?" : r.direction > 0 ? "↑" : r.direction < 0 ? "↓" : "→"} <span className="text-muted">×{r.weight.toFixed(2)}</span>
                 {r.factor === "news" && r.available && (r.value as { trust?: number } | null)?.trust != null && ((r.value as { trust: number }).trust < 1) && (
-                  <span className="text-amber-300"> · trust {(r.value as { trust: number }).trust.toFixed(2)}</span>
+                  <span className="text-amber-300"> · {lang === "mr" ? "विश्वास" : "trust"} {(r.value as { trust: number }).trust.toFixed(2)}</span>
                 )}
               </span>
             ))}

@@ -526,7 +526,8 @@ export type NotificationEventType =
   | "AI_PROPOSAL"
   | "MARKETPLACE"
   | "EOD_SUMMARY"
-  | "NEWS_ALERT";
+  | "NEWS_ALERT"
+  | "THESIS_REPORT";
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 

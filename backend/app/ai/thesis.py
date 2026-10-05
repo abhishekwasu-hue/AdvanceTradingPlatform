@@ -535,8 +535,8 @@ async def weekly_report(session: AsyncSession, tenant_id: int, *, now: Optional[
     for r in scored:
         b = per_symbol.setdefault(r.symbol, {"scored": 0, "hits": 0, "misses": 0})
         b["scored"] += 1
-        b["hits"] += r.score > 0
-        b["misses"] += r.score < 0
+        b["hits"] += int(r.score > 0)
+        b["misses"] += int(r.score < 0)
     hits = sum(1 for r in scored if r.score > 0)
     misses = sum(1 for r in scored if r.score < 0)
     avg_shadow = round(sum(r.shadow_multiplier for r in scored) / len(scored), 2)

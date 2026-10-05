@@ -50,6 +50,7 @@ from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
+from app.ai import thesis as thesis_module
 from app.workers import eod_summary
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
@@ -282,7 +283,6 @@ class TradingWorker:
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
                 # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
-                from app.ai import thesis as thesis_module
                 if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
                     self._last_thesis_report_day = ist_now.date()
                     try:

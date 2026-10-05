@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import settings as ai_settings
@@ -27,7 +27,11 @@ class SourceToggle(BaseModel):
 
 class FeedbackBody(BaseModel):
     verdict: str
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=300)
+
+
+class FeedbackIdsBody(BaseModel):
+    ids: List[int] = Field(default_factory=list, max_length=200)
 
 
 @router.get("/status")
@@ -90,11 +94,11 @@ async def give_feedback(item_id: int, body: FeedbackBody, user: User = Depends(g
     return {"item_id": row.news_event_id, "verdict": row.verdict, "trust": await feedback.trust(session, user.tenant_id)}
 
 
-@router.get("/feedback/mine")
-async def my_feedback(ids: str = Query(default="", max_length=2000), user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """This member's verdicts on the given item ids (comma separated), for the UI."""
+@router.post("/feedback/mine")
+async def my_feedback(body: FeedbackIdsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """This member's verdicts on the given item ids (at most 200 per call; the UI chunks), for the UI."""
     await require_flag(session, service.FLAG, user.tenant_id)
-    item_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()][:200]
+    item_ids = [i for i in body.ids if 0 < i < 2**31]
     return {"verdicts": await feedback.mine(session, user.tenant_id, user.id, item_ids)}
 
 

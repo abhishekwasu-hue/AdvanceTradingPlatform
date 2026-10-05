@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.ai import thesis as th
 from app.core.enums import NotificationType
-from app.db.models import NewsEventRecord, NewsFeedbackRecord, NotificationRecord, ThesisRecord, User
+from app.db.models import NewsEventRecord, NewsFeedbackRecord, NotificationRecord, ThesisRecord
 from app.news_feed import feedback as fb
 from app.platform import controls
 from tests.test_auth_api import _register, _session_factory, client
@@ -81,7 +81,7 @@ def test_feedback_api_records_replaces_and_summarises_per_tenant_and_scales_the_
 
     for i, item in enumerate(ids[:10]):
         verdict = "useful" if i < 6 else "noise" if i < 9 else "wrong_direction"
-        out = client.post(f"/api/news-feed/items/{item}/feedback", headers=headers, json={"verdict": verdict, "note": "x" * 400}).json()
+        out = client.post(f"/api/news-feed/items/{item}/feedback", headers=headers, json={"verdict": verdict, "note": "x" * 300}).json()
         assert out["verdict"] == verdict
     assert out["trust"]["ratings"] == 10 and out["trust"]["trust"] == 0.6 and out["trust"]["applied"] is True
     # Re-voting replaces the verdict, never adds a row.
@@ -91,8 +91,10 @@ def test_feedback_api_records_replaces_and_summarises_per_tenant_and_scales_the_
             return list(await session.scalars(select(NewsFeedbackRecord).where(NewsFeedbackRecord.tenant_id == tenant_id)))
     stored = _run(rows())
     assert len(stored) == 10 and next(r for r in stored if r.news_event_id == ids[0]).verdict == "noise" and all(len(r.note or "") <= 300 for r in stored)
-    mine = client.get(f"/api/news-feed/feedback/mine?ids={','.join(map(str, ids[:3]))},abc", headers=headers).json()["verdicts"]
-    assert mine == {str(ids[0]): "noise", str(ids[1]): "useful", str(ids[2]): "useful"} or mine == {ids[0]: "noise", ids[1]: "useful", ids[2]: "useful"}
+    mine = client.post("/api/news-feed/feedback/mine", headers=headers, json={"ids": ids[:3] + [-5, 10**12]}).json()["verdicts"]
+    assert mine == {str(ids[0]): "noise", str(ids[1]): "useful", str(ids[2]): "useful"}
+    assert client.post("/api/news-feed/feedback/mine", headers=headers, json={"ids": list(range(1, 202))}).status_code == 422     # more than 200: the UI chunks
+    assert client.post(f"/api/news-feed/items/{ids[2]}/feedback", headers=headers, json={"verdict": "useful", "note": "y" * 301}).status_code == 422
     summary = client.get("/api/news-feed/feedback/summary", headers=headers).json()
     assert summary["trust"]["trust"] == 0.5 and {r["key"] for r in summary["by_source"]} == {"rbi_press", "sebi_press"} and summary["by_category"][0]["key"] == "RBI_POLICY"
     assert sum(r["total"] for r in summary["by_source"]) == 10
@@ -130,6 +132,8 @@ def test_feedback_api_records_replaces_and_summarises_per_tenant_and_scales_the_
 
 def test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only():
     headers, tenant_id, _ = _tenant("bd2-report@example.com")
+    _flags(market_thesis=False)
+    assert client.get("/api/ai/thesis/report", headers=headers).status_code == 503
     _flags(market_thesis=True)
     assert th.report_due(NOW) and not th.report_due(NOW - timedelta(days=1)) and not th.report_due(NOW.replace(hour=9))
     assert client.get("/api/ai/thesis/report", headers=headers).json()["scored"] == 0
@@ -155,25 +159,19 @@ def test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only():
             notes = list(await session.scalars(select(NotificationRecord).where(NotificationRecord.tenant_id == tenant_id,
                                                                                 NotificationRecord.event_type == NotificationType.THESIS_REPORT.value)))
             return n, notes
+    _flags(market_thesis=False)
+    n, notes = _run(send(NOW))
+    assert n == 0 and notes == []                                                                       # flag off: silent even with scores
+    _flags(market_thesis=True)
     n, notes = _run(send(NOW))
     assert n == 1 and len(notes) == 1 and notes[0].title.startswith("Thesis scoreboard 2026-W41:") and "Shadow overlay" in notes[0].message
     n, notes = _run(send(NOW + timedelta(hours=2)))
     assert n == 0 and len(notes) == 1                                                                  # same week: once
-    _flags(market_thesis=False)
     n, notes = _run(send(NOW + timedelta(days=7)))
-    assert n == 0 and len(notes) == 1                                                                  # flag off: silent
-    _flags(market_thesis=True)
-    n, notes = _run(send(NOW + timedelta(days=7)))
-    assert n == 0                                                                                      # nothing scored in that later week
+    assert n == 0 and len(notes) == 1                                                                  # nothing scored in that later week
     # Nothing in the report path touches deployments, trades or orders: the records are untouched.
     async def untouched():
         async with _session_factory() as session:
             rows = list(await session.scalars(select(ThesisRecord).where(ThesisRecord.tenant_id == tenant_id)))
             return [(r.direction, r.score, r.shadow_multiplier) for r in rows]
     assert len(_run(untouched())) == 5
-    assert isinstance(_run(_user(tenant_id)), User)
-
-
-async def _user(tenant_id):
-    async with _session_factory() as session:
-        return await session.scalar(select(User).where(User.tenant_id == tenant_id))

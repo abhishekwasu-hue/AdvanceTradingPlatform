@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import NewsEventRecord, NewsFeedbackRecord, User
@@ -36,6 +37,15 @@ async def record(session: AsyncSession, tenant_id: int, user: User, news_event_i
     if row is None:
         row = NewsFeedbackRecord(tenant_id=tenant_id, news_event_id=news_event_id, user_id=user.id, verdict=verdict, note=(note or "")[:300] or None, created_at=now)
         session.add(row)
+        try:
+            await session.flush()
+        except IntegrityError:                       # the same member voted twice at once: the second press updates
+            await session.rollback()
+            row = await session.scalar(select(NewsFeedbackRecord).where(
+                NewsFeedbackRecord.tenant_id == tenant_id, NewsFeedbackRecord.news_event_id == news_event_id, NewsFeedbackRecord.user_id == user.id))
+            if row is None:
+                raise
+            row.verdict, row.note, row.created_at = verdict, (note or "")[:300] or None, now
     else:
         row.verdict, row.note, row.created_at = verdict, (note or "")[:300] or None, now
     if commit:

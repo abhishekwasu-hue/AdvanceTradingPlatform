@@ -126,3 +126,11 @@ LIVE शी संबंधित काहीही बदललेलं न�
   it only scales the thesis news factor's strength, so the worst a wrong verdict can do is change a reading.
 - The weekly report is idempotent per ISO week and flag-gated like the thesis itself.
 
+### BD-2 (PR #55) - self-review findings fixed before merge
+- "My verdicts" lookup moved from a 2000-char GET query to a chunked POST (<=200 ids per call): with months of feed rows
+  the GET would have 422'd and blanked every pressed thumb on load. Unicode-digit and oversized ids no longer reach the DB.
+- The report's flag-off test was vacuous (no scores in that week); it now proves silence with scores present, plus a
+  503 on the preview with the flag off. Concurrent double vote updates instead of 500; note length is a clean 422.
+- News page skips the feedback calls when the feed is off; THESIS_REPORT added to the UI notification type; Marathi
+  label for the trust suffix; worker import hoisted.
+

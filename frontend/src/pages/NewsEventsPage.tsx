@@ -88,12 +88,19 @@ export default function NewsEventsPage() {
   const [verdicts, setVerdicts] = useState<Record<string, NewsVerdict>>({});
   const [trust, setTrust] = useState<NewsTrust | null>(null);
 
+  const [feedOn, setFeedOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    api.newsFeedStatus().then((st) => {
+      setFeedOn(st.enabled);
+      if (st.enabled) api.newsFeedbackSummary().then((r) => setTrust(r.trust)).catch(() => setTrust(null));
+    }).catch(() => setFeedOn(false));
+  }, [user]);
   useEffect(() => {
     const feedIds = events.filter((e) => e.origin === "FEED").map((e) => e.id);
-    if (!feedIds.length || !user) { setVerdicts({}); return; }
+    if (!feedIds.length || !user || !feedOn) { setVerdicts({}); return; }
     api.newsFeedbackMine(feedIds).then((r) => setVerdicts(r.verdicts)).catch(() => setVerdicts({}));
-    api.newsFeedbackSummary().then((r) => setTrust(r.trust)).catch(() => setTrust(null));
-  }, [events, user]);
+  }, [events, user, feedOn]);
 
   async function vote(id: number, verdict: NewsVerdict) {
     try {
@@ -241,7 +248,7 @@ export default function NewsEventsPage() {
                       Delete
                     </button>
                   )}
-                  {user && e.origin === "FEED" && (
+                  {user && feedOn && e.origin === "FEED" && (
                     <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
                       {(["useful", "noise", "wrong_direction"] as NewsVerdict[]).map((v) => (
                         <button key={v} onClick={() => void vote(e.id, v)}

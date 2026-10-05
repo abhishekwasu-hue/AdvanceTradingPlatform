@@ -52,3 +52,10 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
   failed send); strangers are rate-limited before the audit log and audited at most 5 times per chat per hour;
   command replies are plain text (no HTML double-escaping); transport errors to Telegram become `ok: false`.
 
+### Strategist language PR (Phase BF) - decisions
+- Interpreted narrowly as planned: the strategist's output fully in the trader's language (rules in words,
+  direction/timeframe words, summary; verdicts/notes/study were already bilingual) and a deterministic Marathi/English
+  request parser (symbol, style, direction, language). No model call is involved in parsing, so a mis-heard request
+  can only change which study runs, never an order. Unmatched words fall back to the form's values and the UI shows
+  exactly what was understood before anything runs.
+

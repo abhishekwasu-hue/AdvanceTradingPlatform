@@ -170,7 +170,8 @@ def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_n
 
     async def event():
         async with _session_factory() as session:
-            session.add(MarketEventRecord(tenant_id=None, underlying="INDEX", event_date=NOW.astimezone(th.IST).date(), start_time="10:00", end_time="11:00",
+            # The organisation's own event (a global one would bite every other test's guardian today).
+            session.add(MarketEventRecord(tenant_id=tenant_id, underlying="INDEX", event_date=NOW.astimezone(th.IST).date(), start_time="10:00", end_time="11:00",
                                           kind="RBI_POLICY", action="SIZE_CUT", size_cut_pct=50, description="RBI policy"))
             await session.commit()
     _run(event())

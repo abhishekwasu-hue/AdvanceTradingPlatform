@@ -358,6 +358,7 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(ge
             news_items = await news_feed_service.items(session, user.tenant_id, hours=sentiment.NEWS_HOURS) if await news_feed_service.enabled(session, user.tenant_id) else []
             await sentiment.capture(session, user.tenant_id, adapter, memory, news_items=news_items)
         except Exception as exc:  # noqa: BLE001
+            await session.rollback()
             report["errors"] = list(report.get("errors", [])) + [f"sentiment: {type(exc).__name__}: {exc}"[:200]]
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report

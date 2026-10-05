@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues
@@ -184,8 +184,8 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
     now = now or datetime.now(timezone.utc)
     since = now - timedelta(days=HISTORY_DAYS + 3)
     query = select(MarketSnapshotRecord).where(MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.captured_at >= since)
-    if symbol:
-        query = query.where(MarketSnapshotRecord.symbol == symbol.strip().upper())
+    if symbol:   # the market-wide SENTIMENT row (Phase BC) belongs to every symbol's view
+        query = query.where(or_(MarketSnapshotRecord.symbol == symbol.strip().upper(), MarketSnapshotRecord.kind == "SENTIMENT"))
     rows = list(await session.scalars(query.order_by(MarketSnapshotRecord.captured_at.desc()).limit(5000)))
     symbols: Dict[str, dict] = {}
     cues: Dict[str, dict] = {}

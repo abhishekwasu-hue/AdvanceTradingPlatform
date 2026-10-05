@@ -378,8 +378,10 @@ class TradingWorker:
                         written += 1
                     except Exception:  # noqa: BLE001 - sentiment is background, never a blocker
                         logger.exception("Sentiment for tenant %s failed", tenant_id)
+                        await session.rollback()        # a failed commit must not poison the next tenant's work
                 except Exception:  # noqa: BLE001 - one tenant's memory must not stop the others
                     logger.exception("Market memory for tenant %s failed", tenant_id)
+                    await session.rollback()
         return written
 
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:

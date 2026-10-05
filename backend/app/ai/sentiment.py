@@ -40,7 +40,7 @@ SYMBOL = "MARKET"
 DEFAULT_WEIGHTS: Dict[str, float] = {"pcr": 0.25, "vix": 0.20, "breadth": 0.20, "global": 0.20, "fii_dii": 0.15}
 COMPONENTS = tuple(DEFAULT_WEIGHTS)
 RISK_ON, RISK_OFF = 25.0, -25.0
-BREADTH_SYMBOLS = tuple(sorted(HEAVYWEIGHTS))      # the index heavyweights (one quote call, well inside the broker budget)
+BREADTH_SYMBOLS = tuple(sorted(HEAVYWEIGHTS))      # the index heavyweights (one resolved quote each, every 15 min - inside the broker budget)
 CHAIN_UNDERLYING = "NIFTY 50"
 NEWS_HOURS = 24
 DIRECTION_SIGN = {"BULLISH": 1.0, "BEARISH": -1.0, "NEUTRAL": 0.0}
@@ -57,7 +57,9 @@ def weights() -> Dict[str, float]:
     if raw:
         try:
             override = json.loads(raw)
-            for key, value in (override or {}).items():
+            if not isinstance(override, dict):
+                raise ValueError("SENTIMENT_WEIGHTS must be a JSON object")
+            for key, value in override.items():
                 if key in out and isinstance(value, (int, float)) and value >= 0:
                     out[key] = float(value)
         except ValueError:
@@ -158,24 +160,32 @@ def fii_dii_provider() -> Optional[dict]:
 async def read_chain(broker, underlying: str = CHAIN_UNDERLYING) -> Optional[dict]:
     try:
         chain = await broker.get_option_chain(underlying_of(underlying))
-    except Exception as exc:  # noqa: BLE001 - a chain outage leaves the component missing
+        if chain is None or not chain.rows:
+            return None
+        analysis = analyze_option_chain(chain)
+    except Exception as exc:  # noqa: BLE001 - a chain outage (or an odd chain) leaves the component missing
         logger.info("Sentiment: option chain unavailable: %s", exc)
         return None
-    if chain is None or not chain.rows:
-        return None
-    analysis = analyze_option_chain(chain)
     return {"pcr": analysis.pcr, "call_oi_change": analysis.total_call_oi_change, "put_oi_change": analysis.total_put_oi_change,
             "max_pain": analysis.max_pain, "expiry": analysis.expiry, "bias": analysis.bias.value if hasattr(analysis.bias, "value") else str(analysis.bias)}
 
 
 async def read_breadth(broker, symbols=BREADTH_SYMBOLS) -> Optional[dict]:
-    try:
-        quotes = await broker.get_quote(list(symbols))
-    except Exception as exc:  # noqa: BLE001
-        logger.info("Sentiment: heavyweight quotes unavailable: %s", exc)
-        return None
+    """Advance/decline count over the index heavyweights. One `get_quote_for_symbol(symbol, "NSE")`
+    per name: that is the adapter path that resolves a plain trading symbol to the broker's own
+    instrument key (Upstox `NSE_EQ|ISIN`, Zerodha `NSE:SYMBOL`); the bulk `get_quote(list)` takes
+    broker-native keys and would 4xx on plain symbols. A name the broker cannot quote is skipped."""
+    quotes = []
+    for symbol in symbols:
+        try:
+            quote = await broker.get_quote_for_symbol(symbol, "NSE")
+        except Exception as exc:  # noqa: BLE001 - one unquotable name must not drop the component
+            logger.info("Sentiment: quote for %s unavailable: %s", symbol, exc)
+            continue
+        if quote is not None:
+            quotes.append(quote)
     advances = declines = unchanged = 0
-    for q in (quotes or {}).values():
+    for q in quotes:
         close = float(getattr(q, "close", 0.0) or 0.0)
         ltp = float(getattr(q, "ltp", 0.0) or 0.0)
         if close <= 0 or ltp <= 0:
@@ -188,7 +198,7 @@ async def read_breadth(broker, symbols=BREADTH_SYMBOLS) -> Optional[dict]:
             unchanged += 1
     if advances + declines + unchanged == 0:
         return None
-    return {"advances": advances, "declines": declines, "unchanged": unchanged, "universe": len(symbols)}
+    return {"advances": advances, "declines": declines, "unchanged": unchanged, "universe": len(symbols), "quoted": len(quotes)}
 
 
 def from_memory(memory: dict, now: Optional[datetime] = None) -> Dict[str, object]:

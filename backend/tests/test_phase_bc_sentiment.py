@@ -40,13 +40,18 @@ class _Broker:
         return OptionChain(underlying="NIFTY", expiry="2026-10-08", underlying_ltp=25010.0, rows=rows)
 
     async def get_quote(self, symbols):
-        self.calls.append(("quotes", len(symbols)))
+        # Upstox/Zerodha bulk quotes take broker-native keys (NSE_EQ|ISIN, NSE:SYMBOL): a plain
+        # trading symbol is a 4xx. Sentiment must therefore never call this with plain symbols.
+        raise RuntimeError("bulk quote called with plain symbols: " + ",".join(symbols))
+
+    async def get_quote_for_symbol(self, symbol, exchange="NSE"):
+        self.calls.append(("quote", symbol))
         if not self.quotes:
             raise RuntimeError("quotes unavailable")
-        out = {}
-        for i, s in enumerate(symbols):
-            out[s] = Quote(symbol=s, ltp=101.0 if i % 4 else 99.0, close=100.0)       # 3 of 4 advance
-        return out
+        i = len([c for c in self.calls if c[0] == "quote"]) - 1
+        if symbol == "ITC":
+            return None                                                             # one name the broker cannot quote
+        return Quote(symbol=symbol, ltp=101.0 if i % 4 else 99.0, close=100.0)
 
 
 def test_component_scorers_are_bounded_and_monotonic():
@@ -98,28 +103,50 @@ def test_capture_reads_the_broker_and_memory_and_stores_a_snapshot_the_memory_re
             rows = list(await session.scalars(select(MarketSnapshotRecord).where(MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.kind == "SENTIMENT")))
             return result, latest, rows
     result, latest, rows = _run(go())
-    assert broker.calls[0] == ("chain", "NIFTY") and broker.calls[1][0] == "quotes" and broker.calls[1][1] == len(se.BREADTH_SYMBOLS)
-    assert result["components"]["pcr"]["score"] > 50 and result["components"]["vix"]["score"] > 50 and result["components"]["breadth"]["score"] == 50.0
+    assert broker.calls[0] == ("chain", "NIFTY") and [c[1] for c in broker.calls[1:]] == list(se.BREADTH_SYMBOLS)   # one resolved quote per heavyweight
+    breadth = result["components"]["breadth"]
+    assert breadth["input"]["quoted"] == len(se.BREADTH_SYMBOLS) - 1 and breadth["input"]["advances"] == 20 and breadth["input"]["declines"] == 7
+    assert result["components"]["pcr"]["score"] > 50 and result["components"]["vix"]["score"] > 50 and 48 < breadth["score"] < 49
     assert result["components"]["global"]["score"] > 0 and result["components"]["fii_dii"]["score"] is None and result["missing"] == ["fii_dii"]
     assert result["label"] == "RISK_ON" and result["news"]["label"] == "RISK_OFF" and result["components"]["fii_dii"]["input"]["status"] == "off"
     assert len(rows) == 1 and rows[0].last_price == result["score"] and rows[0].bias == "RISK_ON" and rows[0].symbol == "MARKET"
     assert latest["sentiment"]["score"] == result["score"] and [s["symbol"] for s in latest["symbols"]] == []      # not mistaken for a watched symbol
+    assert latest["cues"] == [] and latest["history"] == {} and latest["globals"] == []                         # and touches nothing else in the memory
+
+    async def filtered():
+        async with _session_factory() as session:
+            return await mm.latest(session, tenant_id, now=NOW + timedelta(minutes=1), symbol="RELIANCE")
+    assert _run(filtered())["sentiment"]["score"] == result["score"]                                           # a symbol view still carries the market read
     lines = se.view("mr", latest["sentiment"])
     assert lines[0].startswith("Market sentiment +") and "तेजीचा कल" in lines[0] and any("FII/DII" in line for line in lines) and any("News score" in line for line in lines)
     assert "never a signal" in se.view("en", latest["sentiment"])[-1]
 
 
-def test_capture_survives_a_dead_chain_and_quotes_with_lower_coverage():
+def test_capture_survives_a_dead_chain_and_quotes_with_lower_coverage(monkeypatch):
     _, tenant_id, _ = _tenant("bc-degraded@example.com")
     memory = {"cues": [{"symbol": "INDIA VIX", "last_price": 22.0, "change_pct": 8.0}], "globals": []}
 
-    async def go():
+    async def go(broker):
         async with _session_factory() as session:
-            return await se.capture(session, tenant_id, _Broker(pcr_rows=False, quotes=False), memory, now=NOW)
-    result = _run(go())
+            return await se.capture(session, tenant_id, broker, memory, now=NOW)
+    result = _run(go(_Broker(pcr_rows=False, quotes=False)))
     assert result["missing"] == ["pcr", "breadth", "global", "fii_dii"] and result["coverage"] == 0.2 and result["label"] == "RISK_OFF"
     assert result["components"]["vix"]["weight"] == 1.0 and result["news"] is None
     assert se.view("en", None)[0].startswith("Market sentiment: not read yet")
+
+    # A chain the analyser chokes on drops only the PCR component, never the capture.
+    class _OddChain(_Broker):
+        async def get_option_chain(self, underlying, expiry=None):
+            return OptionChain(underlying="NIFTY", expiry="2026-10-08", underlying_ltp=25010.0, rows=[OptionChainRow(strike=25000, call_oi=None, put_oi=None)])
+    monkeypatch.setattr(se, "analyze_option_chain", lambda chain: (_ for _ in ()).throw(ZeroDivisionError("odd chain")))
+    result = _run(go(_OddChain()))
+    assert "pcr" in result["missing"] and "breadth" not in result["missing"]
+
+    # A valid-JSON but non-object SENTIMENT_WEIGHTS falls back to the defaults instead of failing every tenant.
+    monkeypatch.setenv("SENTIMENT_WEIGHTS", "[0.5, 0.5]")
+    assert se.weights() == se.DEFAULT_WEIGHTS
+    monkeypatch.setenv("SENTIMENT_WEIGHTS", '"vix"')
+    assert se.weights() == se.DEFAULT_WEIGHTS
 
 
 def test_market_memory_api_and_brief_carry_the_sentiment(monkeypatch):

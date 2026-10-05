@@ -268,11 +268,18 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         return False
     from app.db.models import AiActionRecord
     from app.telegram_inbound import service as telegram_inbound
-    action = await session.get(AiActionRecord, notification.ai_action_id)
-    if action is None:
+    try:
+        action = await session.get(AiActionRecord, notification.ai_action_id)
+        if action is None or action.tenant_id != channel.tenant_id:
+            return False
+        _, html_body = render_text(notification)
+        return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client)
+    except RuntimeError:
+        raise                                         # Telegram refused the send: the ordinary retry path
+    except Exception as exc:  # noqa: BLE001 - a bug in the buttons must not stop the alert itself
+        logger.warning("Telegram proposal buttons failed (%s); sending the plain alert", exc)
+        await session.rollback()
         return False
-    _, html_body = render_text(notification)
-    return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client)
 
 
 # --- the drain -----------------------------------------------------------------------------------

@@ -37,7 +37,7 @@ async def telegram_webhook(webhook_token: str, request: Request, session: AsyncS
     if record is None or not record.enabled:
         raise HTTPException(status_code=403, detail="Telegram inbound is not configured")
     cfg: TelegramConfig = decrypt_config(record)  # type: ignore[assignment]
-    if not cfg.inbound_enabled:
+    if not cfg.inbound_enabled or not await _flag_on(session, tenant.id):
         raise HTTPException(status_code=403, detail="Telegram inbound is off for this organisation")
     if not service.secret_ok(x_telegram_bot_api_secret_token, cfg):
         await write_audit_log(session, tenant.id, None, "telegram_inbound_rejected", "secret header missing or wrong")

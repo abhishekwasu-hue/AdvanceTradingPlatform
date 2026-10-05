@@ -63,7 +63,7 @@ export default function AlertChannelsCard() {
       }
     }).catch((e) => setError(String(e)));
     api.listAlertDeliveries(10).then(setDeliveries).catch(() => {});
-    api.telegramInboundStatus().then((s) => { setInbound(s); setInboundChats(s.allowed_chat_ids.join(", ")); }).catch(() => setInbound(null));
+    api.telegramInboundStatus().then((s) => { setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", ")); }).catch(() => setInbound(null));
   }
 
   useEffect(refresh, []);
@@ -185,7 +185,7 @@ export default function AlertChannelsCard() {
                 Chat commands: /brief /positions /risk /news /levels /thesis /why, or ask a question. Approve/Reject buttons appear on
                 monitor proposals for <b>PAPER</b> deployments only ({inbound.telegram_actions.join(", ")}); exits and every LIVE decision stay on the web with your authenticator.
               </p>
-              <input className={input} placeholder="Allowed chat ids (comma separated; the alert chat id is always allowed)" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
+              <input className={input} placeholder="Extra allowed chat ids (comma separated, up to 10); the alert chat id is always allowed" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
               <div className="flex flex-wrap items-center gap-2">
                 <button disabled={busy || inbound.flag_enabled === false} onClick={() => run(inbound.inbound_enabled ? "Two-way Telegram switched off." : "Two-way Telegram switched on - now register the webhook.",
                   () => api.telegramInboundConfigure({ enabled: !inbound.inbound_enabled, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}

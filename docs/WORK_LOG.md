@@ -41,3 +41,14 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
   Telegram's secret header, with a chat whitelist and a per-chat rate limit, all audited. Flag default off.
 - No Telegram command can place, modify or exit an order; free text goes through the read-only Copilot router.
 
+### BE (PR #52) - self-review findings fixed before merge
+- BLOCKING: the generic `PUT /api/alert-channels/telegram` accepted `inbound_enabled` / `allowed_chat_ids` /
+  `inbound_secret` verbatim, so any trader could switch inbound on with a chosen whitelist and secret, bypassing
+  the owner-only endpoint and the flag. The PUT now drops those keys and carries the stored ones over; the webhook
+  itself also checks the `telegram_inbound` flag (403 when off). Test added.
+- The operator's `ai_copilot` kill flag now binds Telegram `/brief`, `/risk` and free text (it bound only the web).
+- Button presses claim the nonce with a conditional UPDATE (and retire the sibling button) so two deliveries cannot
+  both decide; the buttons hook can never break the alert drain (own try/except + rollback, nonce rows dropped on a
+  failed send); strangers are rate-limited before the audit log and audited at most 5 times per chat per hour;
+  command replies are plain text (no HTML double-escaping); transport errors to Telegram become `ok: false`.
+

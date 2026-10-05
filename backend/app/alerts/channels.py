@@ -17,12 +17,21 @@ def severity_reaches(severity: str, floor: str) -> bool:
     return SEVERITY_RANK.get(severity, 0) >= SEVERITY_RANK.get(floor, 1)
 
 
+TELEGRAM_INBOUND_FIELDS = ("inbound_enabled", "allowed_chat_ids", "inbound_secret")   # Phase BE: set only by telegram_inbound.service.configure
+
+
 class TelegramConfig(BaseModel):
     """A bot created with @BotFather and the chat (a user or a group the bot is in) to post to.
     Find the chat id by messaging the bot and reading /getUpdates, or via @userinfobot."""
 
     bot_token: str = Field(min_length=10, max_length=200)
     chat_id: str = Field(min_length=1, max_length=64)
+    # Phase BE: inbound commands and approve/reject buttons from whitelisted chats. Off by default;
+    # `inbound_secret` is the value Telegram echoes in X-Telegram-Bot-Api-Secret-Token (set by the
+    # platform when inbound is enabled, never typed by a person, never returned by the API).
+    inbound_enabled: bool = False
+    allowed_chat_ids: List[str] = Field(default_factory=list, max_length=10)
+    inbound_secret: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator("bot_token")
     @classmethod
@@ -120,7 +129,7 @@ class SmsConfig(BaseModel):
 
 ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig]
 
-SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token",), AlertChannelType.EMAIL.value: ("password",),
+SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token", "inbound_secret"), AlertChannelType.EMAIL.value: ("password",),
                  AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",)}
 
 

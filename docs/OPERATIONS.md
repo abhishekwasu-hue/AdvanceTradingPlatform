@@ -743,7 +743,7 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 - **Where**: Copilot > Market memory card (gauge, components, news score) and the daily brief chip; the plan's
   market-background lines. Captured every 15 minutes with the market memory through the organisation's broker
-  (option chain + heavyweight quotes: one chain call and one batched quote call per read, inside the broker budget).
+  (option chain + heavyweight quotes: one chain call and one resolved quote per heavyweight per read, inside the broker budget).
 - **Reading it**: +25 and above = risk-on, -25 and below = risk-off; `coverage` says how much of the weight had
   data (no broker session = no PCR/breadth; the global cues and VIX still count). A struck-through component had
   no data and the weights renormalised - the score is never padded with zeros.
@@ -753,6 +753,24 @@ Never publish a listing without an attached backtest run; the API refuses the su
   until then the component shows "off" and is simply missing.
 - **News score** is reported separately (unverified feed items, Phase BB); it is not part of the market score.
 - Sentiment never gates an entry or an exit; it is background for the Copilot's plan and the Phase BD thesis.
+
+### 1.6ah Two-way Telegram (Phase BE)
+
+- **Default off.** Platform admin enables the `telegram_inbound` flag (Admin > Controls); then the organisation's
+  owner, in Settings > Alert delivery > Telegram, turns "Two-way Telegram" on, saves the allowed chat ids and
+  presses **Register webhook** (HTTPS domain required - the production overlay's Caddy provides it). The alert
+  chat id is always allowed; add other chats sparingly.
+- **What it does**: chat commands (`/brief /positions /risk /news /levels /thesis /why`, or a question) answered
+  as the owner; Approve/Reject buttons on monitor proposals for **PAPER** deployments and only for pause /
+  reduce-risk / review-strategy. Exits and anything LIVE never get buttons - decide those on the web with the
+  authenticator. A button is single-use and expires with the proposal (24 hours).
+- **Rotating**: turning inbound off and on again generates a new secret; press Register webhook afterwards.
+  Removing the Telegram channel removes inbound with it. Telegram's `setWebhook` answer is shown verbatim.
+- **Audit**: `telegram_decision`, `telegram_callback_replayed`, `telegram_inbound_rejected` and ignored-chat
+  entries in the audit log; usage metered as `telegram_inbound`.
+- **If messages stop arriving**: check the webhook URL in Settings matches `FRONTEND_URL`, that the flag is still
+  on, and the audit log for rejected secrets (a bot token change at BotFather needs the channel re-saved and the
+  webhook re-registered).
 
 ### 1.7 Trading worker runbook
 

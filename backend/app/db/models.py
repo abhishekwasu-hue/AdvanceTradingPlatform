@@ -1247,6 +1247,8 @@ class NotificationRecord(Base):
     related_trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
     related_order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Phase BE: the monitoring-agent proposal this notification announces (approve/reject buttons on Telegram).
+    ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -1526,6 +1528,26 @@ class NewsClassificationRecord(Base):
     model: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     severity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     classification_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
+
+
+class TelegramCallbackRecord(Base):
+    """Phase BE: one Telegram button = one nonce. The button carries only `p:<nonce>` (Telegram's
+    64-byte callback_data limit); this row holds what it means (tenant, proposal, decision, the chat it
+    was sent to), its HMAC and expiry, and whether it was used. Single use, tenant-scoped."""
+
+    __tablename__ = "telegram_callbacks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    nonce: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    decision: Mapped[str] = mapped_column(String(10), nullable=False)        # approve / reject
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    signature: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    used_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 

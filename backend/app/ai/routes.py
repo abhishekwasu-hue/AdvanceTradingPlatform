@@ -499,18 +499,17 @@ class CopilotBody(BaseModel):
     language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
 
 
-@router.post("/copilot")
-async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """One box for everything: routes the message to the briefing, the coach, the deployments, the
-    strategy interview or the guide, and answers - by the AI grounded on those facts when an external
-    provider is configured, from the rules otherwise."""
-    await require_flag(session, "ai_copilot", user.tenant_id)
-    lang = body.language or interview.detect_language(body.message)
-    name = copilot.intent(body.message)
+async def copilot_answer(session: AsyncSession, user: User, message: str, lang: Optional[str] = None) -> dict:
+    """The Copilot router as a function (the web box and the Telegram chat share it): routes the
+    message to the briefing, the coach, the deployments, the strategy interview or the guide, and
+    answers - by the AI grounded on those facts when an external provider is configured, from the
+    rules otherwise. Read-only."""
+    lang = lang or interview.detect_language(message)
+    name = copilot.intent(message)
     out: dict = {"intent": name, "language": lang, "action": copilot.action_for(lang, name), "source": "rules"}
     if name == "guide":
         memory = await market_memory.latest(session, user.tenant_id)
-        guide = knowledge.answer(body.message, lang, memory)
+        guide = knowledge.answer(message, lang, memory)
         out.update(answer=guide["answer"], concepts=guide["concepts"], related=guide["related"], used_market_memory=guide["used_market_memory"])
         facts = [guide["answer"]]
     elif name == "coach":
@@ -518,9 +517,9 @@ async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user),
         facts = coach.summary_lines(lang, review)
         out.update(answer="\n".join(facts), coach={"stats": review["stats"], "grade": review["grade"], "score": review["score"], "flags": review["flags"][:4]})
     elif name == "interview":
-        start = interview.start(body.message)
+        start = interview.start(message)
         facts = [start["intro"]]
-        out.update(answer=start["intro"], prefill=start["prefill"], prompt=body.message)
+        out.update(answer=start["intro"], prefill=start["prefill"], prompt=message)
     else:
         brief = await briefing.build(session, user, lang)
         facts = briefing.deployment_lines(lang, brief) if name == "deployments" else briefing.summary_lines(lang, brief)
@@ -530,7 +529,7 @@ async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user),
                                                    "deployments": brief["deployments"]})
     provider = await ai_settings.provider_for(session, await _tenant(session, user))
     if provider.name != "rule_based" and name != "interview":
-        text = await copilot.narrate(provider, lang, name, body.message, facts)
+        text = await copilot.narrate(provider, lang, name, message, facts)
         await ai_settings.mark_used(session, user.tenant_id, error=None if text else "AI provider unavailable; answered from the rules")
         await session.commit()
         if text:
@@ -538,6 +537,13 @@ async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user),
         else:
             out["note"] = "AI provider unavailable; answered from the rules"
     return out
+
+
+@router.post("/copilot")
+async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """One box for everything - see `copilot_answer`."""
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    return await copilot_answer(session, user, body.message, body.language)
 
 
 # --- Phase AW the strategist: live market study -> validated strategies ----------------------------------

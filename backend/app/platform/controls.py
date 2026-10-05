@@ -87,9 +87,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
     "self_signup": "Public registration (off: invite-only)",
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
+    "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
 }
-# Phase BB: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed"})
+# Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

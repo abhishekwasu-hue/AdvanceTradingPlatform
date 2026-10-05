@@ -1202,6 +1202,18 @@ export interface AlertChannelUpsert {
   config: Record<string, unknown>;
 }
 
+/** Phase BE: Telegram inbound settings (commands + PAPER approval buttons). */
+export interface TelegramInboundStatus {
+  configured: boolean;
+  inbound_enabled: boolean;
+  allowed_chat_ids: string[];
+  has_secret: boolean;
+  webhook_url: string;
+  telegram_actions: string[];
+  note: string;
+  flag_enabled?: boolean;
+}
+
 export interface AlertDelivery {
   id: number;
   channel_type: AlertChannelType;

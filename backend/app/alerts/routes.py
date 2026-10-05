@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.alerts.channels import decrypt_raw, encrypt_config, masked_summary, merge_push, merge_secrets, parse_config
+from app.alerts.channels import TELEGRAM_INBOUND_FIELDS
 from app.alerts import webpush
 from app.core.validation_errors import safe_validation_message
 from app.alerts.dispatcher import send_via_channel
@@ -106,8 +107,16 @@ async def upsert_alert_channel(
     kind = _channel_type_or_404(channel_type)
     record = await _get_channel(session, user.tenant_id, kind)
     existing_raw = decrypt_raw(record) if record is not None else None
+    incoming = dict(request.config)
+    if kind == AlertChannelType.TELEGRAM.value:
+        # Phase BE: the inbound settings are owner-only and flag-gated (PUT /api/telegram/inbound); this
+        # endpoint never sets them - whatever is stored is carried over, whatever was sent is dropped.
+        for field in TELEGRAM_INBOUND_FIELDS:
+            incoming.pop(field, None)
+            if existing_raw and existing_raw.get(field) is not None:
+                incoming[field] = existing_raw[field]
     try:
-        merged = merge_push(request.config, existing_raw) if kind == AlertChannelType.PUSH.value else merge_secrets(kind, request.config, existing_raw)
+        merged = merge_push(incoming, existing_raw) if kind == AlertChannelType.PUSH.value else merge_secrets(kind, incoming, existing_raw)
         config = parse_config(kind, merged)
     except (ValidationError, ValueError) as exc:
         # Never str(exc): pydantic's text includes the rejected input, i.e. the bot token / password.

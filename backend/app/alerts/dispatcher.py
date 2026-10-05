@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.observability.metrics import ALERT_DELIVERIES
 from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, encrypt_config, severity_reaches
 from app.alerts import webpush
-from app.core.enums import AlertChannelType, AlertDeliveryStatus
+from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
 from app.secrets_store.envelope import ensure_tenant_key
@@ -260,6 +260,28 @@ async def send_via_channel(
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
 
 
+async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord,
+                                     client: Optional[httpx.AsyncClient]) -> bool:
+    """Phase BE: an AI_PROPOSAL going to a Telegram channel with inbound on is sent with one-time
+    Approve / Reject buttons when Telegram may decide it (PAPER, reduce/pause). False -> plain send."""
+    if channel.channel_type != AlertChannelType.TELEGRAM.value or notification.event_type != NotificationType.AI_PROPOSAL.value or not notification.ai_action_id:
+        return False
+    from app.db.models import AiActionRecord
+    from app.telegram_inbound import service as telegram_inbound
+    try:
+        action = await session.get(AiActionRecord, notification.ai_action_id)
+        if action is None or action.tenant_id != channel.tenant_id:
+            return False
+        _, html_body = render_text(notification)
+        return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client)
+    except RuntimeError:
+        raise                                         # Telegram refused the send: the ordinary retry path
+    except Exception as exc:  # noqa: BLE001 - a bug in the buttons must not stop the alert itself
+        logger.warning("Telegram proposal buttons failed (%s); sending the plain alert", exc)
+        await session.rollback()
+        return False
+
+
 # --- the drain -----------------------------------------------------------------------------------
 
 async def dispatch_pending(
@@ -291,7 +313,8 @@ async def dispatch_pending(
             failed += 1
             continue
         try:
-            await send_via_channel(channel, notification, client)
+            if not await _telegram_proposal_buttons(session, channel, notification, client):
+                await send_via_channel(channel, notification, client)
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
             delivery.attempts += 1
             delivery.last_error = str(exc)[:500]

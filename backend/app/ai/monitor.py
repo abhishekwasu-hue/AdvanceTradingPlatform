@@ -152,7 +152,7 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
-                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id)
+                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id)
         created.append(row)
     await session.commit()
     return created

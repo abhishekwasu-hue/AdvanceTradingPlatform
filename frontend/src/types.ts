@@ -1923,6 +1923,32 @@ export interface MarketMemory {
   sentiment_view?: string[];
 }
 
+/** Phase BD-lite: the market thesis of one symbol (shadow overlay only). */
+export interface ThesisFactor { factor: string; weight: number; available: boolean; direction: -1 | 0 | 1; strength: number; value: unknown }
+export interface ThesisScenario { trigger?: number; target?: number; invalidation?: number; low?: number; high?: number; text: string }
+export interface MarketThesis {
+  id?: number;
+  symbol: string;
+  as_of: string;
+  lang: string;
+  direction: "BULLISH" | "BEARISH" | "NEUTRAL";
+  confidence: number;
+  agreement: { net: number; direction: string; confidence: number; agreeing: number; with_opinion: number; share: number; coverage: number; conflict: boolean; matrix: ThesisFactor[] };
+  scenarios: Partial<Record<"bull" | "base" | "bear", ThesisScenario>>;
+  shadow: { size_multiplier: number; reasons: string[]; mode: "shadow"; applied: false; note: string };
+  events: { kind: string; action: string; size_cut_pct: number | null; start_time: string | null; end_time: string | null; description: string | null; global: boolean }[];
+  inputs: Record<string, unknown>;
+  lines: string[];
+  narrative: string;
+  narrative_source: "rules" | "model";
+  outcome?: string | null;
+  score?: number | null;
+}
+export interface ThesisHistory {
+  items: { id: number; symbol: string; day: string; direction: string; confidence: number; agreement: number; shadow_multiplier: number; last_price: number | null; outcome: string | null; score: number | null; narrative_source: string; created_at: string | null }[];
+  scoreboard: { scored: number; hits: number; misses: number; flat: number; hit_rate: number | null; shadow_mode: "shadow"; shadow_applied: false };
+}
+
 export interface SentimentComponent { score: number | null; weight: number; configured_weight: number; input: unknown }
 export interface SentimentRead {
   score: number;

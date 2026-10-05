@@ -369,6 +369,7 @@ class TradingWorker:
                     result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)
                     written += result["symbols"] + result["cues"] + result["globals"]
                     # Phase BC: the deterministic sentiment read rides on the same cadence and broker.
+                    news_items: list = []                   # this tenant's own feed items (never a previous tenant's)
                     try:
                         from app.ai import sentiment
                         from app.news_feed import service as news_feed_service
@@ -379,6 +380,17 @@ class TradingWorker:
                     except Exception:  # noqa: BLE001 - sentiment is background, never a blocker
                         logger.exception("Sentiment for tenant %s failed", tenant_id)
                         await session.rollback()        # a failed commit must not poison the next tenant's work
+                    # Phase BD-lite: one thesis per watched symbol per day, and yesterday's theses scored (flag per tenant).
+                    try:
+                        from app.ai import thesis
+                        from app.platform.controls import flag_enabled
+                        if await flag_enabled(session, thesis.FLAG, tenant_id):
+                            memory = await market_memory.latest(session, tenant_id, now=now)
+                            written += await thesis.capture_daily(session, tenant_id, memory, now=now, news_items=news_items)
+                            await thesis.score_due(session, tenant_id, now=now)
+                    except Exception:  # noqa: BLE001 - the thesis is background, never a blocker
+                        logger.exception("Thesis for tenant %s failed", tenant_id)
+                        await session.rollback()
                 except Exception:  # noqa: BLE001 - one tenant's memory must not stop the others
                     logger.exception("Market memory for tenant %s failed", tenant_id)
                     await session.rollback()

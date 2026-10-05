@@ -309,7 +309,8 @@ def test_feature_flags_default_on_and_admin_can_kill_or_allowlist():
     flags = client.get("/api/admin/controls/flags", headers=admin_headers).json()
     assert flags["ai_copilot"]["on"] is True and set(flags) == set(controls.FEATURE_FLAGS)
     features = client.get("/api/system/features", headers=owner_headers).json()
-    assert all(features.values())
+    # Kill flags are on by default; the few DEFAULT_OFF_FLAGS (Phase BB news feed) start off.
+    assert all(v for k, v in features.items() if k not in controls.DEFAULT_OFF_FLAGS) and features["news_feed"] is False
 
     # Kill the optimizer platform-wide -> 503 with a machine-readable header
     r = client.put("/api/admin/controls/flags/backtest_optimizer", headers=admin_headers, json={"on": False})

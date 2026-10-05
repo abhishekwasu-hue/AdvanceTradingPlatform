@@ -272,18 +272,23 @@ def test_news_feed_flag_starts_off():
 
 
 def test_cadence_tightens_around_a_global_macro_event():
+    """A date far from today so the global row never leaks into other suites' "today" events; the
+    test removes its own row afterwards."""
+    day = date(2031, 2, 4)                                                   # a Tuesday
+    at = datetime(2031, 2, 4, 5, 0, tzinfo=UTC)                              # 10:30 IST
+
     async def go():
         async with _session_factory() as session:
-            for row in await session.scalars(select(MarketEventRecord).where(MarketEventRecord.tenant_id.is_(None), MarketEventRecord.event_date == date(2026, 10, 6))):
-                await session.delete(row)
+            base = await nf.cadence_seconds(session, at)
+            row = MarketEventRecord(tenant_id=None, underlying=None, event_date=day, start_time="10:00", end_time="10:15", kind="RBI_MPC",
+                                    action="SIZE_CUT", size_cut_pct=50, description="MPC decision")
+            session.add(row)
             await session.commit()
-            base = await nf.cadence_seconds(session, NOW)
-            session.add(MarketEventRecord(tenant_id=None, underlying=None, event_date=date(2026, 10, 6), start_time="10:00", end_time="10:15", kind="RBI_MPC",
-                                          action="SIZE_CUT", size_cut_pct=50, description="MPC decision"))
+            inside = await nf.cadence_seconds(session, at)                                             # 15 min after the end
+            edge = await nf.cadence_seconds(session, at + timedelta(minutes=46))                      # past end + 60
+            other_day = await nf.cadence_seconds(session, at + timedelta(days=1))
+            await session.delete(row)
             await session.commit()
-            inside = await nf.cadence_seconds(session, NOW)                                            # 10:30 IST, 15 min after the end
-            edge = await nf.cadence_seconds(session, NOW + timedelta(minutes=46))                     # 11:16 IST, past end + 60
-            other_day = await nf.cadence_seconds(session, datetime(2026, 10, 7, 5, 0, tzinfo=UTC))
             return base, inside, edge, other_day
     base, inside, edge, other_day = _run(go())
     assert base == 900 and inside == 300 and edge == 900 and other_day == 900

@@ -739,6 +739,21 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Fetch failures** show on `GET /api/news-feed/status` (`last_run.errors`) and on the sources card; a feed that
   is down is skipped, the others continue.
 
+### 1.6ag Market sentiment score (Phase BC)
+
+- **Where**: Copilot > Market memory card (gauge, components, news score) and the daily brief chip; the plan's
+  market-background lines. Captured every 15 minutes with the market memory through the organisation's broker
+  (option chain + heavyweight quotes: one chain call and one batched quote call per read, inside the broker budget).
+- **Reading it**: +25 and above = risk-on, -25 and below = risk-off; `coverage` says how much of the weight had
+  data (no broker session = no PCR/breadth; the global cues and VIX still count). A struck-through component had
+  no data and the weights renormalised - the score is never padded with zeros.
+- **Tuning**: `SENTIMENT_WEIGHTS='{"pcr":0.3,"vix":0.2,"breadth":0.2,"global":0.2,"fii_dii":0.1}'` in the
+  environment overrides the defaults per deployment; restart the worker and API.
+- **FII/DII**: off until `FII_DII_SOURCE` names a source whose terms allow automated use (`docs/DATA_SOURCES.md`);
+  until then the component shows "off" and is simply missing.
+- **News score** is reported separately (unverified feed items, Phase BB); it is not part of the market score.
+- Sentiment never gates an entry or an exit; it is background for the Copilot's plan and the Phase BD thesis.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

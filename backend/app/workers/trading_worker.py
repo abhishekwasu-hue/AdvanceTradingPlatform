@@ -368,8 +368,20 @@ class TradingWorker:
                         continue
                     result = await market_memory.capture(session, tenant_id, self.market_data_factory, broker, now=now)
                     written += result["symbols"] + result["cues"] + result["globals"]
+                    # Phase BC: the deterministic sentiment read rides on the same cadence and broker.
+                    try:
+                        from app.ai import sentiment
+                        from app.news_feed import service as news_feed_service
+                        memory = await market_memory.latest(session, tenant_id, now=now)
+                        news_items = await news_feed_service.items(session, tenant_id, hours=sentiment.NEWS_HOURS, now=now) if await news_feed_service.enabled(session, tenant_id) else []
+                        await sentiment.capture(session, tenant_id, broker, memory, now=now, news_items=news_items)
+                        written += 1
+                    except Exception:  # noqa: BLE001 - sentiment is background, never a blocker
+                        logger.exception("Sentiment for tenant %s failed", tenant_id)
+                        await session.rollback()        # a failed commit must not poison the next tenant's work
                 except Exception:  # noqa: BLE001 - one tenant's memory must not stop the others
                     logger.exception("Market memory for tenant %s failed", tenant_id)
+                    await session.rollback()
         return written
 
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:

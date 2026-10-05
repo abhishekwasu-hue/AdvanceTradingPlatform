@@ -208,6 +208,9 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
     dt = day_type(memory)
     plan = game_plan(lang, dt, memory, experience, events)
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
+    from app.ai import sentiment as sentiment_mod                          # Phase BC
+    sentiment_read = memory.get("sentiment")
+    sentiment_lines = sentiment_mod.view(lang, sentiment_read) if sentiment_read else []
     day = await your_day(session, user, cfg, now)
     deps = list(await session.scalars(select(StrategyDeploymentRecord).where(
         StrategyDeploymentRecord.tenant_id == user.tenant_id, StrategyDeploymentRecord.status.in_(["ACTIVE", "PAUSED"]))
@@ -245,7 +248,7 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
         "as_of": now.isoformat(), "language": lang, "experience": experience,
         "session": {"open": status.is_open, "text": session_text, "next_open": status.next_open.isoformat() if status.next_open else None,
                     "holidays_next_7_days": [d.isoformat() for d in upcoming]},
-        "day_type": dt, "plan": plan, "global_mood": mood, "market_updated_at": memory.get("updated_at"),
+        "day_type": dt, "plan": plan, "global_mood": mood, "sentiment": sentiment_read, "sentiment_view": sentiment_lines, "market_updated_at": memory.get("updated_at"),
         "market": {"symbols": memory.get("symbols", [])[:4], "cues": memory.get("cues", []), "globals": memory.get("globals", [])},
         "events": events, "you": day, "deployments": deployments, "checklist": checklist,
     }

@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues
@@ -184,15 +184,20 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
     now = now or datetime.now(timezone.utc)
     since = now - timedelta(days=HISTORY_DAYS + 3)
     query = select(MarketSnapshotRecord).where(MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.captured_at >= since)
-    if symbol:
-        query = query.where(MarketSnapshotRecord.symbol == symbol.strip().upper())
+    if symbol:   # the market-wide SENTIMENT row (Phase BC) belongs to every symbol's view
+        query = query.where(or_(MarketSnapshotRecord.symbol == symbol.strip().upper(), MarketSnapshotRecord.kind == "SENTIMENT"))
     rows = list(await session.scalars(query.order_by(MarketSnapshotRecord.captured_at.desc()).limit(5000)))
     symbols: Dict[str, dict] = {}
     cues: Dict[str, dict] = {}
     globals_: Dict[str, dict] = {}
     history: Dict[str, Dict[str, dict]] = {}
+    sentiment: Optional[dict] = None
     for r in rows:
         captured = _utc(r.captured_at)
+        if r.kind == "SENTIMENT":                       # Phase BC: the newest market sentiment read (last 3 days)
+            if sentiment is None and captured >= now - timedelta(days=3):
+                sentiment = _row(r)
+            continue
         if r.kind == "CUE":
             if r.symbol not in cues and captured >= now - timedelta(days=3):
                 cues[r.symbol] = _row(r)
@@ -211,7 +216,8 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
     order = {m.key: i for i, m in enumerate(global_cues.MARKETS)}
     return {"symbols": list(symbols.values()), "cues": list(cues.values()),
             "globals": sorted(globals_.values(), key=lambda g: order.get(g["symbol"], 99)),
-            "history": {k: sorted(v.values(), key=lambda d: d["date"]) for k, v in history.items()}, "updated_at": newest}
+            "history": {k: sorted(v.values(), key=lambda d: d["date"]) for k, v in history.items()}, "updated_at": newest,
+            "sentiment": (sentiment or {}).get("payload") if sentiment else None}
 
 
 def vix_text(lang: str, vix: float) -> str:

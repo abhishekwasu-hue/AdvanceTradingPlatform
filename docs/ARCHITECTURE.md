@@ -4009,3 +4009,27 @@ Tests: `tests/test_phase_ax_first_paper_day.py`.
 
 Tests: `tests/test_phase_bb_news_feed.py`.
 
+## Phase BC: deterministic market sentiment
+
+* **Score** (`ai/sentiment.py`): -100 (risk-off) to +100 (risk-on) from market data only, no model and no
+  social media. Components, each -100..+100 or missing: `pcr_score` (NIFTY option-chain PCR with an OI-change
+  tilt, through `option_chain/analysis.py`), `vix_score` (India VIX level and day change from the memory cue),
+  `breadth_score` (advances vs declines across the index heavyweights through the tenant's own quotes),
+  `global_score` (the Phase AU global mood), `fii_dii_score` (behind a seam that is **off** until a source with
+  clear terms is configured, `FII_DII_SOURCE`). `compute()` weights the present components (`DEFAULT_WEIGHTS`,
+  overridable with `SENTIMENT_WEIGHTS` JSON) and renormalises over what is available, reporting `coverage` and
+  `missing`. Labels: RISK_ON >= +25, RISK_OFF <= -25, else NEUTRAL. `news_score()` is a separate read of the last
+  day's feed items (Phase BB classification, severity- and confidence-weighted direction) shown next to the
+  market score and never mixed into it.
+* **Capture**: `sentiment.capture()` runs with the market memory (worker every 15 minutes while the market is
+  open, and on the market-memory refresh) through the organisation's own broker; the result is a `SENTIMENT`
+  snapshot in `market_snapshots` (`last_price` = score, `bias` = label, payload = components and inputs), so no
+  new table and the retention policy already covers it. `market_memory.latest()` returns it as `sentiment`;
+  `/api/ai/market-memory` adds `sentiment_view` (plain sentences, mr/en); the daily brief carries both.
+* **UI**: the market memory card shows a centred gauge with the components (inputs on hover, missing ones struck
+  through) and the news score; the daily brief shows the score chip next to the global mood.
+* No migration, no LLM call, no change to signals, orders or risk checks: sentiment is background for the plan
+  and for the Phase BD thesis.
+
+Tests: `tests/test_phase_bc_sentiment.py`.
+

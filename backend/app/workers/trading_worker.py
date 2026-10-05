@@ -51,6 +51,7 @@ from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
 from app.workers import eod_summary
+from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
 from app.observability.metrics import RETENTION_DELETED, observe_cycle
@@ -118,6 +119,8 @@ class CycleReport:
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
+    news_items: int = 0          # Phase BB: new feed items stored this cycle
+    news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
 
 
 def _just_closed(now: datetime) -> bool:
@@ -170,6 +173,8 @@ class TradingWorker:
         self._last_billing_day = None
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
+        # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
+        self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
         # agent wants classified even without a filter (those with open positions).
         self._regimes: Dict[int, str] = {}
@@ -275,6 +280,19 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # Phase BB: the live news feed - one fetch for every organisation (flag `news_feed`,
+                # off by default), then each organisation's own AI classification. Never trades.
+                try:
+                    if await news_feed.enabled(session):
+                        cadence = await news_feed.cadence_seconds(session, now)
+                        if news_feed.due(self._last_news_fetch, now, cadence):
+                            self._last_news_fetch = now
+                            result = await news_feed.ingest(session, now)
+                            report.news_items = result["new"]
+                            report.news_classified = await news_feed.classify_all(session, now)
+                except Exception as exc:  # noqa: BLE001 - news must never break trading
+                    logger.exception("News feed failed")
+                    report.errors.append(f"news feed: {exc}")
                 # Instrument master (Phase F1): once per IST day from INSTRUMENT_SYNC_HOUR_IST on,
                 # so contracts/expiries/lot sizes are current before the 09:15 open.
                 if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:

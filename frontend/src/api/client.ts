@@ -117,6 +117,9 @@ import type {
   OptionBacktestConfig, OptionChainCoverage, OptionChainSnapshotRow,
   MarketplaceCharge, MarketplaceEarnings, MarketplacePayout, MarketplacePurchaseResponse, MarketplaceRevenue, MarketplaceTerms,
   SmokeReport,
+  NewsFeedItem,
+  NewsFeedSource,
+  NewsFeedStatus,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -504,11 +507,12 @@ export const api = {
   scannerAiRead: (scanRequest: ScannerRequest, result: ScannerResult, language = "en") =>
     request<ScanRead>("/scanner/ai/read", { method: "POST", body: JSON.stringify({ request: scanRequest, result, language }) }),
 
-  listNewsEvents: (filters?: { category?: NewsEventCategory; symbol?: string; since?: string }) => {
+  listNewsEvents: (filters?: { category?: NewsEventCategory; symbol?: string; since?: string; origin?: "MANUAL" | "FEED" }) => {
     const params = new URLSearchParams();
     if (filters?.category) params.set("category", filters.category);
     if (filters?.symbol) params.set("symbol", filters.symbol);
     if (filters?.since) params.set("since", filters.since);
+    if (filters?.origin) params.set("origin", filters.origin);
     const qs = params.toString();
     return request<NewsEventResponse[]>(`/news-events${qs ? `?${qs}` : ""}`);
   },
@@ -518,6 +522,12 @@ export const api = {
 
   deleteNewsEvent: (id: number) =>
     request<void>(`/news-events/${id}`, { method: "DELETE" }),
+  // Phase BB: the live news feed
+  newsFeedStatus: () => request<NewsFeedStatus>("/news-feed/status"),
+  setNewsFeedSource: (id: string, on: boolean) => request<{ sources: NewsFeedSource[] }>(`/news-feed/sources/${id}`, { method: "PUT", body: JSON.stringify({ on }) }),
+  refreshNewsFeed: () => request<NewsFeedStatus["last_run"]>("/news-feed/refresh", { method: "POST" }),
+  newsFeedItems: (hours = 24, minSeverity = 1) => request<NewsFeedItem[]>(`/news-feed/items?hours=${hours}&min_severity=${minSeverity}`),
+  classifyNewsFeed: () => request<{ classified: number; proposals: number; skipped?: string }>("/news-feed/classify", { method: "POST" }),
 
   listInstruments: () => request<ContractSpec[]>("/instruments"),
 

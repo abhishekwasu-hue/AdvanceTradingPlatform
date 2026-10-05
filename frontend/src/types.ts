@@ -525,7 +525,8 @@ export type NotificationEventType =
   | "SECURITY"
   | "AI_PROPOSAL"
   | "MARKETPLACE"
-  | "EOD_SUMMARY";
+  | "EOD_SUMMARY"
+  | "NEWS_ALERT";
 
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 
@@ -813,10 +814,66 @@ export interface NewsEvent {
   source: SourceCitation;
 }
 
+export interface NewsClassification {
+  type: string;
+  scope: string[];
+  symbols?: string[];
+  direction: "BULLISH" | "BEARISH" | "NEUTRAL";
+  severity: number;
+  horizon: string;
+  confidence: number;
+  one_line_mr: string;
+  one_line_en: string;
+  method: "keyword" | "ai";
+}
+
 export interface NewsEventResponse extends NewsEvent {
   id: number;
   created_by: number | null;
   created_at: string;
+  /** Phase BB: MANUAL = a person's cited entry; FEED = public feed item, never verified by the platform. */
+  origin: "MANUAL" | "FEED";
+  verified: boolean;
+  source_url: string | null;
+  feed_id: string | null;
+  published_at: string | null;
+  classification: NewsClassification | null;
+}
+
+export interface NewsFeedSource {
+  id: string;
+  name: string;
+  publisher: string;
+  url: string;
+  category: NewsEventCategory;
+  official: boolean;
+  default_on: boolean;
+  on: boolean;
+  terms: string;
+}
+
+export interface NewsFeedStatus {
+  enabled: boolean;
+  flag: string;
+  sources: NewsFeedSource[];
+  last_run: { at?: string; fetched?: number; new?: number; duplicates?: number; errors?: string[]; alerts?: number; proposals?: number };
+  cadence_seconds: number;
+  note: string;
+}
+
+export interface NewsFeedItem {
+  id: number;
+  headline: string;
+  source: string;
+  source_url: string | null;
+  published_at: string;
+  category: NewsEventCategory;
+  symbols: string[];
+  verified: boolean;
+  origin: "FEED";
+  classification: NewsClassification;
+  keyword: NewsClassification;
+  ai: NewsClassification | null;
 }
 
 export const NEWS_EVENT_CATEGORY_LABELS: Record<NewsEventCategory, string> = {

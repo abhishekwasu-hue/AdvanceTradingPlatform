@@ -38,6 +38,8 @@ class NotificationType(str, Enum):
     MARKETPLACE = "MARKETPLACE"
     # Phase AX: the worker's end-of-day summary of the session (signals, trades, exits, errors).
     EOD_SUMMARY = "EOD_SUMMARY"
+    # Phase BB: a high-severity item from the live news feed (unverified feed data).
+    NEWS_ALERT = "NEWS_ALERT"
 
 
 class NotificationSeverity(str, Enum):

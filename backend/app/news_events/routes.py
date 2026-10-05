@@ -1,13 +1,13 @@
 """API surface for the News & Event engine - structured, cited macro/market news entries (RBI
 policy, Union Budget, government policy, broad corporate news, global macro events, sector
 developments). Shared reference data (like the fundamentals module), not tenant-private: reads
-are open to everyone, writes require auth so every entry is attributed (`created_by`). There is
-no live news feed wired in - every entry is exactly as reliable as its cited source.
+are open to everyone, writes require auth so every entry is attributed (`created_by`). Phase BB adds
+FEED rows from public feeds (app/news_feed): unverified, with the item's URL, never a person's claim.
 """
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -35,9 +35,10 @@ async def list_news_events_route(
     category: Optional[NewsEventCategory] = None,
     symbol: Optional[str] = None,
     since: Optional[date] = None,
+    origin: Optional[str] = Query(default=None, pattern="^(?i)(manual|feed)$", description="MANUAL (cited by a person) or FEED (unverified feed item)"),
     session: AsyncSession = Depends(get_session),
 ) -> List[NewsEventResponse]:
-    records = await db.list_news_event_records(session, category=category, symbol=symbol, since=since)
+    records = await db.list_news_event_records(session, category=category, symbol=symbol, since=since, origin=origin)
     return [db.news_event_to_response(r) for r in records]
 
 

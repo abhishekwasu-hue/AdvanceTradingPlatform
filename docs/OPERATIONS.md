@@ -720,6 +720,25 @@ Never publish a listing without an attached backtest run; the API refuses the su
   service copying `backups/` and the WAL archive to an S3-compatible bucket hourly (`scripts/backup/offsite_sync.sh`;
   `--once` for a manual pass). `scripts/deploy.sh production` includes the overlay. Needs Compose v2.24+.
 
+### 1.6af Live news feed (Phase BB)
+
+- **Off by default.** Admin console > Feature flags > `news_feed` turns the worker's fetch on. Then News & Events >
+  Live feed sources: RBI and SEBI are on; NSE/BSE announcements and publisher RSS stay off until you have read the
+  terms note on each (`docs/DATA_SOURCES.md`) - turning one on is audited as `news_feed_source_toggled`.
+- **What arrives**: `news_events` rows marked "unverified feed" with the headline, the publisher's link and the
+  time. Keyword severity >= 4 raises a `NEWS_ALERT` (WARNING; CRITICAL at 5) to every organisation with a
+  deployment or a Copilot profile; set the Telegram floor accordingly. No trade changes on its own.
+- **Proposals**: the monitoring agent proposes REDUCE_RISK (severity 4) or PAUSE_DEPLOYMENT (5, new entries only)
+  only when the organisation's own AI classification says so or two sources report the same event; one per
+  event per organisation; approve or reject under AI Copilot like any other proposal.
+- **Cadence**: 15 minutes; 5 minutes within an hour of a global macro event on the Risk page calendar (add RBI
+  MPC / Budget / FOMC / CPI days there with "global event" as the operator).
+- **AI classification** uses each organisation's own key (Settings > AI) and is metered as `ai_news_classify`;
+  `POST /api/news-feed/classify` runs it on demand. No key: keyword classification only.
+- **Retention**: `RETENTION_NEWS_FEED_DAYS` (default 365) for feed rows; manual cited entries are never deleted.
+- **Fetch failures** show on `GET /api/news-feed/status` (`last_run.errors`) and on the sources card; a feed that
+  is down is skipped, the others continue.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

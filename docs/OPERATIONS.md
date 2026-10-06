@@ -695,6 +695,23 @@ Never publish a listing without an attached backtest run; the API refuses the su
   caps chunked uploads to `/api/*` at the same size. The UI asks for a sign-in on those pages instead of showing
   a raw 401.
 
+### 1.6ab-1 Login protection, outbound URLs, authenticator codes (P0.2)
+
+- Behind Caddy the API sees the real client IP (`FORWARDED_ALLOW_IPS=*` in the prod overlay; `127.0.0.1` otherwise).
+  Request limits count in Redis across replicas in production/staging.
+- A user who fails the password 3 times must wait 1 s, then 2, 4 ... up to 60 s between attempts (429 with
+  `Retry-After`); nobody is ever locked out of their own account by someone else's attempts. One IP spraying 50
+  failures in 15 minutes is refused (423). Optional CAPTCHA after N failures: set `CAPTCHA_PROVIDER`
+  (`turnstile` or `hcaptcha`), `CAPTCHA_SECRET` and `LOGIN_CAPTCHA_AFTER_FAILURES` in `.env`; the login then needs
+  `captcha_token` (the API answers 403 `captcha_required` until the UI sends one - widget not shipped yet).
+- Alert webhooks, SMS gateways and push endpoints must be https and public: a private, loopback or link-local
+  destination is refused at save time, and in production/staging the host is resolved right before every send
+  and refused if it points inside. `EGRESS_ALLOWED_HOSTS` (comma-separated hosts or `.suffix`) narrows it further.
+  Gateway error bodies are not shown in the delivery error any more (status code only).
+- An authenticator code works once: the same code pasted twice (enrolment then login, or two step-ups) is refused;
+  use the next code. A refresh token presented again within 30 s of its rotation is honoured (two tabs); later
+  reuse still ends the session.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

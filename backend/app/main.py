@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limit import user_rate_limit
 from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
@@ -398,7 +399,11 @@ async def paper_execute(
     return PaperExecuteResponse(signal=signal, executed=result.executed, reasons=result.reasons)
 
 
-@app.post("/api/backtest", response_model=BacktestResult)
+# P0.2 / S1: one account cannot monopolise the analysis threadpool (per-user, shared across replicas via Redis).
+analysis_rate_limit = user_rate_limit("analysis", limit=60, window_seconds=60)
+
+
+@app.post("/api/backtest", response_model=BacktestResult, dependencies=[Depends(analysis_rate_limit)])
 async def backtest(
     request: BacktestRequest,
     user: User = Depends(get_current_user),
@@ -505,7 +510,7 @@ async def option_chain_greeks(request: GreeksRequest, _: User = Depends(get_curr
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@app.post("/api/scanner/run", response_model=ScannerResult)
+@app.post("/api/scanner/run", response_model=ScannerResult, dependencies=[Depends(analysis_rate_limit)])
 async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_user)) -> ScannerResult:
     """Runs configurable indicator/price-action-structure/option-chain filters across a supplied
     list of symbols (each with its own OHLCV candles and, optionally, option chain) and returns

@@ -57,11 +57,13 @@ def test_login_is_rate_limited_per_ip_independently_of_register():
         isolated_client.post(
             "/api/auth/register", json={"email": "ratelimit-login@example.com", "password": "S3cur3Pass!"},
         )
+        # One failure per address: the per-email progressive delay (P0.2 / S1) stays out of the way, so the
+        # 11th answer is the per-IP limiter's.
         responses = [
             isolated_client.post(
-                "/api/auth/login", json={"email": "ratelimit-login@example.com", "password": "wrong-password"},
+                "/api/auth/login", json={"email": f"ratelimit-login-{i}@example.com", "password": "wrong-password"},
             )
-            for _ in range(11)
+            for i in range(11)
         ]
 
     statuses = [r.status_code for r in responses]

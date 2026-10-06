@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 
+from app.core.egress import EgressBlocked, check_url_literal
 from app.core.enums import AlertChannelType, NotificationSeverity
 from app.db.models import AlertChannelRecord
 from app.secrets_store.encryption import decrypt_text, encrypt_text
@@ -64,8 +65,11 @@ class WebhookConfig(BaseModel):
     @field_validator("url")
     @classmethod
     def _https_only(cls, value: HttpUrl) -> HttpUrl:
-        if value.scheme != "https" and value.host not in ("localhost", "127.0.0.1"):
-            raise ValueError("Webhook URL must use https (plain http is allowed only for localhost while testing)")
+        # P0.2 / S5: https, no private/loopback destination in production/staging, optional allowlist.
+        try:
+            check_url_literal(str(value))
+        except EgressBlocked as exc:
+            raise ValueError(f"Webhook URL refused: {exc}") from exc
         return value
 
 
@@ -104,8 +108,10 @@ class SmsConfig(BaseModel):
     @field_validator("url")
     @classmethod
     def _https_only(cls, value: HttpUrl) -> HttpUrl:
-        if value.scheme != "https" and value.host not in ("localhost", "127.0.0.1"):
-            raise ValueError("SMS gateway URL must use https")
+        try:
+            check_url_literal(str(value))
+        except EgressBlocked as exc:
+            raise ValueError(f"SMS gateway URL refused: {exc}") from exc
         return value
 
     @field_validator("to_numbers")

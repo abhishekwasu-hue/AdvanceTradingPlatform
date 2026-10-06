@@ -26,6 +26,8 @@ from typing import Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
+
+from app.core.egress import check_url_resolved
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -150,6 +152,7 @@ async def send_push(endpoint: str, p256dh: str, auth: str, payload: dict, *, ttl
     body = encrypt_payload(json.dumps(payload, separators=(",", ":")).encode(), p256dh, auth)
     headers = {"Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", "TTL": str(ttl),
                "Urgency": urgency, "Authorization": vapid_authorization(endpoint)}
+    await check_url_resolved(endpoint)                                # P0.2 / S5: a push endpoint is tenant input too
     owns = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
     try:
@@ -160,7 +163,7 @@ async def send_push(endpoint: str, p256dh: str, auth: str, payload: dict, *, ttl
     if response.status_code in (404, 410):
         raise PushGone(f"subscription gone (HTTP {response.status_code})")
     if response.status_code >= 300:
-        raise RuntimeError(f"Push service answered HTTP {response.status_code}: {response.text[:120]}")
+        raise RuntimeError(f"Push service answered HTTP {response.status_code}")
 
 
 if __name__ == "__main__":

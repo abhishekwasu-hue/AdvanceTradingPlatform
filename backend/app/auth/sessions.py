@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.security import create_access_token
-from app.core.config import JWT_EXPIRE_MINUTES, REFRESH_TOKEN_DAYS
+from app.core.config import JWT_EXPIRE_MINUTES, REFRESH_TOKEN_DAYS, REFRESH_REUSE_GRACE_SECONDS
 from app.db.models import User, UserSessionRecord
 
 
@@ -77,14 +77,23 @@ async def rotate_refresh_token(
     expired or revoked. A token that was already rotated (reuse) revokes the session and returns
     None - the legitimate client will be asked to log in again, which is the safe outcome."""
     token_hash = hash_refresh_token(refresh_token)
-    record = await session.scalar(select(UserSessionRecord).where(UserSessionRecord.refresh_token_hash == token_hash))
+    # P0.2 / S9: the row is locked for the rotation (Postgres; SQLite has no row locks and serialises writers
+    # anyway), so two tabs refreshing at once cannot both read the same hash and race each other.
+    record = await session.scalar(select(UserSessionRecord).where(UserSessionRecord.refresh_token_hash == token_hash).with_for_update())
     if record is None:
-        reused = await session.scalar(select(UserSessionRecord).where(UserSessionRecord.previous_token_hash == token_hash))
-        if reused is not None and reused.revoked_at is None:
+        reused = await session.scalar(select(UserSessionRecord).where(UserSessionRecord.previous_token_hash == token_hash).with_for_update())
+        if reused is None or reused.revoked_at is not None:
+            return None
+        rotated_at = _as_utc(reused.last_used_at)
+        if rotated_at is not None and (_utcnow() - rotated_at).total_seconds() <= REFRESH_REUSE_GRACE_SECONDS:
+            # The token was rotated moments ago - the other tab (or a retried request) is still holding the
+            # old one. Rotate again from this row instead of killing the session (P0.2 / S9 grace window).
+            record = reused
+        else:
             reused.revoked_at = _utcnow()
             reused.revoke_reason = "refresh token reuse detected"
             await session.commit()
-        return None
+            return None
     if not session_is_live(record):
         return None
     user = await session.get(User, record.user_id)
@@ -92,7 +101,12 @@ async def rotate_refresh_token(
         return None
 
     new_token = secrets.token_urlsafe(48)
-    record.previous_token_hash = record.refresh_token_hash
+    if record.refresh_token_hash != token_hash:
+        # Grace-window rotation: the presented (previous) token stays the one that may retry; the token issued
+        # in between is retired now, so at most two tokens are ever valid and only inside the window.
+        record.previous_token_hash = token_hash
+    else:
+        record.previous_token_hash = record.refresh_token_hash
     record.refresh_token_hash = hash_refresh_token(new_token)
     record.last_used_at = _utcnow()
     record.expires_at = _utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)

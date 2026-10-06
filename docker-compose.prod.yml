@@ -28,6 +28,9 @@ services:
       ENVIRONMENT: production
       ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
       FRONTEND_URL: https://${DOMAIN}
+      # Only Caddy (a container on this compose network) reaches backend:8000, so its X-Forwarded-For is the
+      # client IP the rate limiter and login protection see (P0.2 / S1).
+      FORWARDED_ALLOW_IPS: "*"
     ports: !override
       - "127.0.0.1:8000:8000"
 

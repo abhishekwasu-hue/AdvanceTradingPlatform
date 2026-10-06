@@ -17,6 +17,7 @@ from app.db.models import Tenant, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.telegram_inbound import service
+from app.webhooks.routes import resolve_tenant_by_webhook_token
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 FLAG = "telegram_inbound"
@@ -30,7 +31,9 @@ class InboundBody(BaseModel):
 @router.post("/webhook/{webhook_token}")
 async def telegram_webhook(webhook_token: str, request: Request, session: AsyncSession = Depends(get_session),
                            x_telegram_bot_api_secret_token: Optional[str] = Header(default=None)) -> dict:
-    tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == webhook_token))
+    # P0.3 / S13: the path names the organisation (stored hash, the plaintext token, or a legacy plaintext URL);
+    # the X-Telegram-Bot-Api-Secret-Token header is the credential.
+    tenant = await resolve_tenant_by_webhook_token(session, webhook_token, accept_hash=True)
     if tenant is None:
         raise HTTPException(status_code=401, detail="Unknown webhook token")
     record = await service.telegram_channel(session, tenant.id)

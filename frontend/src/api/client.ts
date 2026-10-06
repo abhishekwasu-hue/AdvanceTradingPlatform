@@ -132,64 +132,61 @@ import type {
 } from "../types";
 
 const BASE = "/api/v1";
-const TOKEN_KEY = "atp_token";
-const REFRESH_KEY = "atp_refresh";
+// P0.3 / S6: the access token lives in memory only (a script injected into the page cannot read it from
+// storage, and it expires in minutes); the refresh token lives in an HttpOnly cookie the browser sends to
+// /api/* by itself. A reload asks /auth/refresh with that cookie to get a new access token. Tokens an older
+// build left in localStorage are used once to refresh, then removed.
+const LEGACY_TOKEN_KEY = "atp_token";
+const LEGACY_REFRESH_KEY = "atp_refresh";
+let accessToken: string | null = null;
 
 export function getToken(): string | null {
+  return accessToken;
+}
+
+function takeLegacyRefreshToken(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    const legacy = localStorage.getItem(LEGACY_REFRESH_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_KEY);
+    return legacy;
   } catch {
     return null;
   }
 }
 
-export function getRefreshToken(): string | null {
-  try {
-    return localStorage.getItem(REFRESH_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token: string, refreshToken?: string | null): void {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-    if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
-  } catch {
-    // localStorage unavailable (private mode, etc) - session just won't persist across reloads.
-  }
+export function setToken(token: string, _refreshToken?: string | null): void {
+  accessToken = token;
 }
 
 export function clearToken(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-  } catch {
-    // ignore
-  }
+  accessToken = null;
+  takeLegacyRefreshToken();
 }
 
-// Access tokens live for minutes; the refresh token (rotated on every use) keeps the session.
-// One refresh in flight at a time so a burst of 401s from parallel requests rotates once.
+// Access tokens live for minutes; the refresh token (rotated on every use, carried by the cookie) keeps the
+// session. One refresh in flight at a time so a burst of 401s from parallel requests rotates once.
 let refreshInFlight: Promise<boolean> | null = null;
 
-async function tryRefresh(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+export async function tryRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
+        const legacy = takeLegacyRefreshToken();
         const response = await fetch(`${BASE}/auth/refresh`, {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
+          body: JSON.stringify(legacy ? { refresh_token: legacy } : {}),
         });
         if (!response.ok) {
-          clearToken();
+          // 401 = cookie missing/revoked: logged out. 429 (shared office IP reloading at once) is transient:
+          // keep whatever access token is in memory and let the caller retry later.
+          if (response.status !== 429) accessToken = null;
           return false;
         }
         const body = (await response.json()) as TokenResponse;
-        setToken(body.access_token, body.refresh_token);
+        accessToken = body.access_token;
         return true;
       } catch {
         return false;
@@ -205,6 +202,7 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken();
   return fetch(`${BASE}${path}`, {
     ...init,
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -215,7 +213,7 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response = await rawRequest(path, init);
-  if (response.status === 401 && getRefreshToken() && !path.startsWith("/auth/refresh") && !path.startsWith("/auth/login")) {
+  if (response.status === 401 && !path.startsWith("/auth/refresh") && !path.startsWith("/auth/login") && !path.startsWith("/auth/register")) {
     if (await tryRefresh()) response = await rawRequest(path, init);
   }
   if (!response.ok) {
@@ -247,7 +245,7 @@ async function downloadExport(
   if (opts.scope === "platform" && opts.tenantId) params.set("tenant_id", String(opts.tenantId));
   const path = `${opts.scope === "platform" ? "/admin/exports" : "/exports"}/${dataset}?${params.toString()}`;
   let response = await rawRequest(path);
-  if (response.status === 401 && getRefreshToken() && (await tryRefresh())) response = await rawRequest(path);
+  if (response.status === 401 && (await tryRefresh())) response = await rawRequest(path);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
   const disposition = response.headers.get("content-disposition") ?? "";
   const match = /filename="([^"]+)"/.exec(disposition);
@@ -405,7 +403,7 @@ export const api = {
     // No JSON content type: the browser sets the multipart boundary itself.
     const token = getToken();
     let response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} });
-    if (response.status === 401 && getRefreshToken() && (await tryRefresh())) {
+    if (response.status === 401 && (await tryRefresh())) {
       response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: { Authorization: `Bearer ${getToken()}` } });
     }
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);

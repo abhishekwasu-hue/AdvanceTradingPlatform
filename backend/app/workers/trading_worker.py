@@ -336,6 +336,14 @@ class TradingWorker:
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
                     try:
                         report.retention = await run_retention(session, now)
+                        # P0.3 / S7: pin the audit chain's head once a day (cheap; lets verification start from here).
+                        try:
+                            from app.audit.log import record_anchor
+                            if await record_anchor(session, now) is not None:
+                                await session.commit()
+                        except Exception as exc:  # noqa: BLE001 - an anchor never blocks the cycle
+                            await session.rollback()
+                            report.errors.append(f"audit anchor: {exc}")
                         self._last_retention_day = now.astimezone(IST).date()
                         if report.retention.total:
                             logger.info("Retention deleted %s", report.retention.deleted)

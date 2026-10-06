@@ -61,7 +61,9 @@ def test_platform_checklist_is_super_admin_only_and_reads_config(monkeypatch):
     scheme = config.DATABASE_URL.split("://", 1)[0]
     assert items["database"]["detail"] == scheme and items["database"]["status"] == ("ok" if scheme.startswith("postgresql") else "warn")
 
-    # The environment guards are read live from config.
+    # The environment guards are read live from config. P0.3: so is the JWT signing key - keep the key the admin's
+    # token was signed with verifiable (a rotation) while the checklist is read.
+    monkeypatch.setattr(config, "JWT_PREVIOUS_SECRET_KEYS", [config.JWT_SECRET_KEY])
     monkeypatch.setattr(config, "JWT_SECRET_KEY", config._INSECURE_DEFAULT_JWT_SECRET)
     monkeypatch.setattr(config, "ENVIRONMENT", "production")
     monkeypatch.setattr(config, "ALLOWED_ORIGINS", ["*"])

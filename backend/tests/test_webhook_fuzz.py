@@ -24,8 +24,15 @@ _ARBITRARY_JSON_SCALAR = st.one_of(
 def _webhook_token() -> str:
     token = _register("webhook-fuzz@example.com")
     headers = {"Authorization": f"Bearer {token}"}
+    # P0.3 / S13: a new organisation's token exists only as a hash; the owner rotates once to see it.
     response = client.get("/api/webhooks/tradingview/token", headers=headers)
-    return response.json()["webhook_token"]
+    assert response.status_code == 200, response.text
+    token_value = response.json()["webhook_token"]
+    if not token_value:
+        rotated = client.post("/api/webhooks/tradingview/token/rotate", headers=headers)
+        assert rotated.status_code == 200, rotated.text
+        token_value = rotated.json()["webhook_token"]
+    return token_value
 
 
 _TOKEN = None

@@ -72,7 +72,7 @@ export default function SettingsPage() {
   }, []);
 
   async function handleCopyWebhookUrl() {
-    if (!webhook) return;
+    if (!webhook?.webhook_url) return;
     try {
       await navigator.clipboard.writeText(new URL(webhook.webhook_url, window.location.origin).toString());
       setWebhookCopied(true);
@@ -268,8 +268,16 @@ export default function SettingsPage() {
           execute. The token in the URL is the only credential protecting it - rotate it if it
           ever leaks.
         </p>
+        {webhook && !webhook.webhook_url && (
+          <p className="text-xs text-slate-300 mb-2">
+            The URL is stored only as a hash on the server (it is a credential). Press <b>Rotate</b> to get a new
+            one - it is shown once, so copy it into TradingView right away.
+            {webhook.configured ? " The current URL keeps working until you rotate." : ""}
+          </p>
+        )}
         {webhook && (
           <div className="space-y-2">
+            {webhook.webhook_url && (
             <div className="flex gap-2">
               <input
                 readOnly
@@ -284,12 +292,13 @@ export default function SettingsPage() {
                 {webhookCopied ? "Copied!" : "Copy"}
               </button>
             </div>
+            )}
             <button
               onClick={handleRotateWebhook}
               disabled={busy}
               className="text-xs text-danger hover:underline disabled:opacity-50"
             >
-              Rotate URL (invalidates the old one)
+              {webhook.webhook_url ? "Rotate URL (invalidates the old one)" : "Rotate: issue a new webhook URL (owner)"}
             </button>
           </div>
         )}

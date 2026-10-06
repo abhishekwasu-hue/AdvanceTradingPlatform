@@ -11,6 +11,18 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 # P0.1: environments that must boot with a hardened configuration and never create tables outside Alembic.
 HARDENED_ENVIRONMENTS = ("production", "staging")
 APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
+# P0.3 / S14: access tokens carry iss/aud and a key id; JWT_PREVIOUS_SECRET_KEYS (comma-separated) keeps tokens
+# signed with an older secret verifiable through a rotation. JWT_ACCEPT_LEGACY=true (default) also accepts tokens
+# minted before P0.3 (no iss/aud) until they expire - minutes for access tokens - so a deploy logs nobody out.
+JWT_ISSUER = os.environ.get("JWT_ISSUER", "atp")
+JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", "atp-web")
+JWT_PREVIOUS_SECRET_KEYS = [k.strip() for k in os.environ.get("JWT_PREVIOUS_SECRET_KEYS", "").split(",") if k.strip()]
+JWT_ACCEPT_LEGACY = os.environ.get("JWT_ACCEPT_LEGACY", "true").strip().lower() in {"1", "true", "yes"}
+# P0.3 / S6: the refresh token travels in an HttpOnly cookie (path /api, SameSite=Strict, Secure in hardened
+# environments). REFRESH_TOKEN_IN_BODY=true (default this release) also returns it in the JSON for clients
+# built before P0.3; switch it off once every browser has reloaded the new UI.
+REFRESH_COOKIE_NAME = os.environ.get("REFRESH_COOKIE_NAME", "atp_refresh")
+REFRESH_TOKEN_IN_BODY = os.environ.get("REFRESH_TOKEN_IN_BODY", "true").strip().lower() in {"1", "true", "yes"}
 # P0.2 / S1: login protection. After LOGIN_DELAY_AFTER_FAILURES failed attempts on one email the next attempt
 # must wait 2^(n-3) seconds (capped) since the last failure - a brute force slows to a crawl while the real
 # owner is never locked out by someone spamming their email. A CAPTCHA (Cloudflare Turnstile / hCaptcha) can be

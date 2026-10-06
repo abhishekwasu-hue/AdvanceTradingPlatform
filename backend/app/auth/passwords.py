@@ -28,6 +28,8 @@ def password_problem(password: str, email: Optional[str] = None) -> Optional[str
         return f"Password must be at least {MIN_LENGTH} characters"
     if len(password) > MAX_LENGTH:
         return f"Password must be at most {MAX_LENGTH} characters"
+    if len(password.encode("utf-8")) > 72:
+        return "Password must be at most 72 bytes - bcrypt ignores anything beyond, so a longer one would be silently cut"
     lowered = password.lower()
     if lowered in COMMON_PASSWORDS or lowered.rstrip("0123456789!@#$") in COMMON_PASSWORDS:
         return "That password is on the list of most common passwords - choose something less guessable"

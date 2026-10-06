@@ -1,3 +1,4 @@
+import hashlib
 import json
 import secrets
 from datetime import datetime, timezone
@@ -8,7 +9,8 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_trader
+from app.audit.log import write_audit_log
+from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import UserRole, OrderStatus, SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import Tenant, User
@@ -53,9 +55,30 @@ class WebhookExecutionResponse(BaseModel):
     idempotent_replay: bool = False
 
 
+def hash_webhook_token(token: str) -> str:
+    """P0.3 / S13: what `tenants.webhook_token_hash` stores (SHA-256 hex of the URL token)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def resolve_tenant_by_webhook_token(session: AsyncSession, token: str, *, accept_hash: bool = False) -> Optional[Tenant]:
+    """P0.3 / S13: the URL token is matched by hash; a pre-P0.3 organisation still carrying the plaintext matches
+    on it once and gets its hash filled in. With `accept_hash` the stored hash itself is also accepted as the
+    path identifier (Telegram inbound: the secret header authenticates, the path only names the organisation)."""
+    tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token_hash == hash_webhook_token(token)))
+    if tenant is None and accept_hash:
+        tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token_hash == token))
+    if tenant is None:
+        tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == token))
+        if tenant is not None:
+            tenant.webhook_token_hash = hash_webhook_token(token)
+    return tenant
+
+
 class WebhookTokenResponse(BaseModel):
-    webhook_token: str
-    webhook_url: str
+    # None once the organisation's token exists only as a hash: rotate to get a new URL (shown once).
+    webhook_token: Optional[str] = None
+    webhook_url: Optional[str] = None
+    configured: bool = True
 
 
 async def _get_tenant_owner(session: AsyncSession, tenant_id: int) -> User:
@@ -86,7 +109,7 @@ async def tradingview_webhook(
     `webhook_token` alone: TradingView's webhook alerts can't carry a JWT/OAuth header, so the
     token embedded in the URL (from GET /api/webhooks/tradingview/token) is the credential.
     """
-    tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == webhook_token))
+    tenant = await resolve_tenant_by_webhook_token(session, webhook_token)
     if tenant is None:
         raise HTTPException(status_code=401, detail="Unknown or invalid webhook token")
     await ensure_tenant_key(session, tenant.id)  # Phase N1
@@ -127,22 +150,25 @@ async def get_webhook_token(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> WebhookTokenResponse:
     """This tenant's TradingView webhook URL - paste it into TradingView's alert "Webhook URL"
-    field, with a JSON message body matching TradingViewAlertPayload."""
+    field, with a JSON message body matching TradingViewAlertPayload. P0.3 / S13: the token is stored hashed,
+    so the URL is shown here only while the organisation still carries its pre-P0.3 plaintext; otherwise rotate
+    to get a fresh URL, shown once."""
     tenant = await session.get(Tenant, user.tenant_id)
-    return WebhookTokenResponse(
-        webhook_token=tenant.webhook_token, webhook_url=f"/api/webhooks/tradingview/{tenant.webhook_token}",
-    )
+    if tenant.webhook_token:
+        return WebhookTokenResponse(webhook_token=tenant.webhook_token, webhook_url=f"/api/webhooks/tradingview/{tenant.webhook_token}")
+    return WebhookTokenResponse(webhook_token=None, webhook_url=None, configured=bool(tenant.webhook_token_hash))
 
 
 @router.post("/tradingview/token/rotate", response_model=WebhookTokenResponse)
 async def rotate_webhook_token(
-    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_role(UserRole.OWNER, UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session),
 ) -> WebhookTokenResponse:
     """Invalidates the old webhook URL and issues a new one - use if the old URL ever leaks
-    (it's the sole credential protecting this endpoint)."""
+    (it's the sole credential protecting this endpoint). Owner only; the new URL is shown once."""
     tenant = await session.get(Tenant, user.tenant_id)
-    tenant.webhook_token = secrets.token_urlsafe(24)
+    token = secrets.token_urlsafe(24)
+    tenant.webhook_token = None
+    tenant.webhook_token_hash = hash_webhook_token(token)
+    await write_audit_log(session, user.tenant_id, user.id, "webhook_token_rotated")
     await session.commit()
-    return WebhookTokenResponse(
-        webhook_token=tenant.webhook_token, webhook_url=f"/api/webhooks/tradingview/{tenant.webhook_token}",
-    )
+    return WebhookTokenResponse(webhook_token=token, webhook_url=f"/api/webhooks/tradingview/{token}", configured=True)

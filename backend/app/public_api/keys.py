@@ -86,8 +86,10 @@ async def resolve_key(session: AsyncSession, raw: str) -> Optional[ApiKeyRecord]
     parts = raw.split("_", 2)   # the secret part may itself contain "_" (urlsafe base64)
     if len(parts) != 3 or parts[0] != KEY_PREFIX:
         return None
-    record = await session.scalar(select(ApiKeyRecord).where(ApiKeyRecord.key_prefix == parts[1]))
-    if record is None or record.key_hash != _hash(raw):
+    # P0.3 / S13: look the key up by its (unique) hash. The 4-byte display prefix is not unique by construction,
+    # so a prefix lookup could pick another organisation's row and refuse a perfectly valid key.
+    record = await session.scalar(select(ApiKeyRecord).where(ApiKeyRecord.key_hash == _hash(raw)))
+    if record is None or record.key_prefix != parts[1]:
         return None
     return record
 

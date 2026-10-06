@@ -269,3 +269,36 @@ default and G-LIVE gate before any LIVE wiring.
   evaluated (the remaining trade-off: a persistent attacker who keeps *failing* real passwords, at most one per
   minute, can still inconvenience the owner - the CAPTCHA hook is the answer for that); the Redis limiter's INCR
   and EXPIRE run as one script so a crash between them can never leave a counter that refuses forever.
+
+### 2026-10-06 - P0.3: tokens, audit chain, API keys / webhook token (S6, S7, S13, S14)
+- S14: access tokens carry `iss`/`aud` and a `kid` header, no e-mail claim; `JWT_PREVIOUS_SECRET_KEYS` keeps
+  tokens verifiable through a secret rotation; `JWT_ACCEPT_LEGACY` (default on) accepts pre-P0.3 tokens until they
+  expire, so the deploy logs nobody out. Kept HS256 rather than the plan's asymmetric keys: no third party
+  verifies these tokens (one API, one UI), so a public key would add a key file and a JWKS endpoint and no
+  security; revisit when a second service needs to verify them. Passwords are capped at 72 bytes (bcrypt
+  silently truncates beyond) at the policy and at hashing.
+- S6: the refresh token travels in an HttpOnly, SameSite=Strict cookie scoped to `/api` (Secure in
+  production/staging); `/auth/refresh` takes the cookie or the body; logout clears it. The UI keeps the access
+  token in memory only, refreshes from the cookie on reload, and uses a token an older build left in
+  localStorage once, then removes it. `REFRESH_TOKEN_IN_BODY` (default on this release) keeps the JSON field for
+  older clients. Content-Security-Policy and Permissions-Policy on the frontend image and at the Caddy edge
+  (scripts/connect self only; inline style attributes allowed because React components set them).
+- S7: audit appends take a Postgres advisory lock (no forks under concurrency); `audit_anchors` pins the chain
+  head once a day from the worker; `verify_audit_chain(since_anchor=True)` recomputes from the anchored row;
+  `audit_logs` foreign keys are RESTRICT (migration a2b4c6d8e0f2 - SET NULL would rewrite hashed fields); the
+  application role loses DELETE on audit_logs/audit_anchors/orders/order_events/trades (db_roles.sql).
+- S13: API keys are resolved by their unique hash (the 4-byte display prefix is not unique); the day's usage
+  total is kept in Redis (atomic INCRBYFLOAT, SUM fallback) so the per-request allowance check is O(1); the
+  TradingView URL token is stored hashed (`tenants.webhook_token_hash`, migration b3c5d7e9f1a3, backfilled on
+  Postgres; a legacy plaintext still matches once and is hashed) - a new organisation sees its URL only when the
+  **owner** rotates (shown once); rotation is audited.
+- Tests: `tests/test_phase_p0_3_tokens_audit.py`; the TradingView tests rotate to obtain a URL.
+- Self-review findings fixed before merge: Telegram inbound looked the organisation up by the plaintext token
+  (broken for every new organisation) - one shared `resolve_tenant_by_webhook_token` for both webhooks, the
+  Telegram path now carries the stored hash as identifier (secret header authenticates; re-register after a
+  rotation); `verify_password` truncates at 72 bytes like bcrypt did when old hashes were made (refusing would
+  have locked out long-password accounts - PAPER-week rule); the Redis day counter is seeded from the SUM when
+  its key is recreated (a Redis restart mid-day no longer under-counts the plan cap); the owner-only rotation test
+  really exercised (team invite route); CSP allows the Google Fonts the UI loads; an invalid refresh clears the
+  cookie (explicit 401 response); refresh rate limit 60/min per IP because every reload refreshes; the DELETE
+  revoke in db_roles.sql is guarded for a fresh database; a 429 on refresh is treated as transient by the UI.

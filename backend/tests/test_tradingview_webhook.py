@@ -2,9 +2,15 @@ from tests.test_auth_api import _register, client
 
 
 def _get_token(headers):
+    """P0.3 / S13: a new organisation's token exists only as a hash; the owner rotates once to see a URL."""
     response = client.get("/api/webhooks/tradingview/token", headers=headers)
     assert response.status_code == 200
-    return response.json()["webhook_token"]
+    body = response.json()
+    if body["webhook_token"]:
+        return body["webhook_token"]
+    rotated = client.post("/api/webhooks/tradingview/token/rotate", headers=headers)
+    assert rotated.status_code == 200, rotated.text
+    return rotated.json()["webhook_token"]
 
 
 def _alert(strategy_id="pine_breakout", symbol="NIFTY", direction="LONG", alert_id=None, **overrides):

@@ -2,7 +2,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,9 @@ from app.auth.dependencies import current_session_id, get_current_user
 from app.auth import mfa
 from app.auth import captcha
 from app.auth.lockout import HISTORY_LIMIT, is_new_device, recent_failures, record_login_event, refusal
+from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, REFRESH_COOKIE_NAME, REFRESH_TOKEN_DAYS, REFRESH_TOKEN_IN_BODY
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
+from app.webhooks.routes import hash_webhook_token
 from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
 from app.auth.security import hash_password, verify_password
 from app.core.enums import UserRole
@@ -44,7 +47,7 @@ _DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-p
 # tests/test_rate_limiting.py, which re-enables them to test the 429 behavior itself.
 register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60)
 login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60)
-refresh_rate_limit = rate_limit("auth_refresh", limit=30, window_seconds=60)
+refresh_rate_limit = rate_limit("auth_refresh", limit=60, window_seconds=60)   # P0.3: every page load refreshes once (shared office IPs)
 forgot_rate_limit = rate_limit("auth_forgot", limit=5, window_seconds=900)
 
 
@@ -78,12 +81,30 @@ class TokenResponse(BaseModel):
     mfa_token: Optional[str] = None
 
 
-def _token_response(issued: IssuedTokens) -> TokenResponse:
-    return TokenResponse(access_token=issued.access_token, refresh_token=issued.refresh_token, expires_in=issued.expires_in)
+REFRESH_COOKIE_PATH = "/api"
+
+
+def _set_refresh_cookie(response: Optional[Response], refresh_token: Optional[str]) -> None:
+    """P0.3 / S6: the refresh token rides in an HttpOnly cookie scoped to the API (SameSite=Strict, Secure in
+    production/staging) so a script injected into the page can never read it."""
+    if response is None:
+        return
+    if refresh_token:
+        response.set_cookie(REFRESH_COOKIE_NAME, refresh_token, max_age=REFRESH_TOKEN_DAYS * 86400, httponly=True, samesite="strict",
+                            secure=ENVIRONMENT in HARDENED_ENVIRONMENTS, path=REFRESH_COOKIE_PATH)
+    else:
+        response.delete_cookie(REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
+
+
+def _token_response(issued: IssuedTokens, response: Optional[Response] = None) -> TokenResponse:
+    _set_refresh_cookie(response, issued.refresh_token)
+    return TokenResponse(access_token=issued.access_token, refresh_token=issued.refresh_token if REFRESH_TOKEN_IN_BODY else None,
+                         expires_in=issued.expires_in)
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Optional since P0.3 / S6: the HttpOnly cookie is the normal carrier; the body is for pre-P0.3 clients.
+    refresh_token: Optional[str] = None
 
 
 class SessionResponse(BaseModel):
@@ -116,7 +137,7 @@ def _user_response(user: User) -> UserResponse:
     "/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],
 )
-async def register(request: RegisterRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def register(request: RegisterRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Every registration creates a new tenant (spec section 5-6's isolation boundary) with this
     user as its OWNER. Teammates join an existing tenant through an owner's invite instead
     (app/team/routes.py + /api/auth/invite/{token}/accept), never through this endpoint.
@@ -128,7 +149,7 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, request.email)
 
-    tenant = Tenant(name=request.email, webhook_token=secrets.token_urlsafe(24))
+    tenant = Tenant(name=request.email, webhook_token=None, webhook_token_hash=hash_webhook_token(secrets.token_urlsafe(24)))
     session.add(tenant)
     await session.flush()
     await ensure_tenant_key(session, tenant.id)  # Phase N1: every tenant gets its own data key
@@ -143,11 +164,11 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
     await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
     issued = await start_session(session, user, http_request)
     await session.commit()
-    return _token_response(issued)
+    return _token_response(issued, response)
 
 
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
-async def login(request: LoginRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def login(request: LoginRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     email = request.email.lower()
     refused = await refusal(session, email, http_request)
     if refused:
@@ -178,10 +199,10 @@ async def login(request: LoginRequest, http_request: Request, session: AsyncSess
         await session.commit()
         return TokenResponse(mfa_required=True, mfa_token=mfa.create_mfa_token(user.id))
 
-    return await _complete_login(session, user, http_request, "password")
+    return await _complete_login(session, user, http_request, "password", response)
 
 
-async def _complete_login(session: AsyncSession, user: User, http_request: Request, method: str) -> TokenResponse:
+async def _complete_login(session: AsyncSession, user: User, http_request: Request, method: str, response: Optional[Response] = None) -> TokenResponse:
     """Shared tail of a successful login (password-only, or after the MFA step): new-device
     alert, login event, audit, session."""
     new_device = await is_new_device(session, user, http_request)
@@ -197,7 +218,7 @@ async def _complete_login(session: AsyncSession, user: User, http_request: Reque
             message=f"Logged in from {ip} ({agent}). If this was not you, log out everywhere and change your password "
                     "from the Account tab.", severity=NotificationSeverity.WARNING, user_id=user.id,
         )
-    return _token_response(issued)
+    return _token_response(issued, response)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -286,7 +307,7 @@ async def invite_info(token: str, session: AsyncSession = Depends(get_session)) 
     "/invite/{token}/accept", response_model=TokenResponse, status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(register_rate_limit)],
 )
-async def accept_invite(token: str, request: AcceptInviteRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def accept_invite(token: str, request: AcceptInviteRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Creates the invitee's account inside the inviting tenant with the invited role and logs
     them in. The email is fixed by the invite - the invitee only chooses a password."""
     record = await _invite_by_token(session, token)
@@ -310,24 +331,31 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     await write_audit_log(session, record.tenant_id, user.id, "invite_accepted", f"{record.email} as {record.role}")
     issued = await start_session(session, user, http_request)
     await session.commit()
-    return _token_response(issued)
+    return _token_response(issued, response)
 
 
 # --- Sessions (Phase C1) -------------------------------------------------------------------------
 
 @router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(refresh_rate_limit)])
-async def refresh(request: RefreshRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def refresh(request: RefreshRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Exchanges a refresh token for a new access + refresh pair (the old refresh token stops
     working). Reusing an already-rotated token revokes the session: log in again."""
-    issued = await rotate_refresh_token(session, request.refresh_token, http_request)
+    presented = request.refresh_token or http_request.cookies.get(REFRESH_COOKIE_NAME)
+    if not presented:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token (cookie or body)")
+    issued = await rotate_refresh_token(session, presented, http_request)
     if issued is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid, expired or revoked")
-    return _token_response(issued)
+        # Headers set on `response` are dropped when the handler raises; build the 401 explicitly so the stale
+        # cookie is cleared and not re-sent on every later request.
+        failed = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Refresh token is invalid, expired or revoked"})
+        _set_refresh_cookie(failed, None)
+        return failed
+    return _token_response(issued, response)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
+    response: Response, user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     if session_id is not None:
@@ -336,6 +364,7 @@ async def logout(
             await revoke_session(session, record, "logout")
     await write_audit_log(session, user.tenant_id, user.id, "user_logout")
     await session.commit()
+    _set_refresh_cookie(response, None)
 
 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
@@ -505,7 +534,7 @@ async def reset_info(token: str, session: AsyncSession = Depends(get_session)) -
 
 
 @router.post("/password/reset/{token}", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
-async def reset_password(token: str, request: ResetPasswordRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def reset_password(token: str, request: ResetPasswordRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Sets the new password, burns the link, ends every existing session and logs the user in."""
     record = await _reset_by_token(session, token)
     if record is None:
@@ -523,12 +552,12 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     await write_audit_log(session, user.tenant_id, user.id, "password_reset_completed")
     issued = await start_session(session, user, http_request)
     await session.commit()
-    return _token_response(issued)
+    return _token_response(issued, response)
 
 
 @router.post("/password/change", response_model=TokenResponse)
 async def change_password(
-    request: ChangePasswordRequest, http_request: Request,
+    request: ChangePasswordRequest, http_request: Request, response: Response,
     user: User = Depends(get_current_user), session_id: Optional[int] = Depends(current_session_id),
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
@@ -548,7 +577,7 @@ async def change_password(
             await revoke_session(session, current, "password changed (rotated)")
     issued = await start_session(session, user, http_request)
     await session.commit()
-    return _token_response(issued)
+    return _token_response(issued, response)
 
 
 # --- Two-factor authentication (Phase C3) --------------------------------------------------------
@@ -589,7 +618,7 @@ class MfaStatusResponse(BaseModel):
 
 
 @router.post("/mfa/verify", response_model=TokenResponse, dependencies=[Depends(mfa_rate_limit)])
-async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     """Second login step: the challenge token from /login plus a TOTP or backup code."""
     user_id = mfa.parse_mfa_token(request.mfa_token)
     user = await session.get(User, user_id) if user_id is not None else None
@@ -605,7 +634,7 @@ async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, ses
         await write_audit_log(session, user.tenant_id, user.id, "mfa_login_failed")
         await session.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
-    return await _complete_login(session, user, http_request, f"mfa:{method}")
+    return await _complete_login(session, user, http_request, f"mfa:{method}", response)
 
 
 @router.get("/mfa/status", response_model=MfaStatusResponse)

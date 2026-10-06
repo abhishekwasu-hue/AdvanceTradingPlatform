@@ -29,12 +29,14 @@ log() { printf '%s deploy[%s]: %s\n' "$(date -u +%H:%M:%S)" "$ENV_NAME" "$*"; }
 # P0.1: fetch everything, then check the ref out detached - `origin/main`, a branch, a tag or a SHA all work
 # (`git fetch origin origin/main` does not exist as a remote ref, and `checkout main` kept a stale local branch).
 if [ -n "$REF" ]; then log "checking out $REF"; git fetch -q origin && git checkout -q --detach "$REF"; fi
-PREVIOUS="$($COMPOSE images backend --format '{{.ID}}' 2>/dev/null | head -n1 || true)"
+# P0.7: `images -q` prints the image id the running container uses (`--format` takes only table|json, so the
+# earlier `--format '{{.ID}}'` failed silently and the rollback never had an image to go back to).
+PREVIOUS="$($COMPOSE images -q backend 2>/dev/null | head -n1 || true)"
 # P0.7: keep the image the API runs now under a stable tag; `build` re-points `${PROJECT}-backend:latest`.
 IMAGE="${PROJECT}-backend"
 if [ -n "$PREVIOUS" ]; then docker tag "$PREVIOUS" "$IMAGE:previous" >/dev/null 2>&1 || PREVIOUS=""; fi
 log "building images at $(git rev-parse --short HEAD)"
-$COMPOSE build --pull backend frontend
+$COMPOSE build --pull backend worker frontend   # P0.7: the worker has its own build and was never rebuilt here
 $COMPOSE up -d postgres redis
 log "running the migration guard"
 if ! $COMPOSE run --rm --no-deps backend python scripts/migrate_guard.py; then

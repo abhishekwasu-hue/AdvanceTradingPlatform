@@ -212,7 +212,7 @@ Every P0 item was checked against the code before planning (the plan's file name
 | T6 | daily loss on realised P&L only; "day" is UTC | **P0.5 (done)** - IST trading day, open positions marked by the monitor count |
 | T7 | `time_to_expiry_years` in whole days | **P0.6 (done)** - seconds to the 15:30 IST close |
 | B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | **P0.6 (done)** |
-| infra | deploy.sh rollback re-tags the image but does not restart (verified: tags only); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), **P0.7 (done)** - rollback restarts the previous image, log rotation, lint job (ruff/mypy/bandit/gitleaks), SHA-pinned actions |
+| infra | deploy.sh rollback re-tags the image but does not restart (verified: it did not even tag - `images --format '{{.ID}}'` is not a compose form, so the previous id was always empty); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), **P0.7 (done)** - rollback restarts the previous image, log rotation, lint job (ruff/mypy/bandit/gitleaks), SHA-pinned actions |
 
 Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
 batch-safe, off-hours per the guard. Risks: S6/S14 affect every logged-in client -> dual-read for one release;
@@ -402,7 +402,9 @@ default and G-LIVE gate before any LIVE wiring.
   (no intermediate-revision row, keyed by entry date) instead of implying full history.
 
 ### 2026-10-06 - P0.7: infra (deploy rollback, log rotation, static gates, pinned actions)
-- `scripts/deploy.sh`: the rollback restarts the API from the previous image (tagged `:previous` before the build,
+- `scripts/deploy.sh`: the previous image id is read with `images -q` (the old `--format '{{.ID}}'` is not a compose
+  form, failed silently and left nothing to roll back to); the worker image is built with the others (it was never
+  rebuilt, so the worker kept the first image forever); the rollback restarts the API from the previous image (tagged `:previous` before the build,
   retagged `:latest` on failure, `up -d --no-deps --no-build backend`, health wait); before it only re-tagged and
   the broken container stayed up. Worker/frontend are untouched by a rollback (they restart after health only);
   the schema is not rolled back (additive migrations, previous image reads them).
@@ -415,3 +417,7 @@ default and G-LIVE gate before any LIVE wiring.
   trivy, ssh-action, gitleaks) with the tag in a comment.
 - Tests: `tests/test_phase_p0_7_infra.py`. No migration, no runtime behaviour change beyond log rotation and the
   XML parser.
+- Self-review findings fixed before merge: the dead `images --format` line (above); the worker build; gitleaks binary
+  version pinned and PR comments off (the job has read permission only); pin comments name the exact tag
+  (v4.4.0, v5.6.0, v2.3.9); `ET.Element` does not exist on defusedxml (annotation now the stdlib `Element`); the
+  OPERATIONS roll-out note says the first `up -d` recreates every container, Postgres and Redis included.

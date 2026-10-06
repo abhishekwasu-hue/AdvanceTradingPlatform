@@ -775,7 +775,11 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Container logs rotate: Docker's json-file driver keeps at most 5 x 20 MB compressed files per service
   (`x-logging` in `docker-compose.yml`, inherited by the local, staging and production overlays; Caddy and the
   off-site copier too). `docker compose logs --tail 100 backend worker` works as before; history older than ~100 MB
-  per service is gone, which is the point. Applies on the next `up -d` (containers are recreated once).
+  per service is gone, which is the point. Roll-out: run the full `docker compose ... up -d` once, off-hours, after
+  pulling this release - every container (Postgres and Redis included) is recreated once because its logging
+  options changed. `deploy.sh` alone recreates only postgres/redis/backend/worker/frontend, and it does so on its
+  first run after the merge (a short database/Redis restart while the old API still serves), so run that first
+  deploy off-hours too; `backup`, `caddy` and `offsite` need the full `up -d` to pick the options up.
 - CI has a `lint` job next to the test job: ruff (`backend/ruff.toml`, the rule set the code is clean on), mypy
   (`backend/mypy.ini`, the packages that are clean - add one when you make it clean), bandit (medium severity and
   confidence or worse, `app/` only) and a gitleaks scan of the pushed commits (`.gitleaks.toml`). A red `lint`

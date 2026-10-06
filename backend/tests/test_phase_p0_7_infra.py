@@ -3,6 +3,7 @@ container's logs rotate, the CI workflow carries the static gates (ruff, mypy, b
 third-party action is pinned to a commit SHA."""
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -33,7 +34,13 @@ def _steps(workflow: dict):
 # --- deploy.sh rollback ------------------------------------------------------------------------------------------------
 def test_deploy_rollback_restarts_the_api_from_the_previous_image():
     script = (ROOT / "scripts" / "deploy.sh").read_text()
-    assert subprocess.run(["sh", "-n", str(ROOT / "scripts" / "deploy.sh")], capture_output=True).returncode == 0
+    if shutil.which("sh"):   # a Windows dev box has no sh; the body checks below still run there
+        assert subprocess.run(["sh", "-n", str(ROOT / "scripts" / "deploy.sh")], capture_output=True).returncode == 0
+    # `images -q` is the only compose form that prints the image id (`--format` takes table|json only); the old
+    # `--format '{{.ID}}'` failed silently and left nothing to roll back to.
+    code = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    assert "$COMPOSE images -q backend" in code and "images backend --format" not in code
+    assert "$COMPOSE build --pull backend worker frontend" in script
     body = script[script.index("rollback() {"):]
     body = body[:body.index("\n}\n")]
     # The previous image is kept under a stable tag before the build re-points :latest, and the rollback retags it

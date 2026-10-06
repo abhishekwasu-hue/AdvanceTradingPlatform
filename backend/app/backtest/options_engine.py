@@ -53,7 +53,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "3-options"
+ENGINE_VERSION = "4-options"   # P0.6: settlement charges and dated lots changed every option run's numbers
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -197,6 +197,7 @@ def run_option_backtest(
     underlying, underlying_symbol = underlying_name(symbol)
     # P0.6 / B5: the lot size is the exchange's lot *on the entry day* (lot_size_on), unless the run pins one.
     lot = int(config.lot_size or default_lot_size(underlying))
+    lots_used: set = set()
     vol = VolatilityModel(fixed_iv=config.implied_volatility, window=config.realised_vol_window, annualisation=bars_per_year(primary_tf))
     synthetic = SyntheticPricer(vol, config.risk_free_rate)
     if pricer is None:
@@ -235,10 +236,13 @@ def run_option_backtest(
             leg.exit_price = price
             sign = -1 if leg.role == "SHORT" else 1
             gross += sign * (price - leg.entry_price) * leg.quantity
-            # P0.6 / B2: a written leg sold first (STT on its entry premium); a bought leg that settles in the money
-            # at expiry is exercised, which carries STT on the intrinsic value instead of a sell-side premium STT.
-            if settled and leg.role == "LONG":
-                charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION") + broker.exercise_charges(price, leg.quantity)
+            # P0.6 / B2: a written leg sold first (STT on its entry premium). A leg of the expiring series is settled, not
+            # traded: entry-side charges only, and a bought leg in the money is exercised (STT on the intrinsic value
+            # instead of a sell-side premium STT). A far-expiry leg (calendar spread) is closed at market as usual.
+            if settled and leg.expiry == pos.near_expiry:
+                charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION", sold_first=leg.role == "SHORT", settled=True)
+                if leg.role == "LONG":
+                    charges += broker.exercise_charges(price, leg.quantity)
             else:
                 charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION", sold_first=leg.role == "SHORT")
         value = sum((leg.exit_price if leg.role == "SHORT" else -leg.exit_price) * leg.ratio for leg in pos.legs)
@@ -369,6 +373,7 @@ def run_option_backtest(
                 skipped["expiry day too late to enter"] += 1
                 continue
             lot = int(config.lot_size or lot_size_on(underlying, bar_day))
+            lots_used.add(lot)
             try:
                 if config.is_single:
                     open_pos = _open_single(signal, rules, config, spot=spot, ladder=ladder, expiry=expiry, at=at, ts=ts, lot=lot,
@@ -405,7 +410,7 @@ def run_option_backtest(
     options = {
         "engine_version": ENGINE_VERSION, "pricing_model": pricer.name, "pricing": pricer.describe(), "underlying": underlying,
         "structure": config.option_strategy.value, "position": config.option_position.value if config.is_single else None,
-        "lot_size": lot, "strike_step": step_used or config.strike_step or default_strike_step(underlying, float(primary_df["close"].iloc[-1])),
+        "lot_size": lot if len(lots_used) <= 1 else sorted(lots_used), "strike_step": step_used or config.strike_step or default_strike_step(underlying, float(primary_df["close"].iloc[-1])),
         "expiry_calendar": f"{'weekly' if calendar.weekly else 'monthly'}, {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][calendar.weekday]}",
         "intraday": config.intraday, "structures_opened": len(structures), "expiry_settlements": settlements,
         "signals_skipped": dict(skipped), "structures": structures,

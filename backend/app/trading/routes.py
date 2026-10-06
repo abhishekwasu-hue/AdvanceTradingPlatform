@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
 from app.auth.dependencies import get_current_user, require_role, require_trader
+from app.option_chain.greeks import today_ist
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
@@ -146,7 +147,7 @@ async def open_position_greeks(
     if rows and not usable:
         raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in from Settings)")
     adapter = build_adapter(usable[0]) if usable else None
-    today = date.today().isoformat()
+    today = today_ist().isoformat()   # P0.6: the exchange's date, not the container's UTC date
     spots: dict = {}
     legs_out: List[dict] = []
     skipped: List[dict] = []

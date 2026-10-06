@@ -11,7 +11,7 @@ import pytest
 
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.optimizer import optimize
-from app.backtest.options import LOT_SIZES, lot_size_on
+from app.backtest.options import LOT_SIZE_HISTORY, LOT_SIZES, lot_size_on
 from app.backtest.options_engine import OptionBacktestConfig, run_option_backtest
 from app.core.enums import OptionPosition, OptionStrategy, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
@@ -114,6 +114,14 @@ def test_stt_lands_on_the_leg_that_was_sold_and_on_exercise():
     stamp_b, stamp_w = 120 * 75 * 0.003 / 100, 150 * 75 * 0.003 / 100
     assert bought - written == pytest.approx((stt_b + stamp_b) - (stt_w + stamp_w), abs=0.02)
     assert pb.exercise_charges(40.0, 75) == pytest.approx(40 * 75 * 0.125 / 100) and pb.exercise_charges(0.0, 75) == 0.0
+    # A settled leg: one brokerage order, no stamp duty on the settlement (exit passed as 0.0).
+    settled_long = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION", settled=True)
+    traded_long = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION")
+    assert traded_long - settled_long == pytest.approx(pb.brokerage_per_order * (1 + pb.gst_pct / 100), abs=0.02)
+    settled_short = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION", sold_first=True, settled=True)
+    traded_short = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION", sold_first=True)
+    assert traded_short - settled_short == pytest.approx(pb.brokerage_per_order * (1 + pb.gst_pct / 100), abs=0.02)
+    assert settled_short > settled_long   # the written leg owes sell-side STT on its premium; the bought leg only stamp duty
     # The option backtest: a written leg's charges use sold_first; a bought leg settled ITM carries exercise STT.
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14, intraday=False, max_lots=1)
     rally = make_series(list(np.linspace(24500, 24800, 370)), start="2026-10-06 09:15")      # Tuesday expiry, bars past 15:15
@@ -142,7 +150,9 @@ def test_optimizer_ranks_in_sample_and_reports_out_of_sample_validation():
 # --- B5 ------------------------------------------------------------------------------------------------------------------
 def test_option_backtests_size_with_the_lot_of_the_entry_day():
     assert lot_size_on("NIFTY", date(2024, 6, 3)) == 25 and lot_size_on("NIFTY", date(2024, 11, 20)) == LOT_SIZES["NIFTY"]
-    assert lot_size_on("BANKNIFTY", date(2023, 1, 2)) == 15 and lot_size_on("RELIANCE", date(2024, 1, 1)) == 1
+    # Before the oldest dated row the table falls back to that row's "before" lot (a stated approximation, not the
+    # historical lot: BANKNIFTY traded 25 a lot in early 2023); a stock without a row keeps its current lot.
+    assert lot_size_on("BANKNIFTY", date(2023, 1, 2)) == LOT_SIZE_HISTORY["BANKNIFTY"][0][1] and lot_size_on("RELIANCE", date(2024, 1, 1)) == 1
     cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14, max_lots=1)
     old = make_series(list(np.linspace(24500, 24800, 200)), start="2024-06-04 09:15")        # before the Nov 2024 revision
     result = run_option_backtest(_OnceLong(stop=24300, target1=24700), old, "NIFTY 50", "1min", RiskConfig(capital=5_000_000, risk_per_trade_pct=1.0), cfg)

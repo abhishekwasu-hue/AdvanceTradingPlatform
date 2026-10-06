@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.config import RISK_FREE_RATE
-from app.option_chain.greeks import BSInputs, black_scholes, implied_volatility, time_to_expiry_years
+from app.option_chain.greeks import BSInputs, black_scholes, implied_volatility, time_to_expiry_years, today_ist
 from app.option_chain.models import (
     GreeksResult,
     Moneyness,
@@ -104,7 +104,7 @@ def analyze_option_chain(
     `expiry`/`underlying_ltp`/`call_iv`or`call_ltp`/`put_iv`or`put_ltp` fields whenever there's
     enough real data to compute from (None otherwise, never fabricated).
     """
-    as_of = as_of or date.today()
+    as_of = as_of or today_ist()
     try:
         expiry_date = date.fromisoformat(chain.expiry) if chain.expiry else None
     except ValueError:

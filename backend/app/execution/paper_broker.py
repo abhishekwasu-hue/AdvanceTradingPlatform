@@ -48,8 +48,10 @@ class PaperBroker:
         return round(intrinsic_per_unit * quantity * self.EXERCISE_STT_PCT / 100, 2)
 
     def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING",
-                                  *, sold_first: bool = False) -> float:
-        """`sold_first` (P0.6 / B2): the position was opened with a sell (a written option, a short future) - the
+                                  *, sold_first: bool = False, settled: bool = False) -> float:
+        """`settled` (P0.6 / B2): the position ended by expiry settlement, not by an exit order - one brokerage, and no
+        stamp duty on a buy-back that never happened (pass the exit as 0.0; exercise STT is `exercise_charges`).
+        `sold_first` (P0.6 / B2): the position was opened with a sell (a written option, a short future) - the
         sell-side STT then belongs to the *entry* premium and stamp duty to the exit, not the other way round."""
         profile = self.COST_PROFILES.get((instrument_kind or "UNDERLYING").upper())
         if profile is None or instrument_kind in (None, "UNDERLYING"):
@@ -69,7 +71,7 @@ class PaperBroker:
         exchange = turnover * profile["exchange"] / 100
         sebi = turnover * profile["sebi"] / 100
         stamp = buy_turnover * profile["stamp_buy"] / 100
-        brokerage = self.brokerage_per_order * 2
+        brokerage = self.brokerage_per_order * (1 if settled else 2)
         gst = (brokerage + exchange + sebi) * self.gst_pct / 100
         return round(stt + exchange + sebi + stamp + brokerage + gst, 2)
 
@@ -90,8 +92,7 @@ class PaperBroker:
     def close_trade(self, trade: Trade, exit_price: float, exit_time: datetime, reason: str) -> Trade:
         direction_sign = 1 if trade.direction == SignalDirection.LONG else -1
         gross_pnl = direction_sign * (exit_price - trade.entry_price) * trade.quantity
-        charges = self.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity,
-                                                 sold_first=trade.direction == SignalDirection.SHORT)
+        charges = self.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity)
         trade.exit_price = round(exit_price, 2)
         trade.exit_time = exit_time
         trade.exit_reason = reason

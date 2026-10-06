@@ -16,6 +16,7 @@ from app.reconciliation.models import ReconciliationReport
 from app.accounts.service import ensure_account_for_credential
 from app.reconciliation.service import merge_reports, open_trades, reconcile_accounts, run_reconciliation
 from app.secrets_store.encryption import decrypt_text
+from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
@@ -49,7 +50,7 @@ async def reconcile_broker_positions(
 
     pairs = []
     for record in records:
-        credentials = BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload)))
+        credentials = BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id)))
         account = await ensure_account_for_credential(session, record)
         pairs.append((account, get_broker_adapter(broker_name, credentials)))
 

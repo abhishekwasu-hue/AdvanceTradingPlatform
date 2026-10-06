@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import JWT_ALGORITHM, JWT_SECRET_KEY
 from app.db.models import MfaBackupCodeRecord, User
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_MFA_SECRET
 
 ISSUER = "Advance Trading Platform"
 MFA_TOKEN_TTL_MINUTES = 5
@@ -41,13 +42,13 @@ def provisioning_uri(secret: str, email: str) -> str:
 
 
 def store_secret(user: User, secret: str) -> None:
-    user.mfa_secret_encrypted = encrypt_text(secret, user.tenant_id)
+    user.mfa_secret_encrypted = encrypt_text(secret, user.tenant_id, PURPOSE_MFA_SECRET)
 
 
 def load_secret(user: User) -> Optional[str]:
     if not user.mfa_secret_encrypted:
         return None
-    return decrypt_text(user.mfa_secret_encrypted)
+    return decrypt_text(user.mfa_secret_encrypted, PURPOSE_MFA_SECRET, user.tenant_id)
 
 
 def verify_totp(secret: str, code: str, *, last_step: Optional[int] = None, now: Optional[datetime] = None) -> Optional[int]:

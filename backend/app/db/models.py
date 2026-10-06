@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -12,6 +12,15 @@ def _utcnow() -> datetime:
 
 
 _TZ_DATETIME = DateTime(timezone=True)
+
+# P0.4 / S10: money is stored exactly. `Money` (2 decimals) for amounts - P&L, charges, balances, fees, invoices;
+# `Price` (4 decimals) for traded prices and levels, so a sub-paisa crypto or option tick survives. Both come back
+# as Python floats (`asdecimal=False`): the arithmetic in the engines is unchanged, the database no longer rounds
+# a rupee total through binary floating point. Percentages, quantities and analytics stay Float.
+# Aggregate these only with func.sum / func.coalesce / func.max (they inherit asdecimal=False); func.avg, func.abs,
+# func.round and raw text() SQL return Decimal on Postgres - cast(..., Float) first or the float arithmetic breaks.
+Money = Numeric(18, 2, asdecimal=False)
+Price = Numeric(18, 4, asdecimal=False)
 
 
 class Tenant(Base):
@@ -254,20 +263,20 @@ class TradeRecord(Base):
     strategy_id: Mapped[str] = mapped_column(String(100), nullable=False)
     direction: Mapped[str] = mapped_column(String(10), nullable=False)
     entry_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
-    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Price, nullable=False)
     # float, not int: a crypto fill sizes in fractional units (see app/instruments/registry.py) -
     # every equity/index-option/MCX fill still always lands on a whole multiple of its lot size.
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
-    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Price, nullable=False)
     # Nullable since Phase F3: a bought/written option has no target on its own price - the
     # strategy's targets are on the underlying (underlying_target1/2 below).
-    target1: Mapped[float | None] = mapped_column(Float, nullable=True)
-    target2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target1: Mapped[float | None] = mapped_column(Price, nullable=True)
+    target2: Mapped[float | None] = mapped_column(Price, nullable=True)
     exit_time: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
-    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Price, nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
-    charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
+    charges: Mapped[float] = mapped_column(Money, nullable=False, default=0.0)
     # LIVE trades only (both stay null for PAPER): the broker's own id for the entry order and
     # for the protective stop-loss order placed right after the fill, so the position monitor
     # can cancel the SL when it exits on target, and reconciliation can match broker fills.
@@ -303,12 +312,12 @@ class TradeRecord(Base):
     premium_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     underlying_symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
     underlying_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    underlying_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
-    underlying_target1: Mapped[float | None] = mapped_column(Float, nullable=True)
-    underlying_target2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    underlying_stop_loss: Mapped[float | None] = mapped_column(Price, nullable=True)
+    underlying_target1: Mapped[float | None] = mapped_column(Price, nullable=True)
+    underlying_target2: Mapped[float | None] = mapped_column(Price, nullable=True)
     # Execution quality (master prompt V4.14): signal price vs fill, and entry latency.
-    expected_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    slippage: Mapped[float | None] = mapped_column(Float, nullable=True)   # fill - expected, signed against the trade
+    expected_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    slippage: Mapped[float | None] = mapped_column(Price, nullable=True)   # fill - expected, signed against the trade
     # Phase AS: INTRADAY or SWING (held overnight: never squared off at the close; exits and
     # protective stops use the delivery / carry-forward product).
     holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
@@ -323,8 +332,8 @@ class TradeRecord(Base):
     # Phase J1: the exit rules this trade runs under, its initial stop (the stop_loss column moves
     # as rules tighten it) and the best price seen so far (trailing high-water mark).
     exit_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
-    initial_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
-    best_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    initial_stop_loss: Mapped[float | None] = mapped_column(Price, nullable=True)
+    best_price: Mapped[float | None] = mapped_column(Price, nullable=True)
     # Phase M / V4.14 trade journal: the regime read at entry (from the deployment's base frame),
     # free notes and comma-separated tags the trader adds afterwards.
     regime_at_entry: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -350,7 +359,7 @@ class ContractNoteRecord(Base):
     line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     matched_lines: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trades_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    total_charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_charges: Mapped[float] = mapped_column(Money, nullable=False, default=0.0)
     uploaded_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -367,9 +376,9 @@ class ContractNoteLineRecord(Base):
     symbol: Mapped[str] = mapped_column(String(50), nullable=False)
     side: Mapped[str] = mapped_column(String(4), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(Price, nullable=False)
     order_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
-    charges: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    charges: Mapped[float] = mapped_column(Money, nullable=False, default=0.0)
     breakdown_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     match_method: Mapped[str] = mapped_column(String(20), nullable=False, default="UNMATCHED")
 
@@ -744,10 +753,10 @@ class BrokerAccountRecord(Base):
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ACTIVE")   # ACTIVE / DISABLED
     is_default: Mapped[bool] = mapped_column(nullable=False, default=False)
-    available_balance: Mapped[float | None] = mapped_column(Float, nullable=True)
-    used_margin: Mapped[float | None] = mapped_column(Float, nullable=True)
-    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
-    unrealized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    available_balance: Mapped[float | None] = mapped_column(Money, nullable=True)
+    used_margin: Mapped[float | None] = mapped_column(Money, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
+    unrealized_pnl: Mapped[float | None] = mapped_column(Money, nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
@@ -815,7 +824,7 @@ class BillingGatewayPlanRecord(Base):
     plan_id: Mapped[str] = mapped_column(String(50), nullable=False)
     billing_cycle: Mapped[str] = mapped_column(String(10), nullable=False)
     gateway_plan_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(Money, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -844,7 +853,7 @@ class BillingTransactionRecord(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     subscription_id: Mapped[int | None] = mapped_column(ForeignKey("subscriptions.id", ondelete="SET NULL"), nullable=True)
     kind: Mapped[str] = mapped_column(String(20), nullable=False)      # INVOICE / PAYMENT / REFUND / FAILED_PAYMENT
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(Money, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     status: Mapped[str] = mapped_column(String(10), nullable=False)    # OPEN / PAID / VOID / FAILED
     description: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -893,7 +902,7 @@ class MarketplaceListingRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
     # Phase X: a one-time price (0 = free) and the platform's share, frozen when the listing is
     # published so a later change of terms never re-prices a live listing.
-    price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    price: Mapped[float] = mapped_column(Money, nullable=False, default=0.0)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     platform_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -924,11 +933,11 @@ class MarketplaceChargeRecord(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # the buyer
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     subscription_id: Mapped[int | None] = mapped_column(ForeignKey("marketplace_subscriptions.id", ondelete="SET NULL"), nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(Money, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     platform_fee_pct: Mapped[float] = mapped_column(Float, nullable=False)
-    platform_fee: Mapped[float] = mapped_column(Float, nullable=False)
-    creator_net: Mapped[float] = mapped_column(Float, nullable=False)
+    platform_fee: Mapped[float] = mapped_column(Money, nullable=False)
+    creator_net: Mapped[float] = mapped_column(Money, nullable=False)
     status: Mapped[str] = mapped_column(String(8), nullable=False, default="OPEN")   # OPEN / PAID / VOID
     provider: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
     provider_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)    # the gateway's payment link id
@@ -949,7 +958,7 @@ class MarketplacePayoutRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)   # the creator
     requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[float] = mapped_column(Money, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="REQUESTED")   # REQUESTED / PAID / REJECTED
     destination_encrypted: Mapped[str] = mapped_column(Text, nullable=False)

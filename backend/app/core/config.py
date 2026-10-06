@@ -67,6 +67,11 @@ REFRESH_TOKEN_DAYS = int(os.environ.get("REFRESH_TOKEN_DAYS", "30"))
 # deployment - a process-local fallback is generated here only so the app still runs for local
 # development, but anything encrypted with it becomes unreadable across restarts.
 SECRETS_ENCRYPTION_KEY = os.environ.get("SECRETS_ENCRYPTION_KEY")
+# P0.4 / S11: format new ciphertexts are written in. "fernet" (default this release) = the per-tenant Fernet
+# format every image since Phase N reads, so an image rollback never strands a secret; "aesgcm" = AES-256-GCM
+# under a key derived from the tenant data key, bound to the tenant and the column's purpose (AAD). Both are
+# always *read*; `scripts/reencrypt_secrets.py reencrypt` moves existing rows to the configured format.
+SECRETS_WRITE_FORMAT = os.environ.get("SECRETS_WRITE_FORMAT", "fernet").strip().lower() or "fernet"
 
 # Optional: caches short-lived, pure-computation results (option chain analysis, S/R zones).
 # The app runs fine without Redis reachable - every cache call is wrapped to fail open.

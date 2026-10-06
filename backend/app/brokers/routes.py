@@ -38,6 +38,7 @@ from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ async def store_broker_credentials(
     account_label = _clean_label(account_label)
     existing = await get_credential_record(session, user.tenant_id, name, account_label)
     credentials = _merge_with_stored(credentials, existing)
-    encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id)
+    encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
     if existing:
         existing.encrypted_payload = encrypted
@@ -222,9 +223,9 @@ async def disconnect_broker(
     except Exception as exc:  # noqa: BLE001 - local revocation is what matters
         logger.warning("Broker %s logout call failed for tenant %s: %s", name, user.tenant_id, exc)
         detail = f"broker logout call failed ({type(exc).__name__}); token marked expired locally"
-    payload = json.loads(decrypt_text(record.encrypted_payload))
+    payload = json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id))
     payload.pop("access_token", None)
-    record.encrypted_payload = encrypt_text(json.dumps(payload), record.tenant_id)
+    record.encrypted_payload = encrypt_text(json.dumps(payload), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     record.token_status = BrokerTokenStatus.EXPIRED.value
     record.token_expires_at = None
     await write_audit_log(session, user.tenant_id, user.id, "broker_disconnected", f"{name}: {detail}")
@@ -407,7 +408,7 @@ async def broker_login_code(
     if not new_token:
         raise HTTPException(status_code=502, detail=f"{name} returned no access token for the code")
     # Persist the exchanged token on the stored row (re-encrypted; the one-time code is dropped).
-    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id)
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     store_access_token(record, new_token)
     record.user_id = user.id
     await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label} (pasted code)")
@@ -445,7 +446,7 @@ async def upstox_oauth_start(
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
-        record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id)
+        record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
     state = create_oauth_state(user.tenant_id, user.id, "upstox")
     await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", "upstox")

@@ -32,6 +32,7 @@ from app.marketplace.service import MarketplaceError
 from app.notifications.service import notify
 from app.platform.controls import marketplace_terms
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_PAYOUT_DESTINATION
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ async def request_payout(session: AsyncSession, user: User, destination: str) ->
         raise MarketplaceError(f"Available earnings {amount:g} are below the minimum payout of {terms['min_payout']:g}")
     hint = ("…" + destination[-4:]) if len(destination) > 4 else destination
     payout = MarketplacePayoutRecord(tenant_id=user.tenant_id, requested_by=user.id, amount=amount, currency="INR", status="REQUESTED",
-                                     destination_encrypted=encrypt_text(destination, user.tenant_id), destination_hint=hint[:40])
+                                     destination_encrypted=encrypt_text(destination, user.tenant_id, PURPOSE_PAYOUT_DESTINATION), destination_hint=hint[:40])
     session.add(payout)
     await session.flush()
     for c in rows:
@@ -277,7 +278,7 @@ async def settle_payout(session: AsyncSession, admin: User, payout: MarketplaceP
 
 def payout_destination(payout: MarketplacePayoutRecord) -> str:
     """Operator only: the full destination, decrypted for the transfer."""
-    return decrypt_text(payout.destination_encrypted)
+    return decrypt_text(payout.destination_encrypted, PURPOSE_PAYOUT_DESTINATION, payout.tenant_id)
 
 
 # --- lists ------------------------------------------------------------------------------------

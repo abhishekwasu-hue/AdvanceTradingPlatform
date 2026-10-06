@@ -6,6 +6,9 @@ Standard MCX lot sizes are public contract specifications set by the exchange (n
 market data), but they do change from time to time - verify against MCX's current contract
 specifications (https://www.mcxindia.com/products) before relying on these for anything beyond
 paper trading. Crypto tick/quantity precision here mirrors common INR-pair conventions.
+
+P0.4: traded prices are stored as NUMERIC(18, 4), so a spec with a tick below 0.0001 (none today; the smallest
+here is 0.01) would need the `Price` scale in app/db/models.py raised first.
 """
 from typing import Dict, List, Optional
 

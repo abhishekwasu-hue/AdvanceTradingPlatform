@@ -199,8 +199,8 @@ Every P0 item was checked against the code before planning (the plan's file name
 | S7 | audit chain reads last row without a lock; `atp_app` has DELETE on all tables; audit FK SET NULL | P0.3 (advisory lock per tenant, revoke DELETE on audit/orders/trades, range verification) |
 | S8 | `verify_totp` accepts a code twice inside its window (no last-used step) | P0.2 |
 | S9 | refresh rotation without `SELECT ... FOR UPDATE`; two tabs can revoke each other | P0.2 |
-| S10 | money columns are `Float`; currency assumed INR | P0.4 (Numeric(18,2) migration with drift check; off-hours) |
-| S11 | unset `SECRETS_ENCRYPTION_KEY` -> fixed dev key (refused in production only); Fernet, no AAD; passphrase via plain SHA-256 | P0.4 (fail-closed in hardened envs already; AES-GCM with AAD = tenant_id + row id **dual-read**, re-encrypt on next write; KDF scrypt for passphrases) |
+| S10 | money columns are `Float`; currency assumed INR | **P0.4 (done)** - Numeric(18,2) amounts / Numeric(18,4) prices, migration c4d6e8f0a2b4, drift check green |
+| S11 | unset `SECRETS_ENCRYPTION_KEY` -> fixed dev key (refused in production only); Fernet, no AAD; passphrase via plain SHA-256 | **P0.4 (done)** - AES-256-GCM, AAD = tenant_id + column purpose, dual-read, `SECRETS_WRITE_FORMAT` (default fernet this release), scrypt for passphrases |
 | S12 | `create_all` at every startup next to Alembic | **P0.1 (done)** |
 | S13 | metering INSERT + SUM per API call; key prefix is 4 random bytes (no uniqueness guarantee); TradingView token stored plaintext on tenants | P0.3 |
 | S14 | HS256 JWT with `email` claim, no iss/aud/kid | P0.3 (iss/aud/kid + rotation, drop email claim; **dual-verify** old tokens until they expire) |
@@ -302,3 +302,31 @@ default and G-LIVE gate before any LIVE wiring.
   really exercised (team invite route); CSP allows the Google Fonts the UI loads; an invalid refresh clears the
   cookie (explicit 401 response); refresh rate limit 60/min per IP because every reload refreshes; the DELETE
   revoke in db_roles.sql is guarded for a fresh database; a 429 on refresh is treated as transient by the UI.
+
+### 2026-10-06 - P0.4: exact money, AES-GCM secrets (S10, S11)
+- S10: `Money = Numeric(18, 2)` for amounts (P&L, charges, balances, fees, invoices, payouts) and
+  `Price = Numeric(18, 4)` for traded prices and levels; both `asdecimal=False`, so every engine still computes on
+  floats and no call site changed. Migration `c4d6e8f0a2b4` alters 28 columns in 9 tables (batch mode; Postgres
+  casts FLOAT -> NUMERIC in place, rounding to the scale - verified on a scratch Postgres 16 with seeded rows,
+  `alembic check` clean after upgrade and after downgrade + upgrade). Quantities, percentages, fundamentals and
+  FX rates stay Float on purpose. Not done: a currency column per trade (Phase P3 already reports portfolio
+  figures in the organisation's base currency; a per-row currency belongs with multi-currency trading, not P0).
+- S11: `t2:<tenant>:<purpose>:<nonce||ct>` - AES-256-GCM under an HKDF key derived from the tenant data key,
+  associated data `tenant_id|purpose`; every encrypt/decrypt call names its column (`envelope.PURPOSE_*`), so a
+  ciphertext copied into another organisation's row or another column refuses to open. Deviation from the plan's
+  "AAD = tenant_id + row id": a row id does not exist before the first flush and the same helper serves inserts
+  and updates, so the binding is tenant + column; swapping two rows of the *same* column within one organisation
+  stays possible (and is the least useful attack: both are that organisation's own secrets). Dual-read of the
+  Phase N `t1:` and the pre-Phase-N master formats; `SECRETS_WRITE_FORMAT` defaults to `fernet` this release
+  (PAPER-week rule: an image rollback must still read every secret) and is flipped to `aesgcm` after the week,
+  then `reencrypt_secrets.py reencrypt` converts rows (idempotent; `status` lists formats and `pending_rewrite`).
+  Passphrase masters get a scrypt-stretched key (n=2^14, fixed domain salt) next to the SHA-256 derivation via
+  `MultiFernet`; the scrypt key *encrypts* only once `SECRETS_WRITE_FORMAT=aesgcm` (self-review caught that
+  scrypt-first by default would have wrapped a new organisation's data key in a form the previous image cannot
+  open - a boot failure after rollback), SHA-256 leads until then and both always decrypt. A proper Fernet key
+  (the operator's) is used unchanged. `decrypt_text` also takes the owning row's tenant id and refuses a token
+  minted for another organisation even when copied verbatim (the `t2` header alone could not catch that);
+  `warm_all` logs and skips one unopenable tenant key instead of stopping the API.
+- Tests: `tests/test_phase_p0_4_money_crypto.py` (Numeric types + float round trip; migration covers every
+  Numeric column; default format; AAD/tenant/relabel/move refusals; older formats; re-encrypt both modes via the
+  credentials API; scrypt + legacy passphrase).

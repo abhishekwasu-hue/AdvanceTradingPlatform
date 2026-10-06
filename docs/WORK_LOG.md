@@ -264,3 +264,8 @@ default and G-LIVE gate before any LIVE wiring.
   out; the token issued in between is retired, and reuse after the window still revokes the session.
 - Tests: `tests/test_phase_p0_2_auth_egress.py`; login-protection, MFA, sessions and rate-limit tests adapted to
   the new semantics (the MFA tests now ask the authenticator for the *next* code when they use it twice).
+- Self-review fixes before merge: attempts the platform refused (delayed / locked / captcha) are recorded but no
+  longer counted as failures, so hammering an address cannot extend the owner's wait with requests that were never
+  evaluated (the remaining trade-off: a persistent attacker who keeps *failing* real passwords, at most one per
+  minute, can still inconvenience the owner - the CAPTCHA hook is the answer for that); the Redis limiter's INCR
+  and EXPIRE run as one script so a crash between them can never leave a counter that refuses forever.

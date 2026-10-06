@@ -67,11 +67,20 @@ def test_repeated_failures_slow_the_account_down_but_never_lock_the_owner_out():
             await s.execute(update(LoginEventRecord).where(LoginEventRecord.email == "lp-lock@example.com")
                             .values(created_at=datetime.now(timezone.utc) - timedelta(seconds=seconds)))
             await s.commit()
+    # Refused attempts are recorded but never counted: hammering the address does not extend the owner's wait.
+    for _ in range(5):
+        assert _login("lp-lock@example.com", "wrong-password-1", c=_isolated("203.0.113.52")).status_code == 429
+    failures, _ = _run(_failures("lp-lock@example.com"))
+    assert failures == lockout.LOGIN_DELAY_AFTER_FAILURES
     _run(age(lockout.LOGIN_DELAY_MAX_SECONDS + 1))                                 # the wait has passed: no lock stands
     assert _login("lp-lock@example.com", c=c).status_code == 200
-    # A delayed attempt is recorded, so an attacker hammering the address keeps pushing the wait up, never the owner.
     reasons = _run(_reasons("lp-lock@example.com"))
-    assert "delayed" in reasons and reasons.count("bad_password") == lockout.LOGIN_DELAY_AFTER_FAILURES
+    assert reasons.count("delayed") == 7 and reasons.count("bad_password") == lockout.LOGIN_DELAY_AFTER_FAILURES
+
+
+async def _failures(email):
+    async with _session_factory() as s:
+        return await lockout._failures_since(s, datetime.now(timezone.utc) - timedelta(minutes=lockout.LOCKOUT_WINDOW_MINUTES), email=email)
 
 
 async def _reasons(email):

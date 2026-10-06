@@ -24,6 +24,10 @@ from app.core.config import LOGIN_DELAY_AFTER_FAILURES, LOGIN_DELAY_MAX_SECONDS
 LOCKOUT_WINDOW_MINUTES = 15
 MAX_FAILURES_PER_IP = 50
 HISTORY_LIMIT = 50
+# Attempts the platform itself refused before checking anything. They are recorded (the history shows them)
+# but never counted as failures: otherwise an attacker hammering an address would keep extending the owner's
+# wait with requests that were never evaluated.
+REFUSED_REASONS = ("locked", "delayed", "captcha")
 
 
 @dataclass
@@ -62,7 +66,7 @@ async def record_login_event(
 async def _failures_since(session: AsyncSession, since: datetime, *, email: Optional[str] = None, ip: Optional[str] = None) -> Tuple[int, Optional[datetime]]:
     """(count, most recent) of failed attempts since `since` for the email and/or IP."""
     query = select(func.count(), func.max(LoginEventRecord.created_at)).select_from(LoginEventRecord).where(
-        LoginEventRecord.success.is_(False), LoginEventRecord.created_at >= since,
+        LoginEventRecord.success.is_(False), LoginEventRecord.created_at >= since, LoginEventRecord.reason.notin_(REFUSED_REASONS),
     )
     if email is not None:
         query = query.where(LoginEventRecord.email == email.lower())

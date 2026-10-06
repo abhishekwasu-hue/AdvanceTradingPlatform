@@ -22,13 +22,15 @@ def _run(coro):
 
 def test_rate_limiter_counts_in_redis_when_backed_and_falls_back_locally(monkeypatch):
     class _Redis:
+        """Just the INCR+EXPIRE script the limiter sends (atomic in Redis, see rate_limit._HIT_LUA)."""
         def __init__(self):
             self.counts, self.ttl = {}, {}
-        async def incr(self, key):
+        async def eval(self, script, numkeys, key, ttl):
+            assert "incr" in script and "expire" in script and numkeys == 1
             self.counts[key] = self.counts.get(key, 0) + 1
+            if self.counts[key] == 1:
+                self.ttl[key] = ttl
             return self.counts[key]
-        async def expire(self, key, ttl):
-            self.ttl[key] = ttl
     fake = _Redis()
     monkeypatch.setattr(rate_limit, "redis_backed", lambda: True)
     monkeypatch.setattr("app.cache.client._get_client", lambda: fake)
@@ -38,7 +40,7 @@ def test_rate_limiter_counts_in_redis_when_backed_and_falls_back_locally(monkeyp
     assert _run(rate_limit.allow("p0test", "5.6.7.8", 3, 60)) is True          # another key, its own count
 
     class _Down:
-        async def incr(self, key):
+        async def eval(self, *a):
             raise ConnectionError("redis down")
     monkeypatch.setattr("app.cache.client._get_client", lambda: _Down())
     rate_limit.reset("p0test")

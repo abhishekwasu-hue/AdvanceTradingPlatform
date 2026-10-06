@@ -41,15 +41,16 @@ def _local_hit(name: str, key: str, limit: int, window_seconds: float) -> bool:
     return True
 
 
+# INCR and EXPIRE in one script: a process dying between the two would leave a counter that never expires
+# and a key that refuses its holder forever.
+_HIT_LUA = "local c = redis.call('incr', KEYS[1]); if c == 1 then redis.call('expire', KEYS[1], ARGV[1]) end; return c"
+
+
 async def _redis_hit(name: str, key: str, limit: int, window_seconds: float) -> Optional[bool]:
     """True/False within Redis; None when Redis did not answer (caller falls back to the local window)."""
     from app.cache.client import _get_client
     try:
-        client = _get_client()
-        redis_key = f"rl:{name}:{key}"
-        count = await client.incr(redis_key)
-        if count == 1:
-            await client.expire(redis_key, max(1, int(window_seconds)))
+        count = await _get_client().eval(_HIT_LUA, 1, f"rl:{name}:{key}", max(1, int(window_seconds)))
         return int(count) <= limit
     except Exception:  # noqa: BLE001 - Redis down is handled by the local window
         return None

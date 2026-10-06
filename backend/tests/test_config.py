@@ -43,4 +43,5 @@ def test_validate_production_config_passes_with_secure_settings(monkeypatch):
     monkeypatch.setattr(config, "JWT_SECRET_KEY", "a-real-secret")
     monkeypatch.setattr(config, "SECRETS_ENCRYPTION_KEY", "a-real-fernet-key")
     monkeypatch.setattr(config, "ALLOWED_ORIGINS", ["https://app.example.com"])
+    monkeypatch.setattr(config, "METRICS_TOKEN", "scrape-token")           # P0.1: required in hardened environments
     config.validate_production_config()  # must not raise

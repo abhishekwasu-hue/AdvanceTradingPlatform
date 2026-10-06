@@ -5,6 +5,7 @@ from app.db.models import TradeRecord
 
 def determine_exit_price(
     direction: str, stop_loss: float, target1: float, target2: Optional[float], low: float, high: float,
+    open_price: Optional[float] = None,
 ) -> Optional[Tuple[str, float]]:
     """The single source of truth for exit priority (stop loss, then target2 - the more
     ambitious level, so it wins if somehow both are already crossed within the same bar/tick -
@@ -17,20 +18,32 @@ def determine_exit_price(
     """
     is_long = direction == "LONG"
 
+    # P0.6 / B4: a bar that *opens* beyond a level (an overnight or news gap) fills at the open, not at the
+    # level - a stop cannot fill above where the market reopened, and a target does not fill better than
+    # the open either. Without the open (a single live price) the level itself is the fill, as before.
+    def fill(level: float, *, stop: bool) -> float:
+        if open_price is None:
+            return level
+        if is_long:
+            gapped = open_price <= level if stop else open_price >= level
+        else:
+            gapped = open_price >= level if stop else open_price <= level
+        return open_price if gapped else level
+
     if is_long:
         if low <= stop_loss:
-            return "Stop Loss", stop_loss
+            return "Stop Loss", fill(stop_loss, stop=True)
         if target2 is not None and high >= target2:
-            return "Target 2", target2
+            return "Target 2", fill(target2, stop=False)
         if high >= target1:
-            return "Target 1", target1
+            return "Target 1", fill(target1, stop=False)
     else:
         if high >= stop_loss:
-            return "Stop Loss", stop_loss
+            return "Stop Loss", fill(stop_loss, stop=True)
         if target2 is not None and low <= target2:
-            return "Target 2", target2
+            return "Target 2", fill(target2, stop=False)
         if low <= target1:
-            return "Target 1", target1
+            return "Target 1", fill(target1, stop=False)
 
     return None
 

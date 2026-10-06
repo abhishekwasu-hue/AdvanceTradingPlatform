@@ -12,11 +12,12 @@ from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import determine_exit_price
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.backtest.analytics import build_analytics
+from app.backtest.options import IST, to_utc
 
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "2"   # Phase J: exit rules + analytics
+ENGINE_VERSION = "3"   # P0.6: daily counters reset per IST day, gap fills at the open
 
 
 def run_backtest(
@@ -53,10 +54,18 @@ def run_backtest(
     rules = exit_rules if exit_rules is not None and exit_rules.active else None
     initial_stop = 0.0
     best_price: Optional[float] = None
+    current_day = None
 
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
         current_time = primary_df.index[i]
+        # P0.6 / B1: the risk engine's "today" counters (trades, daily P&L) are per Indian trading day, as the
+        # worker keeps them; never reset, the daily loss and trades-per-day limits capped the whole backtest.
+        bar_day = to_utc(current_time).astimezone(IST).date()
+        if bar_day != current_day:
+            current_day = bar_day
+            state.trades_today = 0
+            state.daily_pnl = 0.0
 
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
@@ -76,7 +85,7 @@ def run_backtest(
             if outcome is None:
                 outcome = determine_exit_price(
                     direction, open_trade.stop_loss, open_trade.target1, open_trade.target2,
-                    bar["low"], bar["high"],
+                    bar["low"], bar["high"], open_price=float(bar["open"]) if "open" in bar else None,
                 )
             if outcome is None and rules is not None:
                 best_price = update.best_price

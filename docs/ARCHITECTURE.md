@@ -3594,6 +3594,24 @@ monitor writes `trades.mark_price/mark_time` and `trading/persistence.open_unrea
 open positions to the daily and strategy loss checks. Migration `d5e7f9a1b3c5`. Tests:
 `tests/test_phase_p0_5_trading_safety.py`.
 
+**P0.6 (T7, B1-B5).** `option_chain/greeks.time_to_expiry_years` counts seconds to the 15:30 IST close (datetime or
+date input). `backtest/engine.py` resets the day counters per Indian trading day and passes the bar's open to
+`trading/exit_logic.determine_exit_price`, which fills a gapped level at the open. `execution/paper_broker.py`
+takes `sold_first` (STT on the entry premium of a written option) and `exercise_charges` (STT on intrinsic value at
+settlement); the option engine and the position monitor pass the position's side. `backtest/optimizer.py` ranks
+in-sample and reports `validation` / `best_confirmed_out_of_sample`. `backtest/options.lot_size_on` gives the lot
+that applied on an entry day (`LOT_SIZE_HISTORY`). Tests: `tests/test_phase_p0_6_backtest_fixes.py`.
+
+**P0.7 (infra).** `scripts/deploy.sh` keeps the running backend image under `${PROJECT}-backend:previous`
+before the build and, when the new API fails the deep health check, retags it as `:latest`, recreates the API
+with `up -d --no-deps --no-build backend` and waits for health again (the earlier version only re-tagged, so the
+broken container stayed up). `docker-compose.yml` carries an `x-logging` anchor (json-file, 20 MB x 5,
+compressed) on every service, and the production overlay on Caddy and the off-site copier. CI gained a `lint` job
+(ruff on `backend/ruff.toml`, mypy on the packages `backend/mypy.ini` lists with `follow_imports = silent`,
+bandit `-ll -ii` on `app/`, gitleaks on the pushed commits with `.gitleaks.toml`), every action in `ci.yml` and
+`deploy-staging.yml` is SHA-pinned, and `news_feed/sources.py` parses with defusedxml. Tests:
+`tests/test_phase_p0_7_infra.py` (script syntax and rollback body, rotation on every service, pins, gates).
+
 **P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
 `Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
 payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on

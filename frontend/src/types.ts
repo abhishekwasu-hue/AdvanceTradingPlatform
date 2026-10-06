@@ -1781,12 +1781,13 @@ export interface OptimizeRow {
   params: Record<string, number | string>;
   in_sample: { trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; max_drawdown: number };
   out_of_sample: { trades: number; net_pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; max_drawdown: number };
-  score: number | null; overfit_gap: number | null; flags: string[];
+  // P0.6 / B3: `score` is the in-sample metric the rows are ranked by; `validation` is the out-of-sample figure.
+  score: number | null; validation?: number | null; overfit_gap: number | null; flags: string[];
 }
 
 export interface OptimizeResult {
   metric: string; split: number; in_sample_bars: number; out_of_sample_bars: number; combinations: number;
-  best: OptimizeRow | null; robust_count: number; results: OptimizeRow[]; note: string;
+  best: OptimizeRow | null; best_confirmed_out_of_sample?: boolean | null; robust_count: number; results: OptimizeRow[]; note: string;
 }
 
 // Phase Z: factor and risk models.

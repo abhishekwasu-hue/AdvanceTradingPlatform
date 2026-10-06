@@ -286,7 +286,7 @@ def test_exit_position_default_places_opposite_market_order():
 
 # --- V4.6 optimisation -------------------------------------------------------------------------------
 
-def test_optimizer_ranks_out_of_sample_and_flags_overfit():
+def test_optimizer_ranks_in_sample_reports_validation_and_flags_overfit():
     assert len(expand_grid({"a": [1, 2], "b": [3, 4, 5]})) == 6
     strategy = registry.get("ema_rsi_scalper_1m")
     df = make_series(noisy_uptrend(900, seed=11))

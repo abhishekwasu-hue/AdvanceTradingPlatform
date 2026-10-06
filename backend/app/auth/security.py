@@ -34,9 +34,9 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    raw = password.encode("utf-8")
-    if len(raw) > BCRYPT_MAX_BYTES:
-        return False
+    # Hashes made before P0.3 were produced by bcrypt truncating at 72 bytes; verifying the same way keeps those
+    # accounts logging in. New passwords longer than that are refused at registration/change (hash_password).
+    raw = password.encode("utf-8")[:BCRYPT_MAX_BYTES]
     return bcrypt.checkpw(raw, hashed.encode())
 
 

@@ -293,3 +293,12 @@ default and G-LIVE gate before any LIVE wiring.
   Postgres; a legacy plaintext still matches once and is hashed) - a new organisation sees its URL only when the
   **owner** rotates (shown once); rotation is audited.
 - Tests: `tests/test_phase_p0_3_tokens_audit.py`; the TradingView tests rotate to obtain a URL.
+- Self-review findings fixed before merge: Telegram inbound looked the organisation up by the plaintext token
+  (broken for every new organisation) - one shared `resolve_tenant_by_webhook_token` for both webhooks, the
+  Telegram path now carries the stored hash as identifier (secret header authenticates; re-register after a
+  rotation); `verify_password` truncates at 72 bytes like bcrypt did when old hashes were made (refusing would
+  have locked out long-password accounts - PAPER-week rule); the Redis day counter is seeded from the SUM when
+  its key is recreated (a Redis restart mid-day no longer under-counts the plan cap); the owner-only rotation test
+  really exercised (team invite route); CSP allows the Google Fonts the UI loads; an invalid refresh clears the
+  cookie (explicit 401 response); refresh rate limit 60/min per IP because every reload refreshes; the DELETE
+  revoke in db_roles.sql is guarded for a fresh database; a 429 on refresh is treated as transient by the UI.

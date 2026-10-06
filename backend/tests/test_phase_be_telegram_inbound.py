@@ -72,7 +72,7 @@ def _setup(email, monkeypatch, telegram: _Telegram, allowed=("555",)):
             raw = decrypt_raw(rec)
             from app.db.models import Tenant
             tenant = await session.get(Tenant, t["tenant_id"])
-            return raw["inbound_secret"], tenant.webhook_token
+            return raw["inbound_secret"], tenant.webhook_token_hash
     t["secret"], t["token"] = _run(secret_and_token())
     assert "inbound_secret" not in json.dumps(status)          # the secret is never returned
     return t
@@ -250,7 +250,7 @@ def test_alert_channel_put_cannot_touch_inbound_and_kill_flags_bind_telegram(mon
     async def token():
         async with _session_factory() as session:
             from app.db.models import Tenant
-            return (await session.get(Tenant, t["tenant_id"])).webhook_token
+            return (await session.get(Tenant, t["tenant_id"])).webhook_token_hash
     tok = _run(token())
     assert client.post(f"/api/telegram/webhook/{tok}", headers={"X-Telegram-Bot-Api-Secret-Token": "attacker-chosen"}, json=_message("4242", "/help")).status_code == 403
 

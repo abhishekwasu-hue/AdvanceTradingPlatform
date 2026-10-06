@@ -60,6 +60,20 @@ def hash_webhook_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+async def resolve_tenant_by_webhook_token(session: AsyncSession, token: str, *, accept_hash: bool = False) -> Optional[Tenant]:
+    """P0.3 / S13: the URL token is matched by hash; a pre-P0.3 organisation still carrying the plaintext matches
+    on it once and gets its hash filled in. With `accept_hash` the stored hash itself is also accepted as the
+    path identifier (Telegram inbound: the secret header authenticates, the path only names the organisation)."""
+    tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token_hash == hash_webhook_token(token)))
+    if tenant is None and accept_hash:
+        tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token_hash == token))
+    if tenant is None:
+        tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == token))
+        if tenant is not None:
+            tenant.webhook_token_hash = hash_webhook_token(token)
+    return tenant
+
+
 class WebhookTokenResponse(BaseModel):
     # None once the organisation's token exists only as a hash: rotate to get a new URL (shown once).
     webhook_token: Optional[str] = None
@@ -95,13 +109,7 @@ async def tradingview_webhook(
     `webhook_token` alone: TradingView's webhook alerts can't carry a JWT/OAuth header, so the
     token embedded in the URL (from GET /api/webhooks/tradingview/token) is the credential.
     """
-    # P0.3 / S13: the URL token is matched by hash; a pre-P0.3 organisation still carrying the plaintext matches
-    # on it once and gets its hash filled in.
-    tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token_hash == hash_webhook_token(webhook_token)))
-    if tenant is None:
-        tenant = await session.scalar(select(Tenant).where(Tenant.webhook_token == webhook_token))
-        if tenant is not None:
-            tenant.webhook_token_hash = hash_webhook_token(webhook_token)
+    tenant = await resolve_tenant_by_webhook_token(session, webhook_token)
     if tenant is None:
         raise HTTPException(status_code=401, detail="Unknown or invalid webhook token")
     await ensure_tenant_key(session, tenant.id)  # Phase N1

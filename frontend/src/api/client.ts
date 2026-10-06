@@ -180,7 +180,9 @@ export async function tryRefresh(): Promise<boolean> {
           body: JSON.stringify(legacy ? { refresh_token: legacy } : {}),
         });
         if (!response.ok) {
-          accessToken = null;
+          // 401 = cookie missing/revoked: logged out. 429 (shared office IP reloading at once) is transient:
+          // keep whatever access token is in memory and let the caller retry later.
+          if (response.status !== 429) accessToken = null;
           return false;
         }
         const body = (await response.json()) as TokenResponse;

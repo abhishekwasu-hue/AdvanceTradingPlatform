@@ -724,6 +724,10 @@ Never publish a listing without an attached backtest run; the API refuses the su
   audit rows can no longer be deleted (deactivate instead).
 - TradingView webhook URL: stored hashed. Settings shows it only while an organisation still has its pre-P0.3
   plaintext; otherwise the **owner** presses Rotate and copies the URL once. Public API keys resolve by hash.
+  The Telegram inbound webhook path now carries the stored hash (an identifier; the secret header is the
+  credential), so rotating the TradingView URL changes it too: press **Register webhook** again afterwards.
+- Passwords longer than 72 bytes are refused for new passwords only; existing accounts keep logging in
+  (verification truncates exactly as bcrypt did when the hash was made).
 
 ### 1.6ab CoinDCX setup (Phase AK)
 

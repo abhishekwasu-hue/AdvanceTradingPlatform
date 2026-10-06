@@ -63,6 +63,9 @@ services:
       # P0.2 / S1: proxies whose X-Forwarded-For uvicorn trusts (prod overlay: the Caddy container).
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-}
+      JWT_ISSUER: ${JWT_ISSUER:-atp}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-atp-web}
+      REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-atp_refresh}
       JWT_ACCEPT_LEGACY: ${JWT_ACCEPT_LEGACY:-true}
       REFRESH_TOKEN_IN_BODY: ${REFRESH_TOKEN_IN_BODY:-true}
       RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-}

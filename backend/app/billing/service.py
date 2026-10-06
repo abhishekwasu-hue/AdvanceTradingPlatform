@@ -278,7 +278,11 @@ async def meter(session: AsyncSession, tenant_id: int, metric: str, quantity: fl
         key = _usage_key(tenant_id, metric, start.date())
         total = await client.incrbyfloat(key, float(quantity))
         if float(total) <= float(quantity) + 1e-9:
-            await client.expire(key, 2 * 86400)
+            # Key just (re)created - after a Redis restart or eviction mid-day the DB holds the real total; seed from it
+            # so the plan cap keeps counting everything metered today.
+            db_total = await session.scalar(select(func.coalesce(func.sum(UsageRecord.quantity), 0.0)).where(
+                UsageRecord.tenant_id == tenant_id, UsageRecord.metric == metric, UsageRecord.period_start >= start))
+            await client.set(key, float(db_total or 0.0), ex=2 * 86400)
     except Exception:  # noqa: BLE001 - the SUM fallback still answers
         pass
 

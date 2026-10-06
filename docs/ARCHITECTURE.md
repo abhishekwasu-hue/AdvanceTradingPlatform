@@ -3573,9 +3573,12 @@ an HttpOnly cookie (`REFRESH_COOKIE_NAME`, path `/api`); `/auth/refresh` reads c
 access token in memory and bootstraps from the cookie. `audit/log.py` serialises appends with a Postgres
 advisory lock, records daily anchors (`audit_anchors`, worker) and verifies from the last anchor; audit foreign
 keys are RESTRICT. `public_api/keys.resolve_key` looks keys up by hash; `billing.meter`/`usage_today` keep the
-day's total in Redis; `tenants.webhook_token_hash` replaces the plaintext token (legacy plaintext dual-read,
-owner-only rotation shown once). Migrations `a2b4c6d8e0f2`, `b3c5d7e9f1a3`. Tests:
-`tests/test_phase_p0_3_tokens_audit.py`.
+day's total in Redis (seeded from the SUM when the key is recreated after a Redis restart);
+`tenants.webhook_token_hash` replaces the plaintext token (legacy plaintext dual-read, owner-only rotation shown
+once). `webhooks.routes.resolve_tenant_by_webhook_token` is the one lookup for TradingView and Telegram inbound;
+the Telegram path uses the stored hash as the organisation identifier because the plaintext no longer exists
+server-side (the `X-Telegram-Bot-Api-Secret-Token` header authenticates). Migrations `a2b4c6d8e0f2`,
+`b3c5d7e9f1a3`. Tests: `tests/test_phase_p0_3_tokens_audit.py`.
 
 ### Phase BG: local-PC host and the Fyers daily login
 

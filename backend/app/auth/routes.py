@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,7 +47,7 @@ _DUMMY_PASSWORD_HASH = hash_password("not-a-real-password-used-only-for-timing-p
 # tests/test_rate_limiting.py, which re-enables them to test the 429 behavior itself.
 register_rate_limit = rate_limit("auth_register", limit=10, window_seconds=60)
 login_rate_limit = rate_limit("auth_login", limit=10, window_seconds=60)
-refresh_rate_limit = rate_limit("auth_refresh", limit=30, window_seconds=60)
+refresh_rate_limit = rate_limit("auth_refresh", limit=60, window_seconds=60)   # P0.3: every page load refreshes once (shared office IPs)
 forgot_rate_limit = rate_limit("auth_forgot", limit=5, window_seconds=900)
 
 
@@ -344,8 +345,11 @@ async def refresh(request: RefreshRequest, http_request: Request, response: Resp
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token (cookie or body)")
     issued = await rotate_refresh_token(session, presented, http_request)
     if issued is None:
-        _set_refresh_cookie(response, None)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid, expired or revoked")
+        # Headers set on `response` are dropped when the handler raises; build the 401 explicitly so the stale
+        # cookie is cleared and not re-sent on every later request.
+        failed = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Refresh token is invalid, expired or revoked"})
+        _set_refresh_cookie(failed, None)
+        return failed
     return _token_response(issued, response)
 
 

@@ -15,7 +15,8 @@ def test_create_and_decode_access_token():
     token = create_access_token(user_id=42, email="a@b.com")
     payload = decode_access_token(token)
     assert payload["sub"] == "42"
-    assert payload["email"] == "a@b.com"
+    assert "email" not in payload                       # P0.3 / S14: no PII in the token
+    assert payload["iss"] == "atp" and payload["aud"] == "atp-web"
 
 
 def test_decode_rejects_tampered_token():

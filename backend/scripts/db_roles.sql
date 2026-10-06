@@ -49,6 +49,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE atp_migrator IN SCHEMA public GRANT USAGE, SEL
 -- P0.3 / S7: the ledgers are append-only for the application role. Nothing in the app deletes from them
 -- (retention touches login_events, alert_deliveries, notifications, sessions); a compromised app credential
 -- cannot erase the audit trail or trade history either. Re-run after a migration adds such a table.
-REVOKE DELETE ON audit_logs, audit_anchors, orders, order_events, trades FROM atp_app;
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['audit_logs', 'audit_anchors', 'orders', 'order_events', 'trades'] LOOP
+    IF to_regclass(t) IS NOT NULL THEN
+      EXECUTE format('REVOKE DELETE ON %I FROM atp_app', t);
+    END IF;
+  END LOOP;
+END $$;
 -- Nobody but the migrator may create objects in public (PostgreSQL 15+ already defaults to this).
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

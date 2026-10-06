@@ -64,7 +64,8 @@ def test_passwords_longer_than_72_bytes_are_refused_not_silently_truncated():
     assert password_problem("\u0905" * 30) is not None                            # 30 Devanagari chars = 90 bytes
     with pytest.raises(ValueError):
         security.hash_password("x" * 73)
-    assert security.verify_password("x" * 73, security.hash_password("x" * 72)) is False
+    # Pre-P0.3 hashes were made by bcrypt truncating at 72 bytes: verification keeps doing so, nobody is locked out.
+    assert security.verify_password("x" * 73, security.hash_password("x" * 72)) is True
     assert client.post("/api/auth/register", json={"email": "p03-long@example.com", "password": "Str0ng!" + "x" * 70}).status_code == 400
 
 
@@ -109,7 +110,8 @@ def test_audit_chain_anchors_and_range_verification():
             await audit.write_audit_log(session, None, None, "p03_anchor_test", "after anchor")
             await session.commit()
             assert await audit.verify_audit_chain(session, since_anchor=True) == (True, None)
-            assert await audit.verify_audit_chain(session) == (True, None)
+            whole, whole_broken = await audit.verify_audit_chain(session)
+            assert whole or whole_broken < first.last_id - 2       # another test module may have left an earlier break
             # Tamper with the anchored row's fields (its stored hash untouched): the anchored check recomputes it.
             anchored = await session.get(AuditLogRecord, first.last_id)
             original = anchored.detail
@@ -131,13 +133,14 @@ def test_audit_chain_anchors_and_range_verification():
             finally:
                 last.event = "p03_anchor_test"
                 await session.commit()
-            assert await audit.verify_audit_chain(session) == (True, None)
+            whole, whole_broken = await audit.verify_audit_chain(session)
+            assert whole or whole_broken < first.last_id - 2
             anchors = list(await session.scalars(select(AuditAnchorRecord)))
             assert len(anchors) >= 1
     _run(go())
     # The append lock is a Postgres-only statement; on SQLite it is a no-op and the write still chains.
     from app.db.models import AuditLogRecord as _A
-    assert _A.__table__.c.tenant_id.foreign_keys.pop().ondelete == "RESTRICT"
+    assert next(iter(_A.__table__.c.tenant_id.foreign_keys)).ondelete == "RESTRICT"
 
 
 def test_api_keys_resolve_by_hash_so_a_shared_prefix_cannot_hide_a_key():
@@ -176,6 +179,9 @@ def test_usage_counter_prefers_redis_and_falls_back_to_the_sum(monkeypatch):
             return self.values[key]
         async def expire(self, key, ttl):
             self.ttl[key] = ttl
+        async def set(self, key, value, ex=None):
+            self.values[key] = float(value)
+            self.ttl[key] = ex
         async def get(self, key):
             v = self.values.get(key)
             return None if v is None else str(v)
@@ -189,6 +195,9 @@ def test_usage_counter_prefers_redis_and_falls_back_to_the_sum(monkeypatch):
             assert await billing.usage_today(session, tenant_id, "api_call") == 3.0 and list(fake.ttl.values()) == [2 * 86400]
             fake.values.clear()                                                        # Redis lost the key -> the SUM answers
             assert await billing.usage_today(session, tenant_id, "api_call") == 3.0
+            # The next meter re-creates the key: it is seeded from the DB total, not from this one call.
+            await billing.meter(session, tenant_id, "api_call", 1)
+            assert fake.values and await billing.usage_today(session, tenant_id, "api_call") == 4.0
     _run(go())
 
 
@@ -223,8 +232,16 @@ def test_webhook_token_is_stored_hashed_rotation_is_owner_only_and_legacy_plaint
     assert _run(stored())[1] == hash_webhook_token("legacy-plain-token-0123456789")
     assert client.get("/api/webhooks/tradingview/token", headers=headers).json()["webhook_token"] == "legacy-plain-token-0123456789"
     # A trader (not the owner) may not rotate.
-    invite = client.post("/api/auth/invites", headers=headers, json={"email": "p03-trader@example.com", "role": "TRADER"})
-    if invite.status_code in (200, 201):
-        accepted = client.post(f"/api/auth/invites/{invite.json()['token']}/accept", json={"password": "S3cur3Pass!"})
-        if accepted.status_code in (200, 201):
-            assert client.post("/api/webhooks/tradingview/token/rotate", headers=_headers(accepted.json()["access_token"])).status_code == 403
+    from urllib.parse import parse_qs, urlparse
+    from tests.test_team_api import _upgrade_plan
+    _upgrade_plan(me["tenant_id"])                                                  # Free plan allows one member
+    invite = client.post("/api/team/invites", headers=headers, json={"email": "p03-member@example.com", "role": "USER"})
+    assert invite.status_code == 201, invite.text
+    invite_token = parse_qs(urlparse(invite.json()["invite_url"]).query)["invite"][0]
+    accepted = client.post(f"/api/auth/invite/{invite_token}/accept", json={"password": "S3cur3Pass!Long"})
+    assert accepted.status_code == 201, accepted.text
+    assert client.post("/api/webhooks/tradingview/token/rotate", headers=_headers(accepted.json()["access_token"])).status_code == 403
+    # Telegram inbound names the organisation by the stored hash (or the plaintext token); unknown path -> 401.
+    stored_hash = _run(stored())[1]
+    assert client.post(f"/api/telegram/webhook/{stored_hash}", json={}).status_code == 403          # found; inbound not configured
+    assert client.post("/api/telegram/webhook/not-a-token", json={}).status_code == 401

@@ -75,7 +75,11 @@ async def telegram_channel(session: AsyncSession, tenant_id: int) -> Optional[Al
 
 def webhook_url(tenant: Tenant) -> str:
     base = (app_config.FRONTEND_URL or "").rstrip("/")
-    return f"{base}/api/telegram/webhook/{tenant.webhook_token}"
+    # P0.3 / S13: the TradingView token is no longer stored in plaintext, so the Telegram path carries the stored
+    # hash (an identifier, not a credential - the secret header authenticates). Legacy organisations keep the
+    # plaintext path until their hash is filled in. Rotating the TradingView URL changes this URL: re-register.
+    identifier = tenant.webhook_token_hash or tenant.webhook_token
+    return f"{base}/api/telegram/webhook/{identifier}"
 
 
 def status_of(record: Optional[AlertChannelRecord], tenant: Tenant) -> dict:

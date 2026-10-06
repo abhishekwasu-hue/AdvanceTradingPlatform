@@ -59,9 +59,11 @@ export default function SignalsPage() {
       const data = buildTimeframeData(base, selected.timeframes);
       const primaryCandles = data[primaryTf];
 
+      // The S/R overlay is decoration on top of the signal: a refused zones call (anonymous visitor, P0.1)
+      // must not take the signal itself down with it.
       const [enriched, srZones] = await Promise.all([
         api.enrichSignal(selected.id, symbol, data),
-        api.supportResistanceZones(symbol, primaryCandles),
+        api.supportResistanceZones(symbol, primaryCandles).catch(() => [] as SRZone[]),
       ]);
 
       // The engine can return dozens of small swing clusters; keep only the strongest few

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.ai import monitor
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus
 from app.core.enums import OrderSide
-from app.db.models import BacktestRunRecord, FxRateRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.db.models import BacktestRunRecord, StrategyDeploymentRecord, Tenant, TradeRecord
 from app.fx import service as fx
 from app.market_data.calendar import IST
 from app.tax import report as tax
@@ -258,10 +258,15 @@ def test_degradation_proposes_pause_when_live_diverges_from_backtest():
 def test_deploy_assets_parse():
     root = Path(__file__).resolve().parents[2]
     import yaml
-    staging = yaml.safe_load((root / "docker-compose.staging.yml").read_text())
+
+    class _Compose(yaml.SafeLoader):
+        """Compose's `!override` / `!reset` merge tags (P0.1 / S4) are not YAML core; read them as their value."""
+    _Compose.add_constructor("!override", lambda loader, node: loader.construct_sequence(node))
+    _Compose.add_constructor("!reset", lambda loader, node: None)
+    staging = yaml.load((root / "docker-compose.staging.yml").read_text(), Loader=_Compose)
     assert {"postgres", "backend", "worker", "frontend", "backup"} <= set(staging["services"])
     assert staging["services"]["backend"]["environment"]["ENVIRONMENT"] == "staging"
-    assert "18000:8000" in staging["services"]["backend"]["ports"]
+    assert staging["services"]["backend"]["ports"] == ["127.0.0.1:18000:8000"]
     assert subprocess.run(["sh", "-n", str(root / "scripts" / "deploy.sh")], capture_output=True).returncode == 0
     workflow = yaml.safe_load((root / ".github" / "workflows" / "deploy-staging.yml").read_text())
     assert "deploy" in workflow["jobs"] and "STAGING_ENABLED" in workflow["jobs"]["deploy"]["if"]

@@ -220,6 +220,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const detail = await response.text();
+    // P0.1: the analysis endpoints (backtest, scanner, S/R zones, option chain) need a login now; an anonymous
+    // visitor gets a plain sentence instead of a raw 401 body.
+    if (response.status === 401 && !getToken()) {
+      throw new Error("Sign in from the Account tab to use this feature.");
+    }
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }
   if (response.status === 204) return undefined as T;

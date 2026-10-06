@@ -23,7 +23,9 @@ COMPOSE="docker compose $FILES -p $PROJECT"
 TIMEOUT="${DEPLOY_TIMEOUT:-120}"
 log() { printf '%s deploy[%s]: %s\n' "$(date -u +%H:%M:%S)" "$ENV_NAME" "$*"; }
 
-if [ -n "$REF" ]; then log "checking out $REF"; git fetch -q origin "$REF" && git checkout -q "$REF"; fi
+# P0.1: fetch everything, then check the ref out detached - `origin/main`, a branch, a tag or a SHA all work
+# (`git fetch origin origin/main` does not exist as a remote ref, and `checkout main` kept a stale local branch).
+if [ -n "$REF" ]; then log "checking out $REF"; git fetch -q origin && git checkout -q --detach "$REF"; fi
 PREVIOUS="$($COMPOSE images backend --format '{{.ID}}' 2>/dev/null | head -n1 || true)"
 log "building images at $(git rev-parse --short HEAD)"
 $COMPOSE build --pull backend frontend

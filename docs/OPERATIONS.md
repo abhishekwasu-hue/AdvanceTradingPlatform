@@ -680,6 +680,21 @@ Never publish a listing without an attached backtest run; the API refuses the su
   file, which used to make every pasted code "fail" with the stale token. Fyers needs the app's Redirect URL
   stored once as `redirect_uri`. Local PC runbook (Marathi): `docs/LOCAL_PC_MR.md`.
 
+### 1.6ab-0 Hardened environments (P0.1)
+
+- `ENVIRONMENT=production` **and** `ENVIRONMENT=staging` refuse to boot with the default JWT secret, no
+  `SECRETS_ENCRYPTION_KEY`, `ALLOWED_ORIGINS=*` or an empty `METRICS_TOKEN` (the error lists every problem).
+  Neither creates tables at startup: run `alembic upgrade head` (the Dockerfile's migration guard does) - a model
+  ahead of its migration shows up as a failing `alembic check`, not as a silently created table.
+- Staging publishes Postgres/Redis/API/UI on `127.0.0.1` only: reach it through an SSH tunnel or the host's proxy.
+- The worker needs Redis for LIVE entries in these environments: while Redis is unreachable the cycle log says
+  "Redis unreachable - the replica lock is off" and every LIVE deployment shows "Redis replica lock unavailable -
+  LIVE entries paused this cycle"; exits, PAPER and housekeeping continue. Fix Redis, the next cycle resumes.
+- Backtest (incl. Monte Carlo, walk-forward, optimizer), scanner, price-action, S/R and option-chain analysis
+  endpoints need a login; bodies over `MAX_REQUEST_BODY_BYTES` (8 MB, forwarded by compose) get a 413, and Caddy
+  caps chunked uploads to `/api/*` at the same size. The UI asks for a sign-in on those pages instead of showing
+  a raw 401.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

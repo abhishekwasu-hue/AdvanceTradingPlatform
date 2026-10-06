@@ -177,3 +177,65 @@ LIVE शी संबंधित काहीही बदललेलं न�
 - Operator's new upload (ATP_PRO_GRADE_UPGRADE_PLAN.pdf: P0 bugs -> P1 frontend -> P2 options-seller core ->
   P3 backtesting -> P4 DSL v2 -> P5 scale) read; its method says "plan each phase in WORK_LOG, then PRs, stop
   only at the G-* gates". P0 planning starts after this PR merges (next entry).
+
+### 2026-10-06 - P0 plan (ATP_PRO_GRADE_UPGRADE_PLAN, "P0: serious bugs before real users")
+Method per the plan's §0: plan the phase here, then one PR per goal with tests, migrations + drift check, frontend
+build, docs, WORK_LOG; full suite + self-review subagent before merge; ADR-0004/0006, PAPER default, flags for new
+behaviour, no LIVE, secrets only in env/Settings; stop only at the G-* gates. **PAPER-week rule added by us:** the
+operator's local PC is running the PAPER week on `main`, so nothing in P0 may invalidate stored secrets, log the
+operator out, or need a manual step on `git pull` + `up --build` - secret/auth format changes land dual-read
+(old format still accepted) and re-encrypt/re-issue lazily.
+
+Every P0 item was checked against the code before planning (the plan's file names were partly guesses):
+
+| # | Verified in code | PR |
+|---|---|---|
+| S1 | uvicorn behind Caddy without `--proxy-headers`; lockout per account/IP in `auth/lockout.py` (15 min window), no platform-wide rate limit, no progressive delay | P0.2 |
+| S2 | `cache_acquire_lock` fail-open on Redis errors; release = GET then DEL (not atomic); no renewal | **P0.1 (done)** |
+| S3 | `/api/backtest` optional user, `/api/price-action/*`, `/api/support-resistance/zones`, `/api/option-chain/analyze|greeks`, `/api/scanner/run` anonymous; pandas work on the event loop; no body cap | **P0.1 (done)** |
+| S4 | staging overlay added ports next to the base file's 0.0.0.0 ones; production checks skipped for staging | **P0.1 (done)** |
+| S5 | webhook/SMS channel URL check is scheme + hostname only, no private-range resolution; SMS response echoed | P0.2 |
+| S6 | access + refresh token in localStorage; no CSP | P0.3 (dual: cookie refresh + memory access, old clients keep working until they re-login) |
+| S7 | audit chain reads last row without a lock; `atp_app` has DELETE on all tables; audit FK SET NULL | P0.3 (advisory lock per tenant, revoke DELETE on audit/orders/trades, range verification) |
+| S8 | `verify_totp` accepts a code twice inside its window (no last-used step) | P0.2 |
+| S9 | refresh rotation without `SELECT ... FOR UPDATE`; two tabs can revoke each other | P0.2 |
+| S10 | money columns are `Float`; currency assumed INR | P0.4 (Numeric(18,2) migration with drift check; off-hours) |
+| S11 | unset `SECRETS_ENCRYPTION_KEY` -> fixed dev key (refused in production only); Fernet, no AAD; passphrase via plain SHA-256 | P0.4 (fail-closed in hardened envs already; AES-GCM with AAD = tenant_id + row id **dual-read**, re-encrypt on next write; KDF scrypt for passphrases) |
+| S12 | `create_all` at every startup next to Alembic | **P0.1 (done)** |
+| S13 | metering INSERT + SUM per API call; key prefix is 4 random bytes (no uniqueness guarantee); TradingView token stored plaintext on tenants | P0.3 |
+| S14 | HS256 JWT with `email` claim, no iss/aud/kid | P0.3 (iss/aud/kid + rotation, drop email claim; **dual-verify** old tokens until they expire) |
+| T1 | partial fills handled, unfilled remainder of a MARKET order not cancelled; unknown fill -> recorded as requested | P0.5 |
+| T2 | protective stop is always SL-M; adapters whose broker refuses SL-M on options are not asked | P0.5 (capability matrix per adapter, SL-L with trigger band) |
+| T3 | multi-leg: shorts sent before wing fills are confirmed; failed wing fill recorded 0.0 | P0.5 |
+| T4 | emergency exit cancels orders in the DB only (`transition_order`), not at the broker; shorts/longs order not enforced | P0.5 |
+| T5 | every order `MARKET`, no market-protection % / marketable-limit option | P0.5 (order_style per deployment, default broker-neutral protection) |
+| T6 | daily loss on realised P&L only; "day" is UTC | P0.5 |
+| T7 | `time_to_expiry_years` in whole days | P0.6 |
+| B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | P0.6 |
+| infra | deploy.sh rollback re-tags the image but does not restart (verified: tags only); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), P0.7 (the rest) |
+
+Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
+batch-safe, off-hours per the guard. Risks: S6/S14 affect every logged-in client -> dual-read for one release;
+S11 re-encryption must never run before the key ring is warm; T5 changes order types at the broker -> PAPER
+default and G-LIVE gate before any LIVE wiring.
+
+### 2026-10-06 - P0.1: hardening PR 1 (S2, S3, S4, S12, OpenAPI, deploy workflow)
+- S3: backtest, price action, S/R zones, option-chain analyze/greeks and the scanner need a logged-in caller; the
+  backtest is metered for everyone; pandas work runs in the threadpool; bodies over `MAX_REQUEST_BODY_BYTES`
+  (8 MB default) are refused from Content-Length with a 413 (chunked bodies stay with the proxy's limit).
+- S2: `cache_try_lock` reports Redis reachability; release and renew are compare-and-act Lua; the worker renews the
+  lock after the evaluation phase and, in production/staging (or when constructed with `require_lock_for_live`),
+  pauses LIVE *entries* for the cycle while Redis is unreachable (exits, PAPER and housekeeping continue).
+- S4: staging overlay `ports: !override` on loopback; staging boots with the production configuration checks;
+  METRICS_TOKEN now required there too. Deploy workflow passes inputs through the environment, never into the
+  script text, and refuses a ref with unexpected characters.
+- S12: `create_all` only outside production/staging (`tables_created_at_startup`). OpenAPI title/version from
+  `APP_VERSION`.
+- Self-review findings fixed before merge: the body limiter now sits inside CORS/observability (a 413 carries CORS
+  headers and a request id); Monte Carlo, walk-forward and optimizer closed to anonymous callers and moved to the
+  threadpool too; the replica lock is renewed per tenant (the evaluation phase is the long one) and the LIVE gates
+  sit below the venue check; compose forwards `MAX_REQUEST_BODY_BYTES`/`APP_VERSION`; Caddy caps chunked bodies;
+  the staging deploy's ref check accepts `@^~+` and refuses a leading `-`; `deploy.sh` fetches then checks the ref
+  out detached (`git fetch origin origin/main` never worked); the UI asks anonymous users to sign in on the pages
+  that call the closed endpoints instead of surfacing a raw 401, and the Signals page no longer fails entirely when
+  the S/R zones call is refused.

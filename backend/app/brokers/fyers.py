@@ -74,8 +74,8 @@ def _parse_time(raw) -> Optional[datetime]:
     return None
 
 
-_TICKER_OPTION_RE = re.compile(r"^(?P<u>[A-Z][A-Z&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))(?P<strike>\d+(?:\.\d+)?)(?P<right>CE|PE)$")
-_TICKER_FUTURE_RE = re.compile(r"^(?P<u>[A-Z][A-Z&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))FUT$")
+_TICKER_OPTION_RE = re.compile(r"^(?P<u>[A-Z0-9][A-Z0-9&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))(?P<strike>\d+(?:\.\d+)?)(?P<right>CE|PE)$")
+_TICKER_FUTURE_RE = re.compile(r"^(?P<u>[A-Z0-9][A-Z0-9&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))FUT$")
 
 
 def _number(value: str) -> Optional[float]:
@@ -122,7 +122,7 @@ def _contract_fields(row: List[str], ticker: str) -> Tuple[Optional[float], str,
             break
     # Underlying: the first alphabetic (non-numeric) cell in the documented positions beats the ticker prefix.
     for i in (13, 14):
-        if i < len(cells) and cells[i] and not cells[i].replace(".", "").replace("-", "").isdigit():
+        if i < len(cells) and cells[i] and not cells[i].replace(".", "").replace("-", "").isdigit() and cells[i].upper() not in ("CE", "PE"):
             underlying = cells[i].upper()
             break
     if option_type not in ("CE", "PE"):
@@ -131,7 +131,7 @@ def _contract_fields(row: List[str], ticker: str) -> Tuple[Optional[float], str,
 
 
 # Fyers `segment` codes on positions / orders: 10 capital market, 11 F&O, 12 currency, 20 commodity.
-_SEGMENT_EXCHANGE = {10: {"NSE": "NSE", "BSE": "BSE"}, 11: {"NSE": "NFO", "BSE": "BFO"}, 12: {"NSE": "CDS", "BSE": "BCD"}, 20: {"MCX": "MCX", "NSE": "NCDEX"}}
+_SEGMENT_EXCHANGE = {10: {"NSE": "NSE", "BSE": "BSE"}, 11: {"NSE": "NFO", "BSE": "BFO"}, 12: {"NSE": "CDS", "BSE": "BCD"}, 20: {"MCX": "MCX", "NSE": "NSE"}}
 
 
 def _exchange_of(ticker: str, segment=None) -> str:

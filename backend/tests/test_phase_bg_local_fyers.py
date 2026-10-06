@@ -124,14 +124,18 @@ def test_symbol_master_parsing_survives_both_column_layouts():
     decimal = "x,SBIN 27 OCT 26 820.5 CE,14,750,0.05,,,,1,NSE:SBIN26OCT820.5CE,10,11,1,SBIN,3045,820.5,CE,".split(",")
     assert _contract_fields(decimal, decimal[9]) == (820.5, "CE", "SBIN")
 
-    for csv_text in (FO_CSV_17, FO_CSV_18):
+    assert _contract_fields([], "NSE:360ONE26OCT1000CE") == (1000.0, "CE", "360ONE") and _exchange_of("NSE:360ONE26OCT1000CE") == "NFO"
+    assert _contract_fields([], "NSE:NIFTYNXT5026OCT70000PE") == (70000.0, "PE", "NIFTYNXT50")
+    sixteen = "x,ABCDE 27 OCT 26 100 CE,14,1,0.05,,,,1,NSE:ABCDE26OCT100CE,10,11,1,100,CE,".split(",")
+    assert _contract_fields(sixteen, sixteen[9]) == (100.0, "CE", "ABCDE")              # a CE/PE cell is never the underlying
+    for csv_text, fut_name in ((FO_CSV_17, "NIFTY"), (FO_CSV_18, "BAJAJ-AUTO")):
         server = _Fyers(fo_csv=csv_text)
         broker = FyersBroker(BrokerCredentials(api_key="APP-100", access_token="tok-today"), client=httpx.AsyncClient(transport=httpx.MockTransport(server)))
         rows = {i.tradingsymbol: i for i in _run(broker.get_instruments("NFO"))}
         ce = rows["NIFTY2610326000CE"]
         assert ce.strike == 26000.0 and ce.instrument_type == "CE" and ce.name == "NIFTY" and ce.expiry == "2026-10-13" and ce.lot_size == 75
         futs = [i for i in rows.values() if i.instrument_type == "FUT"]
-        assert len(futs) == 1 and futs[0].strike is None and futs[0].name in ("NIFTY", "BAJAJ-AUTO")
+        assert len(futs) == 1 and futs[0].strike is None and futs[0].name == fut_name
         assert all(i.instrument_type in ("CE", "PE", "FUT") for i in rows.values())
 
 
@@ -146,7 +150,7 @@ def test_daily_paste_the_code_login_replaces_yesterdays_token(monkeypatch):
     assert url["authorization_url"].startswith("https://api-t1.fyers.in/api/v3/generate-authcode?") and url["code_param"] == "auth_code"
     assert q["client_id"] == ["APP-100"] and q["redirect_uri"] == ["https://trade.example.com/redirect"] and q["response_type"] == ["code"]
     assert "secret-1" not in url["authorization_url"]
-    assert client.get("/api/broker/upstox/login-url", headers=headers).status_code in (400, 404)
+    assert client.get("/api/broker/upstox/login-url", headers=headers).status_code == 400              # Upstox: the OAuth button, not a pasted code
     status = {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["fyers"]
     assert status["login_url_supported"] is True and status["code_param"] == "auth_code" and status["oauth_supported"] is False
 
@@ -176,6 +180,12 @@ def test_daily_paste_the_code_login_replaces_yesterdays_token(monkeypatch):
     assert res.status_code == 502 and "Invalid auth code" in res.json()["detail"]
     assert {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["fyers"]["token_status"] == "EXPIRED"
     assert client.post("/api/broker/fyers/login-code", headers=headers, json={"code": "   "}).status_code == 400
+    # Odd pastes never 500: a stray "[" (urlparse raises), a code carried in the fragment, a bare JWT-looking code.
+    assert client.post("/api/broker/fyers/login-code", headers=headers, json={"code": "https://[abc?auth_code=x"}).status_code == 502
+    server.token, server.code = "tok-day4", "code-day4"
+    assert client.post("/api/broker/fyers/login-code", headers=headers, json={"code": "https://trade.example.com/redirect#auth_code=code-day4&state=atp"}).status_code == 200
+    assert broker_routes._code_from_paste("eyJhbGciOi.payload.sig", "auth_code") == "eyJhbGciOi.payload.sig"
+    assert broker_routes._code_from_paste("?request_token=abc&action=login", "request_token") == "abc"
 
 
 def test_first_day_check_runs_the_read_only_probes_over_a_stored_fyers_session():
@@ -228,3 +238,18 @@ def test_first_day_check_runs_the_read_only_probes_over_a_stored_fyers_session()
             return await first_day.run(session, tenant, user, now=NOW.astimezone(timezone.utc))
     bare_report = _run(bare())
     assert "Fyers/Kite" in {c.key: c for c in bare_report.checks}["broker_smoke"].fix
+
+
+def test_local_compose_overlay_binds_every_published_port_to_loopback():
+    """Compose concatenates `ports` across files; without `!override` the base file's 0.0.0.0 binding would stay
+    next to the loopback one and the overlay would protect nothing (docker-compose.prod.yml uses the same tag)."""
+    import re
+    from pathlib import Path
+    text = Path(__file__).resolve().parents[2].joinpath("docker-compose.local.yml").read_text(encoding="utf-8")
+    services = re.findall(r"^  (\w+):\n((?:    .*\n?)+)", text, flags=re.M)
+    assert {name for name, _ in services} == {"postgres", "redis", "backend", "frontend"}
+    for name, body in services:
+        assert "ports: !override" in body, name
+        entries = re.findall(r'^\s+- "([^"]+)"', body, flags=re.M)
+        assert entries and all(e.startswith("127.0.0.1:") for e in entries), (name, entries)
+        assert "restart: unless-stopped" in body, name

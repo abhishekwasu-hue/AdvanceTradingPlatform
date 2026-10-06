@@ -167,6 +167,13 @@ LIVE शी संबंधित काहीही बदललेलं न�
      no CE/PE. The ticker is parsed first, columns confirm; both layouts are under test.
 - New: `GET /api/broker/{name}/login-url` + `POST /api/broker/{name}/login-code` (Fyers, Kite), the banner's
   "Open login" + paste box, a smoke `option_chain` step (optional), broker-neutral fix text in the first-day check.
+- Self-review findings fixed before merge: the compose overlay had *added* loopback bindings next to the base
+  file's 0.0.0.0 ones (Compose concatenates `ports`) - `ports: !override` like the prod overlay, with a test that
+  every published port in the overlay is `127.0.0.1:`; `_code_from_paste` no longer 500s on a stray `[` and reads a
+  code carried in the URL fragment; `login-code` has the same verified-email check, failure notification and
+  "mark EXPIRED only when the broker answered" rule as `/authenticate`; the banner opens the tab inside the click
+  (popup blockers) and always shows the link; digit-leading underlyings (360ONE, NIFTYNXT50) parse from the ticker;
+  NSE commodity segment no longer labelled NCDEX; a CE/PE cell is never taken as the underlying.
 - Operator's new upload (ATP_PRO_GRADE_UPGRADE_PLAN.pdf: P0 bugs -> P1 frontend -> P2 options-seller core ->
   P3 backtesting -> P4 DSL v2 -> P5 scale) read; its method says "plan each phase in WORK_LOG, then PRs, stop
   only at the G-* gates". P0 planning starts after this PR merges (next entry).

@@ -12,10 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
+from app.brokers.exceptions import BrokerError
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.smoke import run_smoke
 from app.brokers.token_lifecycle import (
+    _is_auth_failure,
     build_adapter,
     LOGIN_URL_BROKERS,
     OAUTH_BROKERS,
@@ -319,14 +321,19 @@ class LoginCodeBody(BaseModel):
 
 
 def _code_from_paste(raw: str, code_param: str) -> str:
-    """Accept the bare code or the whole redirected URL pasted from the address bar."""
+    """Accept the bare code or the whole redirected URL pasted from the address bar (query or fragment)."""
     text = (raw or "").strip()
-    if "?" in text or "&" in text or "=" in text:
+    if "?" in text or "&" in text or "=" in text or "#" in text:
         from urllib.parse import parse_qs, urlparse
-        query = urlparse(text).query if "://" in text else text.lstrip("?")
-        values = parse_qs(query).get(code_param) or parse_qs(query).get("code") or []
-        if values:
-            return values[0].strip()
+        try:
+            parsed = urlparse(text) if "://" in text else None
+        except ValueError:                      # a stray "[" makes urlparse raise; treat the paste as the bare code
+            return text
+        parts = [parsed.query, parsed.fragment] if parsed is not None else [text.lstrip("?#")]
+        for part in parts:
+            values = parse_qs(part).get(code_param) or parse_qs(part).get("code") or []
+            if values and values[0].strip():
+                return values[0].strip()
     return text
 
 
@@ -362,8 +369,10 @@ async def broker_login_code(
     yesterday's access token, the adapter exchanges it, the new token is stored encrypted and the
     session is VALID until the broker's next daily expiry. Audited like /authenticate."""
     from app.auth.scopes import has_scope, scope_denied
+    from app.auth.verification import ensure_verified
     if not has_scope(user, "brokers:write"):
         raise scope_denied(user, "brokers:write")
+    ensure_verified(user, "Logging in to the broker")
     await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
     _ensure_known_broker(name)
     spec = LOGIN_URL_BROKERS.get(name)
@@ -381,13 +390,18 @@ async def broker_login_code(
         raise HTTPException(status_code=400, detail=f"{name} needs api_key and api_secret stored before a code can be exchanged")
     credentials.access_token = None
     credentials.request_token = code
-    adapter = get_broker_adapter(name, credentials)
     try:
+        adapter = get_broker_adapter(name, credentials)
         await adapter.authenticate()
     except Exception as exc:  # noqa: BLE001 - every failure is a clean 502, audited
         await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}/{label}: {exc}")
-        mark_expired(record)
+        # The broker answered (a rejected / used code, a dead token): the stored session is not usable.
+        # A network failure says nothing about it, so the status is left alone, as /authenticate does.
+        if isinstance(exc, BrokerError) or _is_auth_failure(exc):
+            mark_expired(record)
         await session.commit()
+        await notify(session, user.tenant_id, NotificationType.TOKEN_EXPIRED if _is_auth_failure(exc) else NotificationType.BROKER_DISCONNECT,
+                     title=f"{name} login failed", message=str(exc), severity=NotificationSeverity.CRITICAL, user_id=user.id)
         raise HTTPException(status_code=502, detail=f"Broker login failed: {exc}") from exc
     new_token = adapter.access_token
     if not new_token:

@@ -16,7 +16,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, { ok: boolean; text: string }>>({});
+  const [notes, setNotes] = useState<Record<string, { ok: boolean; text: string; link?: string }>>({});
 
   useEffect(() => {
     api.brokerTokenStatus().then(setTokens).catch((e) => setError(String(e)));
@@ -29,11 +29,18 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
   async function openLogin(t: BrokerTokenInfo) {
     setBusy(true);
     setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, text: "" } }));
+    // Open the tab synchronously inside the click (popup blockers refuse a window opened after an await),
+    // then point it at the broker once the URL is back; the note always carries the link as a fallback.
+    const win = window.open("about:blank", "_blank");
+    if (win) win.opener = null;
     try {
       const { authorization_url, code_param } = await api.brokerLoginUrl(t.broker_name, t.account_label ?? "primary");
-      window.open(authorization_url, "_blank", "noopener");
-      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, text: `Login page opened in a new tab. After logging in, copy the ${code_param} from the address bar (or the whole address) and paste it here.` } }));
+      if (win) win.location.href = authorization_url;
+      setNotes((n) => ({ ...n, [keyOf(t)]: { ok: true, link: authorization_url, text: win
+        ? `Login page opened in a new tab. After logging in, copy the ${code_param} from the address bar (or the whole address) and paste it here.`
+        : `The browser blocked the new tab - open the login page with the link, then paste the ${code_param} here.` } }));
     } catch (e) {
+      if (win) win.close();
       setNotes((n) => ({ ...n, [keyOf(t)]: { ok: false, text: String(e).replace(/^Error:\s*/, "") } }));
     } finally {
       setBusy(false);
@@ -143,7 +150,12 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                   <LogIn size={12} /> {busy ? "Logging in…" : "Login with code"}
                 </button>
                 {notes[keyOf(t)]?.text && (
-                  <span className={`basis-full ${notes[keyOf(t)].ok ? "text-accent" : "text-danger"}`}>{notes[keyOf(t)].text}</span>
+                  <span className={`basis-full ${notes[keyOf(t)].ok ? "text-accent" : "text-danger"}`}>
+                    {notes[keyOf(t)].text}
+                    {notes[keyOf(t)].link && (
+                      <> <a href={notes[keyOf(t)].link} target="_blank" rel="noopener noreferrer" className="underline">Open the {t.broker_name} login page</a></>
+                    )}
+                  </span>
                 )}
               </div>
             )}

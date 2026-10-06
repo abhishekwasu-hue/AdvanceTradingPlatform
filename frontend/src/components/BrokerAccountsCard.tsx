@@ -74,7 +74,7 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
                   <button onClick={() => act(a.id, () => api.syncAccount(a.id))} disabled={busy === a.id} className="flex items-center gap-1 text-brand hover:underline disabled:opacity-50">
                     <RefreshCw size={11} className={busy === a.id ? "animate-spin" : ""} /> Sync
                   </button>
-                  <button onClick={() => runSmoke(a)} disabled={smokeBusy === a.id} title="Read-only: profile, funds, instruments, an index quote, one option contract through the worker's symbol translation, positions, order book. Places nothing." className="text-slate-200 hover:underline disabled:opacity-50">
+                  <button onClick={() => runSmoke(a)} disabled={smokeBusy === a.id} title="Read-only: profile, funds, instruments, an index quote, one option contract through the worker's symbol translation, the option chain, positions, order book. Places nothing." className="text-slate-200 hover:underline disabled:opacity-50">
                     {smokeBusy === a.id ? "Checking…" : "Read-only check"}
                   </button>
                   {!a.is_default && <button onClick={() => act(a.id, () => api.setDefaultAccount(a.id))} className="text-muted hover:underline">Make default</button>}

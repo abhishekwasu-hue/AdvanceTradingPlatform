@@ -11,24 +11,26 @@
 #   * Every service restarts with Docker Desktop (`unless-stopped`), so a PC restart or a Docker
 #     Desktop update brings the API, worker and database back without a command. A service stopped
 #     on purpose (`docker compose stop`) stays stopped.
+# `ports: !override` replaces the base file's list (Compose merges `ports` by concatenation otherwise, which
+# would keep the 0.0.0.0 binding next to the loopback one - docker-compose.prod.yml does the same).
 # Secrets are not here: they come from `.env` (operator) and Settings (broker/AI keys), as always.
 services:
   postgres:
-    ports:
+    ports: !override
       - "127.0.0.1:5432:5432"
     restart: unless-stopped
 
   redis:
-    ports:
+    ports: !override
       - "127.0.0.1:6379:6379"
     restart: unless-stopped
 
   backend:
-    ports:
+    ports: !override
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
 
   frontend:
-    ports:
+    ports: !override
       - "127.0.0.1:8080:80"
     restart: unless-stopped

@@ -32,7 +32,10 @@ class Tenant(Base):
     # carry a JWT/OAuth header - the token itself, embedded in the webhook URL, is the auth.
     # Generated once at tenant creation (app/auth/routes.py::register); rotatable via
     # POST /api/webhooks/tradingview/token/rotate if it ever leaks.
-    webhook_token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # P0.3 / S13: the TradingView URL token is stored hashed; `webhook_token` (plaintext) is only still set for
+    # organisations created before P0.3 and is cleared on the first rotation. A new organisation has the hash only.
+    webhook_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    webhook_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     # Owner-set policy (Phase C3): LIVE deployments, broker credentials and the OAuth login
     # require the caller to have TOTP MFA enabled and verified on the current session.
     require_mfa_for_live: Mapped[bool] = mapped_column(nullable=False, default=False)
@@ -1219,13 +1222,28 @@ class AuditLogRecord(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # P0.3 / S7: RESTRICT, never SET NULL - tenant_id/user_id are inside the hash, so nulling them would break the chain.
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
     event: Mapped[str] = mapped_column(String(100), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+
+class AuditAnchorRecord(Base):
+    """P0.3 / S7: the audit chain's head, recorded once a day by the worker (`app/audit/log.py::record_anchor`).
+    A verification can start from the latest anchor instead of row 1, and anchors copied off-site let a
+    rewritten prefix be detected even if every hash in the table was recomputed."""
+
+    __tablename__ = "audit_anchors"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    last_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    head_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    anchored_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
 
 
 class NotificationRecord(Base):

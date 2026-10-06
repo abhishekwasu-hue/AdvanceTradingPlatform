@@ -712,6 +712,19 @@ Never publish a listing without an attached backtest run; the API refuses the su
   use the next code. A refresh token presented again within 30 s of its rotation is honoured (two tabs); later
   reuse still ends the session.
 
+### 1.6ab-2 Sessions, audit anchors, webhook URL (P0.3)
+
+- The browser keeps the refresh token in an HttpOnly cookie and the access token in memory; a reload refreshes
+  from the cookie. Rotating `JWT_SECRET_KEY`: put the old value in `JWT_PREVIOUS_SECRET_KEYS`, restart, remove it
+  a day later. Set `REFRESH_TOKEN_IN_BODY=false` once every browser runs the new UI; `JWT_ACCEPT_LEGACY=false`
+  a day after the P0.3 deploy.
+- The worker pins the audit chain head daily (`audit_anchors`); the monthly check and `verify_backup.sh` can
+  verify from the last anchor. Re-run `scripts/db_roles.sql` after the P0.3 migrations so `atp_app` loses
+  DELETE on the ledgers (audit_logs, audit_anchors, orders, order_events, trades). Users and organisations with
+  audit rows can no longer be deleted (deactivate instead).
+- TradingView webhook URL: stored hashed. Settings shows it only while an organisation still has its pre-P0.3
+  plaintext; otherwise the **owner** presses Rotate and copies the URL once. Public API keys resolve by hash.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

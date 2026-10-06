@@ -532,8 +532,10 @@ export type NotificationEventType =
 export type NotificationSeverity = "INFO" | "WARNING" | "CRITICAL" | "EMERGENCY";
 
 export interface WebhookTokenResponse {
-  webhook_token: string;
-  webhook_url: string;
+  // null once the token exists only as a hash on the server (P0.3): rotate to get a new URL, shown once.
+  webhook_token: string | null;
+  webhook_url: string | null;
+  configured?: boolean;
 }
 
 export interface NotificationEntry {

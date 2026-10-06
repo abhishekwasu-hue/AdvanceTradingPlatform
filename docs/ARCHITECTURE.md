@@ -3565,6 +3565,18 @@ channel models call `check_url_literal` at save time, the senders `check_url_res
 `accept_totp` refuse a replay. `sessions.rotate_refresh_token` locks the row and keeps a
 `REFRESH_REUSE_GRACE_SECONDS` window for a just-rotated token. Tests: `tests/test_phase_p0_2_auth_egress.py`.
 
+### P0.3: tokens, audit chain, API keys and the webhook token
+
+`auth/security.py` signs access tokens with `iss`/`aud`/`kid` (HS256, `JWT_PREVIOUS_SECRET_KEYS` for rotation,
+`JWT_ACCEPT_LEGACY` for the minutes after a deploy) and refuses passwords over 72 bytes. The refresh token is
+an HttpOnly cookie (`REFRESH_COOKIE_NAME`, path `/api`); `/auth/refresh` reads cookie or body; the UI keeps the
+access token in memory and bootstraps from the cookie. `audit/log.py` serialises appends with a Postgres
+advisory lock, records daily anchors (`audit_anchors`, worker) and verifies from the last anchor; audit foreign
+keys are RESTRICT. `public_api/keys.resolve_key` looks keys up by hash; `billing.meter`/`usage_today` keep the
+day's total in Redis; `tenants.webhook_token_hash` replaces the plaintext token (legacy plaintext dual-read,
+owner-only rotation shown once). Migrations `a2b4c6d8e0f2`, `b3c5d7e9f1a3`. Tests:
+`tests/test_phase_p0_3_tokens_audit.py`.
+
 ### Phase BG: local-PC host and the Fyers daily login
 
 The PAPER week runs on the operator's Windows PC (Docker Desktop) against Fyers, not on a droplet against

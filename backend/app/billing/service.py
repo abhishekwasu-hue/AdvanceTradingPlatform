@@ -258,15 +258,29 @@ async def sweep(session: AsyncSession, now: Optional[datetime] = None) -> Dict[s
 
 # --- usage metering ------------------------------------------------------------------------
 
+def _usage_key(tenant_id: int, metric: str, day) -> str:
+    return f"usage:{tenant_id}:{metric}:{day.isoformat()}"
+
+
 async def meter(session: AsyncSession, tenant_id: int, metric: str, quantity: float = 1.0, *, source: str = "api",
                 metadata: Optional[dict] = None, commit: bool = True) -> None:
-    """One usage record. Daily period buckets keep the table small enough to sum per month."""
+    """One usage record. Daily period buckets keep the table small enough to sum per month. P0.3 / S13: the day's
+    running total is also kept in Redis (best effort) so the per-request allowance check is an O(1) read, not a SUM."""
     now = _utcnow()
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     session.add(UsageRecord(tenant_id=tenant_id, metric=metric, quantity=quantity, period_start=start, period_end=start + timedelta(days=1),
                             source=source, metadata_json=json.dumps(metadata) if metadata else None))
     if commit:
         await session.commit()
+    try:
+        from app.cache.client import _get_client
+        client = _get_client()
+        key = _usage_key(tenant_id, metric, start.date())
+        total = await client.incrbyfloat(key, float(quantity))
+        if float(total) <= float(quantity) + 1e-9:
+            await client.expire(key, 2 * 86400)
+    except Exception:  # noqa: BLE001 - the SUM fallback still answers
+        pass
 
 
 async def usage_summary(session: AsyncSession, tenant_id: int, *, days: int = 30) -> Dict[str, float]:
@@ -278,6 +292,13 @@ async def usage_summary(session: AsyncSession, tenant_id: int, *, days: int = 30
 
 async def usage_today(session: AsyncSession, tenant_id: int, metric: str) -> float:
     start = _utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        from app.cache.client import _get_client
+        cached = await _get_client().get(_usage_key(tenant_id, metric, start.date()))
+        if cached is not None:
+            return float(cached)
+    except Exception:  # noqa: BLE001
+        pass
     total = await session.scalar(select(func.coalesce(func.sum(UsageRecord.quantity), 0.0)).where(
         UsageRecord.tenant_id == tenant_id, UsageRecord.metric == metric, UsageRecord.period_start >= start))
     return float(total or 0)

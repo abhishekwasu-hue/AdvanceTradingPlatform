@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, clearToken, getToken, setToken } from "../api/client";
+import { api, clearToken, setToken, tryRefresh } from "../api/client";
 import type { UserResponse } from "../types";
 
 interface AuthState {
@@ -24,14 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    api
-      .me()
-      .then(setUser)
+    // P0.3 / S6: nothing survives a reload in memory; the HttpOnly refresh cookie (or a token an older build
+    // left in storage) gets a fresh access token, then the profile.
+    tryRefresh()
+      .then((ok) => (ok ? api.me().then(setUser) : undefined))
       .catch(() => clearToken())
       .finally(() => setLoading(false));
   }, []);

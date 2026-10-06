@@ -282,6 +282,10 @@ class TradeRecord(Base):
     # can cancel the SL when it exits on target, and reconciliation can match broker fills.
     broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sl_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # P0.5 / T6: the last price the position monitor saw and when, so the daily-loss limit can count the
+    # marked-to-market loss of open positions, not only realised P&L.
+    mark_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    mark_time: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Which autonomous deployment opened this trade; null for trades entered by hand from the
     # console or via a TradingView webhook.
     deployment_id: Mapped[int | None] = mapped_column(
@@ -463,6 +467,11 @@ class StrategyDeploymentRecord(Base):
     regime_filter: Mapped[str | None] = mapped_column(String(80), nullable=True)
     # Phase AS: INTRADAY (MIS, squared off at the close) or SWING (CNC / NRML, held overnight).
     holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
+    # P0.5 / T5: how LIVE entries are sent. MARKET (default, unchanged behaviour) or PROTECTED_LIMIT - a marketable
+    # limit `market_protection_pct` past the signal price (default 0.5%), so a thin book cannot fill a market
+    # order far from the price the strategy sized on. Unfilled remainder is cancelled by the fill check (T1).
+    order_style: Mapped[str] = mapped_column(String(20), nullable=False, default="MARKET", server_default="MARKET")
+    market_protection_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)

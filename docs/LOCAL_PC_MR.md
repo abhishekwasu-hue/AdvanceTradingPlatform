@@ -27,7 +27,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml ps
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.local.yml exec backend alembic current
-# अपेक्षित: c4d6e8f0a2b4 (head) किंवा नंतरचं (P0.2-P0.4 च्या migrations: mfa_last_step, audit_anchors, webhook_token_hash, NUMERIC money columns). "(head)" नसेल तर, market बंद असताना:
+# अपेक्षित: d5e7f9a1b3c5 (head) किंवा नंतरचं (P0.2-P0.5 च्या migrations: mfa_last_step, audit_anchors, webhook_token_hash, NUMERIC money columns, order_style/mark_price). "(head)" नसेल तर, market बंद असताना:
 docker compose -f docker-compose.yml -f docker-compose.local.yml exec backend alembic upgrade head
 ```
 

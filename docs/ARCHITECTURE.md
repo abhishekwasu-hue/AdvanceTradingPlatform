@@ -3580,6 +3580,19 @@ the Telegram path uses the stored hash as the organisation identifier because th
 server-side (the `X-Telegram-Bot-Api-Secret-Token` header authenticates). Migrations `a2b4c6d8e0f2`,
 `b3c5d7e9f1a3`. Tests: `tests/test_phase_p0_3_tokens_audit.py`.
 
+**P0.5 (T1-T6).** `execution/router.py` confirms every LIVE fill against the broker's book
+(`_resolve_fill_with_status`): a partial fill cancels the working remainder, an unfilled order is cancelled and no
+position is booked, an unconfirmable one is recorded as requested with `ExecutionResult.broker_uncertain`, which
+`signal_execution` turns into the broker-uncertain flag. `brokers/base.py` carries `BrokerCapabilities` per adapter
+and `stop_order_params` (SL-M, or SL with a limit band where the broker refuses SL-M on options - Kite); the router,
+`trading/stop_guard.py` and the trailing-stop modify use it. `execution/multileg._place_live_legs` sends shorts only
+after every wing's fill is confirmed. The emergency exit (`kill_switch/routes.py`) cancels LIVE orders at the broker
+and closes shorts first. Deployments carry `order_style` / `market_protection_pct` (PROTECTED_LIMIT = marketable
+limit; MARKET default). `market_data/calendar.trading_day_start` is the day boundary for daily limits; the position
+monitor writes `trades.mark_price/mark_time` and `trading/persistence.open_unrealised_pnl` adds the marked P&L of
+open positions to the daily and strategy loss checks. Migration `d5e7f9a1b3c5`. Tests:
+`tests/test_phase_p0_5_trading_safety.py`.
+
 **P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
 `Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
 payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on

@@ -63,7 +63,7 @@ async def execute_signal_for_user(
     broker: Optional[BrokerInterface] = None, deployment_id: Optional[int] = None,
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
-    holding: str = "INTRADAY",
+    holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -254,6 +254,10 @@ async def execute_signal_for_user(
             algo_id=tenant.algo_id if tenant is not None else None,
             # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike.
             product=product_for(holding, contract.kind.value if contract is not None else "UNDERLYING", order_exchange),
+            # P0.5 / T5 + T2: the deployment's entry style; the stop's order type follows what the broker accepts
+            # for the instrument kind actually traded.
+            order_style=order_style or "MARKET", market_protection_pct=market_protection_pct,
+            is_option=(contract.kind.value == "OPTION") if contract is not None else None,
         )
         async def hierarchy_check(quantity: float):
             # Phase I1: every applicable risk limit (GLOBAL -> TENANT -> USER -> ACCOUNT ->
@@ -318,6 +322,11 @@ async def execute_signal_for_user(
             order.quantity = result.trade.quantity
         if result.broker_order_id:
             order.broker_order_id = result.broker_order_id
+        if result.broker_uncertain and tenant is not None and mode == ExecutionMode.LIVE.value:
+            # P0.5 / T1: the fill could not be confirmed or an unfilled remainder could not be cancelled - the
+            # book is only trustworthy again after reconciliation, so LIVE entries pause now.
+            await mark_broker_uncertain(session, tenant, f"order {order.id} ({signal.symbol}): " + "; ".join(
+                r for r in result.reasons if "reconciliation" in r)[:400], user_id=user.id)
         venue = broker.name if (execution_mode == ExecutionMode.LIVE and broker is not None) else "paper broker"
         order = await transition_order(session, order, OrderStatus.SUBMITTED, detail=f"Submitted to {venue}")
         order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")

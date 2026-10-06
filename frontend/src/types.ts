@@ -944,6 +944,8 @@ export interface Deployment {
   id: number;
   regime_filter?: string[] | null;
   holding?: string;
+  order_style?: string;
+  market_protection_pct?: number | null;
   strategy_id: string;
   symbol: string;
   exchange: string;
@@ -1092,6 +1094,9 @@ export interface DeploymentCreateRequest extends ContractRules {
   regime_filter?: string[] | null;
   /** Phase AS: SWING = daily candles, held overnight. */
   holding?: "INTRADAY" | "SWING";
+  /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */
+  order_style?: "MARKET" | "PROTECTED_LIMIT";
+  market_protection_pct?: number | null;
   strategy_id: string;
   symbol: string;
   exchange: string;

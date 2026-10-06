@@ -36,7 +36,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
-from app.brokers.base import BrokerInterface
+from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, Quote)
@@ -80,6 +80,8 @@ def _f(value, default: float = 0.0) -> float:
 
 class CoinDCXBroker(BrokerInterface):
     name = "coindcx"
+    # No market stop at CoinDCX: SL-M is sent as a stop-limit with the limit 0.5% past the trigger (place_order).
+    capabilities = BrokerCapabilities(stop_market=False, stop_limit=True)
     max_tag_length = 36          # client_order_id
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
-from app.brokers.base import BrokerInterface
+from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
@@ -58,6 +58,8 @@ class ZerodhaBroker(BrokerInterface):
 
     name = "zerodha"
     BASE_URL = "https://api.kite.trade"
+    # Kite does not accept SL-M orders on option contracts; the protective stop goes as SL (limit band) there.
+    capabilities = BrokerCapabilities(stop_market_on_options=False)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
         if not credentials.api_key:

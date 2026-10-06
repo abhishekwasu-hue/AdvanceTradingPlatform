@@ -77,6 +77,14 @@ def to_ist(now: Optional[datetime] = None) -> datetime:
     return now.astimezone(IST)
 
 
+def trading_day_start(now: Optional[datetime] = None) -> datetime:
+    """P0.5 / T6: the start of the current Indian trading day (00:00 IST) as an aware UTC instant. "Today's"
+    trades, losses and counts are bounded by this, never by UTC midnight (05:30 IST), which split one session
+    in two and let a pre-05:30 loss vanish from the daily limit."""
+    ist_midnight = to_ist(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    return ist_midnight.astimezone(timezone.utc)
+
+
 def is_trading_day(day: date, holidays: Iterable[date] = ()) -> bool:
     return day.weekday() < 5 and day not in set(holidays)
 

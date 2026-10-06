@@ -115,15 +115,19 @@ def strictest(limits: List[RiskLimitRecord]) -> Dict[str, RiskLimitRecord]:
 
 async def _measure(session: AsyncSession, ctx: RiskContext, limit_type: RiskLimitType, rule: RiskLimitRecord) -> Tuple[float, str]:
     """Current value of the quantity `limit_type` bounds, and a short label for it."""
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    from app.market_data.calendar import trading_day_start
+    from app.trading.persistence import open_unrealised_pnl
+    today_start = trading_day_start()      # P0.5 / T6: Indian trading day, not UTC midnight
     if limit_type == RiskLimitType.MAX_DAILY_LOSS:
         pnl = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
             TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.exit_time >= today_start))
-        return float(-min(0.0, pnl or 0.0)), "realised loss today"
+        marked = float(pnl or 0.0) + await open_unrealised_pnl(session, ctx.tenant_id)
+        return float(-min(0.0, marked)), "realised + marked-to-market loss today"
     if limit_type == RiskLimitType.MAX_STRATEGY_LOSS:
         pnl = await session.scalar(select(func.coalesce(func.sum(TradeRecord.pnl), 0.0)).where(
             TradeRecord.tenant_id == ctx.tenant_id, TradeRecord.strategy_id == ctx.strategy_id, TradeRecord.exit_time >= today_start))
-        return float(-min(0.0, pnl or 0.0)), f"{ctx.strategy_id} realised loss today"
+        marked = float(pnl or 0.0) + await open_unrealised_pnl(session, ctx.tenant_id, strategy_id=ctx.strategy_id)
+        return float(-min(0.0, marked)), f"{ctx.strategy_id} realised + marked-to-market loss today"
     if limit_type == RiskLimitType.MAX_LOSS_PER_TRADE:
         per_unit = ctx.risk_per_unit if ctx.risk_per_unit is not None else (abs(ctx.entry - ctx.stop_loss) if ctx.entry is not None and ctx.stop_loss is not None else 0.0)
         return float(per_unit * ctx.quantity), "loss at the stop"

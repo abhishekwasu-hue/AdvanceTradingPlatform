@@ -118,12 +118,17 @@ def test_fill_price_falls_back_to_signal_entry_when_order_book_unsupported():
     assert broker.book_calls == 1  # gave up immediately rather than retrying an unsupported call
 
 
-def test_fill_price_falls_back_when_order_never_shows_filled():
+def test_order_that_never_fills_is_cancelled_and_no_position_is_booked():
+    """P0.5 / T1: an entry the book still shows unfilled after the poll window is cancelled at the broker; the
+    platform never records a position against the signal price for it."""
     broker = _LiveBroker(fill_price=None)
     router = _router(broker)
-    result = asyncio.run(router.execute(_signal(), TradingDayState()))
-    assert result.trade.entry_price == 100.0
-    assert broker.book_calls == router.fill_poll_attempts
+    state = TradingDayState()
+    result = asyncio.run(router.execute(_signal(), state))
+    assert result.executed is False and result.trade is None and not result.system_failure
+    assert any("cancelled at the broker" in r for r in result.reasons)
+    assert broker.book_calls >= router.fill_poll_attempts
+    assert len(broker.placed) == 1 and state.trades_today == 0 and state.open_positions == 0   # no stop, no counters
 
 
 def test_failed_protective_stop_keeps_the_fill_but_flags_it():

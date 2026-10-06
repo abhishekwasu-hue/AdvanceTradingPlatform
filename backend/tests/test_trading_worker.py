@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.brokers import token_lifecycle
 from app.brokers.base import BrokerInterface
-from app.brokers.models import BrokerOrderResponse, BrokerProfile
+from app.brokers.models import BrokerOrderStatus, BrokerOrderResponse, BrokerProfile
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import OHLCVBar, Signal
 from app.db.models import (
@@ -62,7 +62,11 @@ class _FakeBroker(BrokerInterface):
         return BrokerOrderResponse(order_id=f"ORD-{len(self.placed)}", status="OPEN")
     async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None): raise NotImplementedError
     async def cancel_order(self, order_id): return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
-    async def get_order_book(self): return []
+    async def get_order_book(self):
+        # P0.5 / T1: a real book lists the order just placed; filled at the fake's LTP.
+        return [BrokerOrderStatus(order_id=f"ORD-{i + 1}", symbol=o.symbol, transaction_type=o.transaction_type, quantity=o.quantity,
+                                  filled_quantity=o.quantity, order_type=o.order_type, status="COMPLETE", average_price=self.ltp)
+                for i, o in enumerate(self.placed)]
     async def get_trade_book(self): return []
     async def get_positions(self): return []
     async def get_holdings(self): return []

@@ -318,6 +318,7 @@ async def _monitor_group(
     for leg in legs:
         try:
             prices[leg.id] = await price_lookup(leg.symbol, exchange_for_trade(leg))
+            _mark(leg, prices[leg.id])
         except Exception as exc:  # noqa: BLE001 - no decision on a group with a missing leg price
             logger.warning("No price for leg %s of group %s: %s", leg.symbol, leg.leg_group_id, exc)
             return [CloseOutcome(trade_id=l.id, closed=False, warnings=[f"Price unavailable for {leg.symbol}: {exc}"]) for l in legs]
@@ -371,7 +372,12 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
             live_broker = await broker_for_trade(session, trade)
         if trade.mode == ExecutionMode.LIVE.value and trade.sl_order_id and live_broker is not None:
             try:
-                await live_broker.modify_order(trade.sl_order_id, trigger_price=update.stop_loss)
+                # P0.5 / T2: a stop placed as SL (limit) moves its limit with the trigger; SL-M has no limit.
+                stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
+                stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, update.stop_loss,
+                                                                      is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")
+                await live_broker.modify_order(trade.sl_order_id, trigger_price=update.stop_loss,
+                                               price=stop_limit if stop_type == "SL" else None)
             except Exception as exc:  # noqa: BLE001 - the software stop still applies
                 logger.warning("Could not move broker stop %s for trade %s: %s", trade.sl_order_id, trade.id, exc)
     if changed:
@@ -401,8 +407,10 @@ async def monitor_open_positions(
     for trade in open_trades:
         if trade.leg_group_id:
             groups.setdefault(trade.leg_group_id, []).append(trade)
+    marked = False
     for group_id, legs in groups.items():
         outcomes.extend(await _monitor_group(session, legs, price_lookup, broker=broker, user_id=user_id))
+        marked = marked or any(leg.mark_time is not None for leg in legs)
     for trade in open_trades:
         if trade.leg_group_id:
             continue
@@ -412,6 +420,8 @@ async def monitor_open_positions(
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))
             continue
+        _mark(trade, price)
+        marked = True
         # Phase J1: dynamic exits - tighten the stop (trailing / break-even) or close on time,
         # with the same rule code the backtest engine runs.
         if trade.exit_rules:
@@ -438,4 +448,17 @@ async def monitor_open_positions(
         if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
             trade_broker = await broker_for_trade(session, trade)
         outcomes.append(await close_position(session, trade, exit_price, reason, broker=trade_broker, user_id=user_id))
+    if marked:
+        # P0.5 / T6: persist the marks of positions that stayed open (close_position committed its own).
+        try:
+            await session.commit()
+        except Exception as exc:  # noqa: BLE001 - a failed mark write must not fail the sweep
+            logger.warning("Could not persist position marks: %s", exc)
+            await session.rollback()
     return outcomes
+
+
+def _mark(trade: TradeRecord, price: float) -> None:
+    """P0.5 / T6: remember the last price seen for an open position (the daily-loss limit reads it)."""
+    trade.mark_price = float(price)
+    trade.mark_time = datetime.now(timezone.utc)

@@ -214,6 +214,10 @@ class DeploymentCreateRequest(ContractRulesRequest):
     regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
     # Phase AS: SWING positions are held overnight (CNC / NRML) and never squared off at the close.
     holding: Literal["INTRADAY", "SWING"] = "INTRADAY"
+    # P0.5 / T5: how LIVE entries are sent. MARKET (default) or PROTECTED_LIMIT - a marketable limit
+    # `market_protection_pct` past the signal price (0.5% when omitted). PAPER fills are unaffected.
+    order_style: Literal["MARKET", "PROTECTED_LIMIT"] = "MARKET"
+    market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -264,6 +268,8 @@ class DeploymentResponse(BaseModel):
     regime_filter: Optional[List[str]] = None
     contract_rules: str = "underlying"
     holding: str = "INTRADAY"
+    order_style: str = "MARKET"
+    market_protection_pct: Optional[float] = None
 
     @classmethod
     def from_record(cls, record: StrategyDeploymentRecord, open_positions: int = 0) -> "DeploymentResponse":
@@ -287,6 +293,7 @@ class DeploymentResponse(BaseModel):
             last_route=getattr(record, "last_route", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
             holding=getattr(record, "holding", None) or "INTRADAY",
+            order_style=getattr(record, "order_style", None) or "MARKET", market_protection_pct=getattr(record, "market_protection_pct", None),
         )
 
 
@@ -484,6 +491,7 @@ async def create_deployment(
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
         regime_filter=",".join(_regime_filter(request)) or None,
         holding=request.holding,
+        order_style=request.order_style, market_protection_pct=request.market_protection_pct,
     )
     session.add(record)
     try:

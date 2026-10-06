@@ -204,12 +204,12 @@ Every P0 item was checked against the code before planning (the plan's file name
 | S12 | `create_all` at every startup next to Alembic | **P0.1 (done)** |
 | S13 | metering INSERT + SUM per API call; key prefix is 4 random bytes (no uniqueness guarantee); TradingView token stored plaintext on tenants | P0.3 |
 | S14 | HS256 JWT with `email` claim, no iss/aud/kid | P0.3 (iss/aud/kid + rotation, drop email claim; **dual-verify** old tokens until they expire) |
-| T1 | partial fills handled, unfilled remainder of a MARKET order not cancelled; unknown fill -> recorded as requested | P0.5 |
-| T2 | protective stop is always SL-M; adapters whose broker refuses SL-M on options are not asked | P0.5 (capability matrix per adapter, SL-L with trigger band) |
-| T3 | multi-leg: shorts sent before wing fills are confirmed; failed wing fill recorded 0.0 | P0.5 |
-| T4 | emergency exit cancels orders in the DB only (`transition_order`), not at the broker; shorts/longs order not enforced | P0.5 |
-| T5 | every order `MARKET`, no market-protection % / marketable-limit option | P0.5 (order_style per deployment, default broker-neutral protection) |
-| T6 | daily loss on realised P&L only; "day" is UTC | P0.5 |
+| T1 | partial fills handled, unfilled remainder of a MARKET order not cancelled; unknown fill -> recorded as requested | **P0.5 (done)** - remainder cancelled, unfilled order cancelled (no phantom position), unconfirmable -> broker-uncertain |
+| T2 | protective stop is always SL-M; adapters whose broker refuses SL-M on options are not asked | **P0.5 (done)** - `BrokerCapabilities` per adapter, SL with a 1% limit band where SL-M is refused |
+| T3 | multi-leg: shorts sent before wing fills are confirmed; failed wing fill recorded 0.0 | **P0.5 (done)** |
+| T4 | emergency exit cancels orders in the DB only (`transition_order`), not at the broker; shorts/longs order not enforced | **P0.5 (done)** |
+| T5 | every order `MARKET`, no market-protection % / marketable-limit option | **P0.5 (done)** - `order_style` per deployment (MARKET default, PROTECTED_LIMIT opt-in) |
+| T6 | daily loss on realised P&L only; "day" is UTC | **P0.5 (done)** - IST trading day, open positions marked by the monitor count |
 | T7 | `time_to_expiry_years` in whole days | P0.6 |
 | B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | P0.6 |
 | infra | deploy.sh rollback re-tags the image but does not restart (verified: tags only); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), P0.7 (the rest) |
@@ -330,3 +330,31 @@ default and G-LIVE gate before any LIVE wiring.
 - Tests: `tests/test_phase_p0_4_money_crypto.py` (Numeric types + float round trip; migration covers every
   Numeric column; default format; AAD/tenant/relabel/move refusals; older formats; re-encrypt both modes via the
   credentials API; scrypt + legacy passphrase).
+
+### 2026-10-06 - P0.5: trading safety (T1-T6)
+- T1: after a LIVE entry the router reads the book; a partial fill cancels the working remainder at the broker;
+  an order still unfilled after the poll window is cancelled (a fill that lands during the cancel is honoured)
+  and *no position is booked* - previously it was recorded at the signal price as if filled. A book the broker
+  cannot show, or a cancel that fails, records the order as requested and flags the organisation broker-uncertain
+  (LIVE entries pause until reconciliation). REJECTED/CANCELLED in the book is a business rejection. Day counters
+  move only after a confirmed fill.
+- T2: `BrokerCapabilities` on every adapter (`stop_market`, `stop_market_on_options`, ...); Zerodha declares no
+  SL-M on options (Kite's rule), CoinDCX no market stop. `stop_order_params` picks SL-M or SL with the limit one
+  band (1%) past the trigger, rounded to the tick; the router, the stop guard re-arm and the trailing-stop modify all
+  go through it, and `looks_like_option` recognises every broker spelling (RELIANCE is not an option).
+- T3: `_place_live_legs` confirms each wing's fill in the book before any short is sent, cancels a leg that does
+  not fill, unwinds only confirmed legs and never records a 0.0 fill.
+- T4: the emergency exit cancels LIVE orders at the broker first (every usable session is tried; failures are
+  listed in the response), then closes shorts before longs.
+- T5: `order_style` per deployment - MARKET (default, unchanged) or PROTECTED_LIMIT, a marketable limit
+  `market_protection_pct` (0.5% default) past the signal price on the 0.05 tick; with T1 an unfilled limit is
+  cancelled instead of chased. Deployment form has the selector. Multi-leg entries stay MARKET (sequencing is the
+  protection there). PAPER is unaffected.
+- T6: `trading_day_start()` (00:00 IST as UTC) bounds "today" for the daily loss, strategy loss and trade counts
+  (was UTC midnight = 05:30 IST, so a pre-05:30 loss fell out of the day); the position monitor writes
+  `trades.mark_price/mark_time` each sweep and the daily / strategy loss limits add the marked-to-market P&L of
+  open positions to realised P&L (a position without a mark contributes nothing - never guessed). Stricter, so
+  on by default. Migration `d5e7f9a1b3c5` (verified on Postgres: upgrade, check, downgrade, upgrade).
+- Tests: `tests/test_phase_p0_5_trading_safety.py` (18 cases incl. the signal-execution path flagging the
+  organisation); `test_live_execution` "never fills" case now asserts the cancel; the worker's fake broker lists
+  its orders as a real book does.

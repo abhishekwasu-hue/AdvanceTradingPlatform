@@ -22,7 +22,6 @@ from app.db.session import get_session
 from app.plans.limits import require_feature
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
-from app.trading.exit_rules import ExitRules
 from app.platform.controls import require_flag
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])

@@ -6,9 +6,18 @@ on:
   pull_request:
     branches: ["main"]
 
+# One CI run per commit: a push to an in-repo branch already runs every job on that sha, so the
+# pull_request event only has to cover forks (its jobs are skipped otherwise). A newer push to the
+# same feature branch cancels the run of the one it replaced; main is never cancelled.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   backend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -71,7 +80,9 @@ jobs:
           pip-audit -r requirements.txt
 
   frontend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -98,7 +109,9 @@ jobs:
         run: npm audit || true
 
   container-scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4

@@ -190,7 +190,7 @@ def simulate(config: CustomStrategyConfig, df: pd.DataFrame, *, warmup: int = 0)
     ist = _ist_index(df)
     dates = ist.date
     minutes = ist.hour * 60 + ist.minute
-    o, h, l, c = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close"))
+    o, h, lo, c = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close"))
     ls, ss, a = long_s.to_numpy(), short_s.to_numpy(), atr.to_numpy(dtype=float)
     rr1, rr2 = config.target_rr
     trades, pos, per_day = [], None, {}
@@ -201,7 +201,7 @@ def simulate(config: CustomStrategyConfig, df: pd.DataFrame, *, warmup: int = 0)
             d = pos["dir"]
             exit_px = reason = None
             if d == 1:
-                if l[i] <= pos["stop"]:
+                if lo[i] <= pos["stop"]:
                     exit_px, reason = pos["stop"], "stop"
                 elif h[i] >= pos["t2"]:
                     exit_px, reason = pos["t2"], "t2"
@@ -210,9 +210,9 @@ def simulate(config: CustomStrategyConfig, df: pd.DataFrame, *, warmup: int = 0)
             else:
                 if h[i] >= pos["stop"]:
                     exit_px, reason = pos["stop"], "stop"
-                elif l[i] <= pos["t2"]:
+                elif lo[i] <= pos["t2"]:
                     exit_px, reason = pos["t2"], "t2"
-                elif l[i] <= pos["t1"]:
+                elif lo[i] <= pos["t1"]:
                     exit_px, reason = pos["t1"], "t1"
             new_day = i + 1 >= n or dates[i + 1] != dates[i]
             if exit_px is None and (minutes[i] >= square or new_day):

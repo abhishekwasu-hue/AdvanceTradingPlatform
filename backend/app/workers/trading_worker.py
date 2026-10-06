@@ -738,6 +738,7 @@ class TradingWorker:
             idempotency_key=idempotency_key, broker=broker, deployment_id=dep.id,
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
             account_id=account_id, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
+            order_style=getattr(dep, "order_style", None) or "MARKET", market_protection_pct=getattr(dep, "market_protection_pct", None),
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]

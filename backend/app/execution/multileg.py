@@ -349,41 +349,62 @@ async def _place_live_legs(
     broker: BrokerInterface, structure: ResolvedStructure, quantity: float, strategy_id: str, tenant: Optional[Tenant],
     fills: Dict[str, Tuple[float, Optional[str]]], notes: List[str],
 ) -> Tuple[bool, str]:
-    """Wings first, then shorts. Any failure unwinds what filled. Returns (ok, failure_text)."""
+    """Wings first, then shorts - and a short is sent only once every wing's fill is *confirmed* in the broker's
+    book (P0.5 / T3), so the account is never short without its protection. A leg that does not fill inside the
+    poll window is cancelled and the structure fails; every confirmed leg is unwound. A fill price is recorded only
+    when the book reports one, never as 0.0. Returns (ok, failure_text)."""
     algo_id = tenant.algo_id if tenant is not None else None
     max_tag = getattr(broker, "max_tag_length", None) or 20
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(), broker=broker)
-    placed: List = []
-    ordered = structure.long_legs + structure.short_legs
-    for leg in ordered:
-        request = BrokerOrderRequest(
-            symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
-            quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
-            tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag),
-        )
-        try:
-            response = await broker.place_order(request)
-            if response.status.upper() in ("REJECTED", "CANCELLED"):
-                raise ContractExecutionError(f"{leg.side.value} {leg.contract.tradingsymbol} rejected: {response.message or response.status}")
-        except Exception as exc:  # noqa: BLE001
-            failure = f"{leg.side.value} {leg.contract.tradingsymbol} failed: {exc}"
-            unwound = await _unwind(broker, placed, quantity, strategy_id, algo_id, max_tag)
-            return False, failure + (f"; unwound {unwound} filled leg(s)" if placed else "")
-        placed.append(leg)
-        price, _ = await router._resolve_fill(response.order_id, fallback=0.0)
-        fills[leg.contract.tradingsymbol] = (round(price, 2), response.order_id)
-        notes.append(f"Live {leg.side.value} {leg.contract.tradingsymbol} via {broker.name}: {response.order_id}")
+    placed: List = []          # (leg, filled quantity) with a confirmed fill - what an unwind must reverse
+
+    async def _fail(leg, text: str, order_id: Optional[str]) -> Tuple[bool, str]:
+        if order_id:
+            try:
+                await broker.cancel_order(order_id)      # the unfilled leg must not keep working
+            except Exception as exc:  # noqa: BLE001
+                text += f"; cancel of {order_id} failed: {exc}"
+            # The exchange may have filled it between the last look and the cancel: that fill is a real position
+            # and must be unwound with the rest, never orphaned.
+            late_price, late_qty, _ = await router._resolve_fill_with_status(order_id, fallback=0.0)
+            if late_qty > 0:
+                placed.append((leg, late_qty))
+                text += f"; {leg.contract.tradingsymbol} filled {late_qty:g} during the cancel"
+        unwound = await _unwind(broker, placed, quantity, strategy_id, algo_id, max_tag)
+        return False, text + (f"; unwound {unwound} filled leg(s)" if placed else "")
+
+    for phase, legs in (("wing", structure.long_legs), ("short", structure.short_legs)):
+        for leg in legs:
+            request = BrokerOrderRequest(
+                symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
+                quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
+                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag),
+            )
+            try:
+                response = await broker.place_order(request)
+                if response.status.upper() in ("REJECTED", "CANCELLED"):
+                    raise ContractExecutionError(f"{leg.side.value} {leg.contract.tradingsymbol} rejected: {response.message or response.status}")
+            except Exception as exc:  # noqa: BLE001
+                return await _fail(leg, f"{leg.side.value} {leg.contract.tradingsymbol} failed: {exc}", None)
+            price, filled, _ = await router._resolve_fill_with_status(response.order_id, fallback=0.0)
+            if filled <= 0 or price <= 0:
+                return await _fail(leg, f"{leg.side.value} {leg.contract.tradingsymbol} ({phase}) not filled within the confirmation window", response.order_id)
+            placed.append((leg, filled))
+            fills[leg.contract.tradingsymbol] = (round(price, 2), response.order_id)
+            notes.append(f"Live {leg.side.value} {leg.contract.tradingsymbol} via {broker.name}: {response.order_id} filled @ {price:g}")
     return True, ""
 
 
 async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strategy_id: str, algo_id: Optional[str], max_tag: int) -> int:
+    """Reverses every confirmed fill, shorts first, for exactly the quantity that filled (P0.5 / T3)."""
     done = 0
-    for leg in reversed(placed):
+    ordered = sorted(placed, key=lambda item: 0 if item[0].role == "SHORT" else 1)
+    for leg, filled in ordered:
         try:
             await broker.place_order(BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange,
                 transaction_type=OrderSide.SELL if leg.side == OrderSide.BUY else OrderSide.BUY,
-                quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
+                quantity=filled if filled and filled > 0 else quantity * leg.ratio, order_type="MARKET", product="MIS",
                 tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag),
             ))
             done += 1

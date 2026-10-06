@@ -87,6 +87,9 @@ export default function DeploymentsPage() {
   // Phase T: rule-based account choice at signal time.
   const [routingPolicy, setRoutingPolicy] = useState<RoutingPolicy | "">("");
   const [acrossBrokers, setAcrossBrokers] = useState(false);
+  // P0.5 / T5: LIVE entry style. MARKET is unchanged behaviour; PROTECTED_LIMIT caps the fill at a band past the signal price.
+  const [orderStyle, setOrderStyle] = useState<"MARKET" | "PROTECTED_LIMIT">("MARKET");
+  const [protectionPct, setProtectionPct] = useState("0.5");
   const [confirmLive, setConfirmLive] = useState(false);
   const [liveTyped, setLiveTyped] = useState("");
   // Phase F2: what to trade when the strategy signals on the symbol.
@@ -221,6 +224,7 @@ export default function DeploymentsPage() {
         holding: swing ? "SWING" : "INTRADAY",
         broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
+        order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
       });
       setMessage(`Deployment #${created.id} is ${created.status}: ${created.strategy_id} on ${created.symbol} (${created.mode}).`);
       setConfirmLive(false);
@@ -397,6 +401,18 @@ export default function DeploymentsPage() {
             {routingPolicy && routingPolicy !== "EXPLICIT" && (
               <label className="flex items-center gap-1 text-muted">
                 <input type="checkbox" checked={acrossBrokers} onChange={(e) => setAcrossBrokers(e.target.checked)} /> across brokers
+              </label>
+            )}
+            <span className="text-muted ml-2">Entry</span>
+            <select className="rounded bg-panel2 border border-border px-2 py-1 text-xs" value={orderStyle} onChange={(e) => setOrderStyle(e.target.value as "MARKET" | "PROTECTED_LIMIT")}
+              title="MARKET: fills at whatever the book offers. Protected limit: a marketable limit a small band past the signal price; an unfilled remainder is cancelled.">
+              <option value="MARKET">market</option>
+              <option value="PROTECTED_LIMIT">protected limit</option>
+            </select>
+            {orderStyle === "PROTECTED_LIMIT" && (
+              <label className="flex items-center gap-1 text-muted">
+                band
+                <input className="w-14 rounded bg-panel2 border border-border px-1 py-0.5 text-xs" value={protectionPct} onChange={(e) => setProtectionPct(e.target.value)} inputMode="decimal" /> %
               </label>
             )}
           </div>

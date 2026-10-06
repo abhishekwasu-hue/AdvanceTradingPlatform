@@ -256,8 +256,16 @@ class ContractSymbolBroker(BrokerInterface):
         symbol = await self._out(order.symbol, order.exchange)
         return await self.inner.get_order_margin(order if symbol == order.symbol else order.model_copy(update={"symbol": symbol}))
 
-    async def place_stop_loss_order(self, symbol, exchange, transaction_type, quantity, trigger_price, product="MIS", tag=None):
-        return await self.inner.place_stop_loss_order(await self._out(symbol, exchange), exchange, transaction_type, quantity, trigger_price, product, tag)
+    async def place_stop_loss_order(self, symbol, exchange, transaction_type, quantity, trigger_price, product="MIS", tag=None, is_option=None):
+        extra = {"is_option": is_option} if is_option is not None else {}
+        return await self.inner.place_stop_loss_order(await self._out(symbol, exchange), exchange, transaction_type, quantity, trigger_price, product, tag, **extra)
+
+    @property
+    def capabilities(self):          # P0.5 / T2: the wrapped broker's matrix, not the interface default
+        return self.inner.capabilities
+
+    def stop_order_params(self, symbol, transaction_type, trigger_price, *, is_option=None):
+        return self.inner.stop_order_params(symbol, transaction_type, trigger_price, is_option=is_option)
 
     async def exit_position(self, symbol, exchange, quantity, side: OrderSide, *, product="MIS", tag=None):
         return await self.inner.exit_position(await self._out(symbol, exchange), exchange, quantity, side, product=product, tag=tag)

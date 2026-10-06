@@ -36,6 +36,7 @@ class _LiveBroker(BrokerInterface):
         self.book_supported = book_supported
         self.placed = []
         self.book_calls = 0
+        self.cancelled = []
 
     async def place_order(self, order):
         if order.order_type == "SL-M" and self.sl_fails:
@@ -49,9 +50,10 @@ class _LiveBroker(BrokerInterface):
             raise NotImplementedError
         # First look: still pending; second look: filled - exercises the retry.
         filled = self.book_calls >= 2 and self.fill_price is not None
+        status = "COMPLETE" if filled else ("CANCELLED" if "ORD-1" in self.cancelled else "OPEN")   # a cancel shows in the book
         return [BrokerOrderStatus(
             order_id="ORD-1", symbol="RELIANCE", transaction_type=OrderSide.BUY, quantity=500,
-            filled_quantity=500 if filled else 0, order_type="MARKET", status="COMPLETE" if filled else "OPEN",
+            filled_quantity=500 if filled else 0, order_type="MARKET", status=status,
             average_price=self.fill_price if filled else None,
         )]
 
@@ -63,7 +65,10 @@ class _LiveBroker(BrokerInterface):
     async def get_historical_data(self, symbol, exchange, interval, from_date, to_date): raise NotImplementedError
     async def get_option_chain(self, underlying, expiry=None): raise NotImplementedError
     async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None): raise NotImplementedError
-    async def cancel_order(self, order_id): return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+    async def cancel_order(self, order_id):
+        if self.placed:                      # a cancel of an order that exists shows in the book afterwards
+            self.cancelled.append(order_id)
+        return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
     async def get_trade_book(self): raise NotImplementedError
     async def get_positions(self): raise NotImplementedError
     async def get_holdings(self): raise NotImplementedError
@@ -118,12 +123,17 @@ def test_fill_price_falls_back_to_signal_entry_when_order_book_unsupported():
     assert broker.book_calls == 1  # gave up immediately rather than retrying an unsupported call
 
 
-def test_fill_price_falls_back_when_order_never_shows_filled():
+def test_order_that_never_fills_is_cancelled_and_no_position_is_booked():
+    """P0.5 / T1: an entry the book still shows unfilled after the poll window is cancelled at the broker; the
+    platform never records a position against the signal price for it."""
     broker = _LiveBroker(fill_price=None)
     router = _router(broker)
-    result = asyncio.run(router.execute(_signal(), TradingDayState()))
-    assert result.trade.entry_price == 100.0
-    assert broker.book_calls == router.fill_poll_attempts
+    state = TradingDayState()
+    result = asyncio.run(router.execute(_signal(), state))
+    assert result.executed is False and result.trade is None and not result.system_failure
+    assert any("cancelled at the broker" in r for r in result.reasons)
+    assert broker.book_calls >= router.fill_poll_attempts
+    assert len(broker.placed) == 1 and state.trades_today == 0 and state.open_positions == 0   # no stop, no counters
 
 
 def test_failed_protective_stop_keeps_the_fill_but_flags_it():

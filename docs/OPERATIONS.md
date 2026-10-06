@@ -742,6 +742,21 @@ Never publish a listing without an attached backtest run; the API refuses the su
   new wraps only once `SECRETS_WRITE_FORMAT=aesgcm`, and secrets wrapped under the older SHA-256 derivation
   always open. The 44-character Fernet key most deployments use is unaffected.
 
+### 1.6ab-4 Fills, stops, emergency exit (P0.5)
+
+- A LIVE entry that does not fill inside the confirmation window is cancelled at the broker and the order ends
+  REJECTED with the reason on its trail; nothing is booked. A partial fill books the filled part and cancels
+  the rest. If the broker's book cannot be read or a cancel fails, the organisation goes broker-uncertain
+  (readiness shows it) and LIVE entries pause until reconciliation clears it.
+- Protective stops are SL-M where the broker takes them; on Zerodha options they are SL with the limit 1% past
+  the trigger (Kite refuses SL-M there). The Deployments form has an **Entry** selector: market (default) or
+  protected limit with a band.
+- The daily-loss limit counts realised P&L plus the marked-to-market P&L of open positions on the Indian trading
+  day (00:00 IST). Expect it to bite earlier than before on a bad morning; that is the intent.
+- Emergency exit now cancels working LIVE orders at the broker and buys shorts back before selling longs; the
+  response lists `broker_cancelled` and `broker_cancel_failures`.
+- Migration `d5e7f9a1b3c5` on the next off-hours `git pull` + `up --build`.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

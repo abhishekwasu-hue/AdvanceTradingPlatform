@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends
@@ -14,7 +15,11 @@ from app.execution.order_persistence import transition_order
 from app.execution.order_state_machine import TERMINAL_STATUSES
 from app.kill_switch import checks
 from app.notifications.service import notify
+from app.brokers.token_lifecycle import build_adapter, token_is_usable
+from app.db.models import BrokerCredentialRecord
 from app.trading.position_monitor import broker_for_trade, close_position
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/kill-switch", tags=["kill-switch"])
 
@@ -157,6 +162,43 @@ class EmergencyExitResponse(BaseModel):
     cancelled_order_ids: List[int]
     closed_trade_ids: List[int]
     skipped_symbols: List[str]
+    # P0.5 / T4: what happened at the broker for LIVE orders that were still working.
+    broker_cancelled: List[str] = []
+    broker_cancel_failures: List[str] = []
+
+
+async def _live_brokers(session: AsyncSession, tenant_id: int) -> List:
+    """Every usable broker session of the organisation (an order record does not name its broker)."""
+    adapters = []
+    for record in await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)):
+        if token_is_usable(record):
+            try:
+                adapters.append(build_adapter(record))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Emergency exit: could not build adapter for credential %s: %s", record.id, exc)
+    return adapters
+
+
+async def _cancel_at_brokers(adapters: List, broker_order_id: str) -> Optional[str]:
+    """The broker whose book lists the order cancels it; when no book names it every usable session is tried
+    (adapters answer "CANCELLED" to any accepted request, so the book look keeps the attribution honest).
+    Returns the broker name or None."""
+    ordered = list(adapters)
+    for adapter in adapters:
+        try:
+            if any(o.order_id == broker_order_id for o in await adapter.get_order_book()):
+                ordered = [adapter]
+                break
+        except Exception:  # noqa: BLE001 - a book that cannot be read does not stop the cancel attempt
+            continue
+    for adapter in ordered:
+        try:
+            response = await adapter.cancel_order(broker_order_id)
+            if (response.status or "").upper() not in ("REJECTED", "ERROR", "UNKNOWN"):
+                return adapter.name
+        except Exception as exc:  # noqa: BLE001 - another session may own the order
+            logger.info("Emergency exit: %s could not cancel %s: %s", adapter.name, broker_order_id, exc)
+    return None
 
 
 @router.post("/emergency-exit", response_model=EmergencyExitResponse)
@@ -177,7 +219,20 @@ async def emergency_exit(
         )
     )
     cancelled_ids: List[int] = []
+    broker_cancelled: List[str] = []
+    broker_failures: List[str] = []
+    adapters = None
     for order in pending_orders:
+        # P0.5 / T4: a LIVE order still working at the broker is cancelled *there* first; the platform record
+        # follows. One that cannot be cancelled is reported, and the record still closes so nothing new enters.
+        if order.mode == "LIVE" and order.broker_order_id:
+            if adapters is None:
+                adapters = await _live_brokers(session, user.tenant_id)
+            broker_name = await _cancel_at_brokers(adapters, order.broker_order_id)
+            if broker_name:
+                broker_cancelled.append(f"{order.broker_order_id}@{broker_name}")
+            else:
+                broker_failures.append(order.broker_order_id)
         await transition_order(session, order, OrderStatus.CANCELLED, detail=f"Emergency exit: {request.reason}")
         cancelled_ids.append(order.id)
 
@@ -186,6 +241,9 @@ async def emergency_exit(
             select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None))
         )
     )
+    # P0.5 / T4: shorts (written options, short futures/equity) are bought back before any long is sold, so the
+    # account is never left naked half-way through the exit.
+    open_trades.sort(key=lambda t: (0 if (t.direction == "SHORT" or getattr(t, "leg_role", None) == "SHORT") else 1, t.id))
     closed_ids: List[int] = []
     skipped_symbols: List[str] = []
     for trade in open_trades:
@@ -206,8 +264,8 @@ async def emergency_exit(
     await write_audit_log(
         session, user.tenant_id, user.id, "emergency_exit_triggered",
         (
-            f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; "
-            f"closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"
+            f"reason={request.reason}; cancelled_orders={len(cancelled_ids)}; broker_cancelled={broker_cancelled}; "
+            f"broker_cancel_failures={broker_failures}; closed_trades={len(closed_ids)}; skipped_symbols={skipped_symbols}"
         ),
     )
     await session.commit()
@@ -224,4 +282,5 @@ async def emergency_exit(
     return EmergencyExitResponse(
         tenant_kill_switch_engaged=True, cancelled_order_ids=cancelled_ids,
         closed_trade_ids=closed_ids, skipped_symbols=skipped_symbols,
+        broker_cancelled=broker_cancelled, broker_cancel_failures=broker_failures,
     )

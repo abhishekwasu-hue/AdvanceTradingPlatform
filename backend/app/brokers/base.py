@@ -1,6 +1,8 @@
+import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
@@ -19,6 +21,53 @@ from app.brokers.models import (
 )
 
 
+@dataclass(frozen=True)
+class BrokerCapabilities:
+    """P0.5 / T2: what an adapter's broker actually accepts, so the platform never asks for an order type the
+    exchange gateway refuses. Defaults describe the common Indian broker; adapters override what differs."""
+    stop_market: bool = True                 # SL-M accepted at all
+    stop_market_on_options: bool = True      # SL-M accepted on option contracts (Kite refuses it)
+    stop_limit: bool = True                  # SL (stop-loss limit) accepted
+    modify_orders: bool = True               # modify_order implemented (else cancel + re-place)
+    cancel_orders: bool = True
+
+
+# Platform tick for the limit leg of a stop-limit protective order (NSE equity / F&O tick).
+_STOP_LIMIT_TICK = 0.05
+# A strike (digits) right before CE/PE: `NIFTY26OCT26000CE`, `NIFTY-OCT2026-26000-CE`, canonical `NIFTY 26000 CE 30 OCT 26`.
+# "RELIANCE" ends in CE and is not an option, hence the digit requirement.
+_OPTION_RE = re.compile(r"\d[ -]?(CE|PE)(?: |$)")
+# Shoonya spelling: `NIFTY30OCT26C26000` (expiry digits, C/P, strike).
+_SHOONYA_OPTION_RE = re.compile(r"\d[CP]\d+(?:\.\d+)?$")
+
+
+def looks_like_option(symbol: str) -> bool:
+    """True for an option contract in any broker spelling the platform handles; False for equities,
+    indices and futures."""
+    text = (symbol or "").strip().upper()
+    if not text:
+        return False
+    return bool(_OPTION_RE.search(text)) or bool(_SHOONYA_OPTION_RE.search(text))
+
+
+def stop_order_params(capabilities: BrokerCapabilities, symbol: str, transaction_type: OrderSide, trigger_price: float, *,
+                      is_option: Optional[bool] = None, limit_band_pct: float = 1.0) -> Tuple[str, Optional[float]]:
+    """(order_type, limit price) for a protective stop. SL-M wherever the broker takes it; otherwise SL with the
+    limit a band past the trigger (sell stops below, buy stops above) so a fast move still fills - a stop that
+    never fills is the failure mode this guards against."""
+    option = looks_like_option(symbol) if is_option is None else is_option
+    if capabilities.stop_market and (capabilities.stop_market_on_options or not option):
+        return "SL-M", None
+    band = max(0.0, float(limit_band_pct)) / 100.0
+    raw = trigger_price * (1 - band) if transaction_type == OrderSide.SELL else trigger_price * (1 + band)
+    limit = round(round(raw / _STOP_LIMIT_TICK) * _STOP_LIMIT_TICK, 2)
+    if transaction_type == OrderSide.SELL:
+        limit = max(_STOP_LIMIT_TICK, min(limit, round(trigger_price, 2)))
+    else:
+        limit = max(limit, round(trigger_price, 2))
+    return "SL", limit
+
+
 class BrokerInterface(ABC):
     """Every broker adapter (Zerodha, Upstox, Angel One, Fyers, Dhan, ...) implements this.
 
@@ -32,6 +81,8 @@ class BrokerInterface(ABC):
     # Longest order `tag` this broker accepts (Phase D1 algo tagging shortens to fit). Zerodha
     # documents 20 alphanumeric characters; adapters that allow more override this.
     max_tag_length: int = 20
+    # P0.5 / T2: order types this broker accepts (see BrokerCapabilities).
+    capabilities: BrokerCapabilities = BrokerCapabilities()
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...
@@ -156,17 +207,24 @@ class BrokerInterface(ABC):
             return float(next(iter(prices.values())))
         raise KeyError(f"No LTP returned for {key}")
 
+    def stop_order_params(self, symbol: str, transaction_type: OrderSide, trigger_price: float, *,
+                          is_option: Optional[bool] = None) -> Tuple[str, Optional[float]]:
+        """(order_type, limit price) this broker needs for a protective stop on `symbol` (P0.5 / T2)."""
+        return stop_order_params(self.capabilities, symbol, transaction_type, trigger_price, is_option=is_option)
+
     async def place_stop_loss_order(
         self, symbol: str, exchange: str, transaction_type: OrderSide, quantity: float, trigger_price: float,
-        product: str = "MIS", tag: Optional[str] = None,
+        product: str = "MIS", tag: Optional[str] = None, is_option: Optional[bool] = None,
     ) -> BrokerOrderResponse:
         """The protective stop placed right after a LIVE entry fills: a stop-loss *market* order
-        ("SL-M" - the order type both Kite and Upstox use for it) on the opposite side, triggered
-        at the signal's stop-loss price. A market trigger, not a limit, because a stop that fails
-        to fill in a fast move is worse than a stop that fills a tick worse."""
+        ("SL-M") on the opposite side, triggered at the signal's stop-loss price - a market trigger,
+        not a limit, because a stop that fails to fill in a fast move is worse than one that fills a
+        tick worse. P0.5 / T2: where the broker refuses SL-M (Kite on options) the stop goes as SL
+        with the limit one band past the trigger instead of being refused at the gateway."""
+        order_type, limit = self.stop_order_params(symbol, transaction_type, trigger_price, is_option=is_option)
         order = BrokerOrderRequest(
             symbol=symbol, exchange=exchange, transaction_type=transaction_type, quantity=quantity,
-            order_type="SL-M", product=product, trigger_price=trigger_price, tag=tag,
+            order_type=order_type, product=product, trigger_price=trigger_price, price=limit, tag=tag,
         )
         return await self.place_order(order)
 

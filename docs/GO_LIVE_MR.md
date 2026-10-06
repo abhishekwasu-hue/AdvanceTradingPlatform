@@ -30,7 +30,7 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 | 0.6 | Spaces | DO → Spaces → bucket `atp-backups` (private) → API keys → `.env` मध्ये | - | endpoint region नुसार (`blr1.digitaloceanspaces.com`) |
 | 0.7 | Upstox app | developer.upstox.com → **नवा app फक्त ATP साठी** → Redirect URL `https://<DOMAIN>/api/broker/upstox/oauth/callback` | key/secret फक्त Settings मध्ये (पायरी 1.3) | Trade bots चा app वापरला तर दोघे एकमेकांना logout करतात |
 | 0.8 | Build + up | `scripts/deploy.sh production` | शेवटी `deploy[production]: healthy`; `curl -s https://<DOMAIN>/api/system/health` → `{"status":"ok"...}` | guard ने नाकारले (market open) → 15:30 नंतर; `docker compose logs backend` |
-| 0.9 | Migrations | deploy.sh स्वतः `migrate_guard.py` चालवतो (BB-BD2 च्या नव्या tables: news feed columns, `telegram_callbacks`, `thesis_records`, `news_feedback`) | `docker compose exec backend alembic current` = head (`c4d6e8f0a2b4` किंवा नंतरचे) | drift: `docker compose exec backend alembic upgrade head` (market बंद असताना) |
+| 0.9 | Migrations | deploy.sh स्वतः `migrate_guard.py` चालवतो (BB-BD2 च्या नव्या tables: news feed columns, `telegram_callbacks`, `thesis_records`, `news_feedback`) | `docker compose exec backend alembic current` = head (`d5e7f9a1b3c5` किंवा नंतरचे) | drift: `docker compose exec backend alembic upgrade head` (market बंद असताना) |
 | 0.10 | Holidays | पहिला owner बनल्यावर (१.१) Admin console → Exchange holidays → NSE यादी paste | पायरी 3 च्या check मध्ये ✅ holidays | - |
 | 0.11 | Backup drill | `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backup sh /scripts/verify_backup.sh latest` आणि `... run --rm offsite sh /scripts/offsite_sync.sh --once` | `verified` / `synced to spaces:atp-backups` | OPERATIONS 1.2 |
 

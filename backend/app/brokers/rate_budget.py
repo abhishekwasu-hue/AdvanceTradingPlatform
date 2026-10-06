@@ -148,6 +148,14 @@ class RateLimitedBroker(BrokerInterface):
 
     async def place_stop_loss_order(
         self, symbol: str, exchange: str, transaction_type: OrderSide, quantity: float, trigger_price: float,
-        product: str = "MIS", tag: Optional[str] = None,
+        product: str = "MIS", tag: Optional[str] = None, is_option: Optional[bool] = None,
     ) -> BrokerOrderResponse:
-        return await self._call("place_stop_loss_order", symbol, exchange, transaction_type, quantity, trigger_price, product, tag)
+        extra = {"is_option": is_option} if is_option is not None else {}
+        return await self._call("place_stop_loss_order", symbol, exchange, transaction_type, quantity, trigger_price, product, tag, **extra)
+
+    @property
+    def capabilities(self):          # P0.5 / T2: the wrapped broker's matrix, not the interface default
+        return self.inner.capabilities
+
+    def stop_order_params(self, symbol: str, transaction_type: OrderSide, trigger_price: float, *, is_option: Optional[bool] = None):
+        return self.inner.stop_order_params(symbol, transaction_type, trigger_price, is_option=is_option)

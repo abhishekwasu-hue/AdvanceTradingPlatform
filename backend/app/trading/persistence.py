@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import SignalDirection
 from app.core.models import Trade
 from app.db.models import SignalHistoryRecord, TradeRecord, User
+from app.market_data.calendar import trading_day_start
 from app.risk_engine.risk_manager import TradingDayState
 from app.signal_scoring.models import EnrichedSignal
 
@@ -103,13 +104,16 @@ async def build_trading_day_state(session: AsyncSession, user: User) -> TradingD
     processes. Scoped by tenant_id, not user_id: risk limits (daily loss, trade count,
     consecutive losses) are an org-wide budget shared by everyone trading under that tenant.
     """
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = trading_day_start()      # P0.5 / T6: the Indian trading day, not UTC midnight
     tenant_id = user.tenant_id
 
     open_positions = await session.scalar(
         select(func.count()).select_from(TradeRecord)
         .where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
     )
+    # P0.5 / T6: open positions count at their last mark, so a day going wrong while positions are still open
+    # reaches the daily-loss limit before the exits realise it.
+    unrealised = await open_unrealised_pnl(session, tenant_id)
     trades_today = await session.scalar(
         select(func.count()).select_from(TradeRecord)
         .where(TradeRecord.tenant_id == tenant_id, TradeRecord.entry_time >= today_start)
@@ -133,6 +137,24 @@ async def build_trading_day_state(session: AsyncSession, user: User) -> TradingD
             break
 
     return TradingDayState(
-        trades_today=trades_today or 0, daily_pnl=daily_pnl or 0.0,
+        trades_today=trades_today or 0, daily_pnl=float(daily_pnl or 0.0) + unrealised,
         consecutive_losses=consecutive_losses, open_positions=open_positions or 0,
     )
+
+
+async def open_unrealised_pnl(session: AsyncSession, tenant_id: int, *, strategy_id: Optional[str] = None) -> float:
+    """Marked-to-market P&L of the open positions that have a mark (P0.5 / T6). A position the monitor has not
+    priced yet contributes nothing - it is never guessed."""
+    day_start = trading_day_start()
+    # Only positions opened today, marked today: a swing position carried from an earlier day has an unrealised
+    # P&L that is not today's move (and a large carried gain must not hide today's losses from the limit); a
+    # mark older than today's session is stale and is not used either.
+    query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mark_price.is_not(None),
+                                      TradeRecord.entry_time >= day_start, TradeRecord.mark_time >= day_start)
+    if strategy_id is not None:
+        query = query.where(TradeRecord.strategy_id == strategy_id)
+    total = 0.0
+    for trade in await session.scalars(query):
+        sign = 1.0 if trade.direction == "LONG" else -1.0
+        total += sign * (float(trade.mark_price) - float(trade.entry_price)) * float(trade.quantity)
+    return round(total, 2)

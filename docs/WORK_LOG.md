@@ -339,7 +339,8 @@ default and G-LIVE gate before any LIVE wiring.
   (LIVE entries pause until reconciliation). REJECTED/CANCELLED in the book is a business rejection. Day counters
   move only after a confirmed fill.
 - T2: `BrokerCapabilities` on every adapter (`stop_market`, `stop_market_on_options`, ...); Zerodha declares no
-  SL-M on options (Kite's rule), CoinDCX no market stop. `stop_order_params` picks SL-M or SL with the limit one
+  SL-M on options (Kite's rule); CoinDCX keeps the defaults because its adapter already turns SL-M into its own
+  stop-limit. `stop_order_params` picks SL-M or SL with the limit one
   band (1%) past the trigger, rounded to the tick; the router, the stop guard re-arm and the trailing-stop modify all
   go through it, and `looks_like_option` recognises every broker spelling (RELIANCE is not an option).
 - T3: `_place_live_legs` confirms each wing's fill in the book before any short is sent, cancels a leg that does

@@ -80,8 +80,10 @@ def _f(value, default: float = 0.0) -> float:
 
 class CoinDCXBroker(BrokerInterface):
     name = "coindcx"
-    # No market stop at CoinDCX: SL-M is sent as a stop-limit with the limit 0.5% past the trigger (place_order).
-    capabilities = BrokerCapabilities(stop_market=False, stop_limit=True)
+    # CoinDCX has no market stop; `place_order` itself turns an SL-M request into a stop-limit with the limit 0.5%
+    # past the trigger (STOP_LIMIT_SLIPPAGE), so the platform keeps asking for SL-M and the adapter maps it. The
+    # capability matrix therefore stays at the defaults (the conversion lives here, not in the router).
+    capabilities = BrokerCapabilities()
     max_tag_length = 36          # client_order_id
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:

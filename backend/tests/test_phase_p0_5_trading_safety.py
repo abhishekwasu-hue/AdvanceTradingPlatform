@@ -133,7 +133,7 @@ def test_stop_order_type_follows_the_broker_capability_matrix():
     from app.brokers.coindcx import CoinDCXBroker
     from app.brokers.fyers import FyersBroker
     assert ZerodhaBroker.capabilities.stop_market_on_options is False and FyersBroker.capabilities.stop_market_on_options is True
-    assert CoinDCXBroker.capabilities.stop_market is False
+    assert CoinDCXBroker.capabilities.stop_market is True            # the adapter converts SL-M to its stop-limit itself
 
 
 def test_router_places_a_stop_limit_where_the_broker_refuses_sl_m_on_options():

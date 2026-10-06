@@ -32,7 +32,7 @@ import pandas as pd
 from app.backtest.analytics import build_analytics
 from app.backtest.options import (
     ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
-    default_lot_size, default_strike_step, expiry_instant, strike_ladder, to_utc, underlying_name,
+    default_lot_size, default_strike_step, expiry_instant, lot_size_on, strike_ladder, to_utc, underlying_name,
 )
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
@@ -195,6 +195,7 @@ def run_option_backtest(
     is_daily = bars_per_year(primary_tf) == 250.0
 
     underlying, underlying_symbol = underlying_name(symbol)
+    # P0.6 / B5: the lot size is the exchange's lot *on the entry day* (lot_size_on), unless the run pins one.
     lot = int(config.lot_size or default_lot_size(underlying))
     vol = VolatilityModel(fixed_iv=config.implied_volatility, window=config.realised_vol_window, annualisation=bars_per_year(primary_tf))
     synthetic = SyntheticPricer(vol, config.risk_free_rate)
@@ -228,12 +229,18 @@ def run_option_backtest(
         nonlocal equity, settlements, open_pos
         gross = 0.0
         charges = 0.0
+        settled = reason.startswith("Expiry")
         for idx, leg in enumerate(pos.legs):
             price = exit_prices[idx]
             leg.exit_price = price
             sign = -1 if leg.role == "SHORT" else 1
             gross += sign * (price - leg.entry_price) * leg.quantity
-            charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION")
+            # P0.6 / B2: a written leg sold first (STT on its entry premium); a bought leg that settles in the money
+            # at expiry is exercised, which carries STT on the intrinsic value instead of a sell-side premium STT.
+            if settled and leg.role == "LONG":
+                charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION") + broker.exercise_charges(price, leg.quantity)
+            else:
+                charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION", sold_first=leg.role == "SHORT")
         value = sum((leg.exit_price if leg.role == "SHORT" else -leg.exit_price) * leg.ratio for leg in pos.legs)
         exit_unit = value if pos.direction == SignalDirection.SHORT else -value
         pnl = round(gross - charges, 2)
@@ -361,6 +368,7 @@ def run_option_backtest(
             if expiry == bar_day and at_ist.time() >= SETTLEMENT_FROM and not is_daily:
                 skipped["expiry day too late to enter"] += 1
                 continue
+            lot = int(config.lot_size or lot_size_on(underlying, bar_day))
             try:
                 if config.is_single:
                     open_pos = _open_single(signal, rules, config, spot=spot, ladder=ladder, expiry=expiry, at=at, ts=ts, lot=lot,

@@ -61,6 +61,30 @@ def default_lot_size(underlying: str) -> int:
     return LOT_SIZES.get(underlying.upper(), DEFAULT_STOCK_LOT)
 
 
+# P0.6 / B5: lot sizes the exchange applied *before* a dated revision. Each entry: the first trading day the new
+# lot applied -> the lot that applied before it. A backtest entering on an earlier day sizes with the earlier lot
+# (NSE revised the index lots on 20 Nov 2024: NIFTY 25 -> 75, BANKNIFTY 15 -> 30, FINNIFTY 25 -> 65,
+# MIDCPNIFTY 50 -> 120, NIFTYNXT50 10 -> 25; the current table above carries later revisions). History before the
+# oldest dated entry uses that entry's "before" lot: a documented approximation, not a claim.
+LOT_SIZE_HISTORY: Dict[str, List[Tuple[date, int]]] = {
+    "NIFTY": [(date(2024, 11, 20), 25)],
+    "BANKNIFTY": [(date(2024, 11, 20), 15)],
+    "FINNIFTY": [(date(2024, 11, 20), 25)],
+    "MIDCPNIFTY": [(date(2024, 11, 20), 50)],
+    "NIFTYNXT50": [(date(2024, 11, 20), 10)],
+}
+
+
+def lot_size_on(underlying: str, day: date) -> int:
+    """The contract lot that applied to entries on `day`: the current lot after the last dated revision, the
+    pre-revision lot before it."""
+    key = underlying.upper()
+    for effective_from, before in sorted(LOT_SIZE_HISTORY.get(key, []), key=lambda e: e[0]):
+        if day < effective_from:
+            return before
+    return default_lot_size(key)
+
+
 def default_strike_step(underlying: str, spot: float) -> float:
     step = STRIKE_STEPS.get(underlying.upper())
     if step:

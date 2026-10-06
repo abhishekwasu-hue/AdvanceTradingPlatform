@@ -757,6 +757,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   response lists `broker_cancelled` and `broker_cancel_failures`.
 - Migration `d5e7f9a1b3c5` on the next off-hours `git pull` + `up --build`.
 
+### 1.6ab-5 Backtest numbers after P0.6
+
+- Backtests re-run after P0.6 can differ from stored runs: daily limits reset each day (more trades on long runs),
+  gaps fill at the open (worse stops, no better-than-open targets), written options carry STT on the entry premium,
+  index option lots follow the dated table, and the optimizer's `best` is the in-sample winner with its
+  out-of-sample `validation` beside it. Stored runs carry `engine_version`; compare like with like.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

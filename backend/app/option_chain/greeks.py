@@ -32,9 +32,24 @@ def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / _SQRT_2PI
 
 
-def time_to_expiry_years(expiry: date, as_of: date) -> float:
-    days = (expiry - as_of).days
-    return max(days / 365.0, _MIN_TIME_TO_EXPIRY_YEARS)
+def time_to_expiry_years(expiry: date, as_of) -> float:
+    """Years from the valuation instant to the contract's last trade (15:30 IST on expiry day) - P0.6 / T7.
+
+    `as_of` may be an aware datetime (exact; a naive one is UTC) or a date. Today's date means "now", so a 0DTE
+    option at 11:00 still has 4.5 hours of life instead of the one-hour floor and a 1-DTE theta is not a day
+    too large; a plain historical date carries no clock and keeps whole-day arithmetic."""
+    from datetime import datetime, time, timezone
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    if isinstance(as_of, datetime):
+        instant = as_of if as_of.tzinfo is not None else as_of.replace(tzinfo=timezone.utc)
+    elif as_of == datetime.now(ist).date():
+        instant = datetime.now(timezone.utc)
+    else:
+        return max((expiry - as_of).days / 365.0, _MIN_TIME_TO_EXPIRY_YEARS)
+    close = datetime.combine(expiry, time(15, 30), tzinfo=ist)
+    seconds = (close - instant).total_seconds()
+    return max(seconds / (365.0 * 86400.0), _MIN_TIME_TO_EXPIRY_YEARS)
 
 
 @dataclass

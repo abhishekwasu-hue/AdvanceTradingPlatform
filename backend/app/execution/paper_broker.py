@@ -38,7 +38,19 @@ class PaperBroker:
         "FUTURE": {"stt_sell": 0.02, "stt_buy": 0.0, "exchange": 0.00173, "sebi": 0.0001, "stamp_buy": 0.002},
     }
 
-    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING") -> float:
+    # STT the buyer pays when an in-the-money option is exercised/settled at expiry: 0.125% of the intrinsic value.
+    EXERCISE_STT_PCT = 0.125
+
+    def exercise_charges(self, intrinsic_per_unit: float, quantity: float) -> float:
+        """P0.6 / B2: a long option settled in the money is treated as exercised - STT on the intrinsic value."""
+        if intrinsic_per_unit <= 0 or quantity <= 0:
+            return 0.0
+        return round(intrinsic_per_unit * quantity * self.EXERCISE_STT_PCT / 100, 2)
+
+    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING",
+                                  *, sold_first: bool = False) -> float:
+        """`sold_first` (P0.6 / B2): the position was opened with a sell (a written option, a short future) - the
+        sell-side STT then belongs to the *entry* premium and stamp duty to the exit, not the other way round."""
         profile = self.COST_PROFILES.get((instrument_kind or "UNDERLYING").upper())
         if profile is None or instrument_kind in (None, "UNDERLYING"):
             turnover = (entry_price + exit_price) * quantity
@@ -52,7 +64,7 @@ class PaperBroker:
         legs = [entry_price * quantity, exit_price * quantity]
         turnover = sum(legs)
         # For a bought contract the exit is the sell leg; for a written/short one the entry is.
-        sell_turnover, buy_turnover = legs[1], legs[0]
+        sell_turnover, buy_turnover = (legs[0], legs[1]) if sold_first else (legs[1], legs[0])
         stt = sell_turnover * profile["stt_sell"] / 100 + buy_turnover * profile["stt_buy"] / 100
         exchange = turnover * profile["exchange"] / 100
         sebi = turnover * profile["sebi"] / 100
@@ -78,7 +90,8 @@ class PaperBroker:
     def close_trade(self, trade: Trade, exit_price: float, exit_time: datetime, reason: str) -> Trade:
         direction_sign = 1 if trade.direction == SignalDirection.LONG else -1
         gross_pnl = direction_sign * (exit_price - trade.entry_price) * trade.quantity
-        charges = self.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity)
+        charges = self.estimate_round_trip_costs(trade.entry_price, exit_price, trade.quantity,
+                                                 sold_first=trade.direction == SignalDirection.SHORT)
         trade.exit_price = round(exit_price, 2)
         trade.exit_time = exit_time
         trade.exit_reason = reason

@@ -158,7 +158,7 @@ async def run(
     elif not usable:
         report.checks.append(Check("broker_smoke", "Broker read-only smoke test", "fail" if records else "skip",
                                    "no stored broker session has a VALID token" if records else "no broker credentials stored",
-                                   "Log in to the broker under Settings > Brokers (Upstox: the OAuth button), then run again.", "probe"))
+                                   "Log in to the broker under Settings > Brokers (Upstox: Login button; Fyers/Kite: Open login -> paste the code), then run again.", "probe"))
     for record in usable:
         label = f"{record.broker_name} ({record.account_label or 'primary'})"
         try:

@@ -1150,6 +1150,17 @@ export interface BrokerTokenInfo {
   needs_login: boolean;
   oauth_supported: boolean;
   oauth_callback_url: string | null;
+  // Fyers / Kite: the platform opens the broker's login page and takes the pasted one-time code.
+  login_url_supported?: boolean;
+  code_param?: string | null;
+  account_label?: string;
+}
+
+export interface BrokerLoginUrl {
+  broker_name: string;
+  authorization_url: string;
+  code_param: string;
+  instructions: string;
 }
 
 export interface ReconciliationStatus {

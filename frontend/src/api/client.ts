@@ -128,6 +128,7 @@ import type {
   ThesisWeeklyReport,
   NewsFeedSource,
   NewsFeedStatus,
+  BrokerLoginUrl,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -557,6 +558,11 @@ export const api = {
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
   upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
+  // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
+  brokerLoginUrl: (name: string, accountLabel = "primary") =>
+    request<BrokerLoginUrl>(`/broker/${name}/login-url?account_label=${encodeURIComponent(accountLabel)}`),
+  brokerLoginCode: (name: string, code: string, accountLabel = "primary") =>
+    request<BrokerTokenInfo>(`/broker/${name}/login-code?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify({ code }) }),
 
   positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
 

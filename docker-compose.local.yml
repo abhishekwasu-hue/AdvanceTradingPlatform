@@ -1,0 +1,34 @@
+# Local PC overlay (Windows + Docker Desktop, the PAPER-week host - docs/LOCAL_PC_MR.md).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# What it changes against the base file, and nothing else:
+#   * Postgres, Redis and the API listen on 127.0.0.1 only. The base file publishes them on every
+#     interface, which on a home PC means the LAN (and, with a port-forwarding router, the internet)
+#     can reach a default-password Postgres and an unauthenticated Redis. The browser UI stays on
+#     http://localhost:8080 (bound to 127.0.0.1 too: open it on this PC; a phone on the LAN uses
+#     Telegram alerts, not the UI).
+#   * Every service restarts with Docker Desktop (`unless-stopped`), so a PC restart or a Docker
+#     Desktop update brings the API, worker and database back without a command. A service stopped
+#     on purpose (`docker compose stop`) stays stopped.
+# Secrets are not here: they come from `.env` (operator) and Settings (broker/AI keys), as always.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+    restart: unless-stopped
+
+  backend:
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped

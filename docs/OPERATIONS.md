@@ -665,12 +665,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 - After entering a broker's key under Settings and logging in, press **Read-only check** on that account
   card. It probes profile, funds, instruments, a NIFTY quote, the nearest NIFTY option (resolved and quoted
-  through the worker's own symbol translation), positions and today's order book. It never places, modifies or
-  cancels an order.
-- Green on all eight steps is the adapter's first live confirmation; do it once per broker before the first
+  through the worker's own symbol translation), the broker's option chain (optional: skipped where the broker
+  has no chain endpoint), positions and today's order book. It never places, modifies or cancels an order.
+- Green on all nine steps is the adapter's first live confirmation; do it once per broker before the first
   PAPER session and again after any adapter upgrade. A red `profile` means the token; a red `derivatives` or
   `contract_quote` means the scrip master or symbol translation, and its message names the contract.
 - Each run is audited as `broker_smoke_test` with its summary.
+- **Daily login without OAuth (Fyers, Kite).** These brokers redirect to the URL registered on *their* console,
+  so the platform cannot receive the code. The session banner's **Open <broker> login** builds the login page
+  from the stored App ID and Redirect URI (`GET /api/broker/{name}/login-url`; no secret leaves the server);
+  paste the returned `auth_code` / `request_token` (or the whole redirected address) and **Login with code**
+  (`POST /api/broker/{name}/login-code`) exchanges it and stores the day's token encrypted. Pasting a new code
+  always drops yesterday's access token first - the auth-code adapters skip the exchange while a token is on
+  file, which used to make every pasted code "fail" with the stale token. Fyers needs the app's Redirect URL
+  stored once as `redirect_uri`. Local PC runbook (Marathi): `docs/LOCAL_PC_MR.md`.
 
 ### 1.6ab CoinDCX setup (Phase AK)
 

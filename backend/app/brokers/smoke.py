@@ -4,8 +4,9 @@ Every adapter and the Phase AI symbol translator are verified against mocked tra
 gap analysis has said "first live confirmation pending" since the first adapter landed. This is
 the operator's way to get that confirmation without risking an order: profile, funds, instrument
 list, an index quote, the derivatives list, one option contract resolved and quoted through the
-same translation the worker uses, open positions and today's order book. Nothing here places,
-modifies or cancels anything.
+same translation the worker uses, the broker's option chain (optional: skipped where the broker
+has no chain endpoint), open positions and today's order book. Nothing here places, modifies or
+cancels anything.
 
 Each step is timed, isolated (one failure never stops the next) and reported with the exception
 type and message when it fails, so the report reads as a checklist the operator can act on.
@@ -16,12 +17,12 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Any, Awaitable, Callable, List, Optional
+from typing import Awaitable, Callable, List, Optional
 
 from app.brokers.base import BrokerInterface
 from app.brokers.contract_symbols import contract_keys
 from app.core.config import QUOTE_MAX_STALE_SECONDS
-from app.instruments.master import INDEX_SYMBOLS, derivatives_exchange, underlying_of
+from app.instruments.master import derivatives_exchange, underlying_of
 
 STEP_TIMEOUT_SECONDS = 25.0
 CRITICAL_STEPS = ("profile", "funds", "quote")
@@ -65,11 +66,18 @@ class SmokeReport:
                 "started_at": self.started_at.isoformat(), "steps": [s.as_dict() for s in self.steps], "read_only": True}
 
 
-async def _step(report: SmokeReport, name: str, fn: Callable[[], Awaitable[str]], *, timeout: float) -> Optional[str]:
-    """Run one probe; record ok/fail with timing. Returns the detail on success, None on failure."""
+async def _step(report: SmokeReport, name: str, fn: Callable[[], Awaitable[str]], *, timeout: float, optional: bool = False) -> Optional[str]:
+    """Run one probe; record ok/fail with timing. Returns the detail on success, None on failure.
+    `optional`: a broker (or test double) without this endpoint says so with NotImplementedError -> skip, not fail."""
     started = time.monotonic()
     try:
         detail = await asyncio.wait_for(fn(), timeout=timeout)
+    except NotImplementedError as exc:
+        if optional:
+            report.steps.append(Step(name, "skip", f"not offered by this broker ({str(exc).strip() or 'NotImplementedError'})"[:300], int((time.monotonic() - started) * 1000)))
+            return None
+        report.steps.append(Step(name, "fail", f"NotImplementedError: {str(exc).strip()[:300]}", int((time.monotonic() - started) * 1000)))
+        return None
     except asyncio.TimeoutError as exc:
         elapsed = time.monotonic() - started
         if elapsed >= timeout * 0.9:                     # our own deadline, not a TimeoutError the adapter raised
@@ -165,6 +173,15 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
         via = " via the broker's own symbol" if getattr(adapter, "translations", 0) else ""
         return f"{canonical} premium {ltp:,.2f}{via}"
 
+    async def option_chain() -> str:
+        chain = await adapter.get_option_chain(underlying_symbol if not venue else underlying)
+        rows = [r for r in chain.rows if r.strike]
+        if not rows:
+            raise RuntimeError(f"option chain for {underlying} came back with no strikes")
+        quoted = sum(1 for r in rows if (r.call_ltp or 0) > 0 or (r.put_ltp or 0) > 0)
+        spot = f", underlying {chain.underlying_ltp:,.2f}" if chain.underlying_ltp else ""
+        return f"{len(rows)} strikes for {underlying} expiring {chain.expiry or '?'}, {quoted} with a premium{spot}"
+
     async def positions() -> str:
         rows = await adapter.get_positions()
         open_rows = [p for p in rows if p.quantity]
@@ -184,6 +201,10 @@ async def run_smoke(adapter: BrokerInterface, *, account_label: str = "primary",
         await _step(report, "contract_quote", contract_quote, timeout=timeout)
     else:
         report.steps.append(Step("contract_quote", "skip", "no contract to quote (derivatives list empty or failed)"))
+    if has_derivatives:
+        await _step(report, "option_chain", option_chain, timeout=timeout, optional=True)
+    else:
+        report.steps.append(Step("option_chain", "skip", f"{report.broker} is a spot venue - no option chain"))
     for name, fn in (("positions", positions), ("orders", orders)):
         await _step(report, name, fn, timeout=timeout)
     return report

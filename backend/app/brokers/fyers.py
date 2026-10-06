@@ -25,6 +25,7 @@ import csv
 import hashlib
 import io
 import logging
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -71,6 +72,83 @@ def _parse_time(raw) -> Optional[datetime]:
         except ValueError:
             continue
     return None
+
+
+_TICKER_OPTION_RE = re.compile(r"^(?P<u>[A-Z][A-Z&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))(?P<strike>\d+(?:\.\d+)?)(?P<right>CE|PE)$")
+_TICKER_FUTURE_RE = re.compile(r"^(?P<u>[A-Z][A-Z&-]*?)(?P<when>\d{2}(?:[A-Z]{3}|[1-9OND]\d{2}))FUT$")
+
+
+def _number(value: str) -> Optional[float]:
+    try:
+        number = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _contract_fields(row: List[str], ticker: str) -> Tuple[Optional[float], str, Optional[str]]:
+    """(strike, option type, underlying) of one symbol-master row.
+
+    The public docs list the F&O master's columns, but their exact order around the underlying
+    (`Underlying symbol`, `Underlying scrip code`, `Strike price`, `Option type`) has moved between
+    revisions, and an off-by-one there is silent and expensive: with `Underlying scrip code` taken
+    for the strike every NIFTY option would carry strike 26000 (the index's scrip code) and no
+    `CE`/`PE` at all, so no option could ever be resolved. The ticker itself (`NSE:NIFTY26OCT26000CE`,
+    weekly `NSE:NIFTY25O0726000CE`, `NSE:NIFTY26OCTFUT`) is the documented, stable spelling, so it is
+    read first and the columns only confirm or fill in what it cannot say.
+    """
+    body = (ticker.split(":", 1)[1] if ":" in ticker else ticker).strip().upper()
+    cells = [c.strip() for c in row]
+    option_type = ""
+    strike: Optional[float] = None
+    underlying: Optional[str] = None
+    m = _TICKER_OPTION_RE.match(body)
+    if m:
+        option_type, strike, underlying = m.group("right"), _number(m.group("strike")), m.group("u").rstrip("-")
+    else:
+        m = _TICKER_FUTURE_RE.match(body)
+        if m:
+            underlying = m.group("u").rstrip("-")
+    # Columns: the option type is whichever of the documented positions reads CE/PE; the strike is the
+    # positive number right before it. Used when the ticker did not parse, and to catch a decimal strike
+    # the ticker rounds.
+    for i in (16, 15, 14):
+        if i < len(cells) and cells[i].upper() in ("CE", "PE"):
+            column_type = cells[i].upper()
+            column_strike = _number(cells[i - 1]) if i - 1 < len(cells) else None
+            option_type = option_type or column_type
+            if column_strike is not None and (strike is None or abs(column_strike - strike) < 1.0):
+                strike = column_strike
+            break
+    # Underlying: the first alphabetic (non-numeric) cell in the documented positions beats the ticker prefix.
+    for i in (13, 14):
+        if i < len(cells) and cells[i] and not cells[i].replace(".", "").replace("-", "").isdigit():
+            underlying = cells[i].upper()
+            break
+    if option_type not in ("CE", "PE"):
+        strike = None
+    return strike, option_type, underlying
+
+
+# Fyers `segment` codes on positions / orders: 10 capital market, 11 F&O, 12 currency, 20 commodity.
+_SEGMENT_EXCHANGE = {10: {"NSE": "NSE", "BSE": "BSE"}, 11: {"NSE": "NFO", "BSE": "BFO"}, 12: {"NSE": "CDS", "BSE": "BCD"}, 20: {"MCX": "MCX", "NSE": "NCDEX"}}
+
+
+def _exchange_of(ticker: str, segment=None) -> str:
+    """Fyers spells NSE equities and NSE derivatives with the same `NSE:` prefix; the platform (and the
+    contract-symbol translator that restores positions to the platform spelling) tells them apart by
+    exchange, NSE vs NFO. The segment code decides when present; the ticker's contract shape otherwise."""
+    prefix = ticker.split(":", 1)[0].upper() if ":" in ticker else "NSE"
+    body = (ticker.split(":", 1)[1] if ":" in ticker else ticker).strip().upper()
+    try:
+        code = int(segment) if segment not in (None, "") else None
+    except (TypeError, ValueError):
+        code = None
+    if code in _SEGMENT_EXCHANGE:
+        return _SEGMENT_EXCHANGE[code].get(prefix, prefix)
+    if _TICKER_OPTION_RE.match(body) or _TICKER_FUTURE_RE.match(body):
+        return {"NSE": "NFO", "BSE": "BFO"}.get(prefix, prefix)
+    return prefix
 
 
 class FyersBroker(BrokerInterface):
@@ -172,14 +250,8 @@ class FyersBroker(BrokerInterface):
                     expiry = datetime.fromtimestamp(int(float(row[8])), tz=IST).date().isoformat()
             except (TypeError, ValueError):
                 expiry = None
-            strike = None
-            try:
-                strike = float(row[14]) if len(row) > 14 and row[14] and float(row[14]) > 0 else None
-            except (TypeError, ValueError):
-                strike = None
-            option_type = (row[15].strip().upper() if len(row) > 15 else "") or ""
+            strike, option_type, underlying = _contract_fields(row, ticker)
             instrument_type = option_type if option_type in ("CE", "PE") else ("FUT" if expiry and exchange in ("NFO", "BFO", "MCX") else ("INDEX" if ticker.upper().endswith("-INDEX") else "EQ"))
-            underlying = (row[13].strip().upper() if len(row) > 13 and row[13] and not row[13].strip().replace(".", "").isdigit() else None)
             try:
                 lot = float(row[3] or 1)
             except (TypeError, ValueError):
@@ -383,7 +455,7 @@ class FyersBroker(BrokerInterface):
         out = []
         for p in (await self._request("GET", f"{API_URL}/positions")).get("netPositions") or []:
             ticker = str(p.get("symbol") or "")
-            out.append(BrokerPosition(symbol=self._platform_symbol(ticker), exchange=ticker.split(":", 1)[0] if ":" in ticker else "NSE",
+            out.append(BrokerPosition(symbol=self._platform_symbol(ticker), exchange=_exchange_of(ticker, p.get("segment")),
                                       product=PRODUCT_BACK.get(str(p.get("productType") or ""), str(p.get("productType") or "MIS")), quantity=float(p.get("netQty") or 0),
                                       average_price=float(p.get("netAvg") or p.get("avgPrice") or 0), ltp=float(p.get("ltp") or 0),
                                       pnl=float(p.get("unrealized_profit") if p.get("unrealized_profit") is not None else p.get("pl") or 0)))
@@ -393,7 +465,7 @@ class FyersBroker(BrokerInterface):
         out = []
         for h in (await self._request("GET", f"{API_URL}/holdings")).get("holdings") or []:
             ticker = str(h.get("symbol") or "")
-            out.append(BrokerHolding(symbol=self._platform_symbol(ticker), exchange=ticker.split(":", 1)[0] if ":" in ticker else "NSE",
+            out.append(BrokerHolding(symbol=self._platform_symbol(ticker), exchange=_exchange_of(ticker, h.get("segment")),
                                      quantity=float(h.get("quantity") or h.get("qty") or 0), average_price=float(h.get("costPrice") or 0), ltp=float(h.get("ltp") or 0),
                                      pnl=float(h.get("pl") or 0)))
         return out

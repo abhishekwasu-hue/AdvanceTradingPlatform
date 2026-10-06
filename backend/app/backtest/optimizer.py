@@ -1,9 +1,10 @@
 """Phase M / V4.6: parameter optimisation with an out-of-sample guard.
 
 A small grid over strategy parameters is run on the in-sample part of the data and every
-combination is then re-run untouched on the held-out part. The ranking is by the out-of-sample
-metric, and each row shows the in-sample figure beside it so an over-fitted winner (great
-in-sample, flat or negative out-of-sample) is visible instead of hidden. Bounded to
+combination is then re-run untouched on the held-out part. Candidates are ranked by the in-sample
+metric and each row carries its out-of-sample figure as `validation` (P0.6 / B3: ranking on the held-out
+part would have made it in-sample too), so an over-fitted winner (great in-sample, flat or negative
+out-of-sample) is visible instead of hidden. Bounded to
 `MAX_COMBOS` combinations per call; this is a guided search, not a promise.
 """
 import copy
@@ -57,23 +58,30 @@ def optimize(strategy: BaseStrategy, base_df: pd.DataFrame, symbol: str, base_tf
         ins = run_backtest(candidate, in_sample, symbol, base_tf, risk_config)
         oos = run_backtest(candidate, out_sample, symbol, base_tf, risk_config)
         in_value, out_value = _metric(ins, metric), _metric(oos, metric)
+        enough_in, enough_out = ins.total_trades >= min_trades, oos.total_trades >= min_trades
         rows.append({
             "params": params,
             "in_sample": {"trades": ins.total_trades, "net_pnl": ins.net_pnl, "win_rate": ins.win_rate, "profit_factor": ins.profit_factor,
                           "expectancy": ins.expectancy, "max_drawdown": ins.max_drawdown},
             "out_of_sample": {"trades": oos.total_trades, "net_pnl": oos.net_pnl, "win_rate": oos.win_rate, "profit_factor": oos.profit_factor,
                               "expectancy": oos.expectancy, "max_drawdown": oos.max_drawdown},
-            "score": out_value if (out_value is not None and oos.total_trades >= min_trades) else None,
+            # P0.6 / B3: the *in-sample* metric ranks the candidates; the out-of-sample figure is the honest estimate of
+            # the winner, never the thing we pick on (picking on it would make it in-sample too).
+            "score": in_value if (in_value is not None and enough_in) else None,
+            "validation": out_value if (out_value is not None and enough_out) else None,
             "overfit_gap": (in_value - out_value) if (in_value is not None and out_value is not None) else None,
-            "flags": ([] if oos.total_trades >= min_trades else [f"only {oos.total_trades} out-of-sample trades"])
+            "flags": ([] if enough_in else [f"only {ins.total_trades} in-sample trades"])
+                     + ([] if enough_out else [f"only {oos.total_trades} out-of-sample trades"])
                      + (["in-sample profit did not carry out-of-sample"] if (in_value or 0) > 0 and (out_value or 0) <= 0 else []),
         })
     ranked = sorted(rows, key=lambda r: (r["score"] is None, -(r["score"] or 0.0)))
     best = next((r for r in ranked if r["score"] is not None), None)
-    robust = [r for r in ranked if r["score"] is not None and (r["score"] or 0) > 0 and not r["flags"]]
+    robust = [r for r in ranked if r["score"] is not None and (r["validation"] or 0) > 0 and not r["flags"]]
+    confirmed = best is not None and (best["validation"] or 0) > 0 and not best["flags"]
     return {
         "metric": metric, "split": split, "in_sample_bars": cut, "out_of_sample_bars": n - cut, "combinations": len(rows),
-        "best": best, "robust_count": len(robust), "results": ranked,
-        "note": ("Ranked by the out-of-sample metric. Prefer a parameter region where neighbours also score well over a single spike; "
+        "best": best, "best_confirmed_out_of_sample": confirmed, "robust_count": len(robust), "results": ranked,
+        "note": ("Ranked by the in-sample metric; `validation` is each candidate's out-of-sample figure and was not used to rank. "
+                 "Trust the winner only if best_confirmed_out_of_sample is true and neighbouring parameters also validate; "
                  "a large overfit_gap means the in-sample result did not generalise. Re-run walk-forward on the chosen parameters."),
     }

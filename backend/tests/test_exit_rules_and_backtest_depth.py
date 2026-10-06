@@ -9,7 +9,7 @@ import pandas as pd
 from sqlalchemy import select
 
 from app.backtest.analytics import build_analytics, drawdown_curve, streaks
-from app.backtest.engine import run_backtest
+from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.robustness import monte_carlo, walk_forward
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal, Trade
@@ -167,7 +167,7 @@ def test_backtest_endpoint_records_runs_for_logged_in_users_and_lists_them():
     runs = client.get("/api/backtests", headers=headers).json()
     assert runs[0]["id"] == run_id and runs[0]["symbol"] == "NIFTY" and runs[0]["data_source"] == "sample" and runs[0]["bars"] == 300
     one = client.get(f"/api/backtests/{run_id}", headers=headers).json()
-    assert one["engine_version"] == "2" and one["exit_rules"] == {"trailing_stop_pct": 0.5} and "analytics" in one["metrics"]
+    assert one["engine_version"] == ENGINE_VERSION and one["exit_rules"] == {"trailing_stop_pct": 0.5} and "analytics" in one["metrics"]
     assert client.get(f"/api/backtests/{run_id}", headers=_auth("bt-other@example.com")).status_code == 404
     bad = client.post("/api/backtest", headers=headers, json={**body, "exit_rules": {"time_exit_at": "25:00"}})
     assert bad.status_code == 422

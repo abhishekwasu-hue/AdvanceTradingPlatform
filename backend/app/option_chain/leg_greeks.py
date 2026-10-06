@@ -2,7 +2,7 @@ from datetime import date
 from typing import List
 
 from app.core.config import RISK_FREE_RATE
-from app.option_chain.greeks import BSInputs, black_scholes, implied_volatility, time_to_expiry_years
+from app.option_chain.greeks import BSInputs, black_scholes, implied_volatility, time_to_expiry_years, today_ist
 from app.option_chain.models import GreeksResult, LegGreeksResult, OptionLegInput, StrategyGreeksResult
 
 
@@ -24,7 +24,7 @@ def _resolve_iv(leg: OptionLegInput, t: float) -> float:
 
 
 def compute_leg_greeks(leg: OptionLegInput) -> LegGreeksResult:
-    as_of = date.fromisoformat(leg.as_of) if leg.as_of else date.today()
+    as_of = date.fromisoformat(leg.as_of) if leg.as_of else today_ist()
     expiry = date.fromisoformat(leg.expiry)
     t = time_to_expiry_years(expiry, as_of)
 

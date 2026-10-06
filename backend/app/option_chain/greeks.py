@@ -11,8 +11,9 @@ theoretical maximum), no IV/Greeks are returned rather than inventing a number.
 
 import math
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from app.option_chain.models import OptionType
 
@@ -22,6 +23,13 @@ _SQRT_2PI = math.sqrt(2 * math.pi)
 # configurable, documented default) - passed in explicitly here so this module has no import-time
 # dependency on app.core.config and stays trivially unit-testable with any rate.
 _MIN_TIME_TO_EXPIRY_YEARS = 1.0 / 365.0 / 24.0  # ~1 hour floor, avoids division by zero at/after expiry
+IST = ZoneInfo("Asia/Kolkata")
+
+
+def today_ist() -> date:
+    """The exchange's calendar date now. Callers that mean "today" pass this, not `date.today()`: a container clock
+    runs in UTC, so between 00:00 and 05:30 IST the host date is still yesterday and the Greeks would be a day old."""
+    return datetime.now(IST).date()
 
 
 def _norm_cdf(x: float) -> float:
@@ -32,9 +40,22 @@ def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / _SQRT_2PI
 
 
-def time_to_expiry_years(expiry: date, as_of: date) -> float:
-    days = (expiry - as_of).days
-    return max(days / 365.0, _MIN_TIME_TO_EXPIRY_YEARS)
+def time_to_expiry_years(expiry: date, as_of) -> float:
+    """Years from the valuation instant to the contract's last trade (15:30 IST on expiry day) - P0.6 / T7.
+
+    `as_of` may be an aware datetime (exact; a naive one is UTC) or a date. Today's date means "now", so a 0DTE
+    option at 11:00 still has 4.5 hours of life instead of the one-hour floor and a 1-DTE theta is not a day
+    too large; a plain historical date carries no clock and keeps whole-day arithmetic."""
+    from datetime import datetime, time, timezone
+    if isinstance(as_of, datetime):
+        instant = as_of if as_of.tzinfo is not None else as_of.replace(tzinfo=timezone.utc)
+    elif as_of == today_ist():
+        instant = datetime.now(timezone.utc)
+    else:
+        return max((expiry - as_of).days / 365.0, _MIN_TIME_TO_EXPIRY_YEARS)
+    close = datetime.combine(expiry, time(15, 30), tzinfo=IST)
+    seconds = (close - instant).total_seconds()
+    return max(seconds / (365.0 * 86400.0), _MIN_TIME_TO_EXPIRY_YEARS)
 
 
 @dataclass

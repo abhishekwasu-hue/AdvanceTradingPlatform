@@ -210,8 +210,8 @@ Every P0 item was checked against the code before planning (the plan's file name
 | T4 | emergency exit cancels orders in the DB only (`transition_order`), not at the broker; shorts/longs order not enforced | **P0.5 (done)** |
 | T5 | every order `MARKET`, no market-protection % / marketable-limit option | **P0.5 (done)** - `order_style` per deployment (MARKET default, PROTECTED_LIMIT opt-in) |
 | T6 | daily loss on realised P&L only; "day" is UTC | **P0.5 (done)** - IST trading day, open positions marked by the monitor count |
-| T7 | `time_to_expiry_years` in whole days | P0.6 |
-| B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | P0.6 |
+| T7 | `time_to_expiry_years` in whole days | **P0.6 (done)** - seconds to the 15:30 IST close |
+| B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | **P0.6 (done)** |
 | infra | deploy.sh rollback re-tags the image but does not restart (verified: tags only); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), P0.7 (the rest) |
 
 Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
@@ -369,3 +369,34 @@ default and G-LIVE gate before any LIVE wiring.
   limit); the marked-to-market term counts only positions opened and marked today (a carried swing gain must not
   hide today's losses); a remainder the exchange already cancelled is not cancelled again; the emergency exit asks
   the broker whose book lists the order first.
+
+### 2026-10-06 - P0.6: Greeks clock and backtest honesty (T7, B1-B5)
+- T7: `time_to_expiry_years` measures seconds to the contract's 15:30 IST close; an aware datetime is exact, today's
+  date (the exchange's date, `today_ist`) means "now", an older date keeps whole days. Whole days made every expiry-day Greek the one-hour floor
+  and every 1-DTE theta a day too large (strike selection, leg Greeks and chain analysis all go through it).
+- B1: the plain backtest engine never reset `trades_today` / `daily_pnl`, so `max_trades_per_day` and the daily
+  loss limit capped the *whole run* after the first day. Counters now reset per Indian trading day, as the option
+  engine already did and the worker does. `ENGINE_VERSION` 3: stored runs from version 2 are not comparable.
+- B2: the cost model assumed entry = buy, exit = sell; a written option's sell-side STT therefore landed on its
+  exit premium instead of its entry premium (`sold_first` for short positions, in the option engine, the position
+  monitor and the paper broker). A bought leg settled in the money at expiry is exercised: STT 0.125% of the
+  intrinsic value replaces the sell-side premium STT; a settled leg pays one brokerage and no stamp duty on a
+  buy-back that never happened; a calendar spread's far leg is closed at market as before. Option engine version
+  `4-options`: stored option runs from `3-options` are not comparable.
+- B3: the optimizer ranked candidates by the out-of-sample metric, which makes the held-out part in-sample. It now
+  ranks in-sample and reports each candidate's out-of-sample figure as `validation`;
+  `best_confirmed_out_of_sample` says whether the winner held up (the Backtest page shows it as a badge). A caller
+  that read `score` as the out-of-sample number must read `validation`.
+- B4: a bar that opens beyond a stop or target fills at the open, not at the level (`determine_exit_price` takes
+  the bar's open; the live path passes none and is unchanged).
+- B5: option backtests size with the lot the exchange applied on the entry day (`lot_size_on`, dated table with the
+  20 Nov 2024 index revision; earlier history uses the pre-revision lot - an approximation stated in the code),
+  unless the run pins `lot_size`.
+- Tests: `tests/test_phase_p0_6_backtest_fixes.py`; the `test_phase_m_closure` optimizer test is named for the new
+  ranking (its assertions already held).
+- Self-review findings fixed before merge: option engine version bumped (every option run's numbers changed); the
+  exercise treatment applied to a calendar spread's far long leg, which is sold at market, not settled; settled legs
+  were charged an exit order's brokerage and stamp duty; `date.today()` callers (chain analysis, leg Greeks, position
+  Greeks) now use the IST date so the 00:00-05:30 IST window does not read yesterday's Greeks; the run summary's
+  `lot_size` lists every lot used when a run spans the revision; the lot table's comment states its approximations
+  (no intermediate-revision row, keyed by entry date) instead of implying full history.

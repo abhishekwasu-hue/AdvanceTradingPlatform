@@ -38,7 +38,21 @@ class PaperBroker:
         "FUTURE": {"stt_sell": 0.02, "stt_buy": 0.0, "exchange": 0.00173, "sebi": 0.0001, "stamp_buy": 0.002},
     }
 
-    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING") -> float:
+    # STT the buyer pays when an in-the-money option is exercised/settled at expiry: 0.125% of the intrinsic value.
+    EXERCISE_STT_PCT = 0.125
+
+    def exercise_charges(self, intrinsic_per_unit: float, quantity: float) -> float:
+        """P0.6 / B2: a long option settled in the money is treated as exercised - STT on the intrinsic value."""
+        if intrinsic_per_unit <= 0 or quantity <= 0:
+            return 0.0
+        return round(intrinsic_per_unit * quantity * self.EXERCISE_STT_PCT / 100, 2)
+
+    def estimate_round_trip_costs(self, entry_price: float, exit_price: float, quantity: float, instrument_kind: str = "UNDERLYING",
+                                  *, sold_first: bool = False, settled: bool = False) -> float:
+        """`settled` (P0.6 / B2): the position ended by expiry settlement, not by an exit order - one brokerage, and no
+        stamp duty on a buy-back that never happened (pass the exit as 0.0; exercise STT is `exercise_charges`).
+        `sold_first` (P0.6 / B2): the position was opened with a sell (a written option, a short future) - the
+        sell-side STT then belongs to the *entry* premium and stamp duty to the exit, not the other way round."""
         profile = self.COST_PROFILES.get((instrument_kind or "UNDERLYING").upper())
         if profile is None or instrument_kind in (None, "UNDERLYING"):
             turnover = (entry_price + exit_price) * quantity
@@ -52,12 +66,12 @@ class PaperBroker:
         legs = [entry_price * quantity, exit_price * quantity]
         turnover = sum(legs)
         # For a bought contract the exit is the sell leg; for a written/short one the entry is.
-        sell_turnover, buy_turnover = legs[1], legs[0]
+        sell_turnover, buy_turnover = (legs[0], legs[1]) if sold_first else (legs[1], legs[0])
         stt = sell_turnover * profile["stt_sell"] / 100 + buy_turnover * profile["stt_buy"] / 100
         exchange = turnover * profile["exchange"] / 100
         sebi = turnover * profile["sebi"] / 100
         stamp = buy_turnover * profile["stamp_buy"] / 100
-        brokerage = self.brokerage_per_order * 2
+        brokerage = self.brokerage_per_order * (1 if settled else 2)
         gst = (brokerage + exchange + sebi) * self.gst_pct / 100
         return round(stt + exchange + sebi + stamp + brokerage + gst, 2)
 

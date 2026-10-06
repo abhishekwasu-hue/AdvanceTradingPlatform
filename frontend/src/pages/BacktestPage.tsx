@@ -566,7 +566,7 @@ export default function BacktestPage() {
             </Card>
           )}
 
-          <Card title="Parameter optimisation (in-sample search, out-of-sample ranking)">
+          <Card title="Parameter optimisation (ranked in-sample, validated out-of-sample)">
             <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
               <input className="flex-1 min-w-[260px] rounded bg-panel2 border border-border px-2 py-1 font-mono" value={optGrid} onChange={(e) => setOptGrid(e.target.value)} />
               <select className="rounded bg-panel2 border border-border px-1 py-1" value={optMetric} onChange={(e) => setOptMetric(e.target.value)}>
@@ -578,7 +578,12 @@ export default function BacktestPage() {
             {optError && <div className="text-xs text-danger">{optError}</div>}
             {optResult && (
               <div className="text-xs">
-                <div className="text-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust</div>
+                <div className="text-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
+                  {optResult.best_confirmed_out_of_sample != null && (
+                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-emerald-900/40 text-emerald-300" : "bg-amber-900/40 text-amber-300"}`}>
+                      {optResult.best_confirmed_out_of_sample ? "winner confirmed out-of-sample" : "winner NOT confirmed out-of-sample (in-sample ranking only)"}
+                    </span>
+                  )}</div>
                 <table className="w-full"><thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
                   <tbody>{optResult.results.slice(0, 12).map((r: OptimizeResult["results"][number], i: number) => {
                     const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];

@@ -7,7 +7,7 @@ GET  /api/contract-notes/{id}       one upload with its parsed legs and matches
 Traders and owners can upload (the same people who see the trades); viewers cannot.
 """
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select

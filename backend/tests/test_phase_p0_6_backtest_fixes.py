@@ -2,7 +2,7 @@
 trading day (B1), charges STT on the leg that was actually sold and on exercise (B2), ranks the optimizer in-sample
 and validates out-of-sample (B3), fills gapped levels at the open (B4) and sizes options with the lot of the entry
 day (B5)."""
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import numpy as np

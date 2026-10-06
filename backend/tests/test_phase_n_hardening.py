@@ -20,7 +20,7 @@ from tests.test_admin_api import _admin
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_deployments_api import _store_broker
 from tests.test_mfa import _set_tenant
-from tests.test_team_api import _accept, _invite, _token_from
+from tests.test_team_api import _accept, _invite
 from app.auth.routes import verify_rate_limit
 from app.main import app
 

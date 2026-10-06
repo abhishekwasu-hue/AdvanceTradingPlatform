@@ -370,7 +370,7 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `advance_trading_platform_staging`); set `STAGING_ENABLED=true` plus `STAGING_SSH_*` secrets
   to have GitHub deploy every push to main. Production deploys are `scripts/deploy.sh production`
   after 15:30 IST; the migration guard refuses schema changes during the session and the script
-  restarts the API only after the deep health check passes.
+  restarts the API only after the deep health check passes; if it never does, the API is restarted from the previous image (P0.7).
 
 ### 1.6g Order pre-checks (Phase Q)
 
@@ -763,6 +763,31 @@ Never publish a listing without an attached backtest run; the API refuses the su
   gaps fill at the open (worse stops, no better-than-open targets), written options carry STT on the entry premium,
   index option lots follow the dated table, and the optimizer's `best` is the in-sample winner with its
   out-of-sample `validation` beside it. Stored runs carry `engine_version`; compare like with like.
+
+### 1.6ab-6 Deploy rollback, log rotation, static gates (P0.7)
+
+- `scripts/deploy.sh` now really rolls back: if the new API never passes the deep health check, the previous
+  backend image is retagged as the service image, the API is recreated from it (no rebuild) and the script waits
+  for health again before exiting 4. The worker and the frontend were not restarted yet at that point, so they
+  keep running the previous release; the schema is **not** rolled back (every migration since Phase N is additive
+  and the previous image reads it). If there is no previous image (first deploy) the new container is left up
+  for inspection. The PAPER PC does not use the script (`git pull` + `up --build`): nothing changes there.
+- Container logs rotate: Docker's json-file driver keeps at most 5 x 20 MB compressed files per service
+  (`x-logging` in `docker-compose.yml`, inherited by the local, staging and production overlays; Caddy and the
+  off-site copier too). `docker compose logs --tail 100 backend worker` works as before; history older than ~100 MB
+  per service is gone, which is the point. Roll-out: run the full `docker compose ... up -d` once, off-hours, after
+  pulling this release - every container (Postgres and Redis included) is recreated once because its logging
+  options changed. `deploy.sh` alone recreates only postgres/redis/backend/worker/frontend, and it does so on its
+  first run after the merge (a short database/Redis restart while the old API still serves), so run that first
+  deploy off-hours too; `backup`, `caddy` and `offsite` need the full `up -d` to pick the options up.
+- CI has a `lint` job next to the test job: ruff (`backend/ruff.toml`, the rule set the code is clean on), mypy
+  (`backend/mypy.ini`, the packages that are clean - add one when you make it clean), bandit (medium severity and
+  confidence or worse, `app/` only) and a gitleaks scan of the pushed commits (`.gitleaks.toml`). A red `lint`
+  job blocks a merge like a red test. Run them locally from `backend/` with `ruff check app tests`, `mypy`,
+  `bandit -q -r app -ll -ii` (`pip install ruff mypy bandit`, pinned versions in the workflow).
+- Every GitHub Action in both workflows is pinned to a commit SHA with the tag in a comment; bump by editing
+  both. Dependabot-style tag updates are not automatic.
+- RSS/Atom feeds are parsed with defusedxml (new dependency, in the image on the next build).
 
 ### 1.6ab CoinDCX setup (Phase AK)
 

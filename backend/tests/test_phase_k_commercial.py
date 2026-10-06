@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.alerts.dispatcher import sign_webhook
 from app.billing import service as billing
-from app.db.models import CustomStrategyRecord, SubscriptionRecord, Tenant, UsageRecord, User
+from app.db.models import CustomStrategyRecord, SubscriptionRecord, Tenant, UsageRecord
 from app.plans.limits import feature_allowed
 from app.plans.registry import get_plan
 from app.public_api.keys import limiter

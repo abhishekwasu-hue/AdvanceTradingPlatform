@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 
-from app.brokers.models import BrokerProfile
 from app.core.models import RiskConfig, Signal
 from app.core.enums import SignalDirection, SignalGrade
 from app.db.models import TradeRecord, User

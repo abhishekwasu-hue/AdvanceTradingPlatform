@@ -4,17 +4,17 @@ once a day outside market hours, and erasure anonymises a removed teammate."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 
 from app.db.models import (
-    AlertDeliveryRecord, AuditLogRecord, LoginEventRecord, NotificationRecord, OrderRecord, PasswordResetRecord,
+    AuditLogRecord, LoginEventRecord, NotificationRecord, OrderRecord, PasswordResetRecord,
     TenantInviteRecord, TradeRecord, User, UserSessionRecord,
 )
 from app.retention import service
 from app.retention.policy import MIN_DAYS, NEVER_DELETED, RetentionPolicy, load_policy
-from app.retention.service import erase_user, preview_retention, run_retention
+from app.retention.service import preview_retention, run_retention
 from tests.test_admin_api import _admin
-from tests.test_auth_api import _register, _session_factory, client
+from tests.test_auth_api import _session_factory, client
 from tests.test_team_api import _join, _owner
 
 NOW = datetime(2026, 9, 26, 5, 0, tzinfo=timezone.utc)

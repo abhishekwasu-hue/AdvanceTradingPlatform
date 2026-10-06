@@ -9,9 +9,8 @@ from sqlalchemy import select
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import BrokerProfile
 from app.brokers import token_lifecycle as tl
-from app.core.enums import BrokerTokenStatus
 from app.db.models import BrokerCredentialRecord, NotificationRecord
-from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.encryption import encrypt_text
 from tests.test_auth_api import _register, _session_factory, client
 
 IST = ZoneInfo("Asia/Kolkata")

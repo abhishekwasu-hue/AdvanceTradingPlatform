@@ -3,11 +3,10 @@ and the worker routing a LIVE entry to the account the policy picks."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
 
 from app.accounts.routing import RoutingPolicy, choose_account, policy_for, utilisation
 from app.brokers import token_lifecycle
-from app.brokers.models import BrokerPosition, BrokerProfile, MarginInfo
+from app.brokers.models import BrokerProfile, MarginInfo
 from app.db.models import BrokerAccountRecord, StrategyDeploymentRecord, TradeRecord
 from app.workers import trading_worker as tw
 from tests.test_accounts import _mark_valid

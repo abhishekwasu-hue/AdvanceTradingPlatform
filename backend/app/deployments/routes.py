@@ -33,8 +33,7 @@ from app.instruments.strike_selection import StrikeFilters
 from app.trading.exit_rules import ExitRules
 from app.ai.regime import parse_filter, validate_filter
 from app.instruments.spreads import (
-    MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg, custom_legs_json, describe_structure, is_debit, is_payoff_priced,
-    parse_custom_legs, resolve_structure, structure_metrics,
+    MAX_CUSTOM_LEGS, MAX_LEG_RATIO, CustomLeg, custom_legs_json, describe_structure, is_debit, parse_custom_legs, resolve_structure, structure_metrics,
 )
 from app.execution.contract_execution import contract_ltp
 from app.instruments.contracts import (

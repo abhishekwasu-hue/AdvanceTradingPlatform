@@ -17,7 +17,7 @@ from tests.master_fixture import NIFTY_LOT
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
-from tests.test_multileg import SPOT, _OptionBroker, _premium, _rules
+from tests.test_multileg import SPOT, _OptionBroker, _rules
 from tests.test_trading_worker import _signal, _tenant, _trades
 
 FAR_BUMP = 40.0   # a later expiry's option is worth more: the calendar's long leg

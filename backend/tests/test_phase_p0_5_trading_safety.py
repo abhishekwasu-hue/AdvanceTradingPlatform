@@ -9,10 +9,10 @@ from sqlalchemy import select
 
 from app.brokers.base import BrokerCapabilities, BrokerInterface, looks_like_option, stop_order_params
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus
-from app.core.enums import ExecutionMode, OrderSide, SignalDirection
+from app.core.enums import OrderSide, SignalDirection
 from app.core.models import RiskConfig
-from app.db.models import OrderRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
-from app.execution.router import OrderRouter, protected_limit_price
+from app.db.models import OrderRecord, Tenant, TradeRecord, User
+from app.execution.router import protected_limit_price
 from app.market_data.calendar import IST, trading_day_start
 from app.risk_engine.risk_manager import TradingDayState
 from app.trading.persistence import build_trading_day_state, open_unrealised_pnl
@@ -319,7 +319,7 @@ def test_daily_loss_counts_marked_open_positions_on_the_ist_day():
             # The monitor writes the marks it sees for positions that stay open.
             async def price_lookup(symbol, exchange):
                 return {"B": 95.0, "C": 101.0}[symbol] if symbol in ("B", "C") else 100.0
-            outcomes = await monitor_open_positions(session, me["tenant_id"], price_lookup)
+            await monitor_open_positions(session, me["tenant_id"], price_lookup)
             rows = {t.symbol: t for t in await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == me["tenant_id"], TradeRecord.exit_time.is_(None)))}
             assert rows["B"].mark_price == 95.0 and rows["C"].mark_price == 101.0 and rows["C"].mark_time is not None
             assert await open_unrealised_pnl(session, me["tenant_id"]) == -60.0           # B: -50, C (short): -10

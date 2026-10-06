@@ -1,7 +1,7 @@
 """Phase A5: the single close path (paper + live) and the per-cycle open-position sweep."""
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from sqlalchemy import select
 

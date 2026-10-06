@@ -26,7 +26,7 @@ from app.audit.log import write_audit_log
 from app.billing.razorpay import payment_entity, payment_link_entity
 from app.billing.service import provider as billing_provider
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import MarketplaceChargeRecord, MarketplaceListingRecord, MarketplacePayoutRecord, MarketplaceSubscriptionRecord, Tenant, User
+from app.db.models import MarketplaceChargeRecord, MarketplaceListingRecord, MarketplacePayoutRecord, MarketplaceSubscriptionRecord, User
 from app.marketplace import service
 from app.marketplace.service import MarketplaceError
 from app.notifications.service import notify

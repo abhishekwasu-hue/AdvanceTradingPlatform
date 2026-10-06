@@ -333,7 +333,6 @@ async def load_profile(session, user) -> Tuple[Optional[dict], Preferences]:
 
 
 async def save_profile(session, user, answers: InterviewAnswers, prefs: Preferences) -> None:
-    import json
     from sqlalchemy import select
     from app.db.models import TraderProfileRecord
     row = await session.scalar(select(TraderProfileRecord).where(TraderProfileRecord.user_id == user.id))

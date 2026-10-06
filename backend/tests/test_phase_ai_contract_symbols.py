@@ -1,7 +1,7 @@
 """Phase AI: derived-contract symbols translated into each broker's own spelling at the adapter boundary."""
 import asyncio
-from datetime import date, datetime
-from typing import Dict, List, Optional
+from datetime import date
+from typing import Dict, List
 
 import pytest
 

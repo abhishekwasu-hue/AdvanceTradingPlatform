@@ -11,7 +11,6 @@ from app.auth.dependencies import get_current_user, require_role, require_trader
 from app.option_chain.greeks import today_ist
 from app.db.models import AuditLogRecord, OrderEventRecord, OrderRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
-from app.notifications.service import notify
 from app.trading.analytics import AnalyticsSummary, build_analytics_summary
 from app.trading.exit_logic import check_contract_exit
 from app.trading.position_monitor import broker_for_trade, close_position
@@ -130,7 +129,7 @@ class PositionGreeksResponse(BaseModel):
 async def open_position_greeks(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> PositionGreeksResponse:
-    from datetime import date, datetime, timezone
+    from datetime import datetime, timezone
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.execution.contract_execution import ContractExecutionError

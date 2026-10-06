@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from app.brokers.models import OptionChain, OptionChainRow
-from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, SignalDirection, StrikeRule
+from app.core.enums import InstrumentKind, OptionPosition, SignalDirection
 from app.db.models import OrderRecord, StrategyDeploymentRecord
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.instruments.strike_selection import StrikeFilters, StrikeSelectionError, select_strike_with_chain

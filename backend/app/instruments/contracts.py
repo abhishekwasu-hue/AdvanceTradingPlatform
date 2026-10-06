@@ -13,9 +13,9 @@ Rules
 * strike: ATM = nearest listed strike to spot; ITM/OTM = `offset` listed steps in/out of the
   money for that right (CE in-the-money is below spot, PE in-the-money is above).
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
-from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
+from typing import Awaitable, Callable, Optional, Sequence, Tuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

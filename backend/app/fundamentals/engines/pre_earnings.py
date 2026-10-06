@@ -7,7 +7,6 @@ from datetime import date
 from typing import List
 
 from app.core.enums import Bias, RiskLevel, TrendLabel
-from app.fundamentals.engines.red_flags import RedFlagEngine
 from app.fundamentals.engines.statement_analysis import ProfitabilityEngine, RevenueAnalysisEngine
 from app.fundamentals.models import FinancialPeriod, PreEarningsAnalysis, RedFlag
 

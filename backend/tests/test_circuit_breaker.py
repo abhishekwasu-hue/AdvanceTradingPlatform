@@ -7,7 +7,6 @@ import pytest
 from app.brokers.circuit_breaker import CircuitBreaker, CircuitState, all_breakers, breaker_for, is_health_failure, reset_all
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerOrderRejected
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
-from app.core.enums import ExecutionMode
 from app.risk_engine.risk_manager import TradingDayState
 from tests.test_live_execution import _LiveBroker, _router, _signal
 

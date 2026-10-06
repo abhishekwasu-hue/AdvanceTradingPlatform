@@ -11,7 +11,7 @@ from sqlalchemy import Numeric, select
 from cryptography.fernet import Fernet
 
 from app.core import config
-from app.db.models import BrokerCredentialRecord, Money, Price, TradeRecord, Tenant
+from app.db.models import BrokerCredentialRecord, Money, Price, TradeRecord
 from app.secrets_store import encryption, envelope
 from tests.test_auth_api import _register, _session_factory, client
 

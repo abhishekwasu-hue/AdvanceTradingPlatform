@@ -19,7 +19,6 @@ Deterministic; the copilot route can hand it to an AI provider to narrate. Educa
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -30,7 +29,7 @@ from app.ai import global_cues, market_memory
 from app.ai.interview import FAMILY_TEXT, PROFILES, regime_fit, tr
 from app.brokers.token_lifecycle import token_is_usable
 from app.core.models import RiskConfig
-from app.db.models import (BrokerCredentialRecord, RiskSettingsRecord, StrategyDeploymentRecord, TradeRecord, User,
+from app.db.models import (BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User,
                            WorkerHeartbeatRecord)
 from app.market_data.calendar import IST, load_holidays, session_status
 from app.risk_engine import guardian

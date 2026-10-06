@@ -1,0 +1,14 @@
+# P0.7: configuration for the CI secret scan (gitleaks, `lint` job). Default rules plus the two
+# strings the default `generic-api-key` rule mistakes for credentials in this repository. A real
+# secret never gets an allowlist entry: it is rotated and the commit is rewritten.
+title = "ATP"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documented boolean flag in .env.example and the deliberately fake token a test uses to prove the API never echoes one"
+regexes = [
+  '''JWT_ACCEPT_LEGACY=(true|false)''',
+  '''AAGLIFsecretPartNoColon_xyz123''',
+]

@@ -32,7 +32,7 @@ docker compose -f docker-compose.yml -f docker-compose.local.yml exec backend al
 ```
 
 - Health: `curl.exe -s http://localhost:8000/api/system/health` → `{"status":"ok"...}`; UI http://localhost:8080.
-- Logs: `docker compose -f docker-compose.yml -f docker-compose.local.yml logs --tail 100 backend worker`.
+- Logs: `docker compose -f docker-compose.yml -f docker-compose.local.yml logs --tail 100 backend worker`. (P0.7 नंतर प्रत्येक container चे logs 5 × 20 MB वर rotate होतात; disk भरत नाही.)
 - जुनी checkout आणि CRLF: `backup` container exit 2 ने फिरत असेल तर README "On Windows" टीप
   (`git ls-files --eol scripts` → `w/lf`).
 

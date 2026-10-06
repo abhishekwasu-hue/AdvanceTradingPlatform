@@ -10,12 +10,11 @@ from sqlalchemy import select
 from app.brokers.models import BrokerOrderResponse, MarginInfo
 from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
 from app.core.models import RiskConfig
-from app.db.models import NotificationRecord, OrderRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
+from app.db.models import OrderRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.execution.multileg import execute_structure
 from app.instruments.contracts import ContractResolutionError, ContractRules
 from app.instruments.spreads import describe_structure, resolve_structure, structure_metrics
-from app.market_data.service import MarketDataService
-from app.trading.position_monitor import group_exit, monitor_open_positions
+from app.trading.position_monitor import group_exit
 from tests.master_fixture import NIFTY_LOT
 from tests.test_auth_api import _session_factory, client
 from tests.test_contract_execution import BIG

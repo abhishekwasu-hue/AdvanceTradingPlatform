@@ -19,7 +19,7 @@ def test_registering_and_logging_in_are_audited():
 
 
 def test_audit_logs_are_private_per_user():
-    token_a = _register("hank@example.com")
+    _register("hank@example.com")
     token_b = _register("ivy@example.com")
 
     logs_b = client.get("/api/audit-logs", headers={"Authorization": f"Bearer {token_b}"}).json()

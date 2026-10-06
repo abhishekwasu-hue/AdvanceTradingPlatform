@@ -16,7 +16,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET  # P0.7: refuses entity expansion and external references outright
+from xml.etree.ElementTree import Element  # the parsed nodes are stdlib Elements; defusedxml exports no Element
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -84,7 +85,7 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip().lower()
 
 
-def _text(node: Optional[ET.Element]) -> str:
+def _text(node: Optional[Element]) -> str:
     return re.sub(r"<[^>]+>", "", (node.text or "")).strip() if node is not None and node.text else ""
 
 

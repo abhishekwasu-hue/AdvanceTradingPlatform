@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import numpy as np
-import pandas as pd
 from sqlalchemy import select
 
 from app.ai import generator, monitor
@@ -18,7 +17,7 @@ from app.db.models import AiActionRecord, AiProviderConfigRecord, CustomStrategy
 from app.secrets_store.encryption import decrypt_text
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant as _worker_tenant, _trades, _worker
-from tests.utils import decline_then_rally, make_series, noisy_uptrend
+from tests.utils import make_series, noisy_uptrend
 
 
 def _run(coro):

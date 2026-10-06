@@ -14,7 +14,6 @@ middleware (no BaseHTTPMiddleware: it must not buffer streaming responses or bre
 import re
 import time
 import uuid
-from typing import Callable
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 

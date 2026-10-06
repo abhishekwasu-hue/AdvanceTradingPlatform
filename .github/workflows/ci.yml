@@ -107,7 +107,14 @@ jobs:
       - name: Run test suite (in-memory SQLite, no DB dependency)
         env:
           REDIS_URL: redis://localhost:6379/0
-        run: python -m pytest -q
+        # P0.7: each failed test becomes a check-run annotation (`::error`), so the failure is readable from the API
+        # without the job log (which GitHub serves from a host the session tooling cannot reach).
+        run: |
+          set -o pipefail
+          python -m pytest -q -rf 2>&1 | tee pytest-output.txt
+          status=$?
+          grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
+          exit $status
 
       - name: Apply Alembic migrations against a real Postgres
         env:

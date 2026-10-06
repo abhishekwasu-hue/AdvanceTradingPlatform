@@ -45,7 +45,7 @@ from app.core.config import WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
+from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
@@ -64,15 +64,15 @@ from app.instruments.contracts import ContractResolutionError, ContractRules, re
 from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
-from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
+from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
-from app.secrets_store.envelope import ensure_tenant_key, warm_all as warm_tenant_keys
+from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
-from app.accounts.service import credential_for_account, default_account, get_account, list_accounts, routing_for_deployment, sync_account
+from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
 from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
 from app.trading.stop_guard import verify_protective_stops

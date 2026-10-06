@@ -24,7 +24,7 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 | 0.6 | Spaces | DO → Spaces → bucket `atp-backups` (private) → API keys → `.env` मध्ये | - | endpoint region नुसार (`blr1.digitaloceanspaces.com`) |
 | 0.7 | Upstox app | developer.upstox.com → **नवा app फक्त ATP साठी** → Redirect URL `https://<DOMAIN>/api/broker/upstox/oauth/callback` | key/secret फक्त Settings मध्ये (पायरी 1.3) | Trade bots चा app वापरला तर दोघे एकमेकांना logout करतात |
 | 0.8 | Build + up | `scripts/deploy.sh production` | शेवटी `deploy[production]: healthy`; `curl -s https://<DOMAIN>/api/system/health` → `{"status":"ok"...}` | guard ने नाकारले (market open) → 15:30 नंतर; `docker compose logs backend` |
-| 0.9 | Migrations | deploy.sh स्वतः `migrate_guard.py` चालवतो | `docker compose exec backend alembic current` = head | drift: `docker compose exec backend alembic upgrade head` (market बंद असताना) |
+| 0.9 | Migrations | deploy.sh स्वतः `migrate_guard.py` चालवतो (BB-BD2 च्या नव्या tables: news feed columns, `telegram_callbacks`, `thesis_records`, `news_feedback`) | `docker compose exec backend alembic current` = head (`e0f2a4b6c8d0` किंवा नंतरचे) | drift: `docker compose exec backend alembic upgrade head` (market बंद असताना) |
 | 0.10 | Holidays | पहिला owner बनल्यावर (१.१) Admin console → Exchange holidays → NSE यादी paste | पायरी 3 च्या check मध्ये ✅ holidays | - |
 | 0.11 | Backup drill | `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backup sh /scripts/verify_backup.sh latest` आणि `... run --rm offsite sh /scripts/offsite_sync.sh --once` | `verified` / `synced to spaces:atp-backups` | OPERATIONS 1.2 |
 
@@ -39,6 +39,8 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 | 1.5 | Read-only check | card वर **Read-only check** | 8/8 हिरवे (profile, funds, instruments, quote, derivatives, contract_quote, positions, orders) - कुठलीही order नाही |
 | 1.6 | Alerts | Settings → Alerts → Telegram (bot token + chat id) → Save → **Send test** | फोनवर message |
 | 1.7 | Risk | Risk पान: capital, 0.5% प्रति trade, daily loss cap, max positions | Risk limits set ✅ |
+| 1.8 | Feature flags (PAPER मध्ये, तुमच्या निर्णयाने) | Admin console → Controls → `news_feed`, `market_thesis`, `telegram_inbound` on (default off). कुठलाही flag order/sizing बदलत नाही: feed = unverified बातम्या + alerts, thesis = वाचन + shadow multiplier (कधीही लागू नाही), telegram_inbound = commands + PAPER approve/reject | Copilot "आजचा market" वर sentiment gauge, thesis card; News पानावर feed rows |
+| 1.9 | Two-way Telegram (ऐच्छिक, 1.8 नंतर) | Settings → Alerts → Telegram → "Two-way Telegram" on → allowed chat ids → **Register webhook** (HTTPS domain लागतो) → फोनवरून `/help` | bot उत्तर देतो; `/brief`, `/positions`, `/thesis NIFTY 50` चालतात. Buttons फक्त PAPER pause/reduce/review; exits/LIVE web + authenticator |
 
 ## 2. PAPER deployment
 
@@ -88,6 +90,10 @@ Live probes
 
 Exit code `0` = सुरू करा; `1` = ❌ आहे; `2` = organisation निवडता आली नाही (`--tenant` द्या).
 
+4. **Flags on असतील तर** (1.8): News पान → feed status `last_run` ताजा (≤15 मिनिटे) आणि items येत आहेत; Copilot → आजचा
+   market → sentiment gauge "not read yet" नसावा (broker login नंतर पहिल्या 15 मिनिटांत भरतो); thesis card वर watchlist
+   चा symbol दिसतो. काहीही नसेल तर `docker compose logs --tail 200 worker | grep -i "news\|sentiment\|thesis"`.
+
 | ❌ दिसले | करायचे |
 |---|---|
 | Broker session token valid today | पायरी 3.1 पुन्हा; Upstox app चा redirect URL तपासा |
@@ -110,6 +116,7 @@ Exit code `0` = सुरू करा; `1` = ❌ आहे; `2` = organisation 
 | 15:15 | Positions | सगळ्या intraday positions square-off; open = 0 |
 | 15:35 | Notifications/Telegram | **EOD summary** notification (signals, entries, exits, net P&L, open after square-off, reconciliation, worker errors) |
 | 15:40 | Positions → Reconcile | 0 mismatches |
+| 15:40 (शुक्रवार, `market_thesis` on) | Notifications/Telegram | **Thesis scoreboard** आठवड्याचा (hit rate, shadow multiplier फक्त नोंद) |
 | संध्याकाळ | Trade journal, Coach | दिवसाची नोंद; `docker compose logs --since 8h worker \| grep -i error` रिकामे |
 
 **Worker मध्येच थांबला (heartbeat stale) तर:** OPERATIONS 1.7 - प्रथम `docker compose restart worker`; PAPER मध्ये
@@ -129,6 +136,10 @@ Exit code `0` = सुरू करा; `1` = ❌ आहे; `2` = organisation 
 
 नोंद वही (एक ओळ प्रति दिवस): `दिनांक · signals · entries · exits · net P&L · open after 15:15 · reconcile · worker restarts · टीप`.
 5 दिवस झाल्यावर `docs/GO_LIVE.md` §3 (LIVE) वेगळ्या निर्णयाने.
+
+Flags (1.8) चे features या निकषांत **नाहीत**: feed/sentiment/thesis/Telegram बंद पडले तरी PAPER दिवस मोजता येतो; ते
+background वाचन आहे, trading नाही. Trade repo चं level engine (AY/AZ/BA) port **थांबवलं** आहे - validation मध्ये
+random पेक्षा edge दिसला नाही; strategies built-in / Builder / strategist वरच्याच.
 
 ## 6. रोजचे (OPERATIONS 1.5)
 

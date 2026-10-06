@@ -134,3 +134,15 @@ LIVE शी संबंधित काहीही बदललेलं न�
 - News page skips the feedback calls when the feed is off; THESIS_REPORT added to the UI notification type; Marathi
   label for the trust suffix; worker import hoisted.
 
+### 2026-10-06 - operator decisions and CI hygiene
+- Operator: AY/AZ/BA (Trade price-action engine port) **stopped** - the level engine showed no edge over random in
+  Trade's validation. Flags `news_feed`, `market_thesis`, `telegram_inbound` will be switched on by the operator in
+  PAPER after the droplet deploy. No new phase until then; only CI/flaky-test hygiene and keeping GO_LIVE_MR.md current.
+- CI: one run per commit (the pull_request event duplicated every job for in-repo branches and produced the
+  cancelled/skipped check runs seen on PR #55); job timeouts; superseded feature-branch runs cancelled, main never.
+- Tests: feature flags and platform-wide market events are reset after every test module (conftest), so a module
+  that turns a flag on or seeds a global event can no longer change what a later module sees (the class of failure
+  fixed by hand twice this week). Unused imports and an ambiguous name cleaned (ruff).
+- GO_LIVE_MR.md: flags step (1.8), two-way Telegram step (1.9), morning check for feed/sentiment/thesis, Friday thesis
+  scoreboard in the day table, the stopped engine port and the "flags are not in the PAPER criteria" note.
+

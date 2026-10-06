@@ -4,13 +4,12 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 import httpx
-import pytest
 from sqlalchemy import func, select
 
 from app.db.models import InstrumentRecord
 from app.instruments import master
 from app.instruments.master import (
-    MasterRow, derivatives_exchange, normalise_expiry, parse_upstox_master, replace_master, underlying_of,
+    derivatives_exchange, normalise_expiry, parse_upstox_master, replace_master, underlying_of,
 )
 from tests.master_fixture import BANKNIFTY_LOT, NIFTY_EXPIRIES, NIFTY_LOT, build_master, master_gzip
 from tests.test_admin_api import _admin

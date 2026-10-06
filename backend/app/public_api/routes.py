@@ -21,7 +21,7 @@ from app.core.models import Signal
 from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.instruments import master as instrument_master
-from app.plans.limits import feature_allowed, limits, require_feature
+from app.plans.limits import limits, require_feature
 from app.plans.registry import get_plan
 from app.public_api.keys import SCOPES, ApiPrincipal, api_key_auth, generate_key, parse_scopes
 from app.strategy_engine.registry import registry

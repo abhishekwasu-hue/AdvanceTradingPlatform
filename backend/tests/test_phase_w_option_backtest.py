@@ -17,8 +17,7 @@ from app.backtest.options_engine import ENGINE_VERSION, OptionBacktestConfig, ru
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.enums import ExpiryRule, OptionPosition, OptionStrategy, SignalDirection, SignalGrade, StrikeRule
 from app.core.models import RiskConfig, Signal
-from app.db.models import OptionChainSnapshotRecord
-from app.instruments.contracts import ContractResolutionError, ContractRules
+from app.instruments.contracts import ContractResolutionError
 from app.instruments.spreads import CustomLeg, plan_structure, resolve_structure
 from app.market_data.calendar import IST
 from app.trading.position_monitor import structure_exit_reason

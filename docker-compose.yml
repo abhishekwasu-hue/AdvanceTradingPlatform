@@ -1,5 +1,16 @@
+# P0.7: every container's stdout/stderr is kept by Docker's json-file driver; without a cap it grows until
+# the disk is full (the PAPER PC and the droplet both learnt this the hard way elsewhere). 20 MB x 5 files
+# per service, compressed - `docker compose logs --tail` is unaffected. Overlays inherit it.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    compress: "true"
+
 services:
   postgres:
+    logging: *default-logging
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-atp_user}
@@ -21,6 +32,7 @@ services:
       retries: 10
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -31,6 +43,7 @@ services:
       retries: 10
 
   backend:
+    logging: *default-logging
     build:
       context: ./backend
     environment:
@@ -86,6 +99,7 @@ services:
   # trades) independently of the API and of any browser; restart it, not the API, if it wedges.
   # Exactly one replica unless Redis is reachable (its lock is what stops two replicas trading).
   worker:
+    logging: *default-logging
     build:
       context: ./backend
     command: ["python", "-m", "app.workers.trading_worker"]
@@ -133,6 +147,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
     depends_on:
@@ -145,6 +160,7 @@ services:
   # database so pg_dump/pg_restore match. Rehearse a restore with:
   #   docker compose run --rm backup sh /scripts/verify_backup.sh latest
   backup:
+    logging: *default-logging
     image: postgres:17-alpine
     entrypoint: ["sh", "/scripts/run_scheduled.sh"]
     environment:

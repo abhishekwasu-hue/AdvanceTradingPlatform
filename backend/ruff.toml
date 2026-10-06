@@ -1,0 +1,14 @@
+# P0.7: lint gate run by the CI `lint` job (`ruff check app tests` from backend/). The rule set is
+# the one the code base is clean on today - real defects, not style: syntax/undefined names (E9, F),
+# import placement (E4), statement errors (E7), mutable default arguments (B006), exec/eval (S102,
+# S307), leftover debuggers (T10), pylint errors (PLE). Widen it one rule family at a time, fixing
+# the findings in the same PR; never add `# noqa` to pass a gate.
+target-version = "py311"
+line-length = 160
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B006", "S102", "S307", "T10", "PLE"]
+ignore = ["E741"]   # `l` for a leg / a line is fine in this code base
+
+[lint.per-file-ignores]
+"tests/*" = ["E402", "E702", "E731"]   # tests may import after the shared fixtures are set up and keep their compact one-liners

@@ -10,14 +10,14 @@ from app.core.enums import OptionStrategy, SignalDirection, StrikeRule
 from app.db.models import TradeRecord
 from app.instruments.contracts import ContractResolutionError
 from app.instruments.payoff import PayoffLeg, analyse
-from app.instruments.spreads import CustomLeg, describe_structure, parse_custom_legs, resolve_structure, structure_metrics
+from app.instruments.spreads import CustomLeg, describe_structure, parse_custom_legs, resolve_structure
 from app.trading.position_monitor import group_exit
 from tests.master_fixture import NIFTY_LOT
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_contract_rules import TODAY, _load_master
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_multileg import SPOT, _OptionBroker, _rules
-from tests.test_phase_r_structures import _execute, _legs, _metrics, _resolve
+from tests.test_phase_r_structures import _execute, _metrics, _resolve
 from tests.test_trading_worker import _tenant, _trades
 
 

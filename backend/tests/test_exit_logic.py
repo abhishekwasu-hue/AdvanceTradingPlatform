@@ -14,8 +14,7 @@ priority (stop loss, then target2, then target1), called by both the backtest en
 import pandas as pd
 
 from app.backtest.engine import run_backtest
-from app.core.enums import SignalDirection, SignalGrade
-from app.core.models import RiskConfig, Signal
+from app.core.models import RiskConfig
 from app.db.models import TradeRecord
 from app.trading.exit_logic import check_exit, determine_exit_price
 from tests.test_backtest import _OneShotLongStrategy

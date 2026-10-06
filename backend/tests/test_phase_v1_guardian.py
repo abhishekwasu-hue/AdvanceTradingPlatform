@@ -9,11 +9,10 @@ from app.core.models import RiskConfig
 from app.db.models import TradeRecord, User
 from app.execution.signal_execution import execute_signal_for_user
 from app.platform import controls
-from app.risk_engine.guardian import DRAWDOWN_CUT_MULTIPLIER, bucket_for, is_stop_exit
+from app.risk_engine.guardian import bucket_for, is_stop_exit
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_contract_rules import _load_master
 from tests.test_live_execution import _signal
-from tests.test_multileg import _OptionBroker
 from tests.test_phase_r_structures import _execute as _execute_structure, _resolve
 from tests.test_trading_worker import _tenant, _trades
 

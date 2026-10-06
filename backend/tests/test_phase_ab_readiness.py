@@ -3,7 +3,7 @@ items, the statuses moving as the operator completes steps, and the SUPER_ADMIN 
 from app.core import config
 from tests.test_admin_api import _admin
 from tests.test_auth_api import client
-from tests.test_deployments_api import _auth, _create, _store_broker
+from tests.test_deployments_api import _create, _store_broker
 from tests.test_phase_k_commercial import _owner
 
 

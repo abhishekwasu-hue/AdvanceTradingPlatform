@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.brokers.models import BrokerPosition, BrokerProfile, MarginInfo
-from app.db.models import BrokerAccountRecord, BrokerCredentialRecord, StrategyDeploymentRecord
+from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _me, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker

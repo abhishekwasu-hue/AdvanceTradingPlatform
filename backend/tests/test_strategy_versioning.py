@@ -129,7 +129,6 @@ def test_versions_are_tenant_scoped():
 
 
 def test_executed_strategy_uses_current_live_version_after_update(monkeypatch):
-    from app.strategy_engine.registry import registry
     from tests.utils import decline_then_rally, make_series
 
     token = _register("juno@example.com")

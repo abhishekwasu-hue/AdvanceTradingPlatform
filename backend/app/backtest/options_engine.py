@@ -32,7 +32,7 @@ import pandas as pd
 from app.backtest.analytics import build_analytics
 from app.backtest.options import (
     ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
-    default_lot_size, default_strike_step, expiry_instant, strike_ladder, to_utc, underlying_name,
+    default_lot_size, default_strike_step, strike_ladder, to_utc, underlying_name,
 )
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade

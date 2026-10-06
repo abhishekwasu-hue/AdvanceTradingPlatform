@@ -14,8 +14,6 @@ from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers.shoonya import ShoonyaBroker
 from app.brokers.angel_one import AngelOneBroker
-from app.brokers.dhan import DhanBroker
-from app.brokers.fyers import FyersBroker
 from app.brokers.coindcx import CoinDCXBroker
 from app.brokers.stubs import _StubBrokerAdapter
 from app.brokers.upstox import UpstoxBroker

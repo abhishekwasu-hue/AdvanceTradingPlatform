@@ -17,7 +17,6 @@ asking it to promise. The compliance validator (Phase V2) reads the suggestion t
 """
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -29,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, StrikeRule
 from app.core.models import RiskConfig
 from app.db.models import Tenant, TradeRecord, User
-from app.instruments.spreads import PAYOFF_STRUCTURES, RATIO_SPREADS, UNDEFINED_RISK, is_debit
+from app.instruments.spreads import RATIO_SPREADS, UNDEFINED_RISK, is_debit
 from app.risk_engine import guardian
 
 PROMPT_VERSION = "guardian-v3.0"

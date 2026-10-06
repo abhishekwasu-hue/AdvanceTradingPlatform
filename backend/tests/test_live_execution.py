@@ -10,7 +10,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus
 from app.core.enums import ExecutionMode, OrderSide, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
-from app.db.models import NotificationRecord, OrderRecord, TradeRecord, User
+from app.db.models import NotificationRecord, TradeRecord, User
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
 from app.risk_engine.risk_manager import TradingDayState

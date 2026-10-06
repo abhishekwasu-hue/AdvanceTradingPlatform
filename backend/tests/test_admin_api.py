@@ -2,10 +2,9 @@
 changes (audited + notified), platform audit trail, and that nobody else can reach any of it."""
 import asyncio
 
-from sqlalchemy import select
 
 from app.admin import bootstrap
-from app.db.models import Tenant, User
+from app.db.models import User
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
 

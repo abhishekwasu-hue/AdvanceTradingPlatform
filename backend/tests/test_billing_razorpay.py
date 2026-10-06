@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.billing import service as billing
 from app.billing.razorpay import RazorpayProvider
-from app.db.models import BillingGatewayPlanRecord, BillingTransactionRecord, BillingWebhookEventRecord, SubscriptionRecord, Tenant
+from app.db.models import BillingGatewayPlanRecord, BillingWebhookEventRecord, SubscriptionRecord, Tenant
 from tests.test_auth_api import _register, _session_factory, client
 
 SECRET = "whsec_test_secret_value"

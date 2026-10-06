@@ -104,7 +104,6 @@ def test_reconciliation_broker_failure_is_audited_and_returns_502(monkeypatch):
 def test_reconciliation_is_tenant_scoped(monkeypatch):
     token1 = _register("recon_tenant1@example.com")
     token2 = _register("recon_tenant2@example.com")
-    headers1 = {"Authorization": f"Bearer {token1}"}
     headers2 = {"Authorization": f"Bearer {token2}"}
     _store_credentials(headers2)
     _seed_open_trade(token1, symbol="NIFTY", direction="LONG", quantity=50)

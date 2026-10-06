@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy import select
 
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import TenantInviteRecord, User
+from app.db.models import TenantInviteRecord
 from app.notifications.service import notify
 from tests.test_auth_api import _register, _session_factory, client
 

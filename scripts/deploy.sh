@@ -9,7 +9,10 @@
 # 3. restarts the API first and waits for /api/system/health/deep, then the worker, then the
 #    frontend - the previous containers keep serving until the new one is healthy (rolling, not
 #    blue-green: one host, one database; the worker is a single replica by design),
-# 4. prints the versions running, or rolls the services back to the previous image on failure.
+# 4. prints the versions running, or - when the new API never becomes healthy - re-tags the previous
+#    backend image as the service image, restarts the API from it and waits for it to be healthy again
+#    (P0.7: the rollback used to re-tag only, leaving the broken container running). The schema is not
+#    rolled back: every migration since Phase N is additive and the previous image reads it.
 #
 # Environment: DEPLOY_TIMEOUT (seconds to wait for health, default 120). Run from the repo root.
 set -eu
@@ -27,6 +30,9 @@ log() { printf '%s deploy[%s]: %s\n' "$(date -u +%H:%M:%S)" "$ENV_NAME" "$*"; }
 # (`git fetch origin origin/main` does not exist as a remote ref, and `checkout main` kept a stale local branch).
 if [ -n "$REF" ]; then log "checking out $REF"; git fetch -q origin && git checkout -q --detach "$REF"; fi
 PREVIOUS="$($COMPOSE images backend --format '{{.ID}}' 2>/dev/null | head -n1 || true)"
+# P0.7: keep the image the API runs now under a stable tag; `build` re-points `${PROJECT}-backend:latest`.
+IMAGE="${PROJECT}-backend"
+if [ -n "$PREVIOUS" ]; then docker tag "$PREVIOUS" "$IMAGE:previous" >/dev/null 2>&1 || PREVIOUS=""; fi
 log "building images at $(git rev-parse --short HEAD)"
 $COMPOSE build --pull backend frontend
 $COMPOSE up -d postgres redis
@@ -45,9 +51,21 @@ wait_healthy() {
 
 rollback() {
   echo "deploy: new API never became healthy" >&2
-  if [ -n "$PREVIOUS" ]; then
-    log "rolling back backend/worker to image $PREVIOUS"
-    docker tag "$PREVIOUS" "${PROJECT}-backend:rollback" >/dev/null 2>&1 || true
+  $COMPOSE logs --tail=50 backend >&2 || true
+  if [ -z "$PREVIOUS" ]; then
+    echo "deploy: no previous backend image to roll back to - the new container stays up for inspection" >&2
+    exit 4
+  fi
+  # P0.7: restart the API from the previous image. The worker and the frontend were not touched yet (they
+  # restart only after the API is healthy), so only the backend service is recreated; `--no-build` keeps compose
+  # from rebuilding the broken image, and the retag makes `$IMAGE:latest` the previous image again.
+  log "rolling back API to image $PREVIOUS"
+  docker tag "$IMAGE:previous" "$IMAGE:latest" >/dev/null 2>&1 || true
+  $COMPOSE up -d --no-deps --no-build backend || true
+  if wait_healthy; then
+    log "rollback complete: API healthy on $PREVIOUS; the new image was not promoted (worker/frontend unchanged)"
+  else
+    echo "deploy: rollback API did not become healthy either - check '$COMPOSE logs backend' and the database" >&2
     $COMPOSE logs --tail=50 backend >&2 || true
   fi
   exit 4

@@ -1,6 +1,5 @@
 """Phase G1: the market-data staleness gate (safety rule 7), the broker-uncertain tenant flag
 (rule 8) and reconciliation on worker start (rule 18)."""
-import asyncio
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -9,7 +8,6 @@ from sqlalchemy import select
 
 from app.brokers.models import BrokerPosition, Quote
 from app.brokers.timestamps import parse_broker_timestamp
-from app.core import config
 from app.db.models import NotificationRecord, OrderRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.market_data.freshness import StaleMarketDataError, candle_staleness, quote_is_stale, timeframe_seconds
 from app.market_data.service import MarketDataService

@@ -8,7 +8,7 @@ Portfolio exposure reports in the tenant's base currency and says which rates it
 INR instruments and INR tenants nothing changes; the seams are what section 57 asked for.
 """
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -14,8 +14,7 @@ from app.brokers.models import BrokerOrderStatus, BrokerOrderResponse, BrokerPro
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import OHLCVBar, Signal
 from app.db.models import (
-    BrokerCredentialRecord, NotificationRecord, OrderRecord, StrategyDeploymentRecord, TradeRecord, User,
-    WorkerHeartbeatRecord,
+    BrokerCredentialRecord, NotificationRecord, OrderRecord, StrategyDeploymentRecord, TradeRecord, WorkerHeartbeatRecord,
 )
 from app.strategy_engine.registry import registry
 from app.workers import trading_worker as tw
@@ -231,7 +230,7 @@ def test_paper_deployment_enters_once_per_signal_bar(monkeypatch):
 
 def test_new_signal_bar_after_position_closed_enters_again(monkeypatch):
     t = _tenant("w-rebar@example.com")
-    dep_id = _deploy(t)
+    _deploy(t)
     broker = _FakeBroker(ltp=101.0)
     worker = _worker(monkeypatch, broker)
     _force_signal(monkeypatch, _signal)

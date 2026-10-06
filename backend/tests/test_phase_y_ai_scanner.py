@@ -8,8 +8,7 @@ import numpy as np
 
 from app.ai import settings as ai_settings
 from app.scanner import ai as scanner_ai
-from app.scanner.engine import run_scanner
-from app.scanner.models import ScannerMatch, ScannerRequest, ScannerResult, ScannerSymbolInput
+from app.scanner.models import ScannerMatch, ScannerResult
 from tests.test_auth_api import _register, client
 from tests.test_phase_k_commercial import _owner
 from tests.utils import make_series

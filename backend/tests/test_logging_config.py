@@ -8,7 +8,7 @@ import json
 import logging
 
 from app.core.logging_config import CorrelationFilter, JsonFormatter, bind_log_context, update_log_context
-from tests.test_auth_api import _register, client
+from tests.test_auth_api import _register
 from tests.test_kill_switch_api import _paper_execute
 
 

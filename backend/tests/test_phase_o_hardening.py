@@ -1,7 +1,6 @@
 """Phase O: per-exchange sessions, least-privilege DB roles, Web Push + SMS channels, chaos
 behaviour under dependency failure, AI/billing metrics, PITR script shape."""
 import asyncio
-import base64
 import json
 import os
 import shutil
@@ -16,12 +15,11 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
-from sqlalchemy import select
 
 from app.alerts import dispatcher, webpush
 from app.alerts.channels import SmsConfig, merge_push, parse_config
 from app.core.config import DATABASE_URL
-from app.db.models import AlertChannelRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, intraday_cutoffs, session_family, session_status
 from app.notifications.service import notify
 from app.core.enums import NotificationSeverity, NotificationType
@@ -29,7 +27,7 @@ from app.observability import metrics
 from tests.test_alerts import _auth, _dispatch, _put
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import (
-    BAR_TS, OPEN_NOW, STRATEGY, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker,
+    OPEN_NOW, STRATEGY, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker,
 )
 
 FRIDAY_2000 = datetime(2026, 9, 25, 20, 0, tzinfo=IST)     # NSE closed, MCX open

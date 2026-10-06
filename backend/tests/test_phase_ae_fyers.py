@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
-from app.brokers.fyers import API_URL, DATA_URL, FyersBroker
+from app.brokers.fyers import FyersBroker
 from app.brokers.models import BrokerCredentials, BrokerOrderRequest
 from app.brokers.registry import get_broker_adapter
 from app.core.enums import OrderSide

@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.alerts import dispatcher
 from app.auth.passwords import password_problem
-from app.db.models import PasswordResetRecord, Tenant, User
+from app.db.models import PasswordResetRecord, Tenant
 from tests.test_auth_api import _register, _session_factory, client
 
 

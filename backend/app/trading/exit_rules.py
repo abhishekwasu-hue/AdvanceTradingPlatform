@@ -20,7 +20,7 @@ modifies the broker-side SL-M to the new trigger).
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, time as dtime, timedelta
-from typing import Optional, Tuple
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")

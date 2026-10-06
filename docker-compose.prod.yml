@@ -12,6 +12,13 @@
 #
 # Needs Docker Compose v2.24+ (the `!override` tags). Secrets stay in the host's .env, never in
 # this file or in chat (.env.example lists the DOMAIN / ACME_EMAIL / OFFSITE_* variables).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+    compress: "true"
+
 services:
   # The database and the cache are reachable from the host only (the base file publishes them
   # for local development); nothing but Caddy listens on the public interface.
@@ -44,6 +51,7 @@ services:
       - "80"
 
   caddy:
+    logging: *default-logging
     image: caddy:2-alpine
     environment:
       DOMAIN: ${DOMAIN}
@@ -65,6 +73,7 @@ services:
   # never deleted by a local retention run or a mistake on the host), `sync` for the WAL archive
   # (mirrors the base-backup pruning so it cannot grow without bound).
   offsite:
+    logging: *default-logging
     image: rclone/rclone:1
     entrypoint: ["sh", "/scripts/offsite_sync.sh"]
     environment:

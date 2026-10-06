@@ -11,15 +11,15 @@ from sqlalchemy import select
 
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus, MarginInfo
-from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OrderSide, SignalDirection, SignalGrade, StrikeRule
+from app.core.enums import ExpiryRule, InstrumentKind, OptionPosition, OrderSide, SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
-from app.db.models import OrderRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.db.models import StrategyDeploymentRecord, TradeRecord, User
 from app.execution.contract_execution import ContractExecutionError, build_order_plan, contract_ltp, written_lot_cap
 from app.execution.signal_execution import execute_signal_for_user
 from app.instruments.contracts import ContractRules, resolve_contract
 from app.instruments.master import parse_upstox_master, replace_master
 from tests.master_fixture import NIFTY_LOT, build_master
-from tests.test_auth_api import _register, _session_factory, client
+from tests.test_auth_api import _register, _session_factory
 from tests.test_live_execution import _upgrade_plan
 
 TODAY = date(2026, 9, 28)
@@ -349,7 +349,6 @@ def test_worker_trades_option_deployment_end_to_end(monkeypatch):
                         resolve_contract(session, symbol, rules, direction, spot=24512.0, today=TODAY, broker=broker, **kw))
     worker = _worker(monkeypatch, broker)
     # A generous tenant risk config so one lot is affordable.
-    from app.risk_engine import routes as risk_routes
     async def big_risk(tenant_id, session):
         return BIG
     monkeypatch.setattr("app.execution.signal_execution.get_tenant_risk_config", big_risk)

@@ -4,16 +4,15 @@ and the limits/events API."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
 
-from app.core.enums import KillSwitchScope, RiskLimitType, RiskScope
+from app.core.enums import KillSwitchScope
 from app.core.models import RiskConfig
-from app.db.models import RiskEventRecord, RiskLimitRecord, TradeRecord, User
+from app.db.models import RiskLimitRecord, TradeRecord, User
 from app.kill_switch.checks import disengage, get_switch
 from app.risk_engine.hierarchy import RiskContext, evaluate, strictest
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth
-from tests.test_live_execution import _LiveBroker, _signal, _upgrade_plan
+from tests.test_live_execution import _signal
 
 
 def _run(coro):

@@ -1,26 +1,24 @@
 """Phase J: dynamic exit rules shared by the backtest engine and the position monitor, backtest
 analytics, Monte Carlo / walk-forward robustness, and backtest run records."""
 import asyncio
-import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from sqlalchemy import select
 
-from app.backtest.analytics import build_analytics, drawdown_curve, streaks
+from app.backtest.analytics import drawdown_curve, streaks
 from app.backtest.engine import run_backtest
 from app.backtest.robustness import monte_carlo, walk_forward
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal, Trade
-from app.db.models import BacktestRunRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.db.models import StrategyDeploymentRecord
 from app.market_data.service import MarketDataService
 from app.strategy_engine.indicator_strategies import EmaRsiScalper
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.trading.position_monitor import monitor_open_positions
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
-from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _trades, _worker
 from tests.utils import make_series, noisy_uptrend
 
 IST = ZoneInfo("Asia/Kolkata")

@@ -15,8 +15,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, get_current_user_optional
-from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, RiskLevel, SignalDirection, ValuationLabel
+from app.auth.dependencies import get_current_user
+from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, ValuationLabel
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
 from app.fundamentals import ingest, persistence as db
@@ -28,7 +28,7 @@ from app.fundamentals.engines.post_earnings import PostEarningsEngine
 from app.fundamentals.engines.pre_earnings import PreEarningsEngine
 from app.fundamentals.engines.red_flags import RedFlagEngine
 from app.fundamentals.engines.scenario import ScenarioEngine
-from app.fundamentals.engines.score import FundamentalScoreEngine, FusionEngine, WEIGHTS, score_from_quality_label, score_from_risk_level, score_from_valuation_label
+from app.fundamentals.engines.score import FundamentalScoreEngine, FusionEngine, score_from_quality_label, score_from_risk_level
 from app.fundamentals.engines.sector_specific import SECTOR_METRIC_SPECS, SectorSpecificEngine
 from app.fundamentals.engines.statement_analysis import (
     BalanceSheetEngine,

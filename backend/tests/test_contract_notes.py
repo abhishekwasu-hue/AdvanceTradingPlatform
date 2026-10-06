@@ -1,15 +1,14 @@
 """Phase D4: contract-note ingestion - broker-agnostic CSV parsing, matching by order id then by
 fill, actual charges and P&L applied to trades, dry run, duplicate refusal, tenant isolation."""
 import asyncio
-import io
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
 from app.contract_notes.parser import ContractNoteParseError, parse_contract_note_csv, parse_date
 from app.contract_notes.service import MATCH_FILL, MATCH_ORDER_ID, match_legs
-from app.db.models import AuditLogRecord, ContractNoteLineRecord, TradeRecord, User
-from tests.test_auth_api import _register, _session_factory, client
+from app.db.models import AuditLogRecord, TradeRecord, User
+from tests.test_auth_api import _session_factory, client
 from tests.test_position_monitor import _trade, _user
 
 ENTRY_TS = datetime(2026, 9, 25, 4, 0, tzinfo=timezone.utc)   # 09:30 IST on 25 Sep

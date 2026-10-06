@@ -11,7 +11,7 @@ from app.alerts import dispatcher
 from app.alerts.channels import decrypt_raw, severity_reaches
 from app.alerts.dispatcher import dispatch_pending
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord, User
+from app.db.models import AlertChannelRecord, AlertDeliveryRecord
 from app.notifications.service import notify
 from tests.test_auth_api import _register, _session_factory, client
 

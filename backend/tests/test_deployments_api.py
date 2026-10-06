@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
+from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from tests.test_auth_api import _register, _session_factory, client
 
 STRATEGY = "ema_rsi_scalper_1m"

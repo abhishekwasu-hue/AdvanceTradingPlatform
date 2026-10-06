@@ -2,21 +2,17 @@
 portfolio engine and its two new risk scopes, the trade journal, EMERGENCY severity, degradation
 baselines, incidents, BrokerInterface.exit_position and parameter optimisation."""
 import asyncio
-import json
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
 import pytest
 from sqlalchemy import select
 
 from app.alerts.channels import severity_reaches
 from app.backtest.optimizer import expand_grid, optimize
-from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
 from app.core.enums import OrderSide
 from app.core.models import RiskConfig
-from app.db.models import IncidentRecord, TradeRecord, User
-from app.platform import controls
+from app.db.models import TradeRecord, User
 from app.portfolio.engine import snapshot
 from app.strategy_engine.registry import registry
 from app.trading.degradation import compare, live_metrics

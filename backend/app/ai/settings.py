@@ -60,7 +60,7 @@ async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optiona
     record = await get_config(session, tenant.id)
     if record is None or not record.enabled or not feature_allowed(tenant, "ai_features"):
         return RuleBasedProvider()
-    key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY) if record.encrypted_api_key else None
+    key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY, record.tenant_id) if record.encrypted_api_key else None
     return build_provider(record.provider, key, record.model, client=client)
 
 

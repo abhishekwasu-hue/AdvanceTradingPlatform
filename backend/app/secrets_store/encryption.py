@@ -2,10 +2,12 @@
 
 Three layers:
 
-* **Master key** - `SECRETS_ENCRYPTION_KEY`: a Fernet key, or any passphrase. A passphrase is stretched with
-  scrypt (P0.4); the SHA-256 derivation Phase N used stays as a *second* master so everything wrapped or
-  encrypted under it still opens (`MultiFernet`: first key encrypts, every key decrypts). Before Phase N every
-  secret was encrypted directly under the master; those legacy tokens still decrypt unchanged.
+* **Master key** - `SECRETS_ENCRYPTION_KEY`: a Fernet key, or any passphrase. A passphrase yields two masters
+  (`MultiFernet`: first key encrypts, every key decrypts): the SHA-256 derivation Phase N used and a
+  scrypt-stretched one (P0.4). Which one *encrypts* follows `SECRETS_WRITE_FORMAT`: while it is `fernet` (the
+  rollback-safe default) new wraps stay under SHA-256 so the previous image can still open them; once it is
+  `aesgcm` the scrypt key takes over and the SHA-256 one is decrypt-only. Before Phase N every secret was
+  encrypted directly under the master; those legacy tokens still decrypt unchanged.
 * **Per-tenant data keys** (Phase N1, `app/secrets_store/envelope.py`) - one random key per tenant, stored
   *wrapped* by the master in `tenant_keys`. `t1:<tenant_id>:<fernet token>` is the Phase N format.
 * **AES-256-GCM with associated data** (P0.4) - `t2:<tenant_id>:<purpose>:<base64(nonce || ciphertext)>`.
@@ -55,10 +57,16 @@ def _scrypt_key(raw: bytes) -> bytes:
     return base64.urlsafe_b64encode(hashlib.scrypt(raw, salt=_SCRYPT_SALT, n=2 ** 14, r=8, p=1, dklen=32))
 
 
-def _derive_fernet_keys(raw_key: Optional[str] = None) -> Tuple[bytes, ...]:
-    """The master key material, strongest first. A proper Fernet key is used as is. A passphrase yields the
-    scrypt-stretched key (encrypts) followed by Phase N's SHA-256 derivation (still decrypts). Without a key the
-    fixed dev-only value is used (refused by the production/staging configuration checks)."""
+def write_format() -> str:
+    value = (getattr(config, "SECRETS_WRITE_FORMAT", FORMAT_FERNET) or FORMAT_FERNET).lower()
+    return FORMAT_AESGCM if value == FORMAT_AESGCM else FORMAT_FERNET
+
+
+def _derive_fernet_keys(raw_key: Optional[str] = None, *, scrypt_first: Optional[bool] = None) -> Tuple[bytes, ...]:
+    """The master key material, encrypting key first. A proper Fernet key is used as is. A passphrase yields
+    Phase N's SHA-256 derivation and the scrypt-stretched key; the scrypt key leads only once the operator has
+    moved to `SECRETS_WRITE_FORMAT=aesgcm` (so a rollback inside the default window still opens every new wrap).
+    Without a key the fixed dev-only value is used (refused by the production/staging configuration checks)."""
     if raw_key:
         raw = raw_key.encode()
         try:
@@ -66,7 +74,8 @@ def _derive_fernet_keys(raw_key: Optional[str] = None) -> Tuple[bytes, ...]:
             return (raw,)
         except (ValueError, TypeError):
             pass
-        return (_scrypt_key(raw), _sha256_key(raw))
+        lead_scrypt = (write_format() == FORMAT_AESGCM) if scrypt_first is None else scrypt_first
+        return (_scrypt_key(raw), _sha256_key(raw)) if lead_scrypt else (_sha256_key(raw), _scrypt_key(raw))
     return (_sha256_key(_DEV_PASSPHRASE),)
 
 
@@ -80,16 +89,17 @@ def fernet_for_key(raw_key: Optional[str]) -> MultiFernet:
     return MultiFernet([Fernet(k) for k in _derive_fernet_keys(raw_key)])
 
 
-_fernet = fernet_for_key(SECRETS_ENCRYPTION_KEY)
+_masters: dict = {}
 
 
 def master_fernet() -> MultiFernet:
-    return _fernet
-
-
-def write_format() -> str:
-    value = (getattr(config, "SECRETS_WRITE_FORMAT", FORMAT_FERNET) or FORMAT_FERNET).lower()
-    return FORMAT_AESGCM if value == FORMAT_AESGCM else FORMAT_FERNET
+    """The configured master. Built per write format so a passphrase master's encrypting key follows the
+    operator's rollout (SHA-256 while `fernet`, scrypt once `aesgcm`); every derivation always decrypts."""
+    key = write_format()
+    cached = _masters.get(key)
+    if cached is None:
+        cached = _masters[key] = fernet_for_key(SECRETS_ENCRYPTION_KEY)
+    return cached
 
 
 def aead_key_from_data_key(data_key: bytes, tenant_id: int) -> AESGCM:
@@ -126,7 +136,7 @@ def encrypt_text(plaintext: str, tenant_id: Optional[int] = None, purpose: Optio
                 return f"{AEAD_PREFIX}{tenant_id}:{label}:{base64.urlsafe_b64encode(nonce + sealed).decode()}"
             return f"{TENANT_PREFIX}{tenant_id}:{tenant_fernet.encrypt(plaintext.encode()).decode()}"
         logger.warning("Tenant %s data key not loaded - encrypting under the master key", tenant_id)
-    return _fernet.encrypt(plaintext.encode()).decode()
+    return master_fernet().encrypt(plaintext.encode()).decode()
 
 
 def is_tenant_encrypted(ciphertext: str) -> bool:
@@ -175,9 +185,18 @@ def _parse_aead_token(ciphertext: str) -> tuple[int, str, bytes]:
         raise ValueError("Malformed AES-GCM secret") from exc
 
 
-def decrypt_text(ciphertext: str, purpose: Optional[str] = None) -> str:
+def _check_owner(embedded: int, owner: Optional[int]) -> None:
+    if owner is not None and int(owner) != int(embedded):
+        raise ValueError(f"Stored secret belongs to organisation {embedded}, not {owner} - refusing to decrypt")
+
+
+def decrypt_text(ciphertext: str, purpose: Optional[str] = None, tenant_id: Optional[int] = None) -> str:
+    """`tenant_id` is the organisation that *owns the row* being read; when given, a token minted for another
+    organisation (even copied verbatim) is refused, for the `t1` and `t2` formats alike."""
     if ciphertext.startswith(AEAD_PREFIX):
-        tenant_id, label, blob = _parse_aead_token(ciphertext)
+        embedded, label, blob = _parse_aead_token(ciphertext)
+        _check_owner(embedded, tenant_id)
+        tenant_id = embedded
         expected = _clean_purpose(purpose)
         if label != expected:
             raise ValueError(f"Stored secret belongs to '{label}', not '{expected}' - refusing to decrypt")
@@ -190,12 +209,14 @@ def decrypt_text(ciphertext: str, purpose: Optional[str] = None) -> str:
             return envelope.aead_for(tenant_id).decrypt(blob[:_NONCE_BYTES], blob[_NONCE_BYTES:], _aad(tenant_id, expected)).decode()
         except InvalidTag as exc:
             raise ValueError("Could not decrypt stored credentials - tenant data key or binding does not match") from exc
-    tenant_id, token = parse_tenant_token(ciphertext)
-    if tenant_id is None:
+    embedded, token = parse_tenant_token(ciphertext)
+    if embedded is None:
         try:
-            return _fernet.decrypt(token.encode()).decode()
+            return master_fernet().decrypt(token.encode()).decode()
         except InvalidToken as exc:
             raise ValueError("Could not decrypt stored credentials - wrong or rotated encryption key") from exc
+    _check_owner(embedded, tenant_id)
+    tenant_id = embedded
     from app.secrets_store import envelope
     tenant_fernet = envelope.key_ring.get(tenant_id)
     if tenant_fernet is None:

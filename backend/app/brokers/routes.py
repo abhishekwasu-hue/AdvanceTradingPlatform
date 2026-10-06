@@ -223,7 +223,7 @@ async def disconnect_broker(
     except Exception as exc:  # noqa: BLE001 - local revocation is what matters
         logger.warning("Broker %s logout call failed for tenant %s: %s", name, user.tenant_id, exc)
         detail = f"broker logout call failed ({type(exc).__name__}); token marked expired locally"
-    payload = json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL))
+    payload = json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id))
     payload.pop("access_token", None)
     record.encrypted_payload = encrypt_text(json.dumps(payload), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     record.token_status = BrokerTokenStatus.EXPIRED.value

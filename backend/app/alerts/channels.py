@@ -186,11 +186,11 @@ def encrypt_config(config: ChannelConfig, tenant_id: Optional[int] = None) -> st
 
 
 def decrypt_config(record: AlertChannelRecord) -> ChannelConfig:
-    return parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL)))
+    return parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL, record.tenant_id)))
 
 
 def decrypt_raw(record: AlertChannelRecord) -> Dict[str, Any]:
-    return json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL))
+    return json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL, record.tenant_id))
 
 
 def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:

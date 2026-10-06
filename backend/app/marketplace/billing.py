@@ -278,7 +278,7 @@ async def settle_payout(session: AsyncSession, admin: User, payout: MarketplaceP
 
 def payout_destination(payout: MarketplacePayoutRecord) -> str:
     """Operator only: the full destination, decrypted for the transfer."""
-    return decrypt_text(payout.destination_encrypted, PURPOSE_PAYOUT_DESTINATION)
+    return decrypt_text(payout.destination_encrypted, PURPOSE_PAYOUT_DESTINATION, payout.tenant_id)
 
 
 # --- lists ------------------------------------------------------------------------------------

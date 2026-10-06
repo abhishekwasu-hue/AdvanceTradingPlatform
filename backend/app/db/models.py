@@ -17,6 +17,8 @@ _TZ_DATETIME = DateTime(timezone=True)
 # `Price` (4 decimals) for traded prices and levels, so a sub-paisa crypto or option tick survives. Both come back
 # as Python floats (`asdecimal=False`): the arithmetic in the engines is unchanged, the database no longer rounds
 # a rupee total through binary floating point. Percentages, quantities and analytics stay Float.
+# Aggregate these only with func.sum / func.coalesce / func.max (they inherit asdecimal=False); func.avg, func.abs,
+# func.round and raw text() SQL return Decimal on Postgres - cast(..., Float) first or the float arithmetic breaks.
 Money = Numeric(18, 2, asdecimal=False)
 Price = Numeric(18, 4, asdecimal=False)
 

@@ -3586,10 +3586,12 @@ payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly 
 floats. `secrets_store/encryption.py` writes `t2:<tenant>:<purpose>:<nonce||ct>` with AES-256-GCM when
 `SECRETS_WRITE_FORMAT=aesgcm`: the key is HKDF-derived from the tenant data key (`envelope.aead_for`), the
 associated data is `tenant_id|purpose`, and every caller names its column (`envelope.PURPOSE_*`) on both
-encrypt and decrypt, so a ciphertext copied to another organisation or another column refuses to open. The
+encrypt and decrypt and passes the owning row's tenant id on decrypt, so a ciphertext copied to another
+organisation (header rewritten or verbatim) or another column refuses to open. The
 Phase N `t1:` tenant-Fernet and the pre-Phase-N master formats stay readable; `reencrypt_tenant` converts to the
-configured format; `status` reports per-format counts. A passphrase master is stretched with scrypt, the SHA-256
-derivation kept as a second decrypt-only key (`MultiFernet`). Tests: `tests/test_phase_p0_4_money_crypto.py`.
+configured format; `status` reports per-format counts. A passphrase master carries a scrypt-stretched key next to
+the SHA-256 derivation (`MultiFernet`); scrypt encrypts only once `SECRETS_WRITE_FORMAT=aesgcm`, both always
+decrypt. Tests: `tests/test_phase_p0_4_money_crypto.py`.
 
 ### Phase BG: local-PC host and the Fyers daily login
 

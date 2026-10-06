@@ -735,11 +735,12 @@ Never publish a listing without an attached backtest run; the API refuses the su
   place and rounds; nothing to do besides the usual off-hours `git pull` + `up --build`.
 - `SECRETS_WRITE_FORMAT` stays `fernet` for the PAPER week (any image since Phase N reads it, so a rollback is
   safe). Afterwards set `SECRETS_WRITE_FORMAT=aesgcm` in `.env`, `up -d`, then
-  `docker compose exec api python scripts/reencrypt_secrets.py reencrypt` - rows move to AES-256-GCM bound to
+  `docker compose exec backend python scripts/reencrypt_secrets.py reencrypt` - rows move to AES-256-GCM bound to
   the organisation and the column. `status` shows `formats` and `pending_rewrite`. Never set it back to
   `fernet` after rows are in `aesgcm` *and* an older image is in play: the old image cannot read them.
-- `SECRETS_ENCRYPTION_KEY` as a passphrase (not a Fernet key) is now stretched with scrypt; secrets wrapped
-  under the older SHA-256 derivation still open. The 44-character Fernet key most deployments use is unaffected.
+- `SECRETS_ENCRYPTION_KEY` as a passphrase (not a Fernet key) gains a scrypt-stretched key; it takes over for
+  new wraps only once `SECRETS_WRITE_FORMAT=aesgcm`, and secrets wrapped under the older SHA-256 derivation
+  always open. The 44-character Fernet key most deployments use is unaffected.
 
 ### 1.6ab CoinDCX setup (Phase AK)
 

@@ -117,7 +117,7 @@ def token_is_usable(record: Optional[BrokerCredentialRecord], now: Optional[date
 
 
 def load_credentials(record: BrokerCredentialRecord) -> BrokerCredentials:
-    return BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL)))
+    return BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id)))
 
 
 def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncClient] = None) -> BrokerInterface:

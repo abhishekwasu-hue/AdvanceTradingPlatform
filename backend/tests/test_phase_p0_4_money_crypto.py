@@ -99,6 +99,12 @@ def test_aesgcm_binds_tenant_and_purpose_and_every_older_format_still_reads(monk
     moved = token.replace(f"t2:{a}:", f"t2:{b}:", 1)
     with pytest.raises(ValueError):
         encryption.decrypt_text(moved, envelope.PURPOSE_BROKER_CREDENTIAL)
+    # Copied *verbatim* into another organisation's row: the owner check refuses it (t2 and t1 alike).
+    with pytest.raises(ValueError, match="belongs to organisation"):
+        encryption.decrypt_text(token, envelope.PURPOSE_BROKER_CREDENTIAL, tenant_id=b)
+    with pytest.raises(ValueError, match="belongs to organisation"):
+        encryption.decrypt_text(f"t1:{a}:{envelope.key_ring[a].encrypt(b'x').decode()}", envelope.PURPOSE_MFA_SECRET, tenant_id=b)
+    assert encryption.decrypt_text(token, envelope.PURPOSE_BROKER_CREDENTIAL, tenant_id=a) == '{"api_key":"k"}'
     # Two encryptions of the same plaintext never share a nonce/ciphertext.
     assert encryption.encrypt_text("x", a, "p") != encryption.encrypt_text("x", a, "p")
     # Older formats: Phase N tenant Fernet and pre-Phase-N master tokens.
@@ -169,18 +175,51 @@ def test_reencrypt_moves_rows_to_the_configured_format_and_status_reports_it(mon
     assert payload.startswith("t2:") and json.loads(encryption.decrypt_text(payload, envelope.PURPOSE_BROKER_CREDENTIAL))["api_key"] == "appid"
 
 
-def test_passphrase_master_uses_scrypt_and_still_opens_sha256_derived_secrets():
+def test_passphrase_master_scrypt_follows_the_rollout_and_sha256_wraps_always_open(monkeypatch):
     passphrase = "correct horse battery staple"
     sha_fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(passphrase.encode()).digest()))   # Phase N derivation
+    scrypt_fernet = Fernet(base64.urlsafe_b64encode(hashlib.scrypt(passphrase.encode(), salt=b"atp-secrets-master-v2", n=2 ** 14, r=8, p=1, dklen=32)))
     old_token = sha_fernet.encrypt(b"wrapped-before-p0.4")
+    # Default rollout (fernet): new wraps stay under SHA-256, so the previous image still opens them (rollback-safe).
+    monkeypatch.setattr(config, "SECRETS_WRITE_FORMAT", "fernet")
     master = encryption.fernet_for_key(passphrase)
-    assert master.decrypt(old_token) == b"wrapped-before-p0.4"                      # still readable
+    assert master.decrypt(old_token) == b"wrapped-before-p0.4"
+    assert sha_fernet.decrypt(master.encrypt(b"new")) == b"new"
+    assert master.decrypt(scrypt_fernet.encrypt(b"from-later")) == b"from-later"      # and scrypt wraps already open
+    # After the operator moves to aesgcm the scrypt key leads; SHA-256 wraps still open.
+    monkeypatch.setattr(config, "SECRETS_WRITE_FORMAT", "aesgcm")
+    master = encryption.fernet_for_key(passphrase)
     fresh = master.encrypt(b"new")
+    assert scrypt_fernet.decrypt(fresh) == b"new" and master.decrypt(old_token) == b"wrapped-before-p0.4"
     with pytest.raises(Exception):
-        sha_fernet.decrypt(fresh)                                                     # new wraps use the scrypt key
-    scrypt_key = base64.urlsafe_b64encode(hashlib.scrypt(passphrase.encode(), salt=b"atp-secrets-master-v2", n=2 ** 14, r=8, p=1, dklen=32))
-    assert Fernet(scrypt_key).decrypt(fresh) == b"new"
+        sha_fernet.decrypt(fresh)
     # A real Fernet key is used as-is (the operator's 44-char key never changes meaning).
     real = Fernet.generate_key().decode()
     assert encryption._derive_fernet_keys(real) == (real.encode(),)
     assert encryption.fernet_for_key(real).decrypt(Fernet(real.encode()).encrypt(b"k")) == b"k"
+
+
+def test_rotate_master_from_a_passphrase_to_a_fernet_key_rewraps_every_tenant_key(monkeypatch):
+    from app.db.models import TenantKeyRecord
+    headers = _headers(_register("p04-rotate@example.com"))
+    tenant_id = client.get("/api/auth/me", headers=headers).json()["tenant_id"]
+    passphrase = "old operator passphrase"
+    sha_fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(passphrase.encode()).digest()))
+    raw = envelope.raw_ring[tenant_id]
+
+    async def go():
+        async with _session_factory() as session:
+            record = await session.get(TenantKeyRecord, tenant_id)
+            record.wrapped_key = sha_fernet.encrypt(raw).decode()                   # as a Phase N passphrase deployment left it
+            await session.commit()
+            envelope.forget(tenant_id)
+            with pytest.raises(ValueError, match="SECRETS_ENCRYPTION_KEY changed"):
+                await envelope.ensure_tenant_key(session, tenant_id)                 # the current (test) master cannot open it
+            assert await envelope.rotate_master(session, passphrase) >= 1          # old = passphrase (MultiFernet, two keys)
+            await session.refresh(record)
+            assert encryption.master_fernet().decrypt(record.wrapped_key.encode()) == raw
+            assert envelope.raw_ring[tenant_id] == raw
+            assert await envelope.rotate_master(session, passphrase) == 0           # re-run: nothing left under the old master
+    _run(go())
+    secret = encryption.encrypt_text("after-rotation", tenant_id, envelope.PURPOSE_MFA_SECRET)
+    assert encryption.decrypt_text(secret, envelope.PURPOSE_MFA_SECRET, tenant_id) == "after-rotation"

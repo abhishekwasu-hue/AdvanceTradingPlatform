@@ -48,7 +48,7 @@ def store_secret(user: User, secret: str) -> None:
 def load_secret(user: User) -> Optional[str]:
     if not user.mfa_secret_encrypted:
         return None
-    return decrypt_text(user.mfa_secret_encrypted, PURPOSE_MFA_SECRET)
+    return decrypt_text(user.mfa_secret_encrypted, PURPOSE_MFA_SECRET, user.tenant_id)
 
 
 def verify_totp(secret: str, code: str, *, last_step: Optional[int] = None, now: Optional[datetime] = None) -> Optional[int]:

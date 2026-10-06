@@ -108,8 +108,14 @@ async def warm_all(session: AsyncSession) -> int:
     first request, so this never creates rows."""
     rows = list(await session.scalars(select(TenantKeyRecord)))
     for record in rows:
-        if record.tenant_id not in key_ring:
+        if record.tenant_id in key_ring:
+            continue
+        try:
             _remember(record.tenant_id, _unwrap(record))
+        except ValueError as exc:
+            # One organisation's key that does not open under this master must not keep the whole API from
+            # starting: that organisation's requests fail with the same clear error until the key is re-wrapped.
+            logger.error("Tenant %s data key not loaded at startup: %s", record.tenant_id, exc)
     return len(rows)
 
 

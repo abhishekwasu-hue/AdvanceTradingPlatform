@@ -50,7 +50,7 @@ async def reconcile_broker_positions(
 
     pairs = []
     for record in records:
-        credentials = BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL)))
+        credentials = BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id)))
         account = await ensure_account_for_credential(session, record)
         pairs.append((account, get_broker_adapter(broker_name, credentials)))
 

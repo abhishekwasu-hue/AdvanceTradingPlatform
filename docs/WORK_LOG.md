@@ -320,8 +320,13 @@ default and G-LIVE gate before any LIVE wiring.
   Phase N `t1:` and the pre-Phase-N master formats; `SECRETS_WRITE_FORMAT` defaults to `fernet` this release
   (PAPER-week rule: an image rollback must still read every secret) and is flipped to `aesgcm` after the week,
   then `reencrypt_secrets.py reencrypt` converts rows (idempotent; `status` lists formats and `pending_rewrite`).
-  Passphrase masters are stretched with scrypt (n=2^14, fixed domain salt), the SHA-256 derivation kept as a
-  decrypt-only second key via `MultiFernet`; a proper Fernet key (the operator's) is used unchanged.
+  Passphrase masters get a scrypt-stretched key (n=2^14, fixed domain salt) next to the SHA-256 derivation via
+  `MultiFernet`; the scrypt key *encrypts* only once `SECRETS_WRITE_FORMAT=aesgcm` (self-review caught that
+  scrypt-first by default would have wrapped a new organisation's data key in a form the previous image cannot
+  open - a boot failure after rollback), SHA-256 leads until then and both always decrypt. A proper Fernet key
+  (the operator's) is used unchanged. `decrypt_text` also takes the owning row's tenant id and refuses a token
+  minted for another organisation even when copied verbatim (the `t2` header alone could not catch that);
+  `warm_all` logs and skips one unopenable tenant key instead of stopping the API.
 - Tests: `tests/test_phase_p0_4_money_crypto.py` (Numeric types + float round trip; migration covers every
   Numeric column; default format; AAD/tenant/relabel/move refusals; older formats; re-encrypt both modes via the
   credentials API; scrypt + legacy passphrase).

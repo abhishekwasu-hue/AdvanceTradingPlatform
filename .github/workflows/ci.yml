@@ -41,7 +41,7 @@ jobs:
         working-directory: backend
         run: |
           pip install -r requirements.txt
-          pip install "ruff==0.16.10" "mypy==2.4.0" "bandit==1.9.5"
+          pip install "ruff==0.16.10" "mypy==2.4.0" "bandit==1.9.4"
 
       - name: ruff (backend/ruff.toml)
         working-directory: backend

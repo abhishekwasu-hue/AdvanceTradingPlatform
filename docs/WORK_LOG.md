@@ -356,6 +356,16 @@ default and G-LIVE gate before any LIVE wiring.
   `trades.mark_price/mark_time` each sweep and the daily / strategy loss limits add the marked-to-market P&L of
   open positions to realised P&L (a position without a mark contributes nothing - never guessed). Stricter, so
   on by default. Migration `d5e7f9a1b3c5` (verified on Postgres: upgrade, check, downgrade, upgrade).
-- Tests: `tests/test_phase_p0_5_trading_safety.py` (18 cases incl. the signal-execution path flagging the
-  organisation); `test_live_execution` "never fills" case now asserts the cancel; the worker's fake broker lists
-  its orders as a real book does.
+- Tests: `tests/test_phase_p0_5_trading_safety.py` (incl. the signal-execution path flagging the organisation and
+  the stacked worker wrappers); `test_live_execution` "never fills" case now asserts the cancel; the worker's fake
+  broker lists its orders as a real book does.
+- Self-review findings fixed before merge: `ContractSymbolBroker` (every non-Upstox adapter runs inside it) did not
+  accept the option flag nor expose the inner matrix - an F&O LIVE entry would have lost its exchange-side stop;
+  a cancel *request* the adapter accepted was treated as proof (every adapter answers "CANCELLED"; Kite/Upstox cancel
+  asynchronously) - now only the book showing the order terminal with nothing filled counts, anything else is
+  recorded and flags the organisation; CoinDCX's `active_orders` drops filled orders, so the adapter now looks up
+  the ids it placed by `orders/status`; a structure leg that fills during its cancel joins the unwind (filled
+  quantity, shorts first) instead of being orphaned; CoinDCX refuses to edit a stop's trigger (it can only move the
+  limit); the marked-to-market term counts only positions opened and marked today (a carried swing gain must not
+  hide today's losses); a remainder the exchange already cancelled is not cancelled again; the emergency exit asks
+  the broker whose book lists the order first.

@@ -180,8 +180,18 @@ async def _live_brokers(session: AsyncSession, tenant_id: int) -> List:
 
 
 async def _cancel_at_brokers(adapters: List, broker_order_id: str) -> Optional[str]:
-    """Tries every usable session; the broker that knows the order cancels it. Returns the broker name or None."""
+    """The broker whose book lists the order cancels it; when no book names it every usable session is tried
+    (adapters answer "CANCELLED" to any accepted request, so the book look keeps the attribution honest).
+    Returns the broker name or None."""
+    ordered = list(adapters)
     for adapter in adapters:
+        try:
+            if any(o.order_id == broker_order_id for o in await adapter.get_order_book()):
+                ordered = [adapter]
+                break
+        except Exception:  # noqa: BLE001 - a book that cannot be read does not stop the cancel attempt
+            continue
+    for adapter in ordered:
         try:
             response = await adapter.cancel_order(broker_order_id)
             if (response.status or "").upper() not in ("REJECTED", "ERROR", "UNKNOWN"):

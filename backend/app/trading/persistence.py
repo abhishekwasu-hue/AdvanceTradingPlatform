@@ -145,7 +145,12 @@ async def build_trading_day_state(session: AsyncSession, user: User) -> TradingD
 async def open_unrealised_pnl(session: AsyncSession, tenant_id: int, *, strategy_id: Optional[str] = None) -> float:
     """Marked-to-market P&L of the open positions that have a mark (P0.5 / T6). A position the monitor has not
     priced yet contributes nothing - it is never guessed."""
-    query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mark_price.is_not(None))
+    day_start = trading_day_start()
+    # Only positions opened today, marked today: a swing position carried from an earlier day has an unrealised
+    # P&L that is not today's move (and a large carried gain must not hide today's losses from the limit); a
+    # mark older than today's session is stale and is not used either.
+    query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mark_price.is_not(None),
+                                      TradeRecord.entry_time >= day_start, TradeRecord.mark_time >= day_start)
     if strategy_id is not None:
         query = query.where(TradeRecord.strategy_id == strategy_id)
     total = 0.0

@@ -3584,8 +3584,9 @@ server-side (the `X-Telegram-Bot-Api-Secret-Token` header authenticates). Migrat
 (`_resolve_fill_with_status`): a partial fill cancels the working remainder, an unfilled order is cancelled and no
 position is booked, an unconfirmable one is recorded as requested with `ExecutionResult.broker_uncertain`, which
 `signal_execution` turns into the broker-uncertain flag. `brokers/base.py` carries `BrokerCapabilities` per adapter
-and `stop_order_params` (SL-M, or SL with a limit band where the broker refuses SL-M on options - Kite); the router,
-`trading/stop_guard.py` and the trailing-stop modify use it. `execution/multileg._place_live_legs` sends shorts only
+and `stop_order_params` (SL-M, or SL with a limit band where the broker refuses SL-M on options - Kite); the router
+and the trailing-stop modify call it directly, the stop guard's re-arm reaches it through `place_stop_loss_order`,
+and the `ContractSymbolBroker` / `RateLimitedBroker` wrappers pass the matrix and the option flag through. `execution/multileg._place_live_legs` sends shorts only
 after every wing's fill is confirmed. The emergency exit (`kill_switch/routes.py`) cancels LIVE orders at the broker
 and closes shorts first. Deployments carry `order_style` / `market_protection_pct` (PROTECTED_LIMIT = marketable
 limit; MARKET default). `market_data/calendar.trading_day_start` is the day boundary for daily limits; the position

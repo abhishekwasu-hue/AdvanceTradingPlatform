@@ -208,7 +208,8 @@ class OrderRouter:
             # platform books a position against the signal price.
             book_status = (book_entry.status if book_entry is not None else "").upper()
             if book_status in _REJECTED_STATUSES:
-                return ExecutionResult(executed=False, reasons=reasons + [f"Order {response.order_id} ended {book_status} at the broker with no fill"])
+                return ExecutionResult(executed=False, broker_order_id=response.order_id,
+                                       reasons=reasons + [f"Order {response.order_id} ended {book_status} at the broker with no fill"])
             if book_entry is None and not self._book_readable:
                 # The broker cannot show us its book: cancelling blind could close a fill we cannot see.
                 filled_quantity = decision.quantity
@@ -220,8 +221,8 @@ class OrderRouter:
                     fill_price, filled_quantity = late_price, late_quantity   # filled while we were cancelling
                     reasons.append(f"Order filled during the cancel attempt: {late_quantity:g} @ {late_price}")
                 elif cancelled:
-                    return ExecutionResult(executed=False, reasons=reasons + [
-                        f"No fill within {self.fill_poll_attempts * self.fill_poll_delay_seconds:g}s - order {response.order_id} cancelled at the broker, no position opened"])
+                    return ExecutionResult(executed=False, broker_order_id=response.order_id, reasons=reasons + [
+                        f"No fill within {self.fill_poll_attempts * self.fill_poll_delay_seconds:g}s - order {response.order_id} cancelled at the broker (book confirms), no position opened"])
                 else:
                     filled_quantity = decision.quantity
                     broker_uncertain = True
@@ -230,7 +231,8 @@ class OrderRouter:
             # Partial fill (safety rule 17): the position is the filled part, never the requested one, and the
             # remainder must not keep working at the broker (P0.5 / T1).
             reasons.append(f"Partial fill: {filled_quantity:g} of {decision.quantity:g} - position and stop sized to the filled quantity")
-            if book_entry is None or (book_entry.status or "").upper() not in _FILLED_STATUSES:
+            remainder_status = (book_entry.status or "").upper() if book_entry is not None else ""
+            if remainder_status not in (_FILLED_STATUSES | _REJECTED_STATUSES):      # a terminal remainder needs no cancel
                 try:
                     await self.broker.cancel_order(response.order_id)
                     reasons.append(f"Unfilled remainder {decision.quantity - filled_quantity:g} cancelled at the broker")
@@ -312,22 +314,26 @@ class OrderRouter:
 
     async def _cancel_unfilled(self, order_id: str, fallback: float) -> tuple[bool, float, float]:
         """Cancels an order the book still shows unfilled. Returns (cancel confirmed, late fill price, late fill
-        quantity): a fill that landed between the last look and the cancel is honoured, never discarded."""
+        quantity). A cancel *request* that the adapter accepted proves nothing - every adapter answers "CANCELLED"
+        to an accepted request and Kite/Upstox cancels are asynchronous - so the cancel counts only once the
+        broker's book shows the order terminal with nothing filled. A fill that lands meanwhile is honoured; an
+        order the book cannot show as terminal stays unconfirmed (the caller records it and pauses LIVE entries)."""
         try:
-            response = await self.broker.cancel_order(order_id)
-        except Exception as exc:  # noqa: BLE001
+            await self.broker.cancel_order(order_id)
+        except Exception as exc:  # noqa: BLE001 - "already executed" is the common cause: the book decides below
             logger.error("Cancel of unfilled order %s failed: %s", order_id, exc)
-            price, quantity, _ = await self._resolve_fill_with_status(order_id, fallback)
-            return False, price, quantity
-        # One more look: the exchange may have filled it a moment before the cancel reached it.
-        try:
-            book = await self.broker.get_order_book()
-        except Exception:  # noqa: BLE001
-            book = []
-        match = next((o for o in book if o.order_id == order_id), None)
-        if match is not None and match.average_price and match.filled_quantity > 0:
-            return False, float(match.average_price), float(match.filled_quantity)
-        status = (response.status or "").upper()
-        return status in _REJECTED_STATUSES or status == "" or match is None or (match.status or "").upper() in _REJECTED_STATUSES, fallback, 0.0
+        for attempt in range(self.fill_poll_attempts):
+            try:
+                book = await self.broker.get_order_book()
+            except Exception:  # noqa: BLE001
+                return False, fallback, 0.0
+            match = next((o for o in book if o.order_id == order_id), None)
+            if match is not None and match.average_price and match.filled_quantity > 0:
+                return False, float(match.average_price), float(match.filled_quantity)
+            if match is not None and (match.status or "").upper() in _REJECTED_STATUSES:
+                return True, fallback, 0.0
+            if attempt < self.fill_poll_attempts - 1:
+                await asyncio.sleep(self.fill_poll_delay_seconds)
+        return False, fallback, 0.0
         logger.info("Fill price for %s not yet in order book; recording signal entry provisionally", order_id)
         return fallback, 0.0

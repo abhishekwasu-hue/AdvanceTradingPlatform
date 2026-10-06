@@ -324,3 +324,140 @@ def test_daily_loss_counts_marked_open_positions_on_the_ist_day():
             assert rows["B"].mark_price == 95.0 and rows["C"].mark_price == 101.0 and rows["C"].mark_time is not None
             assert await open_unrealised_pnl(session, me["tenant_id"]) == -60.0           # B: -50, C (short): -10
     _run(go())
+
+
+# --- review follow-ups -----------------------------------------------------------------------------------------------------
+def test_stop_type_survives_the_symbol_and_rate_limit_wrappers(monkeypatch):
+    """The worker hands the router RateLimitedBroker(ContractSymbolBroker(adapter)); the option flag and the
+    capability matrix must pass through both, or an F&O entry silently loses its exchange-side stop."""
+    from app.brokers.contract_symbols import ContractSymbolBroker
+    from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
+    inner = _BookBroker(fills=500, status="COMPLETE", capabilities=BrokerCapabilities(stop_market_on_options=False))
+    stacked = RateLimitedBroker(ContractSymbolBroker(inner), RateBudget(RateLimits(per_second=100, per_minute=6000, burst=100)))
+    assert stacked.capabilities.stop_market_on_options is False
+    assert stacked.stop_order_params("NIFTY26OCT26000CE", OrderSide.SELL, 120.0) == ("SL", 118.8)
+    result = _run(_router(stacked, is_option=True).execute(_signal(), TradingDayState()))
+    assert result.executed and result.sl_order_id == "ORD-2" and not result.sl_failed
+    assert inner.placed[1].order_type == "SL" and inner.placed[1].price == 97.0
+
+
+def test_cancel_counts_only_when_the_book_shows_the_order_terminal():
+    class _CancelSaysYesBookSaysOpen(_BookBroker):
+        async def cancel_order(self, order_id):
+            self.cancelled.append(order_id)
+            return BrokerOrderResponse(order_id=order_id, status="CANCELLED")      # accepted, but the book keeps it OPEN
+    broker = _CancelSaysYesBookSaysOpen(fills=0, status="OPEN")
+    result = _run(_router(broker).execute(_signal(), TradingDayState()))
+    assert result.executed and result.broker_uncertain and result.trade.quantity == 500
+    assert any("could not be cancelled" in r for r in result.reasons) and broker.cancelled == ["ORD-1"]
+    # A cancel that raises because the order already executed: the book's fill is honoured.
+    class _AlreadyExecuted(_BookBroker):
+        async def cancel_order(self, order_id):
+            self.fills, self.status = 500, "COMPLETE"
+            raise RuntimeError("Order already executed")
+    broker = _AlreadyExecuted(fills=0, status="OPEN")
+    result = _run(_router(broker).execute(_signal(), TradingDayState()))
+    assert result.executed and not result.broker_uncertain and result.trade.entry_price == 100.2
+
+
+def test_a_remainder_already_terminal_at_the_broker_is_not_cancelled_again():
+    broker = _BookBroker(fills=200, status="CANCELLED", cancel_raises=True)     # exchange cancelled the rest itself
+    result = _run(_router(broker).execute(_signal(), TradingDayState()))
+    assert result.executed and result.partial_fill and result.trade.quantity == 200 and not result.broker_uncertain
+
+
+def test_structure_leg_filled_during_the_cancel_is_unwound_not_orphaned(monkeypatch):
+    from app.execution.multileg import _place_live_legs
+    from app.instruments.spreads import resolve_structure
+    from app.core.enums import OptionStrategy
+    from tests.test_contract_rules import TODAY, _load_master
+    from tests.test_multileg import SPOT, _OptionBroker, _rules
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    _load_master()
+
+    class _ShortFillsOnCancel(_OptionBroker):
+        def __init__(self):
+            super().__init__()
+            self.cancelled = []
+            self.short_filled = False
+
+        async def get_order_book(self):
+            book = await super().get_order_book()
+            out = []
+            for o in book:
+                if "24500 PE" in o.symbol and not self.short_filled:
+                    out.append(o.model_copy(update={"filled_quantity": 0, "average_price": None, "status": "OPEN"}))
+                else:
+                    out.append(o)
+            return out
+
+        async def cancel_order(self, order_id):
+            self.cancelled.append(order_id)
+            self.short_filled = True                                             # the exchange filled it first
+            raise RuntimeError("Order already executed")
+
+    async def go(broker):
+        async with _session_factory() as session:
+            structure = await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
+                                                spread_width=2, spot=SPOT, today=TODAY)
+            fills, notes = {}, []
+            return await _place_live_legs(broker, structure, structure.lot_size, "s", None, fills, notes)
+    broker = _ShortFillsOnCancel()
+    ok, failure = _run(go(broker))
+    assert not ok and "filled" in failure and "unwound 2 filled leg(s)" in failure
+    sides = [(o.transaction_type.value, "24500 PE" in o.symbol) for o in broker.placed]
+    # wing BUY, short SELL, then the unwind: short bought back first, wing sold.
+    assert sides == [("BUY", False), ("SELL", True), ("BUY", True), ("SELL", False)]
+
+
+def test_unrealised_counts_only_positions_opened_and_marked_today():
+    headers = _headers(_register("p05-swing@example.com"))
+    me = client.get("/api/auth/me", headers=headers).json()
+    now = datetime.now(timezone.utc)
+    yesterday = trading_day_start(now) - timedelta(hours=3)
+
+    async def go():
+        async with _session_factory() as session:
+            session.add(TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="SWING", strategy_id="s", direction="LONG",
+                                    entry_time=yesterday, entry_price=100.0, quantity=10, stop_loss=90.0, target1=130.0, mark_price=150.0, mark_time=now))
+            session.add(TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="STALE", strategy_id="s", direction="LONG",
+                                    entry_time=now, entry_price=100.0, quantity=10, stop_loss=90.0, target1=130.0, mark_price=50.0, mark_time=yesterday))
+            session.add(TradeRecord(tenant_id=me["tenant_id"], user_id=me["id"], mode="PAPER", symbol="TODAY", strategy_id="s", direction="LONG",
+                                    entry_time=now, entry_price=100.0, quantity=10, stop_loss=90.0, target1=130.0, mark_price=96.0, mark_time=now))
+            await session.commit()
+            assert await open_unrealised_pnl(session, me["tenant_id"]) == -40.0        # the carried gain and the stale mark do not count
+    _run(go())
+
+
+def test_coindcx_book_includes_filled_orders_it_placed_and_refuses_trigger_edits():
+    import json as _json
+    import httpx
+    from app.brokers.coindcx import CoinDCXBroker
+    from app.brokers.exceptions import BrokerAPIError
+    from app.brokers.models import BrokerCredentials
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET":
+            return httpx.Response(200, json=[{"coindcx_name": "BTCINR", "base_currency_short_name": "INR", "target_currency_short_name": "BTC", "symbol": "BTCINR",
+                                              "min_quantity": 0.0001, "max_quantity": 10, "step": 0.0001, "base_currency_precision": 2, "target_currency_precision": 4,
+                                              "order_types": ["limit_order", "market_order", "stop_limit"]}])
+        payload = _json.loads(request.content or b"{}")
+        if path == "/exchange/v1/orders/create":
+            return httpx.Response(200, json={"orders": [{"id": "ord-9", "market": "BTCINR", "side": "buy", "order_type": "market_order", "status": "open",
+                                                         "total_quantity": 0.001, "remaining_quantity": 0.001, "created_at": 1}]})
+        if path == "/exchange/v1/orders/active_orders":
+            return httpx.Response(200, json={"orders": []})                               # filled: gone from the active list
+        if path == "/exchange/v1/orders/status":
+            assert payload["id"] == "ord-9"
+            return httpx.Response(200, json={"id": "ord-9", "market": "BTCINR", "side": "buy", "order_type": "market_order", "status": "filled",
+                                             "total_quantity": 0.001, "remaining_quantity": 0, "avg_price": 4900000, "created_at": 1})
+        raise AssertionError(f"unexpected {request.method} {path}")
+    broker = CoinDCXBroker(BrokerCredentials(api_key="k", api_secret="s"), client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://api.coindcx.com"))
+    placed = _run(broker.place_order(__import__("app.brokers.models", fromlist=["BrokerOrderRequest"]).BrokerOrderRequest(
+        symbol="BTCINR", exchange="CRYPTO", transaction_type=OrderSide.BUY, quantity=0.001, order_type="MARKET", product="MIS")))
+    book = _run(broker.get_order_book())
+    assert placed.order_id == "ord-9" and [o.order_id for o in book] == ["ord-9"] and book[0].filled_quantity == 0.001 and book[0].average_price == 4900000
+    import pytest
+    with pytest.raises(BrokerAPIError):
+        _run(broker.modify_order("ord-9", price=4800000.0, trigger_price=4850000.0))    # trigger is not editable: cancel + re-place

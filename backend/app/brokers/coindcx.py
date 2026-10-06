@@ -285,13 +285,17 @@ class CoinDCXBroker(BrokerInterface):
         order_id = str(first.get("id") or "")
         if not order_id:
             raise BrokerAPIError("CoinDCX returned no order id", raw=str(body)[:300])
+        self._remember_order(order_id)
         status = STATUS_MAP.get(str(first.get("status") or "open").lower(), "OPEN")
         return BrokerOrderResponse(order_id=order_id, status=status, message=first.get("message") if isinstance(first, dict) else None,
                                    raw=body if isinstance(body, dict) else {"orders": body})
 
     async def modify_order(self, order_id: str, quantity: Optional[float] = None, price: Optional[float] = None,
                            trigger_price: Optional[float] = None, order_type: Optional[str] = None) -> BrokerOrderResponse:
-        if quantity is not None or order_type is not None or (trigger_price is not None and price is None):
+        if quantity is not None or order_type is not None or trigger_price is not None:
+            # P0.5: `orders/edit` changes price_per_unit only. Moving a stop's limit while its trigger stays put would
+            # leave a stop that triggers at the old level and then rests unmarketable - refuse, so the caller keeps
+            # the software stop (and cancel + re-place is the explicit path).
             raise BrokerAPIError("CoinDCX can only edit an order's price; cancel and re-place to change quantity, type or trigger")
         body = await self._private("/exchange/v1/orders/edit", {"id": str(order_id), "price_per_unit": float(price)})
         return BrokerOrderResponse(order_id=str(order_id), status=STATUS_MAP.get(str(body.get("status") or "open").lower(), "OPEN") if isinstance(body, dict) else "OPEN",
@@ -312,10 +316,35 @@ class CoinDCXBroker(BrokerInterface):
                                  status=STATUS_MAP.get(str(o.get("status") or "").lower(), str(o.get("status") or "OPEN").upper()),
                                  price=_f(o.get("price_per_unit")) or None, average_price=_f(o.get("avg_price")) or None, placed_at=_ms(o.get("created_at")))
 
+    # P0.5 / T1: `active_orders` drops an order the moment it fills, so a fill confirmation that only reads it would
+    # mistake a filled market order for a missing one. The ids this process placed are kept (most recent 50) and
+    # looked up by `orders/status` when the active list does not show them.
+    _RECENT_ORDERS = 50
+
+    def _remember_order(self, order_id: str) -> None:
+        recent = getattr(self, "_recent_order_ids", None)
+        if recent is None:
+            recent = self._recent_order_ids = []
+        if order_id not in recent:
+            recent.append(order_id)
+            del recent[:-self._RECENT_ORDERS]
+
     async def get_order_book(self) -> List[BrokerOrderStatus]:
         body = await self._private("/exchange/v1/orders/active_orders", {})
         rows = body.get("orders") if isinstance(body, dict) else body
-        return [self._status_from(o) for o in (rows or []) if isinstance(o, dict)]
+        book = [self._status_from(o) for o in (rows or []) if isinstance(o, dict)]
+        listed = {o.order_id for o in book}
+        for order_id in list(getattr(self, "_recent_order_ids", []) or []):
+            if order_id in listed:
+                continue
+            try:
+                status = await self._private("/exchange/v1/orders/status", {"id": order_id})
+            except Exception as exc:  # noqa: BLE001 - the active list still answers; the fill check treats it as unconfirmed
+                logger.debug("CoinDCX order status for %s unavailable: %s", order_id, exc)
+                continue
+            if isinstance(status, dict) and status.get("id"):
+                book.append(self._status_from(status))
+        return book
 
     async def get_trade_book(self) -> List[BrokerTradeEntry]:
         rows = await self._private("/exchange/v1/orders/trade_history", {"limit": 500})

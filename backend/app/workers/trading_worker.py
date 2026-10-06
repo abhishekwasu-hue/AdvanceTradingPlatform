@@ -434,6 +434,9 @@ class TradingWorker:
             by_tenant.setdefault(dep.tenant_id, []).append(dep)
 
         for tenant_id, tenant_deployments in by_tenant.items():
+            # P0.1 / S2: the evaluation phase is the long one; keep the replica lock alive per tenant.
+            if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
+                logger.warning("Replica lock could not be renewed before tenant %s - another replica may now hold it", tenant_id)
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
@@ -566,6 +569,9 @@ class TradingWorker:
                 )
                 break
             evaluated += 1
+            family = session_family(dep.exchange)
+            if family not in open_families:
+                continue  # Phase O2: this venue is closed right now; nothing to evaluate
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
@@ -574,9 +580,6 @@ class TradingWorker:
                 dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
                 await session.commit()
                 continue
-            family = session_family(dep.exchange)
-            if family not in open_families:
-                continue  # Phase O2: this venue is closed right now; nothing to evaluate
             no_new_after = intraday_cutoffs(family)[0]
             entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):

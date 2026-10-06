@@ -39,7 +39,7 @@ jobs:
             set -e
             cd "${REPO_PATH:-/opt/atp}"
             git fetch -q origin
-            case "${DEPLOY_REF:-origin/main}" in *[!A-Za-z0-9._/-]*) echo "refusing ref with unexpected characters" >&2; exit 1;; esac
+            case "${DEPLOY_REF:-origin/main}" in -*|*[!A-Za-z0-9._/@^~+-]*) echo "refusing ref with unexpected characters" >&2; exit 1;; esac
             scripts/deploy.sh staging "${DEPLOY_REF:-origin/main}"
       - name: Smoke test
         env:

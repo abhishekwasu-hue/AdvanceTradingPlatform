@@ -231,3 +231,11 @@ default and G-LIVE gate before any LIVE wiring.
   script text, and refuses a ref with unexpected characters.
 - S12: `create_all` only outside production/staging (`tables_created_at_startup`). OpenAPI title/version from
   `APP_VERSION`.
+- Self-review findings fixed before merge: the body limiter now sits inside CORS/observability (a 413 carries CORS
+  headers and a request id); Monte Carlo, walk-forward and optimizer closed to anonymous callers and moved to the
+  threadpool too; the replica lock is renewed per tenant (the evaluation phase is the long one) and the LIVE gates
+  sit below the venue check; compose forwards `MAX_REQUEST_BODY_BYTES`/`APP_VERSION`; Caddy caps chunked bodies;
+  the staging deploy's ref check accepts `@^~+` and refuses a leading `-`; `deploy.sh` fetches then checks the ref
+  out detached (`git fetch origin origin/main` never worked); the UI asks anonymous users to sign in on the pages
+  that call the closed endpoints instead of surfacing a raw 401, and the Signals page no longer fails entirely when
+  the S/R zones call is refused.

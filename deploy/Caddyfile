@@ -12,6 +12,10 @@
 	respond @metrics 404
 
 	handle /api/* {
+		# P0.1 / S3: the API caps declared bodies itself (MAX_REQUEST_BODY_BYTES); the edge caps chunked ones too.
+		request_body {
+			max_size 8MB
+		}
 		reverse_proxy backend:8000 {
 			header_up X-Forwarded-Proto https
 		}

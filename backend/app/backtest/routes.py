@@ -12,12 +12,13 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, get_current_user_optional
+from app.auth.dependencies import get_current_user
 from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
@@ -89,7 +90,7 @@ class OptionBacktestBody(BaseModel):
             option_strategy=self.option_strategy, option_position=self.option_position, expiry_rule=self.expiry_rule,
             strike_rule=self.strike_rule, strike_offset=self.strike_offset, spread_width=self.spread_width,
             target_credit_pct=self.target_credit_pct, stop_credit_pct=self.stop_credit_pct, premium_stop_pct=self.premium_stop_pct,
-            custom_legs=[CustomLeg.from_dict(l.model_dump()) for l in (self.custom_legs or [])], max_lots=self.max_lots,
+            custom_legs=[CustomLeg.from_dict(leg.model_dump()) for leg in (self.custom_legs or [])], max_lots=self.max_lots,
             lot_size=self.lot_size, strike_step=self.strike_step, expiry_weekday=self.expiry_weekday, weekly_expiry=self.weekly_expiry,
             holidays=set(holidays), implied_volatility=self.implied_volatility, realised_vol_window=self.realised_vol_window,
             risk_free_rate=self.risk_free_rate, intraday=self.intraday,
@@ -236,26 +237,26 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
 @router.post("/api/backtest/monte-carlo")
 async def backtest_monte_carlo(
     body: BacktestBody, runs: int = 1000, seed: Optional[int] = 42,
-    user: Optional[User] = Depends(get_current_user_optional), session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session)
-    result = runner.run(strategy, bars_to_dataframe(body.candles))
-    return {"backtest": result.model_dump(exclude={"trades", "equity_curve", "analytics", "options"}),
-            "monte_carlo": monte_carlo(result.trades, risk.capital, runs=max(100, min(runs, 5000)), seed=seed)}
+    result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
+    mc = await run_in_threadpool(monte_carlo, result.trades, risk.capital, runs=max(100, min(runs, 5000)), seed=seed)
+    return {"backtest": result.model_dump(exclude={"trades", "equity_curve", "analytics", "options"}), "monte_carlo": mc}
 
 
 @router.post("/api/backtest/walk-forward")
 async def backtest_walk_forward(
     body: BacktestBody, folds: int = 4,
-    user: Optional[User] = Depends(get_current_user_optional), session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session)
-    return walk_forward(strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
-                        runner=runner.run if body.options is not None else None)
+    return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
+                                   runner=runner.run if body.options is not None else None)
 
 
 # --- Phase W: recorded option-chain quotes -------------------------------------------------
@@ -300,15 +301,15 @@ class OptimizeBody(BaseModel):
 
 
 @router.post("/api/backtest/optimize")
-async def backtest_optimize(body: OptimizeBody, user: Optional[User] = Depends(get_current_user_optional),
+async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current_user),
                             session: AsyncSession = Depends(get_session)) -> dict:
     """Phase M / V4.6: grid search on the in-sample part, ranked by the out-of-sample metric."""
     from app.platform.controls import require_flag
-    await require_flag(session, "backtest_optimizer", user.tenant_id if user else None)  # Phase N4
+    await require_flag(session, "backtest_optimizer", user.tenant_id)  # Phase N4
     strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=body.symbol, base_timeframe=body.base_timeframe,
                                             candles=body.candles, risk_config=body.risk_config), user, session)
     try:
-        return optimize(strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, body.risk_config or RiskConfig(),
-                        body.param_grid, metric=body.metric, split=body.split)
+        return await run_in_threadpool(optimize, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe,
+                                       body.risk_config or RiskConfig(), body.param_grid, metric=body.metric, split=body.split)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

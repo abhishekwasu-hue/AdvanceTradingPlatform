@@ -127,6 +127,17 @@ app.add_exception_handler(RequestValidationError, request_validation_handler)
 # any origin for zero-config local dev; set ALLOWED_ORIGINS (comma-separated) to your real
 # frontend domain(s) in production - validate_production_config() refuses to boot with the "*"
 # default when ENVIRONMENT=production.
+@app.middleware("http")
+async def _limit_request_body(request: Request, call_next):
+    """P0.1 / S3: refuse oversized bodies from the declared length before anything parses them. A chunked
+    upload without a Content-Length is capped by the edge (deploy/Caddyfile `request_body max_size`).
+    Registered before CORS/observability so those wrap it: the 413 carries CORS headers and a request id."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
+    return await call_next(request)
+
+
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
 # wraps it and its headers are still applied to the rewritten request.
 app.add_middleware(ObservabilityMiddleware)
@@ -137,15 +148,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.middleware("http")
-async def _limit_request_body(request: Request, call_next):
-    """P0.1 / S3: refuse oversized bodies from the declared length before anything parses them. Chunked
-    uploads without a Content-Length are left to the reverse proxy's limit (Caddy: request_body)."""
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
-        return JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
-    return await call_next(request)
 
 app.include_router(auth_router)
 app.include_router(broker_router)

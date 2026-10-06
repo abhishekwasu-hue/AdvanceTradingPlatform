@@ -24,9 +24,12 @@ def test_cpu_heavy_endpoints_need_a_login_and_bodies_are_capped():
     headers = {"Authorization": f"Bearer {_register('p0-closed@example.com')}"}
     assert client.post("/api/option-chain/greeks", headers=headers, json={"legs": []}).status_code == 200
     # The cap reads Content-Length before any parsing: a declared oversized body is a 413, never a parse attempt.
-    huge = "x" * 64
-    res = client.post("/api/scanner/run", headers={**headers, "Content-Length": str(config.MAX_REQUEST_BODY_BYTES + 1)}, content=huge)
+    res = client.post("/api/scanner/run", headers={**headers, "Origin": "https://app.example.com", "Content-Type": "application/json"},
+                      content=b"x" * (config.MAX_REQUEST_BODY_BYTES + 1))
     assert res.status_code == 413 and "larger than" in res.json()["detail"]
+    assert res.headers.get("access-control-allow-origin") and res.headers.get("x-request-id")      # CORS + request id wrap the limiter
+    for path in ("/api/backtest/monte-carlo", "/api/backtest/walk-forward", "/api/backtest/optimize"):
+        assert client.post(path, json={}).status_code in (401, 403), path
     assert app.title == "AMW Algorithmic Trading Platform API" and app.version == config.APP_VERSION
 
 

@@ -60,6 +60,28 @@ UPSTOX_AUTHORIZE_URL = "https://api.upstox.com/v2/login/authorization/dialog"
 # Brokers whose login is a browser redirect the platform can drive end-to-end.
 OAUTH_BROKERS = {"upstox"}
 
+# Brokers whose daily login is a hosted page the platform can only *open*: the broker sends the
+# browser to the redirect URL registered on its developer console (not to the platform), and the
+# operator copies the one-time code out of that address bar into Settings. `code_param` names the
+# query parameter that carries it. Fyers: `generate-authcode` -> `?auth_code=...`; Kite: `?request_token=...`.
+FYERS_AUTHORIZE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode"
+KITE_AUTHORIZE_URL = "https://kite.zerodha.com/connect/login"
+LOGIN_URL_BROKERS: Dict[str, Dict[str, Any]] = {
+    "fyers": {"code_param": "auth_code", "needs_redirect_uri": True},
+    "zerodha": {"code_param": "request_token", "needs_redirect_uri": False},
+}
+
+
+def build_login_url(broker_name: str, api_key: str, redirect_uri: Optional[str] = None, state: str = "atp") -> str:
+    """The broker's hosted login page for the paste-the-code flow (LOGIN_URL_BROKERS only)."""
+    if broker_name == "fyers":
+        if not redirect_uri:
+            raise ValueError("Fyers needs the app's redirect URI (the Redirect URL on myapi.fyers.in) stored as redirect_uri")
+        return f"{FYERS_AUTHORIZE_URL}?{urlencode({'client_id': api_key, 'redirect_uri': redirect_uri, 'response_type': 'code', 'state': state})}"
+    if broker_name == "zerodha":
+        return f"{KITE_AUTHORIZE_URL}?{urlencode({'v': '3', 'api_key': api_key})}"
+    raise ValueError(f"{broker_name} has no hosted login page the platform can open")
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)

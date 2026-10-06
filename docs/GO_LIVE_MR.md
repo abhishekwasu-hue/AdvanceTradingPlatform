@@ -1,8 +1,14 @@
 # Go-live (PAPER) - मराठी operator checklist
 
 `docs/GO_LIVE.md` चाच क्रम, पण प्रत्येक पायरीला नेमके clicks/commands, अपेक्षित output आणि चूक झाली तर काय
-करायचे. लक्ष्य: खऱ्या Upstox खात्यावर, खऱ्या data वर **पहिला पूर्ण PAPER दिवस**, आणि मग सलग **5 PAPER दिवस**.
+करायचे. लक्ष्य: खऱ्या broker खात्यावर, खऱ्या data वर **पहिला पूर्ण PAPER दिवस**, आणि मग सलग **5 PAPER दिवस**.
 LIVE या checklist च्या बाहेर आहे (GO_LIVE.md §3).
+
+> **निर्णय 2026-10-06 - host आणि broker बदलले:** PAPER आठवडा **तुमच्या Windows PC वर Docker Desktop मध्ये**,
+> broker **Fyers** (सध्याचा app). Local पायऱ्या (`git pull`, compose overlay, migrations, sleep/restart, Fyers रोजचा
+> auth-code login, read-only check, तपासणी script चा local command) **`docs/LOCAL_PC_MR.md`** मध्ये. खालचा §0
+> (droplet/Caddy/Spaces/Upstox app) **नंतरसाठी** ठेवला आहे; §1-§6 दोन्ही host ला लागू, Upstox-विशिष्ट ओळींना Fyers
+> पर्याय दिला आहे. Two-way Telegram (1.9) local वर नाही (public HTTPS लागतो); outbound alerts चालू.
 
 > **Secrets चा नियम:** broker key/secret, access token, TOTP secret, AI provider key, `JWT_SECRET_KEY`,
 > `SECRETS_ENCRYPTION_KEY`, Razorpay keys - हे कधीही chat मध्ये, GitHub issue/PR मध्ये किंवा repo मधल्या फाइलमध्ये
@@ -34,13 +40,13 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 |---|---|---|---|
 | 1.1 | नोंदणी | `https://<DOMAIN>` → Register → email verify (SMTP नसेल तर Admin ने verify) → **Account → MFA चालू** (backup codes जपून ठेवा) | Account पानावर MFA: enabled |
 | 1.2 | Admin | DB मध्ये पहिल्या user ला `SUPER_ADMIN` (OPERATIONS 1.6) → Admin console उघडते | Admin → Readiness सगळे ok/warn |
-| 1.3 | Broker key | Settings → Brokers → Upstox → API key + secret (पायरी 0.7 चा app) → Save | "stored, encrypted" |
-| 1.4 | Login | त्याच card वर **Login to Upstox** → Upstox पान → परवानगी → परत | banner `VALID`, expiry 03:30 IST |
-| 1.5 | Read-only check | card वर **Read-only check** | 8/8 हिरवे (profile, funds, instruments, quote, derivatives, contract_quote, positions, orders) - कुठलीही order नाही |
+| 1.3 | Broker key | Settings → Brokers → Upstox → API key + secret (पायरी 0.7 चा app) → Save. **Fyers (local):** broker `fyers` → API Key = App ID, API Secret, **Redirect URI = app मधला Redirect URL** → Save (LOCAL_PC_MR §3) | "stored, encrypted" |
+| 1.4 | Login | Upstox: त्याच card वर **Login to Upstox** → Upstox पान → परवानगी → परत. **Fyers:** **Open fyers login** → Fyers पान → redirect झाल्यावर address bar copy → "Paste today's auth_code" → **Login with code** | banner `VALID`, expiry 03:30 IST (Upstox) / 06:00 IST (Fyers) |
+| 1.5 | Read-only check | card वर **Read-only check** | **9/9** हिरवे (profile, funds, instruments, quote, derivatives, contract_quote, option_chain, positions, orders) - कुठलीही order नाही |
 | 1.6 | Alerts | Settings → Alerts → Telegram (bot token + chat id) → Save → **Send test** | फोनवर message |
 | 1.7 | Risk | Risk पान: capital, 0.5% प्रति trade, daily loss cap, max positions | Risk limits set ✅ |
 | 1.8 | Feature flags (PAPER मध्ये, तुमच्या निर्णयाने) | Admin console → Controls → `news_feed`, `market_thesis`, `telegram_inbound` on (default off). कुठलाही flag order/sizing बदलत नाही: feed = unverified बातम्या + alerts, thesis = वाचन + shadow multiplier (कधीही लागू नाही), telegram_inbound = commands + PAPER approve/reject | Copilot "आजचा market" वर sentiment gauge, thesis card; News पानावर feed rows |
-| 1.9 | Two-way Telegram (ऐच्छिक, 1.8 नंतर) | Settings → Alerts → Telegram → "Two-way Telegram" on → allowed chat ids → **Register webhook** (HTTPS domain लागतो) → फोनवरून `/help` | bot उत्तर देतो; `/brief`, `/positions`, `/thesis NIFTY 50` चालतात. Buttons फक्त PAPER pause/reduce/review; exits/LIVE web + authenticator |
+| 1.9 | Two-way Telegram (ऐच्छिक, 1.8 नंतर; **local PC वर नाही** - public HTTPS लागतो) | Settings → Alerts → Telegram → "Two-way Telegram" on → allowed chat ids → **Register webhook** (HTTPS domain लागतो) → फोनवरून `/help` | bot उत्तर देतो; `/brief`, `/positions`, `/thesis NIFTY 50` चालतात. Buttons फक्त PAPER pause/reduce/review; exits/LIVE web + authenticator |
 
 ## 2. PAPER deployment
 
@@ -52,7 +58,8 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 
 ## 3. पहिल्या PAPER दिवसाची सकाळ (08:30-09:10 IST)
 
-1. **Broker login** (token रोज 03:30 ला expire होतो): Settings → Brokers → Login to Upstox → banner `VALID`.
+1. **Broker login** (token रोज expire होतो - Upstox 03:30, Fyers 06:00): Settings → Brokers → Login to Upstox /
+   Fyers: Open login → code paste → banner `VALID`.
 2. **Read-only check** (पायरी 1.5) एकदा.
 3. **तपासणी script** (read-only; काहीही बदलत नाही):
 
@@ -81,7 +88,7 @@ Organisation
 ✅ No kill switch engaged: none engaged
 Live probes
 ✅ NSE session today: trading day; opens 09:15 IST
-✅ Broker read-only smoke test - upstox (primary): 8 ok, 0 failed, 0 skipped
+✅ Broker read-only smoke test - upstox (primary): 9 ok, 0 failed, 0 skipped
 ✅ An ACTIVE PAPER deployment: ema_rsi_scalper_1m on NIFTY 50 [1min]
 ✅ Alert channel test message - TELEGRAM: sent
 निकाल: 13 ठीक · 0 इशारे · 0 अडथळे · 0 वगळले
@@ -90,14 +97,16 @@ Live probes
 
 Exit code `0` = सुरू करा; `1` = ❌ आहे; `2` = organisation निवडता आली नाही (`--tenant` द्या).
 
+Local PC वर (PowerShell): `docker compose -f docker-compose.yml -f docker-compose.local.yml exec backend python scripts/first_paper_day_check.py --tenant <email> --send-test-alert` (LOCAL_PC_MR §5); smoke ओळ `fyers (primary): 9 ok`.
+
 4. **Flags on असतील तर** (1.8): News पान → feed status `last_run` ताजा (≤15 मिनिटे) आणि items येत आहेत; Copilot → आजचा
    market → sentiment gauge "not read yet" नसावा (broker login नंतर पहिल्या 15 मिनिटांत भरतो); thesis card वर watchlist
    चा symbol दिसतो. काहीही नसेल तर `docker compose logs --tail 200 worker | grep -i "news\|sentiment\|thesis"`.
 
 | ❌ दिसले | करायचे |
 |---|---|
-| Broker session token valid today | पायरी 3.1 पुन्हा; Upstox app चा redirect URL तपासा |
-| Broker read-only smoke test: profile fail | token चुकीचा/expired → पुन्हा login; `derivatives`/`contract_quote` fail → Instruments → Sync |
+| Broker session token valid today | पायरी 3.1 पुन्हा; Upstox app चा redirect URL तपासा; Fyers: code जुना/वापरलेला → नवा code |
+| Broker read-only smoke test: profile fail | token चुकीचा/expired → पुन्हा login; `derivatives`/`contract_quote` fail → Instruments → Sync (Fyers: symbol master - LOCAL_PC_MR §4) |
 | Trading worker running: never_seen / stale | `docker compose ... up -d worker`; `docker compose logs --tail 100 worker` |
 | Migrations at head: todo | market बंद असताना `alembic upgrade head` |
 | An ACTIVE PAPER deployment | Autopilot → Start (PAPER) |
@@ -143,5 +152,5 @@ random पेक्षा edge दिसला नाही; strategies built-in
 
 ## 6. रोजचे (OPERATIONS 1.5)
 
-03:30 नंतर token expired → 09:00 पूर्वी login; worker heartbeat; Risk limits; alert channel; 15:15 square-off; backups
+03:30 (Upstox) / 06:00 (Fyers) नंतर token expired → 09:00 पूर्वी login; worker heartbeat; Risk limits; alert channel; 15:15 square-off; backups
 verified (`docker compose ... run --rm backup sh /scripts/verify_backup.sh latest` आठवड्यातून एकदा).

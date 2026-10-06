@@ -146,3 +146,34 @@ LIVE शी संबंधित काहीही बदललेलं न�
 - GO_LIVE_MR.md: flags step (1.8), two-way Telegram step (1.9), morning check for feed/sentiment/thesis, Friday thesis
   scoreboard in the day table, the stopped engine port and the "flags are not in the PAPER criteria" note.
 
+
+### 2026-10-06 - Phase BG: local PC host, Fyers daily login, read-only check end to end
+- Operator decision: no droplet; the PAPER week runs on the Windows PC (Docker Desktop) that already hosts ATP,
+  broker Fyers (existing app), not Upstox. `docker-compose.local.yml` binds Postgres/Redis/API/UI to 127.0.0.1
+  and restarts everything with Docker Desktop; `docs/LOCAL_PC_MR.md` (Marathi) covers pull/build/migrations,
+  sleep/restart, the daily Fyers auth-code login with what the screen shows, the read-only check, the first-day
+  script on local, and that two-way Telegram (1.9) is not available locally (outbound alerts are).
+- Bugs found by writing the end-to-end test over the real seams (stored encrypted credential -> build_adapter ->
+  smoke -> first-day report), all fixed with tests:
+  1. Daily re-login by pasting the auth code could not work: the credential merge kept yesterday's access token
+     and the auth-code adapters (Fyers, Kite) skip the exchange while a token is on file, so every pasted code
+     "failed" with the stale token. A fresh request_token now drops the stored access token.
+  2. Fyers F&O positions came back with exchange `NSE` (Fyers uses the `NSE:` prefix for derivatives too), so
+     the contract-symbol translator never restored them to the platform spelling - the monitor and reconciliation
+     would not have matched an option position. Positions/holdings now carry NFO/BFO from the segment code or
+     the ticker shape.
+  3. The Fyers symbol-master parser read strike and option type from fixed columns whose documented order has
+     moved; with the current layout every NIFTY option would have had strike 26000 (the index's scrip code) and
+     no CE/PE. The ticker is parsed first, columns confirm; both layouts are under test.
+- New: `GET /api/broker/{name}/login-url` + `POST /api/broker/{name}/login-code` (Fyers, Kite), the banner's
+  "Open login" + paste box, a smoke `option_chain` step (optional), broker-neutral fix text in the first-day check.
+- Self-review findings fixed before merge: the compose overlay had *added* loopback bindings next to the base
+  file's 0.0.0.0 ones (Compose concatenates `ports`) - `ports: !override` like the prod overlay, with a test that
+  every published port in the overlay is `127.0.0.1:`; `_code_from_paste` no longer 500s on a stray `[` and reads a
+  code carried in the URL fragment; `login-code` has the same verified-email check, failure notification and
+  "mark EXPIRED only when the broker answered" rule as `/authenticate`; the banner opens the tab inside the click
+  (popup blockers) and always shows the link; digit-leading underlyings (360ONE, NIFTYNXT50) parse from the ticker;
+  NSE commodity segment no longer labelled NCDEX; a CE/PE cell is never taken as the underlying.
+- Operator's new upload (ATP_PRO_GRADE_UPGRADE_PLAN.pdf: P0 bugs -> P1 frontend -> P2 options-seller core ->
+  P3 backtesting -> P4 DSL v2 -> P5 scale) read; its method says "plan each phase in WORK_LOG, then PRs, stop
+  only at the G-* gates". P0 planning starts after this PR merges (next entry).

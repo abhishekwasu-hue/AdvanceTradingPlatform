@@ -3538,6 +3538,25 @@ AJ gives the operator that confirmation from Settings without risking an order.
 
 No schema change. Tests: `tests/test_phase_aj_smoke.py`.
 
+### Phase BG: local-PC host and the Fyers daily login
+
+The PAPER week runs on the operator's Windows PC (Docker Desktop) against Fyers, not on a droplet against
+Upstox. `docker-compose.local.yml` binds Postgres, Redis, the API and the UI to `127.0.0.1` and restarts every
+service with Docker Desktop. Fyers (like Kite) has no platform-driven OAuth: the broker redirects to the URL
+on its own console, so `GET /api/broker/{name}/login-url` builds the hosted login page from the stored App ID
+and `redirect_uri` (`token_lifecycle.LOGIN_URL_BROKERS`), and `POST /api/broker/{name}/login-code` takes the
+pasted `auth_code` / `request_token` (or the whole redirected address), drops the stored access token, exchanges
+the code through the adapter and stores the new token encrypted (`store_access_token`). `_merge_with_stored`
+now drops the stored access token whenever a fresh `request_token` arrives, for the Store + Authenticate route
+too. The Fyers symbol master is parsed from the ticker first (`_contract_fields`: `NSE:NIFTY2610326000CE`,
+`NSE:NIFTY26OCTFUT`) with the columns as confirmation, so the documented column order around
+`Underlying scrip code` / `Strike price` / `Option type` cannot silently turn every option into a future with
+the index's scrip code as its strike; positions and holdings carry `NFO`/`BFO` for derivatives (`_exchange_of`,
+from the segment code or the ticker shape) so the contract-symbol translator restores them to the platform
+spelling. The smoke test gained an optional `option_chain` step (skipped with `NotImplementedError`). No
+schema change. Tests: `tests/test_phase_bg_local_fyers.py` (both master layouts, the two-day login, the
+first-day check over a stored Fyers credential through `build_adapter`). Runbook: `docs/LOCAL_PC_MR.md`.
+
 ## Phase AK: completion - CoinDCX adapter, real defaults, go-live runbook
 
 The last items between the master prompt and "everything the code can do is done".

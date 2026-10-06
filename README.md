@@ -121,6 +121,11 @@ machine (Windows + Docker Desktop/WSL2): all images pull and build cleanly, migr
 automatically, and both services come up healthy. See "Docker Deployment" in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full verification note.
 
+For the Windows PC that hosts the PAPER week, add the local overlay so the database, Redis, API and UI
+listen on `127.0.0.1` only and restart with Docker Desktop:
+`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` (Marathi runbook with the
+daily Fyers login: [`docs/LOCAL_PC_MR.md`](docs/LOCAL_PC_MR.md)).
+
 On Windows, `.gitattributes` keeps the `.sh` scripts LF so the `backup` service's `sh` can run
 them. A checkout made before that file existed still has CRLF copies (the `backup` container
 restarts with exit code 2); delete them and check them out again once (`del /q scripts\backup\*.sh

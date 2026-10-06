@@ -161,10 +161,12 @@ export default function SettingsPage() {
 
       <Card title="Broker session health">
         <p className="text-xs text-muted mb-3">
-          Broker access tokens expire every trading morning (Upstox 03:30 IST, Kite 06:00 IST) and
-          cannot be refreshed automatically - log in again each day before the market opens, or
+          Broker access tokens expire every trading morning (Upstox 03:30 IST, Kite and Fyers 06:00 IST)
+          and cannot be refreshed automatically - log in again each day before the market opens, or
           LIVE deployments stay on hold. For Upstox the button below completes the login in your
-          browser and stores the new token for you.
+          browser and stores the new token for you. For Fyers and Kite it opens the broker's login
+          page; paste the code the broker returns (or the whole redirected address) and the session is
+          stored for the day. Fyers needs the app's Redirect URL stored once (field below).
         </p>
         <BrokerTokenBanner key={stored.length} />
       </Card>

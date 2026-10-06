@@ -66,7 +66,8 @@ class _LiveBroker(BrokerInterface):
     async def get_option_chain(self, underlying, expiry=None): raise NotImplementedError
     async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None): raise NotImplementedError
     async def cancel_order(self, order_id):
-        self.cancelled.append(order_id)
+        if self.placed:                      # a cancel of an order that exists shows in the book afterwards
+            self.cancelled.append(order_id)
         return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
     async def get_trade_book(self): raise NotImplementedError
     async def get_positions(self): raise NotImplementedError

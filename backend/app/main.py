@@ -4,14 +4,16 @@ import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
+from fastapi import Request, Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import ALLOWED_ORIGINS, validate_production_config
+from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
 from app.core.models import (
@@ -22,7 +24,7 @@ from app.core.models import (
     StrategyInfo,
     bars_to_dataframe,
 )
-from app.auth.dependencies import get_current_user_optional
+from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
 from app.brokers.models import OptionChain
@@ -37,7 +39,7 @@ from app.db.models import CustomStrategyRecord, User
 from app.core.validation_errors import request_validation_handler
 from app.db.session import get_session, init_models
 from app.execution.order_persistence import get_order_by_idempotency_key
-from app.execution.router import ExecutionResult, LiveTradingNotConfigured, OrderRouter
+from app.execution.router import LiveTradingNotConfigured, OrderRouter
 from app.execution.signal_execution import execute_signal_for_user
 from app.instruments.models import ContractSpec
 from app.instruments.registry import get_contract_spec, list_contract_specs
@@ -102,7 +104,8 @@ from app.secrets_store.envelope import warm_all as warm_tenant_keys
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     validate_production_config()
-    await init_models()
+    if tables_created_at_startup(ENVIRONMENT):
+        await init_models()         # dev/test only; production and staging are Alembic's alone (P0.1 / S12)
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
@@ -110,9 +113,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="Advance Trading Platform - Strategy Engine",
-    description="Inbuilt auto-executable multi-timeframe and indicator-based intraday scalping strategies.",
-    version="0.1.0",
+    title="AMW Algorithmic Trading Platform API",
+    description="Strategies, backtesting, autonomous PAPER/LIVE deployments, risk, brokers, AI copilot - the platform's own API. "
+                "Educational tooling; nothing here is investment advice.",
+    version=APP_VERSION,
     lifespan=_lifespan,
 )
 # 422s keep FastAPI's shape but never echo the rejected input (it may be a credential).
@@ -132,6 +136,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _limit_request_body(request: Request, call_next):
+    """P0.1 / S3: refuse oversized bodies from the declared length before anything parses them. Chunked
+    uploads without a Content-Length are left to the reverse proxy's limit (Caddy: request_body)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
+    return await call_next(request)
 
 app.include_router(auth_router)
 app.include_router(broker_router)
@@ -385,7 +399,7 @@ async def paper_execute(
 @app.post("/api/backtest", response_model=BacktestResult)
 async def backtest(
     request: BacktestRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> BacktestResult:
     try:
@@ -403,22 +417,21 @@ async def backtest(
 
     body = BacktestBody(**request.model_dump())
     runner = await BacktestRunner.build(body, risk_config, session)
-    result = runner.run(strategy, base_df)
-    # Phase J2: a logged-in caller's run is recorded (strategy, params, data span, metrics).
+    result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
+    # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
-    if user is not None:
-        await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
+    await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
     return result
 
 
 @app.post("/api/price-action/structure", response_model=MarketStructureResult)
-def price_action_structure(request: CandlesRequest) -> MarketStructureResult:
+def price_action_structure(request: CandlesRequest, _: User = Depends(get_current_user)) -> MarketStructureResult:
     df = bars_to_dataframe(request.candles)
     return analyze_market_structure(df, window=request.swing_window)
 
 
 @app.post("/api/price-action/patterns", response_model=List[PatternMatch])
-def price_action_patterns(request: CandlesRequest) -> List[PatternMatch]:
+def price_action_patterns(request: CandlesRequest, _: User = Depends(get_current_user)) -> List[PatternMatch]:
     df = bars_to_dataframe(request.candles)
     return detect_patterns(df)
 
@@ -428,7 +441,7 @@ def _cache_key(prefix: str, payload: str) -> str:
 
 
 @app.post("/api/support-resistance/zones", response_model=List[SRZone])
-async def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
+async def support_resistance_zones(request: SRZonesRequest, _: User = Depends(get_current_user)) -> List[SRZone]:
     """Pure function of its input candles, so short-lived results are cached in Redis (when
     reachable - this fails open to a plain recompute otherwise) to avoid rebuilding the same
     swing-cluster/pivot/Fibonacci zones on every identical repeated call.
@@ -444,7 +457,7 @@ async def support_resistance_zones(request: SRZonesRequest) -> List[SRZone]:
         tolerance_pct=request.tolerance_pct,
         opening_range_minutes=request.opening_range_minutes,
     )
-    zones = engine.build_zones(df, request.timeframe)
+    zones = await run_in_threadpool(engine.build_zones, df, request.timeframe)
     await cache_set(key, "[" + ",".join(z.model_dump_json() for z in zones) + "]", ttl_seconds=5)
     return zones
 
@@ -455,7 +468,7 @@ class OptionChainAnalyzeRequest(BaseModel):
 
 
 @app.post("/api/option-chain/analyze", response_model=OptionChainAnalysis)
-async def option_chain_analyze(request: OptionChainAnalyzeRequest) -> OptionChainAnalysis:
+async def option_chain_analyze(request: OptionChainAnalyzeRequest, _: User = Depends(get_current_user)) -> OptionChainAnalysis:
     """Takes a raw OptionChain (e.g. from BrokerInterface.get_option_chain()) and returns PCR,
     Max Pain, ATM/ITM/OTM, OI buildup/unwinding, and a bias confirmed by more than PCR alone.
     Pure function of its input, so short-lived results are cached in Redis (fails open to a
@@ -477,7 +490,7 @@ class GreeksRequest(BaseModel):
 
 
 @app.post("/api/option-chain/greeks", response_model=StrategyGreeksResult)
-async def option_chain_greeks(request: GreeksRequest) -> StrategyGreeksResult:
+async def option_chain_greeks(request: GreeksRequest, _: User = Depends(get_current_user)) -> StrategyGreeksResult:
     """Black-Scholes Delta/Gamma/Theta/Vega for one or more option legs, and the net Greeks of
     the combined position (a spread/straddle/strangle nets a short leg's Greeks against a long
     leg's). Each leg supplies either a real quoted `option_ltp` (implied volatility is solved
@@ -491,14 +504,14 @@ async def option_chain_greeks(request: GreeksRequest) -> StrategyGreeksResult:
 
 
 @app.post("/api/scanner/run", response_model=ScannerResult)
-async def scanner_run(request: ScannerRequest) -> ScannerResult:
+async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_user)) -> ScannerResult:
     """Runs configurable indicator/price-action-structure/option-chain filters across a supplied
     list of symbols (each with its own OHLCV candles and, optionally, option chain) and returns
     only the ones that clear every filter. Indicator filters reuse the exact same `Condition`
     building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
-    works with or without a logged-in caller.
+    needs a logged-in caller (P0.1 / S3: CPU-bound work is not offered to anonymous callers).
     """
-    return run_scanner(request)
+    return await run_in_threadpool(run_scanner, request)
 
 
 @app.get("/api/broker/available")

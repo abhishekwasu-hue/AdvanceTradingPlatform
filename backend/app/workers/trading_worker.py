@@ -39,9 +39,9 @@ from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
-from app.cache.client import cache_acquire_lock, cache_release_lock
+from app.cache.client import cache_release_lock, cache_renew_lock, cache_try_lock
 from app.core import config as app_config
-from app.core.config import WORKER_CYCLE_SECONDS
+from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
@@ -108,6 +108,9 @@ class CycleReport:
     positions_closed: int = 0
     errors: List[str] = field(default_factory=list)
     skipped_lock: bool = False
+    # P0.1 / S2: Redis was unreachable, so this cycle ran without the replica lock (LIVE entries paused
+    # where a second replica is possible).
+    lock_degraded: bool = False
     retention: Optional[RetentionReport] = None
     chain_rows_recorded: int = 0   # Phase W
     billing: Optional[Dict[str, int]] = None
@@ -156,10 +159,15 @@ class TradingWorker:
     def __init__(
         self, session_factory: async_sessionmaker, *, cycle_seconds: int = WORKER_CYCLE_SECONDS,
         market_data_factory: Callable[[BrokerInterface], MarketDataService] = MarketDataService,
-        worker_name: str = WORKER_NAME, max_seconds_per_tenant: Optional[float] = None,
+        worker_name: str = WORKER_NAME, max_seconds_per_tenant: Optional[float] = None, require_lock_for_live: Optional[bool] = None,
     ) -> None:
         self.session_factory = session_factory
         self.cycle_seconds = cycle_seconds
+        # P0.1 / S2: in production/staging a LIVE entry needs the replica lock to be real (Redis reachable);
+        # a single dev/test replica may trade LIVE without Redis as before.
+        self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
+        self._lock_degraded = False
+        self._lock_ttl = max(cycle_seconds * 2, 30)
         self.market_data_factory = market_data_factory
         self.worker_name = worker_name
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
@@ -233,10 +241,14 @@ class TradingWorker:
     async def run_cycle(self, now: Optional[datetime] = None) -> CycleReport:
         now = now or datetime.now(timezone.utc)
         cycle_started = time.monotonic()
-        lock_ttl = max(self.cycle_seconds * 2, 30)
-        if not await cache_acquire_lock(LOCK_KEY, self.holder_id, lock_ttl):
+        lock_ttl = self._lock_ttl = max(self.cycle_seconds * 2, 30)
+        acquired, reachable = await cache_try_lock(LOCK_KEY, self.holder_id, lock_ttl)
+        if not acquired:
             logger.info("Another worker replica holds the lock - skipping this cycle")
             return CycleReport(started_at=now, market_open=False, session_reason="lock held elsewhere", skipped_lock=True)
+        if self._lock_degraded != (not reachable):
+            logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
+        self._lock_degraded = not reachable
 
         try:
             async with self.session_factory() as session:
@@ -249,11 +261,15 @@ class TradingWorker:
                 self._open_families = {name for name, st in statuses.items() if st.is_open}
                 nse = statuses["NSE"]
                 reason = nse.reason if wanted == {"NSE"} else "; ".join(f"{n}: {'open' if st.is_open else 'closed'}" for n, st in sorted(statuses.items()))
-                report = CycleReport(started_at=now, market_open=bool(self._open_families), session_reason=reason, open_exchanges=sorted(self._open_families))
+                report = CycleReport(started_at=now, market_open=bool(self._open_families), session_reason=reason, open_exchanges=sorted(self._open_families),
+                                     lock_degraded=self._lock_degraded)
                 if self._open_families:
                     self._stale_skips = 0
                     await self._process_tenants(session, now, report)
                     report.stale_skips = self._stale_skips
+                    # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
+                    if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
+                        logger.warning("Replica lock could not be renewed - another replica may now hold it")
                 else:
                     logger.debug("Market closed: %s", reason)
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
@@ -552,6 +568,10 @@ class TradingWorker:
             evaluated += 1
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
+                await session.commit()
+                continue
+            if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
+                dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
                 await session.commit()
                 continue
             family = session_family(dep.exchange)

@@ -1,4 +1,5 @@
 import os
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -7,6 +8,12 @@ load_dotenv()
 # "production" enables the startup checks in validate_production_config() below - anything else
 # (the default) is treated as local/dev and skips them so the app still runs with no .env at all.
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
+# P0.1: environments that must boot with a hardened configuration and never create tables outside Alembic.
+HARDENED_ENVIRONMENTS = ("production", "staging")
+APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
+# P0.1 / S3: the largest request body the API accepts (candle arrays for backtests and scans are the
+# big ones; 8 MB is ~100k bars). Enforced from Content-Length before the body is read.
+MAX_REQUEST_BODY_BYTES = int(os.environ.get("MAX_REQUEST_BODY_BYTES", str(8 * 1024 * 1024)))
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform"
@@ -99,30 +106,50 @@ WORKER_CYCLE_SECONDS = int(os.environ.get("WORKER_CYCLE_SECONDS", "60"))
 RISK_FREE_RATE = float(os.environ.get("RISK_FREE_RATE", "0.07"))
 
 
-def validate_production_config() -> None:
-    """Fails fast at startup rather than silently serving traffic with a known-insecure
-    configuration. A very common way real deployments get compromised is a dev-only default
-    secret nobody rotated before going live - refusing to boot is cheaper than that incident.
-    """
-    if ENVIRONMENT != "production":
-        return
+def tables_created_at_startup(environment: str) -> bool:
+    """P0.1 / S12: `create_all` at boot is a dev/test convenience only. Production and staging get their
+    schema from Alembic alone (the Dockerfile runs the migration guard before uvicorn), so a model that
+    is ahead of its migration surfaces as a failing `alembic check`, never as a silently created table."""
+    return environment not in HARDENED_ENVIRONMENTS
 
+
+def config_problems(*, environment: str, jwt_secret: str, secrets_key: Optional[str], allowed_origins: List[str], metrics_token: str,
+                    email_verification_required: bool, smtp_host: str) -> List[str]:
+    """The insecure-configuration findings for `environment` (empty outside the hardened ones)."""
+    if environment not in HARDENED_ENVIRONMENTS:
+        return []
     problems = []
-    if JWT_SECRET_KEY == _INSECURE_DEFAULT_JWT_SECRET:
+    if jwt_secret == _INSECURE_DEFAULT_JWT_SECRET:
         problems.append("JWT_SECRET_KEY is still the insecure default - set a real secret (see .env.example).")
-    if not SECRETS_ENCRYPTION_KEY:
+    if not secrets_key:
         problems.append(
             "SECRETS_ENCRYPTION_KEY is not set - broker credentials would be encrypted under a "
             "fixed, publicly-known dev-only key."
         )
-    if ALLOWED_ORIGINS == ["*"]:
-        problems.append("ALLOWED_ORIGINS is \"*\" - set it to your real frontend origin(s) in production.")
-    if os.environ.get("EMAIL_VERIFICATION_REQUIRED", "").strip().lower() in {"1", "true", "yes"} and not os.environ.get("PLATFORM_SMTP_HOST", "").strip():
+    if allowed_origins == ["*"]:
+        problems.append("ALLOWED_ORIGINS is \"*\" - set it to your real frontend origin(s).")
+    if not metrics_token:
+        problems.append("METRICS_TOKEN is not set - GET /metrics (counts of orders, logins, tenants) would be public.")
+    if email_verification_required and not smtp_host:
         problems.append("EMAIL_VERIFICATION_REQUIRED is on but PLATFORM_SMTP_HOST is unset - nobody could ever verify.")
+    return problems
 
+
+def validate_production_config() -> None:
+    """Fails fast at startup rather than silently serving traffic with a known-insecure
+    configuration. A very common way real deployments get compromised is a dev-only default
+    secret nobody rotated before going live - refusing to boot is cheaper than that incident.
+    P0.1 / S4: staging is held to the same checks as production.
+    """
+    problems = config_problems(
+        environment=ENVIRONMENT, jwt_secret=JWT_SECRET_KEY, secrets_key=SECRETS_ENCRYPTION_KEY, allowed_origins=ALLOWED_ORIGINS,
+        metrics_token=METRICS_TOKEN,
+        email_verification_required=os.environ.get("EMAIL_VERIFICATION_REQUIRED", "").strip().lower() in {"1", "true", "yes"},
+        smtp_host=os.environ.get("PLATFORM_SMTP_HOST", "").strip(),
+    )
     if problems:
         raise RuntimeError(
-            "Refusing to start with ENVIRONMENT=production and insecure configuration:\n- " + "\n- ".join(problems)
+            f"Refusing to start with ENVIRONMENT={ENVIRONMENT} and insecure configuration:\n- " + "\n- ".join(problems)
         )
 
 # --- Platform mailer + email verification (Phase N3) --------------------------------------------

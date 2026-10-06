@@ -159,7 +159,7 @@ def test_backtest_endpoint_records_runs_for_logged_in_users_and_lists_them():
     body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "nifty", "base_timeframe": "1min", "candles": _candles(),
             "exit_rules": {"trailing_stop_pct": 0.5}, "data_source": "sample"}
     anon = client.post("/api/backtest", json=body)
-    assert anon.status_code == 200 and anon.json()["run_id"] is None and anon.json()["analytics"] is not None
+    assert anon.status_code in (401, 403)                                  # P0.1 / S3: a backtest needs a logged-in, metered caller
     mine = client.post("/api/backtest", headers=headers, json=body)
     assert mine.status_code == 200, mine.text
     run_id = mine.json()["run_id"]

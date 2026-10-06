@@ -3,6 +3,18 @@ from fastapi.testclient import TestClient
 from app.main import app
 from tests.utils import decline_then_rally, make_series
 
+from tests.test_auth_api import _register
+
+_HEADERS = None
+
+
+def _h():
+    """A logged-in caller: P0.1 / S3 closed the CPU-heavy endpoints to anonymous callers."""
+    global _HEADERS
+    if _HEADERS is None:
+        _HEADERS = {"Authorization": f"Bearer {_register('p0-api@example.com')}"}
+    return _HEADERS
+
 client = TestClient(app)
 
 
@@ -79,7 +91,7 @@ def test_option_chain_analyze_endpoint():
             {"strike": 120, "call_oi": 10, "call_change_oi": -1, "put_oi": 30, "put_change_oi": 8},
         ],
     }
-    response = client.post("/api/option-chain/analyze", json={"chain": chain})
+    response = client.post("/api/option-chain/analyze", headers=_h(), json={"chain": chain})
     assert response.status_code == 200
     body = response.json()
     assert body["bias"] == "BULLISH"
@@ -107,7 +119,7 @@ def _candles_payload(prices):
 def test_price_action_structure_endpoint():
     prices = decline_then_rally(decline_len=40, rally_len=40)
     response = client.post(
-        "/api/price-action/structure",
+        "/api/price-action/structure", headers=_h(),
         json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
     )
     assert response.status_code == 200
@@ -119,7 +131,7 @@ def test_price_action_structure_endpoint():
 def test_price_action_patterns_endpoint():
     prices = decline_then_rally(decline_len=40, rally_len=20)
     response = client.post(
-        "/api/price-action/patterns",
+        "/api/price-action/patterns", headers=_h(),
         json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
     )
     assert response.status_code == 200
@@ -129,7 +141,7 @@ def test_price_action_patterns_endpoint():
 def test_support_resistance_zones_endpoint():
     prices = decline_then_rally(decline_len=40, rally_len=40)
     response = client.post(
-        "/api/support-resistance/zones",
+        "/api/support-resistance/zones", headers=_h(),
         json={"symbol": "TESTSYM", "candles": _candles_payload(prices)},
     )
     assert response.status_code == 200

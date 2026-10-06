@@ -23,17 +23,26 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ vars.STAGING_ENABLED == 'true' }}
     steps:
+      # P0.1: workflow inputs and variables reach the shell as environment variables, never interpolated
+      # into the script text (a ref such as `x"; rm -rf /` would otherwise run on the staging host).
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.ref }}
+          REPO_PATH: ${{ vars.STAGING_REPO_PATH }}
         with:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_REF,REPO_PATH
           script: |
             set -e
-            cd "${{ vars.STAGING_REPO_PATH || '/opt/atp' }}"
+            cd "${REPO_PATH:-/opt/atp}"
             git fetch -q origin
-            scripts/deploy.sh staging "${{ github.event.inputs.ref || 'origin/main' }}"
+            case "${DEPLOY_REF:-origin/main}" in *[!A-Za-z0-9._/-]*) echo "refusing ref with unexpected characters" >&2; exit 1;; esac
+            scripts/deploy.sh staging "${DEPLOY_REF:-origin/main}"
       - name: Smoke test
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
         run: |
-          curl -sf "${{ vars.STAGING_URL || 'http://localhost:18000' }}/api/system/health" || echo "smoke test skipped (STAGING_URL unset or unreachable from runner)"
+          curl -sf "${STAGING_URL:-http://localhost:18000}/api/system/health" || echo "smoke test skipped (STAGING_URL unset or unreachable from runner)"

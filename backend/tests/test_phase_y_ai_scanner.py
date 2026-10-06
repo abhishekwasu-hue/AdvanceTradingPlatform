@@ -10,7 +10,7 @@ from app.ai import settings as ai_settings
 from app.scanner import ai as scanner_ai
 from app.scanner.engine import run_scanner
 from app.scanner.models import ScannerMatch, ScannerRequest, ScannerResult, ScannerSymbolInput
-from tests.test_auth_api import client
+from tests.test_auth_api import _register, client
 from tests.test_phase_k_commercial import _owner
 from tests.utils import make_series
 
@@ -118,7 +118,7 @@ def test_read_ranks_matches_with_the_platform_regime_and_survives_a_bad_model_an
                "structure_filters": [], "option_filters": [], "swing_window": 3,
                "indicator_conditions": [{"left": {"type": "indicator", "indicator": "EMA", "period": 20}, "operator": "GT",
                                          "right": {"type": "indicator", "indicator": "EMA", "period": 50}}]}
-    result = client.post("/api/scanner/run", json=request).json()
+    result = client.post("/api/scanner/run", headers={"Authorization": f"Bearer {_register('p0-y-scanner@example.com')}"}, json=request).json()
     matched = {m["symbol"] for m in result["matches"]}
     assert "RISING" in matched and "FALLING" not in matched
 

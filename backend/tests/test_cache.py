@@ -3,6 +3,18 @@ import asyncio
 from app.cache import client as cache_client
 from tests.test_auth_api import client
 
+from tests.test_auth_api import _register
+
+_HEADERS = None
+
+
+def _h():
+    """A logged-in caller: P0.1 / S3 closed the CPU-heavy endpoints to anonymous callers."""
+    global _HEADERS
+    if _HEADERS is None:
+        _HEADERS = {"Authorization": f"Bearer {_register('p0-cache@example.com')}"}
+    return _HEADERS
+
 
 class _BrokenRedis:
     async def get(self, key):
@@ -50,8 +62,8 @@ def test_option_chain_analyze_is_cached_across_identical_calls(monkeypatch):
     monkeypatch.setattr(main_module, "analyze_option_chain", counting_analyze)
 
     payload = {"chain": _sample_option_chain(), "top_n": 3}
-    first = client.post("/api/option-chain/analyze", json=payload)
-    second = client.post("/api/option-chain/analyze", json=payload)
+    first = client.post("/api/option-chain/analyze", headers=_h(), json=payload)
+    second = client.post("/api/option-chain/analyze", headers=_h(), json=payload)
 
     assert first.status_code == 200
     assert second.status_code == 200
@@ -72,8 +84,8 @@ def test_support_resistance_zones_endpoint_still_works_with_caching(monkeypatch)
     ]
     payload = {"symbol": "NIFTY", "candles": candles, "timeframe": "1min"}
 
-    first = client.post("/api/support-resistance/zones", json=payload)
-    second = client.post("/api/support-resistance/zones", json=payload)
+    first = client.post("/api/support-resistance/zones", headers=_h(), json=payload)
+    second = client.post("/api/support-resistance/zones", headers=_h(), json=payload)
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()

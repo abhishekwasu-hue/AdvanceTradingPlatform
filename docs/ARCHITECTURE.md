@@ -3538,6 +3538,20 @@ AJ gives the operator that confirmation from Settings without risking an order.
 
 No schema change. Tests: `tests/test_phase_aj_smoke.py`.
 
+### P0.1: hardening (pro-grade upgrade plan, P0 security)
+
+`config.config_problems` is the one list of insecure-configuration findings, applied to production **and**
+staging (`HARDENED_ENVIRONMENTS`); it now includes an unset `METRICS_TOKEN`. `tables_created_at_startup` keeps
+`create_all` to dev/test - hardened environments get their schema from Alembic alone. The CPU-heavy pure-function
+endpoints (backtest, price action, S/R zones, option-chain analyze/greeks, scanner) require a logged-in user, run
+their pandas work through `run_in_threadpool`, and every request body is capped by `MAX_REQUEST_BODY_BYTES` from
+Content-Length (413). The worker's replica lock (`cache_try_lock`) reports whether Redis answered; release and
+renewal are compare-and-act Lua scripts, the lock is renewed after the evaluation phase, and with Redis down the
+worker pauses LIVE entries for the cycle where a second replica is possible (`require_lock_for_live`, default on
+in hardened environments) while PAPER, exits and housekeeping continue. The staging overlay publishes on loopback
+only (`ports: !override`), and the staging deploy workflow takes its inputs through environment variables.
+Tests: `tests/test_phase_p0_1_hardening.py`. Plan for the rest of P0: WORK_LOG (2026-10-06, P0 plan).
+
 ### Phase BG: local-PC host and the Fyers daily login
 
 The PAPER week runs on the operator's Windows PC (Docker Desktop) against Fyers, not on a droplet against

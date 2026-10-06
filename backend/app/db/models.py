@@ -82,6 +82,8 @@ class User(Base):
     mfa_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     mfa_enabled_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # P0.2 / S8: the last accepted TOTP step (30-second counter); a code for that step or an earlier one is a replay.
+    mfa_last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
     tenant: Mapped["Tenant"] = relationship(back_populates="users")

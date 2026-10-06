@@ -11,7 +11,8 @@ from app.admin.bootstrap import is_configured_super_admin
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, get_current_user
 from app.auth import mfa
-from app.auth.lockout import HISTORY_LIMIT, is_new_device, lock_reason, record_login_event
+from app.auth import captcha
+from app.auth.lockout import HISTORY_LIMIT, is_new_device, recent_failures, record_login_event, refusal
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
 from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
 from app.auth.security import hash_password, verify_password
@@ -61,6 +62,9 @@ def _enforce_password_policy(password: str, email: str) -> None:
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # P0.2 / S1: demanded (403 `captcha_required`) after LOGIN_CAPTCHA_AFTER_FAILURES failures when a CAPTCHA
+    # provider is configured; ignored otherwise.
+    captcha_token: Optional[str] = None
 
 
 class TokenResponse(BaseModel):
@@ -145,11 +149,18 @@ async def register(request: RegisterRequest, http_request: Request, session: Asy
 @router.post("/login", response_model=TokenResponse, dependencies=[Depends(login_rate_limit)])
 async def login(request: LoginRequest, http_request: Request, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     email = request.email.lower()
-    locked = await lock_reason(session, email, http_request)
-    if locked:
-        await record_login_event(session, email=email, user=None, success=False, reason="locked", request=http_request)
+    refused = await refusal(session, email, http_request)
+    if refused:
+        await record_login_event(session, email=email, user=None, success=False, reason="locked" if refused.status_code == 423 else "delayed", request=http_request)
         await session.commit()
-        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=locked)
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason,
+                            headers={"Retry-After": str(refused.retry_after)} if refused.retry_after else None)
+    if captcha.required(await recent_failures(session, email)):
+        ip = http_request.client.host if http_request.client else None
+        if not await captcha.verify(request.captcha_token, ip):
+            await record_login_event(session, email=email, user=None, success=False, reason="captcha", request=http_request)
+            await session.commit()
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="captcha_required", headers={"X-Captcha": "required"})
 
     user = await session.scalar(select(User).where(User.email == email))
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
@@ -584,9 +595,10 @@ async def mfa_verify_login(request: MfaVerifyRequest, http_request: Request, ses
     user = await session.get(User, user_id) if user_id is not None else None
     if user is None or not user.is_active or not user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Login challenge is invalid or expired - start again")
-    locked = await lock_reason(session, user.email, http_request)
-    if locked:
-        raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=locked)
+    refused = await refusal(session, user.email, http_request)
+    if refused:
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason,
+                            headers={"Retry-After": str(refused.retry_after)} if refused.retry_after else None)
     ok, method = await mfa.verify_code(session, user, request.code)
     if not ok:
         await record_login_event(session, email=user.email, user=user, success=False, reason="mfa_failed", request=http_request)
@@ -636,7 +648,7 @@ async def mfa_confirm(
     secret = mfa.load_secret(user)
     if not secret:
         raise HTTPException(status_code=400, detail="Start enrolment first")
-    if not mfa.verify_totp(secret, request.code):
+    if not mfa.accept_totp(user, secret, request.code):
         raise HTTPException(status_code=400, detail="That code did not match - check the app's clock and try the next code")
     user.mfa_enabled = True
     user.mfa_enabled_at = datetime.now(timezone.utc)
@@ -679,7 +691,7 @@ async def mfa_regenerate_backup_codes(
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
     secret = mfa.load_secret(user)
-    if not secret or not mfa.verify_totp(secret, request.code):
+    if not secret or not mfa.accept_totp(user, secret, request.code):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code")
     codes = await mfa.issue_backup_codes(session, user)
     await write_audit_log(session, user.tenant_id, user.id, "mfa_backup_codes_regenerated")

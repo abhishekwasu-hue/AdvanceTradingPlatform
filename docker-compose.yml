@@ -60,6 +60,13 @@ services:
       GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}
       MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-8388608}
       APP_VERSION: ${APP_VERSION:-1.0.0}
+      # P0.2 / S1: proxies whose X-Forwarded-For uvicorn trusts (prod overlay: the Caddy container).
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-}
+      LOGIN_CAPTCHA_AFTER_FAILURES: ${LOGIN_CAPTCHA_AFTER_FAILURES:-0}
+      CAPTCHA_PROVIDER: ${CAPTCHA_PROVIDER:-}
+      CAPTCHA_SECRET: ${CAPTCHA_SECRET:-}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,6 +103,7 @@ services:
       TICK_MAX_AGE_SECONDS: ${TICK_MAX_AGE_SECONDS:-120}
       GLOBAL_CUES_ENABLED: ${GLOBAL_CUES_ENABLED:-true}
       APP_VERSION: ${APP_VERSION:-1.0.0}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
     # Prometheus scrapes the worker's own metrics here; not published to the host by default.
     expose:
       - "9102"

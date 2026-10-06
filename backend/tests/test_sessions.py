@@ -53,11 +53,30 @@ def test_refresh_rotates_and_reuse_revokes_the_session():
     assert second_refresh != first_refresh
     assert client.get("/api/auth/me", headers=_headers(rotated.json()["access_token"])).status_code == 200
 
-    # Presenting the already-rotated token again = two holders of one credential -> session dies.
+    # P0.2 / S9: the just-rotated token presented again *within the grace window* (a second tab, a retried
+    # request) rotates once more instead of killing the session; the token issued in between is retired.
     reuse = client.post("/api/auth/refresh", json={"refresh_token": first_refresh})
-    assert reuse.status_code == 401
+    assert reuse.status_code == 200
+    third_refresh = reuse.json()["refresh_token"]
     assert client.post("/api/auth/refresh", json={"refresh_token": second_refresh}).status_code == 401
-    assert client.get("/api/auth/me", headers=_headers(rotated.json()["access_token"])).status_code == 401
+    assert client.get("/api/auth/me", headers=_headers(reuse.json()["access_token"])).status_code == 200
+    # After the grace window a replay is what it always was: two holders of one credential -> session dies.
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    from app.db.models import UserSessionRecord
+    from tests.test_auth_api import _session_factory
+
+    async def age():
+        async with _session_factory() as s:
+            await s.execute(update(UserSessionRecord).values(last_used_at=datetime.now(timezone.utc) - timedelta(minutes=5)))
+            await s.commit()
+    rotated_again = client.post("/api/auth/refresh", json={"refresh_token": third_refresh})
+    assert rotated_again.status_code == 200
+    asyncio.run(age())
+    assert client.post("/api/auth/refresh", json={"refresh_token": third_refresh}).status_code == 401
+    assert client.post("/api/auth/refresh", json={"refresh_token": rotated_again.json()["refresh_token"]}).status_code == 401
+    assert client.get("/api/auth/me", headers=_headers(rotated_again.json()["access_token"])).status_code == 401
     assert client.post("/api/auth/refresh", json={"refresh_token": "garbage"}).status_code == 401
 
 

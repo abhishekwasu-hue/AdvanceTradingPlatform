@@ -49,23 +49,44 @@ def test_every_attempt_is_recorded_with_ip_and_agent():
     assert rec is not None and rec.user_id is None and rec.reason == "unknown_email"
 
 
-def test_account_locks_after_ten_failures_even_with_the_right_password():
+def test_repeated_failures_slow_the_account_down_but_never_lock_the_owner_out():
+    """P0.2 / S1: after LOGIN_DELAY_AFTER_FAILURES failures the next attempt must wait (429 + Retry-After), from any
+    IP, and the wait grows; the owner with the right password gets in as soon as the wait has passed."""
     _register("lp-lock@example.com")
     c = _isolated("203.0.113.50")
-    for _ in range(lockout.MAX_FAILURES_PER_EMAIL):
+    for _ in range(lockout.LOGIN_DELAY_AFTER_FAILURES):
         assert _login("lp-lock@example.com", "wrong-password-1", c=c).status_code == 401
-    locked = _login("lp-lock@example.com", c=c)
-    assert locked.status_code == 423 and "try again in 15 minutes" in locked.json()["detail"]
-    # The lock is on the email, so it also holds from another IP...
-    assert _login("lp-lock@example.com", c=_isolated("203.0.113.51")).status_code == 423
-    # ...and lifts once the failures fall out of the window.
-    async def age():
+    delayed = _login("lp-lock@example.com", c=c)                                   # right password, too soon
+    assert delayed.status_code == 429 and "wait" in delayed.json()["detail"] and int(delayed.headers["retry-after"]) >= 1
+    assert _login("lp-lock@example.com", c=_isolated("203.0.113.51")).status_code == 429   # per email, not per IP
+    assert lockout.required_delay_seconds(2) == 0 and lockout.required_delay_seconds(3) == 1
+    assert lockout.required_delay_seconds(5) == 4 and lockout.required_delay_seconds(50) == lockout.LOGIN_DELAY_MAX_SECONDS
+
+    async def age(seconds):
         async with _session_factory() as s:
             await s.execute(update(LoginEventRecord).where(LoginEventRecord.email == "lp-lock@example.com")
-                            .values(created_at=datetime.now(timezone.utc) - timedelta(minutes=lockout.LOCKOUT_WINDOW_MINUTES + 1)))
+                            .values(created_at=datetime.now(timezone.utc) - timedelta(seconds=seconds)))
             await s.commit()
-    _run(age())
+    # Refused attempts are recorded but never counted: hammering the address does not extend the owner's wait.
+    for _ in range(5):
+        assert _login("lp-lock@example.com", "wrong-password-1", c=_isolated("203.0.113.52")).status_code == 429
+    failures, _ = _run(_failures("lp-lock@example.com"))
+    assert failures == lockout.LOGIN_DELAY_AFTER_FAILURES
+    _run(age(lockout.LOGIN_DELAY_MAX_SECONDS + 1))                                 # the wait has passed: no lock stands
     assert _login("lp-lock@example.com", c=c).status_code == 200
+    reasons = _run(_reasons("lp-lock@example.com"))
+    assert reasons.count("delayed") == 7 and reasons.count("bad_password") == lockout.LOGIN_DELAY_AFTER_FAILURES
+
+
+async def _failures(email):
+    async with _session_factory() as s:
+        return await lockout._failures_since(s, datetime.now(timezone.utc) - timedelta(minutes=lockout.LOCKOUT_WINDOW_MINUTES), email=email)
+
+
+async def _reasons(email):
+    async with _session_factory() as s:
+        rows = await s.scalars(select(LoginEventRecord.reason).where(LoginEventRecord.email == email))
+        return list(rows)
 
 
 def test_ip_lock_after_spraying_many_emails():
@@ -78,14 +99,14 @@ def test_ip_lock_after_spraying_many_emails():
     assert _login("lp-victim@example.com").status_code == 200  # other IPs unaffected
 
 
-def test_mfa_failures_count_towards_lockout():
+def test_mfa_failures_count_towards_the_delay():
     headers = _headers(_register("lp-mfa@example.com"))
     enable_mfa(headers)
     c = _isolated("203.0.113.60")
-    for _ in range(lockout.MAX_FAILURES_PER_EMAIL):
+    for _ in range(lockout.LOGIN_DELAY_AFTER_FAILURES):
         challenge = _login("lp-mfa@example.com", c=c).json()["mfa_token"]
         assert c.post("/api/auth/mfa/verify", json={"mfa_token": challenge, "code": "000000"}).status_code == 401
-    assert _login("lp-mfa@example.com", c=c).status_code == 423
+    assert _login("lp-mfa@example.com", c=c).status_code == 429
 
 
 def test_new_device_login_raises_a_security_notification_once():

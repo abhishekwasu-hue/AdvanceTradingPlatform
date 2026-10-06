@@ -239,3 +239,33 @@ default and G-LIVE gate before any LIVE wiring.
   out detached (`git fetch origin origin/main` never worked); the UI asks anonymous users to sign in on the pages
   that call the closed endpoints instead of surfacing a raw 401, and the Signals page no longer fails entirely when
   the S/R zones call is refused.
+
+### 2026-10-06 - P0.2: login protection, egress, TOTP replay, refresh race (S1, S5, S8, S9)
+- S1: uvicorn runs with `--proxy-headers --forwarded-allow-ips "$FORWARDED_ALLOW_IPS"` (default 127.0.0.1; the prod
+  overlay sets `*` because only Caddy reaches backend:8000), so the client IP the limiter and login protection see
+  is real and unspoofable. The request limiter counts in Redis (`INCR`/`EXPIRE`, shared across replicas) in
+  production/staging or with `RATE_LIMIT_BACKEND=redis`, falls back to the per-process window when Redis is down
+  (never fail-open), and gained a per-user flavour applied to the backtest and scanner endpoints. The per-email
+  *hard lock* is gone: after 3 failures the next attempt must wait 1, 2, 4 ... 60 s since the last failure (429 +
+  Retry-After, from any IP), so a brute force crawls while the owner can never be locked out by someone spamming
+  their address; the per-IP cap (50 / 15 min, 423) stays. CAPTCHA hook: with `CAPTCHA_PROVIDER` (turnstile |
+  hcaptcha), `CAPTCHA_SECRET` and `LOGIN_CAPTCHA_AFTER_FAILURES` set, the login demands `captcha_token` (403
+  `captcha_required`, header `X-Captcha`) and verifies it with the provider; off by default (no widget in the UI yet).
+- S5: `app/core/egress.py` - tenant-supplied URLs (alert webhooks, SMS gateways, push endpoints) are checked
+  literally at save time (https, no loopback/private/link-local literal, optional `EGRESS_ALLOWED_HOSTS`) and
+  resolved right before every request in production/staging (any non-public address, IPv4 or IPv6-mapped,
+  refuses the send - DNS rebinding included). Dev/test keep localhost webhooks. The SMS gateway's response body is
+  no longer echoed into the error (it can carry the gateway's own secrets); the push service's neither.
+- S8: `users.mfa_last_step` (migration f1a3b5c7d9e1, nullable) - a TOTP code is accepted once; the same or an
+  older step is a replay. Confirm, verify, step-up, backup-code regeneration and disable all go through
+  `accept_totp`. Existing users: column NULL -> first code accepted as before.
+- S9: refresh rotation locks the session row (`FOR UPDATE`, no-op on SQLite) and honours a token presented again
+  within `REFRESH_REUSE_GRACE_SECONDS` (30) of its rotation - two tabs refreshing at once no longer log each other
+  out; the token issued in between is retired, and reuse after the window still revokes the session.
+- Tests: `tests/test_phase_p0_2_auth_egress.py`; login-protection, MFA, sessions and rate-limit tests adapted to
+  the new semantics (the MFA tests now ask the authenticator for the *next* code when they use it twice).
+- Self-review fixes before merge: attempts the platform refused (delayed / locked / captcha) are recorded but no
+  longer counted as failures, so hammering an address cannot extend the owner's wait with requests that were never
+  evaluated (the remaining trade-off: a persistent attacker who keeps *failing* real passwords, at most one per
+  minute, can still inconvenience the owner - the CAPTCHA hook is the answer for that); the Redis limiter's INCR
+  and EXPIRE run as one script so a crash between them can never leave a counter that refuses forever.

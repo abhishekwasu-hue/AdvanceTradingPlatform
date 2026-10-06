@@ -11,6 +11,25 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
 # P0.1: environments that must boot with a hardened configuration and never create tables outside Alembic.
 HARDENED_ENVIRONMENTS = ("production", "staging")
 APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
+# P0.2 / S1: login protection. After LOGIN_DELAY_AFTER_FAILURES failed attempts on one email the next attempt
+# must wait 2^(n-3) seconds (capped) since the last failure - a brute force slows to a crawl while the real
+# owner is never locked out by someone spamming their email. A CAPTCHA (Cloudflare Turnstile / hCaptcha) can be
+# demanded after LOGIN_CAPTCHA_AFTER_FAILURES failures when CAPTCHA_PROVIDER and CAPTCHA_SECRET are set.
+LOGIN_DELAY_AFTER_FAILURES = int(os.environ.get("LOGIN_DELAY_AFTER_FAILURES", "3"))
+LOGIN_DELAY_MAX_SECONDS = int(os.environ.get("LOGIN_DELAY_MAX_SECONDS", "60"))
+LOGIN_CAPTCHA_AFTER_FAILURES = int(os.environ.get("LOGIN_CAPTCHA_AFTER_FAILURES", "0"))      # 0 = never
+CAPTCHA_PROVIDER = os.environ.get("CAPTCHA_PROVIDER", "").strip().lower()                   # "", turnstile, hcaptcha
+CAPTCHA_SECRET = os.environ.get("CAPTCHA_SECRET", "")
+# P0.2 / S1: the request limiter counts in Redis (shared across API replicas) in hardened environments or when
+# RATE_LIMIT_BACKEND=redis; otherwise in-process (one replica, as in dev/test).
+RATE_LIMIT_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "").strip().lower()
+# P0.2 / S5: outbound HTTP from alert channels (webhooks, SMS gateways, push services). Private, loopback,
+# link-local and reserved destinations are refused after DNS resolution in hardened environments; an optional
+# comma-separated allowlist (exact host or ".suffix") narrows it further.
+EGRESS_ALLOWED_HOSTS = [h.strip().lower() for h in os.environ.get("EGRESS_ALLOWED_HOSTS", "").split(",") if h.strip()]
+# P0.2 / S9: a refresh token presented again within this many seconds of its rotation is honoured (two tabs
+# refreshing at once); after that, reuse revokes the session as before.
+REFRESH_REUSE_GRACE_SECONDS = int(os.environ.get("REFRESH_REUSE_GRACE_SECONDS", "30"))
 # P0.1 / S3: the largest request body the API accepts (candle arrays for backtests and scans are the
 # big ones; 8 MB is ~100k bars). Enforced from Content-Length before the body is read.
 MAX_REQUEST_BODY_BYTES = int(os.environ.get("MAX_REQUEST_BODY_BYTES", str(8 * 1024 * 1024)))

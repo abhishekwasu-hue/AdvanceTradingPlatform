@@ -22,8 +22,11 @@ def _login(email, password="S3cur3Pass!"):
     return client.post("/api/auth/login", json={"email": email, "password": password})
 
 
-def _code(secret):
-    return pyotp.TOTP(secret).now()
+def _code(secret, step=0):
+    """A code for now + `step` x 30 s. P0.2 / S8 accepts each step once, so a test that uses the authenticator
+    twice in a row asks for the *next* code the second time (still inside the +/-1 step window)."""
+    from datetime import datetime, timedelta, timezone
+    return pyotp.TOTP(secret).at(datetime.now(timezone.utc) + timedelta(seconds=30 * step))
 
 
 def _set_tenant(headers, **fields):
@@ -62,7 +65,9 @@ def test_enrol_confirm_and_two_step_login():
     assert challenge["mfa_required"] and challenge["mfa_token"] and not challenge["access_token"]
     bad = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": "123456"})
     assert bad.status_code == 401
-    good = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": _code(enrolled["secret"])})
+    replay = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": _code(enrolled["secret"])})
+    assert replay.status_code == 401                               # the code that confirmed enrolment is spent (P0.2 / S8)
+    good = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": _code(enrolled["secret"], step=1)})
     assert good.status_code == 200 and good.json()["refresh_token"]
     assert client.get("/api/auth/mfa/status", headers=_headers(good.json()["access_token"])).json()["session_verified"] is True
     assert client.post("/api/auth/mfa/verify", json={"mfa_token": "garbage", "code": "123456"}).status_code == 401
@@ -71,7 +76,7 @@ def test_enrol_confirm_and_two_step_login():
 def test_backup_codes_work_once_and_can_be_regenerated():
     headers = _headers(_register("mfa-backup@example.com"))
     secret = enable_mfa(headers)
-    codes = client.post("/api/auth/mfa/backup-codes", headers=headers, json={"code": _code(secret)}).json()["backup_codes"]
+    codes = client.post("/api/auth/mfa/backup-codes", headers=headers, json={"code": _code(secret, step=1)}).json()["backup_codes"]
     challenge = _login("mfa-backup@example.com").json()["mfa_token"]
     first = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge, "code": codes[0].upper()})
     assert first.status_code == 200
@@ -120,7 +125,7 @@ def test_live_step_up_only_when_tenant_policy_requires_it():
     assert client.post("/api/deployments", headers=headers, json={"strategy_id": "ema_rsi_scalper_1m", "symbol": "C"}).status_code == 201  # PAPER unaffected
 
     assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": "000000"}).status_code == 401
-    assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": _code(secret)}).status_code == 204
+    assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": _code(secret, step=1)}).status_code == 204
     assert client.post("/api/deployments", headers=headers, json={**live, "symbol": "B"}).status_code == 201
     assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k"}).status_code == 204
 
@@ -159,7 +164,7 @@ def test_disable_requires_password_and_code_then_login_is_single_step_again():
     secret = enable_mfa(headers)
     assert client.post("/api/auth/mfa/disable", headers=headers, json={"password": "wrong", "code": _code(secret)}).status_code == 401
     assert client.post("/api/auth/mfa/disable", headers=headers, json={"password": "S3cur3Pass!", "code": "000000"}).status_code == 401
-    assert client.post("/api/auth/mfa/disable", headers=headers, json={"password": "S3cur3Pass!", "code": _code(secret)}).status_code == 204
+    assert client.post("/api/auth/mfa/disable", headers=headers, json={"password": "S3cur3Pass!", "code": _code(secret, step=1)}).status_code == 204
     status = client.get("/api/auth/mfa/status", headers=headers).json()
     assert status["enabled"] is False and status["backup_codes_remaining"] == 0
     assert _login("mfa-disable@example.com").json()["access_token"]

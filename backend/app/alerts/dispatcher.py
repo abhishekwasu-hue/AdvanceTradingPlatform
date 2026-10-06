@@ -18,6 +18,8 @@ from email.message import EmailMessage
 from typing import List, Optional, Tuple
 
 import httpx
+
+from app.core.egress import check_url_resolved
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,6 +148,7 @@ async def send_webhook(config: WebhookConfig, notification: NotificationRecord, 
     timestamp = str(int(_utcnow().timestamp()))
     headers = {"Content-Type": "application/json", "X-ATP-Timestamp": timestamp, "X-ATP-Signature": sign_webhook(config.secret, body, timestamp),
                "X-ATP-Event": notification.event_type, "User-Agent": "ATP-Webhooks/1.0"}
+    await check_url_resolved(str(config.url))                       # P0.2 / S5: resolved right before the request
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
     try:
@@ -180,6 +183,7 @@ def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: s
 
 async def send_sms(config: SmsConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
     """Phase O3: one gateway request per recipient; the first failure is raised after trying all."""
+    await check_url_resolved(str(config.url))                       # P0.2 / S5
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
     errors: List[str] = []
@@ -193,7 +197,7 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)
                 if response.status_code >= 300:
-                    errors.append(f"{number}: HTTP {response.status_code} {response.text[:100]}")
+                    errors.append(f"{number}: HTTP {response.status_code}")       # the gateway's body is never echoed (P0.2 / S5)
             except httpx.HTTPError as exc:
                 errors.append(f"{number}: {type(exc).__name__}")
     finally:

@@ -3552,6 +3552,19 @@ in hardened environments) while PAPER, exits and housekeeping continue. The stag
 only (`ports: !override`), and the staging deploy workflow takes its inputs through environment variables.
 Tests: `tests/test_phase_p0_1_hardening.py`. Plan for the rest of P0: WORK_LOG (2026-10-06, P0 plan).
 
+### P0.2: login protection, egress, TOTP replay, refresh race
+
+`app/core/rate_limit.py` counts per IP (auth endpoints) or per user (`user_rate_limit`, the analysis endpoints) in
+Redis when `redis_backed()` (production/staging or `RATE_LIMIT_BACKEND=redis`), falling back to the in-process
+window; uvicorn trusts `X-Forwarded-For` only from `FORWARDED_ALLOW_IPS`. `app/auth/lockout.py` turns repeated
+failures per email into a growing wait (`required_delay_seconds`, `refusal` -> 429 + Retry-After) rather than a
+lock; the per-IP cap stays a 423; `app/auth/captcha.py` is the optional provider hook (Turnstile / hCaptcha).
+`app/core/egress.py` is the one place that decides where the platform may send HTTP on a tenant's behalf: the
+channel models call `check_url_literal` at save time, the senders `check_url_resolved` before each request.
+`users.mfa_last_step` (migration `f1a3b5c7d9e1`) makes `mfa.verify_totp` return the accepted step and
+`accept_totp` refuse a replay. `sessions.rotate_refresh_token` locks the row and keeps a
+`REFRESH_REUSE_GRACE_SECONDS` window for a just-rotated token. Tests: `tests/test_phase_p0_2_auth_egress.py`.
+
 ### Phase BG: local-PC host and the Fyers daily login
 
 The PAPER week runs on the operator's Windows PC (Docker Desktop) against Fyers, not on a droplet against

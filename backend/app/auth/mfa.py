@@ -8,6 +8,7 @@ TOTP check is marked `mfa_verified_at`, which is what the step-up gate for LIVE 
 credentials and the admin console looks at.
 """
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
@@ -49,11 +50,33 @@ def load_secret(user: User) -> Optional[str]:
     return decrypt_text(user.mfa_secret_encrypted)
 
 
-def verify_totp(secret: str, code: str) -> bool:
+def verify_totp(secret: str, code: str, *, last_step: Optional[int] = None, now: Optional[datetime] = None) -> Optional[int]:
+    """The 30-second step the code belongs to (within +/- TOTP_VALID_WINDOW steps of now), or None when it does
+    not match - or when that step is not newer than `last_step` (P0.2 / S8: a code is accepted once; a replay
+    inside the same window, e.g. one sniffed off a shoulder, is refused)."""
     code = code.strip().replace(" ", "")
     if not code.isdigit() or len(code) != 6:
+        return None
+    totp = pyotp.TOTP(secret)
+    moment = now or _utcnow()
+    base = int(moment.timestamp()) // totp.interval
+    for offset in range(-TOTP_VALID_WINDOW, TOTP_VALID_WINDOW + 1):
+        step = base + offset
+        if hmac.compare_digest(totp.generate_otp(step), code):
+            if last_step is not None and step <= last_step:
+                return None
+            return step
+    return None
+
+
+def accept_totp(user: User, secret: str, code: str, now: Optional[datetime] = None) -> bool:
+    """`verify_totp` against the user's last accepted step, remembering the new one on success. The caller
+    commits the session that holds `user`."""
+    step = verify_totp(secret, code, last_step=user.mfa_last_step, now=now)
+    if step is None:
         return False
-    return pyotp.TOTP(secret).verify(code, valid_window=TOTP_VALID_WINDOW)
+    user.mfa_last_step = step
+    return True
 
 
 def _hash_code(code: str) -> str:
@@ -98,7 +121,7 @@ async def consume_backup_code(session: AsyncSession, user: User, code: str) -> b
 async def verify_code(session: AsyncSession, user: User, code: str) -> Tuple[bool, str]:
     """TOTP first, then a backup code. Returns (ok, method)."""
     secret = load_secret(user)
-    if secret and verify_totp(secret, code):
+    if secret and accept_totp(user, secret, code):
         return True, "totp"
     if await consume_backup_code(session, user, code):
         return True, "backup_code"

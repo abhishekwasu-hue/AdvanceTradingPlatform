@@ -9,6 +9,7 @@ from app.core.egress import EgressBlocked, check_url_literal
 from app.core.enums import AlertChannelType, NotificationSeverity
 from app.db.models import AlertChannelRecord
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_ALERT_CHANNEL
 
 SEVERITY_RANK = {NotificationSeverity.INFO.value: 0, NotificationSeverity.WARNING.value: 1, NotificationSeverity.CRITICAL.value: 2,
                  NotificationSeverity.EMERGENCY.value: 3}
@@ -181,15 +182,15 @@ def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optiona
 
 
 def encrypt_config(config: ChannelConfig, tenant_id: Optional[int] = None) -> str:
-    return encrypt_text(config.model_dump_json(), tenant_id)
+    return encrypt_text(config.model_dump_json(), tenant_id, PURPOSE_ALERT_CHANNEL)
 
 
 def decrypt_config(record: AlertChannelRecord) -> ChannelConfig:
-    return parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config)))
+    return parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL)))
 
 
 def decrypt_raw(record: AlertChannelRecord) -> Dict[str, Any]:
-    return json.loads(decrypt_text(record.encrypted_config))
+    return json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL))
 
 
 def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:

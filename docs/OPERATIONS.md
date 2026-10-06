@@ -729,6 +729,18 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Passwords longer than 72 bytes are refused for new passwords only; existing accounts keep logging in
   (verification truncates exactly as bcrypt did when the hash was made).
 
+### 1.6ab-3 Exact money, AES-GCM secrets (P0.4)
+
+- Migration `c4d6e8f0a2b4` turns money columns into NUMERIC (amounts 2 decimals, prices 4). Postgres casts in
+  place and rounds; nothing to do besides the usual off-hours `git pull` + `up --build`.
+- `SECRETS_WRITE_FORMAT` stays `fernet` for the PAPER week (any image since Phase N reads it, so a rollback is
+  safe). Afterwards set `SECRETS_WRITE_FORMAT=aesgcm` in `.env`, `up -d`, then
+  `docker compose exec api python scripts/reencrypt_secrets.py reencrypt` - rows move to AES-256-GCM bound to
+  the organisation and the column. `status` shows `formats` and `pending_rewrite`. Never set it back to
+  `fernet` after rows are in `aesgcm` *and* an older image is in play: the old image cannot read them.
+- `SECRETS_ENCRYPTION_KEY` as a passphrase (not a Fernet key) is now stretched with scrypt; secrets wrapped
+  under the older SHA-256 derivation still open. The 44-character Fernet key most deployments use is unaffected.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

@@ -2,7 +2,9 @@
 """Phase N1: move secrets to per-tenant data keys and rotate the master key.
 
     python scripts/reencrypt_secrets.py status          # how much still sits under the master key
-    python scripts/reencrypt_secrets.py reencrypt       # upgrade every legacy row to its tenant key
+    python scripts/reencrypt_secrets.py reencrypt       # move every row to the configured write format
+                                                        #   (legacy master rows -> tenant key; with
+                                                        #   SECRETS_WRITE_FORMAT=aesgcm also t1 -> AES-GCM)
     python scripts/reencrypt_secrets.py rotate-master   # after changing SECRETS_ENCRYPTION_KEY:
                                                         #   OLD_SECRETS_ENCRYPTION_KEY=<previous> ...
 

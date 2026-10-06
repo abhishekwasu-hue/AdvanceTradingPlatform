@@ -38,6 +38,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_WRITE_FORMAT: ${SECRETS_WRITE_FORMAT:-fernet}
       REDIS_URL: redis://redis:6379/0
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
@@ -93,6 +94,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_WRITE_FORMAT: ${SECRETS_WRITE_FORMAT:-fernet}
       REDIS_URL: redis://redis:6379/0
       WORKER_CYCLE_SECONDS: ${WORKER_CYCLE_SECONDS:-60}
       ALGO_ID_REQUIRED_FOR_LIVE: ${ALGO_ID_REQUIRED_FOR_LIVE:-false}

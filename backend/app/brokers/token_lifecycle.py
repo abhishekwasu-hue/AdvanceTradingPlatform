@@ -35,6 +35,7 @@ from app.db.models import BrokerCredentialRecord
 from app.market_data.calendar import IST
 from app.notifications.service import notify
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ def token_is_usable(record: Optional[BrokerCredentialRecord], now: Optional[date
 
 
 def load_credentials(record: BrokerCredentialRecord) -> BrokerCredentials:
-    return BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload)))
+    return BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL)))
 
 
 def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncClient] = None) -> BrokerInterface:
@@ -147,7 +148,7 @@ def store_access_token(record: BrokerCredentialRecord, access_token: str, now: O
     credentials = load_credentials(record)
     credentials.access_token = access_token
     credentials.request_token = None
-    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id)
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     record.token_status = BrokerTokenStatus.VALID.value
     record.token_expires_at = default_token_expiry(record.broker_name, now)
     record.last_verified_at = now

@@ -12,6 +12,7 @@ from app.audit.log import write_audit_log
 from app.db.models import AiProviderConfigRecord, Tenant, User
 from app.plans.limits import feature_allowed
 from app.secrets_store.encryption import decrypt_text, encrypt_text
+from app.secrets_store.envelope import PURPOSE_AI_PROVIDER_KEY
 
 
 async def get_config(session: AsyncSession, tenant_id: int) -> Optional[AiProviderConfigRecord]:
@@ -29,7 +30,7 @@ async def save_config(session: AsyncSession, user: User, *, provider: str, model
         session.add(record)
     if provider != "rule_based":
         if api_key:
-            record.encrypted_api_key = encrypt_text(api_key.strip(), record.tenant_id)
+            record.encrypted_api_key = encrypt_text(api_key.strip(), record.tenant_id, PURPOSE_AI_PROVIDER_KEY)
         elif record.provider != provider or not record.encrypted_api_key:
             raise ProviderError(f"{provider} needs an API key")
     else:
@@ -59,7 +60,7 @@ async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optiona
     record = await get_config(session, tenant.id)
     if record is None or not record.enabled or not feature_allowed(tenant, "ai_features"):
         return RuleBasedProvider()
-    key = decrypt_text(record.encrypted_api_key) if record.encrypted_api_key else None
+    key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY) if record.encrypted_api_key else None
     return build_provider(record.provider, key, record.model, client=client)
 
 

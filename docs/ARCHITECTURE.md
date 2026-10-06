@@ -3580,6 +3580,17 @@ the Telegram path uses the stored hash as the organisation identifier because th
 server-side (the `X-Telegram-Bot-Api-Secret-Token` header authenticates). Migrations `a2b4c6d8e0f2`,
 `b3c5d7e9f1a3`. Tests: `tests/test_phase_p0_3_tokens_audit.py`.
 
+**P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
+`Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
+payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on
+floats. `secrets_store/encryption.py` writes `t2:<tenant>:<purpose>:<nonce||ct>` with AES-256-GCM when
+`SECRETS_WRITE_FORMAT=aesgcm`: the key is HKDF-derived from the tenant data key (`envelope.aead_for`), the
+associated data is `tenant_id|purpose`, and every caller names its column (`envelope.PURPOSE_*`) on both
+encrypt and decrypt, so a ciphertext copied to another organisation or another column refuses to open. The
+Phase N `t1:` tenant-Fernet and the pre-Phase-N master formats stay readable; `reencrypt_tenant` converts to the
+configured format; `status` reports per-format counts. A passphrase master is stretched with scrypt, the SHA-256
+derivation kept as a second decrypt-only key (`MultiFernet`). Tests: `tests/test_phase_p0_4_money_crypto.py`.
+
 ### Phase BG: local-PC host and the Fyers daily login
 
 The PAPER week runs on the operator's Windows PC (Docker Desktop) against Fyers, not on a droplet against

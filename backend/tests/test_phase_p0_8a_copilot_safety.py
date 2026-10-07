@@ -391,3 +391,14 @@ def test_interview_deploy_goes_through_the_candidate_gate():
             return row.status, row.deployment_id, audit is not None
     st, dep_id, audited = _run(status())
     assert st == "DEPLOYED" and dep_id == body["deployment"]["id"] and audited
+    # Tidy up: stop the deployment and drop the broker credential the deploy needed, so the worker cycles other test
+    # files run (forced signals, market-memory captures with counted chain calls) do not pick this tenant up.
+    assert client.post(f"/api/deployments/{dep_id}/stop", headers=headers, json={"reason": "test"}).status_code == 200
+
+    async def drop_credentials():
+        from sqlalchemy import delete
+        from app.db.models import BrokerCredentialRecord
+        async with _session_factory() as session:
+            await session.execute(delete(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == t["tenant_id"]))
+            await session.commit()
+    _run(drop_credentials())

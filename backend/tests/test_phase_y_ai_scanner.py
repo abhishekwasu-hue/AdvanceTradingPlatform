@@ -96,7 +96,7 @@ def test_plan_endpoint_uses_the_rule_based_provider_by_default_and_meters(monkey
         {"left": {"type": "indicator", "indicator": "EMA", "period": 20}, "operator": "GT", "right": {"type": "indicator", "indicator": "EMA", "period": 50}}],
         "structure_filters": [{"filter_type": "BOS_BULLISH"}], "option_filters": [], "explanation": "EMA20 over EMA50 with a bullish break.", "warnings": []})
 
-    async def fake_provider(session, tenant, *, client=None):
+    async def fake_provider(session, tenant, *, client=None, **_kw):
         return fake
     monkeypatch.setattr(ai_settings, "provider_for", fake_provider)
     res = client.post("/api/scanner/ai/plan", headers=headers, json={"text": "TCS momentum with a fresh bullish break of structure", "language": "mr"}).json()
@@ -139,7 +139,7 @@ def test_read_ranks_matches_with_the_platform_regime_and_survives_a_bad_model_an
         {"symbol": "THIN", "score": 95, "thesis": "Looks great.", "risks": "", "next_step": ""},
         {"symbol": "INFY", "score": 70, "thesis": "not in the scan", "risks": "", "next_step": ""}], "warnings": ["small sample"]})
 
-    async def fake_provider(session, tenant, *, client=None):
+    async def fake_provider(session, tenant, *, client=None, **_kw):
         return fake
     monkeypatch.setattr(ai_settings, "provider_for", fake_provider)
     body = client.post("/api/scanner/ai/read", headers=headers, json={"request": request, "result": result}).json()

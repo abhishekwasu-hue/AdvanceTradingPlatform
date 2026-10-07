@@ -95,7 +95,7 @@ async def narrate(provider, lang: str, intent_name: str, question: str, facts: L
         try:
             text = (await provider.complete(system, user, max_tokens=1200)).strip()
         except Exception as exc:  # noqa: BLE001 - the rule-based answer is always there
-            return None, f"provider error: {type(exc).__name__}"
+            return None, f"provider error: {str(exc)[:160] or type(exc).__name__}"
         if not text:
             return None, why
         ok, why = grounded(text, facts, question)

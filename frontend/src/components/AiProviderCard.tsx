@@ -50,6 +50,32 @@ export default function AiProviderCard() {
           {!config.ai_features_allowed && <span className="text-amber-400">external providers need the Pro or Business plan</span>}
         </div>
       )}
+      {config?.configured && config.provider !== "rule_based" && config.models && (
+        <div className="text-xs text-muted mb-3">
+          Models: <span className="text-text">{config.models.strong}</span> writes strategies and scanner plans;{" "}
+          <span className="text-text">{config.models.fast}</span> narrates, classifies news and answers questions (set by the operator).
+        </div>
+      )}
+      {config?.usage && config.configured && config.provider !== "rule_based" && (
+        <div className={`rounded border px-3 py-2 text-xs mb-3 ${config.usage.exhausted ? "border-amber-500/50 bg-amber-500/10" : "border-border bg-panel2"}`}>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span className="font-semibold">AI usage {config.usage.month}</span>
+            <span>₹{config.usage.spent_inr.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{config.usage.budget_inr > 0 ? ` of ₹${config.usage.budget_inr.toLocaleString("en-IN")} budget` : " (no cap on this plan)"}</span>
+            <span className="text-muted">${config.usage.spent_usd.toFixed(4)} · {config.usage.calls} calls · {config.usage.tokens_input.toLocaleString()} in / {config.usage.tokens_output.toLocaleString()} out tokens</span>
+          </div>
+          {config.usage.budget_inr > 0 && (
+            <div className="mt-1 h-1.5 w-full rounded bg-border overflow-hidden">
+              <div className={`h-full ${config.usage.exhausted ? "bg-amber-500" : "bg-brand"}`} style={{ width: `${Math.min(100, (config.usage.spent_inr / config.usage.budget_inr) * 100)}%` }} />
+            </div>
+          )}
+          {Object.keys(config.usage.by_feature).length > 0 && (
+            <div className="mt-1 text-muted">
+              {Object.entries(config.usage.by_feature).sort((a, b) => b[1] - a[1]).map(([f, usd]) => `${f} $${usd.toFixed(4)}`).join(" · ")}
+            </div>
+          )}
+          <div className={`mt-1 ${config.usage.exhausted ? "text-amber-400" : "text-muted"}`}>{config.usage.note}</div>
+        </div>
+      )}
       {isOwner && (
         <div className="grid md:grid-cols-4 gap-2">
           <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: config?.default_models[e.target.value] ?? "" })}>

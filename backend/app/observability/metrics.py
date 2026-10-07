@@ -56,6 +56,8 @@ ALERT_DELIVERIES = _counter("alert_deliveries", "Out-of-app alert deliveries by 
 
 # --- AI and billing (Phase O4 / V4.11) --------------------------------------------------------
 AI_PROVIDER_CALLS = _counter("ai_provider_calls", "LLM provider calls by provider and outcome", ("provider", "outcome"))
+AI_TOKENS = _counter("ai_tokens", "P0.8-C: LLM tokens by provider, model and kind (input/output)", ("provider", "model", "kind"))
+AI_COST_USD = _counter("ai_cost_usd", "P0.8-C: LLM spend in USD by provider and model", ("provider", "model"))
 AI_PROPOSALS = _counter("ai_proposals", "Monitoring-agent proposals raised by action type", ("action",))
 AI_DECISIONS = _counter("ai_decisions", "Human decisions on AI proposals", ("decision",))
 BILLING_PAYMENTS = _counter("billing_payments", "Payments recorded by source", ("source",))

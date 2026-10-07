@@ -1586,6 +1586,26 @@ export interface AiProviderConfig {
   providers: AiProviderName[];
   default_models: Record<string, string>;
   default_provider?: AiProviderName;
+  /** P0.8-C: the model each tier runs on (strong = rule writing, fast = narration/classification/Q&A). */
+  models?: { strong: string; fast: string };
+  tier_models?: Record<string, { strong: string; fast: string }>;
+  usage?: AiUsage | null;
+}
+
+/** P0.8-C: this month's AI spend of the organisation against the plan's budget. */
+export interface AiUsage {
+  month: string;
+  calls: number;
+  tokens_input: number;
+  tokens_output: number;
+  spent_usd: number;
+  spent_inr: number;
+  budget_inr: number;
+  exhausted: boolean;
+  note: string;
+  by_feature: Record<string, number>;
+  by_model: Record<string, number>;
+  usd_inr_rate: number;
 }
 
 export type AiDraftStatus = "DRAFT" | "FAILED" | "BACKTESTED" | "APPROVED" | "REJECTED";

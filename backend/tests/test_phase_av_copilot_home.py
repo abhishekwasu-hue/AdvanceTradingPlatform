@@ -125,7 +125,7 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
             Provider.seen = system
             return "आज बाजार sideways आहे."
 
-    async def provider_for(session, tenant):
+    async def provider_for(session, tenant, **_kw):
         return Provider()
     from app.ai import routes as ai_routes
     monkeypatch.setattr(ai_routes.ai_settings, "provider_for", provider_for)

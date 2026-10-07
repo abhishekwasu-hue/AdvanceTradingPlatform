@@ -11,7 +11,8 @@ from sqlalchemy import select
 
 from app.ai import generator, monitor
 from app.ai.generator import parse_answer
-from app.ai.providers import AnthropicProvider, OpenAIProvider, ProviderError, RuleBasedProvider, build_provider
+from app.ai import providers as prov
+from app.ai.providers import DEFAULT_MODELS, AnthropicProvider, OpenAIProvider, ProviderError, RuleBasedProvider, build_provider
 from app.ai.regime import classify_regime, regime_blocks, validate_filter
 from app.db.models import AiActionRecord, AiProviderConfigRecord, CustomStrategyRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.secrets_store.encryption import decrypt_text
@@ -75,10 +76,11 @@ def test_anthropic_provider_uses_the_sdk_and_maps_errors():
                                           "content": [{"type": "thinking", "thinking": "", "signature": "x"}, {"type": "text", "text": "hello from claude"}],
                                           "stop_reason": "end_turn", "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 1}})
     provider = AnthropicProvider("sk-ant-test", http_client=_anthropic_mock(handler))
-    assert provider.model == "claude-opus-5"
+    assert provider.model == DEFAULT_MODELS["anthropic"] == prov.default_models()["anthropic"]["strong"]
     assert _run(provider.complete("sys", "make a strategy")) == "hello from claude"
     body = json.loads(seen[0].content)
-    assert body["model"] == "claude-opus-5" and body["system"] == "sys" and body["messages"] == [{"role": "user", "content": "make a strategy"}]
+    assert body["model"] == provider.model and body["messages"] == [{"role": "user", "content": "make a strategy"}]
+    assert body["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]          # P0.8-C: cacheable static prompt
     assert body["thinking"] == {"type": "adaptive"} and body["output_config"] == {"effort": "medium"} and body["fallbacks"] == "default"
     assert "server-side-fallback-2026-07-01" in seen[0].headers["anthropic-beta"]
     assert set(body) == {"model", "max_tokens", "system", "messages", "thinking", "output_config", "fallbacks"}   # prompt text only, no credentials

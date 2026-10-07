@@ -806,7 +806,11 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - News: a stock at its upper/lower circuit is company news (severity 3), not a market halt; a severity-5 pause is
   proposed only for a deployment the news names (or an index deployment for index-wide news).
 - Migration `e6f8a0b2c4d6` (new table `ai_candidates`, one open proposal per rule, `custom_` -> `custom:` on stored
-  deployments) on the next off-hours `git pull` + `up -d --build`; nothing else to do.
+  deployments) on the next off-hours `git pull` + `up -d --build`; nothing else to do. If two open proposals for one
+  rule already exist (the race this closes), the migration marks the newer one EXPIRED ("Duplicate open proposal")
+  and keeps the oldest.
+- Expired candidates nobody adopted are deleted by the retention job after `RETENTION_AI_CANDIDATES_DAYS` (default 30);
+  adopted and deployed candidates are kept.
 
 ### 1.6ab-8 What the AI may say (P0.8-B)
 

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 
 import httpx
+import pytest
 from sqlalchemy import select
 
 from app.ai import monitor
@@ -56,6 +57,15 @@ class _Telegram:
             self.calls.append({"method": request.url.path.rsplit("/", 1)[-1], "path": request.url.path, **body})
             return httpx.Response(200, json={"ok": True, "result": {"message_id": 42}})
         return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.fixture(autouse=True)
+def _no_shared_rate_limit(monkeypatch):
+    """The suite reuses tenant and chat ids on every run; against a persistent local Redis the fixed one-minute window
+    would carry over between runs. The limiter itself is covered by its own tests (local window here, Redis in P0.8-A)."""
+    async def never(*_a, **_k):
+        return False
+    monkeypatch.setattr(tg, "rate_limited", never)
 
 
 def _setup(email, monkeypatch, telegram: _Telegram, allowed=("555",)):

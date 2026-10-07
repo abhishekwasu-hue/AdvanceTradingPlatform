@@ -536,7 +536,8 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     price_lookup = broker = None
     if row.action == "EXIT_POSITION":
-        from app.ai.worker_bridge import broker_for_trade, price_lookup_for_tenant
+        from app.ai.worker_bridge import price_lookup_for_tenant
+        from app.trading.position_monitor import broker_for_trade
         price_lookup = await price_lookup_for_tenant(session, user.tenant_id)
         trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
         broker = await broker_for_trade(session, trade)

@@ -109,10 +109,12 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         # P0.7: each failed test becomes a check-run annotation (`::error`), so the failure is readable from the API
         # without the job log (which GitHub serves from a host the session tooling cannot reach).
+        # The default shell is `bash -e`: a failing pipeline would stop the script before the annotations are written,
+        # so the exit status is captured with `|| status=$?` instead of relying on $? after the pipe.
         run: |
           set -o pipefail
-          python -m pytest -q -rf 2>&1 | tee pytest-output.txt
-          status=$?
+          status=0
+          python -m pytest -q -rf 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
           exit $status
 

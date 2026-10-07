@@ -92,7 +92,7 @@ def status_of(record: Optional[AlertChannelRecord], tenant: Tenant) -> dict:
             "has_secret": bool(cfg.inbound_secret), "webhook_url": webhook_url(tenant), "telegram_actions": list(TELEGRAM_ACTIONS),
             "approvers": [{"telegram_user_id": a.telegram_user_id, "user_id": a.user_id, "email": a.email} for a in cfg.approvers],
             "note": "Approvals over Telegram cover PAPER deployments and reduce/pause proposals only; LIVE decisions need the web and your authenticator. "
-                    "Without approvers, only a private chat with the configured chat id can decide (as the owner); in a group, list who may."}
+                    "Without approvers, only a private chat on the whitelist can decide (as the owner); in a group, list who may."}
 
 
 async def configure(session: AsyncSession, tenant: Tenant, user: User, *, enabled: bool, allowed_chat_ids: List[str],

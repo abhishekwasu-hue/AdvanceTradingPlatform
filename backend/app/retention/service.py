@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
-    MarketSnapshotRecord, NewsEventRecord,
+    AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
     OptionChainSnapshotRecord,
     AlertDeliveryRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserSessionRecord,
@@ -76,6 +76,9 @@ def _rules(now: datetime, policy: RetentionPolicy):
         ("market_snapshots", MarketSnapshotRecord, MarketSnapshotRecord.captured_at < _cutoff(now, policy.market_snapshots_days)),
         # Phase BB: feed items age out; a person's cited MANUAL entry never does (it is their claim, kept).
         ("news_events_feed", NewsEventRecord, (NewsEventRecord.origin == "FEED") & (NewsEventRecord.created_at < _cutoff(now, policy.news_feed_days))),
+        # P0.8 / A3: candidates nobody adopted age out after they expire; adopted and deployed ones stay as the record of
+        # what the person chose from.
+        ("ai_candidates_open", AiCandidateRecord, (AiCandidateRecord.status == "OPEN") & (AiCandidateRecord.expires_at < _cutoff(now, policy.ai_candidates_days))),
     ]
 
 

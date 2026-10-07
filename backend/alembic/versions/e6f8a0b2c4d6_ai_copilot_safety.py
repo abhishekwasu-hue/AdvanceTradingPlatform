@@ -45,7 +45,13 @@ def upgrade() -> None:
     op.create_index('ix_ai_candidates_tenant_id', 'ai_candidates', ['tenant_id'])
     op.create_index('ix_ai_candidates_status', 'ai_candidates', ['status'])
     op.create_index('ix_ai_candidates_created_at', 'ai_candidates', ['created_at'])
-    # A5: the database refuses a second open proposal for the same tenant/deployment/rule.
+    # A5: the database refuses a second open proposal for the same tenant/deployment/rule. Duplicates that the old
+    # code let through (the very race this index closes) are expired first - the oldest open row of each group stays -
+    # or the index could not be built.
+    op.execute(sa.text(
+        "UPDATE ai_actions SET status = 'EXPIRED', result = 'Duplicate open proposal (P0.8 migration)' "
+        "WHERE status IN ('PROPOSED', 'APPROVED') AND id NOT IN "
+        "(SELECT MIN(id) FROM ai_actions WHERE status IN ('PROPOSED', 'APPROVED') GROUP BY tenant_id, deployment_id, rule)"))
     op.create_index('uq_ai_actions_open_rule', 'ai_actions', ['tenant_id', 'deployment_id', 'rule'], unique=True,
                     postgresql_where=sa.text(_OPEN), sqlite_where=sa.text(_OPEN))
     # A4: deployments created from an AI draft / marketplace copy carried the `custom_<id>` spelling the resolver never

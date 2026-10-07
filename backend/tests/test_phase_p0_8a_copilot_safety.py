@@ -345,7 +345,8 @@ def test_news_scope_circuit_and_pause_target():
 # --- A3 (interview) ------------------------------------------------------------------------------------------------------------
 def test_interview_deploy_goes_through_the_candidate_gate():
     from tests.test_phase_ap_interview import _sessions
-    headers = {"Authorization": f"Bearer {_register('p08a-interview@example.com')}"}
+    t = _tenant("p08a-interview@example.com")
+    headers = t["headers"]
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
     plan = client.post("/api/ai/interview/plan", headers=headers, json={
@@ -353,20 +354,40 @@ def test_interview_deploy_goes_through_the_candidate_gate():
         "base_timeframe": "5min", "candles": candles, "data_source": "broker:upstox"}).json()
     assert plan["candidate_id"] and all(o["candidate_id"] for o in plan["options"])
     cid = plan["candidate_id"]
+    # Five sessions of synthetic candles give the templates no trades: the gate refuses before anything else is looked at.
+    refused = client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid, "accept_risk": True})
+    assert refused.status_code == 400 and "backtest evidence" in refused.text
+
+    # With server-side evidence (as a longer run produces) on a cash deployment, the risk statement must still be accepted.
+    async def with_evidence():
+        async with _session_factory() as session:
+            row = await session.get(AiCandidateRecord, cid)
+            metrics = json.loads(row.metrics_json or "{}")
+            metrics["evidence"] = {"tested": True, "total_trades": 18, "win_rate": 0.5}
+            payload = json.loads(row.deployment_json or "{}")
+            for key in ("option_position", "expiry_rule", "strike_rule", "premium_stop_pct", "premium_ceiling_pct", "strike_offset", "strike_filters", "max_lots"):
+                payload.pop(key, None)
+            payload.update({"symbol": "RELIANCE", "exchange": "NSE", "instrument_kind": "UNDERLYING", "mode": "LIVE"})
+            row.metrics_json, row.deployment_json = json.dumps(metrics), json.dumps(payload)
+            await session.commit()
+            return payload["strategy_id"]
+    strategy_id = _run(with_evidence())
     refused = client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid})
-    evidence = plan["recommended"]["evidence"]
-    if not (evidence["tested"] and evidence["total_trades"] > 0):
-        assert refused.status_code == 400 and "backtest evidence" in refused.text
-        return
-    assert refused.status_code == 400 and "accept" in refused.text
+    assert refused.status_code == 400 and "accept" in refused.text and "maximum loss per trade" in refused.text
     deployed = client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid, "accept_risk": True})
     assert deployed.status_code == 201, deployed.text
-    assert deployed.json()["mode"] == "PAPER" and deployed.json()["deployment"]["mode"] == "PAPER"
+    body = deployed.json()
+    # The stored payload said LIVE; the hand-off forces PAPER regardless.
+    assert body["mode"] == "PAPER" and body["deployment"]["mode"] == "PAPER" and body["deployment"]["symbol"] == "RELIANCE"
+    assert body["deployment"]["strategy_id"] == strategy_id
     assert client.post("/api/ai/interview/deploy", headers=headers, json={"candidate_id": cid, "accept_risk": True}).status_code == 409
     other = {"Authorization": f"Bearer {_register('p08a-interview-other@example.com')}"}
     assert client.post("/api/ai/interview/deploy", headers=other, json={"candidate_id": cid, "accept_risk": True}).status_code == 404
 
     async def status():
         async with _session_factory() as session:
-            return (await session.get(AiCandidateRecord, cid)).status
-    assert _run(status()) == "DEPLOYED"
+            row = await session.get(AiCandidateRecord, cid)
+            audit = await session.scalar(select(AuditLogRecord).where(AuditLogRecord.tenant_id == t["tenant_id"], AuditLogRecord.event == "ai_candidate_deployed"))
+            return row.status, row.deployment_id, audit is not None
+    st, dep_id, audited = _run(status())
+    assert st == "DEPLOYED" and dep_id == body["deployment"]["id"] and audited

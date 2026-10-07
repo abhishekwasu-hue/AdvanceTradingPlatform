@@ -143,10 +143,16 @@ def test_strategist_api_build_and_adopt_into_a_paper_deployment():
     assert client.post("/api/ai/strategist/study", headers=headers, json={"candles": candles[:40]}).status_code == 422
 
     best = body["candidates"][0]
-    adopted = client.post("/api/ai/strategist/adopt", headers=headers, json={"name": "Copilot test", "config": best["config"], "symbol": "NIFTY 50"})
+    assert best["candidate_id"] > 0                                       # P0.8 / A3: the server holds the candidate
+    # A config typed by the browser is not a candidate; the server's candidate needs the risk acceptance.
+    assert client.post("/api/ai/strategist/adopt", headers=headers, json={"name": "bad", "config": {"name": "x"}}).status_code == 422
+    refused = client.post("/api/ai/strategist/adopt", headers=headers, json={"candidate_id": best["candidate_id"], "name": "Copilot test"})
+    assert refused.status_code == 400 and "accept" in refused.text.lower()
+    adopted = client.post("/api/ai/strategist/adopt", headers=headers, json={"candidate_id": best["candidate_id"], "name": "Copilot test", "accept_risk": True})
     assert adopted.status_code == 201, adopted.text
     a = adopted.json()
-    assert a["strategy_id"].startswith("custom:") and a["deployment"]["mode"] == "PAPER"
+    assert a["strategy_id"].startswith("custom:") and a["deployment"]["mode"] == "PAPER" and a["compliance"]["ok"] is True
     saved = client.get(f"/api/custom-strategies/{a['strategy_id'].split(':')[1]}", headers=headers)
     assert saved.status_code == 200 and saved.json()["config"]["timeframe"] == best["config"]["timeframe"]
-    assert client.post("/api/ai/strategist/adopt", headers=headers, json={"name": "bad", "config": {"name": "x"}}).status_code == 400
+    assert client.post("/api/ai/strategist/adopt", headers=headers, json={"candidate_id": best["candidate_id"], "accept_risk": True}).status_code == 409   # already adopted
+    assert client.post("/api/ai/strategist/adopt", headers=headers, json={"candidate_id": 999999, "accept_risk": True}).status_code == 404

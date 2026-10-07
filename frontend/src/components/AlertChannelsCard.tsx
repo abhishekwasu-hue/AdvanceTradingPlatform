@@ -26,6 +26,12 @@ export default function AlertChannelsCard() {
   // PAPER monitor proposals. Off by default; LIVE decisions stay on the web with the authenticator.
   const [inbound, setInbound] = useState<TelegramInboundStatus | null>(null);
   const [inboundChats, setInboundChats] = useState("");
+  // P0.8 / A6: one approver per line, "telegram_user_id email" - the e-mail must be a team member.
+  const [inboundApprovers, setInboundApprovers] = useState("");
+  const parseApprovers = () => inboundApprovers.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+    const [telegram_user_id, email] = l.split(/[\s,]+/);
+    return { telegram_user_id, email: email ?? "" };
+  });
   const [wh, setWh] = useState({ url: "", secret: "", event_types: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
   const [sms, setSms] = useState({
     preset: "msg91", url: "", headers: "", body_template: "", to_numbers: "", content_type: "application/json",
@@ -63,7 +69,10 @@ export default function AlertChannelsCard() {
       }
     }).catch((e) => setError(String(e)));
     api.listAlertDeliveries(10).then(setDeliveries).catch(() => {});
-    api.telegramInboundStatus().then((s) => { setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", ")); }).catch(() => setInbound(null));
+    api.telegramInboundStatus().then((s) => {
+      setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", "));
+      setInboundApprovers((s.approvers ?? []).map((a) => `${a.telegram_user_id} ${a.email}`).join("\n"));
+    }).catch(() => setInbound(null));
   }
 
   useEffect(refresh, []);
@@ -186,13 +195,16 @@ export default function AlertChannelsCard() {
                 monitor proposals for <b>PAPER</b> deployments only ({inbound.telegram_actions.join(", ")}); exits and every LIVE decision stay on the web with your authenticator.
               </p>
               <input className={input} placeholder="Extra allowed chat ids (comma separated, up to 10); the alert chat id is always allowed" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
+              <textarea className={`${input} h-16 font-mono`} placeholder={"Approvers, one per line: <Telegram user id> <team member e-mail>. Empty = only a private chat with the owner can decide; in a group every other member is refused."}
+                value={inboundApprovers} onChange={(e) => setInboundApprovers(e.target.value)} />
+              {(inbound.approvers ?? []).length > 0 && <div className="text-[11px] text-muted">Approvers: {inbound.approvers!.map((a) => `${a.telegram_user_id} → ${a.email}`).join(" · ")}</div>}
               <div className="flex flex-wrap items-center gap-2">
                 <button disabled={busy || inbound.flag_enabled === false} onClick={() => run(inbound.inbound_enabled ? "Two-way Telegram switched off." : "Two-way Telegram switched on - now register the webhook.",
                   () => api.telegramInboundConfigure({ enabled: !inbound.inbound_enabled, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
                   className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">{inbound.inbound_enabled ? "Turn off" : "Turn on"}</button>
-                <button disabled={busy || !inbound.inbound_enabled} onClick={() => run("Allowed chats saved.",
-                  () => api.telegramInboundConfigure({ enabled: true, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
-                  className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Save chats</button>
+                <button disabled={busy || !inbound.inbound_enabled} onClick={() => run("Allowed chats and approvers saved.",
+                  () => api.telegramInboundConfigure({ enabled: true, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean), approvers: parseApprovers() }))}
+                  className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Save chats + approvers</button>
                 <button disabled={busy || !inbound.inbound_enabled || !inbound.has_secret} onClick={() => run("Webhook registered with Telegram.", async () => {
                   const r = await api.telegramInboundRegister();
                   if (!r.ok) throw new Error(r.description ?? "Telegram refused the webhook");

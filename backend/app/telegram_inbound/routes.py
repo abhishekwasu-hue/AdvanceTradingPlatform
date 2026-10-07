@@ -22,9 +22,16 @@ router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 FLAG = "telegram_inbound"
 
 
+class ApproverBody(BaseModel):
+    telegram_user_id: str = Field(min_length=1, max_length=32, pattern=r"^-?\d+$")
+    email: str = Field(min_length=3, max_length=200)
+
+
 class InboundBody(BaseModel):
     enabled: bool
     allowed_chat_ids: List[str] = Field(default_factory=list, max_length=10)
+    # P0.8 / A6: None = keep the stored approvers; [] = clear them (legacy private-chat mode).
+    approvers: Optional[List[ApproverBody]] = Field(default=None, max_length=10)
 
 
 @router.post("/webhook/{webhook_token}")
@@ -72,9 +79,12 @@ async def configure_inbound(body: InboundBody, user: User = Depends(require_owne
     await require_flag(session, FLAG, user.tenant_id)
     tenant = await session.get(Tenant, user.tenant_id)
     try:
-        return await service.configure(session, tenant, user, enabled=body.enabled, allowed_chat_ids=body.allowed_chat_ids)
+        return await service.configure(session, tenant, user, enabled=body.enabled, allowed_chat_ids=body.allowed_chat_ids,
+                                       approvers=None if body.approvers is None else [a.model_dump() for a in body.approvers])
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/inbound/register")

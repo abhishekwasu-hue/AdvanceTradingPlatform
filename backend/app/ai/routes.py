@@ -1,7 +1,8 @@
 """Phase L: `/api/ai/*` - provider settings, the strategy generator with its review gate, the
 regime classifier and the monitoring agent's action queue. Every mutating call is a human's."""
 import copy
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
-from app.auth.dependencies import get_current_user, require_owner, require_trader
+from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_owner, require_trader
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.routes import _run_summary
 from app.core.models import OHLCVBar, RiskConfig, bars_to_dataframe
-from app.db.models import AiActionRecord, AiStrategyDraftRecord, BacktestRunRecord, Tenant, User
+from app.db.models import AiActionRecord, AiCandidateRecord, AiStrategyDraftRecord, BacktestRunRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.db.session import get_session
 from app.plans.limits import require_feature
 from app.risk_engine.routes import get_tenant_risk_config
@@ -172,7 +173,7 @@ async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(r
         record = await generator.approve(session, draft, user, tenant, name=body.name, accept_risk=body.accept_risk)
     except generator.GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"draft": generator.as_dict(draft), "custom_strategy_id": record.id, "strategy_id": f"custom_{record.id}", "origin": record.origin}
+    return {"draft": generator.as_dict(draft), "custom_strategy_id": record.id, "strategy_id": f"custom:{record.id}", "origin": record.origin}
 
 
 @router.post("/drafts/{draft_id}/reject")
@@ -243,7 +244,79 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
     result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,
                                      data_source=body.data_source, memory=memory)
     await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
+    # P0.8 / A3: each option's deployment is held on the server; "Deploy in PAPER" takes the candidate id and the
+    # trader's risk acceptance, never the browser's copy of the plan.
+    now = datetime.now(timezone.utc)
+    for option in result.get("options") or []:
+        pick = option.get("recommended") or {}
+        if not option.get("deployment"):
+            continue
+        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="interview", symbol=str(option["deployment"].get("symbol") or answers.symbol).upper(),
+                                name=str(pick.get("name") or option["deployment"].get("strategy_id") or "interview plan")[:120],
+                                strategy_id=option["deployment"].get("strategy_id"), config_json=None,
+                                metrics_json=json.dumps({"evidence": pick.get("evidence"), "regime_fit": pick.get("regime_fit"), "score": pick.get("score"),
+                                                         "option": option.get("option"), "data_source": body.data_source}, default=str),
+                                deployment_json=json.dumps(option["deployment"], default=str), risk_json=json.dumps(option.get("risk_config") or {}, default=str),
+                                expires_at=now + CANDIDATE_TTL, created_at=now)
+        session.add(row)
+        await session.flush()
+        option["candidate_id"] = row.id
+    await session.commit()
+    balanced = next((o for o in result.get("options") or [] if (o.get("option") or {}).get("id") == "balanced"), None)
+    result["candidate_id"] = balanced.get("candidate_id") if balanced else None
     return result
+
+
+CANDIDATE_TTL = timedelta(days=7)
+
+
+class CandidateDeployBody(BaseModel):
+    candidate_id: int
+    accept_risk: bool = Field(default=False, description="P0.8 / A3: the human confirms the maximum loss per trade before anything runs")
+
+
+async def _candidate(session: AsyncSession, candidate_id: int, user: User, source: str) -> AiCandidateRecord:
+    row = await session.get(AiCandidateRecord, candidate_id)
+    if row is None or row.tenant_id != user.tenant_id or row.source != source:
+        raise HTTPException(status_code=404, detail="No such candidate - build the plan again")
+    if row.status != "OPEN":
+        raise HTTPException(status_code=409, detail=f"This candidate was already {row.status.lower()}")
+    expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+    if expires <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=409, detail="This candidate has expired - build the plan again on today's market")
+    return row
+
+
+def _risk_statement(risk: dict) -> str:
+    capital = float(risk.get("capital") or 0.0)
+    pct = float(risk.get("risk_per_trade_pct") or 0.0)
+    return f"the maximum loss per trade of about {capital * pct / 100:,.0f} INR ({pct:g}% of {capital:,.0f})" if capital and pct else "the maximum loss per trade"
+
+
+@router.post("/interview/deploy", status_code=201)
+async def interview_deploy(body: CandidateDeployBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                           session_id: Optional[int] = Depends(current_session_id)) -> dict:
+    """P0.8 / A3: deploy an interview option in PAPER through the same gate as an AI draft - the candidate is the
+    server's, its strategy carries backtest evidence with trades, and the human accepted the maximum loss per trade."""
+    from app.deployments.routes import DeploymentCreateRequest, create_deployment
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    row = await _candidate(session, body.candidate_id, user, "interview")
+    metrics = json.loads(row.metrics_json or "{}")
+    evidence = (metrics.get("evidence") or {})
+    if not evidence.get("tested") or int(evidence.get("total_trades") or 0) <= 0:
+        raise HTTPException(status_code=400, detail="This option has no backtest evidence with trades on the server - run the plan on more candles first")
+    risk = json.loads(row.risk_json or "{}")
+    if not body.accept_risk:
+        raise HTTPException(status_code=400, detail=f"Confirm that you accept {_risk_statement(risk)} before deploying (accept_risk)")
+    payload = json.loads(row.deployment_json or "{}")
+    payload["mode"] = "PAPER"
+    request = DeploymentCreateRequest(**payload)
+    created = await create_deployment(request, user=user, session=session, session_id=session_id)
+    row.status, row.deployment_id = "DEPLOYED", created.id
+    from app.audit.log import write_audit_log
+    await write_audit_log(session, user.tenant_id, user.id, "ai_candidate_deployed", f"candidate {row.id} ({row.name}) -> PAPER deployment #{created.id}, risk accepted")
+    await session.commit()
+    return {"candidate_id": row.id, "deployment": created.model_dump(), "mode": "PAPER"}
 
 
 @router.post("/interview/plan")
@@ -433,21 +506,41 @@ async def _action(session: AsyncSession, action_id: int, user: User) -> AiAction
     return row
 
 
+async def _action_is_live(session: AsyncSession, row: AiActionRecord) -> bool:
+    """P0.8 / A2: a proposal touches real money when its deployment or its position runs LIVE."""
+    if row.deployment_id is not None:
+        dep = await session.get(StrategyDeploymentRecord, row.deployment_id)
+        if dep is not None and dep.mode == "LIVE":
+            return True
+    if row.trade_id is not None:
+        trade = await session.get(TradeRecord, row.trade_id)
+        if trade is not None and trade.mode == "LIVE":
+            return True
+    return False
+
+
 @router.post("/actions/{action_id}/approve")
-async def approve_action(action_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def approve_action(action_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                         session_id: Optional[int] = Depends(current_session_id)) -> dict:
     """Approve and execute in one human step (pause / acknowledge). Exits need a live price, so
     an EXIT_POSITION approval executes through the worker's price source when available and
-    otherwise tells the user to close from the Positions page."""
+    otherwise tells the user to close from the Positions page. P0.8 / A2: a LIVE deployment or
+    position needs the authenticator step-up the Telegram message promises (same rule as creating
+    or resuming a LIVE deployment); A1: a LIVE exit squares off at the broker the trade went through."""
     row = await _action(session, action_id, user)
+    if await _action_is_live(session, row):
+        await ensure_live_step_up(session, user, session_id, "Approving an AI proposal on a LIVE deployment")
     try:
         row = await monitor.decide(session, row, user, approve=True, note=body.note)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    price_lookup = None
+    price_lookup = broker = None
     if row.action == "EXIT_POSITION":
-        from app.ai.worker_bridge import price_lookup_for_tenant
+        from app.ai.worker_bridge import broker_for_trade, price_lookup_for_tenant
         price_lookup = await price_lookup_for_tenant(session, user.tenant_id)
-    row = await monitor.execute(session, row, user, price_lookup=price_lookup)
+        trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
+        broker = await broker_for_trade(session, trade)
+    row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
     return monitor.as_dict(row)
 
 
@@ -704,40 +797,69 @@ async def strategist_build(body: StrategistBody, user: User = Depends(get_curren
         await session.commit()
     result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
                                      extra_configs=extra)
+    # P0.8 / A3: the validated candidates are held on the server; "adopt" takes a candidate id, never a config.
+    now = datetime.now(timezone.utc)
+    for plan in result.get("candidates") or []:
+        row = AiCandidateRecord(tenant_id=user.tenant_id, user_id=user.id, source="strategist", symbol=str(study["symbol"]).upper(), name=str(plan["name"])[:120],
+                                config_json=json.dumps(plan["config"]),
+                                metrics_json=json.dumps({k: plan.get(k) for k in ("in_sample", "out_of_sample", "all", "verdict", "oos_sessions", "source")}, default=str),
+                                deployment_json=json.dumps(plan.get("deployment"), default=str), risk_json=cfg.model_dump_json(),
+                                expires_at=now + CANDIDATE_TTL, created_at=now)
+        session.add(row)
+        await session.flush()
+        plan["candidate_id"] = row.id
+    await session.commit()
     return {"study": study, **result, "data_source": source, "ai_candidates": len(extra), "provider": provider.name, "request_parsed": parsed,
             "language": body.language}
 
 
 class AdoptBody(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-    config: dict
-    symbol: str = Field(default="NIFTY 50", max_length=50)
+    candidate_id: int
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    accept_risk: bool = Field(default=False, description="P0.8 / A3: the human confirms the maximum loss per trade")
 
 
 @router.post("/strategist/adopt", status_code=201)
 async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
-    """Save a strategist candidate as one of your custom strategies (versioned), ready to deploy in PAPER."""
+    """Save a strategist candidate as one of your custom strategies (versioned), ready to deploy in PAPER.
+    P0.8 / A3: the candidate is the server's (built and validated by /strategist/build - a config typed by the
+    browser is not accepted), it must carry a simulation with trades, it runs the compliance checklist like an AI
+    draft, and the human accepts the maximum loss per trade. Only then does it get the `ai-strategist` lineage."""
+    from app.ai.compliance import evaluate_config
     from app.audit.log import write_audit_log
     from app.custom_strategies import versioning
     from app.db.models import CustomStrategyRecord
     from app.plans.limits import check_can_add_custom_strategy
     from app.strategy_engine.declarative import CustomStrategyConfig
     await require_flag(session, "ai_copilot", user.tenant_id)
+    candidate = await _candidate(session, body.candidate_id, user, "strategist")
+    metrics = json.loads(candidate.metrics_json or "{}")
+    if int(((metrics.get("all") or {}).get("trades")) or 0) <= 0 or metrics.get("verdict") == "untested":
+        raise HTTPException(status_code=400, detail="This candidate has no server-side simulation with trades - it cannot be adopted")
     try:
-        config = CustomStrategyConfig.model_validate({**body.config, "name": body.name.strip()})
+        config = CustomStrategyConfig.model_validate({**json.loads(candidate.config_json or "{}"), "name": (body.name or candidate.name).strip()})
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Invalid strategy: {exc}"[:300]) from exc
     tenant = await _tenant(session, user)
+    cfg, ceilings = await generator._effective_risk(session, tenant.id)
+    config, report = evaluate_config(config, cfg, ceilings)
+    if not report.ok:
+        raise HTTPException(status_code=400, detail=f"Resolve the compliance failures first: {report.failure_text()}"[:600])
+    if not body.accept_risk:
+        statement = report.user_must_accept.get("max_loss_per_trade_text") or _risk_statement(json.loads(candidate.risk_json or "{}"))
+        raise HTTPException(status_code=400, detail=f"Confirm that you accept the risk before adopting (accept_risk): {statement}"[:600])
     await check_can_add_custom_strategy(session, tenant)
     record = CustomStrategyRecord(tenant_id=tenant.id, user_id=user.id, name=config.name, config_json=config.model_dump_json(),
                                   origin="ai-strategist", ai_approved_by=user.id)
     session.add(record)
     await session.flush()
     await versioning.create_version(session, record, config, user, source="ai-strategist")
-    await write_audit_log(session, tenant.id, user.id, "ai_strategist_adopted", f"strategy {record.id} ({config.name}) for {body.symbol}")
+    candidate.status, candidate.adopted_strategy_id = "ADOPTED", record.id
+    await write_audit_log(session, tenant.id, user.id, "ai_strategist_adopted",
+                          f"candidate {candidate.id} -> strategy {record.id} ({config.name}) for {candidate.symbol}, compliance ok, risk accepted")
     await session.commit()
     strategy_id = f"custom:{record.id}"
-    return {"strategy_id": strategy_id, "name": config.name,
-            "deployment": {"strategy_id": strategy_id, "symbol": body.symbol.strip().upper(), "exchange": "NSE", "timeframe": config.timeframe,
+    return {"strategy_id": strategy_id, "name": config.name, "candidate_id": candidate.id, "compliance": report.as_dict(),
+            "deployment": {"strategy_id": strategy_id, "symbol": candidate.symbol, "exchange": "NSE", "timeframe": config.timeframe,
                            "mode": "PAPER", "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}}}
 

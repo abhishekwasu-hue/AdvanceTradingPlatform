@@ -214,6 +214,22 @@ Every P0 item was checked against the code before planning (the plan's file name
 | B1-B5 | daily counters, STT on short options, optimizer winner on IS, gap fills, dated lot sizes | **P0.6 (done)** |
 | infra | deploy.sh rollback re-tags the image but does not restart (verified: it did not even tag - `images --format '{{.ID}}'` is not a compose form, so the previous id was always empty); no log rotation; CI without ruff/mypy/bandit/gitleaks; actions not SHA-pinned; `deploy-staging.yml` interpolates inputs into the remote shell; OpenAPI title/version placeholder | **P0.1** (OpenAPI, staging workflow), **P0.7 (done)** - rollback restarts the previous image, log rotation, lint job (ruff/mypy/bandit/gitleaks), SHA-pinned actions |
 
+**P0.8 (added 2026-10-06 from `ATP_AI_COPILOT_FIX_PROMPT`, before P1):** the AI Copilot review's must-fixes, every
+item re-read in code before planning - all seven safety findings are real:
+
+| # | Verified in code | PR |
+|---|---|---|
+| A1 | `ai/monitor.py` execute: `close_position` returning `closed=False` still ended EXECUTED, and the rule could not fire again that day | **P0.8-A (done)** |
+| A2 | `ai/routes.py` approve_action: no TOTP step-up for a LIVE deployment/position (Telegram text promised "web + authenticator") | **P0.8-A (done)** |
+| A3 | `strategist_adopt` saved whatever config the browser sent with `origin="ai-strategist"`, no compliance check, no stored backtest; interview "Deploy in PAPER" posted straight to /deployments | **P0.8-A (done)** |
+| A4 | `custom_{id}` returned by AI approve / marketplace, resolver knows `custom:` only | **P0.8-A (done)** |
+| A5 | `decide` checked status in memory; no database guard against two open proposals for one rule | **P0.8-A (done)** |
+| A6 | Telegram checked the chat id only; any group member could press Approve and the owner was recorded as decider; rate limits in-process | **P0.8-A (done)** |
+| A7 | empty news scope matched everything in corroboration; bare "circuit" = severity 5; PAUSE landed on `active[0]` when no symbol matched | **P0.8-A (done)** |
+| B1-B3 | thesis headlines not wrapped, headline digits counted as allowed numbers, abs() compare; no numbers-check on copilot/knowledge/Telegram; flaky bd2 test | P0.8-B |
+| C1-C5 | thinking + small max_tokens, no `stop_reason` handling, hard-coded models, OpenAI reasoning params, no client reuse/caching, no cost metering | P0.8-C |
+| D1-D5 | interview "Recommended"/match %/allocation advice, strategist "Best", thesis targets, no first-use acknowledgement, no LLM audit table, DPDP text wrong, AI marketplace listings | P0.8-D |
+
 Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
 batch-safe, off-hours per the guard. Risks: S6/S14 affect every logged-in client -> dual-read for one release;
 S11 re-encryption must never run before the key ring is warm; T5 changes order types at the broker -> PAPER
@@ -421,3 +437,33 @@ default and G-LIVE gate before any LIVE wiring.
   version pinned and PR comments off (the job has read permission only); pin comments name the exact tag
   (v4.4.0, v5.6.0, v2.3.9); `ET.Element` does not exist on defusedxml (annotation now the stdlib `Element`); the
   OPERATIONS roll-out note says the first `up -d` recreates every container, Postgres and Redis included.
+
+### 2026-10-07 - P0.8-A: AI Copilot safety (A1-A7 of ATP_AI_COPILOT_FIX_PROMPT)
+- A1: an approved EXIT whose `close_position` did not close is **FAILED** with the reason (never EXECUTED), and a FAILED
+  row no longer blocks the rule for the day; a LIVE position without a broker session is refused, and the web approval
+  passes the trade's broker adapter (`worker_bridge.broker_for_trade`, by the trade's broker account).
+- A2: `approve_action` runs `ensure_live_step_up` when the proposal's deployment or position is LIVE (same rule as
+  creating/resuming a LIVE deployment: 403 with the MFA code until the session passed TOTP).
+- A3: `ai_candidates` table (migration `e6f8a0b2c4d6`): `/strategist/build` and `/interview/plan` persist the server's
+  validated candidates (config, simulation/evidence, deployment, risk; 7-day TTL). `/strategist/adopt` takes
+  `candidate_id` + `accept_risk` (a browser config is a 422), requires a simulation with trades, runs the compliance
+  checklist (`evaluate_config`, 400 on failures) and the risk acceptance before stamping `origin=ai-strategist`.
+  New `/interview/deploy` (candidate_id + accept_risk) requires backtest evidence with trades and forces PAPER; the
+  Strategy Interview and the Strategist cards show the risk checkbox. Candidates are per tenant (404 otherwise).
+- A4: `custom:` everywhere (`/drafts/{id}/approve`, `generator.as_dict`, marketplace); `resolver.normalize_strategy_id`
+  accepts the legacy `custom_<id>` and the migration rewrites stored deployments; deployment creation normalises.
+- A5: `decide` is a conditional UPDATE (`WHERE status='PROPOSED'`; the loser gets "decided concurrently"); partial
+  unique index `uq_ai_actions_open_rule` (tenant, deployment, rule where status in PROPOSED/APPROVED) with
+  `raise_proposals` skipping the IntegrityError.
+- A6: `TelegramConfig.approvers` (Telegram user id -> team member, set by the owner under Settings by e-mail); a
+  button press or command is attributed to the sender's `from.id`: with approvers configured only a listed sender acts,
+  as that member (recorded in `decided_by` and the audit log); without approvers only a *private* chat with a
+  whitelisted id acts (legacy PC setup unchanged), a group member is refused and audited. The per-chat rate limit is a
+  Redis fixed window (`cache_incr_window`) with the in-process window as fallback.
+- A7: corroboration needs an overlapping scope (empty scope confirms nothing); "upper/lower circuit" is a stock
+  CORPORATE item (severity 3), only trading halt / market-wide circuit breaker / outage is LIQUIDITY 5; a severity-5
+  PAUSE names a deployment the news is about (symbol, or an index deployment for INDEX scope) and otherwise nothing is
+  paused (the alert still goes out); severity-4 REDUCE_RISK is unchanged.
+- Tests: `tests/test_phase_p0_8a_copilot_safety.py` (8); strategist adopt / Telegram / AI draft tests follow the new
+  contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
+  with the risk checkbox, approvers textarea on the Telegram card.

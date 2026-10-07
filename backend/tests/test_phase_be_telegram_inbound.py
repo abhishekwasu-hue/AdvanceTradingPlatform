@@ -118,9 +118,14 @@ def test_webhook_guards_token_secret_whitelist_and_answers_commands(monkeypatch)
     # Rate limit: the 21st message in a minute is refused with one short reply.
     tg._rate.clear()
     for _ in range(tg.RATE_LIMIT):
-        assert tg.rate_limited(t["tenant_id"], "555") is False
-    assert tg.rate_limited(t["tenant_id"], "555") is True
+        assert tg._rate_limited_local(t["tenant_id"], "555") is False
+    assert tg._rate_limited_local(t["tenant_id"], "555") is True
+    # P0.8 / A6: the shared limiter is Redis-backed; whichever store answered, the webhook refuses once it says so.
+    async def limited(*_a, **_k):
+        return True
+    monkeypatch.setattr(tg, "rate_limited", limited)
     assert _post(t, _message("555", "/help")).json()["handled"] == "rate_limited"
+    monkeypatch.undo()
     tg._rate.clear()
 
 

@@ -789,6 +789,25 @@ Never publish a listing without an attached backtest run; the API refuses the su
   both. Dependabot-style tag updates are not automatic.
 - RSS/Atom feeds are parsed with defusedxml (new dependency, in the image on the next build).
 
+### 1.6ab-7 AI Copilot approvals and hand-offs (P0.8-A)
+
+- An approved AI **exit** that the broker did not complete now shows **FAILED** with the reason (the position is still
+  open - close it from the Positions page); the rule may propose again. A LIVE exit squares off at the broker the trade
+  went through; without a usable session it is FAILED, never booked closed.
+- Approving a proposal on a **LIVE** deployment or position on the web needs the authenticator (same step-up as
+  creating a LIVE deployment, when `require_mfa_for_live` is on). PAPER proposals are unchanged.
+- Strategist "Save as a strategy" and the interview's "Deploy in PAPER" now need the **risk checkbox** (maximum loss
+  per trade) and go through the server's candidate: a candidate without a simulation/backtest with trades, or one that
+  fails the compliance checklist, is refused with the reason. Candidates expire after 7 days - build again.
+- **Telegram approvers**: on the Telegram card list who may press Approve/Reject as `<Telegram user id> <team e-mail>`
+  (one per line). Without the list, only a *private* chat with a whitelisted chat id decides, as the owner; in a group
+  every other member is refused ("not an authorised approver") and the refusal is audited. The PAPER PC's private-chat
+  setup keeps working unchanged. Find a Telegram user id with @userinfobot.
+- News: a stock at its upper/lower circuit is company news (severity 3), not a market halt; a severity-5 pause is
+  proposed only for a deployment the news names (or an index deployment for index-wide news).
+- Migration `e6f8a0b2c4d6` (new table `ai_candidates`, one open proposal per rule, `custom_` -> `custom:` on stored
+  deployments) on the next off-hours `git pull` + `up -d --build`; nothing else to do.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

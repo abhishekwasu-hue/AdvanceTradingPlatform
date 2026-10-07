@@ -19,7 +19,16 @@ def severity_reaches(severity: str, floor: str) -> bool:
     return SEVERITY_RANK.get(severity, 0) >= SEVERITY_RANK.get(floor, 1)
 
 
-TELEGRAM_INBOUND_FIELDS = ("inbound_enabled", "allowed_chat_ids", "inbound_secret")   # Phase BE: set only by telegram_inbound.service.configure
+TELEGRAM_INBOUND_FIELDS = ("inbound_enabled", "allowed_chat_ids", "inbound_secret", "approvers")   # Phase BE / P0.8: set only by telegram_inbound.service.configure
+
+
+class TelegramApprover(BaseModel):
+    """P0.8 / A6: one Telegram account allowed to decide (and ask) for one platform user. `telegram_user_id` is the
+    sender's `from.id`, not a chat id - in a group every member shares the chat id."""
+
+    telegram_user_id: str = Field(min_length=1, max_length=32)
+    user_id: int
+    email: str = Field(default="", max_length=200)
 
 
 class TelegramConfig(BaseModel):
@@ -34,6 +43,9 @@ class TelegramConfig(BaseModel):
     inbound_enabled: bool = False
     allowed_chat_ids: List[str] = Field(default_factory=list, max_length=10)
     inbound_secret: Optional[str] = Field(default=None, max_length=128)
+    # P0.8 / A6: who may press Approve/Reject and ask account questions. Empty = legacy private-chat mode: only the
+    # sender whose Telegram user id *is* the configured chat id (a private chat) acts, as the organisation's owner.
+    approvers: List[TelegramApprover] = Field(default_factory=list, max_length=10)
 
     @field_validator("bot_token")
     @classmethod

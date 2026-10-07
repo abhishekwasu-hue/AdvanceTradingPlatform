@@ -26,7 +26,7 @@ from app.accounts.service import get_account
 from app.market_data.calendar import IST
 from datetime import datetime, date
 from app.core.enums import DeploymentStatus, ExecutionMode, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, SignalDirection, StrikeRule
-from app.custom_strategies.resolver import resolve_strategy
+from app.custom_strategies.resolver import resolve_strategy, normalize_strategy_id
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.instruments import master as instrument_master
 from app.instruments.strike_selection import StrikeFilters
@@ -389,6 +389,7 @@ async def create_deployment(
         await _live_gates(session, user, "Creating a LIVE deployment")
         await ensure_live_step_up(session, user, session_id, "Creating a LIVE deployment")
     try:
+        request.strategy_id = normalize_strategy_id(request.strategy_id)   # P0.8 / A4: legacy `custom_<id>` -> `custom:<id>`
         strategy = await resolve_strategy(request.strategy_id, user, session)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

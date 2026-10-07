@@ -21,7 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
@@ -63,6 +64,8 @@ async def _already_open(session: AsyncSession, tenant_id: int, deployment_id: Op
     for row in rows:
         if row.status in OPEN_STATES:
             return True
+        if row.status == "FAILED":
+            continue            # P0.8 / A1: an approved action the system could not carry out leaves the rule free to fire again
         if row.decided_at is not None and _utc(row.decided_at) >= day_start:
             return True
         if row.status == "EXECUTED" and row.executed_at is not None and _utc(row.executed_at) >= day_start:
@@ -148,7 +151,12 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         row = AiActionRecord(tenant_id=tenant_id, deployment_id=p.deployment_id, trade_id=p.trade_id, action=p.action, rule=p.rule, reason=reason,
                              evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS))
         session.add(row)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            # P0.8 / A5: the partial unique index on open proposals (tenant, deployment, rule) caught a concurrent raise.
+            await session.rollback()
+            continue
         AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
@@ -178,10 +186,17 @@ async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, a
         action.status, action.result = "EXPIRED", "Expired before the decision"
         await session.commit()
         raise ValueError("This proposal has expired")
-    action.status = "APPROVED" if approve else "REJECTED"
-    AI_DECISIONS.labels(decision=action.status).inc()
-    action.decided_by, action.decided_at, action.decision_note = user.id, now, (note or "")[:300] or None
-    await write_audit_log(session, action.tenant_id, user.id, "ai_action_decided", f"#{action.id} {action.action} {action.status} {note or ''}".strip())
+    status = "APPROVED" if approve else "REJECTED"
+    # P0.8 / A5: the decision is a conditional UPDATE - the web and Telegram (or two tabs) may decide the same proposal at
+    # the same instant, and only the one whose row was still PROPOSED wins; the other learns it was already decided.
+    claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id, AiActionRecord.status == "PROPOSED")
+                                    .values(status=status, decided_by=user.id, decided_at=now, decision_note=(note or "")[:300] or None))
+    if claimed.rowcount != 1:
+        await session.rollback()
+        await session.refresh(action)
+        raise ValueError(f"Action is {action.status}; it was decided concurrently")
+    AI_DECISIONS.labels(decision=status).inc()
+    await write_audit_log(session, action.tenant_id, user.id, "ai_action_decided", f"#{action.id} {action.action} {status} {note or ''}".strip())
     await session.commit()
     await session.refresh(action)
     return action
@@ -216,8 +231,14 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
                 price = await price_lookup(trade.symbol) if callable(price_lookup) else None
                 if price is None:
                     raise ValueError("No live price for the position")
+                if trade.mode == "LIVE" and broker is None:
+                    raise ValueError("No broker session for this LIVE position - close it from the Positions page")
                 outcome = await close_position(session, trade, float(price), f"AI action #{action.id} ({action.rule}) approved", broker=broker, user_id=user.id, now=now)
-                action.result = f"Position #{trade.id} closed at {price}" if outcome.closed else f"Exit not completed: {outcome.exit_reason}"
+                if not outcome.closed:
+                    # P0.8 / A1: an exit the broker did not complete is a FAILED action, never EXECUTED - the position is still
+                    # open, the row says why, and the rule may propose again (FAILED is not an open state).
+                    raise ValueError(f"Exit not completed: {outcome.exit_reason or '; '.join(outcome.warnings) or 'unknown'}")
+                action.result = f"Position #{trade.id} closed at {price}"
         elif action.action in ("REDUCE_RISK", "REVIEW_STRATEGY"):
             action.result = "Acknowledged - review the strategy/risk settings; no automatic change is made for this action type"
         else:

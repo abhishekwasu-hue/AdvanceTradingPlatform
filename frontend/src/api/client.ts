@@ -698,8 +698,12 @@ export const api = {
   // Phase BF: what a plain-words request (Marathi or English) means to the strategist.
   aiStrategistParse: (text: string, symbol: string, language: "en" | "mr" = "mr") =>
     request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol, language }) }),
-  aiStrategistAdopt: (name: string, config: CustomStrategyConfig, symbol: string) =>
-    request<{ strategy_id: string; name: string; deployment: DeploymentCreateRequest }>("/ai/strategist/adopt", { method: "POST", body: JSON.stringify({ name, config, symbol }) }),
+  // P0.8 / A3: the server's candidate id plus the human's risk acceptance; a config typed by the browser is not accepted.
+  aiStrategistAdopt: (candidateId: number, name: string, acceptRisk: boolean) =>
+    request<{ strategy_id: string; name: string; candidate_id: number; deployment: DeploymentCreateRequest; compliance: { ok: boolean; user_must_accept: Record<string, string> } }>(
+      "/ai/strategist/adopt", { method: "POST", body: JSON.stringify({ candidate_id: candidateId, name, accept_risk: acceptRisk }) }),
+  aiInterviewDeploy: (candidateId: number, acceptRisk: boolean) =>
+    request<{ candidate_id: number; deployment: Deployment; mode: "PAPER" }>("/ai/interview/deploy", { method: "POST", body: JSON.stringify({ candidate_id: candidateId, accept_risk: acceptRisk }) }),
   // Phase AV: the Copilot home.
   aiBrief: (language: "en" | "mr") => request<DailyBrief>(`/ai/brief?language=${language}`),
   aiCoach: (language: "en" | "mr", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>
@@ -775,7 +779,7 @@ export const api = {
 
   // Phase BE: Telegram inbound (commands + PAPER approval buttons) - owner-only settings.
   telegramInboundStatus: () => request<TelegramInboundStatus>("/telegram/inbound/status"),
-  telegramInboundConfigure: (body: { enabled: boolean; allowed_chat_ids: string[] }) =>
+  telegramInboundConfigure: (body: { enabled: boolean; allowed_chat_ids: string[]; approvers?: { telegram_user_id: string; email: string }[] }) =>
     request<TelegramInboundStatus>("/telegram/inbound", { method: "PUT", body: JSON.stringify(body) }),
   telegramInboundRegister: () =>
     request<{ ok: boolean; description?: string | null; webhook_url: string }>("/telegram/inbound/register", { method: "POST" }),

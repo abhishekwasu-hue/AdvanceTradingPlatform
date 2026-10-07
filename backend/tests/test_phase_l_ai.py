@@ -205,7 +205,7 @@ def test_generator_retries_once_then_review_gate_requires_backtest_before_approv
     assert rec.ai_approved_by == me["id"] and rec.origin == f"ai:{draft_id}" and rec.name == "Pullback (AI, reviewed)"
     assert any(s["id"] == strategy_id for s in client.get("/api/custom-strategies", headers=headers).json())
     drafts = client.get("/api/ai/drafts", headers=headers).json()
-    assert drafts[0]["status"] == "APPROVED" and drafts[0]["strategy_id"] == f"custom_{strategy_id}"
+    assert drafts[0]["status"] == "APPROVED" and drafts[0]["strategy_id"] == f"custom:{strategy_id}"
     events = {l["event"] for l in client.get("/api/audit-logs", headers=headers).json()}
     assert {"ai_strategy_generated", "ai_strategy_approved"} <= events
 

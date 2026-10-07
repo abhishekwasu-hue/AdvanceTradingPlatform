@@ -135,13 +135,16 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
   const [saved, setSaved] = useState<{ strategy_id: string; deployment: Parameters<typeof api.createDeployment>[0] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // P0.8 / A3: the human confirms the maximum loss per trade before the server saves the candidate as a strategy.
+  const [acceptRisk, setAcceptRisk] = useState(false);
   const v = VERDICT[c.verdict];
   async function adopt() {
+    if (c.candidate_id == null) { setError(L("हा उमेदवार server वर नाही - पुन्हा build करा.", "This candidate is not on the server - build again.")); return; }
     setBusy(true); setError(null);
     try {
-      const r = await api.aiStrategistAdopt(`${c.name} · ${symbol}`, c.config, symbol);
+      const r = await api.aiStrategistAdopt(c.candidate_id, `${c.name} · ${symbol}`, acceptRisk);
       setSaved(r);
-      onAdopted(`"${r.name}" तुमच्या strategies मध्ये जतन झाली (${r.strategy_id}).`);
+      onAdopted(L(`"${r.name}" तुमच्या strategies मध्ये जतन झाली (${r.strategy_id}).`, `"${r.name}" saved to your strategies (${r.strategy_id}).`));
     } catch (e) { setError(String(e).replace(/^Error:\s*/, "")); } finally { setBusy(false); }
   }
   async function deploy() {
@@ -205,9 +208,15 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {!saved ? (
-          <button disabled={busy} onClick={() => void adopt()} className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-            {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}{L("Strategy म्हणून जतन करा", "Save as a strategy")}
-          </button>
+          <>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-200">
+              <input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
+              {L(`मी प्रति trade जास्तीत जास्त ₹${fmt(c.risk_amount, 0)} तोटा स्वीकारतो/स्वीकारते (नियम वाचले)`, `I accept a maximum loss of about ₹${fmt(c.risk_amount, 0)} per trade (I read the rules)`)}
+            </label>
+            <button disabled={busy || !acceptRisk} onClick={() => void adopt()} className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
+              {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}{L("Strategy म्हणून जतन करा", "Save as a strategy")}
+            </button>
+          </>
         ) : (
           <>
             <span className="text-xs text-emerald-300"><CheckCircle2 size={13} className="mr-1 inline" />{L("जतन झाली", "Saved")}: {saved.strategy_id}</span>

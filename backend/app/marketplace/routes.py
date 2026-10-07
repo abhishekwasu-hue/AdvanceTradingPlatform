@@ -96,7 +96,7 @@ async def my_subscriptions(user: User = Depends(get_current_user), session: Asyn
     for sub in rows:
         listing = await session.get(MarketplaceListingRecord, sub.listing_id)
         out.append({"id": sub.id, "listing_id": sub.listing_id, "status": sub.status, "custom_strategy_id": sub.custom_strategy_id,
-                    "strategy_id": f"custom_{sub.custom_strategy_id}" if sub.custom_strategy_id else None,
+                    "strategy_id": f"custom:{sub.custom_strategy_id}" if sub.custom_strategy_id else None,
                     "title": listing.title if listing else None, "created_at": sub.created_at.isoformat() if sub.created_at else None})
     return out
 
@@ -197,7 +197,7 @@ async def subscribe(listing_id: int, user: User = Depends(require_trader), sessi
             "charge": billing.charge_dict(charge, listing_title=listing.title), "checkout_url": charge.checkout_url,
             "disclaimer": service.DISCLAIMER, "next": next_step})
     return {"id": sub.id, "listing_id": listing.id, "status": sub.status, "custom_strategy_id": sub.custom_strategy_id,
-            "strategy_id": f"custom_{sub.custom_strategy_id}", "disclaimer": service.DISCLAIMER,
+            "strategy_id": f"custom:{sub.custom_strategy_id}", "disclaimer": service.DISCLAIMER,
             "next": "Backtest and paper-trade this copy from the Strategies tab before deploying it LIVE."}
 
 

@@ -224,10 +224,28 @@ async def same_event(session: AsyncSession, row: NewsEventRecord, c: dict, *, ot
         if abs((when - anchor).total_seconds()) > window.total_seconds():
             continue
         oc = classification_of(other)
-        if oc.get("type") == c.get("type") and int(oc.get("severity", 1)) >= ALERT_SEVERITY and (scope & set(oc.get("scope") or []) or not scope):
+        # P0.8 / A7: both classifications must name an overlapping scope - an empty scope used to match everything, which
+        # let two unrelated severity-4 items "confirm" each other.
+        if oc.get("type") == c.get("type") and int(oc.get("severity", 1)) >= ALERT_SEVERITY and (scope & set(oc.get("scope") or [])):
             if best is None or other.id < best.id:
                 best = other
     return best
+
+
+INDEX_SYMBOLS = ("NIFTY", "BANKNIFTY", "BANK NIFTY", "FINNIFTY", "FIN NIFTY", "MIDCPNIFTY", "NIFTYNXT50", "SENSEX", "BANKEX")
+
+
+def deployment_matches(dep: StrategyDeploymentRecord, c: dict) -> bool:
+    """P0.8 / A7: the news names this deployment's instrument - the symbol itself, or an index deployment for INDEX-scope
+    news (a rate decision, a market-wide halt). A stock deployment is never paused for news about another stock, and
+    nothing is paused because it happened to be the first active row."""
+    symbol = (dep.symbol or "").upper()
+    compact = symbol.replace(" ", "")
+    symbols = {str(s).upper() for s in (c.get("symbols") or [])}
+    scope = {str(s).upper() for s in (c.get("scope") or [])}
+    if symbol in symbols or compact in symbols:
+        return True
+    return "INDEX" in scope and any(compact.startswith(ix.replace(" ", "")) for ix in INDEX_SYMBOLS)
 
 
 def _rule(row: NewsEventRecord) -> str:
@@ -249,9 +267,12 @@ async def propose(session: AsyncSession, tenant_id: int, row: NewsEventRecord, s
         StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.status == DeploymentStatus.ACTIVE.value).order_by(StrategyDeploymentRecord.id)))
     if not active:
         return 0
-    symbols = set(c.get("symbols") or [])
-    target = next((d for d in active if d.symbol.upper() in symbols), active[0])
+    target = next((d for d in active if deployment_matches(d, c)), None)
     if severity >= 5:
+        if target is None:
+            # P0.8 / A7: a pause names a deployment; without a symbol/scope match there is nothing to pause on evidence - the
+            # organisation already has the alert, and a wrong deployment must never be paused "because it was first".
+            return 0
         action, deployment_id = "PAUSE_DEPLOYMENT", target.id
         what = f"pause {target.strategy_id} on {target.symbol} (new entries only; open positions keep their exits)"
     else:

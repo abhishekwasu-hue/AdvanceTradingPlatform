@@ -21,6 +21,8 @@ from typing import Iterable, List, Set, Tuple
 _NUMBER = re.compile(
     r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?\s*(%|(?:k|K|lakh|lakhs|lac|L|cr|crore|crores|हजार|लाख|कोटी)(?![A-Za-z]))?"
 )
+# Minus signs the model may write for a negative figure (U+2212 minus, U+2013 en dash, U+2010/U+2011 hyphens).
+_MINUS = re.compile("[\u2212\u2013\u2010\u2011]")
 _MULTIPLIERS = {"k": 1e3, "K": 1e3, "हजार": 1e3, "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "L": 1e5, "लाख": 1e5, "cr": 1e7, "crore": 1e7, "crores": 1e7, "कोटी": 1e7}
 
 # Upper-case tokens that are vocabulary, not tradable symbols.
@@ -30,14 +32,20 @@ ACRONYMS = frozenset({
     "LIVE", "PAPER", "LONG", "SHORT", "BUY", "SELL", "HOLD", "FLAT", "OK", "NO", "YES", "AND", "OR", "NOT", "THE", "FOR", "ON", "IN", "AT", "TO",
     "BULLISH", "BEARISH", "NEUTRAL", "UPTREND", "DOWNTREND", "RANGING", "TRENDING", "VOLATILE", "UNKNOWN", "ACTIVE", "PAUSED", "STOPPED",
     "RISK", "ON", "OFF", "EOD", "IST", "UTC", "ET", "FOMC", "MPC", "CPI", "GDP", "PMI", "WPI", "IIP", "US", "UK", "EU", "FX", "ETF", "IPO", "F&O",
-    "ADR", "TOTP", "MFA", "JSON", "HTML", "URL", "ID", "QTY", "PF", "WIN", "LOSS", "DD", "ROI", "YTD", "MTD", "WTD", "CAGR", "ROE", "PE",
+    "ADR", "TOTP", "MFA", "JSON", "HTML", "URL", "ID", "QTY", "PF", "WIN", "LOSS", "DD", "ROI", "YTD", "MTD", "WTD", "CAGR", "ROE",
+    "FMCG", "PSU", "NBFC", "IMPORTANT", "NOTE", "STOP", "ENTRY", "EXIT", "TARGET", "SIP", "CALL", "PUT", "INDEX", "ALWAYS", "NEVER",
+    "INDIA", "ATM", "OTM", "ITM", "ORB", "HTF", "LTF", "MTF", "SMC", "BOS", "CHOCH", "QUESTION", "FACTS", "NOTES", "MEMORY", "TRADER", "CONCEPT",
 })
+# Index aliases the model may use interchangeably with the platform's spelling.
+_ALIASES = {"BANKNIFTY": "NIFTYBANK", "NIFTYBANK": "NIFTYBANK", "FINNIFTY": "NIFTYFINSERVICE", "NIFTYFINSERVICE": "NIFTYFINSERVICE", "NIFTY50": "NIFTY", "NIFTY": "NIFTY"}
 _TICKER = re.compile(r"\b[A-Z][A-Z&]{1,11}(?:\s?(?:50|100|200|500|BANK|NEXT ?50|FIN ?SERVICE|MIDCAP ?(?:50|100|SELECT)))?\b")
 
 
 def _norm(value: float) -> Set[str]:
     out = {f"{value:.2f}".rstrip("0").rstrip("."), f"{value:.1f}".rstrip("0").rstrip("."), f"{value:.4f}".rstrip("0").rstrip(".")}
     out.add(str(int(value)) if float(value).is_integer() else f"{value:.4f}".rstrip("0").rstrip("."))
+    if abs(value) >= 100:
+        out.add(f"{value:.0f}")          # 25,012.35 may be written as 25,012 - a rounding, not a new level
     return {o if o not in ("-0", "") else "0" for o in out}
 
 
@@ -63,7 +71,7 @@ def numbers_in_values(obj) -> Set[str]:
 def numbers_in_text(text: str) -> List[Tuple[str, float]]:
     """(raw, value) for every number in `text`, shorthand expanded (`25k` -> 25000, `1.2 लाख` -> 120000); the sign kept."""
     out: List[Tuple[str, float]] = []
-    for m in _NUMBER.finditer(text or ""):
+    for m in _NUMBER.finditer(_MINUS.sub("-", text or "")):
         raw = m.group(0).strip()
         suffix = (m.group(1) or "").strip()
         body = raw[: len(raw) - len(suffix)].strip() if suffix else raw
@@ -106,15 +114,26 @@ def tickers_in(text: str) -> Set[str]:
     return found
 
 
+def _canon(token: str) -> Set[str]:
+    """The spellings a symbol token stands for: the joined form, each of its words, and the index aliases."""
+    joined = token.replace(" ", "")
+    forms = {joined, *token.split(" ")}
+    forms.add(_ALIASES.get(joined, joined))
+    return forms
+
+
 def check_tickers(text: str, allowed_text: str) -> Tuple[bool, List[str]]:
-    """Every symbol-looking token in `text` must appear in `allowed_text` (the facts and the question)."""
-    allowed = {t.replace(" ", "") for t in tickers_in(allowed_text)}
-    bad = sorted(t for t in tickers_in(text) if t.replace(" ", "") not in allowed and t.split(" ")[0] not in allowed)
+    """Every symbol-looking token in `text` must appear in `allowed_text` (the facts and the question). `NIFTY` stands
+    for `NIFTY 50`, `BANK NIFTY` / `BANKNIFTY` for `NIFTY BANK`, and every word of an allowed name is allowed."""
+    allowed: Set[str] = set()
+    for t in tickers_in(allowed_text):
+        allowed |= _canon(t)
+    bad = sorted(t for t in tickers_in(text) if not (_canon(t) & allowed))
     return (not bad), bad
 
 
 def wrap_untrusted(name: str, lines: Iterable[str]) -> str:
-    body = "\n".join(re.sub(r"(?i)</?\s*untrusted_data", "[untrusted_data", str(line))[:400] for line in lines)
+    body = "\n".join(re.sub(r"(?i)<\s*/*\s*untrusted_data", "[untrusted_data", str(line))[:400] for line in lines)
     return f'<untrusted_data name="{name}">\n{body}\n</untrusted_data>'
 
 

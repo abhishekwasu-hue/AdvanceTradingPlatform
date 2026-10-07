@@ -49,10 +49,13 @@ async def record(session: AsyncSession, tenant_id: int, feature: str, provider: 
                                 cache_read_tokens=result.cache_read_tokens, cache_write_tokens=result.cache_write_tokens)
     meta = {"feature": feature, "provider": provider, "model": model, "cache_read": result.cache_read_tokens, "cache_write": result.cache_write_tokens,
             "estimated": cost.estimated, "stop_reason": result.stop_reason}
-    await meter(session, tenant_id, METRIC_CALLS, 1, source=source, metadata=meta, commit=False)
-    await meter(session, tenant_id, METRIC_TOKENS_IN, float(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens), source=source, metadata=meta, commit=False)
-    await meter(session, tenant_id, METRIC_TOKENS_OUT, float(result.output_tokens), source=source, metadata=meta, commit=False)
-    await meter(session, tenant_id, METRIC_COST_USD, cost.amount, source=source, metadata=meta, commit=True)
+    # The rows join the caller's transaction inside a savepoint: the caller commits them with its own work (every AI
+    # call site commits after the answer), and a failed flush rolls back only the savepoint, never the caller's state.
+    async with session.begin_nested():
+        await meter(session, tenant_id, METRIC_CALLS, 1, source=source, metadata=meta, commit=False)
+        await meter(session, tenant_id, METRIC_TOKENS_IN, float(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens), source=source, metadata=meta, commit=False)
+        await meter(session, tenant_id, METRIC_TOKENS_OUT, float(result.output_tokens), source=source, metadata=meta, commit=False)
+        await meter(session, tenant_id, METRIC_COST_USD, cost.amount, source=source, metadata=meta, commit=False)
     try:
         AI_TOKENS.labels(provider=provider, model=model, kind="input").inc(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens)
         AI_TOKENS.labels(provider=provider, model=model, kind="output").inc(result.output_tokens)

@@ -84,6 +84,9 @@ def test_anthropic_reuses_one_client_per_key_and_scales_the_timeout_with_the_bud
     # Older models without the effort/thinking controls get a plain request.
     plain = AnthropicProvider("k", model="claude-haiku-4-5")._request("s", "u", 900)
     assert "thinking" not in plain and "output_config" not in plain and plain["max_tokens"] == 900
+    assert not prov._supports_effort("claude-sonnet-4-20250514") and not prov._supports_effort("claude-3-5-haiku-20241022")
+    assert prov._supports_effort("claude-opus-4-6") and prov._supports_effort("claude-haiku-5") and prov._supports_effort("claude-sonnet-5-5-20260901")
+    assert "api_key" not in repr(AnthropicProvider("sk-secret-xyz")) and "sk-secret-xyz" not in repr(OpenAIProvider("sk-secret-xyz"))
 
 
 # --- C2 ---------------------------------------------------------------------------------------------------------------------
@@ -102,6 +105,9 @@ def test_models_come_from_the_environment_per_tier_and_the_tenant_override_wins_
     built = prov.build_provider("anthropic", "k", None, task="narration")
     assert built.model == "claude-fast-env" and built.effort == "low" and built.tier == "fast"
     assert prov.build_provider("anthropic", "k", "claude-mine", task="strategy_generation").effort == "medium"
+    # Pro and o-series models carry their own prices; a prefix never maps them onto the cheaper base model.
+    assert pricing.cost_usd("openai", "o3-pro", input_tokens=1_000_000, output_tokens=0).amount == pytest.approx(20.0)
+    assert pricing.cost_usd("openai", "gpt-5-pro-2026", input_tokens=1_000_000, output_tokens=0).amount == pytest.approx(15.0)
 
 
 # --- C3 ---------------------------------------------------------------------------------------------------------------------
@@ -120,8 +126,10 @@ def test_openai_uses_max_completion_tokens_skips_temperature_for_reasoning_model
     mock = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     assert _run(OpenAIProvider("sk-openai", model="gpt-4.1-mini", client=mock).complete("s", "u", max_tokens=300)) == "hello from gpt"
     assert seen[-1]["max_completion_tokens"] == 300 and "max_tokens" not in seen[-1] and seen[-1]["temperature"] == 0.2
-    result = _run(OpenAIProvider("sk-openai", model="o4-mini", client=mock).complete_full("s", "u", max_tokens=300))
+    result = _run(OpenAIProvider("sk-openai", model="o4-mini", client=mock, tier="fast").complete_full("s", "u", max_tokens=300))
     assert "temperature" not in seen[-1] and result.input_tokens == 100 and result.output_tokens == 20 and result.cache_read_tokens == 50
+    # C1 on OpenAI too: a reasoning model's cap covers its reasoning, so the fast tier gets low effort plus the headroom.
+    assert seen[-1]["reasoning_effort"] == "low" and seen[-1]["max_completion_tokens"] == 300 + prov.thinking_headroom("low")
     assert prov.is_reasoning_model("gpt-5-mini") and prov.is_reasoning_model("o3") and not prov.is_reasoning_model("gpt-4.1")
     with caplog.at_level(logging.WARNING):
         with pytest.raises(ProviderError) as info:
@@ -157,8 +165,13 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     headers = {"Authorization": f"Bearer {_register('p08c-meter@example.com')}"}
     me = client.get("/api/auth/me", headers=headers).json()
     _upgrade_plan(me["tenant_id"], "pro")
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-meter-key-1234", "model": "claude-mine"}).status_code == 200
     monkeypatch.setenv("AI_ANTHROPIC_FAST_MODEL", "claude-fast-env")
+    monkeypatch.setenv("AI_ANTHROPIC_STRONG_MODEL", "claude-strong-env")
+    # Typing the operator's current default (or nothing) pins no model: the row keeps "" and follows the environment.
+    saved = client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-meter-key-1234", "model": "claude-strong-env"}).json()
+    assert saved["model"] == "" and saved["models"] == {"strong": "claude-strong-env", "fast": "claude-fast-env"}
+    saved = client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "model": "claude-mine"}).json()
+    assert saved["model"] == "claude-mine" and saved["models"]["strong"] == "claude-mine"
 
     def handler(request):
         # The response names the model that served the call (a server-side fallback may differ from the request): that is what is priced.
@@ -170,6 +183,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
             tenant = await session.get(Tenant, me["tenant_id"])
             provider = await ai_settings.provider_for(session, tenant, client=_anthropic_mock(handler), task=task)
             text = await provider.complete("sys", "u", max_tokens=500)
+            await session.commit()                 # the usage rows ride on the caller's transaction (every call site commits)
             return provider, text
     provider, text = _run(call("narration"))
     assert text == "Grounded words." and isinstance(provider, metering.MeteredProvider)
@@ -210,7 +224,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     shown = client.get("/api/ai/provider", headers=headers).json()
     assert shown["usage"]["exhausted"] is True and "budget" in shown["usage"]["note"]
     # A plan without a budget line (0) is uncapped; the Free plan never calls out anyway.
-    assert metering.budget_inr(Tenant(name="x", plan="free", status="ACTIVE")) == 0.0 or True
+    assert metering.budget_inr(Tenant(name="x", plan="free", status="ACTIVE")) == 0.0
     # Metering never breaks the AI call: a failing recorder is logged, the answer still comes back.
     async def broken(*_a, **_k):
         raise RuntimeError("db down")

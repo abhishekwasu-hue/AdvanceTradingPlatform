@@ -471,7 +471,10 @@ async def ask(body: AskBody, user: User = Depends(get_current_user), session: As
     saved, _ = await advisor.load_profile(session, user)
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge")
     if provider.name == "rule_based":
-        return knowledge.answer(body.question, lang, memory)
+        out = knowledge.answer(body.question, lang, memory)
+        if getattr(provider, "reason", ""):
+            out["note"] = f"AI not used ({provider.reason}); answered from the concept library"
+        return out
     result = await knowledge.ai_answer(provider, body.question, lang, memory, saved)
     await ai_settings.mark_used(session, user.tenant_id, error=result.get("note"))
     await session.commit()
@@ -625,7 +628,8 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
         raise HTTPException(status_code=404, detail=f"No market read of {symbol.upper()} yet - add it to the watchlist and refresh the market memory")
     if narrate and out.get("narrative_source") == "model":
         await ai_settings.mark_used(session, user.tenant_id)
-        await session.commit()
+    if provider is not None:
+        await session.commit()            # P0.8-C: the metered usage of the narration, grounded or not
     return out
 
 
@@ -680,6 +684,8 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             out.update(answer=text, source="ai")
         else:
             out["note"] = f"AI answer not used ({why}); answered from the rules"
+    elif getattr(provider, "reason", "") and name != "interview":
+        out["note"] = f"AI not used ({provider.reason}); answered from the rules"
     return out
 
 

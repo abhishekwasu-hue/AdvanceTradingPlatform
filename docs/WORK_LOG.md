@@ -505,6 +505,12 @@ default and G-LIVE gate before any LIVE wiring.
   length retry, pricing table/override/estimate, metering through `provider_for` + usage endpoint + budget fallback +
   recorder failure, truncated Copilot answer metered and falling back to the rules (the test deferred from P0.8-B).
   Test fakes of `provider_for` accept the `task` keyword.
+- Self-review fixes: usage rows join the caller's transaction in a savepoint (no commit inside an AI call; the
+  thesis route commits the narration's usage); a model equal to the operator's default (or blank) is stored as ""
+  so the environment keeps driving it, the card shows the default as the placeholder; OpenAI reasoning models get
+  the C1 headroom and `reasoning_effort`; `_supports_effort` parses the model generation (4.6+); clients are cached
+  by a key digest with eviction, API keys are out of dataclass reprs; o3-pro / gpt-5-pro / o1 / o3-mini priced;
+  the rule-based fallback reason (budget spent) is shown in Copilot and guide notes.
 
 ### 2026-10-07 - P0.8-B: prompt injection and the numbers-check everywhere (B1-B3)
 - `app/ai/grounding.py` is the one place for the checks: `numbers_in_values` (numeric leaves only - digits inside

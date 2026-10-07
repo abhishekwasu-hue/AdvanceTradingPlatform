@@ -296,8 +296,6 @@ def view(lang: str, thesis: dict) -> List[str]:
 
 
 # --- the optional narrative with the numbers check ------------------------------------------------
-_NUMBER = re.compile(r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?%?")
-
 NARRATIVE_PROMPT = (
     "You describe, in 4-6 sentences in {language}, what the market data in the JSON below shows for a retail trader - a data read, not a "
     "view on what to do, and not investment advice. Use ONLY the facts in the JSON below. "
@@ -336,30 +334,33 @@ async def narrate(provider, thesis: dict, lang: str) -> Tuple[Optional[str], str
     """The provider's narrative when it passes the numbers check (one retry naming the offending
     numbers); otherwise None and the reason."""
     language = tr(lang, "English", "Marathi (Devanagari script)")
-    facts = json.dumps(thesis_facts(thesis), default=str, ensure_ascii=False).replace("</untrusted_data", "[untrusted_data")
+    facts = re.sub(r"(?i)<\s*/*\s*untrusted_data", "[untrusted_data", json.dumps(thesis_facts(thesis), default=str, ensure_ascii=False))
     headlines = [f"[{(n.get('direction') or 'NEUTRAL')} severity {n.get('severity')}] {n.get('headline') or ''} - {n.get('source') or ''}"
                  for n in (thesis.get("inputs") or {}).get("news") or []]
     news = grounding.wrap_untrusted("news_headlines", headlines) if headlines else ""
     system = NARRATIVE_PROMPT.format(language=language, facts=facts, news=news)
     user = "Write the thesis."
+    kind = "numbers"
     for attempt in range(2):
         try:
             text = (await provider.complete(system, user, max_tokens=700)).strip()
         except Exception as exc:  # noqa: BLE001 - the rule-based narrative is always there
-            return None, f"provider error: {type(exc).__name__}"
+            return None, f"provider error: {str(exc)[:160] or type(exc).__name__}"
         if not text or text.startswith("{"):
             return None, "provider returned no prose"
         ok, bad = numbers_check(text, thesis)
         if ok:
+            kind = "symbols"
             ok, bad = grounding.check_tickers(text, facts + " " + news)
             if ok:
                 return text, "ok"
             user = f"Rewrite the thesis. These symbols are NOT in the JSON and must not appear: {', '.join(bad[:10])}. Name only {thesis['symbol']}."
         else:
+            kind = "numbers"
             user = f"Rewrite the thesis. These numbers are NOT in the JSON and must not appear: {', '.join(bad[:10])}. Use only numbers from THESIS_JSON (same sign)."
         if attempt == 1:
-            return None, f"numbers check failed: {', '.join(bad[:5])}"
-    return None, "numbers check failed"
+            return None, f"{kind} check failed: {', '.join(bad[:5])}"
+    return None, f"{kind} check failed"
 
 
 # --- storage and API-facing functions ---------------------------------------------------------------

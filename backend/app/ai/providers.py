@@ -21,9 +21,12 @@ P0.8-C:
   timeout grows with the token budget.
 * C5 - `Completion` carries the usage so `app.ai.metering` can price and record every call.
 """
+import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Protocol
 
@@ -117,10 +120,24 @@ def is_reasoning_model(model: str) -> bool:
     return m.startswith(("o1", "o3", "o4", "gpt-5"))
 
 
+_GENERATION = re.compile(r"(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)")   # a date suffix is not a minor version
+
+
 def _supports_effort(model: str) -> bool:
-    """Adaptive thinking + `output_config.effort` exist on the 4.6+ line; Haiku 4.5 and older take neither."""
+    """Adaptive thinking + `output_config.effort` exist from the 4.6 generation on (Opus/Sonnet 4.6, everything 5.x);
+    Haiku 4.5 and older take neither (they run without thinking here). An id this cannot parse is assumed current."""
     m = (model or "").lower()
-    return not any(tag in m for tag in ("haiku", "claude-3", "claude-4-", "sonnet-4-5", "opus-4-5", "opus-4-1", "sonnet-4-0", "opus-4-0"))
+    if m.startswith("claude-3"):
+        return False
+    found = _GENERATION.search(m)
+    if not found:
+        return True
+    major, minor = int(found.group(2)), int(found.group(3) or 0)
+    return major >= 5 or (major == 4 and minor >= 6)
+
+
+def _effort_for(tier: str) -> str:
+    return EFFORT_FOR_TIER.get(tier, "medium")
 
 
 @dataclass
@@ -165,6 +182,20 @@ _ANTHROPIC_CLIENTS: Dict[Any, Any] = {}
 _MAX_CLIENTS = 64
 
 
+def _key_id(api_key: str) -> str:
+    """Clients are cached by a digest of the key, never by the key itself."""
+    return hashlib.sha256((api_key or "").encode()).hexdigest()
+
+
+def _evict_oldest() -> None:
+    oldest = next(iter(_ANTHROPIC_CLIENTS))
+    client = _ANTHROPIC_CLIENTS.pop(oldest)
+    try:
+        asyncio.get_running_loop().create_task(client.close())
+    except RuntimeError:
+        pass
+
+
 def _usage_of(response: Any) -> Completion:
     usage = getattr(response, "usage", None)
     return Completion(text="", input_tokens=int(getattr(usage, "input_tokens", 0) or 0), output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
@@ -182,9 +213,9 @@ class AnthropicProvider:
     ProviderError, never as an empty strategy. `http_client` is an SDK `DefaultAsyncHttpxClient` (tests hand in one
     with a mock transport); clients are cached per key (C4)."""
 
-    api_key: str
+    api_key: str = field(repr=False)
     model: str = field(default_factory=lambda: default_models()["anthropic"]["strong"])
-    http_client: Optional[Any] = None
+    http_client: Optional[Any] = field(default=None, repr=False)
     name: str = "anthropic"
     effort: str = "medium"
     tier: str = "strong"
@@ -195,11 +226,11 @@ class AnthropicProvider:
 
     def _client(self) -> Any:
         import anthropic
-        key = (self.api_key, id(self.http_client) if self.http_client is not None else 0)
+        key = (_key_id(self.api_key), id(self.http_client) if self.http_client is not None else 0)
         client = _ANTHROPIC_CLIENTS.get(key)
         if client is None:
-            if len(_ANTHROPIC_CLIENTS) >= _MAX_CLIENTS:
-                _ANTHROPIC_CLIENTS.clear()
+            while len(_ANTHROPIC_CLIENTS) >= _MAX_CLIENTS:
+                _evict_oldest()
             client = anthropic.AsyncAnthropic(api_key=self.api_key, http_client=self.http_client, timeout=TIMEOUT, max_retries=1)
             _ANTHROPIC_CLIENTS[key] = client
         return client
@@ -269,20 +300,27 @@ def _openai_client() -> httpx.AsyncClient:
 
 @dataclass
 class OpenAIProvider:
-    api_key: str
+    api_key: str = field(repr=False)
     model: str = field(default_factory=lambda: default_models()["openai"]["strong"])
-    client: Optional[httpx.AsyncClient] = None
+    client: Optional[httpx.AsyncClient] = field(default=None, repr=False)
     name: str = "openai"
     base_url: str = "https://api.openai.com"
     tier: str = "strong"
 
     def _payload(self, system: str, user: str, budget: int) -> dict:
-        # C3: `max_completion_tokens` is the current parameter for every model; reasoning models reject `temperature`.
+        # C3: `max_completion_tokens` is the current parameter for every model; reasoning models reject `temperature`
+        # and take `reasoning_effort` instead (low for the fast tier, like the Anthropic effort).
         payload: dict = {"model": self.model, "max_completion_tokens": budget,
                          "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
-        if not is_reasoning_model(self.model):
+        if is_reasoning_model(self.model):
+            payload["reasoning_effort"] = _effort_for(self.tier)
+        else:
             payload["temperature"] = 0.2
         return payload
+
+    def _budget(self, max_tokens: int) -> int:
+        # C1 applies here too: on reasoning models `max_completion_tokens` caps the reasoning plus the visible text.
+        return int(max_tokens) + (thinking_headroom(_effort_for(self.tier)) if is_reasoning_model(self.model) else 0)
 
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
@@ -290,7 +328,7 @@ class OpenAIProvider:
     async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
         headers = {"Authorization": f"Bearer {self.api_key}", "content-type": "application/json"}
         client = self.client or _openai_client()
-        budget = int(max_tokens)
+        budget = self._budget(max_tokens)
         spent = Completion(text="", model=self.model, provider=self.name)
         for attempt in range(2):
             try:
@@ -357,7 +395,7 @@ class RuleBasedProvider:
         result = parse_strategy_description(text, name="AI draft")
         return json.dumps({
             "config": result.config.model_dump(),
-            "explanation": "Deterministic parse of the request (no external model configured): " + "; ".join(result.interpreted or ["no indicator rules recognised"]),
+            "explanation": f"Deterministic parse of the request ({self.reason or 'no external model configured'}): " + "; ".join(result.interpreted or ["no indicator rules recognised"]),
             "warnings": list(result.warnings),
         })
 

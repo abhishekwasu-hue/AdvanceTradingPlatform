@@ -828,8 +828,9 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Which model does what**: the operator sets the models in the host `.env` - `AI_ANTHROPIC_STRONG_MODEL` (writes
   strategies, strategist proposals, scanner plans) and `AI_ANTHROPIC_FAST_MODEL` (narration, Copilot and knowledge
   answers, the thesis text, news classification, scanner reads); the same pair for OpenAI. The model an organisation
-  types under Settings > AI provider replaces the strong one for that organisation only; cheap tasks always use the
-  fast model. The Settings card shows both.
+  types under Settings > AI provider replaces the strong one for that organisation only (leave it blank to follow your
+  default); cheap tasks always use the fast model. The Settings card shows both. When the budget is spent, Copilot
+  and guide answers carry the note "AI not used (the plan's monthly AI budget ... is spent)".
 - **Spend**: every call is recorded (calls, tokens, USD at list price, INR at `AI_USD_INR_RATE`, default 84) per
   organisation, feature and model; the card shows this month's figure against the plan's budget. The Pro plan has
   1,500 INR a month, Business 10,000 (`AI_BUDGET_INR_PRO`, `AI_BUDGET_INR_BUSINESS`; 0 removes the cap). When the

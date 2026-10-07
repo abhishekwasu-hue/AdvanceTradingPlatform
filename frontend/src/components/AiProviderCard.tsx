@@ -23,7 +23,9 @@ export default function AiProviderCard() {
       setConfig(c);
       // Not configured yet: pre-select the platform's recommended provider (Claude) so the owner only pastes a key.
       const provider = c.configured ? c.provider : (c.default_provider ?? "anthropic");
-      setForm((f) => ({ ...f, provider, model: c.configured ? c.model : (c.default_models[provider] ?? ""), enabled: c.enabled, api_key: "" }));
+      // P0.8-C: a blank model means "the operator's default for this provider" (shown as the placeholder) and follows
+      // the server's environment; typing a name pins that model for this organisation only.
+      setForm((f) => ({ ...f, provider, model: c.configured ? c.model : "", enabled: c.enabled, api_key: "" }));
     }).catch((e) => setError(String(e)));
   }
   useEffect(refresh, []);
@@ -45,7 +47,7 @@ export default function AiProviderCard() {
       </p>
       {config && (
         <div className="text-xs mb-3 flex flex-wrap gap-3">
-          <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model}</span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model || config.models?.strong || config.default_models[config.provider]}</span>
           <span className="text-muted">{config.configured ? (config.api_key_set ? "key stored (encrypted)" : "no key needed") : "not configured - rule-based"}</span>
           {config.last_used_at && <span className="text-muted">last used {new Date(config.last_used_at).toLocaleString()}</span>}
           {config.last_error && <span className="text-danger">{config.last_error}</span>}
@@ -80,10 +82,10 @@ export default function AiProviderCard() {
       )}
       {isOwner && (
         <div className="grid md:grid-cols-4 gap-2">
-          <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: config?.default_models[e.target.value] ?? "" })}>
+          <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: "" })}>
             {(config?.providers ?? ["rule_based"]).map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <input className={input} placeholder="Model" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
+          <input className={input} placeholder={form.provider === "rule_based" ? "rule-based" : `default: ${config?.default_models[form.provider] ?? "operator's model"}`} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
           <input className={input} type="password" autoComplete="off" placeholder={form.provider === "rule_based" ? "no key needed" : "API key (blank = keep stored)"} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} disabled={form.provider === "rule_based"} />
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> enabled</label>

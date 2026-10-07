@@ -36,7 +36,10 @@ async def save_config(session: AsyncSession, user: User, *, provider: str, model
     else:
         record.encrypted_api_key = None
     record.provider = provider
-    record.model = (model or DEFAULT_MODELS[provider]).strip()[:80]
+    # P0.8-C / C2: a blank model, or the operator's current default typed back in, is no override - the row keeps "" and
+    # the environment model applies (and follows when the operator changes it). Only a different name is pinned.
+    chosen = (model or "").strip()[:80]
+    record.model = "" if provider == "rule_based" or chosen == default_models()[provider]["strong"] else chosen
     record.enabled = enabled
     record.updated_by = user.id
     record.last_error = None
@@ -88,7 +91,7 @@ def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant, usage: Opt
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,
                 "models": {"strong": DEFAULT_MODELS["rule_based"], "fast": DEFAULT_MODELS["rule_based"]}, **base}
-    return {"provider": record.provider, "model": record.model, "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
+    return {"provider": record.provider, "model": record.model or "", "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
             "configured": True, "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None, "last_error": record.last_error,
             "models": {"strong": model_for(record.provider, record.model, "strategy_generation"), "fast": model_for(record.provider, record.model, "narration")},
             **base}

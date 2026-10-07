@@ -534,6 +534,12 @@ default and G-LIVE gate before any LIVE wiring.
   length retry, pricing table/override/estimate, metering through `provider_for` + usage endpoint + budget fallback +
   recorder failure, truncated Copilot answer metered and falling back to the rules (the test deferred from P0.8-B).
   Test fakes of `provider_for` accept the `task` keyword.
+- Self-review fixes: usage rows join the caller's transaction in a savepoint (no commit inside an AI call; the
+  thesis route commits the narration's usage); a model equal to the operator's default (or blank) is stored as ""
+  so the environment keeps driving it, the card shows the default as the placeholder; OpenAI reasoning models get
+  the C1 headroom and `reasoning_effort`; `_supports_effort` parses the model generation (4.6+); clients are cached
+  by a key digest with eviction, API keys are out of dataclass reprs; o3-pro / gpt-5-pro / o1 / o3-mini priced;
+  the rule-based fallback reason (budget spent) is shown in Copilot and guide notes.
 
 ### 2026-10-07 - P0.8-B: prompt injection and the numbers-check everywhere (B1-B3)
 - `app/ai/grounding.py` is the one place for the checks: `numbers_in_values` (numeric leaves only - digits inside
@@ -552,5 +558,9 @@ default and G-LIVE gate before any LIVE wiring.
   no leak into the JSON), sign flip, headline digit, Copilot hallucination (API falls back to the rules), knowledge
   guide, cross-tenant approve/reject/list (404 / empty). The order-dependent
   `test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only` asserts this organisation's notifications
-  (the sender is platform-wide: other tests' organisations are due too). The `max_tokens` truncation test lands with
+  (the sender is platform-wide: other tests' organisations are due too). Self-review fixes: Unicode minus / en dash
+  read as a minus sign; `NIFTY` = `NIFTY 50`, `BANKNIFTY` = `NIFTY BANK`, `FINNIFTY` = `NIFTY FIN SERVICE` and every word
+  of an allowed name counts; a level >= 100 may be rounded to the rupee; more prose acronyms; every closing-tag
+  variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
+  symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).

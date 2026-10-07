@@ -72,7 +72,9 @@ async def _tenant(session: AsyncSession, user: User) -> Tenant:
 
 @router.get("/provider")
 async def get_provider(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    return ai_settings.as_dict(await ai_settings.get_config(session, user.tenant_id), await _tenant(session, user))
+    from app.ai import metering
+    tenant = await _tenant(session, user)
+    return ai_settings.as_dict(await ai_settings.get_config(session, user.tenant_id), tenant, usage=await metering.budget_state(session, tenant))
 
 
 @router.put("/provider")
@@ -84,7 +86,8 @@ async def put_provider(body: ProviderBody, user: User = Depends(require_owner), 
         record = await ai_settings.save_config(session, user, provider=body.provider, model=body.model, api_key=body.api_key, enabled=body.enabled)
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return ai_settings.as_dict(record, tenant)
+    from app.ai import metering
+    return ai_settings.as_dict(record, tenant, usage=await metering.budget_state(session, tenant))
 
 
 @router.delete("/provider", status_code=204)
@@ -466,9 +469,12 @@ async def ask(body: AskBody, user: User = Depends(get_current_user), session: As
     lang = body.language or interview.detect_language(body.question)
     memory = await market_memory.latest(session, user.tenant_id)
     saved, _ = await advisor.load_profile(session, user)
-    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge")
     if provider.name == "rule_based":
-        return knowledge.answer(body.question, lang, memory)
+        out = knowledge.answer(body.question, lang, memory)
+        if getattr(provider, "reason", ""):
+            out["note"] = f"AI not used ({provider.reason}); answered from the concept library"
+        return out
     result = await knowledge.ai_answer(provider, body.question, lang, memory, saved)
     await ai_settings.mark_used(session, user.tenant_id, error=result.get("note"))
     await session.commit()
@@ -610,7 +616,7 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
     provider = None
     if narrate:
         try:
-            provider = await ai_settings.provider_for(session, await _tenant(session, user))
+            provider = await ai_settings.provider_for(session, await _tenant(session, user), task="thesis")
         except ProviderError:                       # a stale provider record: the rule-based narrative, with the reason
             provider = None
     news_items = []
@@ -622,7 +628,8 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
         raise HTTPException(status_code=404, detail=f"No market read of {symbol.upper()} yet - add it to the watchlist and refresh the market memory")
     if narrate and out.get("narrative_source") == "model":
         await ai_settings.mark_used(session, user.tenant_id)
-        await session.commit()
+    if provider is not None:
+        await session.commit()            # P0.8-C: the metered usage of the narration, grounded or not
     return out
 
 
@@ -668,7 +675,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             facts = briefing.summary_lines(lang, brief)[:2] + facts
         out.update(answer="\n".join(facts), brief={"day_type": brief["day_type"], "plan": brief["plan"], "checklist": brief["checklist"],
                                                    "deployments": brief["deployments"]})
-    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge")
     if provider.name != "rule_based" and name != "interview":
         text, why = await copilot.narrate(provider, lang, name, message, facts)
         await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
@@ -677,6 +684,8 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             out.update(answer=text, source="ai")
         else:
             out["note"] = f"AI answer not used ({why}); answered from the rules"
+    elif getattr(provider, "reason", "") and name != "interview":
+        out["note"] = f"AI not used ({provider.reason}); answered from the rules"
     return out
 
 
@@ -791,7 +800,7 @@ async def strategist_build(body: StrategistBody, user: User = Depends(get_curren
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     extra = []
-    provider = await ai_settings.provider_for(session, await _tenant(session, user))
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="strategist")
     if provider.name != "rule_based":
         extra = await strategist.ai_proposals(provider, study, body.style)
         await ai_settings.mark_used(session, user.tenant_id, error=None)

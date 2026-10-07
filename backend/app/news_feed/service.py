@@ -328,7 +328,7 @@ async def classify_all(session: AsyncSession, now: datetime, provider_for=None) 
         if tenant is None or not await enabled(session, tenant.id):
             continue
         try:
-            provider = await provider_for(session, tenant)
+            provider = await provider_for(session, tenant, task="classification")
             result = await classify_for_tenant(session, tenant, provider, now=now)
             classified += int(result.get("classified", 0))
             await ai_settings.mark_used(session, tenant.id, error=None)

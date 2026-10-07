@@ -117,7 +117,7 @@ def test_copilot_answer_is_grounded_on_facts_or_falls_back():
     import pytest
     bad = _Provider(["Go long at 26000 now."] * 2)
 
-    async def provider_for(session, tenant):
+    async def provider_for(session, tenant, **_kw):
         return bad
     mp = pytest.MonkeyPatch()
     mp.setattr(ai_routes.ai_settings, "provider_for", provider_for)

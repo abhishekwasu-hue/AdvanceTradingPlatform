@@ -69,7 +69,7 @@ async def classify_now(user: User = Depends(get_current_user), session: AsyncSes
     """Classify this organisation's pending feed items with its own provider key (metered)."""
     await require_flag(session, service.FLAG, user.tenant_id)
     tenant = await session.get(Tenant, user.tenant_id)
-    provider = await ai_settings.provider_for(session, tenant)
+    provider = await ai_settings.provider_for(session, tenant, task="classification")
     try:
         result = await service.classify_for_tenant(session, tenant, provider)
     except ProviderError as exc:

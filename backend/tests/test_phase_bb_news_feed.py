@@ -203,7 +203,7 @@ def test_tenant_ai_classification_is_cached_metered_and_proposes_on_severity_fou
                             "confidence": 0.9, "one_line_en": "Rate cut", "one_line_mr": "दर कपात"} for i in ids])
     fake = _FakeLLM(answer)
 
-    async def provider_for(session, tenant, *, client=None):
+    async def provider_for(session, tenant, *, client=None, **_kw):
         return fake
     monkeypatch.setattr(ai_settings, "provider_for", provider_for)
     first = client.post("/api/news-feed/classify", headers=t["headers"]).json()
@@ -230,7 +230,7 @@ def test_tenant_ai_classification_is_cached_metered_and_proposes_on_severity_fou
     # A rule-based provider (no key) is skipped: keyword classification stands, nothing is sent.
     from app.ai.providers import RuleBasedProvider
 
-    async def rule_based(session, tenant, *, client=None):
+    async def rule_based(session, tenant, *, client=None, **_kw):
         return RuleBasedProvider()
     monkeypatch.setattr(ai_settings, "provider_for", rule_based)
     assert "rule_based" in client.post("/api/news-feed/classify", headers=_tenant("bb-nokey@example.com")["headers"]).json()["skipped"]

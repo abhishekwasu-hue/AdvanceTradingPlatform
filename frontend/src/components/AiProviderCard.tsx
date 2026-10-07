@@ -23,7 +23,9 @@ export default function AiProviderCard() {
       setConfig(c);
       // Not configured yet: pre-select the platform's recommended provider (Claude) so the owner only pastes a key.
       const provider = c.configured ? c.provider : (c.default_provider ?? "anthropic");
-      setForm((f) => ({ ...f, provider, model: c.configured ? c.model : (c.default_models[provider] ?? ""), enabled: c.enabled, api_key: "" }));
+      // P0.8-C: a blank model means "the operator's default for this provider" (shown as the placeholder) and follows
+      // the server's environment; typing a name pins that model for this organisation only.
+      setForm((f) => ({ ...f, provider, model: c.configured ? c.model : "", enabled: c.enabled, api_key: "" }));
     }).catch((e) => setError(String(e)));
   }
   useEffect(refresh, []);
@@ -43,19 +45,45 @@ export default function AiProviderCard() {
       </p>
       {config && (
         <div className="text-xs mb-3 flex flex-wrap gap-3">
-          <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model}</span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-brand/40 bg-brand/10 px-2 py-0.5 font-bold text-brand"><Sparkles size={12} /> {config.provider} · {config.model || config.models?.strong || config.default_models[config.provider]}</span>
           <span className="text-muted">{config.configured ? (config.api_key_set ? "key stored (encrypted)" : "no key needed") : "not configured - rule-based"}</span>
           {config.last_used_at && <span className="text-muted">last used {new Date(config.last_used_at).toLocaleString()}</span>}
           {config.last_error && <span className="text-danger">{config.last_error}</span>}
           {!config.ai_features_allowed && <span className="text-amber-400">external providers need the Pro or Business plan</span>}
         </div>
       )}
+      {config?.configured && config.provider !== "rule_based" && config.models && (
+        <div className="text-xs text-muted mb-3">
+          Models: <span className="text-text">{config.models.strong}</span> writes strategies and scanner plans;{" "}
+          <span className="text-text">{config.models.fast}</span> narrates, classifies news and answers questions (set by the operator).
+        </div>
+      )}
+      {config?.usage && config.configured && config.provider !== "rule_based" && (
+        <div className={`rounded border px-3 py-2 text-xs mb-3 ${config.usage.exhausted ? "border-amber-500/50 bg-amber-500/10" : "border-border bg-panel2"}`}>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span className="font-semibold">AI usage {config.usage.month}</span>
+            <span>₹{config.usage.spent_inr.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{config.usage.budget_inr > 0 ? ` of ₹${config.usage.budget_inr.toLocaleString("en-IN")} budget` : " (no cap on this plan)"}</span>
+            <span className="text-muted">${config.usage.spent_usd.toFixed(4)} · {config.usage.calls} calls · {config.usage.tokens_input.toLocaleString()} in / {config.usage.tokens_output.toLocaleString()} out tokens</span>
+          </div>
+          {config.usage.budget_inr > 0 && (
+            <div className="mt-1 h-1.5 w-full rounded bg-border overflow-hidden">
+              <div className={`h-full ${config.usage.exhausted ? "bg-amber-500" : "bg-brand"}`} style={{ width: `${Math.min(100, (config.usage.spent_inr / config.usage.budget_inr) * 100)}%` }} />
+            </div>
+          )}
+          {Object.keys(config.usage.by_feature).length > 0 && (
+            <div className="mt-1 text-muted">
+              {Object.entries(config.usage.by_feature).sort((a, b) => b[1] - a[1]).map(([f, usd]) => `${f} $${usd.toFixed(4)}`).join(" · ")}
+            </div>
+          )}
+          <div className={`mt-1 ${config.usage.exhausted ? "text-amber-400" : "text-muted"}`}>{config.usage.note}</div>
+        </div>
+      )}
       {isOwner && (
         <div className="grid md:grid-cols-4 gap-2">
-          <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: config?.default_models[e.target.value] ?? "" })}>
+          <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: "" })}>
             {(config?.providers ?? ["rule_based"]).map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <input className={input} placeholder="Model" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
+          <input className={input} placeholder={form.provider === "rule_based" ? "rule-based" : `default: ${config?.default_models[form.provider] ?? "operator's model"}`} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
           <input className={input} type="password" autoComplete="off" placeholder={form.provider === "rule_based" ? "no key needed" : "API key (blank = keep stored)"} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} disabled={form.provider === "rule_based"} />
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> enabled</label>

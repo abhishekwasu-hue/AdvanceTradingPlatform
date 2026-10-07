@@ -3,6 +3,7 @@ need review like any other business rule, and there are three of them. `tenants.
 id; a SUPER_ADMIN changes it (Phase B3). An unknown id falls back to `free` so a typo in the DB
 can only ever *restrict* a tenant, never unlock live trading by accident.
 """
+import os
 from dataclasses import dataclass
 from typing import Dict
 
@@ -31,6 +32,16 @@ class Plan:
     marketplace_access: bool = False  # subscribe to / publish marketplace strategies
     support_level: str = "community"
     trial_days: int = 0
+    # P0.8-C: monthly spend on external AI providers (INR) before the tenant falls back to the rule-based provider;
+    # 0 = no cap. The operator sets `AI_BUDGET_INR_PRO` / `AI_BUDGET_INR_BUSINESS` to change the defaults.
+    ai_monthly_budget_inr: float = 0.0
+
+
+def _budget(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.environ.get(name, str(default))))
+    except ValueError:
+        return default
 
 
 PLANS: Dict[str, Plan] = {
@@ -46,7 +57,7 @@ PLANS: Dict[str, Plan] = {
         description="Live trading for a small desk: up to 10 concurrent deployments and 5 team members.",
         price_monthly=2999.0, price_yearly=29990.0, max_live_strategies=5, max_backtests_per_month=500,
         max_api_calls_per_day=5000, max_accounts=3, max_brokers=2, option_features=True, ai_features=True,
-        marketplace_access=True, support_level="email", trial_days=14,
+        marketplace_access=True, support_level="email", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_PRO", 1500.0),
     ),
     "business": Plan(
         id="business", name="Business", max_active_deployments=50, live_trading=True, max_custom_strategies=200,
@@ -54,7 +65,7 @@ PLANS: Dict[str, Plan] = {
         description="For prop desks and advisories: 50 concurrent deployments, 25 members, priority support.",
         price_monthly=14999.0, price_yearly=149990.0, max_live_strategies=50, max_backtests_per_month=5000,
         max_api_calls_per_day=100000, max_accounts=20, max_brokers=5, option_features=True, ai_features=True,
-        marketplace_access=True, support_level="priority", trial_days=14,
+        marketplace_access=True, support_level="priority", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_BUSINESS", 10000.0),
     ),
 }
 

@@ -3637,6 +3637,18 @@ the headlines in an untrusted block, then checks numbers and tickers with one re
 the reason in `note`; `knowledge.ai_answer` checks against the memory values, the concept notes and the question.
 Tests: `tests/test_phase_p0_8b_grounding.py`.
 
+**P0.8-C (provider layer).** `ai/providers.py`: `Completion` (text + token counts), `complete_full` on every
+provider, `TASK_TIERS` / `default_models()` / `model_for()` (environment per tier, tenant override for the strong
+tier), `thinking_headroom` added to the text budget, one retry on `max_tokens` / `finish_reason == "length"` then
+`ProviderError` with the usage of the failed attempts, cached `AsyncAnthropic` per key, system prompt as a
+`cache_control` block, `timeout_for(budget)`, OpenAI `max_completion_tokens` and no temperature on reasoning models.
+`ai/pricing.py` prices a call (prefix table, `AI_MODEL_PRICES_JSON`, conservative estimate for unknown models, INR
+rate). `ai/metering.py`: `MeteredProvider` (returned by `settings.provider_for(..., task=)`) records
+`ai_calls` / `ai_tokens_input` / `ai_tokens_output` / `ai_cost_usd` usage rows per feature and model,
+`month_usage` / `budget_state` feed `GET /api/ai/provider`, `budget_exhausted` turns the tenant over to
+`RuleBasedProvider(reason=...)`; `Plan.ai_monthly_budget_inr` holds the cap. Tests:
+`tests/test_phase_p0_8c_provider_layer.py`.
+
 **P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
 `Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
 payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on

@@ -823,6 +823,26 @@ Never publish a listing without an attached backtest run; the API refuses the su
   so a headline that "instructs" the model cannot change the thesis. If you see many "not used" notes, the provider
   is inventing figures: switch the model under Settings or stay on the rule-based text.
 
+### 1.6ab-9 AI models, spend and the monthly budget (P0.8-C)
+
+- **Which model does what**: the operator sets the models in the host `.env` - `AI_ANTHROPIC_STRONG_MODEL` (writes
+  strategies, strategist proposals, scanner plans) and `AI_ANTHROPIC_FAST_MODEL` (narration, Copilot and knowledge
+  answers, the thesis text, news classification, scanner reads); the same pair for OpenAI. The model an organisation
+  types under Settings > AI provider replaces the strong one for that organisation only (leave it blank to follow your
+  default); cheap tasks always use the fast model. The Settings card shows both. When the budget is spent, Copilot
+  and guide answers carry the note "AI not used (the plan's monthly AI budget ... is spent)".
+- **Spend**: every call is recorded (calls, tokens, USD at list price, INR at `AI_USD_INR_RATE`, default 84) per
+  organisation, feature and model; the card shows this month's figure against the plan's budget. The Pro plan has
+  1,500 INR a month, Business 10,000 (`AI_BUDGET_INR_PRO`, `AI_BUDGET_INR_BUSINESS`; 0 removes the cap). When the
+  budget is spent the organisation gets the rule-based answers with a note until the 1st - nothing stops, nothing is
+  charged beyond the budget. New model prices: `AI_MODEL_PRICES_JSON='{"model-prefix": [input, output, cache_read]}'`
+  (USD per million tokens); an unknown model is priced at the provider's most expensive row and marked estimated.
+- **Cut-off answers**: an answer the model could not finish inside its token budget is retried once with a bigger
+  budget and otherwise dropped with "cut off" in the note - you never see half a sentence presented as the answer.
+  Long drafts get a longer timeout (`AI_TIMEOUT_PER_1K_SECONDS`, default 8 s per 1,000 tokens of budget, on top of
+  `AI_PROVIDER_TIMEOUT_SECONDS`).
+- Prometheus: `atp_ai_tokens_total{provider,model,kind}` and `atp_ai_cost_usd_total{provider,model}`.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

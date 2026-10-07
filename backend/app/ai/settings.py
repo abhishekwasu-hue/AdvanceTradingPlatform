@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.providers import DEFAULT_MODELS, DEFAULT_PROVIDER, LLMProvider, PROVIDERS, ProviderError, RuleBasedProvider, build_provider
+from app.ai.providers import DEFAULT_MODELS, DEFAULT_PROVIDER, LLMProvider, PROVIDERS, ProviderError, RuleBasedProvider, build_provider, default_models, model_for
 from app.audit.log import write_audit_log
 from app.db.models import AiProviderConfigRecord, Tenant, User
 from app.plans.limits import feature_allowed
@@ -36,7 +36,10 @@ async def save_config(session: AsyncSession, user: User, *, provider: str, model
     else:
         record.encrypted_api_key = None
     record.provider = provider
-    record.model = (model or DEFAULT_MODELS[provider]).strip()[:80]
+    # P0.8-C / C2: a blank model, or the operator's current default typed back in, is no override - the row keeps "" and
+    # the environment model applies (and follows when the operator changes it). Only a different name is pinned.
+    chosen = (model or "").strip()[:80]
+    record.model = "" if provider == "rule_based" or chosen == default_models()[provider]["strong"] else chosen
     record.enabled = enabled
     record.updated_by = user.id
     record.last_error = None
@@ -54,14 +57,22 @@ async def delete_config(session: AsyncSession, user: User) -> None:
         await session.commit()
 
 
-async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optional[httpx.AsyncClient] = None) -> LLMProvider:
-    """The tenant's configured provider, or the rule-based one when none is set/enabled. AI
-    features on the Free plan always get the rule-based provider (no external calls)."""
+async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optional[httpx.AsyncClient] = None, task: str = "general") -> LLMProvider:
+    """The tenant's configured provider for `task`, metered (P0.8-C), or the rule-based one when none is set/enabled,
+    when the plan has no AI features (the Free plan never calls out) or when the plan's monthly AI budget is spent.
+    `task` picks the model tier: cheap tasks (narration, classification, Q&A) run the operator's fast model at low
+    effort, rule-writing tasks the tenant's generation model."""
+    from app.ai import metering
     record = await get_config(session, tenant.id)
     if record is None or not record.enabled or not feature_allowed(tenant, "ai_features"):
         return RuleBasedProvider()
+    if record.provider != "rule_based" and await metering.budget_exhausted(session, tenant):
+        return RuleBasedProvider(reason=f"the plan's monthly AI budget ({metering.budget_inr(tenant):,.0f} INR) is spent; the rules answer until the 1st")
     key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY, record.tenant_id) if record.encrypted_api_key else None
-    return build_provider(record.provider, key, record.model, client=client)
+    inner = build_provider(record.provider, key, record.model, client=client, task=task)
+    if isinstance(inner, RuleBasedProvider):
+        return inner
+    return metering.MeteredProvider(inner, session, tenant.id, feature=task)
 
 
 async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] = None) -> None:
@@ -71,11 +82,15 @@ async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] 
         record.last_error = (error or "")[:300] or None
 
 
-def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant) -> dict:
+def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant, usage: Optional[dict] = None) -> dict:
+    """`usage` (P0.8-C) is `metering.budget_state(...)` - this month's calls, tokens and spend against the plan budget."""
     allowed = feature_allowed(tenant, "ai_features")
+    base = {"ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS.as_dict(), "default_provider": DEFAULT_PROVIDER,
+            "tier_models": default_models(), "usage": usage}
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,
-                "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS, "default_provider": DEFAULT_PROVIDER}
-    return {"provider": record.provider, "model": record.model, "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
+                "models": {"strong": DEFAULT_MODELS["rule_based"], "fast": DEFAULT_MODELS["rule_based"]}, **base}
+    return {"provider": record.provider, "model": record.model or "", "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
             "configured": True, "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None, "last_error": record.last_error,
-            "ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS, "default_provider": DEFAULT_PROVIDER}
+            "models": {"strong": model_for(record.provider, record.model, "strategy_generation"), "fast": model_for(record.provider, record.model, "narration")},
+            **base}

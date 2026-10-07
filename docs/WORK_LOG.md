@@ -227,7 +227,7 @@ item re-read in code before planning - all seven safety findings are real:
 | A6 | Telegram checked the chat id only; any group member could press Approve and the owner was recorded as decider; rate limits in-process | **P0.8-A (done)** |
 | A7 | empty news scope matched everything in corroboration; bare "circuit" = severity 5; PAUSE landed on `active[0]` when no symbol matched | **P0.8-A (done)** |
 | B1-B3 | thesis headlines not wrapped, headline digits counted as allowed numbers, abs() compare; no numbers-check on copilot/knowledge/Telegram; flaky bd2 test | **P0.8-B (done)** |
-| C1-C5 | thinking + small max_tokens, no `stop_reason` handling, hard-coded models, OpenAI reasoning params, no client reuse/caching, no cost metering | P0.8-C |
+| C1-C5 | thinking + small max_tokens, no `stop_reason` handling, hard-coded models, OpenAI reasoning params, no client reuse/caching, no cost metering | **P0.8-C (done)** |
 | D1-D5 | interview "Recommended"/match %/allocation advice, strategist "Best", thesis targets, no first-use acknowledgement, no LLM audit table, DPDP text wrong, AI marketplace listings | P0.8-D |
 
 Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
@@ -471,6 +471,46 @@ default and G-LIVE gate before any LIVE wiring.
 - Tests: `tests/test_phase_p0_8a_copilot_safety.py` (8); strategist adopt / Telegram / AI draft tests follow the new
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
+
+### 2026-10-07 - P0.8-C: the provider layer (C1-C5)
+- C1 `providers.AnthropicProvider`: the request `max_tokens` is the caller's text budget plus a thinking headroom per
+  effort (`THINKING_HEADROOM`: low 2000, medium 6000); the fast tier runs at `effort=low`. `stop_reason ==
+  "max_tokens"` is retried once with twice the budget, then raised as `ProviderError("... cut off ...")` - a partial
+  answer is never returned as a complete one. `complete_full` returns a `Completion` (text + token counts); the
+  `ProviderError` carries the usage of failed attempts. Models without the effort control (Haiku 4.5 and older) get a
+  plain request.
+- C2 model names come from the environment per tier: `AI_ANTHROPIC_STRONG_MODEL` / `AI_ANTHROPIC_FAST_MODEL`,
+  `AI_OPENAI_STRONG_MODEL` / `AI_OPENAI_FAST_MODEL` (`providers.default_models`; built-in names fill gaps only).
+  `TASK_TIERS` maps each AI task: strategy generation, strategist proposals and scanner plans run the strong tier
+  (the tenant's Settings model overrides it), narration, Copilot, knowledge, thesis, news classification and scanner
+  reads run the fast tier. Every `provider_for` call site names its task.
+- C3 `OpenAIProvider` sends `max_completion_tokens` (never `max_tokens`), no `temperature` on reasoning models
+  (`is_reasoning_model`: o1/o3/o4/gpt-5), logs the 400 body (the key is only ever in the header) and surfaces its
+  message; `finish_reason == "length"` is handled like C1.
+- C4 one `AsyncAnthropic` client per API key is cached (`_ANTHROPIC_CLIENTS`; tests with their own http client get
+  their own), one shared `httpx.AsyncClient` for OpenAI; the static system prompt goes as a `cache_control: ephemeral`
+  block (prompt caching); the request timeout is `AI_PROVIDER_TIMEOUT_SECONDS + AI_TIMEOUT_PER_1K_SECONDS` per 1k
+  tokens of budget (a 16k draft gets ~3-4 minutes instead of 45 s).
+- C5 `ai/pricing.py` (list prices per model prefix, `AI_MODEL_PRICES_JSON` override, unknown model = the provider's
+  most expensive row and `estimated`; `AI_USD_INR_RATE`) and `ai/metering.py`: `MeteredProvider` wraps the tenant's
+  provider from `provider_for` and writes `ai_calls`, `ai_tokens_input` (fresh + cached), `ai_tokens_output` and
+  `ai_cost_usd` usage rows with `{feature, provider, model, cache_read, estimated}` for every answer and every failed
+  attempt that reported tokens; Prometheus `ai_tokens_total`, `ai_cost_usd_total`. `Plan.ai_monthly_budget_inr`
+  (Pro 1,500, Business 10,000; `AI_BUDGET_INR_PRO` / `AI_BUDGET_INR_BUSINESS`; 0 = no cap): once this month's spend
+  reaches it, `provider_for` returns the rule-based provider with the reason and `GET /api/ai/provider` shows
+  `usage` (calls, tokens, USD/INR, by feature and model, budget, exhausted, note) and `models` (strong/fast); the
+  Settings card shows the month's spend against the budget and which model does what.
+- Tests `tests/test_phase_p0_8c_provider_layer.py` (7): headroom + retry + no partial answer, client reuse + timeout
+  scaling + plain request for older models, env models per tier + tenant override, OpenAI parameters + 400 body +
+  length retry, pricing table/override/estimate, metering through `provider_for` + usage endpoint + budget fallback +
+  recorder failure, truncated Copilot answer metered and falling back to the rules (the test deferred from P0.8-B).
+  Test fakes of `provider_for` accept the `task` keyword.
+- Self-review fixes: usage rows join the caller's transaction in a savepoint (no commit inside an AI call; the
+  thesis route commits the narration's usage); a model equal to the operator's default (or blank) is stored as ""
+  so the environment keeps driving it, the card shows the default as the placeholder; OpenAI reasoning models get
+  the C1 headroom and `reasoning_effort`; `_supports_effort` parses the model generation (4.6+); clients are cached
+  by a key digest with eviction, API keys are out of dataclass reprs; o3-pro / gpt-5-pro / o1 / o3-mini priced;
+  the rule-based fallback reason (budget spent) is shown in Copilot and guide notes.
 
 ### 2026-10-07 - P0.8-B: prompt injection and the numbers-check everywhere (B1-B3)
 - `app/ai/grounding.py` is the one place for the checks: `numbers_in_values` (numeric leaves only - digits inside

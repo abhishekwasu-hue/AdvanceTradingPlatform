@@ -670,13 +670,13 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
                                                    "deployments": brief["deployments"]})
     provider = await ai_settings.provider_for(session, await _tenant(session, user))
     if provider.name != "rule_based" and name != "interview":
-        text = await copilot.narrate(provider, lang, name, message, facts)
-        await ai_settings.mark_used(session, user.tenant_id, error=None if text else "AI provider unavailable; answered from the rules")
+        text, why = await copilot.narrate(provider, lang, name, message, facts)
+        await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()
         if text:
             out.update(answer=text, source="ai")
         else:
-            out["note"] = "AI provider unavailable; answered from the rules"
+            out["note"] = f"AI answer not used ({why}); answered from the rules"
     return out
 
 

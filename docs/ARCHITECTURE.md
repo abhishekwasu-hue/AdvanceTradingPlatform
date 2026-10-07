@@ -3629,6 +3629,14 @@ rule) and `rate_limited` counts in Redis (`cache.cache_incr_window`). `news_feed
 deployment a severity-5 pause names; `same_event` requires overlapping scopes; `classify.RULES` separates stock
 circuits from market-wide halts. Tests: `tests/test_phase_p0_8a_copilot_safety.py`.
 
+**P0.8-B (grounding).** `ai/grounding.py` holds the numbers-check (`numbers_in_values` on numeric leaves with
+their sign, `numbers_in_text` with shorthand expansion, `check_numbers`), the ticker check (`tickers_in`,
+`check_tickers`, `ACRONYMS`) and `wrap_untrusted`. `thesis.narrate` sends `thesis_facts` (no headlines) as JSON and
+the headlines in an untrusted block, then checks numbers and tickers with one retry; `copilot.narrate` returns
+`(text, why)` after `copilot.grounded` (facts lines + question) and `routes.copilot_answer` keeps the rule text with
+the reason in `note`; `knowledge.ai_answer` checks against the memory values, the concept notes and the question.
+Tests: `tests/test_phase_p0_8b_grounding.py`.
+
 **P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
 `Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
 payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on

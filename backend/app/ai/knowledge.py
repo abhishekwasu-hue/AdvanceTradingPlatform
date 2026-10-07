@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from app.ai.interview import tr
+from app.ai import grounding
 
 
 @dataclass(frozen=True)
@@ -335,7 +336,8 @@ GUIDE_PROMPT = """You are the trading guide inside AMW Algorithmic Trading - a p
 trader who may be a beginner. Answer in {language}, in plain words, in at most 180 words. Use the CONCEPT NOTES and MARKET MEMORY below as
 your facts; if they do not cover the question, say what you can from general trading knowledge and keep it educational.
 Rules: never tell the trader to buy or sell a specific security or promise profit; explain the why; always include the risk side; mention how
-this platform handles it when the notes say so (sizing from the stop, daily loss limit, regime filter, paper first).
+this platform handles it when the notes say so (sizing from the stop, daily loss limit, regime filter, paper first). Every number and every
+symbol you write must come from the MARKET MEMORY, the CONCEPT NOTES or the question - no other prices, levels or tickers.
 === TRADER ===
 {profile}
 === MARKET MEMORY ===
@@ -362,12 +364,22 @@ async def ai_answer(provider, question: str, lang: str, memory: Optional[dict], 
     """A grounded answer from the tenant's AI provider; the library answer on any failure."""
     base = answer(question, lang, memory)
     concepts = [BY_ID[c["id"]] for c in base["concepts"] if c["id"] in BY_ID]
+    system = ai_context(lang, concepts, memory, profile)
     try:
-        text = (await provider.complete(ai_context(lang, concepts, memory, profile), f"QUESTION:\n{question.strip()}", max_tokens=1200)).strip()
+        text = (await provider.complete(system, f"QUESTION:\n{question.strip()}", max_tokens=1200)).strip()
     except Exception as exc:  # noqa: BLE001 - the library answer is always there
         base["note"] = f"AI provider unavailable ({type(exc).__name__}); answered from the concept library"
         return base
     if not text:
+        return base
+    # P0.8 / B2: numbers and symbols only from the memory, the concept notes and the question - else the library answer.
+    trusted = system + "\n" + question
+    allowed = grounding.numbers_in_values(memory or {}) | grounding.allowed_from_text(trusted)
+    ok, bad = grounding.check_numbers(text, allowed)
+    if ok:
+        ok, bad = grounding.check_tickers(text, trusted)
+    if not ok:
+        base["note"] = f"AI answer failed the grounding check ({', '.join(bad[:5])}); answered from the concept library"
         return base
     return {**base, "answer": text, "source": "ai"}
 

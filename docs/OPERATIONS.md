@@ -812,6 +812,17 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Expired candidates nobody adopted are deleted by the retention job after `RETENTION_AI_CANDIDATES_DAYS` (default 30);
   adopted and deployed candidates are kept.
 
+### 1.6ab-8 What the AI may say (P0.8-B)
+
+- Every AI-written text (market thesis, Copilot answers on the web and in Telegram, the knowledge guide) is checked
+  before you see it: every number must be one of the platform's own figures (same sign; `25k` and `1.2 लाख` count as
+  the full number) and every symbol must be one the facts or your question named. A text that fails gets one rewrite
+  and then the rule-based text with a note such as "AI answer not used (numbers not in the facts: 26000)". Nothing
+  else changes - the rule-based text was always there.
+- News headlines reach the thesis model inside an `untrusted_data` block and no number from a headline is accepted,
+  so a headline that "instructs" the model cannot change the thesis. If you see many "not used" notes, the provider
+  is inventing figures: switch the model under Settings or stay on the rule-based text.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

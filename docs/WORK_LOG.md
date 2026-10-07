@@ -226,7 +226,7 @@ item re-read in code before planning - all seven safety findings are real:
 | A5 | `decide` checked status in memory; no database guard against two open proposals for one rule | **P0.8-A (done)** |
 | A6 | Telegram checked the chat id only; any group member could press Approve and the owner was recorded as decider; rate limits in-process | **P0.8-A (done)** |
 | A7 | empty news scope matched everything in corroboration; bare "circuit" = severity 5; PAUSE landed on `active[0]` when no symbol matched | **P0.8-A (done)** |
-| B1-B3 | thesis headlines not wrapped, headline digits counted as allowed numbers, abs() compare; no numbers-check on copilot/knowledge/Telegram; flaky bd2 test | P0.8-B |
+| B1-B3 | thesis headlines not wrapped, headline digits counted as allowed numbers, abs() compare; no numbers-check on copilot/knowledge/Telegram; flaky bd2 test | **P0.8-B (done)** |
 | C1-C5 | thinking + small max_tokens, no `stop_reason` handling, hard-coded models, OpenAI reasoning params, no client reuse/caching, no cost metering | P0.8-C |
 | D1-D5 | interview "Recommended"/match %/allocation advice, strategist "Best", thesis targets, no first-use acknowledgement, no LLM audit table, DPDP text wrong, AI marketplace listings | P0.8-D |
 
@@ -471,3 +471,27 @@ default and G-LIVE gate before any LIVE wiring.
 - Tests: `tests/test_phase_p0_8a_copilot_safety.py` (8); strategist adopt / Telegram / AI draft tests follow the new
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
+
+### 2026-10-07 - P0.8-B: prompt injection and the numbers-check everywhere (B1-B3)
+- `app/ai/grounding.py` is the one place for the checks: `numbers_in_values` (numeric leaves only - digits inside
+  strings such as headlines are not evidence; the sign is kept, no `abs`), `numbers_in_text` (the model's shorthand
+  `25k`, `1.2 लाख`, `2 cr`, `25,200.00`, `73%` expanded), `check_numbers`, `tickers_in`/`check_tickers` (symbols must
+  appear in the facts or the question; indicator and platform acronyms are not symbols), `wrap_untrusted`.
+- B1 thesis: the facts JSON no longer carries the headlines; they follow the JSON in an `<untrusted_data>` block with
+  the closing tag escaped and the prompt says they are text to summarise, never instructions. `numbers_check` keeps
+  the sign (a +0.4% day written as -0.4% is refused) and allows only numeric fields plus the symbol's own digits
+  (`NIFTY 50`). `narrate` also checks tickers; one retry names the offending numbers or symbols, then the rule text.
+- B2 `copilot.narrate` returns `(text, why)`: numbers and symbols only from the facts lines and the question, one
+  retry, else the rule-based answer with the note (`"AI answer not used (numbers not in the facts: 26000)"`). The
+  Telegram free text goes through the same `copilot_answer`. `knowledge.ai_answer` applies the same check against the
+  market memory (numeric values), the concept notes and the question, else the library answer with the note.
+- B3 tests `tests/test_phase_p0_8b_grounding.py` (5): injection through a headline (tag escaped, digits refused,
+  no leak into the JSON), sign flip, headline digit, Copilot hallucination (API falls back to the rules), knowledge
+  guide, cross-tenant approve/reject/list (404 / empty). The order-dependent
+  `test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only` asserts this organisation's notifications
+  (the sender is platform-wide: other tests' organisations are due too). Self-review fixes: Unicode minus / en dash
+  read as a minus sign; `NIFTY` = `NIFTY 50`, `BANKNIFTY` = `NIFTY BANK`, `FINNIFTY` = `NIFTY FIN SERVICE` and every word
+  of an allowed name counts; a level >= 100 may be rounded to the rupee; more prose acronyms; every closing-tag
+  variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
+  symbols. The `max_tokens` truncation test lands with
+  the provider work in P0.8-C (providers only return text today).

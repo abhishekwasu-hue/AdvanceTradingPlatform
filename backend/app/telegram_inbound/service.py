@@ -469,7 +469,8 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
         return help_text(lang)
     from app.ai.routes import copilot_answer
     out = await copilot_answer(session, user, text, lang)
-    return str(out.get("answer") or help_text(lang))
+    answer = str(out.get("answer") or help_text(lang))
+    return f"{answer}\n\n({out['note']})" if out.get("note") else answer      # P0.8-B: the "AI answer not used" note travels too
 
 
 # --- the update --------------------------------------------------------------------------------------

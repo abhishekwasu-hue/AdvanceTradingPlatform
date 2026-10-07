@@ -163,12 +163,14 @@ def test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only():
     n, notes = _run(send(NOW))
     assert n == 0 and notes == []                                                                       # flag off: silent even with scores
     _flags(market_thesis=True)
+    # P0.8 / B3: the sender is platform-wide (other tests' organisations may be due too), so the counts that matter are this
+    # organisation's notifications; `n` only has to include ours.
     n, notes = _run(send(NOW))
-    assert n == 1 and len(notes) == 1 and notes[0].title.startswith("Thesis scoreboard 2026-W41:") and "Shadow overlay" in notes[0].message
-    n, notes = _run(send(NOW + timedelta(hours=2)))
-    assert n == 0 and len(notes) == 1                                                                  # same week: once
-    n, notes = _run(send(NOW + timedelta(days=7)))
-    assert n == 0 and len(notes) == 1                                                                  # nothing scored in that later week
+    assert n >= 1 and len(notes) == 1 and notes[0].title.startswith("Thesis scoreboard 2026-W41:") and "Shadow overlay" in notes[0].message
+    _n, notes = _run(send(NOW + timedelta(hours=2)))
+    assert len(notes) == 1                                                                             # same week: once
+    _n, notes = _run(send(NOW + timedelta(days=7)))
+    assert len(notes) == 1                                                                             # nothing scored in that later week
     # Nothing in the report path touches deployments, trades or orders: the records are untouched.
     async def untouched():
         async with _session_factory() as session:

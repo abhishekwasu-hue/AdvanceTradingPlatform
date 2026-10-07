@@ -489,5 +489,9 @@ default and G-LIVE gate before any LIVE wiring.
   no leak into the JSON), sign flip, headline digit, Copilot hallucination (API falls back to the rules), knowledge
   guide, cross-tenant approve/reject/list (404 / empty). The order-dependent
   `test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only` asserts this organisation's notifications
-  (the sender is platform-wide: other tests' organisations are due too). The `max_tokens` truncation test lands with
+  (the sender is platform-wide: other tests' organisations are due too). Self-review fixes: Unicode minus / en dash
+  read as a minus sign; `NIFTY` = `NIFTY 50`, `BANKNIFTY` = `NIFTY BANK`, `FINNIFTY` = `NIFTY FIN SERVICE` and every word
+  of an allowed name counts; a level >= 100 may be rounded to the rupee; more prose acronyms; every closing-tag
+  variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
+  symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).

@@ -1235,10 +1235,13 @@ export interface AlertChannelUpsert {
 }
 
 /** Phase BE: Telegram inbound settings (commands + PAPER approval buttons). */
+export interface TelegramApprover { telegram_user_id: string; user_id?: number; email: string }
 export interface TelegramInboundStatus {
   configured: boolean;
   inbound_enabled: boolean;
   allowed_chat_ids: string[];
+  /** P0.8 / A6: who may press Approve/Reject (Telegram user id -> team member). Empty = private chat with the owner only. */
+  approvers?: TelegramApprover[];
   has_secret: boolean;
   webhook_url: string;
   telegram_actions: string[];
@@ -1917,6 +1920,8 @@ export interface InterviewPlan {
   option?: InterviewOptionMeta;
   options?: InterviewPlan[];
   best_option?: string;
+  /** P0.8 / A3: the server-held candidate behind this option; "Deploy in PAPER" sends it with the risk acceptance. */
+  candidate_id?: number | null;
   preferences?: InterviewPreferences;
   feedback_options?: FeedbackOption[];
   changes?: string[];
@@ -2082,6 +2087,8 @@ export interface StrategyCandidate {
   verdict: "robust" | "overfit" | "weak" | "untested" | "thin"; verdict_text: string;
   trades: { date: string; dir: string; entry: number; exit: number; reason: string; pts: number; r: number }[];
   config: CustomStrategyConfig; source: "template" | "ai";
+  /** P0.8 / A3: the server-held candidate this card stands for; adopt sends this id, never the config. */
+  candidate_id?: number;
 }
 export interface StrategistResult {
   study: MarketStudy; style: string; base_timeframe: string; higher_timeframe: string; sides: string[];

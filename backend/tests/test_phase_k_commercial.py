@@ -206,7 +206,7 @@ def test_marketplace_flow_create_submit_publish_discover_subscribe_copies_strate
     sub = client.post(f"/api/marketplace/{body['id']}/subscribe", headers=subscriber)
     assert sub.status_code == 200, sub.text
     copy_id = sub.json()["custom_strategy_id"]
-    assert sub.json()["strategy_id"] == f"custom_{copy_id}" and "paper-trade" in sub.json()["next"]
+    assert sub.json()["strategy_id"] == f"custom:{copy_id}" and "paper-trade" in sub.json()["next"]
 
     async def copy_config():
         async with _session_factory() as session:

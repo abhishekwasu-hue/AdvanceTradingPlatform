@@ -410,6 +410,9 @@ function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
 }) {
   const pick = plan.recommended;
   const symbol = String(plan.answers.symbol ?? "NIFTY 50");
+  // P0.8 / A3: "Deploy in PAPER" goes through the server's candidate with the trader's risk acceptance.
+  const [acceptRisk, setAcceptRisk] = useState(false);
+  const perTrade = Math.round((plan.risk_config.capital * plan.risk_config.risk_per_trade_pct) / 100);
   const biasCls = plan.market.bias === "BULLISH" ? "text-emerald-300" : plan.market.bias === "BEARISH" ? "text-rose-300" : "text-amber-200";
   return (
     <div className="space-y-3">
@@ -441,13 +444,19 @@ function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
         }} className="rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50">
           <ShieldCheck size={12} className="mr-1 inline" />{L(lang, "Apply risk settings", "Risk settings लागू करा")}
         </button>
-        {plan.deployment && (
-          <button disabled={busy} onClick={() => onAct(L(lang, "Deploying…", "Deploy करत आहे…"), async () => {
-            const d = await api.createDeployment(plan.deployment!);
-            return L(lang, `Deployment #${d.id} is running in PAPER. Watch it on the Autopilot page.`, `Deployment #${d.id} PAPER मध्ये सुरू झाले. Autopilot page वर पहा.`);
-          })} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-            <Rocket size={12} className="mr-1 inline" />{L(lang, "Deploy in PAPER", "PAPER मध्ये deploy करा")}
-          </button>
+        {plan.deployment && plan.candidate_id != null && (
+          <>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-200">
+              <input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
+              {L(lang, `I accept a maximum loss of about ₹${perTrade.toLocaleString("en-IN")} per trade`, `मी प्रति trade जास्तीत जास्त ₹${perTrade.toLocaleString("en-IN")} तोटा स्वीकारतो/स्वीकारते`)}
+            </label>
+            <button disabled={busy || !acceptRisk} onClick={() => onAct(L(lang, "Deploying…", "Deploy करत आहे…"), async () => {
+              const d = await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk);
+              return L(lang, `Deployment #${d.deployment.id} is running in PAPER. Watch it on the Autopilot page.`, `Deployment #${d.deployment.id} PAPER मध्ये सुरू झाले. Autopilot page वर पहा.`);
+            })} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
+              <Rocket size={12} className="mr-1 inline" />{L(lang, "Deploy in PAPER", "PAPER मध्ये deploy करा")}
+            </button>
+          </>
         )}
         <button onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-panel2">
           <CandlestickChart size={12} className="mr-1 inline" />{L(lang, "Open the chart", "Chart उघडा")}

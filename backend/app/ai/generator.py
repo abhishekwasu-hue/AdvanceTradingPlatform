@@ -234,7 +234,7 @@ def as_dict(draft: AiStrategyDraftRecord, *, include_raw: bool = False) -> dict:
         "deployment_text": (draft_suggestion(draft).describe() if getattr(draft, "deployment_json", None) and draft_suggestion(draft) else None),
         "prompt_version": getattr(draft, "prompt_version", None),
         "runtime_context": json.loads(draft.context_json) if getattr(draft, "context_json", None) else None,
-        "custom_strategy_id": draft.custom_strategy_id, "strategy_id": f"custom_{draft.custom_strategy_id}" if draft.custom_strategy_id else None,
+        "custom_strategy_id": draft.custom_strategy_id, "strategy_id": f"custom:{draft.custom_strategy_id}" if draft.custom_strategy_id else None,
         "approved_by": draft.approved_by, "approved_at": draft.approved_at.isoformat() if draft.approved_at else None,
         "created_at": draft.created_at.isoformat() if draft.created_at else None,
         "lineage": {"provider": draft.provider, "model": draft.model, "prompt_chars": len(draft.prompt), "generated_at": draft.created_at.isoformat() if draft.created_at else None},

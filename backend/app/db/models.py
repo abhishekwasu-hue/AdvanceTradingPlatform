@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -1098,6 +1098,12 @@ class AiActionRecord(Base):
     places or closes a position without the approval row filled in."""
 
     __tablename__ = "ai_actions"
+    # P0.8 / A5: at most one *open* (PROPOSED/APPROVED) proposal per tenant, deployment and rule - a concurrent raise from
+    # two worker passes or two feed items is refused by the database, not only by the in-app check.
+    __table_args__ = (
+        Index("uq_ai_actions_open_rule", "tenant_id", "deployment_id", "rule", unique=True,
+              postgresql_where=text("status IN ('PROPOSED', 'APPROVED')"), sqlite_where=text("status IN ('PROPOSED', 'APPROVED')")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1113,6 +1119,32 @@ class AiActionRecord(Base):
     decision_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     executed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class AiCandidateRecord(Base):
+    """P0.8 / A3: a strategy candidate the *server* produced and validated - the strategist's rule sets with their
+    in-sample / out-of-sample simulation, or the interview's pick with its evidence - held here so "adopt" and
+    "deploy in PAPER" take a candidate id, never a config the browser typed. Adoption runs the compliance checklist
+    and needs the human's risk acceptance, like an AI draft."""
+
+    __tablename__ = "ai_candidates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)          # strategist / interview
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    strategy_id: Mapped[str | None] = mapped_column(String(100), nullable=True)   # a built-in id (interview) when config_json is empty
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")   # the server-side simulation / evidence
+    deployment_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN", index=True)   # OPEN / ADOPTED / DEPLOYED
+    adopted_strategy_id: Mapped[int | None] = mapped_column(ForeignKey("custom_strategies.id", ondelete="SET NULL"), nullable=True)
+    deployment_id: Mapped[int | None] = mapped_column(ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 

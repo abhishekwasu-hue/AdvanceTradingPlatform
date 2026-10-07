@@ -10,6 +10,15 @@ from app.strategy_engine.declarative import CustomStrategyConfig, DeclarativeStr
 from app.strategy_engine.registry import registry
 
 CUSTOM_PREFIX = "custom:"
+LEGACY_CUSTOM_PREFIX = "custom_"   # P0.8 / A4: the spelling the AI draft / marketplace routes handed out before this release
+
+
+def normalize_strategy_id(strategy_id: str) -> str:
+    """`custom_12` (legacy) -> `custom:12`; everything else unchanged. Deployments and AI records written with the
+    legacy spelling keep resolving (the migration rewrites stored deployments too)."""
+    if strategy_id.startswith(LEGACY_CUSTOM_PREFIX) and strategy_id[len(LEGACY_CUSTOM_PREFIX):].isdigit():
+        return CUSTOM_PREFIX + strategy_id[len(LEGACY_CUSTOM_PREFIX):]
+    return strategy_id
 
 
 def custom_strategy_info(record: CustomStrategyRecord) -> StrategyInfo:
@@ -37,6 +46,7 @@ async def load_custom_strategy(strategy_id: str, user: Optional[User], session: 
     if user is None:
         raise PermissionError("Custom strategies require authentication")
 
+    strategy_id = normalize_strategy_id(strategy_id)
     raw_id = strategy_id[len(CUSTOM_PREFIX):]
     try:
         record_id = int(raw_id)
@@ -55,6 +65,7 @@ async def resolve_strategy(strategy_id: str, user: Optional[User], session: Asyn
     """The single lookup path every /strategies/{id}/... route uses: a built-in strategy by id,
     or - for a "custom:<id>" id - a saved DeclarativeStrategy owned by the calling user.
     """
+    strategy_id = normalize_strategy_id(strategy_id)
     if strategy_id.startswith(CUSTOM_PREFIX):
         return await load_custom_strategy(strategy_id, user, session)
     return registry.get(strategy_id)

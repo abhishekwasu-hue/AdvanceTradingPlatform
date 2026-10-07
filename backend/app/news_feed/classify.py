@@ -40,7 +40,11 @@ RULES = (
     (r"(?=.*\b(repo rate|policy rate|mpc|monetary policy)\b)(?=.*\b(hike\w*|rais\w*|increas\w*)\b)", "RATE_DECISION", 4, "BEARISH", ("INDEX", "BANKS", "RATES"), "DAYS"),
     (r"\b(repo rate|policy rate|mpc|monetary policy|crr|cash reserve)\b", "RATE_DECISION", 3, "NEUTRAL", ("INDEX", "BANKS", "RATES"), "DAYS"),
     (r"(?=.*\b(fomc|federal reserve|fed)\b)(?=.*\b(rate|cut|cuts|hike|hikes)\b)", "RATE_DECISION", 3, "NEUTRAL", ("INDEX", "FX", "RATES"), "DAYS"),
-    (r"\b(trading halt|circuit|market closed|exchange outage|systems? (down|failure))\b", "LIQUIDITY", 5, "BEARISH", ("INDEX",), "INTRADAY"),
+    # P0.8 / A7: a stock hitting its upper/lower circuit is company news (severity 3, direction by the band); only a
+    # market-wide circuit breaker, halt or outage is the severity-5 LIQUIDITY event. A bare "circuit" is no longer 5.
+    (r"\bupper circuit\b", "CORPORATE", 3, "BULLISH", (), "INTRADAY"),
+    (r"\blower circuit\b", "CORPORATE", 3, "BEARISH", (), "INTRADAY"),
+    (r"\b(trading halt|market[- ]wide circuit|circuit breaker|index circuit|market closed|exchange outage|systems? (down|failure))\b", "LIQUIDITY", 5, "BEARISH", ("INDEX",), "INTRADAY"),
     (r"\b(f&o ban|ban period|securities? in ban)\b", "REGULATION", 2, "NEUTRAL", (), "INTRADAY"),
     (r"\b(sebi|circular|regulation|margin (rule|norm)|lot size|position limit|surveillance)\b", "REGULATION", 2, "NEUTRAL", (), "WEEKS"),
     (r"\b(war|missile|strike|attack|sanction|tariff|border|ceasefire)\b", "GEOPOLITICS", 3, "BEARISH", ("INDEX", "ENERGY", "FX"), "DAYS"),

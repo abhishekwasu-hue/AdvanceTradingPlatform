@@ -27,6 +27,19 @@ async def cache_get(key: str) -> Optional[str]:
         return None
 
 
+async def cache_incr_window(key: str, ttl_seconds: int) -> Optional[int]:
+    """P0.8 / A6: INCR + EXPIRE on first use - a fixed-window counter shared by every replica. None when Redis is
+    unreachable, so the caller can fall back to its in-process count instead of failing open or closed blindly."""
+    try:
+        client = _get_client()
+        count = await client.incr(key)
+        if count == 1:
+            await client.expire(key, ttl_seconds)
+        return int(count)
+    except Exception:
+        return None
+
+
 async def cache_set(key: str, value: str, ttl_seconds: int) -> None:
     try:
         await _get_client().set(key, value, ex=ttl_seconds)

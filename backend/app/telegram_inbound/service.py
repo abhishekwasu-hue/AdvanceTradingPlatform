@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import briefing, market_memory, monitor, sentiment
 from app.ai.interview import tr
 from app.alerts.channels import TelegramConfig, decrypt_config, decrypt_raw, encrypt_config, parse_config
+from app.cache.client import cache_incr_window
 from app.audit.log import write_audit_log
 from app.billing.service import meter
 from app.core import config as app_config
@@ -89,21 +90,37 @@ def status_of(record: Optional[AlertChannelRecord], tenant: Tenant) -> dict:
     cfg: TelegramConfig = decrypt_config(record)  # type: ignore[assignment]
     return {"configured": True, "inbound_enabled": bool(cfg.inbound_enabled), "allowed_chat_ids": [cfg.chat_id] + [c for c in cfg.allowed_chat_ids if c != cfg.chat_id],
             "has_secret": bool(cfg.inbound_secret), "webhook_url": webhook_url(tenant), "telegram_actions": list(TELEGRAM_ACTIONS),
-            "note": "Approvals over Telegram cover PAPER deployments and reduce/pause proposals only; LIVE decisions need the web and your authenticator."}
+            "approvers": [{"telegram_user_id": a.telegram_user_id, "user_id": a.user_id, "email": a.email} for a in cfg.approvers],
+            "note": "Approvals over Telegram cover PAPER deployments and reduce/pause proposals only; LIVE decisions need the web and your authenticator. "
+                    "Without approvers, only a private chat on the whitelist can decide (as the owner); in a group, list who may."}
 
 
-async def configure(session: AsyncSession, tenant: Tenant, user: User, *, enabled: bool, allowed_chat_ids: List[str]) -> dict:
+async def configure(session: AsyncSession, tenant: Tenant, user: User, *, enabled: bool, allowed_chat_ids: List[str],
+                    approvers: Optional[List[dict]] = None) -> dict:
+    """`approvers` (P0.8 / A6): [{telegram_user_id, email}] - the e-mail names an active user of this organisation and is
+    stored as the platform user id, so a decision is recorded against the person who pressed the button."""
     record = await telegram_channel(session, tenant.id)
     if record is None:
         raise LookupError("No Telegram alert channel configured")
     raw = decrypt_raw(record)
     raw["inbound_enabled"] = bool(enabled)
     raw["allowed_chat_ids"] = sorted({str(c).strip() for c in allowed_chat_ids if str(c).strip()})[:10]
+    if approvers is not None:
+        resolved = []
+        for item in approvers[:10]:
+            tg_id, email = str(item.get("telegram_user_id") or "").strip(), str(item.get("email") or "").strip().lower()
+            if not tg_id:
+                continue
+            member = await session.scalar(select(User).where(User.tenant_id == tenant.id, User.email == email, User.is_active.is_(True))) if email else None
+            if member is None:
+                raise ValueError(f"No active user {email or '(missing e-mail)'} in this organisation for Telegram user {tg_id}")
+            resolved.append({"telegram_user_id": tg_id, "user_id": member.id, "email": member.email})
+        raw["approvers"] = resolved
     if enabled and not raw.get("inbound_secret"):
         raw["inbound_secret"] = secrets.token_urlsafe(32)
     record.encrypted_config = encrypt_config(parse_config(record.channel_type, raw), tenant.id)
     await write_audit_log(session, tenant.id, user.id, "telegram_inbound_configured",
-                          f"enabled={enabled} chats={len(raw['allowed_chat_ids']) + 1}")
+                          f"enabled={enabled} chats={len(raw['allowed_chat_ids']) + 1} approvers={len(raw.get('approvers') or [])}")
     await session.commit()
     return status_of(record, tenant)
 
@@ -182,7 +199,7 @@ def audit_stranger(tenant_id: int, chat_id: str, now: Optional[float] = None) ->
     return True
 
 
-def rate_limited(tenant_id: int, chat_id: str, now: Optional[float] = None) -> bool:
+def _rate_limited_local(tenant_id: int, chat_id: str, now: Optional[float] = None) -> bool:
     now = now if now is not None else time.monotonic()
     bucket = _rate[(tenant_id, str(chat_id))]
     while bucket and now - bucket[0] > RATE_WINDOW_SECONDS:
@@ -193,9 +210,38 @@ def rate_limited(tenant_id: int, chat_id: str, now: Optional[float] = None) -> b
     return False
 
 
+async def rate_limited(tenant_id: int, chat_id: str, now: Optional[float] = None) -> bool:
+    """P0.8 / A6: the per-chat limit lives in Redis (shared by every API replica, survives a restart) as a fixed
+    one-minute window; when Redis is unreachable the in-process window above still applies."""
+    window = int((time.time() if now is None else now) // RATE_WINDOW_SECONDS)
+    count = await cache_incr_window(f"tg:rate:{tenant_id}:{chat_id}:{window}", int(RATE_WINDOW_SECONDS * 2))
+    if count is None:
+        return _rate_limited_local(tenant_id, chat_id, now)
+    return count > RATE_LIMIT
+
+
 async def acting_user(session: AsyncSession, tenant_id: int) -> Optional[User]:
     user = await session.scalar(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True), User.role == UserRole.OWNER.value).order_by(User.id).limit(1))
     return user or await session.scalar(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id).limit(1))
+
+
+async def actor_for_sender(session: AsyncSession, tenant_id: int, cfg: TelegramConfig, from_id: str, chat_id: str = "") -> Optional[User]:
+    """P0.8 / A6: the platform user a Telegram sender acts as. With approvers configured, only a listed `from.id` acts,
+    as its mapped user. Without approvers (legacy setup) only a *private* chat acts - Telegram gives a private chat the
+    user's own id, so `from.id == chat.id` on a whitelisted chat - as the owner; a member of a whitelisted group
+    (`from.id != chat.id`) is nobody and is never recorded as the owner."""
+    from_id = str(from_id or "")
+    if not from_id:
+        return None
+    if cfg.approvers:
+        match = next((a for a in cfg.approvers if str(a.telegram_user_id) == from_id), None)
+        if match is None:
+            return None
+        user = await session.get(User, match.user_id)
+        return user if user is not None and user.tenant_id == tenant_id and user.is_active else None
+    if from_id == str(chat_id or "") and chat_allowed(cfg, from_id):
+        return await acting_user(session, tenant_id)
+    return None
 
 
 # --- callbacks (approve / reject buttons) -------------------------------------------------------------
@@ -232,8 +278,10 @@ async def keyboard_for(session: AsyncSession, action: AiActionRecord, chat_id: s
     return {"inline_keyboard": [buttons]}
 
 
-async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: TelegramConfig, data: str, chat_id: str, *, now: Optional[datetime] = None) -> str:
-    """Resolves one button press: nonce -> signed row -> the same decide/execute path the web uses. Returns the text to show."""
+async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: TelegramConfig, data: str, chat_id: str, *, now: Optional[datetime] = None,
+                               from_id: str = "") -> str:
+    """Resolves one button press: nonce -> signed row -> the same decide/execute path the web uses. Returns the text to show.
+    P0.8 / A6: the sender (`from_id`) must be an authorised approver; the decision is recorded against that person."""
     now = now or datetime.now(timezone.utc)
     nonce = data[len(CALLBACK_PREFIX):] if data.startswith(CALLBACK_PREFIX) else ""
     row = await session.scalar(select(TelegramCallbackRecord).where(TelegramCallbackRecord.nonce == nonce, TelegramCallbackRecord.tenant_id == tenant.id)) if nonce else None
@@ -267,9 +315,11 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
         await write_audit_log(session, tenant.id, None, "telegram_callback_refused", f"action #{action.id} {action.action}: {why}")
         await session.commit()
         return why
-    user = await acting_user(session, tenant.id)
+    user = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)
     if user is None:
-        return "No active user to record the decision."
+        await write_audit_log(session, tenant.id, None, "telegram_callback_refused", f"action #{action.id}: Telegram user {from_id or '?'} in chat {chat_id} is not an authorised approver")
+        await session.commit()
+        return "You are not an authorised approver for this organisation - ask the owner to add your Telegram user id under Settings."
     # Claim the nonce atomically: two deliveries of the same (or the sibling) button race here, and
     # only the one whose conditional UPDATE lands gets to decide.
     claimed = await session.execute(update(TelegramCallbackRecord).where(TelegramCallbackRecord.id == row.id, TelegramCallbackRecord.used_at.is_(None))
@@ -284,12 +334,12 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
     del siblings
     await session.commit()
     try:
-        action = await monitor.decide(session, action, user, approve=(row.decision == "approve"), note=f"via Telegram chat {chat_id}", now=now)
+        action = await monitor.decide(session, action, user, approve=(row.decision == "approve"), note=f"via Telegram chat {chat_id} by user {from_id}", now=now)
     except ValueError as exc:
         return f"Could not decide: {exc}"
     if row.decision == "approve":
         action = await monitor.execute(session, action, user, now=now)
-    await write_audit_log(session, tenant.id, user.id, "telegram_decision", f"#{action.id} {action.action} {action.status} via chat {chat_id}")
+    await write_audit_log(session, tenant.id, user.id, "telegram_decision", f"#{action.id} {action.action} {action.status} via chat {chat_id} by Telegram user {from_id}")
     await session.commit()
     return f"Proposal #{action.id} {action.action.replace('_', ' ').lower()}: {action.status}" + (f" - {action.result}" if action.result else "")
 
@@ -431,7 +481,8 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
     callback = update.get("callback_query")
     if callback:
         chat_id = str(((callback.get("message") or {}).get("chat") or {}).get("id") or (callback.get("from") or {}).get("id") or "")
-        if rate_limited(tenant.id, chat_id):
+        from_id = str((callback.get("from") or {}).get("id") or "")
+        if await rate_limited(tenant.id, chat_id):
             await _call(cfg, "answerCallbackQuery", {"callback_query_id": callback.get("id"), "text": "Slow down - try again in a minute."}, client)
             return {"handled": "rate_limited"}
         if not chat_allowed(cfg, chat_id):
@@ -441,7 +492,7 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
             else:
                 logger.warning("Telegram callback from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
-        text = await decide_from_callback(session, tenant, cfg, str(callback.get("data") or ""), chat_id, now=now)
+        text = await decide_from_callback(session, tenant, cfg, str(callback.get("data") or ""), chat_id, now=now, from_id=from_id)
         await meter(session, tenant.id, METRIC, 1, source="telegram", metadata={"kind": "callback"})
         await session.commit()
         await _call(cfg, "answerCallbackQuery", {"callback_query_id": callback.get("id"), "text": text[:190]}, client)
@@ -452,20 +503,27 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
         return {"handled": "callback", "reply": text}
     if message:
         chat_id = str((message.get("chat") or {}).get("id") or "")
+        from_id = str((message.get("from") or {}).get("id") or "")
         text = str(message.get("text") or "")
         if not chat_allowed(cfg, chat_id):
-            if not rate_limited(tenant.id, chat_id) and audit_stranger(tenant.id, chat_id):
+            if not await rate_limited(tenant.id, chat_id) and audit_stranger(tenant.id, chat_id):
                 await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"message from non-whitelisted chat {chat_id}: {text[:60]!r}")
                 await session.commit()
             else:
                 logger.warning("Telegram message from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
-        if rate_limited(tenant.id, chat_id):
+        if await rate_limited(tenant.id, chat_id):
             await reply(cfg, chat_id, tr(_lang(text), "Slow down - 20 messages a minute.", "थोडे थांबा - मिनिटाला 20 messages."), client, parse_mode=None)
             return {"handled": "rate_limited"}
-        user = await acting_user(session, tenant.id)
+        user = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)
         if user is None:
-            return {"handled": "ignored", "reason": "no active user"}
+            # P0.8 / A6: a whitelisted group's other members get no account data and act as nobody.
+            if audit_stranger(tenant.id, f"{chat_id}:{from_id}"):
+                await write_audit_log(session, tenant.id, None, "telegram_inbound_refused", f"Telegram user {from_id or '?'} in chat {chat_id} is not an authorised user: {text[:60]!r}")
+                await session.commit()
+            await reply(cfg, chat_id, tr(_lang(text), "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings.",
+                                         "तुम्ही या bot चे अधिकृत वापरकर्ते नाही - owner ला Settings मध्ये तुमचा Telegram user id जोडायला सांगा."), client, parse_mode=None)
+            return {"handled": "refused", "reason": "sender not an approver"}
         try:
             answer = await answer_text(session, tenant, user, text)
         except Exception as exc:  # noqa: BLE001 - the chat gets a plain error, the log the detail

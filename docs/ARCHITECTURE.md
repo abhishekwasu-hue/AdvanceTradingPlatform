@@ -3612,6 +3612,23 @@ bandit `-ll -ii` on `app/`, gitleaks on the pushed commits with `.gitleaks.toml`
 `deploy-staging.yml` is SHA-pinned, and `news_feed/sources.py` parses with defusedxml. Tests:
 `tests/test_phase_p0_7_infra.py` (script syntax and rollback body, rotation on every service, pins, gates).
 
+**P0.8-A (AI Copilot safety).** `ai/monitor.execute` turns an incomplete `close_position` into a FAILED action
+(FAILED rows do not throttle the rule); `decide` is a conditional UPDATE and `ai_actions` carries the partial unique
+index `uq_ai_actions_open_rule` (tenant, deployment, rule; open statuses only). `ai/routes.approve_action` runs the
+LIVE step-up and passes `trading.position_monitor.broker_for_trade` (the one helper every square-off uses: broker
+account, else the deployment's broker, else the tenant's single broker) for a LIVE exit. `raise_proposals` inserts
+each row in a savepoint, so a duplicate caught by the index drops that row only; `decide` never rolls back (the lost
+race matched no row). Open rows with `deployment_id IS NULL` (news REDUCE_RISK) are guarded by `_already_open`
+only, since the database treats NULLs as distinct. Expired OPEN candidates age out through retention
+(`ai_candidates_days`, `RETENTION_AI_CANDIDATES_DAYS`, default 30 after expiry). `ai_candidates` holds the server-built
+strategist / interview candidates; `/strategist/adopt` and `/interview/deploy` take a candidate id and the risk
+acceptance, run `compliance.evaluate_config` (adopt) and require trades in the stored simulation / evidence.
+`custom_strategies/resolver.normalize_strategy_id` maps the legacy `custom_<id>`. `telegram_inbound.actor_for_sender`
+resolves the sender (`from.id`) to a platform user through `TelegramConfig.approvers` (or the legacy private-chat
+rule) and `rate_limited` counts in Redis (`cache.cache_incr_window`). `news_feed.service.deployment_matches` picks the
+deployment a severity-5 pause names; `same_event` requires overlapping scopes; `classify.RULES` separates stock
+circuits from market-wide halts. Tests: `tests/test_phase_p0_8a_copilot_safety.py`.
+
 **P0.4 (S10, S11).** `db/models.py` defines `Money = Numeric(18, 2, asdecimal=False)` and
 `Price = Numeric(18, 4, asdecimal=False)`; trades, contract notes, broker accounts, billing, marketplace charges and
 payouts use them (migration `c4d6e8f0a2b4`), so a rupee total is stored exactly while the engines keep working on

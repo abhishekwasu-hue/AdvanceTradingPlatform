@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
-import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
+import type { AiAcknowledgement, AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
 import MarketMemoryCard from "../components/MarketMemoryCard";
@@ -59,6 +59,10 @@ export default function AiCopilotPage() {
   const [interviewPrompt, setInterviewPrompt] = useState("");
   const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist"));
   const [lang, setLangState] = useState<"en" | "mr">(() => stored<"en" | "mr">("atp_copilot_lang", ["en", "mr"], "mr"));
+  // P0.8-D: the first-use acknowledgement - nothing AI-written is shown until this user accepted the current version.
+  const [ack, setAck] = useState<AiAcknowledgement | null>(null);
+  const [ackRead, setAckRead] = useState(false);
+  useEffect(() => { if (user) api.aiAcknowledgement().then(setAck).catch((e) => setError(String(e))); }, [user]);
   const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
   const setLang = (l: "en" | "mr") => { setLangState(l); store("atp_copilot_lang", l); };
   const startInterview = (text: string) => {
@@ -89,6 +93,34 @@ export default function AiCopilotPage() {
   const dataLabel = source.mode === "broker" ? "broker candles" : "sample data";
 
   if (!user) return <Card><p className="text-sm text-muted">Log in to use the AI Copilot.</p></Card>;
+  if (ack && !ack.accepted) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
+        <Card title={lang === "mr" ? "सुरू करण्याआधी - कृपया वाचा" : "Before you start - please read"}>
+          <div className="flex justify-end mb-2">
+            <div className="flex overflow-hidden rounded-lg border border-border text-xs">
+              {(["mr", "en"] as const).map((l) => (
+                <button key={l} onClick={() => setLang(l)} className={`px-2.5 py-1 ${lang === l ? "bg-purple-500/20 text-purple-100" : "text-muted"}`}>{l === "mr" ? "मराठी" : "English"}</button>
+              ))}
+            </div>
+          </div>
+          <p className="text-sm text-slate-100 leading-relaxed">{ack.text[lang]}</p>
+          <p className="mt-2 text-xs text-muted">{lang === "mr" ? "आवृत्ती" : "Version"} {ack.version}</p>
+          <label className="mt-3 flex items-start gap-2 text-sm text-slate-100">
+            <input type="checkbox" checked={ackRead} onChange={(e) => setAckRead(e.target.checked)} />
+            <span>{lang === "mr" ? "मी वाचले आणि समजले: AI Copilot सल्लागार नाही; निर्णय माझा." : "I have read and understood: the AI Copilot is not an adviser; the decision is mine."}</span>
+          </label>
+          <button disabled={!ackRead || busy} onClick={() => run(null, async () => { setAck(await api.aiAcceptAcknowledgement(ack.version, lang)); })}
+                  className="mt-3 rounded bg-purple-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">
+            {lang === "mr" ? "समजले, पुढे जा" : "I understand, continue"}
+          </button>
+          {error && <div className="mt-3 text-sm text-danger">{error}</div>}
+        </Card>
+        <Disclaimer kind="ai" />
+      </div>
+    );
+  }
 
   const open = actions.filter((a) => a.status === "PROPOSED");
   const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
@@ -156,8 +188,8 @@ export default function AiCopilotPage() {
           {interviewKey === 0 ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-slate-200 flex-1 min-w-[260px]">
-                नवीन आहात? आधी मी तुम्हाला काही प्रश्न विचारतो - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market वाचून (trend, structure, support/resistance) तुमच्यासाठी पूर्ण plan बनवतो: strategy, risk management, भांडवलाचे नियोजन आणि R:R.
-                <span className="block text-xs text-muted mt-1">New to trading? I ask about you first, read the market, then build a complete plan. Marathi or English.</span>
+                नवीन आहात? आधी काही प्रश्न - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market चा data वाचून (trend, structure, support/resistance) तीन templates त्यांच्या नियमांसह, backtest आणि risk settings सह दाखवतो. Template तुम्ही निवडा; ही शिफारस नाही.
+                <span className="block text-xs text-muted mt-1">New to trading? A few questions first, then the market data and three templates with their rules, backtest and risk settings. You choose the template; this is not a recommendation. Marathi or English.</span>
               </p>
               <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />सुरू करा / Start</button>
             </div>

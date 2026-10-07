@@ -228,7 +228,7 @@ item re-read in code before planning - all seven safety findings are real:
 | A7 | empty news scope matched everything in corroboration; bare "circuit" = severity 5; PAUSE landed on `active[0]` when no symbol matched | **P0.8-A (done)** |
 | B1-B3 | thesis headlines not wrapped, headline digits counted as allowed numbers, abs() compare; no numbers-check on copilot/knowledge/Telegram; flaky bd2 test | **P0.8-B (done)** |
 | C1-C5 | thinking + small max_tokens, no `stop_reason` handling, hard-coded models, OpenAI reasoning params, no client reuse/caching, no cost metering | **P0.8-C (done)** |
-| D1-D5 | interview "Recommended"/match %/allocation advice, strategist "Best", thesis targets, no first-use acknowledgement, no LLM audit table, DPDP text wrong, AI marketplace listings | P0.8-D |
+| D1-D5 | interview "Recommended"/match %/allocation advice, strategist "Best", thesis targets, no first-use acknowledgement, no LLM audit table, DPDP text wrong, AI marketplace listings | **P0.8-D (done)** |
 
 Migrations: P0.4 (Numeric money, encryption format columns) and P0.3 (audit anchors, key hashing) only, all
 batch-safe, off-hours per the guard. Risks: S6/S14 affect every logged-in client -> dual-read for one release;
@@ -471,6 +471,35 @@ default and G-LIVE gate before any LIVE wiring.
 - Tests: `tests/test_phase_p0_8a_copilot_safety.py` (8); strategist adopt / Telegram / AI draft tests follow the new
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
+
+### 2026-10-07 - P0.8-D: compliance (SEBI / DPDP) of the AI Copilot (D1-D5)
+- D1 interview: three risk settings on **templates you choose** - no "Recommended/शिफारस", no "Three options for you",
+  no match % ("matches you", "Closest to you", match history), no best option; the plan says "Template shown first ...
+  you choose; this is a description, not a recommendation", explains how the order came about (regime fit + backtest),
+  and names "Other template" instead of "Alternative". The trading capital is the figure the trader entered (no
+  allocation by experience, no "keep as reserve", no "raise the allocation"); the R:R line gives the break-even
+  arithmetic *before costs* and points to the backtest's net figures; "Consider waiting" removed; the LLM prompt no
+  longer asks to "improve on the pick". `/interview/choose` ignores the match field (kept for older clients).
+- D2 strategist: no "Best/सर्वोत्तम" badge (`best` is null), no "Market ठरवू दे" - `auto` now means both sides and the
+  default is both; no priced "Today's triggers" on templates; the "wait or paper-trade" note is data-only. Thesis: for
+  a single stock the confidence % and the next reference levels ("targets") are hidden unless the operator turns on
+  `thesis_stock_targets` (indices keep them); the wording is a data read ("keeps the bullish read", "this read is
+  invalid"), never "opens room towards"; the narrative prompt forbids buy/sell/hold/wait and says it is not advice.
+  Copilot persona: "explains the platform's rules, templates and data", never recommends a strategy or allocation.
+- D3 first-use acknowledgement (`ai/compliance_terms.py`, version 2026-10-07, en/mr text): every AI content route
+  (drafts, interview, ask, brief, thesis, coach, copilot, strategist, interview deploy, adopt) answers 428
+  `ai_acknowledgement_required` until the user accepts; `GET/POST /api/ai/acknowledgement`; the acceptance is an
+  `ai_acknowledgements` row (version, text hash, language, IP, user agent) and an audit event. Approve/reject of
+  proposals and provider settings never wait for it. The Copilot page shows the text and the checkbox first.
+- D4 `llm_calls` (migration `f7a9b1c3d5e7`): every LLM input and output through `MeteredProvider` - system prompt,
+  user text, answer or error, SHA-256 of each, prompt version, provider, model, tokens, cost, tenant, user, feature.
+  `llm_calls` and `ai_acknowledgements` are in `retention.NEVER_DELETED`.
+- D5 DPDP: the AI provider card says what is actually sent (questions, interview answers incl. capital and experience,
+  trade facts, market data, headlines; never credentials or keys); saving an external provider needs the owner's
+  versioned data-sharing consent (purpose, processing possibly outside India, opt-out = rule-based), recorded and
+  audited. Marketplace: a strategy whose origin starts with `ai` cannot be listed or submitted while the new flag
+  `marketplace_ai_listings` is off (default off, SEBI RA gating).
+- Tests `tests/test_phase_p0_8d_compliance.py` (7); the suite's `_register` accepts the terms (`ai_terms=False` to skip).
 
 ### 2026-10-07 - P0.8-C: the provider layer (C1-C5)
 - C1 `providers.AnthropicProvider`: the request `max_tokens` is the caller's text budget plus a thinking headroom per

@@ -184,31 +184,32 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
     if up:
         tgt = up2["price"] if up2 else round(up["price"] + (atr5 * 3 if not pd.isna(atr5) else up["price"] * 0.004), 2)
         scenarios.append({"id": "bull", "trigger": up["price"], "trigger_name": up["name"], "target": tgt,
-                          "text": tr(lang, f"Bullish if it holds above {up['name']} {up['price']:,.2f} - room towards {tgt:,.2f}.",
-                                     f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजी - {tgt:,.2f} पर्यंत जागा.")})
+                          "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
+                                     f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
     if down:
         tgt = down2["price"] if down2 else round(down["price"] - (atr5 * 3 if not pd.isna(atr5) else down["price"] * 0.004), 2)
         scenarios.append({"id": "bear", "trigger": down["price"], "trigger_name": down["name"], "target": tgt,
-                          "text": tr(lang, f"Bearish below {down['name']} {down['price']:,.2f} - room towards {tgt:,.2f}.",
-                                     f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदी - {tgt:,.2f} पर्यंत जागा.")})
+                          "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
+                                     f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
     if up and down:
         scenarios.append({"id": "range", "trigger": None, "low": down["price"], "high": up["price"],
-                          "text": tr(lang, f"Between {down['price']:,.2f} and {up['price']:,.2f} it is a range - fade the edges, no chasing in the middle.",
-                                     f"{down['price']:,.2f} ते {up['price']:,.2f} दरम्यान range - कडांवर उलट trade, मधे पाठलाग नको.")})
+                          "text": tr(lang, f"Between {down['price']:,.2f} and {up['price']:,.2f} the data reads as a range.",
+                                     f"{down['price']:,.2f} ते {up['price']:,.2f} दरम्यान data range दाखवतो.")})
 
+    # P0.8-D: the headline describes the session; it does not tell the trader what to trade.
     headline = {
-        ("TREND", "BULLISH"): ("Trend day, buyers in control: trade pullbacks and breakouts in the up direction.", "Trend चा दिवस, खरेदीदारांचे वर्चस्व: वरच्या दिशेने pullback आणि breakout."),
-        ("TREND", "BEARISH"): ("Trend day, sellers in control: sell rallies and breakdowns.", "Trend चा दिवस, विक्रेत्यांचे वर्चस्व: वर आलेल्या भावावर आणि breakdown वर विक्री."),
-        ("VOLATILE", None): ("Volatile session: wide swings - wider stops, smaller size, only the clearest setups.", "अस्थिर सत्र: मोठे चढ-उतार - stop मोठे, size लहान, फक्त स्पष्ट setups."),
-        ("RANGE", None): ("Range-bound: fade the edges of the range, take breakouts only with follow-through.", "Range मधला market: range च्या कडांवर उलट trade, breakout फक्त पुढे गेला तरच."),
+        ("TREND", "BULLISH"): ("Trend day, buyers in control on the data: higher highs above VWAP.", "Trend चा दिवस, data नुसार खरेदीदारांचे वर्चस्व: VWAP च्या वर वाढते highs."),
+        ("TREND", "BEARISH"): ("Trend day, sellers in control on the data: lower lows below VWAP.", "Trend चा दिवस, data नुसार विक्रेत्यांचे वर्चस्व: VWAP च्या खाली घटते lows."),
+        ("VOLATILE", None): ("Volatile session: wide swings, so ATR-based stops are wider in rupees.", "अस्थिर सत्र: मोठे चढ-उतार, त्यामुळे ATR वर आधारित stop रुपयांत मोठे."),
+        ("RANGE", None): ("Range-bound session: price is moving between its nearest levels without follow-through.", "Range मधले सत्र: भाव जवळच्या levels दरम्यान फिरतो, पुढे जात नाही."),
     }
     key = (character, bias) if (character, bias) in headline else (character, None)
     if key not in headline:
         key = ("RANGE", None)
     lines = [tr(lang, *headline[key])] + reasons[:5]
     if vix is not None:
-        lines.append(tr(lang, f"India VIX {vix:.1f}" + (" - high; trade small." if vix >= 20 else "."),
-                        f"India VIX {vix:.1f}" + (" - जास्त; size लहान ठेवा." if vix >= 20 else ".")))
+        lines.append(tr(lang, f"India VIX {vix:.1f}" + (" - high (above 20)." if vix >= 20 else "."),
+                        f"India VIX {vix:.1f}" + (" - जास्त (20 पेक्षा वर)." if vix >= 20 else ".")))
     if memory and memory.get("globals"):
         from app.ai import global_cues
         g = global_cues.view(lang, memory["globals"])

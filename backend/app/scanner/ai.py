@@ -279,7 +279,7 @@ def rule_based_plan(text: str) -> ScanPlan:
 
 async def plan_scan(session: AsyncSession, tenant: Tenant, user: User, text: str, *, language: str = "en",
                     provider: Optional[LLMProvider] = None) -> ScanPlan:
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_plan")
+    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_plan", user_id=user.id)
     if isinstance(provider, RuleBasedProvider):
         plan = rule_based_plan(text)
     else:
@@ -387,7 +387,7 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
                     language: str = "en", provider: Optional[LLMProvider] = None) -> ScanRead:
     matches = result.matches[:MAX_MATCHES_TO_READ]
     regimes = _regimes_for(request, matches)
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_read")
+    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_read", user_id=user.id)
     if isinstance(provider, RuleBasedProvider) or not matches:
         read = rule_based_read(matches, regimes)
     else:

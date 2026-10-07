@@ -297,20 +297,17 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         if high_fear and a.experience != "experienced":
             plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are likely. A beginner should paper-trade or just watch until it cools.",
                                        "India VIX 20 किंवा जास्त आहे - भीती जास्त, gap ची शक्यता. नवशिक्याने VIX कमी होईपर्यंत PAPER मध्येच किंवा फक्त निरीक्षण करावे."))
-        match, market_fit, reasons = match_score(a, p, market, pick, cfg, honoured)
+        _match, market_fit, _reasons = match_score(a, p, market, pick, cfg, honoured)
         (en_label, en_sub), (mr_label, mr_sub) = OPTION_TEXT[oid]
-        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "match": match,
-                          "market_fit": market_fit, "match_reasons": reasons,
+        # P0.8-D: three risk settings on templates the trader chooses between. No "match %", no "closest to you", no
+        # best option - the only figure is the data: how the template's regime filter and evidence fit today's market.
+        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "market_fit": market_fit,
                           "headline": None if pick is None else {"strategy": pick["name"], "risk_pct": cfg.risk_per_trade_pct,
                                                                  "trades_per_day": cfg.max_trades_per_day, "min_rr": cfg.min_risk_reward}}
         options.append(plan)
-    best = max(options, key=lambda o: 0.7 * o["option"]["match"] + 0.3 * o["option"]["market_fit"])
-    history = (p.match_history + [best["option"]["match"]])[-50:]
-    # The top level stays the balanced option (the trader's own answers) for older clients; the
-    # UI shows all three and marks `best_option`.
+    # The top level stays the balanced option (the trader's own answers) for older clients; the UI shows all three.
     result = dict(next(o for o in options if o["option"]["id"] == "balanced"))
-    result.update({"options": options, "best_option": best["option"]["id"], "preferences": p.model_copy(update={"match_history": history}).model_dump(),
-                   "feedback_options": feedback_options(), "desired": desired(a, p)})
+    result.update({"options": options, "best_option": None, "preferences": p.model_dump(), "feedback_options": feedback_options(), "desired": desired(a, p)})
     return result
 
 

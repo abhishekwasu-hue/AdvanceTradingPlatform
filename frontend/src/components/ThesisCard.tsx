@@ -77,7 +77,7 @@ export default function ThesisCard({ lang = "mr" }: { lang?: "mr" | "en" }) {
         <div className="space-y-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold ${dir.cls}`}><Icon size={13} />{thesis.symbol} · {lang === "mr" ? dir.mr : thesis.direction.toLowerCase()}</span>
-            <span className="text-slate-200">{thesis.confidence}% {lang === "mr" ? "विश्वास" : "confidence"}</span>
+            {thesis.confidence != null && <span className="text-slate-200">{thesis.confidence}% {lang === "mr" ? "विश्वास" : "confidence"}</span>}
             <span className="text-muted">· {thesis.agreement.agreeing}/{thesis.agreement.with_opinion} {lang === "mr" ? "घटक सहमत" : "factors agree"} · coverage {(thesis.agreement.coverage * 100).toFixed(0)}%</span>
             <span className="ml-auto rounded border border-border px-2 py-0.5 text-muted" title={thesis.shadow.reasons.join("; ") || "no reduction"}>
               shadow ×{thesis.shadow.size_multiplier.toFixed(2)} <span className="text-amber-300">({lang === "mr" ? "लागू नाही" : "not applied"})</span>

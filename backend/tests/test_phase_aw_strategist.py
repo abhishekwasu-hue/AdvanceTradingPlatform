@@ -89,10 +89,12 @@ def test_market_study_reads_the_trend_and_the_levels():
 def test_strategist_builds_validated_candidates():
     df = _sessions(days=12, minutes=1)
     s = ms.study(df, "NIFTY 50", "en")
-    out = st.build(df, s, "en")
-    assert out["sides"] == ["long"] and out["base_timeframe"] == "5min" and out["tested"] >= 3
+    # P0.8-D: the trader names the side; a bullish study no longer picks LONG for them, and nothing is marked best.
+    assert st.build(df, s, "en")["sides"] == ["both"]
+    out = st.build(df, s, "en", direction="long")
+    assert out["sides"] == ["long"] and out["base_timeframe"] == "5min" and out["tested"] >= 3 and out["best"] is None
     best = out["candidates"][0]
-    assert best["id"] == out["best"] and best["direction"] == "LONG" and not best["rules"]["short"]
+    assert best["direction"] == "LONG" and not best["rules"]["short"] and best["triggers"] == []
     assert best["all"]["trades"] > 0 and best["verdict"] in ("robust", "overfit", "weak", "untested", "thin")
     assert best["in_sample"]["trades"] + best["out_of_sample"]["trades"] <= best["all"]["trades"] + 1
     assert best["risk_amount"] == 500.0 and best["stop_points"] > 0

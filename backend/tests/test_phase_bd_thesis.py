@@ -187,7 +187,7 @@ def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_n
             return await th.current(session, tenant_id, "NIFTY 50", lang="en", now=NOW)
     first = _run(build())
     assert first["direction"] == "BULLISH" and first["shadow"]["size_multiplier"] == 0.5 and first["shadow"]["applied"] is False and first["events"][0]["kind"] == "RBI_POLICY"
-    assert first["scenarios"]["bull"]["trigger"] == 25200.0 and first["lines"][0].startswith("NIFTY 50 thesis: bullish")
+    assert first["scenarios"]["bull"]["trigger"] == 25200.0 and first["lines"][0].startswith("NIFTY 50 data read: bullish")
     again = _run(build())
     assert again["id"] == first["id"]                                                                 # fresh enough: served from the store
 
@@ -267,4 +267,4 @@ def test_capture_daily_builds_one_thesis_per_symbol_per_day_and_telegram_thesis_
             tenant = await session.get(Tenant, tenant_id)
             return await tg._thesis_text(session, tenant.id, "RELIANCE", "en")
     out = _run(text())
-    assert out.startswith("RELIANCE thesis:") and "Shadow overlay" in out and "never a signal" in out and "&" not in out.replace("P&L", "")
+    assert out.startswith("RELIANCE data read:") and "Shadow overlay" in out and "never a signal" in out and "&" not in out.replace("P&L", "")

@@ -3637,6 +3637,16 @@ the headlines in an untrusted block, then checks numbers and tickers with one re
 the reason in `note`; `knowledge.ai_answer` checks against the memory values, the concept notes and the question.
 Tests: `tests/test_phase_p0_8b_grounding.py`.
 
+**P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
+`ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the
+AI content routes, `accept()` with an audit event. `metering.MeteredProvider` also writes `llm_calls` (`log_call`,
+savepoint) with the user, feature, prompt version and both texts. `PUT /api/ai/provider` needs `data_consent` for an
+external provider. `marketplace.service._ai_origin_allowed` checks `marketplace_ai_listings`. `thesis.compose(...,
+stock_targets=)` hides targets and the confidence % for non-index symbols unless `thesis_stock_targets` is on;
+`strategist._side_for` never derives a side from the bias and `build()` returns `best=None` and no triggers;
+`advisor.build_options` returns no match score or best option; `interview.risk_plan` uses the entered capital.
+Tests: `tests/test_phase_p0_8d_compliance.py`.
+
 **P0.8-C (provider layer).** `ai/providers.py`: `Completion` (text + token counts), `complete_full` on every
 provider, `TASK_TIERS` / `default_models()` / `model_for()` (environment per tier, tenant override for the strong
 tier), `thinking_headroom` added to the text budget, one retry on `max_tokens` / `finish_reason == "length"` then

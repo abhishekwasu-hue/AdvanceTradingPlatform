@@ -78,7 +78,9 @@ def parse_answer_full(text: str) -> Tuple[CustomStrategyConfig, str, List[str], 
 async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: str, *, client: Optional[httpx.AsyncClient] = None,
                    provider: Optional[LLMProvider] = None, regime: Optional[str] = None, language: str = "en",
                    symbol: Optional[str] = None) -> AiStrategyDraftRecord:
-    provider = provider or await ai_settings.provider_for(session, tenant, client=client, task="strategy_generation")
+    provider = provider or await ai_settings.provider_for(session, tenant, client=client, task="strategy_generation", user_id=user.id)
+    if hasattr(provider, "prompt_version"):
+        provider.prompt_version = PROMPT_VERSION        # P0.8-D: the llm_calls row names the guardian prompt that answered
     cfg, ceilings = await _effective_risk(session, tenant.id)
     # Phase V3: the versioned guardian prompt, filled from the tenant's live state.
     context = await build_runtime_context(session, tenant, user, cfg, ceilings, regime=regime, language=language, symbol=symbol)

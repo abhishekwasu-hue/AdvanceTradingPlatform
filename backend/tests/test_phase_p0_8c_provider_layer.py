@@ -157,7 +157,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     headers = {"Authorization": f"Bearer {_register('p08c-meter@example.com')}"}
     me = client.get("/api/auth/me", headers=headers).json()
     _upgrade_plan(me["tenant_id"], "pro")
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-meter-key-1234", "model": "claude-mine"}).status_code == 200
+    assert client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "api_key": "sk-ant-meter-key-1234", "model": "claude-mine"}).status_code == 200
     monkeypatch.setenv("AI_ANTHROPIC_FAST_MODEL", "claude-fast-env")
 
     def handler(request):
@@ -226,7 +226,7 @@ def test_truncated_answers_are_metered_and_fall_back_to_the_rules(monkeypatch):
     headers = {"Authorization": f"Bearer {_register('p08c-trunc@example.com')}"}
     me = client.get("/api/auth/me", headers=headers).json()
     _upgrade_plan(me["tenant_id"], "pro")
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-trunc-key-1234"}).status_code == 200
+    assert client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "api_key": "sk-ant-trunc-key-1234"}).status_code == 200
 
     def cut(request):
         return httpx2.Response(200, json=_msg("Index at 25,0", stop="max_tokens", usage={"input_tokens": 10, "output_tokens": 50}))

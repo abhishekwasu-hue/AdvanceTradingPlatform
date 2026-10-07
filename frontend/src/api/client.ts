@@ -129,6 +129,7 @@ import type {
   NewsFeedSource,
   NewsFeedStatus,
   BrokerLoginUrl,
+  AiAcknowledgement,
 } from "../types";
 
 const BASE = "/api/v1";
@@ -648,7 +649,10 @@ export const api = {
     request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),
   // ---- Phase L: AI layer
   aiProvider: () => request<AiProviderConfig>("/ai/provider"),
-  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
+  aiAcknowledgement: () => request<AiAcknowledgement>("/ai/acknowledgement"),
+  aiAcceptAcknowledgement: (version: string, language: "en" | "mr") =>
+    request<AiAcknowledgement>("/ai/acknowledgement", { method: "POST", body: JSON.stringify({ version, language }) }),
+  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" | "mr" }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}) =>
@@ -679,8 +683,8 @@ export const api = {
                       feedback: string[], optionId: string, strategyId: string | null) =>
     request<InterviewPlan>("/ai/interview/refine", { method: "POST", body: JSON.stringify({
       answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }) }),
-  aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null, match: number) =>
-    request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId, match }) }),
+  aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null) =>
+    request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   // Phase BD-lite: the market thesis (shadow overlay only) and its scoreboard.

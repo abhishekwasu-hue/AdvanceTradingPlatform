@@ -842,6 +842,20 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `AI_PROVIDER_TIMEOUT_SECONDS`).
 - Prometheus: `atp_ai_tokens_total{provider,model,kind}` and `atp_ai_cost_usd_total{provider,model}`.
 
+### 1.6ab-10 AI Copilot compliance switches (P0.8-D)
+
+- **First use**: every user sees the AI Copilot acknowledgement once (not a SEBI-registered adviser; explains rules and
+  data; the decision is yours) and ticks it; until then the AI routes answer 428. A new version of the text (changed
+  in `ai/compliance_terms.py`) asks everyone again. Acceptances are in `ai_acknowledgements` and the audit log.
+- **External AI provider**: the owner must tick the data-sharing consent on the AI provider card before Anthropic or
+  OpenAI can be saved. Switching to the rule-based provider is the opt-out.
+- **Flags (Admin > Feature flags), both OFF by default**: `marketplace_ai_listings` (AI-drafted / strategist strategies
+  may be listed for sale - keep off until the SEBI research-analyst question is settled) and `thesis_stock_targets`
+  (show price reference levels and a confidence % in the thesis of a single stock; indices always show them).
+- **Records kept for good**: `llm_calls` (every AI prompt and answer) and `ai_acknowledgements` are never touched by
+  retention. They grow with use; include them in backups (they are, with the rest of the database).
+- Migration `f7a9b1c3d5e7` (two new tables, nothing changed in existing rows) on the next off-hours pull + build.
+
 ### 1.6ab CoinDCX setup (Phase AK)
 
 - **Create an API key** in the CoinDCX web app (Profile > API dashboard) with trading permission and,

@@ -53,6 +53,7 @@ async def create_listing(session: AsyncSession, user: User, *, custom_strategy_i
     strategy = await session.get(CustomStrategyRecord, custom_strategy_id)
     if strategy is None or strategy.tenant_id != user.tenant_id:
         raise MarketplaceError("No such strategy in your organisation")
+    await _ai_origin_allowed(session, strategy)
     version = None
     if version_number is not None:
         version = await session.scalar(select(StrategyVersionRecord).where(
@@ -80,9 +81,18 @@ async def create_listing(session: AsyncSession, user: User, *, custom_strategy_i
     return listing
 
 
+async def _ai_origin_allowed(session: AsyncSession, strategy: Optional[CustomStrategyRecord]) -> None:
+    """P0.8-D: a strategy an AI drafted or the strategist proposed is not sold on the marketplace until the operator turns
+    `marketplace_ai_listings` on (SEBI Research Analyst gating); the trader can still run it in their own organisation."""
+    from app.platform.controls import flag_enabled
+    if strategy is not None and str(strategy.origin or "user").lower().startswith("ai") and not await flag_enabled(session, "marketplace_ai_listings", strategy.tenant_id):
+        raise MarketplaceError("AI-originated strategies cannot be listed on the marketplace yet (platform flag marketplace_ai_listings is off pending SEBI research-analyst gating)")
+
+
 async def submit(session: AsyncSession, user: User, listing: MarketplaceListingRecord) -> MarketplaceListingRecord:
     if listing.status not in ("DRAFT", "REJECTED", "UNLISTED"):
         raise MarketplaceError(f"A {listing.status} listing cannot be submitted")
+    await _ai_origin_allowed(session, await session.get(CustomStrategyRecord, listing.custom_strategy_id))
     if not listing.performance_json:
         raise MarketplaceError("Attach a saved backtest run as documented performance before submitting (V3.14 rule 8)")
     if len(listing.description) < 40:

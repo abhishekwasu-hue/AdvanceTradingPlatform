@@ -156,9 +156,8 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
     } catch (e) { setError(String(e).replace(/^Error:\s*/, "")); } finally { setBusy(false); }
   }
   return (
-    <div className={`rounded-xl border p-4 ${best ? "border-purple-400/60 bg-purple-500/[0.07]" : "border-border bg-panel"}`}>
+    <div className="rounded-xl border border-border bg-panel p-4">
       <div className="flex flex-wrap items-center gap-2">
-        {best && <span className="rounded bg-purple-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-100">{L("सर्वोत्तम", "Best")}</span>}
         <span className="text-base font-extrabold text-slate-50">{c.name}</span>
         <span className={`rounded border px-1.5 py-0.5 text-[11px] ${c.direction === "LONG" ? "border-emerald-500/40 text-emerald-300" : c.direction === "SHORT" ? "border-rose-500/40 text-rose-300" : "border-border text-slate-300"}`}>{c.direction_text ?? (c.direction === "LONG" ? L("फक्त LONG", "LONG only") : c.direction === "SHORT" ? L("फक्त SHORT", "SHORT only") : L("दोन्ही बाजू", "both sides"))}</span>
         <span className="text-[11px] text-muted">{c.timeframe_text ?? c.timeframe}{c.source === "ai" ? L(" · AI ने सुचवलेली", " · proposed by your AI") : ""}</span>
@@ -234,7 +233,7 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
 export default function StrategistPanel({ source, lang }: { source: CandleSourceState; lang: "en" | "mr" }) {
   const [symbol, setSymbol] = useState("NIFTY 50");
   const [style, setStyle] = useState<"intraday" | "scalping">("intraday");
-  const [direction, setDirection] = useState<"auto" | "long" | "short" | "both">("auto");
+  const [direction, setDirection] = useState<"long" | "short" | "both">("both");   // P0.8-D: the trader names the side; the market does not
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StrategistResult | null>(null);
@@ -254,7 +253,7 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         setParsed(p);
         if (p.matched.symbol) setSymbol(p.symbol);
         if (p.matched.style) setStyle(p.style);
-        if (p.matched.direction) setDirection(p.direction);
+        if (p.matched.direction) setDirection(p.direction === "auto" ? "both" : p.direction);
       }).catch(() => { if (active) setParsed(null); });
     }, 400);
     return () => { active = false; clearTimeout(handle); };
@@ -318,7 +317,6 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
           </label>
           <label className="text-xs text-muted">दिशा
             <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)} className="mt-0.5 block rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100">
-              <option value="auto">Market ठरवू दे (bias नुसार)</option>
               <option value="long">फक्त LONG</option>
               <option value="short">फक्त SHORT</option>
               <option value="both">दोन्ही बाजू</option>

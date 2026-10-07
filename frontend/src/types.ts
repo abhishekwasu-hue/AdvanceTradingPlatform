@@ -1590,6 +1590,18 @@ export interface AiProviderConfig {
   models?: { strong: string; fast: string };
   tier_models?: Record<string, { strong: string; fast: string }>;
   usage?: AiUsage | null;
+  /** P0.8-D: the organisation's data-sharing consent (version, accepted, by whom). */
+  data_consent?: AiAcknowledgement;
+}
+
+/** P0.8-D: a versioned acceptance - the Copilot first-use terms (per user) or the data-sharing consent (per organisation). */
+export interface AiAcknowledgement {
+  kind: "copilot_terms" | "data_consent";
+  version: string;
+  text: { en: string; mr: string };
+  accepted: boolean;
+  accepted_at?: string | null;
+  accepted_by?: number | null;
 }
 
 /** P0.8-C: this month's AI spend of the organisation against the plan's budget. */
@@ -1900,18 +1912,16 @@ export interface InterviewPreferences {
   reward_bias: number;
   simplicity: number;
   rejected: string[];
-  chosen: { option: string; strategy_id: string | null; match: number }[];
+  chosen: { option: string; strategy_id: string | null; match?: number }[];
   match_history: number[];
 }
 export interface InterviewOptionMeta {
   id: "safe" | "balanced" | "active";
   label: string;
   summary: string;
-  /** How close to what this trader asked for (feedback moves it). */
-  match: number;
-  /** How well it suits today's market and its recent evidence (the market's say). */
+  /** How well the template's regime filter and recent evidence fit today's market (data, not a recommendation).
+   * P0.8-D: there is no "match with you" score any more. */
   market_fit: number;
-  match_reasons: string[];
   headline: { strategy: string; risk_pct: number; trades_per_day: number; min_rr: number } | null;
 }
 export interface FeedbackOption { code: string; en: string; mr: string }
@@ -1939,7 +1949,7 @@ export interface InterviewPlan {
   disclaimer: string;
   option?: InterviewOptionMeta;
   options?: InterviewPlan[];
-  best_option?: string;
+  best_option?: string | null;   // P0.8-D: always null - nothing is marked as best
   /** P0.8 / A3: the server-held candidate behind this option; "Deploy in PAPER" sends it with the risk acceptance. */
   candidate_id?: number | null;
   preferences?: InterviewPreferences;
@@ -1983,14 +1993,14 @@ export interface MarketMemory {
 
 /** Phase BD-lite: the market thesis of one symbol (shadow overlay only). */
 export interface ThesisFactor { factor: string; weight: number; available: boolean; direction: -1 | 0 | 1; strength: number; value: unknown }
-export interface ThesisScenario { trigger?: number; target?: number; invalidation?: number; low?: number; high?: number; text: string }
+export interface ThesisScenario { trigger?: number; /** P0.8-D: indices only, unless the operator's thesis_stock_targets flag is on */ target?: number; invalidation?: number; low?: number; high?: number; text: string }
 export interface MarketThesis {
   id?: number;
   symbol: string;
   as_of: string;
   lang: string;
   direction: "BULLISH" | "BEARISH" | "NEUTRAL";
-  confidence: number;
+  confidence: number | null;   // P0.8-D: null for a single stock (no confidence %), unless the operator's flag allows
   agreement: { net: number; direction: string; confidence: number; agreeing: number; with_opinion: number; share: number; coverage: number; conflict: boolean; matrix: ThesisFactor[] };
   scenarios: Partial<Record<"bull" | "base" | "bear", ThesisScenario>>;
   shadow: { size_multiplier: number; reasons: string[]; mode: "shadow"; applied: false; note: string };

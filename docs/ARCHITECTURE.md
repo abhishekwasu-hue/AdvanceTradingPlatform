@@ -3615,7 +3615,12 @@ bandit `-ll -ii` on `app/`, gitleaks on the pushed commits with `.gitleaks.toml`
 **P0.8-A (AI Copilot safety).** `ai/monitor.execute` turns an incomplete `close_position` into a FAILED action
 (FAILED rows do not throttle the rule); `decide` is a conditional UPDATE and `ai_actions` carries the partial unique
 index `uq_ai_actions_open_rule` (tenant, deployment, rule; open statuses only). `ai/routes.approve_action` runs the
-LIVE step-up and passes `worker_bridge.broker_for_trade` for a LIVE exit. `ai_candidates` holds the server-built
+LIVE step-up and passes `trading.position_monitor.broker_for_trade` (the one helper every square-off uses: broker
+account, else the deployment's broker, else the tenant's single broker) for a LIVE exit. `raise_proposals` inserts
+each row in a savepoint, so a duplicate caught by the index drops that row only; `decide` never rolls back (the lost
+race matched no row). Open rows with `deployment_id IS NULL` (news REDUCE_RISK) are guarded by `_already_open`
+only, since the database treats NULLs as distinct. Expired OPEN candidates age out through retention
+(`ai_candidates_days`, `RETENTION_AI_CANDIDATES_DAYS`, default 30 after expiry). `ai_candidates` holds the server-built
 strategist / interview candidates; `/strategist/adopt` and `/interview/deploy` take a candidate id and the risk
 acceptance, run `compliance.evaluate_config` (adopt) and require trades in the stored simulation / evidence.
 `custom_strategies/resolver.normalize_strategy_id` maps the legacy `custom_<id>`. `telegram_inbound.actor_for_sender`

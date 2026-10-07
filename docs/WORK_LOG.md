@@ -441,7 +441,8 @@ default and G-LIVE gate before any LIVE wiring.
 ### 2026-10-07 - P0.8-A: AI Copilot safety (A1-A7 of ATP_AI_COPILOT_FIX_PROMPT)
 - A1: an approved EXIT whose `close_position` did not close is **FAILED** with the reason (never EXECUTED), and a FAILED
   row no longer blocks the rule for the day; a LIVE position without a broker session is refused, and the web approval
-  passes the trade's broker adapter (`worker_bridge.broker_for_trade`, by the trade's broker account).
+  passes the trade's broker adapter (`position_monitor.broker_for_trade` - the same helper as the Positions page,
+  the kill switch and the worker: broker account, else the deployment's broker, else the tenant's only broker).
 - A2: `approve_action` runs `ensure_live_step_up` when the proposal's deployment or position is LIVE (same rule as
   creating/resuming a LIVE deployment: 403 with the MFA code until the session passed TOTP).
 - A3: `ai_candidates` table (migration `e6f8a0b2c4d6`): `/strategist/build` and `/interview/plan` persist the server's
@@ -454,7 +455,10 @@ default and G-LIVE gate before any LIVE wiring.
   accepts the legacy `custom_<id>` and the migration rewrites stored deployments; deployment creation normalises.
 - A5: `decide` is a conditional UPDATE (`WHERE status='PROPOSED'`; the loser gets "decided concurrently"); partial
   unique index `uq_ai_actions_open_rule` (tenant, deployment, rule where status in PROPOSED/APPROVED) with
-  `raise_proposals` skipping the IntegrityError.
+  `raise_proposals` inserting each row in a savepoint and skipping the IntegrityError (earlier rows and the caller's
+  objects survive); the migration expires pre-existing duplicate open rows before building the index. Self-review
+  fixes: canonical `position_monitor.broker_for_trade`, no rollback in `decide`, interview-deploy happy path
+  tested on a cash deployment, `ai_candidates` retention knob, Telegram tests pinned off the shared limiter.
 - A6: `TelegramConfig.approvers` (Telegram user id -> team member, set by the owner under Settings by e-mail); a
   button press or command is attributed to the sender's `from.id`: with approvers configured only a listed sender acts,
   as that member (recorded in `decided_by` and the audit log); without approvers only a *private* chat with a

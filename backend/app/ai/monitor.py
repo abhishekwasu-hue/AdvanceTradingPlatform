@@ -150,12 +150,14 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
                 pass
         row = AiActionRecord(tenant_id=tenant_id, deployment_id=p.deployment_id, trade_id=p.trade_id, action=p.action, rule=p.rule, reason=reason,
                              evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS))
-        session.add(row)
         try:
-            await session.flush()
+            # P0.8 / A5: the insert runs in a savepoint, so when the partial unique index on open proposals (tenant,
+            # deployment, rule) catches a concurrent raise only this row is dropped - the proposals and notifications
+            # already flushed in this call, and the caller's loaded objects, stay intact.
+            async with session.begin_nested():
+                session.add(row)
+                await session.flush()
         except IntegrityError:
-            # P0.8 / A5: the partial unique index on open proposals (tenant, deployment, rule) caught a concurrent raise.
-            await session.rollback()
             continue
         AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
@@ -190,9 +192,11 @@ async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, a
     # P0.8 / A5: the decision is a conditional UPDATE - the web and Telegram (or two tabs) may decide the same proposal at
     # the same instant, and only the one whose row was still PROPOSED wins; the other learns it was already decided.
     claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id, AiActionRecord.status == "PROPOSED")
-                                    .values(status=status, decided_by=user.id, decided_at=now, decision_note=(note or "")[:300] or None))
+                                    .values(status=status, decided_by=user.id, decided_at=now, decision_note=(note or "")[:300] or None)
+                                    .execution_options(synchronize_session=False))
     if claimed.rowcount != 1:
-        await session.rollback()
+        # The UPDATE matched nothing, so there is nothing to roll back: reload the row and tell the loser. (A rollback
+        # here would expire every object the caller still holds - the Telegram handler's tenant among them.)
         await session.refresh(action)
         raise ValueError(f"Action is {action.status}; it was decided concurrently")
     AI_DECISIONS.labels(decision=status).inc()

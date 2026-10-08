@@ -184,7 +184,9 @@ def test_lot_is_keyed_by_the_contract_expiry_and_explicit_weekly_is_honoured():
     assert lot_size_for("NIFTY 50", D("2025-12-31"), D("2026-01-06")) == 65     # the Jan 2026 series, entered in Dec 2025
     assert lot_size_for("NIFTY 50", D("2025-12-31"), D("2025-12-30")) == 75
     assert lot_size_for("BANKNIFTY", D("2026-10-05"), D("2026-10-27")) == lot_size_on("BANKNIFTY", D("2026-10-05"))
-    forced = ExpiryCalendar.for_underlying("BANKNIFTY", weekly=True)
-    assert forced.expiries(D("2023-03-06"), 2) == [D("2023-03-09"), D("2023-03-16")]   # weekly Thursdays as asked
-    monthly = ExpiryCalendar.for_underlying("BANKNIFTY")
-    assert monthly.expiries(D("2023-03-06"), 1) == [D("2023-03-30")]                  # monthly only: the last Thursday
+    # BANKNIFTY reads NSE's own dates (app.instruments.expiry_data): weeklies where they were listed, and the March 2023
+    # monthly on Wed 29 Mar - the exchange moved it off the Ram Navami holiday, which no weekday rule knows.
+    listed = ExpiryCalendar.for_underlying("BANKNIFTY", weekly=True)
+    assert listed.expiries(D("2023-03-06"), 2) == [D("2023-03-09"), D("2023-03-16")]
+    monthly = ExpiryCalendar.for_underlying("BANKNIFTY", weekly=False)
+    assert monthly.expiries(D("2023-03-06"), 1) == [D("2023-03-29")]

@@ -110,9 +110,10 @@ def test_conventions_calendar_and_ladder():
     # A holiday on the Tuesday moves the expiry to Monday - the exchange's rule.
     shifted = ExpiryCalendar.for_underlying("NIFTY", holidays=[date(2026, 10, 13)])
     assert shifted.expiries(date(2026, 10, 7), count=1) == [date(2026, 10, 12)]
-    # BANKNIFTY: monthly, last Tuesday; SENSEX: weekly Thursday; overrides win.
+    # BANKNIFTY: the dates NSE listed (monthly only since Nov 2024; Nov 2026 moved to Monday 23rd by the exchange);
+    # SENSEX: weekly Thursday; overrides win.
     bank = ExpiryCalendar.for_underlying("BANKNIFTY")
-    assert (bank.weekday, bank.weekly) == (1, False) and bank.expiries(date(2026, 10, 5), count=2) == [date(2026, 10, 27), date(2026, 11, 24)]
+    assert bank.data_symbol == "BANKNIFTY" and bank.expiries(date(2026, 10, 5), count=2) == [date(2026, 10, 27), date(2026, 11, 23)]
     assert ExpiryCalendar.for_underlying("SENSEX").expiries(date(2026, 10, 5), count=1) == [date(2026, 10, 8)]
     legacy = ExpiryCalendar.for_underlying("NIFTY", weekday=3, weekly=True)
     assert legacy.expiries(date(2024, 3, 4), count=1) == [date(2024, 3, 7)]

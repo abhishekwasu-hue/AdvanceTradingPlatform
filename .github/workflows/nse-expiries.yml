@@ -15,9 +15,6 @@ on:
         default: ""
   schedule:
     - cron: "17 2 2 * *"   # 07:47 IST on the 2nd of each month
-  push:   # TEMPORARY: first build on the pull request branch; removed before merge
-    branches: ["claude/banknifty-expiries"]
-    paths: ["backend/app/instruments/nse_expiries.py", ".github/workflows/nse-expiries.yml"]
 
 concurrency:
   group: nse-expiries

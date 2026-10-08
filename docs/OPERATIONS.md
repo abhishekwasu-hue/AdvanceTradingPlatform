@@ -510,8 +510,14 @@ Never publish a listing without an attached backtest run; the API refuses the su
   right, ltp) or use synthetic pricing.
 - **Wrong expiries in an old year**: conventions default to the exchange's current listings.
   Override `expiry_weekday` (0 = Monday) and `weekly_expiry` for the period being tested (NIFTY
-  weeklies were Thursdays before September 2025; BANKNIFTY had weeklies until November 2024), and
-  `lot_size` / `strike_step` when those differed.
+  weeklies were Thursdays before September 2025), and `lot_size` / `strike_step` when those differed.
+  **BANKNIFTY has no rule**: its expiries are the dates NSE printed in its F&O bhavcopies
+  (`backend/app/instruments/data/nse_index_expiries.csv`, every one confirmed by the bhavcopy of its own
+  day). `weekly_expiry=false` keeps the monthlies only. A run outside the file's coverage fails with
+  "NSE expiry data ... covers A to B" - refresh the file: GitHub > Actions > "NSE expiry data" > Run
+  workflow (it also runs on the 2nd of each month); the result arrives on the `data/nse-expiries` branch
+  for a pull request. On a machine that reaches nsearchives.nseindia.com the same build is
+  `python backend/app/instruments/nse_expiries.py --start 2016-01-01 --out backend/app/instruments/data`.
 - **Signals not traded**: `options.signals_skipped` counts why - the sizer refusing a lot bigger than
   the risk per trade, no quote for a leg, or quotes that make the structure a debit where a credit
   is required. Raise capital or risk per trade, widen the recorded strikes, or change the structure.

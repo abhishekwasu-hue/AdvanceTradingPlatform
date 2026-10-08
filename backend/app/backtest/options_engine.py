@@ -42,6 +42,7 @@ from app.execution.paper_broker import PaperBroker
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
 )
+from app.instruments.expiry_data import ExpiryDataMissing
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
 from app.market_data.calendar import IST
@@ -369,7 +370,10 @@ def run_option_backtest(
             step = config.strike_step or default_strike_step(underlying, spot)
             step_used = step
             ladder = strike_ladder(spot, step)
-            expiry = calendar.select(config.expiry_rule, bar_day)
+            try:
+                expiry = calendar.select(config.expiry_rule, bar_day)
+            except ExpiryDataMissing as exc:
+                raise OptionBacktestError(str(exc)) from exc
             if expiry is None:
                 skipped["no expiry"] += 1
                 continue
@@ -416,7 +420,8 @@ def run_option_backtest(
         "engine_version": ENGINE_VERSION, "pricing_model": pricer.name, "pricing": pricer.describe(), "underlying": underlying,
         "structure": config.option_strategy.value, "position": config.option_position.value if config.is_single else None,
         "lot_size": lot if len(lots_used) <= 1 else sorted(lots_used), "strike_step": step_used or config.strike_step or default_strike_step(underlying, float(primary_df["close"].iloc[-1])),
-        "expiry_calendar": f"{'weekly' if calendar.weekly else 'monthly'}, "
+        "expiry_calendar": ("NSE listed expiries (bhavcopy data), " if calendar.data_symbol
+                            else f"{'weekly' if calendar.weekly else 'monthly'}, ")
                            + "/".join(sorted({["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][e.weekday()] for e in expiries_used},
                                              key=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index)
                                       or [["Mon", "Tue", "Wed", "Thu", "Fri"][calendar.weekday]]),
@@ -487,7 +492,10 @@ def _open_structure(signal: Signal, rules: ContractRules, config: OptionBacktest
     strategy = config.option_strategy
     planned = plan_structure(strategy, signal.direction, rules, spot=spot, strikes_by_right={"CE": ladder, "PE": ladder},
                              spread_width=config.spread_width, custom_legs=config.custom_legs)
-    far = calendar.far_expiry(expiry) if any(l.far_expiry for l in planned) else None
+    try:
+        far = calendar.far_expiry(expiry) if any(l.far_expiry for l in planned) else None
+    except (ExpiryDataMissing, StopIteration) as exc:
+        raise OptionBacktestError(f"no listed far expiry after {expiry}") from exc
     structure = _resolved_structure(strategy, planned, underlying=underlying, underlying_symbol=underlying_symbol, near=expiry, far=far, lot=lot)
     premiums = {leg.contract.tradingsymbol: pricer.price(leg.contract.right, leg.contract.strike, leg.contract.expiry, spot=spot, at=at)
                 for leg in structure.legs}

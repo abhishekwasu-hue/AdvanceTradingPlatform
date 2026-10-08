@@ -5,6 +5,7 @@ import ContractNoteCard from "../components/ContractNoteCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
+import { PageHeader } from "../components/primitives";
 
 export default function PositionsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -68,7 +69,7 @@ export default function PositionsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
+        <PageHeader title="Positions" />
         <Card>
           <p className="text-sm text-muted">
             Log in from the Account tab to see your paper-execute positions and trade history.
@@ -84,10 +85,7 @@ export default function PositionsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-emerald-400">Positions</h1>
-        <p className="text-sm font-semibold text-emerald-200">Paper trades executed from the Signals tab while signed in as {user.email}.</p>
-      </div>
+      <PageHeader title="Positions" description={`Paper trades executed from the Signals tab while signed in as ${user.email}.`} />
 
       {error && <div className="text-sm text-danger">{error}</div>}
       {loading && <div className="text-sm text-muted">Loading…</div>}

@@ -100,14 +100,14 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
         m.push({ timestamp: t.entry_time, position: long ? "belowBar" : "aboveBar", color: c, shape: long ? "arrowUp" : "arrowDown", text: `${tag} ${long ? "L" : "S"}` });
         if (t.exit_time) {
           const won = (t.pnl ?? 0) >= 0;
-          m.push({ timestamp: t.exit_time, position: long ? "aboveBar" : "belowBar", color: won ? "#22c55e" : "#ef4444", shape: "circle", text: `${won ? "+" : ""}${Math.round(t.pnl ?? 0)}` });
+          m.push({ timestamp: t.exit_time, position: long ? "aboveBar" : "belowBar", color: won ? "up" : "down", shape: "circle", text: `${won ? "+" : ""}${Math.round(t.pnl ?? 0)}` });
         }
       }
       const s = r.last_signal;
       if (s && s.direction !== "NO_TRADE" && s.entry != null) {
         lines.push({ price: s.entry, color: c, title: `${tag} entry` });
-        if (s.stop_loss != null) lines.push({ price: s.stop_loss, color: "#ef4444", title: `${tag} SL` });
-        if (s.target1 != null) lines.push({ price: s.target1, color: "#22c55e", title: `${tag} T1` });
+        if (s.stop_loss != null) lines.push({ price: s.stop_loss, color: "down", title: `${tag} SL` });
+        if (s.target1 != null) lines.push({ price: s.target1, color: "up", title: `${tag} T1` });
       }
     }
     return { markers: m, priceLines: lines };

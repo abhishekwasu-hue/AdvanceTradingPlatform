@@ -75,7 +75,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
         )}
         {turns.map((t, i) => (
           <div key={i} className="space-y-1">
-            <div className="ml-auto w-fit max-w-[85%] rounded-lg bg-brand/30 px-3 py-1.5 text-sm text-white">{t.q}</div>
+            <div className="ml-auto w-fit max-w-[85%] rounded-lg bg-brand/30 px-3 py-1.5 text-sm text-fg">{t.q}</div>
             {t.a && (
               <div className="max-w-[95%] rounded-lg bg-panel3 px-3 py-2 text-sm text-slate-100">
                 <div className="whitespace-pre-wrap leading-relaxed">{t.a.answer}</div>

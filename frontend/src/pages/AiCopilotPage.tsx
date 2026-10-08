@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
+import { PageHeader } from "../components/primitives";
 import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
@@ -107,12 +108,8 @@ export default function AiCopilotPage() {
   return (
     <AiAcknowledgementGate>
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[260px]">
-          <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-          <p className="text-sm text-purple-200">Explains rules and data - market reads, templates, backtests and risk settings. Decisions are yours; nothing trades without your approval.</p>
-        </div>
-      </div>
+      <PageHeader title={<span className="flex items-center gap-2"><Sparkles size={18} className="text-brand" /> AI Copilot</span>}
+        description="Explains rules and data - market reads, templates, backtests and risk settings. Decisions are yours; nothing trades without your approval." />
 
       {/* P0.10: Today's market reads the stored market memory, never sample candles - the switch does not apply there. */}
       {tab !== "today" && <DataSourceBar source={source} />}

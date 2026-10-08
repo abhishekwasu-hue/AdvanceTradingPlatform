@@ -25,10 +25,11 @@ export const toast: ToastApi = {
   info: (text) => emit("info", text),
 };
 
-const STYLE: Record<ToastKind, { cls: string; icon: typeof Info }> = {
-  success: { cls: "border-emerald-500/50 bg-emerald-950/95 text-emerald-100", icon: CheckCircle2 },
-  error: { cls: "border-rose-500/50 bg-rose-950/95 text-rose-100", icon: TriangleAlert },
-  info: { cls: "border-sky-500/50 bg-slate-900/95 text-slate-100", icon: Info },
+const STYLE: Record<ToastKind, { cls: string; iconCls: string; icon: typeof Info }> = {
+  // P1.2: one surface for every toast; the edge and icon carry the meaning.
+  success: { cls: "border-l-4 border-border border-l-up bg-surface-1 text-fg", iconCls: "text-up", icon: CheckCircle2 },
+  error: { cls: "border-l-4 border-border border-l-down bg-surface-1 text-fg", iconCls: "text-down", icon: TriangleAlert },
+  info: { cls: "border-l-4 border-border border-l-brand bg-surface-1 text-fg", iconCls: "text-brand", icon: Info },
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -84,11 +85,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className="pointer-events-none fixed inset-x-3 bottom-3 z-50 flex flex-col items-end gap-2 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-96"
            role="region" aria-label="Notifications">
         {items.map((t) => {
-          const { cls, icon: Icon } = STYLE[t.kind];
+          const { cls, iconCls, icon: Icon } = STYLE[t.kind];
           return (
             <div key={t.id} role={t.kind === "error" ? "alert" : "status"}
                  className={`pointer-events-auto flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg backdrop-blur ${cls}`}>
-              <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <Icon size={16} className={`mt-0.5 shrink-0 ${iconCls}`} aria-hidden="true" />
               <span className="flex-1 break-words">{t.text}</span>
               <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="rounded p-0.5 opacity-70 hover:opacity-100"><X size={14} /></button>
             </div>

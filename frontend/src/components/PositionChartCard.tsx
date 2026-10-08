@@ -41,14 +41,14 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
     if (!p) return [];
     const lines: PriceLineSpec[] = [];
     if (derivative) {
-      if (p.underlying_stop_loss != null) lines.push({ price: p.underlying_stop_loss, color: "#ef4444", title: "Underlying stop" });
-      if (p.underlying_target1 != null) lines.push({ price: p.underlying_target1, color: "#22c55e", title: "Underlying T1" });
-      if (p.underlying_target2 != null) lines.push({ price: p.underlying_target2, color: "#16a34a", title: "Underlying T2" });
+      if (p.underlying_stop_loss != null) lines.push({ price: p.underlying_stop_loss, color: "down", title: "Underlying stop" });
+      if (p.underlying_target1 != null) lines.push({ price: p.underlying_target1, color: "up", title: "Underlying T1" });
+      if (p.underlying_target2 != null) lines.push({ price: p.underlying_target2, color: "up", title: "Underlying T2" });
     } else {
-      lines.push({ price: p.entry_price, color: "#e2e8f0", title: `Entry ${p.direction}` });
-      lines.push({ price: p.stop_loss, color: "#ef4444", title: "Stop" });
-      if (p.target1 != null) lines.push({ price: p.target1, color: "#22c55e", title: "Target 1" });
-      if (p.target2 != null) lines.push({ price: p.target2, color: "#16a34a", title: "Target 2" });
+      lines.push({ price: p.entry_price, color: "fg", title: `Entry ${p.direction}` });
+      lines.push({ price: p.stop_loss, color: "down", title: "Stop" });
+      if (p.target1 != null) lines.push({ price: p.target1, color: "up", title: "Target 1" });
+      if (p.target2 != null) lines.push({ price: p.target2, color: "up", title: "Target 2" });
     }
     return lines;
   }, [p, derivative]);

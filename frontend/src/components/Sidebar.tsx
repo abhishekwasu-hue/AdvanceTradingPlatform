@@ -164,11 +164,11 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
                   aria-current={active ? "page" : undefined}
                   className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors border-r-2 ${
                     active
-                      ? "bg-brand/15 text-white font-semibold border-brand"
-                      : "text-slate-200 font-medium border-transparent hover:text-white hover:bg-panel2"
+                      ? "bg-brand/10 text-fg font-semibold border-brand"
+                      : "text-fg-muted font-medium border-transparent hover:text-fg hover:bg-surface-2"
                   }`}
                 >
-                  <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-slate-300"} />
+                  <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-fg-muted"} />
                   {item.label}
                 </Link>
               );
@@ -181,7 +181,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
         onClick={() => onClose?.()}
         aria-current={page === "account" ? "page" : undefined}
         className={`block px-4 py-3 border-t border-border text-left text-xs transition-colors ${
-          page === "account" ? "bg-panel2 text-white" : "text-slate-200 hover:text-white hover:bg-panel2"
+          page === "account" ? "bg-surface-2 text-fg" : "text-fg-muted hover:text-fg hover:bg-surface-2"
         }`}
       >
         <div className="flex items-center gap-2">

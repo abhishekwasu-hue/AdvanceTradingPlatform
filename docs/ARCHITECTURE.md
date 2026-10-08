@@ -3645,6 +3645,12 @@ gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, 
 `pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
 (the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
 
+**P1.2 (design system).** `styles/tokens.css` (semantic RGB variables per theme / colour-blind mode),
+`styles/palette.css` (generated, themeable Tailwind hues), `tailwind.config.js` (all colours from variables),
+`theme.ts` (appearance load/save/apply, `useAppearance`, `chartColors`), `components/primitives/*` (Radix-based
+Select / Dialog / Sheet / Tabs plus Button, Input, Table, Badge, Signed, Skeleton, EmptyState, PageHeader),
+`.storybook/` + `src/stories/`.
+
 **P1.1 (router).** `frontend/src/routes.ts` maps each `Page` to a path and a `React.lazy` chunk; `App.tsx` renders
 them under `react-router` with a per-page `ErrorBoundary` and `Suspense`; `Sidebar` links preload chunks. `api/errors.ts`
 (`ApiError`, `apiErrorFrom`) is the one error shape; `Toast` shows unhandled ones. `vite.config.ts` splits

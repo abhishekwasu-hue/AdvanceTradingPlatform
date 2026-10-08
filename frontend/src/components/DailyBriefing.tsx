@@ -94,7 +94,7 @@ export default function DailyBriefing() {
     <div className="space-y-4">
       <div className={`rounded-2xl border p-4 ${kind.cls}`}>
         <div className="flex flex-wrap items-start gap-3">
-          <div className="rounded-xl bg-black/20 p-2"><Icon size={26} /></div>
+          <div className="rounded-xl bg-panel2/60 p-2"><Icon size={26} /></div>
           <div className="min-w-[240px] flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">Today · {kind.en}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}</span>
@@ -112,26 +112,26 @@ export default function DailyBriefing() {
               </div>
             )}
           </div>
-          <button onClick={load} disabled={busy} className="rounded-lg border border-white/15 px-2.5 py-1 text-xs text-slate-100 hover:bg-white/5 disabled:opacity-50">
+          <button onClick={load} disabled={busy} className="rounded-lg border border-border px-2.5 py-1 text-xs text-slate-100 hover:bg-panel2 disabled:opacity-50">
             <RefreshCw size={12} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />Refresh
           </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {snaps.map((s) => (
-            <span key={s.symbol} className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100">
+            <span key={s.symbol} className="rounded-lg border border-border bg-panel2/60 px-2 py-1 text-slate-100">
               {s.symbol} <b className={(s.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{(s.change_pct ?? 0) >= 0 ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%</b>
             </span>
           ))}
-          {vix != null && <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100">India VIX <b>{vix.toFixed(1)}</b></span>}
+          {vix != null && <span className="rounded-lg border border-border bg-panel2/60 px-2 py-1 text-slate-100">India VIX <b>{vix.toFixed(1)}</b></span>}
           {brief.sentiment && brief.sentiment.label !== "UNKNOWN" && (
-            <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100" title={(brief.sentiment_view ?? []).join(" ")}>Sentiment{" "}
+            <span className="rounded-lg border border-border bg-panel2/60 px-2 py-1 text-slate-100" title={(brief.sentiment_view ?? []).join(" ")}>Sentiment{" "}
               <b className={brief.sentiment.label === "RISK_ON" ? "text-emerald-300" : brief.sentiment.label === "RISK_OFF" ? "text-rose-300" : "text-amber-200"}>
                 {brief.sentiment.score >= 0 ? "+" : ""}{brief.sentiment.score.toFixed(0)}
               </b>
             </span>
           )}
           {brief.global_mood && (
-            <span className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-slate-100">Global cues{" "}
+            <span className="rounded-lg border border-border bg-panel2/60 px-2 py-1 text-slate-100">Global cues{" "}
               <b className={brief.global_mood.label === "POSITIVE" ? "text-emerald-300" : brief.global_mood.label === "NEGATIVE" ? "text-rose-300" : "text-amber-200"}>
                 {brief.global_mood.label === "POSITIVE" ? "positive" : brief.global_mood.label === "NEGATIVE" ? "negative" : "mixed"}
               </b>

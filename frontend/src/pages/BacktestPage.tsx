@@ -10,6 +10,7 @@ import {
   type OptionStrategy, type StrikeRule, DEBIT_STRUCTURES, MAX_CUSTOM_LEGS, PAYOFF_STRUCTURES, WIDTH_STRUCTURES, WINGED_STRUCTURES,
 } from "../types";
 import { useAuth } from "../auth/AuthContext";
+import { PageHeader } from "../components/primitives";
 
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -219,7 +220,7 @@ export default function BacktestPage() {
         markers.push({
           timestamp: t.exit_time,
           position: t.direction === "LONG" ? "aboveBar" : "belowBar",
-          color: won ? "#22c55e" : "#ef4444",
+          color: won ? "up" : "down",
           shape: "circle",
           text: `Exit ${t.pnl?.toFixed(0) ?? ""}`,
         });
@@ -230,10 +231,7 @@ export default function BacktestPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-teal-400">Backtesting</h1>
-        <p className="text-sm font-semibold text-teal-200">Event-driven simulation with position sizing, SL/target management and realistic costs.</p>
-      </div>
+      <PageHeader title="Backtesting" description="Event-driven simulation with position sizing, stop / target management and dated Indian charges." />
 
       <DataSourceBar source={source} note="Bars below applies to sample data; broker candles use the lookback." />
       {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}

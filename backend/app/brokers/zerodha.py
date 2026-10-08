@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Tuple
 import httpx
 
 from app.brokers.base import BrokerCapabilities, BrokerInterface
+from app.core import config
+from app.execution.order_safety import apply_market_protection
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
@@ -259,22 +261,23 @@ class ZerodhaBroker(BrokerInterface):
         )
 
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
-        data = await self._request(
-            "POST",
-            "/orders/regular",
-            data={
-                "tradingsymbol": order.symbol,
-                "exchange": order.exchange,
-                "transaction_type": order.transaction_type.value,
-                "order_type": order.order_type,
-                "quantity": order.quantity,
-                "product": order.product,
-                "price": order.price or 0,
-                "trigger_price": order.trigger_price or 0,
-                "validity": order.validity,
-                "tag": order.tag or "",
-            },
-        )
+        payload = {
+            "tradingsymbol": order.symbol,
+            "exchange": order.exchange,
+            "transaction_type": order.transaction_type.value,
+            "order_type": order.order_type,
+            "quantity": order.quantity,
+            "product": order.product,
+            "price": order.price or 0,
+            "trigger_price": order.trigger_price or 0,
+            "validity": order.validity,
+            "tag": order.tag or "",
+        }
+        if config.LIVE_MARKET_PROTECTION:
+            # G-LIVE: Kite rejects an API MARKET / SL-M order without a non-zero market_protection (exchange rule for
+            # algo orders); -1 = Kite's automatic band, or the operator's ORDER_MARKET_PROTECTION_PCT.
+            payload = apply_market_protection(payload, config.ORDER_MARKET_PROTECTION_PCT, auto=True)
+        data = await self._request("POST", "/orders/regular", data=payload)
         return BrokerOrderResponse(order_id=data["order_id"], status="OPEN", raw=data)
 
     async def modify_order(

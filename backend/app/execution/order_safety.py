@@ -16,6 +16,7 @@ TERMINAL_NOFILL = ("REJECTED", "CANCELLED", "CANCELED")
 TERMINAL_ALL = ("COMPLETE", "FILLED", "TRADED") + TERMINAL_NOFILL
 PROTECTION_MIN, PROTECTION_MAX = 1, 25
 PROTECTED_TYPES = ("MARKET", "SL-M")
+AUTO_PROTECTION = -1                     # Kite and Upstox: the broker's automatic market-protection band
 
 
 def market_protection_pct(value: Any) -> Optional[int]:
@@ -29,12 +30,17 @@ def market_protection_pct(value: Any) -> Optional[int]:
     return v if PROTECTION_MIN <= v <= PROTECTION_MAX else None
 
 
-def apply_market_protection(payload: Dict[str, Any], value: Any) -> Dict[str, Any]:
-    """The broker payload unchanged when no valid percentage is set; else a copy with `market_protection` on a MARKET /
-    SL-M order (limit orders carry their own price and are left alone)."""
-    pct = market_protection_pct(value)
-    if pct is None or str(payload.get("order_type", "")).upper() not in PROTECTED_TYPES:
+def apply_market_protection(payload: Dict[str, Any], value: Any, auto: bool = False) -> Dict[str, Any]:
+    """A copy with `market_protection` on a MARKET / SL-M order: the valid percentage (1-25) when one is set, else -1
+    (the broker's automatic band) when `auto`; otherwise - and for limit orders, which carry their own price - the
+    payload unchanged."""
+    if str(payload.get("order_type", "")).upper() not in PROTECTED_TYPES:
         return payload
+    pct = market_protection_pct(value)
+    if pct is None:
+        if not auto:
+            return payload
+        pct = AUTO_PROTECTION
     return {**payload, "market_protection": pct}
 
 

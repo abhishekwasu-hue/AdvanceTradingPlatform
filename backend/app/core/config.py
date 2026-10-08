@@ -220,6 +220,18 @@ RAZORPAY_BASE_URL = os.environ.get("RAZORPAY_BASE_URL", "https://api.razorpay.co
 # 2026; Upstox `market_protection`). Unset = the field is not sent (today's behaviour; Upstox then applies its own
 # automatic protection). 1-25 = that percentage on every Upstox MARKET / SL-M order (entries, stops, exits).
 ORDER_MARKET_PROTECTION_PCT = os.environ.get("ORDER_MARKET_PROTECTION_PCT", "").strip() or None
+# G-LIVE (all default off = today's orders, unchanged until the operator turns them on):
+# - every MARKET / SL-M order to Zerodha and Upstox carries `market_protection`: ORDER_MARKET_PROTECTION_PCT when set
+#   (1-25), else -1 = the broker's automatic band. Kite rejects an API market order whose protection is 0 / absent.
+LIVE_MARKET_PROTECTION = os.environ.get("LIVE_MARKET_PROTECTION", "false").lower() in ("1", "true", "yes")
+# - Upstox protective stops on option contracts go as SL (stop-limit) instead of SL-M (the exchanges stopped SL-M on
+#   index options); the limit sits STOP_LIMIT_BAND_PCT past the trigger.
+LIVE_UPSTOX_OPTION_STOP_LIMIT = os.environ.get("LIVE_UPSTOX_OPTION_STOP_LIMIT", "false").lower() in ("1", "true", "yes")
+# - a LIVE position whose broker-side stop cannot be placed (at entry) or re-armed (stop guard) is closed at once.
+LIVE_EXIT_IF_NO_STOP = os.environ.get("LIVE_EXIT_IF_NO_STOP", "false").lower() in ("1", "true", "yes")
+# How far past the trigger a stop-limit's limit sits (% of the trigger; Zerodha options today, Upstox options with
+# the flag above). 1.0 = today's value.
+STOP_LIMIT_BAND_PCT = float(os.environ.get("STOP_LIMIT_BAND_PCT", "1.0"))
 # Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")

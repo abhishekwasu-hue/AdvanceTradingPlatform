@@ -378,5 +378,8 @@ async def execute_signal_for_user(
                     severity=NotificationSeverity.CRITICAL, user_id=user.id,
                     related_trade_id=trade_record.id, related_order_id=order.id,
                 )
+                if config.LIVE_EXIT_IF_NO_STOP and broker is not None:
+                    from app.trading.stop_guard import exit_unprotected   # local: stop_guard imports the monitor
+                    await exit_unprotected(session, trade_record, broker, "the protective stop failed at entry")
 
         return result, order

@@ -863,6 +863,21 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 
 
+### 1.6ab-14 G-LIVE order switches (all off; LIVE unchanged until set)
+
+| Key | Off (today) | On |
+|---|---|---|
+| `LIVE_MARKET_PROTECTION` | Zerodha sends no `market_protection`; Upstox only `ORDER_MARKET_PROTECTION_PCT` when set | every Zerodha / Upstox MARKET and SL-M order carries `market_protection` = `ORDER_MARKET_PROTECTION_PCT` (1-25) or `-1` (the broker's automatic band); limit / stop-limit orders never do |
+| `LIVE_UPSTOX_OPTION_STOP_LIMIT` | Upstox protective stops are SL-M everywhere | on option contracts the stop is SL (stop-limit): trigger = the stop, limit = trigger -/+ `STOP_LIMIT_BAND_PCT` (sell stop below, buy stop above, at least one tick); stocks / futures keep SL-M |
+| `LIVE_EXIT_IF_NO_STOP` | a stop that fails at entry or cannot be re-armed raises a CRITICAL alert; the software stop keeps watching | the position is closed at once with a market exit (and a CRITICAL alert says whether the exit worked); an exit also skips cancelling a stop the broker already rejected / cancelled, which today fails and blocks the exit |
+| `STOP_LIMIT_BAND_PCT` | 1.0 | the stop-limit band (Zerodha options today; Upstox options with the switch above) |
+
+A stop-limit that triggers but does not fill (price gapped through the limit) is still covered: the position monitor's
+software stop sees the price past the stop on its next cycle (`WORKER_CYCLE_SECONDS`, default 60), cancels the
+broker stop and sends a market exit (with `market_protection` when that switch is on). Suggested order of switching
+on, in PAPER first: `LIVE_MARKET_PROTECTION`, `LIVE_UPSTOX_OPTION_STOP_LIMIT` with `STOP_LIMIT_BAND_PCT=3`, then
+`LIVE_EXIT_IF_NO_STOP`.
+
 ### 1.6ab-13 Dated costs, NSE contracts and order-safety switches (Trade port)
 
 - Paper and backtest charges use the statutory rates of each trade's own date (STT 0.15% on option sales from

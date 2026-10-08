@@ -472,6 +472,17 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - G-LIVE order fixes behind switches (nothing LIVE turned on)
+- `LIVE_MARKET_PROTECTION`: Zerodha and Upstox MARKET / SL-M orders carry `market_protection` (`-1` automatic band, or
+  `ORDER_MARKET_PROTECTION_PCT`). Kite rejects an API market order without a non-zero value (exchange rule for algo
+  orders, per Kite's forum); ATP's Zerodha adapter sent none.
+- `LIVE_UPSTOX_OPTION_STOP_LIMIT`: Upstox option stops as SL with the limit `STOP_LIMIT_BAND_PCT` past the trigger
+  (the exchanges discontinued SL-M on index options); a triggered-but-unfilled stop is closed by the software stop.
+- `LIVE_EXIT_IF_NO_STOP`: no broker stop at entry or on re-arm -> immediate market exit + CRITICAL alert; and an exit
+  skips cancelling an already rejected / cancelled stop (found: today that cancel fails and blocks the exit).
+- Tests: `tests/test_glive_order_flags.py` (mock brokers: payloads, stop params, blocked vs. completed exit, closing an
+  unprotected position, the four strict wing-fill outcomes, defaults off).
+
 ### 2026-10-08 - BANKNIFTY expiries from NSE data (no weekday rule)
 - **Source**: NSE's own F&O bhavcopies - `EXPIRY_DT` (legacy file, to 5 Jul 2024) and `XpryDt` (UDiFF, from 8 Jul 2024).
   `backend/app/instruments/nse_expiries.py` (stdlib only) reads one file per week from 1 Jan 2016, confirms every

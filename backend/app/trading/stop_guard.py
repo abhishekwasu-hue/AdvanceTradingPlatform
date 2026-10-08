@@ -24,7 +24,8 @@ from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType
 from app.db.models import Tenant, TradeRecord
 from app.execution.tagging import LEG_STOP, build_order_tag
 from app.notifications.service import notify
-from app.trading.position_monitor import exchange_for_trade
+from app.core import config
+from app.trading.position_monitor import close_position, exchange_for_trade
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,34 @@ ALERT_COOLDOWN_SECONDS = 1800
 _last_failure_alert: Dict[int, float] = {}   # trade id -> monotonic time of the last CRITICAL; absent = never alerted
 
 
+async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: BrokerInterface, why: str) -> bool:
+    """G-LIVE (LIVE_EXIT_IF_NO_STOP): a LIVE position that cannot get a broker-side stop is closed at once with a
+    market exit (exits are never blocked, ADR-0004). True when it closed; else the software stop keeps watching."""
+    try:
+        price = float(await broker.get_ltp_for_symbol(trade.symbol, exchange_for_trade(trade)))
+    except Exception:  # noqa: BLE001 - the reference price only seeds the booking; the broker fill wins
+        price = float(trade.entry_price)
+    outcome = await close_position(session, trade, price, f"No protective stop - closed at once ({why})", broker=broker)
+    await notify(session, trade.tenant_id, NotificationType.SYSTEM_FAILURE,
+                 title=f"{'Closed' if outcome.closed else 'Could NOT close'} {trade.symbol}: no broker-side stop",
+                 message=(f"Position #{trade.id}: {why}. " + ("Closed with a market exit (LIVE_EXIT_IF_NO_STOP)." if outcome.closed
+                          else "The market exit failed too: " + "; ".join(outcome.warnings) + " - close it at the broker by hand.")),
+                 severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+    return outcome.closed
+
+
 async def verify_protective_stops(
     session: AsyncSession, tenant: Tenant, broker: BrokerInterface, *, user_id: Optional[int] = None, source: str = "worker",
     product: str = "MIS", account_id: Optional[int] = None, include_unassigned: bool = True,
 ) -> Dict[str, int]:
     """Re-arms missing/cancelled/rejected stops for the tenant's open LIVE single-leg trades.
-    Returns counts: checked, standing, rearmed, filled_pending, failed.
+    Returns counts: checked, standing, rearmed, filled_pending, failed, closed (LIVE_EXIT_IF_NO_STOP).
 
     Phase T: `account_id` scopes the check to the trades that sit in that broker account (the
     `broker` must be that account's session); `include_unassigned` also takes trades recorded
     before accounts were tracked. A stop must never be re-armed in a different account from
     the position it protects."""
-    counts = {"checked": 0, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 0}
+    counts = {"checked": 0, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 0, "closed": 0}
     query = select(TradeRecord).where(
         TradeRecord.tenant_id == tenant.id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value,
         TradeRecord.leg_group_id.is_(None))
@@ -98,6 +115,9 @@ async def verify_protective_stops(
         except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
             counts["failed"] += 1
             logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
+            if config.LIVE_EXIT_IF_NO_STOP and await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}"):
+                counts["closed"] += 1
+                continue
             last = _last_failure_alert.get(trade.id)
             if last is None or time.monotonic() - last > ALERT_COOLDOWN_SECONDS:
                 _last_failure_alert[trade.id] = time.monotonic()

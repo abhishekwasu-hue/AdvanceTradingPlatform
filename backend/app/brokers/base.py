@@ -210,7 +210,9 @@ class BrokerInterface(ABC):
     def stop_order_params(self, symbol: str, transaction_type: OrderSide, trigger_price: float, *,
                           is_option: Optional[bool] = None) -> Tuple[str, Optional[float]]:
         """(order_type, limit price) this broker needs for a protective stop on `symbol` (P0.5 / T2)."""
-        return stop_order_params(self.capabilities, symbol, transaction_type, trigger_price, is_option=is_option)
+        from app.core import config
+        return stop_order_params(self.capabilities, symbol, transaction_type, trigger_price, is_option=is_option,
+                                 limit_band_pct=config.STOP_LIMIT_BAND_PCT)
 
     async def place_stop_loss_order(
         self, symbol: str, exchange: str, transaction_type: OrderSide, quantity: float, trigger_price: float,

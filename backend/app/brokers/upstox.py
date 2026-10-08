@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import httpx
 
 from app.instruments.master import normalise_expiry
-from app.brokers.base import BrokerInterface
+from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
@@ -94,6 +94,12 @@ class UpstoxBroker(BrokerInterface):
 
     name = "upstox"
     BASE_URL = "https://api.upstox.com/v2"
+
+    @property
+    def capabilities(self) -> BrokerCapabilities:  # type: ignore[override]
+        # G-LIVE (LIVE_UPSTOX_OPTION_STOP_LIMIT): the exchanges discontinued SL-M on index options, so option stops go
+        # as stop-limit; default off = today's SL-M everywhere.
+        return BrokerCapabilities(stop_market_on_options=not config.LIVE_UPSTOX_OPTION_STOP_LIMIT)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
         if not credentials.api_key:
@@ -371,7 +377,7 @@ class UpstoxBroker(BrokerInterface):
                 "disclosed_quantity": 0,
                 "is_amo": False,
                 "tag": order.tag or "",
-            }, config.ORDER_MARKET_PROTECTION_PCT),
+            }, config.ORDER_MARKET_PROTECTION_PCT, auto=config.LIVE_MARKET_PROTECTION),
         )
         return BrokerOrderResponse(order_id=data["order_id"], status="OPEN", raw=data)
 

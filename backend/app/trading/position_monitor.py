@@ -31,6 +31,7 @@ from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface
 from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
+from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
 from app.execution.tagging import LEG_EXIT, build_order_tag
@@ -161,16 +162,20 @@ async def _square_off_live(
             # The exchange already closed us at the stop. Nothing to place - a second exit order
             # here would open a fresh position in the opposite direction.
             return _stop_already_filled(trade, sl_order, reason, outcome)
-        try:
-            await broker.cancel_order(trade.sl_order_id)
-        except Exception as exc:  # noqa: BLE001
-            # Cancel can legitimately fail because the stop filled between our book read and now.
-            recheck = await _find_order(broker, trade.sl_order_id)
-            if recheck is not None and recheck.status.upper() in _FILLED_STATUSES:
-                return _stop_already_filled(trade, recheck, reason, outcome)
-            outcome.warnings.append(f"Could not cancel protective stop {trade.sl_order_id}: {exc}")
-            logger.error("Cancel of SL %s failed for trade %s: %s", trade.sl_order_id, trade.id, exc)
-            return None
+        dead = sl_order is not None and sl_order.status.upper() in ("REJECTED", "CANCELLED", "CANCELED")
+        # G-LIVE (LIVE_EXIT_IF_NO_STOP): a stop the broker rejected or cancelled has nothing to cancel - asking would
+        # fail and block the exit (ADR-0004: exits are never blocked). Default off = today's cancel attempt.
+        if not (dead and config.LIVE_EXIT_IF_NO_STOP):
+            try:
+                await broker.cancel_order(trade.sl_order_id)
+            except Exception as exc:  # noqa: BLE001
+                # Cancel can legitimately fail because the stop filled between our book read and now.
+                recheck = await _find_order(broker, trade.sl_order_id)
+                if recheck is not None and recheck.status.upper() in _FILLED_STATUSES:
+                    return _stop_already_filled(trade, recheck, reason, outcome)
+                outcome.warnings.append(f"Could not cancel protective stop {trade.sl_order_id}: {exc}")
+                logger.error("Cancel of SL %s failed for trade %s: %s", trade.sl_order_id, trade.id, exc)
+                return None
 
     try:
         response = await broker.place_order(BrokerOrderRequest(

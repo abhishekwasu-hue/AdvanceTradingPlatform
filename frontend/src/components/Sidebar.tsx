@@ -24,7 +24,9 @@ import {
   Zap,
   type LucideIcon, Store, Sparkles, Sigma} from "lucide-react";
 import { useEffect } from "react";
+import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
+import { pathFor, preloadPage } from "../routes";
 import Logo from "./Logo";
 
 export type Page =
@@ -123,7 +125,9 @@ export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.item
 
 /** P0.9: below the md breakpoint the sidebar is an off-canvas drawer (opened from the top bar's menu button) so the
  * page keeps the full phone width; from md up it is the usual fixed column. */
-export default function Sidebar({ page, onChange, open = false, onClose }: { page: Page; onChange: (p: Page) => void; open?: boolean; onClose?: () => void }) {
+/** P1.1: the entries are real links (open in a new tab, copy the address, back/forward), and hovering or focusing one
+ * starts loading that page's code. */
+export default function Sidebar({ page, open = false, onClose }: { page: Page | null; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
   useEffect(() => {
     if (!open) return;
@@ -151,9 +155,13 @@ export default function Sidebar({ page, onChange, open = false, onClose }: { pag
               const Icon = item.icon;
               const active = page === item.id;
               return (
-                <button
+                <Link
                   key={item.id}
-                  onClick={() => { onChange(item.id); onClose?.(); }}
+                  to={pathFor(item.id)}
+                  onClick={() => onClose?.()}
+                  onMouseEnter={() => preloadPage(item.id)}
+                  onFocus={() => preloadPage(item.id)}
+                  aria-current={active ? "page" : undefined}
                   className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors border-r-2 ${
                     active
                       ? "bg-brand/15 text-white font-semibold border-brand"
@@ -162,15 +170,17 @@ export default function Sidebar({ page, onChange, open = false, onClose }: { pag
                 >
                   <Icon size={16} strokeWidth={2} className={active ? "text-brand" : "text-slate-300"} />
                   {item.label}
-                </button>
+                </Link>
               );
             })}
           </div>
         ))}
       </nav>
-      <button
-        onClick={() => { onChange("account"); onClose?.(); }}
-        className={`px-4 py-3 border-t border-border text-left text-xs transition-colors ${
+      <Link
+        to={pathFor("account")}
+        onClick={() => onClose?.()}
+        aria-current={page === "account" ? "page" : undefined}
+        className={`block px-4 py-3 border-t border-border text-left text-xs transition-colors ${
           page === "account" ? "bg-panel2 text-white" : "text-slate-200 hover:text-white hover:bg-panel2"
         }`}
       >
@@ -188,7 +198,7 @@ export default function Sidebar({ page, onChange, open = false, onClose }: { pag
             PAPER MODE
           </span>
         </div>
-      </button>
+      </Link>
     </aside>
     </>
   );

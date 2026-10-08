@@ -3645,6 +3645,11 @@ gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, 
 `pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
 (the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
 
+**P1.1 (router).** `frontend/src/routes.ts` maps each `Page` to a path and a `React.lazy` chunk; `App.tsx` renders
+them under `react-router` with a per-page `ErrorBoundary` and `Suspense`; `Sidebar` links preload chunks. `api/errors.ts`
+(`ApiError`, `apiErrorFrom`) is the one error shape; `Toast` shows unhandled ones. `vite.config.ts` splits
+`lightweight-charts` into `charts`; `scripts/check-bundle-budget.mjs` enforces 300 KB gzip of initial JS in CI.
+
 **Trade port (Trade@0df3e09).** `price_action/` gains `pa_settings` (all thresholds in median-range / ATR multiples),
 `reversal.evaluate_reversal` (composite E2+C1 or the 0-100 score, closed candles only), `breaks`, `level_strength`,
 `causal_swings` and a `gap_context` placeholder. `instruments/expiry_calendar` (dated weekday, holiday shift, expiry

@@ -65,7 +65,7 @@ export default function SettingsPage() {
       } else if (params.get("error")) {
         setOauthOutcome({ ok: false, text: `${broker} login did not complete: ${params.get("error")}` });
       }
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState(window.history.state, "", window.location.pathname);
     } catch {
       // URL APIs unavailable - nothing to show
     }

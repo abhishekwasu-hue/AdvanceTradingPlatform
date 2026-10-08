@@ -45,7 +45,7 @@ export default function AccountPage() {
     try {
       const verify = new URLSearchParams(window.location.search).get("verify");
       if (verify) {
-        window.history.replaceState({}, "", window.location.pathname);
+        window.history.replaceState(window.history.state, "", window.location.pathname);
         api.verifyEmail(verify)
           .then((u) => { setVerifyMessage(`${u.email} is verified.`); void refreshUser(); })
           .catch((e) => setVerifyMessage(String(e)));
@@ -55,7 +55,7 @@ export default function AccountPage() {
         setResetToken(reset);
         setMode("reset");
         api.resetInfo(reset).then(setResetHint).catch((e) => setError(String(e)));
-        window.history.replaceState({}, "", window.location.pathname);
+        window.history.replaceState(window.history.state, "", window.location.pathname);
         return;
       }
       const token = new URLSearchParams(window.location.search).get("invite");
@@ -63,7 +63,7 @@ export default function AccountPage() {
       setInviteToken(token);
       setMode("invite");
       api.inviteInfo(token).then((info) => { setInvite(info); setEmail(info.email); }).catch((e) => setError(String(e)));
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState(window.history.state, "", window.location.pathname);
     } catch {
       // no URL API - ordinary login
     }

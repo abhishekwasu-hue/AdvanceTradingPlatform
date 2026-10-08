@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Eye, RefreshCw, Target } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { MarketThesis, ThesisHistory } from "../types";
 import { Card } from "./ui";
 
@@ -52,7 +52,7 @@ export default function ThesisCard() {
       setHistory(await api.aiThesisHistory(symbol));
     } catch (e) {
       const d = detail(e);
-      if (/^503\b/.test(String(e).replace(/^Error:\s*/, "")) && /market_thesis/.test(String(e))) { setOff(true); setThesis(null); } else { setError(d); setThesis(null); }
+      if (e instanceof ApiError && e.status === 503 && e.body.includes("market_thesis")) { setOff(true); setThesis(null); } else { setError(d); setThesis(null); }
     } finally { setBusy(false); }
   }
   useEffect(() => { void load(); }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps

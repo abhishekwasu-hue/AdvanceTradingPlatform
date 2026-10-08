@@ -133,6 +133,10 @@ import type {
   AiPreferences,
 } from "../types";
 
+import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
+
+export { ApiError, friendlyError } from "./errors";
+
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
 export const AI_ACK_REQUIRED_EVENT = "atp:ai-ack-required";
 
@@ -203,9 +207,19 @@ export async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** P1.1: `fetch` itself rejects (offline, DNS, the server down) with a bare TypeError - turn it into a sentence. */
+async function send(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new ApiError(0, NETWORK_MESSAGE);
+  }
+}
+
 async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken();
-  return fetch(`${BASE}${path}`, {
+  return send(`${BASE}${path}`, {
     ...init,
     credentials: "same-origin",
     headers: {
@@ -222,19 +236,19 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (await tryRefresh()) response = await rawRequest(path, init);
   }
   if (!response.ok) {
-    const detail = await response.text();
+    const error = await apiErrorFrom(response);
     // P0.1: the analysis endpoints (backtest, scanner, S/R zones, option chain) need a login now; an anonymous
     // visitor gets a plain sentence instead of a raw 401 body.
     if (response.status === 401 && !getToken()) {
-      throw new Error("Sign in from the Account tab to use this feature.");
+      throw new ApiError(401, "Sign in from the Account page to use this feature.", error.detail, error.body, error.requestId);
     }
     // P0.8-D: an AI route before the first-use acknowledgement - every open acknowledgement gate re-reads its state
     // (so the page shows the acknowledgement screen) and the caller gets a sentence, not a raw 428 body.
-    if (response.status === 428 && detail.includes("ai_acknowledgement_required")) {
+    if (response.status === 428 && error.body.includes("ai_acknowledgement_required")) {
       window.dispatchEvent(new Event(AI_ACK_REQUIRED_EVENT));
-      throw new Error("Accept the AI Copilot acknowledgement first (AI Copilot page).");
+      throw new ApiError(428, "Accept the AI Copilot acknowledgement first (AI Copilot page).", error.detail, error.body, error.requestId);
     }
-    throw new Error(`${response.status} ${response.statusText}: ${detail}`);
+    throw error;
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -257,7 +271,7 @@ async function downloadExport(
   const path = `${opts.scope === "platform" ? "/admin/exports" : "/exports"}/${dataset}?${params.toString()}`;
   let response = await rawRequest(path);
   if (response.status === 401 && (await tryRefresh())) response = await rawRequest(path);
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+  if (!response.ok) throw await apiErrorFrom(response);
   const disposition = response.headers.get("content-disposition") ?? "";
   const match = /filename="([^"]+)"/.exec(disposition);
   return {
@@ -413,11 +427,11 @@ export const api = {
     form.append("apply", apply ? "true" : "false");
     // No JSON content type: the browser sets the multipart boundary itself.
     const token = getToken();
-    let response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    let response = await send(`${BASE}/contract-notes`, { method: "POST", body: form, headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (response.status === 401 && (await tryRefresh())) {
-      response = await fetch(`${BASE}/contract-notes`, { method: "POST", body: form, headers: { Authorization: `Bearer ${getToken()}` } });
+      response = await send(`${BASE}/contract-notes`, { method: "POST", body: form, headers: { Authorization: `Bearer ${getToken()}` } });
     }
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+    if (!response.ok) throw await apiErrorFrom(response);
     return response.json() as Promise<ContractNoteIngest>;
   },
 

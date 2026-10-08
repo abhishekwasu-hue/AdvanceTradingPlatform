@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
 import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
 import { getToken } from "../api/client";
+import { apiErrorFrom, friendlyError } from "../api/errors";
 
 function TaxReportCard() {
   const [years, setYears] = useState<string[]>([]);
@@ -15,7 +16,11 @@ function TaxReportCard() {
   useEffect(() => { if (fy) api.taxReport(fy, mode).then(setReport).catch((e) => setError(String(e))); }, [fy, mode]);
   const money = (v: number) => v.toLocaleString("en-IN", { maximumFractionDigits: 0 });
   async function download() {
-    const res = await fetch(api.taxReportCsvUrl(fy, mode), { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+    setError(null);
+    let res: Response;
+    try { res = await fetch(api.taxReportCsvUrl(fy, mode), { headers: { Authorization: `Bearer ${getToken() ?? ""}` } }); } catch (e) { setError(friendlyError(e)); return; }
+    // P1.1: a refused download shows the reason instead of saving the error body as the CSV.
+    if (!res.ok) { setError((await apiErrorFrom(res)).message); return; }
     const blob = await res.blob();
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `tax-report-${fy}-${mode}.csv`; a.click();
   }

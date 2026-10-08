@@ -1,7 +1,10 @@
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { api } from "../api/client";
-import ProChart, { chartWindowUrl, useLiveLtp } from "./ProChart";
+import { chartWindowUrl, useLiveLtp } from "./chartHelpers";
+
+// P1.1: the chart engine loads after the dashboard has rendered (its own `charts` chunk).
+const ProChart = lazy(() => import("./ProChart"));
 import { useCandleSource } from "./DataSource";
 import type { Page } from "./Sidebar";
 import { Card } from "./ui";
@@ -20,8 +23,10 @@ function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; can
   return (
     <div className="relative rounded-xl border border-border bg-panel2 p-3">
       <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-panel p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
-      <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
-                openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} deployable />
+      <Suspense fallback={<div className="h-[160px] animate-pulse rounded-lg bg-panel" aria-label={`Loading ${symbol} chart`} />}>
+        <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
+                  openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} deployable />
+      </Suspense>
     </div>
   );
 }

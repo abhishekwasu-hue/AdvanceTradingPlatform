@@ -1,5 +1,6 @@
 import { Activity, CheckCircle2, Compass, ScanSearch, Settings2, ShieldAlert, Sparkles, Sun, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
@@ -27,11 +28,12 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 type Tab = "strategist" | "today" | "strategy" | "advanced";
-const TABS: { id: Tab; en: string; icon: typeof Sun }[] = [
-  { id: "strategist", en: "Market study & templates", icon: ScanSearch },
-  { id: "today", en: "Today's market", icon: Sun },
-  { id: "strategy", en: "Strategy interview", icon: Compass },
-  { id: "advanced", en: "Drafts & agent", icon: Settings2 },
+/** P1.1: each tab has its own address - /ai-copilot/study, /today, /interview, /drafts. */
+const TABS: { id: Tab; slug: string; en: string; icon: typeof Sun }[] = [
+  { id: "strategist", slug: "study", en: "Market study & templates", icon: ScanSearch },
+  { id: "today", slug: "today", en: "Today's market", icon: Sun },
+  { id: "strategy", slug: "interview", en: "Strategy interview", icon: Compass },
+  { id: "advanced", slug: "drafts", en: "Drafts & agent", icon: Settings2 },
 ];
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try { const v = localStorage.getItem(key) as T | null; return v && allowed.includes(v) ? v : fallback; } catch { return fallback; }
@@ -59,8 +61,17 @@ export default function AiCopilotPage() {
   // Phase AP: the interview runs before any strategy is proposed for a vague request.
   const [interviewKey, setInterviewKey] = useState(0);
   const [interviewPrompt, setInterviewPrompt] = useState("");
-  const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist"));
-  const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
+  // The address decides the tab; a bare /ai-copilot opens the tab used last (remembered in this browser).
+  const params = useParams<{ tab?: string }>();
+  const navigate = useNavigate();
+  const fromUrl = TABS.find((t) => t.slug === params.tab)?.id;
+  const tab: Tab = fromUrl ?? stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist");
+  const slugOf = (t: Tab) => TABS.find((x) => x.id === t)?.slug ?? "study";
+  useEffect(() => {
+    if (!fromUrl) navigate(`/ai-copilot/${slugOf(tab)}`, { replace: true });
+    else store("atp_copilot_tab", fromUrl);
+  }, [fromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setTab = (t: Tab) => { store("atp_copilot_tab", t); navigate(`/ai-copilot/${slugOf(t)}`); };
   const startInterview = (text: string) => {
     setTab("strategy");
     setInterviewPrompt(text); setInterviewKey((k) => k + 1);

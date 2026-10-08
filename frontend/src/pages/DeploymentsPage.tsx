@@ -231,7 +231,7 @@ export default function DeploymentsPage() {
       setLiveTyped("");
       refresh();
     } catch (e) {
-      if (isStepUpError(e)) setStepUp({ reason: String(e).replace(/^Error: 403[^:]*: /, ""), retry: submit });
+      if (isStepUpError(e)) setStepUp({ reason: String(e), retry: submit });
       else setError(String(e));
     } finally {
       setBusy(false);
@@ -255,7 +255,7 @@ export default function DeploymentsPage() {
       setMessage(label);
       refresh();
     } catch (e) {
-      if (isStepUpError(e)) setStepUp({ reason: String(e).replace(/^Error: 403[^:]*: /, ""), retry: () => act(label, fn) });
+      if (isStepUpError(e)) setStepUp({ reason: String(e), retry: () => act(label, fn) });
       else setError(String(e));
     } finally {
       setBusy(false);
@@ -314,8 +314,10 @@ export default function DeploymentsPage() {
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>
             No worker heartbeat {worker.last_seen_at ? `since ${ist(worker.last_seen_at)}` : "yet"}.
-            Nothing is being evaluated or monitored. Start the <code className="font-mono">worker</code> service
-            (docker compose up worker) - see docs/OPERATIONS.md.
+            Nothing is being evaluated or monitored.{" "}
+            {user?.role === "SUPER_ADMIN"
+              ? <>Start the <code className="font-mono">worker</code> service (see the operations guide).</>
+              : "Ask your platform operator to start the trading worker."}
           </span>
         </div>
       )}

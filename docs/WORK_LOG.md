@@ -472,6 +472,21 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P1.1: router, lazy pages, error handling, bundle budget
+- **URLs**: every page has its own path (`react-router` 7; `/` = dashboard, `/<page>` otherwise, Copilot tabs at
+  `/ai-copilot/<tab>`, the last tab remembered for a bare `/ai-copilot`); deep links, reload and back/forward work; the
+  sidebar uses real links (`aria-current`) and preloads a page's chunk on hover; unknown paths show a not-found card;
+  the old `?verify=`, `?broker=...&connected=1` and `?chart=` links keep working.
+- **Lazy loading**: each page is its own chunk (`routes.ts`); the chart engine (`lightweight-charts`) is a separate
+  `charts` chunk. The dashboard's market-pulse charts load it lazily after the page renders, and the chart-window
+  link helpers moved to `components/chartHelpers.ts` so the Copilot no longer pulls the chart engine. Initial JS:
+  76.7 KB gzip; `npm run check:bundle` fails CI above 300 KB.
+- **Errors**: `api/errors.ts` normalises every failure into `ApiError` (status, message, request id; network errors
+  as status 0 with one message); an error boundary per page (one page failing never blanks the app) and toasts for
+  unhandled API errors. nginx: hashed `/assets/*` cached for a year, `index.html` and 404s never cached.
+- Tests: Vitest `api/errors.test.ts`, `routes.test.ts` (+ the P0.10 sample-data tests); a Playwright smoke run of
+  deep links, back/forward, reload, legacy links, not-found and chunk loading passed (18/18).
+
 ### 2026-10-08 - Trade port: price action, NSE contracts, India costs, order safety, validation
 Source: `https://github.com/abhishekwasu-hue/Trade` (read-only clone, nothing changed or pushed there) at
 **Trade@0df3e09d0aa5942e3352327d5b998c5f6939ac61**. Logic only - no bots, Streamlit pages, Supabase/Upstox-specific

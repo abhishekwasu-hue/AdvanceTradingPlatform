@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { AiStrategyDraft, FeedbackOption, InterviewPlan, InterviewQuestion, InterviewStart, OHLCVBar } from "../types";
 import { FNO_INDICES, FNO_STOCKS } from "../utils/fnoSymbols";
 import type { CandleSourceState } from "./DataSource";
-import { chartWindowUrl } from "./ProChart";
+import { chartWindowUrl } from "./chartHelpers";
 import { INTERVIEW_MR } from "../i18n/interviewSecondary";
 import SampleStamp from "./SampleStamp";
 

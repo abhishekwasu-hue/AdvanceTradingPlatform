@@ -163,7 +163,7 @@ export default function AICore3D({ tone, variant = "orb", lowPower = false, ligh
     const pGeo = new BufferGeometry();
     pGeo.setAttribute("position", new Float32BufferAttribute(positions, 3));
     pGeo.setAttribute("aSeed", new Float32BufferAttribute(seeds, 1));
-    const pMat = new ShaderMaterial({ uniforms: { ...shared, uTime: time, uSize: { value: variant === "orb" ? 34 : 46 } },
+    const pMat = new ShaderMaterial({ uniforms: { ...shared, uTime: time, uSize: { value: variant === "orb" ? 34 : 30 } },
                                       vertexShader: POINTS_VERTEX, fragmentShader: POINTS_FRAGMENT, transparent: true, depthWrite: false,
                                       blending: light ? NormalBlending : AdditiveBlending });
     group.add(new Points(pGeo, pMat));

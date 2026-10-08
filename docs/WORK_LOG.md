@@ -472,6 +472,12 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P1.3 batch 4: Settings, Account, Team, System Logs, Notifications, Admin, Coach & Guide + their cards
+- Pages and the components they render (alert channels, AI provider, billing, MFA, broker accounts, API keys,
+  holidays, export, contract notes, go-live checklist, market pulse, position chart, chart strategies, ProChart
+  toolbar, trade coach, guide chat, sidebar, error boundary) on semantic tokens; destructive admin actions (global
+  kill switch) stay solid `down`, maintenance on is solid `warn`; channel headings are neutral; coach P&L bars are
+  visible again and zero is neutral. The AI Copilot page and its own panels are left for the Copilot redesign.
 ### 2026-10-08 - P1.3 batch 3: Strategy Builder, Fundamentals, Instruments, News & Events, Factor Lab, Marketplace
 - Same rules as batches 1-2: semantic tokens, colour only for meaning, `PageHeader` on every page (Marketplace had only
   a screen-reader title), signed figures through `signClass` / `signTone`. Factor Lab's run button no longer wraps.

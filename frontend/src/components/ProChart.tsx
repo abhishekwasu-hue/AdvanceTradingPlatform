@@ -395,29 +395,29 @@ export default function ProChart({
   const fit = () => { for (const c of Object.values(charts.current)) c?.timeScale().fitContent(); };
 
   return (
-    <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-bg p-4" : "w-full"}>
+    <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-surface p-4" : "w-full"}>
       {/* Header: symbol, last price, change, live badge, timeframe pills, indicator toggles */}
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
-        {(title || symbol) && <span className={`font-bold text-slate-100 ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
+        {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
         {lastClose != null && (
-          <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-rose-300" : "text-emerald-300"}`}>
+          <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-down" : change != null && change > 0 ? "text-up" : "text-fg"}`}>
             {fmt(lastClose)}{change != null && <span className="ml-1.5 text-xs font-semibold">{change >= 0 ? "+" : ""}{fmt(change)} ({changePct?.toFixed(2)}%)</span>}
           </span>
         )}
         {live && (
-          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${live.stale ? "border-amber-400/40 bg-amber-500/10 text-amber-300" : "border-emerald-400/40 bg-emerald-500/10 text-emerald-300"}`}
+          <span className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${live.stale ? "border-warn/40 bg-warn/10 text-warn" : "border-up/40 bg-up/10 text-up"}`}
                 title={live.stale ? live.stale_reason ?? "stale quote" : `${live.source} via ${live.source_broker}`}>
             <Radio size={10} className={live.stale ? "" : "animate-pulse"} /> {live.stale ? `stale · ${live.age_seconds != null ? Math.round(live.age_seconds / 60) + "m old" : "no exchange time"}` : `LIVE${live.age_seconds != null ? ` · ${Math.round(live.age_seconds)}s` : ""}`}
           </span>
         )}
-        {liveError && <span className="max-w-[22rem] truncate text-[10px] text-rose-300" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
+        {liveError && <span className="max-w-[22rem] truncate text-[10px] text-down" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
         {onLoadOlder && (loadingOlder
-          ? <span className="text-[10px] text-sky-300">Loading older data…</span>
-          : olderExhausted ? <span className="text-[10px] text-muted" title="The broker has no older history for this timeframe">No older history</span> : null)}
+          ? <span className="text-[10px] text-fg-muted">Loading older data…</span>
+          : olderExhausted ? <span className="text-[10px] text-fg-muted" title="The broker has no older history for this timeframe">No older history</span> : null)}
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (
-              <button key={tf} onClick={() => onTimeframeChange(tf)} className={`px-2 py-0.5 ${tf === timeframe ? "bg-sky-500/20 text-sky-200" : "text-muted hover:text-slate-200"}`}>{tf.replace("min", "m")}</button>
+              <button key={tf} onClick={() => onTimeframeChange(tf)} className={`px-2 py-0.5 ${tf === timeframe ? "bg-brand/15 text-brand font-semibold" : "text-fg-muted hover:text-fg"}`}>{tf.replace("min", "m")}</button>
             ))}
           </div>
         )}
@@ -425,27 +425,27 @@ export default function ProChart({
           <div className="ml-auto flex flex-wrap items-center gap-1">
             {[...OVERLAYS, ...PANES].map((id) => (
               <button key={id} onClick={() => toggle(id)} title={INDICATOR_LABELS[id]}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-panel3 text-slate-100 ring-1 ring-sky-500/40" : "text-muted hover:text-slate-300"}`}>
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
                 {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
               </button>
             ))}
             <button onClick={() => strat.setOpen(!strat.open)} title="Strategies on this chart: draw their trades, deploy them"
-                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-sky-500/50 bg-sky-500/15 text-sky-200" : "border-border text-slate-200 hover:bg-panel2"}`}>
+                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
               <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
             </button>
-            <button onClick={fit} title="Fit all candles" className="rounded p-1 text-muted hover:text-slate-200"><Scan size={12} /></button>
+            <button onClick={fit} title="Fit all candles" className="rounded p-1 text-fg-muted hover:text-fg"><Scan size={12} /></button>
           </div>
         )}
         <div className={`${compact ? "ml-auto" : ""} flex items-center gap-1`}>
           {openUrl && (
             <a href={openUrl} target="_blank" rel="noopener" title="Open this chart in a new browser tab"
-               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-panel2">
+               className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg hover:bg-surface-2">
               <ExternalLink size={11} /> New tab
             </a>
           )}
           {!fullWindow && (
             <button onClick={() => setExpanded((v) => !v)} title={expanded ? "Back to normal size (Esc)" : "Open the chart full screen"}
-                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-slate-200 hover:bg-panel2">
+                    className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg hover:bg-surface-2">
               {expanded ? <><Minimize2 size={11} /> Close</> : <><Maximize2 size={11} /> Full screen</>}
             </button>
           )}
@@ -456,12 +456,12 @@ export default function ProChart({
 
       {/* Legend */}
       {bar && !compact && (
-        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-muted">
-          <span className="text-slate-300">{fmtIst(times[idx as number], true)}</span>
-          <span>O <b className="text-slate-200">{fmt(bar.open)}</b></span><span>H <b className="text-slate-200">{fmt(bar.high)}</b></span>
-          <span>L <b className="text-slate-200">{fmt(bar.low)}</b></span>
-          <span>C <b className={prev && bar.close < prev.close ? "text-rose-300" : "text-emerald-300"}>{fmt(bar.close)}</b></span>
-          {bar.volume > 0 && <span>Vol <b className="text-slate-200">{bar.volume.toLocaleString("en-IN")}</b></span>}
+        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-fg-muted">
+          <span className="text-fg-muted">{fmtIst(times[idx as number], true)}</span>
+          <span>O <b className="text-fg">{fmt(bar.open)}</b></span><span>H <b className="text-fg">{fmt(bar.high)}</b></span>
+          <span>L <b className="text-fg">{fmt(bar.low)}</b></span>
+          <span>C <b className={prev && bar.close < prev.close ? "text-down" : "text-up"}>{fmt(bar.close)}</b></span>
+          {bar.volume > 0 && <span>Vol <b className="text-fg">{bar.volume.toLocaleString("en-IN")}</b></span>}
           {ind.emaFast && <span style={{ color: COLORS.emaFast }}>EMA{settings.emaFast} {fmt(ind.emaFast[idx as number])}</span>}
           {ind.emaSlow && <span style={{ color: COLORS.emaSlow }}>EMA{settings.emaSlow} {fmt(ind.emaSlow[idx as number])}</span>}
           {ind.sma && <span style={{ color: COLORS.sma }}>SMA{settings.smaPeriod} {fmt(ind.sma[idx as number])}</span>}
@@ -474,10 +474,10 @@ export default function ProChart({
       )}
 
       <div ref={mainRef} className="w-full" />
-      {showVolume && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px] text-muted">Volume</span><div ref={volRef} className="w-full" /></div>}
+      {showVolume && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px] text-fg-muted">Volume</span><div ref={volRef} className="w-full" /></div>}
       {showRsi && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.rsi }}>RSI {settings.rsiPeriod}</span><div ref={rsiRef} className="w-full" /></div>}
       {showAdx && <div className="relative"><span className="absolute left-1 top-0 z-10 text-[10px]" style={{ color: COLORS.adx }}>ADX {settings.adxPeriod} · threshold {settings.adxMin}</span><div ref={adxRef} className="w-full" /></div>}
-      {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-muted">No candles yet - the broker returned none for this window (market closed, or the session token has expired).</div>}
+      {display.length === 0 && <div className="flex h-24 items-center justify-center text-xs text-fg-muted">No candles yet - the broker returned none for this window (market closed, or the session token has expired).</div>}
     </div>
   );
 }

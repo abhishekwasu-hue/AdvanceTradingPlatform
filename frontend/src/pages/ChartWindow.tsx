@@ -26,18 +26,18 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
 
-  if (loading) return <div className="p-6 text-sm text-muted">Loading…</div>;
-  if (!user) return <div className="p-6 text-sm text-slate-200">Log in in the main tab first, then open the chart again.</div>;
-  if (!symbol) return <div className="p-6 text-sm text-slate-200">No symbol given.</div>;
+  if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
+  if (!symbol) return <div className="p-6 text-sm text-fg">No symbol given.</div>;
 
   return (
-    <div className="min-h-screen bg-bg p-4">
+    <div className="min-h-screen bg-surface p-4">
       <h1 className="sr-only">{symbol} chart</h1>
-      <div className="mb-2 flex items-center gap-3 text-xs text-muted">
-        <span className="font-semibold text-slate-200">{exchange}</span>
+      <div className="mb-2 flex items-center gap-3 text-xs text-fg-muted">
+        <span className="font-semibold text-fg">{exchange}</span>
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
-        {error && <span className="text-rose-300">{error}</span>}
+        {error && <span className="text-down">{error}</span>}
       </div>
       <ProChart candles={chart.candles} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
                 live={timeframe === "day" ? null : live.ltp} liveError={live.error} fullWindow deployable exchange={exchange}

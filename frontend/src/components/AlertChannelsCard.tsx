@@ -6,7 +6,7 @@ import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverit
 
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
 
-const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
+const input = "w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm";
 
 /**
  * Settings card for out-of-app alerts. The worker raises TOKEN_EXPIRED / SYSTEM_FAILURE /
@@ -145,9 +145,9 @@ export default function AlertChannelsCard() {
 
   function status(type: AlertChannelType) {
     const c = stored(type);
-    if (!c) return <span className="text-muted">not configured</span>;
+    if (!c) return <span className="text-fg-muted">not configured</span>;
     return (
-      <span className={c.last_error ? "text-danger" : c.enabled ? "text-accent" : "text-muted"}>
+      <span className={c.last_error ? "text-down" : c.enabled ? "text-up" : "text-fg-muted"}>
         {c.enabled ? "enabled" : "disabled"} · floor {c.min_severity}
         {c.last_delivered_at && ` · last sent ${new Date(c.last_delivered_at).toLocaleString()}`}
         {c.last_error && ` · ${c.last_error}`}
@@ -157,7 +157,7 @@ export default function AlertChannelsCard() {
 
   return (
     <Card title="Alert delivery (Telegram / email / webhook / push / SMS)">
-      <p className="text-xs text-muted mb-3">
+      <p className="text-xs text-fg-muted mb-3">
         The trading worker raises CRITICAL alerts (broker session expired, stop-loss could not be
         placed, deployment auto-paused, daily loss limit) while no browser is open. Configure at
         least one channel so they reach you. Secrets are stored encrypted and never shown again;
@@ -165,58 +165,58 @@ export default function AlertChannelsCard() {
       </p>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-sky-400"><Send size={14} /> Telegram</div>
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Send size={14} /> Telegram</div>
           <div className="text-[11px]">{status("TELEGRAM")}</div>
           <input className={input} type="password" autoComplete="off" placeholder="Bot token from @BotFather (blank = keep stored)" value={tg.bot_token} onChange={(e) => setTg({ ...tg, bot_token: e.target.value })} />
           <input className={input} placeholder="Chat id (your user id or a group id)" value={tg.chat_id} onChange={(e) => setTg({ ...tg, chat_id: e.target.value })} />
           <div className="flex items-center gap-3 text-xs">
-            <label className="flex items-center gap-1 text-muted">floor
-              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={tg.min_severity} onChange={(e) => setTg({ ...tg, min_severity: e.target.value as NotificationSeverity })}>
+            <label className="flex items-center gap-1 text-fg-muted">floor
+              <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={tg.min_severity} onChange={(e) => setTg({ ...tg, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={tg.enabled} onChange={(e) => setTg({ ...tg, enabled: e.target.checked })} /> enabled</label>
+            <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={tg.enabled} onChange={(e) => setTg({ ...tg, enabled: e.target.checked })} /> enabled</label>
           </div>
           <div className="flex gap-2">
-            <button disabled={busy || !tg.chat_id} onClick={() => run("Telegram channel saved.", () => api.upsertAlertChannel("telegram", { enabled: tg.enabled, min_severity: tg.min_severity, config: { bot_token: tg.bot_token, chat_id: tg.chat_id } }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
-            <button disabled={busy || !stored("TELEGRAM")} onClick={() => test("TELEGRAM")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("TELEGRAM") && <button disabled={busy} onClick={() => run("Telegram channel removed.", () => api.deleteAlertChannel("telegram"))} className="text-xs text-danger hover:underline">Remove</button>}
+            <button disabled={busy || !tg.chat_id} onClick={() => run("Telegram channel saved.", () => api.upsertAlertChannel("telegram", { enabled: tg.enabled, min_severity: tg.min_severity, config: { bot_token: tg.bot_token, chat_id: tg.chat_id } }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || !stored("TELEGRAM")} onClick={() => test("TELEGRAM")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("TELEGRAM") && <button disabled={busy} onClick={() => run("Telegram channel removed.", () => api.deleteAlertChannel("telegram"))} className="text-xs text-down hover:underline">Remove</button>}
           </div>
           {stored("TELEGRAM") && inbound && (
             <div className="mt-2 border-t border-border pt-2 space-y-2">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-200">Two-way Telegram (commands + PAPER approvals)</span>
-                <span className={inbound.inbound_enabled ? "text-accent" : "text-muted"}>{inbound.inbound_enabled ? "on" : "off"}</span>
+                <span className="font-semibold text-fg">Two-way Telegram (commands + PAPER approvals)</span>
+                <span className={inbound.inbound_enabled ? "text-up" : "text-fg-muted"}>{inbound.inbound_enabled ? "on" : "off"}</span>
               </div>
-              {inbound.flag_enabled === false && <div className="text-[11px] text-amber-400">Feature flag <code>telegram_inbound</code> is off for this organisation - ask the platform admin to enable it.</div>}
-              <p className="text-[11px] text-muted">
+              {inbound.flag_enabled === false && <div className="text-[11px] text-warn">Feature flag <code>telegram_inbound</code> is off for this organisation - ask the platform admin to enable it.</div>}
+              <p className="text-[11px] text-fg-muted">
                 Chat commands: /brief /positions /risk /news /levels /thesis /why, or ask a question. Approve/Reject buttons appear on
                 monitor proposals for <b>PAPER</b> deployments only ({inbound.telegram_actions.join(", ")}); exits and every LIVE decision stay on the web with your authenticator.
               </p>
               <input className={input} placeholder="Extra allowed chat ids (comma separated, up to 10); the alert chat id is always allowed" value={inboundChats} onChange={(e) => setInboundChats(e.target.value)} />
               <textarea className={`${input} h-16 font-mono`} placeholder={"Approvers, one per line: <Telegram user id> <team member e-mail>. Empty = only a private chat with the owner can decide; in a group every other member is refused."}
                 value={inboundApprovers} onChange={(e) => setInboundApprovers(e.target.value)} />
-              {(inbound.approvers ?? []).length > 0 && <div className="text-[11px] text-muted">Approvers: {inbound.approvers!.map((a) => `${a.telegram_user_id} → ${a.email}`).join(" · ")}</div>}
+              {(inbound.approvers ?? []).length > 0 && <div className="text-[11px] text-fg-muted">Approvers: {inbound.approvers!.map((a) => `${a.telegram_user_id} → ${a.email}`).join(" · ")}</div>}
               <div className="flex flex-wrap items-center gap-2">
                 <button disabled={busy || inbound.flag_enabled === false} onClick={() => run(inbound.inbound_enabled ? "Two-way Telegram switched off." : "Two-way Telegram switched on - now register the webhook.",
                   () => api.telegramInboundConfigure({ enabled: !inbound.inbound_enabled, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean) }))}
-                  className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">{inbound.inbound_enabled ? "Turn off" : "Turn on"}</button>
+                  className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">{inbound.inbound_enabled ? "Turn off" : "Turn on"}</button>
                 <button disabled={busy || !inbound.inbound_enabled} onClick={() => run("Allowed chats and approvers saved.",
                   () => api.telegramInboundConfigure({ enabled: true, allowed_chat_ids: inboundChats.split(",").map((c) => c.trim()).filter(Boolean), approvers: parseApprovers() }))}
-                  className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Save chats + approvers</button>
+                  className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Save chats + approvers</button>
                 <button disabled={busy || !inbound.inbound_enabled || !inbound.has_secret} onClick={() => run("Webhook registered with Telegram.", async () => {
                   const r = await api.telegramInboundRegister();
                   if (!r.ok) throw new Error(r.description ?? "Telegram refused the webhook");
-                })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Register webhook</button>
+                })} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Register webhook</button>
               </div>
-              <div className="text-[11px] text-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
+              <div className="text-[11px] text-fg-muted break-all">Webhook: {inbound.webhook_url} (HTTPS required; the secret header is set automatically)</div>
             </div>
           )}
         </div>
 
-        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-amber-400"><Mail size={14} /> Email (SMTP)</div>
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Mail size={14} /> Email (SMTP)</div>
           <div className="text-[11px]">{status("EMAIL")}</div>
           <div className="grid grid-cols-3 gap-2">
             <input className={`${input} col-span-2`} placeholder="SMTP host" value={em.smtp_host} onChange={(e) => setEm({ ...em, smtp_host: e.target.value })} />
@@ -229,13 +229,13 @@ export default function AlertChannelsCard() {
           <input className={input} placeholder="From address" value={em.from_address} onChange={(e) => setEm({ ...em, from_address: e.target.value })} />
           <input className={input} placeholder="To addresses, comma separated" value={em.to_addresses} onChange={(e) => setEm({ ...em, to_addresses: e.target.value })} />
           <div className="flex items-center gap-3 text-xs">
-            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={em.use_tls} onChange={(e) => setEm({ ...em, use_tls: e.target.checked })} /> STARTTLS</label>
-            <label className="flex items-center gap-1 text-muted">floor
-              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={em.min_severity} onChange={(e) => setEm({ ...em, min_severity: e.target.value as NotificationSeverity })}>
+            <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={em.use_tls} onChange={(e) => setEm({ ...em, use_tls: e.target.checked })} /> STARTTLS</label>
+            <label className="flex items-center gap-1 text-fg-muted">floor
+              <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={em.min_severity} onChange={(e) => setEm({ ...em, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={em.enabled} onChange={(e) => setEm({ ...em, enabled: e.target.checked })} /> enabled</label>
+            <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={em.enabled} onChange={(e) => setEm({ ...em, enabled: e.target.checked })} /> enabled</label>
           </div>
           <div className="flex gap-2">
             <button
@@ -248,19 +248,19 @@ export default function AlertChannelsCard() {
                   to_addresses: em.to_addresses.split(",").map((a) => a.trim()).filter(Boolean),
                 },
               }))}
-              className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50"
+              className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50"
             >
               Save
             </button>
-            <button disabled={busy || !stored("EMAIL")} onClick={() => test("EMAIL")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("EMAIL") && <button disabled={busy} onClick={() => run("Email channel removed.", () => api.deleteAlertChannel("email"))} className="text-xs text-danger hover:underline">Remove</button>}
+            <button disabled={busy || !stored("EMAIL")} onClick={() => test("EMAIL")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("EMAIL") && <button disabled={busy} onClick={() => run("Email channel removed.", () => api.deleteAlertChannel("email"))} className="text-xs text-down hover:underline">Remove</button>}
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2 lg:col-span-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-emerald-400"><Webhook size={14} /> Webhook (signed JSON POST)</div>
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2 lg:col-span-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Webhook size={14} /> Webhook (signed JSON POST)</div>
           <div className="text-[11px]">{status("WEBHOOK")}</div>
-          <p className="text-[11px] text-muted">
+          <p className="text-[11px] text-fg-muted">
             Every event is POSTed as JSON with <code>X-ATP-Signature: sha256=HMAC-SHA256(secret, timestamp + "." + body)</code> and
             <code> X-ATP-Timestamp</code>, so your receiver (a bot, n8n, Zapier, a Slack relay) can verify it came from here. HTTPS only.
           </p>
@@ -270,54 +270,54 @@ export default function AlertChannelsCard() {
           </div>
           <input className={input} placeholder="Event types to send, comma separated (blank = all): ORDER_FILLED, DAILY_LOSS_LIMIT, ..." value={wh.event_types} onChange={(e) => setWh({ ...wh, event_types: e.target.value })} />
           <div className="flex items-center gap-3 text-xs">
-            <label className="flex items-center gap-1 text-muted">floor
-              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={wh.min_severity} onChange={(e) => setWh({ ...wh, min_severity: e.target.value as NotificationSeverity })}>
+            <label className="flex items-center gap-1 text-fg-muted">floor
+              <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={wh.min_severity} onChange={(e) => setWh({ ...wh, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={wh.enabled} onChange={(e) => setWh({ ...wh, enabled: e.target.checked })} /> enabled</label>
+            <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={wh.enabled} onChange={(e) => setWh({ ...wh, enabled: e.target.checked })} /> enabled</label>
           </div>
           <div className="flex gap-2">
             <button disabled={busy || !wh.url} onClick={() => run("Webhook channel saved.", () => api.upsertAlertChannel("webhook", {
               enabled: wh.enabled, min_severity: wh.min_severity,
               config: { url: wh.url, secret: wh.secret || null, event_types: wh.event_types.split(",").map((a) => a.trim()).filter(Boolean) },
-            }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
-            <button disabled={busy || !stored("WEBHOOK")} onClick={() => test("WEBHOOK")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("WEBHOOK") && <button disabled={busy} onClick={() => run("Webhook channel removed.", () => api.deleteAlertChannel("webhook"))} className="text-xs text-danger hover:underline">Remove</button>}
+            }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || !stored("WEBHOOK")} onClick={() => test("WEBHOOK")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("WEBHOOK") && <button disabled={busy} onClick={() => run("Webhook channel removed.", () => api.deleteAlertChannel("webhook"))} className="text-xs text-down hover:underline">Remove</button>}
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-violet-400"><Smartphone size={14} /> Browser push</div>
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Smartphone size={14} /> Browser push</div>
           <div className="text-[11px]">{status("PUSH")}</div>
-          <p className="text-[11px] text-muted">
+          <p className="text-[11px] text-fg-muted">
             System notifications on this device even with the tab closed (Chrome, Edge, Firefox, Safari 16+). Messages are
             end-to-end encrypted to this browser; the push service never sees them. Add each device you use.
           </p>
           {((stored("PUSH")?.config.devices as { label: string; endpoint: string }[] | undefined) ?? []).map((d) => (
             <div key={d.endpoint} className="flex items-center justify-between text-xs">
-              <span className="text-slate-200">{d.label}</span>
+              <span className="text-fg">{d.label}</span>
               <button disabled={busy} onClick={() => run("Device removed.", () => (stored("PUSH")?.config.count as number) > 1
                 ? api.upsertAlertChannel("push", { enabled: true, min_severity: stored("PUSH")!.min_severity, config: { remove_endpoint: d.endpoint } })
-                : api.deleteAlertChannel("push"))} className="text-danger hover:underline">remove</button>
+                : api.deleteAlertChannel("push"))} className="text-down hover:underline">remove</button>
             </div>
           ))}
           <div className="flex gap-2">
-            <button disabled={busy || !pushSupported} title={pushSupported ? "" : "This browser does not support Web Push"} onClick={() => run("Push enabled on this device.", enablePushHere)} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Enable on this device</button>
-            <button disabled={busy || !stored("PUSH")} onClick={() => test("PUSH")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("PUSH") && <button disabled={busy} onClick={() => run("Push channel removed.", () => api.deleteAlertChannel("push"))} className="text-xs text-danger hover:underline">Remove all</button>}
+            <button disabled={busy || !pushSupported} title={pushSupported ? "" : "This browser does not support Web Push"} onClick={() => run("Push enabled on this device.", enablePushHere)} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Enable on this device</button>
+            <button disabled={busy || !stored("PUSH")} onClick={() => test("PUSH")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("PUSH") && <button disabled={busy} onClick={() => run("Push channel removed.", () => api.deleteAlertChannel("push"))} className="text-xs text-down hover:underline">Remove all</button>}
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-panel2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-teal-400"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>
+        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>
           <div className="text-[11px]">{status("SMS")}</div>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-muted">Preset</span>
-            <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={sms.preset} onChange={(e) => applyPreset(e.target.value)}>
+            <span className="text-fg-muted">Preset</span>
+            <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={sms.preset} onChange={(e) => applyPreset(e.target.value)}>
               <option value="msg91">MSG91</option><option value="twilio">Twilio</option><option value="custom">Custom</option>
             </select>
-            <span className="text-[11px] text-muted">{SMS_PRESETS[sms.preset]?.hint}</span>
+            <span className="text-[11px] text-fg-muted">{SMS_PRESETS[sms.preset]?.hint}</span>
           </div>
           <input className={input} placeholder="Gateway URL (https)" value={sms.url} onChange={(e) => setSms({ ...sms, url: e.target.value })} />
           <textarea className={`${input} font-mono text-[11px]`} rows={2} placeholder={"Headers, one per line: Name: value (blank = keep stored)"} value={sms.headers} onChange={(e) => setSms({ ...sms, headers: e.target.value })} />
@@ -327,40 +327,40 @@ export default function AlertChannelsCard() {
             <input className={input} placeholder="Content type" value={sms.content_type} onChange={(e) => setSms({ ...sms, content_type: e.target.value })} />
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <label className="flex items-center gap-1 text-muted">floor
-              <select className="rounded bg-panel2 border border-border px-1 py-0.5" value={sms.min_severity} onChange={(e) => setSms({ ...sms, min_severity: e.target.value as NotificationSeverity })}>
+            <label className="flex items-center gap-1 text-fg-muted">floor
+              <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={sms.min_severity} onChange={(e) => setSms({ ...sms, min_severity: e.target.value as NotificationSeverity })}>
                 {SEVERITIES.map((s) => <option key={s}>{s}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={sms.enabled} onChange={(e) => setSms({ ...sms, enabled: e.target.checked })} /> enabled</label>
+            <label className="flex items-center gap-1 text-fg-muted"><input type="checkbox" checked={sms.enabled} onChange={(e) => setSms({ ...sms, enabled: e.target.checked })} /> enabled</label>
           </div>
           <div className="flex gap-2">
             <button disabled={busy || !sms.url || !sms.to_numbers} onClick={() => run("SMS channel saved.", () => api.upsertAlertChannel("sms", {
               enabled: sms.enabled, min_severity: sms.min_severity,
               config: { url: sms.url, headers: parseHeaders(sms.headers), body_template: sms.body_template, content_type: sms.content_type,
                 method: "POST", to_numbers: sms.to_numbers.split(",").map((n) => n.trim()).filter(Boolean) },
-            }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
-            <button disabled={busy || !stored("SMS")} onClick={() => test("SMS")} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("SMS") && <button disabled={busy} onClick={() => run("SMS channel removed.", () => api.deleteAlertChannel("sms"))} className="text-xs text-danger hover:underline">Remove</button>}
+            }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || !stored("SMS")} onClick={() => test("SMS")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
+            {stored("SMS") && <button disabled={busy} onClick={() => run("SMS channel removed.", () => api.deleteAlertChannel("sms"))} className="text-xs text-down hover:underline">Remove</button>}
           </div>
         </div>
       </div>
 
-      {error && <div className="mt-3 text-sm text-danger">{error}</div>}
-      {message && <div className="mt-3 text-sm text-accent">{message}</div>}
+      {error && <div className="mt-3 text-sm text-down">{error}</div>}
+      {message && <div className="mt-3 text-sm text-up">{message}</div>}
 
       {deliveries.length > 0 && (
         <div className="mt-4">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5"><BellRing size={12} /> Recent deliveries</div>
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1.5"><BellRing size={12} /> Recent deliveries</div>
           <table className="w-full text-xs">
             <tbody>
               {deliveries.map((d) => (
                 <tr key={d.id} className="border-t border-border">
-                  <td className="py-1 pr-3 text-muted whitespace-nowrap">{new Date(d.created_at).toLocaleString()}</td>
-                  <td className="py-1 pr-3 capitalize text-slate-300">{d.channel_type.toLowerCase()}</td>
-                  <td className="py-1 pr-3 text-slate-200">[{d.severity}] {d.title}</td>
-                  <td className={`py-1 pr-3 font-semibold ${d.status === "SENT" ? "text-accent" : d.status === "FAILED" ? "text-danger" : "text-warn"}`}>{d.status}{d.attempts > 1 ? ` (${d.attempts})` : ""}</td>
-                  <td className="py-1 text-muted">{d.last_error ?? ""}</td>
+                  <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(d.created_at).toLocaleString()}</td>
+                  <td className="py-1 pr-3 capitalize text-fg-muted">{d.channel_type.toLowerCase()}</td>
+                  <td className="py-1 pr-3 text-fg">[{d.severity}] {d.title}</td>
+                  <td className={`py-1 pr-3 font-semibold ${d.status === "SENT" ? "text-up" : d.status === "FAILED" ? "text-down" : "text-warn"}`}>{d.status}{d.attempts > 1 ? ` (${d.attempts})` : ""}</td>
+                  <td className="py-1 text-fg-muted">{d.last_error ?? ""}</td>
                 </tr>
               ))}
             </tbody>

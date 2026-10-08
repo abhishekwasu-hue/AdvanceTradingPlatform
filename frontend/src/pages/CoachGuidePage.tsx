@@ -5,6 +5,7 @@ import GuideChat from "../components/GuideChat";
 import TradeCoach from "../components/TradeCoach";
 import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
 import { Card } from "../components/ui";
+import { PageHeader } from "../components/primitives";
 
 /** Phase AW: the trade coach and the concept guide, on their own page - the AI Copilot is the
  * live-market strategist; reviewing your trades and learning concepts live here. */
@@ -14,17 +15,14 @@ export default function CoachGuidePage() {
     try { return localStorage.getItem("atp_coach_tab") === "guide" ? "guide" : "coach"; } catch { return "coach"; }
   });
   const choose = (t: "coach" | "guide") => { setTab(t); try { localStorage.setItem("atp_coach_tab", t); } catch { /* storage unavailable */ } };
-  if (!user) return <Card><p className="text-sm text-muted">Log in to see your trade review.</p></Card>;
+  if (!user) return <Card><p className="text-sm text-fg-muted">Log in to see your trade review.</p></Card>;
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-sky-300 flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</h1>
-        <p className="text-sm text-slate-300">The coach shows patterns in your own trades (rules followed or broken); the guide explains the concepts behind them. Decisions are yours.</p>
-      </div>
+      <PageHeader title={<span className="inline-flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</span>} description="The coach shows patterns in your own trades (rules followed or broken); the guide explains the concepts behind them. Decisions are yours." />
       <div className="flex gap-1 border-b border-border">
         {([["coach", "Trade coach", GraduationCap], ["guide", "Guide", BookOpen]] as const).map(([id, label, Icon]) => (
           <button key={id} onClick={() => choose(id)}
-                  className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? "border-sky-400 text-sky-100" : "border-transparent text-muted hover:text-slate-200"}`}>
+                  className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? "border-brand text-fg" : "border-transparent text-fg-muted hover:text-fg"}`}>
             <Icon size={14} />{label}
           </button>
         ))}

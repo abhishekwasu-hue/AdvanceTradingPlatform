@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { ChartRunResponse, Deployment, OHLCVBar, StrategyInfo } from "../types";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
+import { signClass } from "./ui";
 
 /**
  * Phase AO: strategies on the chart. Each inbuilt strategy gets two switches:
@@ -26,8 +27,8 @@ export function strategyLabel(name: string): string {
 function Switch({ on, onChange, disabled, title }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string }) {
   return (
     <button type="button" role="switch" aria-checked={on} disabled={disabled} title={title} onClick={() => onChange(!on)}
-            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? "bg-emerald-500" : "bg-slate-600"}`}>
-      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
+            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? "bg-brand" : "bg-fg-muted/40"}`}>
+      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-surface-1 shadow ring-1 ring-border transition-all ${on ? "left-3.5" : "left-0.5"}`} />
     </button>
   );
 }
@@ -136,16 +137,16 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
   };
 
   const panel = !enabled || !open ? null : (
-    <div className="mb-2 rounded-lg border border-border bg-panel2/60 p-2">
-      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted">
-        <span className="font-bold uppercase tracking-wider text-slate-200">Strategies on this chart</span>
-        <span><b className="text-slate-200">Chart</b> draws its entries, exits and last signal on these candles</span>
+    <div className="mb-2 rounded-lg border border-border bg-surface-2/60 p-2">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[11px] text-fg-muted">
+        <span className="font-bold uppercase tracking-wider text-fg">Strategies on this chart</span>
+        <span><b className="text-fg">Chart</b> draws its entries, exits and last signal on these candles</span>
         {canDeploy
-          ? <span><b className="text-slate-200">Deploy</b> runs it on {sym} in PAPER mode via the trading worker (LIVE: Autopilot page)</span>
+          ? <span><b className="text-fg">Deploy</b> runs it on {sym} in PAPER mode via the trading worker (LIVE: Autopilot page)</span>
           : <span>{user ? "Deploy needs a broker symbol chart (Market pulse, Position chart, New tab)" : "Log in to deploy"}</span>}
-        {deployMsg && <span className="text-sky-300">{deployMsg}</span>}
+        {deployMsg && <span className="text-fg-muted">{deployMsg}</span>}
       </div>
-      {strategies.length === 0 ? <div className="text-xs text-muted">Loading strategies…</div> : (
+      {strategies.length === 0 ? <div className="text-xs text-fg-muted">Loading strategies…</div> : (
         <div className="grid gap-1 md:grid-cols-2">
           {strategies.map((s) => {
             const r = runs[s.id];
@@ -155,31 +156,31 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
             const incompatible = r && !("error" in r) && !r.compatible;
             const finest = s.timeframes[0];
             return (
-              <div key={s.id} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] ${on ? "border-sky-500/40 bg-panel3" : "border-border"}`}>
+              <div key={s.id} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-[11px] ${on ? "border-border bg-surface-3" : "border-border"}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color(s.id) }} />
                 <span className="min-w-0 flex-1">
-                  <span className="font-semibold text-slate-100" title={s.description}>{s.name}</span>
-                  <span className="ml-1 text-muted">{s.timeframes.join("/")}</span>
-                  {on && busy.has(s.id) && <span className="ml-1 text-muted">running…</span>}
-                  {on && r && "error" in r && <span className="block truncate text-rose-300" title={r.error}>{r.error}</span>}
+                  <span className="font-semibold text-fg" title={s.description}>{s.name}</span>
+                  <span className="ml-1 text-fg-muted">{s.timeframes.join("/")}</span>
+                  {on && busy.has(s.id) && <span className="ml-1 text-fg-muted">running…</span>}
+                  {on && r && "error" in r && <span className="block truncate text-down" title={r.error}>{r.error}</span>}
                   {on && incompatible && (
-                    <span className="block text-amber-300">{r.reason}
+                    <span className="block text-warn">{r.reason}
                       {onTimeframeChange && <button onClick={() => onTimeframeChange(finest)} className="ml-1 underline">switch to {finest.replace("min", "m")}</button>}
                     </span>
                   )}
-                  {on && r && !("error" in r) && r.compatible && !r.last_signal && r.reason && <span className="block text-amber-300">{r.reason}</span>}
+                  {on && r && !("error" in r) && r.compatible && !r.last_signal && r.reason && <span className="block text-warn">{r.reason}</span>}
                   {on && r && !("error" in r) && r.compatible && r.last_signal && (
-                    <span className="block text-slate-300">
+                    <span className="block text-fg-muted">
                       {r.total_trades} trades · win {r.win_rate.toFixed(0)}% ·{" "}
-                      <b className={r.net_pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{r.net_pnl >= 0 ? "+" : ""}₹{Math.round(r.net_pnl).toLocaleString("en-IN")}</b>
-                      {r.last_signal && r.last_signal.direction !== "NO_TRADE" && <span className="text-sky-300"> · now {r.last_signal.direction} @ {r.last_signal.entry}</span>}
+                      <b className={signClass(r.net_pnl, 0)}>{Math.round(r.net_pnl) > 0 ? "+" : ""}₹{Math.round(r.net_pnl).toLocaleString("en-IN")}</b>
+                      {r.last_signal && r.last_signal.direction !== "NO_TRADE" && <span className="text-fg-muted"> · now {r.last_signal.direction} @ {r.last_signal.entry}</span>}
                     </span>
                   )}
                 </span>
-                <label className="flex items-center gap-1 text-muted">Chart <Switch on={on} onChange={(v) => toggleShown(s.id, v)} title="Draw this strategy's trades on the chart" /></label>
+                <label className="flex items-center gap-1 text-fg-muted">Chart <Switch on={on} onChange={(v) => toggleShown(s.id, v)} title="Draw this strategy's trades on the chart" /></label>
                 {canDeploy && (
-                  <label className="flex items-center gap-1 text-muted" title={running ? "Running (PAPER) - switch off to pause" : dep ? "Paused - switch on to resume" : "Create a PAPER deployment on this symbol"}>
-                    <Rocket size={11} className={running ? "text-emerald-300" : ""} />
+                  <label className="flex items-center gap-1 text-fg-muted" title={running ? "Running (PAPER) - switch off to pause" : dep ? "Paused - switch on to resume" : "Create a PAPER deployment on this symbol"}>
+                    <Rocket size={11} className={running ? "text-up" : ""} />
                     <Switch on={running} onChange={(v) => void toggleDeploy(s, v)} />
                   </label>
                 )}

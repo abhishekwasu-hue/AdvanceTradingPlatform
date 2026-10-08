@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useBrokerChart } from "./chartHistory";
 import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "./ProChart";
 import { useCandleSource } from "./DataSource";
-import { Card } from "./ui";
+import { Card, signClass } from "./ui";
 import type { TradeRecord } from "../types";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
@@ -62,16 +62,16 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
   return (
     <Card title="Position chart">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        <select value={selectedId ?? ""} onChange={(e) => setSelectedId(Number(e.target.value))} className="rounded bg-panel2 border border-border px-2 py-1 text-slate-200">
+        <select value={selectedId ?? ""} onChange={(e) => setSelectedId(Number(e.target.value))} className="rounded bg-surface-2 border border-border px-2 py-1 text-fg">
           {positions.map((x) => <option key={x.id} value={x.id}>{x.symbol} · {x.direction} {x.quantity} @ {x.entry_price} · {x.mode}</option>)}
         </select>
-        {p && derivative && <span className="text-muted">charting the underlying <b className="text-slate-200">{chartSymbol}</b>; the position is in <b className="text-slate-200">{p.symbol}</b></span>}
+        {p && derivative && <span className="text-fg-muted">charting the underlying <b className="text-fg">{chartSymbol}</b>; the position is in <b className="text-fg">{p.symbol}</b></span>}
         {p && (
           <span className="ml-auto flex items-center gap-3 font-tabular">
-            {held != null && <span className="text-slate-300">{derivative ? "premium" : "LTP"} <b className="text-slate-100">{held.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b></span>}
-            {pnl != null && <span className={`font-bold ${pnl >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{pnl >= 0 ? "+" : "-"}₹{Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })} unrealised</span>}
+            {held != null && <span className="text-fg-muted">{derivative ? "premium" : "LTP"} <b className="text-fg">{held.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b></span>}
+            {pnl != null && <span className={`font-bold ${signClass(pnl, 0)}`}>{Math.round(pnl) > 0 ? "+" : Math.round(pnl) < 0 ? "-" : ""}₹{Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })} unrealised</span>}
             {source.sources.filter((s) => s.usable).length > 1 && (
-              <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-panel2 border border-border px-1 py-0.5 text-[11px] text-slate-200">
+              <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-1 py-0.5 text-[11px] text-fg">
                 {source.sources.filter((s) => s.usable).map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker}</option>)}
               </select>
             )}
@@ -79,13 +79,13 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
         )}
       </div>
       {!usable ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-200">
+        <div className="rounded-lg border border-warn/30 bg-warn/[0.06] px-3 py-2 text-xs text-warn">
           Live chart needs a broker with a valid session. Add the API key under Settings &gt; Brokers (stored encrypted, never in chat or the environment) and log in; the chart, live price and P&amp;L then appear here.
         </div>
       ) : (
         <>
-          {error && <div className="mb-2 text-xs text-rose-300">{error}</div>}
-          {loading && candles.length === 0 && <div className="text-xs text-muted">Fetching candles…</div>}
+          {error && <div className="mb-2 text-xs text-down">{error}</div>}
+          {loading && candles.length === 0 && <div className="text-xs text-fg-muted">Fetching candles…</div>}
           <ProChart candles={candles} symbol={chartSymbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
                     priceLines={priceLines} markers={markers} live={timeframe === "day" ? null : live.ltp} liveError={live.error} height={340}
                     defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume"]}

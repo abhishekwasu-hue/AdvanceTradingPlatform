@@ -3,15 +3,16 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
 import type { NotificationEntry, NotificationSeverity } from "../types";
+import { PageHeader } from "../components/primitives";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
     case "CRITICAL":
-      return "border-danger/40 text-danger";
+      return "border-down/40 text-down";
     case "WARNING":
-      return "border-amber-500/40 text-amber-400";
+      return "border-warn/40 text-warn";
     default:
-      return "border-sky-500/40 text-sky-400";
+      return "border-info/40 text-info";
   }
 }
 
@@ -50,9 +51,9 @@ export default function NotificationsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-violet-400">Notifications</h1>
+        <PageHeader title="Notifications" />
         <Card>
-          <p className="text-sm text-muted">Log in from the Account tab to see your account's notification feed.</p>
+          <p className="text-sm text-fg-muted">Log in from the Account tab to see your account's notification feed.</p>
         </Card>
       </div>
     );
@@ -63,46 +64,40 @@ export default function NotificationsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-violet-400">Notifications</h1>
-          <p className="text-sm font-semibold text-violet-200">
-            Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches,
-            emergency exits, and system failures - shared across your account.
-          </p>
-        </div>
+        <PageHeader title="Notifications" description="Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches, emergency exits, and system failures - shared across your account." />
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
-            className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs shrink-0"
+            className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs shrink-0"
           >
             Mark all read ({unreadCount})
           </button>
         )}
       </div>
 
-      {error && <div className="text-sm text-danger">{error}</div>}
+      {error && <div className="text-sm text-down">{error}</div>}
 
       <Card title={`Feed (${notifications.length})`}>
         {notifications.length === 0 ? (
-          <div className="text-sm text-muted py-4 text-center">No notifications yet.</div>
+          <div className="text-sm text-fg-muted py-4 text-center">No notifications yet.</div>
         ) : (
           <div className="space-y-2">
             {notifications.map((n) => (
               <div
                 key={n.id}
-                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-panel2/50"}`}
+                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-surface-2/50"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${severityClasses(n.severity)}`}>
                       {n.severity}
                     </span>
-                    <span className="text-[10px] text-muted uppercase tracking-wide">{n.event_type}</span>
+                    <span className="text-[10px] text-fg-muted uppercase tracking-wide">{n.event_type}</span>
                   </div>
-                  <span className="text-[11px] text-muted whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</span>
+                  <span className="text-[11px] text-fg-muted whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</span>
                 </div>
-                <div className="mt-1 text-sm font-medium text-slate-200">{n.title}</div>
-                {n.message && <div className="mt-0.5 text-xs text-muted">{n.message}</div>}
+                <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
+                {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}
                 {!n.read && (
                   <button
                     onClick={() => markRead(n.id)}

@@ -169,6 +169,12 @@ jobs:
       - name: Initial JS budget (300 KB gzip; pages and charts load on demand)
         run: npm run check:bundle
 
+      - name: Generated palette is up to date (scripts/gen-palette.mjs)
+        run: npm run gen:palette && git diff --exit-code -- src/styles/palette.css
+
+      - name: Design-system catalogue builds (Storybook)
+        run: npm run build-storybook
+
       - name: Audit production dependencies for known vulnerabilities (npm audit)
         run: npm audit --omit=dev
 

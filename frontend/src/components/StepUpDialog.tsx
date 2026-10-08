@@ -31,26 +31,26 @@ export default function StepUpDialog({ reason, onVerified, onCancel }: { reason:
   }
 
   return (
-    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-amber-400 font-bold text-sm"><ShieldCheck size={16} /> Two-factor check required</div>
-      <p className="text-xs text-slate-300">{reason}</p>
+    <div className="rounded-lg border border-warn/40 bg-warn/10 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-warn font-bold text-sm"><ShieldCheck size={16} /> Two-factor check required</div>
+      <p className="text-xs text-fg-muted">{reason}</p>
       {needsEnrol ? (
-        <p className="text-xs text-muted">Go to the Account tab, enable two-factor authentication, then come back.</p>
+        <p className="text-xs text-fg-muted">Go to the Account tab, enable two-factor authentication, then come back.</p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <input
-            className="rounded bg-panel2 border border-amber-500/40 px-2 py-1.5 text-sm w-44 font-mono"
+            className="rounded bg-surface-2 border border-warn/40 px-2 py-1.5 text-sm w-44 font-mono"
             placeholder="authenticator code"
             value={code}
             onChange={(e) => setCode(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void submit(); }}
             autoFocus
           />
-          <button onClick={submit} disabled={busy || code.length < 6} className="rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50">Verify</button>
+          <button onClick={submit} disabled={busy || code.length < 6} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50">Verify</button>
         </div>
       )}
-      {error && <div className="text-xs text-danger">{error}</div>}
-      <button onClick={onCancel} className="text-xs text-muted hover:text-slate-200">Cancel</button>
+      {error && <div className="text-xs text-down">{error}</div>}
+      <button onClick={onCancel} className="text-xs text-fg-muted hover:text-fg">Cancel</button>
     </div>
   );
 }

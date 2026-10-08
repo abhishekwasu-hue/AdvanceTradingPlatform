@@ -75,7 +75,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
     }
   }
 
-  if (error) return <div className="text-xs text-danger">{error}</div>;
+  if (error) return <div className="text-xs text-down">{error}</div>;
   if (tokens.length === 0) return null;
 
   return (
@@ -86,17 +86,17 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
           <div
             key={keyOf(t)}
             className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-              ok ? "border-accent/30 bg-accent/[0.06]" : "border-warn/40 bg-warn/[0.08]"
+              ok ? "border-info/30 bg-info/[0.06]" : "border-warn/40 bg-warn/[0.08]"
             }`}
           >
             <div className="flex items-center gap-2">
-              {ok ? <ShieldCheck size={14} className="text-accent" /> : <KeyRound size={14} className="text-warn" />}
-              <span className="font-bold capitalize text-slate-100">{t.broker_name}</span>
-              <span className={`rounded border px-1.5 py-0.5 font-semibold ${ok ? "border-accent/40 text-accent" : "border-warn/40 text-warn"}`}>
+              {ok ? <ShieldCheck size={14} className="text-up" /> : <KeyRound size={14} className="text-warn" />}
+              <span className="font-bold capitalize text-fg">{t.broker_name}</span>
+              <span className={`rounded border px-1.5 py-0.5 font-semibold ${ok ? "border-up/40 text-up" : "border-warn/40 text-warn"}`}>
                 {t.token_status}
               </span>
               {!compact && (
-                <span className="text-muted">
+                <span className="text-fg-muted">
                   {ok && t.token_expires_at
                     ? `session valid until ${new Date(t.token_expires_at).toLocaleString()}`
                     : t.token_status === "EXPIRED"
@@ -110,13 +110,13 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <button
                   onClick={loginToUpstox}
                   disabled={busy}
-                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
                 >
                   <LogIn size={12} /> {busy ? "Redirecting…" : ok ? "Re-login to Upstox" : "Login to Upstox"}
                 </button>
               )}
               {!compact && t.oauth_callback_url && (
-                <span className="text-muted hidden md:inline" title="Register this exact redirect URI on the Upstox developer console">
+                <span className="text-fg-muted hidden md:inline" title="Register this exact redirect URI on the Upstox developer console">
                   redirect URI: <code className="font-mono">{t.oauth_callback_url}</code>
                 </span>
               )}
@@ -124,7 +124,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <button
                   onClick={() => void openLogin(t)}
                   disabled={busy}
-                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
                   title={`Opens the ${t.broker_name} login page in a new tab; paste the ${t.code_param ?? "code"} it returns below`}
                 >
                   <ExternalLink size={12} /> {ok ? `Re-login to ${t.broker_name}` : `Open ${t.broker_name} login`}
@@ -136,7 +136,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <input
                   type="password"
                   autoComplete="off"
-                  className="flex-1 min-w-[16rem] rounded bg-panel2 border border-border px-2 py-1 text-xs"
+                  className="flex-1 min-w-[16rem] rounded bg-surface-2 border border-border px-2 py-1 text-xs"
                   placeholder={`Paste today's ${t.code_param ?? "code"} (or the whole redirected address)`}
                   value={codes[keyOf(t)] ?? ""}
                   onChange={(e) => setCodes((c) => ({ ...c, [keyOf(t)]: e.target.value }))}
@@ -145,12 +145,12 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <button
                   onClick={() => void submitCode(t)}
                   disabled={busy || !(codes[keyOf(t)] ?? "").trim()}
-                  className="flex items-center gap-1.5 rounded border border-border px-3 py-1 text-slate-100 hover:bg-panel2 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded border border-border px-3 py-1 text-fg hover:bg-surface-2 disabled:opacity-50"
                 >
                   <LogIn size={12} /> {busy ? "Logging in…" : "Login with code"}
                 </button>
                 {notes[keyOf(t)]?.text && (
-                  <span className={`basis-full ${notes[keyOf(t)].ok ? "text-accent" : "text-danger"}`}>
+                  <span className={`basis-full ${notes[keyOf(t)].ok ? "text-up" : "text-down"}`}>
                     {notes[keyOf(t)].text}
                     {notes[keyOf(t)].link && (
                       <> <a href={notes[keyOf(t)].link} target="_blank" rel="noopener noreferrer" className="underline">Open the {t.broker_name} login page</a></>

@@ -72,6 +72,24 @@ def test_build_confirms_each_expiry_on_its_own_day_and_reads_the_kind_from_futur
     assert (meta["coverage_start"], meta["coverage_end"]) == ("2024-01-02", "2024-01-22")
 
 
+def test_a_moved_monthly_goes_to_the_day_its_future_expired_not_the_nearest_weekly():
+    # NIFTY Sep 2025: the series listed for Thu 25 Sep was re-dated to Tue 30 Sep; Tue 23 Sep is a weekly.
+    files = {
+        D("2025-09-01"): legacy(("FUTIDX", "NIFTY", "25-Sep-2025"), ("OPTIDX", "NIFTY", "25-Sep-2025"),
+                                ("OPTIDX", "NIFTY", "23-Sep-2025")),
+        D("2025-09-08"): legacy(("OPTIDX", "NIFTY", "23-Sep-2025")),
+        D("2025-09-15"): legacy(("OPTIDX", "NIFTY", "23-Sep-2025")),
+        D("2025-09-23"): legacy(("OPTIDX", "NIFTY", "23-Sep-2025"), ("FUTIDX", "NIFTY", "30-Sep-2025")),
+        D("2025-09-25"): legacy(("FUTIDX", "NIFTY", "30-Sep-2025")),
+        D("2025-09-29"): legacy(("FUTIDX", "NIFTY", "30-Sep-2025")),
+        D("2025-09-30"): legacy(("FUTIDX", "NIFTY", "30-Sep-2025"), ("OPTIDX", "NIFTY", "30-Sep-2025")),
+    }
+    rows, meta = ne.build(D("2025-09-01"), D("2025-09-30"), files.get, workers=1)
+    got = {(r["expiry"], r["kind"], r["first_seen"]) for r in rows}
+    assert ("2025-09-23", "weekly", "2025-09-01") in got and ("2025-09-30", "monthly", "2025-09-01") in got
+    assert {"symbol": "NIFTY", "from": "2025-09-25", "to": "2025-09-30"} in meta["moved"]
+
+
 def test_build_refuses_holes_unexplained_drops_and_shrinking():
     base = {D("2024-01-02"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
             D("2024-01-03"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
@@ -99,16 +117,21 @@ def test_build_refuses_holes_unexplained_drops_and_shrinking():
 
 
 # --- part 2: the committed data and the backtest calendar ----------------------------------------------------------------
-def _bank():
-    rows = expiry_data.listed("BANKNIFTY")
-    assert rows, "backend/app/instruments/data/nse_index_expiries.csv must hold BANKNIFTY (run the 'NSE expiry data' workflow)"
+def _rows(symbol):
+    rows = expiry_data.listed(symbol)
+    assert rows, f"backend/app/instruments/data/nse_index_expiries.csv must hold {symbol} (run the 'NSE expiry data' workflow)"
     return rows
 
 
-def test_data_file_covers_banknifty_from_2016_and_every_expiry_is_exchange_confirmed():
+def _bank():
+    return _rows("BANKNIFTY")
+
+
+@pytest.mark.parametrize("symbol", sorted(expiry_data.DATA_DRIVEN))
+def test_data_file_covers_from_2016_and_every_expiry_is_exchange_confirmed(symbol):
     start, end = expiry_data.coverage()
     assert start <= D("2016-01-08") and end >= D("2026-09-30")
-    rows = _bank()
+    rows = _rows(symbol)
     assert all(e.weekday() < 5 for e, _, _ in rows)
     # one monthly (the series with a future) in every month of the coverage
     monthly = defaultdict(list)
@@ -120,13 +143,14 @@ def test_data_file_covers_banknifty_from_2016_and_every_expiry_is_exchange_confi
     assert {k for k, v in monthly.items() if len(v) == 1} >= months
 
 
-def test_every_month_of_every_year_matches_the_data():
+@pytest.mark.parametrize("symbol", sorted(expiry_data.DATA_DRIVEN))
+def test_every_month_of_every_year_matches_the_data(symbol):
     """The backtest calendar returns exactly the exchange's dates: each expiry is the next one after the previous expiry,
     and the monthly-only calendar returns each month's monthly - from the first month of the coverage to the last."""
     start, end = expiry_data.coverage()
-    rows = [r for r in _bank() if r[0] <= end]
-    every = ExpiryCalendar.for_underlying("BANKNIFTY")
-    monthly_only = ExpiryCalendar.for_underlying("BANKNIFTY", weekly=False)
+    rows = [r for r in _rows(symbol) if r[0] <= end]
+    every = ExpiryCalendar.for_underlying(symbol)
+    monthly_only = ExpiryCalendar.for_underlying(symbol, weekly=False)
     checked = 0
     for (prev, _, _), (exp, kind, seen) in zip(rows, rows[1:]):
         day = prev + dt.timedelta(days=1)
@@ -157,6 +181,28 @@ def test_the_2024_changes_are_in_the_data():
     monthly_days = {e.weekday() for e, k, _ in rows if k == "monthly" and D("2023-01-01") <= e <= D("2026-09-30")
                     and (e + dt.timedelta(days=7)).month != e.month}    # not holiday-shifted into the week before
     assert len(monthly_days) >= 2
+
+
+def test_nifty_weeklies_thursday_then_tuesday_and_holiday_moves():
+    rows = _rows("NIFTY")
+    weekly = [e for e, k, _ in rows if k == "weekly"]
+    assert weekly[0] == D("2019-02-14")                                      # the first NIFTY weekly
+    # Thursday era: a holiday moves the expiry to an earlier day, never later
+    thu = [e for e, _, _ in rows if D("2019-02-14") <= e < D("2025-09-01")]
+    assert all(e.weekday() <= 3 for e in thu) and sum(e.weekday() == 3 for e in thu) >= 0.9 * len(thu)
+    # Tuesday from Sep 2025 (Monday where the Tuesday is a holiday)
+    _, end = expiry_data.coverage()
+    tue = [e for e, _, _ in rows if D("2025-09-01") <= e <= end]               # long-dated listings keep printed dates
+    assert tue[0] == D("2025-09-02") and all(e.weekday() <= 1 for e in tue) and sum(e.weekday() == 1 for e in tue) >= 0.9 * len(tue)
+    assert max(e for e in thu) == D("2025-08-28")
+    # holiday moves the exchange made - no weekday rule produces these
+    dates = {e for e, _, _ in rows}
+    for moved, rule_day in ((D("2018-03-28"), D("2018-03-29")), (D("2021-11-03"), D("2021-11-04")),
+                            (D("2026-10-19"), D("2026-10-20"))):
+        assert moved in dates and rule_day not in dates
+    assert ExpiryCalendar.for_underlying("NIFTY 50").data_symbol == "NIFTY"
+    with pytest.raises(expiry_data.ExpiryDataMissing):
+        expiry_calendar.expiry_weekday(D("2024-01-01"), "NIFTY")
 
 
 def test_no_weekday_rule_is_left_for_banknifty_and_outside_the_data_is_an_error():

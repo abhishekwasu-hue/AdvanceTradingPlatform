@@ -3,8 +3,9 @@
 Ported from Trade@0df3e09d0aa5942e3352327d5b998c5f6939ac61, elliott/contracts.py (NIFTY only there), generalised to
 several underlyings through the `UNDERLYINGS` table.
 
-An expiry is never "next Tuesday": a holiday moves it to the previous trading day. BANKNIFTY has no rule here at all:
-its expiries are the dates NSE printed in its bhavcopies (`app.instruments.expiry_data`). Sources, in order:
+An expiry is never "next Tuesday": a holiday moves it to the previous trading day. NIFTY and BANKNIFTY have no rule
+here at all: their expiries are the dates NSE printed in its bhavcopies (`app.instruments.expiry_data`); the rule
+calendar below serves the others (SENSEX). Sources, in order:
   1. a listed-contracts calendar (the broker instrument master / bhavcopy: expiries with the day they were first listed),
      used causally - a contract counts only from its listing day;
   2. the rule calendar below (for backtests and as a fallback): the weekly weekday by date, the monthly = the last such
@@ -29,9 +30,10 @@ FULL_SESSION_MIN_BARS = 300                         # a muhurat / DR / half sess
 # weekdays: Monday = 0 ... Friday = 4
 UNDERLYINGS: Dict[str, Dict] = {
     "NIFTY": {
-        # (from date, weekday of the expiry) - Thursday until 31 Aug 2025, Tuesday from 1 Sep 2025.
-        "weekday": [(dt.date(2000, 1, 1), 3), (dt.date(2025, 9, 1), 1)],
-        "weekly_start": dt.date(2019, 2, 11),       # NIFTY weekly options listed (first weekly expiry 14 Feb 2019)
+        # No weekday rule: every expiry comes from NSE's bhavcopies (app.instruments.expiry_data). Only the dated lot
+        # table below is used.
+        "weekday": None,
+        "weekly_start": None,
         "weekly_end": None,
         "lots": [(dt.date(2000, 1, 1), 25), (dt.date(2015, 10, 30), 75), (dt.date(2021, 7, 30), 50),
                  (dt.date(2024, 4, 26), 25), (dt.date(2024, 11, 20), 75), (dt.date(2026, 1, 6), 65)],

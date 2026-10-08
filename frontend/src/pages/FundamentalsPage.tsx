@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
-import { Card, StatTile, Disclaimer, signClass } from "../components/ui";
+import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { PageHeader } from "../components/primitives";
 import {
   defaultCalendarEvent,
@@ -54,8 +54,7 @@ function toneForRisk(risk?: string) {
 }
 
 function toneForNumber(n?: number | null) {
-  if (n == null) return "default" as const;
-  return n >= 0 ? ("up" as const) : ("down" as const);
+  return signTone(n, 1);
 }
 
 export default function FundamentalsPage() {
@@ -727,7 +726,7 @@ export default function FundamentalsPage() {
                     <StatTile label="Bull" value={`₹${dcf.bull.intrinsic_value_per_share}`} tone="up" />
                     {dcf.upside_pct != null && (
                       <div className="col-span-3 text-xs text-fg-muted mt-1">
-                        Upside vs current price: <span className={signClass(dcf.upside_pct)}>{dcf.upside_pct.toFixed(1)}%</span>
+                        Upside vs current price: <span className={signClass(dcf.upside_pct, 1)}>{dcf.upside_pct.toFixed(1)}%</span>
                         {dcf.margin_of_safety_pct != null && ` · Margin of safety: ${dcf.margin_of_safety_pct.toFixed(1)}%`}
                       </div>
                     )}
@@ -829,7 +828,7 @@ export default function FundamentalsPage() {
               {card && (
                 <div className="max-w-md rounded border border-border p-4 space-y-1 text-sm">
                   <div className="text-lg font-semibold text-fg">{card.symbol}</div>
-                  <div className="text-2xl font-bold text-up">{card.fundamental_score}/100 <span className="text-sm text-fg-muted">({card.fundamental_grade})</span></div>
+                  <div className="text-2xl font-bold text-fg">{card.fundamental_score}/100 <span className="text-sm text-fg-muted">({card.fundamental_grade})</span></div>
                   <div>Business Quality: <span className="text-fg">{card.business_quality}</span></div>
                   <div>Earnings Quality: <span className="text-fg">{card.earnings_quality}</span></div>
                   <div>Balance Sheet Risk: <span className="text-fg">{card.balance_sheet_risk}</span></div>
@@ -1115,7 +1114,7 @@ export default function FundamentalsPage() {
                 {finalReport && (
                   <div className="max-w-2xl space-y-3 text-sm">
                     <div className="text-lg font-semibold text-fg">{finalReport.name} ({finalReport.symbol}) — {finalReport.sector}</div>
-                    <div className="text-2xl font-bold text-up">{finalReport.card.fundamental_score}/100 <span className="text-sm text-fg-muted">({finalReport.card.fundamental_grade})</span></div>
+                    <div className="text-2xl font-bold text-fg">{finalReport.card.fundamental_score}/100 <span className="text-sm text-fg-muted">({finalReport.card.fundamental_grade})</span></div>
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div><div className="text-xs uppercase text-fg-muted mb-1">Strengths</div>{finalReport.swot.strengths.length ? finalReport.swot.strengths.map((s, i) => <div key={i} className="text-up text-xs">+ {s}</div>) : <div className="text-fg-muted text-xs">None entered</div>}</div>
                       <div><div className="text-xs uppercase text-fg-muted mb-1">Weaknesses</div>{finalReport.swot.weaknesses.length ? finalReport.swot.weaknesses.map((s, i) => <div key={i} className="text-down text-xs">− {s}</div>) : <div className="text-fg-muted text-xs">None entered</div>}</div>

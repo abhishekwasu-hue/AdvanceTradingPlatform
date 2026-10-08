@@ -19,9 +19,9 @@ function zClass(z: number | null): string {
 
 function corrClass(v: number | null): string {
   if (v == null) return "bg-surface-2";
-  if (v > 0.7) return "bg-up/40";
-  if (v > 0.3) return "bg-up/15";
-  if (v < -0.3) return "bg-down/25";
+  if (v > 0.7) return "bg-brand/40";
+  if (v > 0.3) return "bg-brand/15";
+  if (v < -0.3) return "bg-surface-3";
   return "bg-surface-2";
 }
 
@@ -94,7 +94,7 @@ export default function QuantPage() {
         <div className="grid sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
           {Object.keys(FACTOR_LABELS).map((f) => (
             <div key={f}>
-              <label className="block text-[11px] text-fg-muted mb-0.5">{FACTOR_LABELS[f]} <span className="text-fg-muted">{weights[f]}%</span></label>
+              <label className="block text-[11px] text-fg-muted mb-0.5">{FACTOR_LABELS[f]} <span className="text-fg">{weights[f]}%</span></label>
               <input type="range" min={0} max={60} step={5} value={weights[f]} onChange={(e) => setWeights({ ...weights, [f]: Number(e.target.value) })} className="w-full" />
             </div>
           ))}
@@ -113,7 +113,7 @@ export default function QuantPage() {
             {Object.values(table.fundamentals.filled).some((f) => f.missing.length > 0) && (
               <ul className="mt-1 space-y-0.5">
                 {Object.values(table.fundamentals.filled).filter((f) => f.missing.length > 0).map((f) => (
-                  <li key={f.symbol}><span className="text-fg-muted">{f.symbol}</span>{f.period ? ` (${f.period})` : ""}: {f.missing.join("; ")}</li>
+                  <li key={f.symbol}><span className="text-fg">{f.symbol}</span>{f.period ? ` (${f.period})` : ""}: {f.missing.join("; ")}</li>
                 ))}
               </ul>
             )}

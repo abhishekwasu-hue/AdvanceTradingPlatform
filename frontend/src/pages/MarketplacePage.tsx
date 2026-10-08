@@ -22,7 +22,7 @@ function Performance({ l }: { l: MarketplaceListing }) {
       <div className="flex flex-wrap gap-3">
         <span>trades <b>{p.total_trades ?? "-"}</b></span>
         <span>win rate <b>{pct(p.win_rate)}</b></span>
-        <span>net P&L <b className={signClass(p.net_pnl)}>{num(p.net_pnl, 0)}</b></span>
+        <span>net P&L <b className={signClass(p.net_pnl, 0)}>{num(p.net_pnl, 0)}</b></span>
         <span>profit factor <b>{num(p.profit_factor)}</b></span>
         <span>max DD <b>{num(p.max_drawdown, 0)}</b></span>
         <span>expectancy <b>{num(p.expectancy)}</b></span>
@@ -105,7 +105,7 @@ export default function MarketplacePage() {
               <div key={l.id} className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-bold text-sm flex items-center gap-1.5"><Store size={14} className="text-brand" /> {l.title} <span className="text-fg-muted text-[11px]">v{l.version_number}</span></div>
-                  <span className="text-[11px] text-fg-muted flex items-center gap-1"><Users size={11} /> {l.subscriber_count} · <b className={l.price > 0 ? "text-fg" : "text-up"}>{inr(l.price, l.currency)}</b>{l.price > 0 ? " one-time" : ""}</span>
+                  <span className="text-[11px] text-fg-muted flex items-center gap-1"><Users size={11} /> {l.subscriber_count} · <b className="text-fg">{inr(l.price, l.currency)}</b>{l.price > 0 ? " one-time" : ""}</span>
                 </div>
                 <div className="text-xs text-fg-muted whitespace-pre-wrap">{l.description}</div>
                 {l.methodology && <div className="text-[11px] text-fg-muted whitespace-pre-wrap"><b>How it trades:</b> {l.methodology}</div>}
@@ -255,7 +255,7 @@ export default function MarketplacePage() {
                 {openCharges.map((c) => (
                   <tr key={c.id} className="border-t border-border/60"><td className="py-1">#{c.id} {c.listing_title} · buyer org #{c.buyer_tenant_id}</td><td className="py-1">{inr(c.amount, c.currency)} via {c.provider}</td>
                     <td className="py-1 text-right space-x-2">
-                      <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Charge confirmed; the buyer's copy is made.", () => api.adminMarketplaceChargePaid(c.id, ref)); }} className="text-up hover:underline">Mark paid</button>
+                      <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Charge confirmed; the buyer's copy is made.", () => api.adminMarketplaceChargePaid(c.id, ref)); }} className="text-brand hover:underline">Mark paid</button>
                       <button disabled={busy} onClick={() => { const note = window.prompt("Reason for voiding") ?? ""; void run("Charge voided.", () => api.adminMarketplaceChargeVoid(c.id, note)); }} className="text-down hover:underline">Void</button>
                     </td></tr>
                 ))}
@@ -270,7 +270,7 @@ export default function MarketplacePage() {
                   <tr key={p.id} className="border-t border-border/60"><td className="py-1">#{p.id} creator org #{p.tenant_id}</td><td className="py-1">{inr(p.amount, p.currency)} to {shownDestination[p.id] ? <span className="select-all font-mono text-fg">{shownDestination[p.id]}</span> : p.destination_hint}</td>
                     <td className="py-1 text-right space-x-2">
                       <button disabled={busy} onClick={() => api.adminMarketplacePayoutDestination(p.id).then((d) => setShownDestination((s) => ({ ...s, [p.id]: d.destination }))).catch((e) => setError(String(e)))} className="text-fg hover:underline">Show destination</button>
-                      <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Payout marked paid.", () => api.adminMarketplacePayoutSettle(p.id, true, ref)); }} className="text-up hover:underline">Mark paid</button>
+                      <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Payout marked paid.", () => api.adminMarketplacePayoutSettle(p.id, true, ref)); }} className="text-brand hover:underline">Mark paid</button>
                       <button disabled={busy} onClick={() => { const note = window.prompt("Reason (shown to the creator)") ?? ""; void run("Payout rejected; the earnings are available again.", () => api.adminMarketplacePayoutSettle(p.id, false, undefined, note)); }} className="text-down hover:underline">Reject</button>
                     </td></tr>
                 ))}

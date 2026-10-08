@@ -19,8 +19,8 @@ import {
 function severityClass(severity: number): string {
   if (severity >= 5) return "bg-down/20 text-down border-down/50";
   if (severity >= 4) return "bg-warn/15 text-warn border-warn/50";
-  if (severity >= 3) return "bg-surface-2 text-fg-muted border-border";
-  return "bg-surface-2/30 text-fg-muted border-border";
+  if (severity >= 3) return "bg-info/10 text-info border-info/40";
+  return "bg-surface-2 text-fg-muted border-border";
 }
 
 function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
@@ -45,7 +45,7 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
       <div className="space-y-1.5">
         {status.sources.map((src) => (
           <div key={src.id} className="flex items-start gap-2 rounded border border-border px-2 py-1.5 text-xs">
-            <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${src.on ? "bg-up/10" : "bg-surface-2"}`} />
+            <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${src.on ? "bg-up" : "bg-fg-muted/40"}`} title={src.on ? "on" : "off"}><span className="sr-only">{src.on ? "on" : "off"}</span></span>
             <div className="flex-1">
               <div className="font-semibold text-fg">{src.name} <span className="font-normal text-fg-muted">· {src.publisher}{src.official ? "" : " · not a primary source"}</span></div>
               <div className="text-fg-muted">{src.terms}</div>
@@ -244,8 +244,8 @@ export default function NewsEventsPage() {
                   {user && feedOn && e.origin === "FEED" && (
                     <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
                       {(["useful", "noise", "wrong_direction"] as NewsVerdict[]).map((v) => (
-                        <button key={v} onClick={() => void vote(e.id, v)}
-                                className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-border bg-surface-2 text-fg-muted" : "border-border text-fg-muted hover:text-fg"}`}>
+                        <button key={v} onClick={() => void vote(e.id, v)} aria-pressed={verdicts[String(e.id)] === v}
+                                className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-brand bg-brand/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>
                           {v === "useful" ? "👍 useful" : v === "noise" ? "👎 noise" : "↔ wrong direction"}
                         </button>
                       ))}

@@ -206,11 +206,12 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
             here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}
             if here:
                 moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})
+                # the same contract under its new date: it was listed since the old one was first seen
+                t = seen.setdefault((sym, d), {"first_seen": s["first_seen"], "future": False})
+                t["first_seen"] = min(t["first_seen"], s["first_seen"])
+                t["future"] = t["future"] or s["future"]
                 if (sym, d) not in kept:
                     kept.add((sym, d))
-                    t = seen.setdefault((sym, d), {"first_seen": s["first_seen"], "future": False})
-                    t["first_seen"] = min(t["first_seen"], s["first_seen"])
-                    t["future"] = t["future"] or s["future"]
                     confirmed[d] = (confirmed.get(d) or set()) | here
                 break
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):

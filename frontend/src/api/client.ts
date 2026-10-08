@@ -132,6 +132,9 @@ import type {
   AiAcknowledgement,
 } from "../types";
 
+/** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
+export const AI_ACK_REQUIRED_EVENT = "atp:ai-ack-required";
+
 const BASE = "/api/v1";
 // P0.3 / S6: the access token lives in memory only (a script injected into the page cannot read it from
 // storage, and it expires in minutes); the refresh token lives in an HttpOnly cookie the browser sends to
@@ -223,6 +226,12 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // visitor gets a plain sentence instead of a raw 401 body.
     if (response.status === 401 && !getToken()) {
       throw new Error("Sign in from the Account tab to use this feature.");
+    }
+    // P0.8-D: an AI route before the first-use acknowledgement - every open acknowledgement gate re-reads its state
+    // (so the page shows the acknowledgement screen) and the caller gets a sentence, not a raw 428 body.
+    if (response.status === 428 && detail.includes("ai_acknowledgement_required")) {
+      window.dispatchEvent(new Event(AI_ACK_REQUIRED_EVENT));
+      throw new Error("Accept the AI Copilot acknowledgement first (AI Copilot page) - AI Copilot सूचना आधी स्वीकारा.");
     }
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }

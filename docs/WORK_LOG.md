@@ -499,7 +499,19 @@ default and G-LIVE gate before any LIVE wiring.
   versioned data-sharing consent (purpose, processing possibly outside India, opt-out = rule-based), recorded and
   audited. Marketplace: a strategy whose origin starts with `ai` cannot be listed or submitted while the new flag
   `marketplace_ai_listings` is off (default off, SEBI RA gating).
-- Tests `tests/test_phase_p0_8d_compliance.py` (7); the suite's `_register` accepts the terms (`ai_terms=False` to skip).
+- Review follow-ups (independent review of the PR): the interview templates show no score at all (the market-fit %
+  became a yes/no "this template's regime filter is open/closed today"); Telegram free text, `/brief` and `/thesis`
+  and the two AI scanner routes wait for the acknowledgement too, and so do reading and approving an AI draft; the
+  acknowledgement is matched on its text hash as well as its version (an edited text asks again); `provider_for`
+  sends nothing to an outside model until the owner holds the current data-sharing consent (also for providers saved
+  before the consent existed - they answer from the rules with a note until the owner ticks it once); the consent is
+  asked once per version, not on every save; the strategist market study and the thesis API hide a single stock's
+  confidence and next reference level like the thesis card; the AI scanner read describes each match in the scanner's
+  order without a score unless `thesis_stock_targets` is on; the marketplace also refuses publishing and subscribing
+  an AI-originated listing while `marketplace_ai_listings` is off; the shared `AiAcknowledgementGate` covers the Coach
+  & Guide page and any 428 brings the screen back; the VIX line in the interview became data-only; "Apply risk
+  settings" names the trading capital it will write.
+- Tests `tests/test_phase_p0_8d_compliance.py` (12); the suite's `_register` accepts the terms (`ai_terms=False` to skip).
 
 ### 2026-10-07 - P0.8-C: the provider layer (C1-C5)
 - C1 `providers.AnthropicProvider`: the request `max_tokens` is the caller's text budget plus a thinking headroom per

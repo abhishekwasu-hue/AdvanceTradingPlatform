@@ -66,7 +66,10 @@ def current_version(kind: str) -> str:
 
 async def latest(session: AsyncSession, kind: str, *, tenant_id: int, user_id: Optional[int] = None) -> Optional[AiAcknowledgementRecord]:
     query = select(AiAcknowledgementRecord).where(AiAcknowledgementRecord.tenant_id == tenant_id, AiAcknowledgementRecord.kind == kind,
-                                                  AiAcknowledgementRecord.version == current_version(kind))
+                                                  AiAcknowledgementRecord.version == current_version(kind),
+                                                  # the text itself, not only its version label: editing the text without
+                                                  # bumping the version still asks everyone again.
+                                                  AiAcknowledgementRecord.text_sha256 == text_hash(kind, current_version(kind)))
     if user_id is not None:
         query = query.where(AiAcknowledgementRecord.user_id == user_id)
     return await session.scalar(query.order_by(AiAcknowledgementRecord.accepted_at.desc(), AiAcknowledgementRecord.id.desc()).limit(1))

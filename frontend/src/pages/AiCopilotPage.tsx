@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
-import type { AiAcknowledgement, AiAction, AiStrategyDraft, Condition, Regime } from "../types";
+import type { AiAction, AiStrategyDraft, Condition, Regime } from "../types";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import StrategyInterview from "../components/StrategyInterview";
 import MarketMemoryCard from "../components/MarketMemoryCard";
 import DailyBriefing from "../components/DailyBriefing";
 import StrategistPanel from "../components/StrategistPanel";
 import ThesisCard from "../components/ThesisCard";
+import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -59,10 +60,6 @@ export default function AiCopilotPage() {
   const [interviewPrompt, setInterviewPrompt] = useState("");
   const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist"));
   const [lang, setLangState] = useState<"en" | "mr">(() => stored<"en" | "mr">("atp_copilot_lang", ["en", "mr"], "mr"));
-  // P0.8-D: the first-use acknowledgement - nothing AI-written is shown until this user accepted the current version.
-  const [ack, setAck] = useState<AiAcknowledgement | null>(null);
-  const [ackRead, setAckRead] = useState(false);
-  useEffect(() => { if (user) api.aiAcknowledgement().then(setAck).catch((e) => setError(String(e))); }, [user]);
   const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
   const setLang = (l: "en" | "mr") => { setLangState(l); store("atp_copilot_lang", l); };
   const startInterview = (text: string) => {
@@ -93,39 +90,12 @@ export default function AiCopilotPage() {
   const dataLabel = source.mode === "broker" ? "broker candles" : "sample data";
 
   if (!user) return <Card><p className="text-sm text-muted">Log in to use the AI Copilot.</p></Card>;
-  if (ack && !ack.accepted) {
-    return (
-      <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-        <Card title={lang === "mr" ? "सुरू करण्याआधी - कृपया वाचा" : "Before you start - please read"}>
-          <div className="flex justify-end mb-2">
-            <div className="flex overflow-hidden rounded-lg border border-border text-xs">
-              {(["mr", "en"] as const).map((l) => (
-                <button key={l} onClick={() => setLang(l)} className={`px-2.5 py-1 ${lang === l ? "bg-purple-500/20 text-purple-100" : "text-muted"}`}>{l === "mr" ? "मराठी" : "English"}</button>
-              ))}
-            </div>
-          </div>
-          <p className="text-sm text-slate-100 leading-relaxed">{ack.text[lang]}</p>
-          <p className="mt-2 text-xs text-muted">{lang === "mr" ? "आवृत्ती" : "Version"} {ack.version}</p>
-          <label className="mt-3 flex items-start gap-2 text-sm text-slate-100">
-            <input type="checkbox" checked={ackRead} onChange={(e) => setAckRead(e.target.checked)} />
-            <span>{lang === "mr" ? "मी वाचले आणि समजले: AI Copilot सल्लागार नाही; निर्णय माझा." : "I have read and understood: the AI Copilot is not an adviser; the decision is mine."}</span>
-          </label>
-          <button disabled={!ackRead || busy} onClick={() => run(null, async () => { setAck(await api.aiAcceptAcknowledgement(ack.version, lang)); })}
-                  className="mt-3 rounded bg-purple-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-            {lang === "mr" ? "समजले, पुढे जा" : "I understand, continue"}
-          </button>
-          {error && <div className="mt-3 text-sm text-danger">{error}</div>}
-        </Card>
-        <Disclaimer kind="ai" />
-      </div>
-    );
-  }
-
   const open = actions.filter((a) => a.status === "PROPOSED");
   const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
 
+  // P0.8-D: nothing AI-written is shown until this user accepted the current acknowledgement (shared gate).
   return (
+    <AiAcknowledgementGate lang={lang} setLang={setLang}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
@@ -338,5 +308,6 @@ export default function AiCopilotPage() {
       {error && <div className="text-sm text-danger">{error}</div>}
       {message && <div className="text-sm text-accent">{message}</div>}
     </div>
+    </AiAcknowledgementGate>
   );
 }

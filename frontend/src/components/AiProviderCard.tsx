@@ -89,7 +89,7 @@ export default function AiProviderCard() {
           <input className={input} type="password" autoComplete="off" placeholder={form.provider === "rule_based" ? "no key needed" : "API key (blank = keep stored)"} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} disabled={form.provider === "rule_based"} />
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> enabled</label>
-            <button disabled={busy || (form.provider !== "rule_based" && !form.data_consent)} onClick={() => run("AI provider saved.", () => api.aiSaveProvider({ provider: form.provider, model: form.model || null, api_key: form.api_key || null, enabled: form.enabled, data_consent: form.data_consent, language: "en" }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || (form.provider !== "rule_based" && !form.data_consent && !config?.data_consent?.accepted)} onClick={() => run("AI provider saved.", () => api.aiSaveProvider({ provider: form.provider, model: form.model || null, api_key: form.api_key || null, enabled: form.enabled, data_consent: form.data_consent, language: "en" }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
             {config?.configured && <button disabled={busy} onClick={() => run("AI provider removed.", () => api.aiDeleteProvider())} className="text-xs text-danger hover:underline">Remove</button>}
           </div>
         </div>
@@ -101,10 +101,10 @@ export default function AiProviderCard() {
           </div>
           <p className="text-slate-200">{config.data_consent.text.en}</p>
           <p className="mt-1 text-slate-300">{config.data_consent.text.mr}</p>
-          <label className="mt-2 flex items-start gap-2 text-slate-100">
+          {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-slate-100">
             <input type="checkbox" checked={form.data_consent} onChange={(e) => setForm({ ...form, data_consent: e.target.checked })} />
             <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider. · मी या संस्थेचा मालक आहे आणि वर नमूद उद्देशासाठी हा data निवडलेल्या provider कडे पाठवण्यास संमती देतो.</span>
-          </label>
+          </label>}
         </div>
       )}
       {error && <div className="mt-3 text-sm text-danger">{error}</div>}

@@ -262,8 +262,10 @@ def compose(symbol: str, snapshot: dict, memory: dict, news_items: List[dict], e
               "global": next((r["value"] for r in rows if r["factor"] == "global"), None), "events": events, "read_at": snapshot.get("captured_at")}
     # P0.8-D: for a single stock the confidence % is not shown (the factor agreement is); indices, or the operator's
     # `thesis_stock_targets` flag, keep it.
+    shown_agree = dict(agree) if detail else {k: v for k, v in agree.items() if k != "confidence"}     # not in the API either
     result = {"symbol": symbol, "as_of": now.isoformat(), "lang": lang, "direction": agree["direction"], "confidence": agree["confidence"] if detail else None,
-              "agreement": {**agree, "matrix": rows}, "scenarios": scen, "shadow": shadow, "inputs": inputs, "events": events, "detail_shown": detail}
+              "agreement": {**shown_agree, "matrix": rows}, "scenarios": scen, "shadow": shadow, "inputs": inputs, "events": events, "detail_shown": detail,
+              "_confidence": agree["confidence"]}
     result["lines"] = view(lang, result)
     result["narrative"], result["narrative_source"] = "\n".join(result["lines"]), "rules"
     return result
@@ -409,8 +411,9 @@ async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str
             thesis["narrative"], thesis["narrative_source"] = text, "model"
         else:
             thesis["narrative_note"] = why
+    stored_confidence = int(thesis.pop("_confidence", 0) or 0)     # kept for the scoreboard audit; the API never shows it for a stock
     if store:
-        row = ThesisRecord(tenant_id=tenant_id, symbol=symbol, day=_ist_day(now), direction=thesis["direction"], confidence=thesis["agreement"]["confidence"],
+        row = ThesisRecord(tenant_id=tenant_id, symbol=symbol, day=_ist_day(now), direction=thesis["direction"], confidence=stored_confidence,
                            agreement=thesis["agreement"]["share"], shadow_multiplier=thesis["shadow"]["size_multiplier"], last_price=snapshot.get("last_price"),
                            lang=lang, narrative_source=thesis["narrative_source"], thesis_json=json.dumps(thesis, default=str, ensure_ascii=False), created_at=now)
         session.add(row)
@@ -442,7 +445,10 @@ async def history(session: AsyncSession, tenant_id: int, symbol: Optional[str] =
     scored = list(await session.scalars(query.where(ThesisRecord.score.is_not(None))))        # the whole record, not the page
     hits = sum(1 for r in scored if r.score > 0)
     misses = sum(1 for r in scored if r.score < 0)
-    return {"items": [{"id": r.id, "symbol": r.symbol, "day": r.day.isoformat(), "direction": r.direction, "confidence": r.confidence, "agreement": r.agreement,
+    from app.platform.controls import flag_enabled
+    stock_targets = await flag_enabled(session, "thesis_stock_targets", tenant_id)
+    return {"items": [{"id": r.id, "symbol": r.symbol, "day": r.day.isoformat(), "direction": r.direction,
+                       "confidence": r.confidence if (stock_targets or is_index(r.symbol)) else None, "agreement": r.agreement,
                        "shadow_multiplier": r.shadow_multiplier, "last_price": r.last_price, "outcome": r.outcome, "score": r.score, "narrative_source": r.narrative_source,
                        "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows],
             "scoreboard": {"scored": len(scored), "hits": hits, "misses": misses, "flat": len(scored) - hits - misses,

@@ -750,7 +750,7 @@ export interface ScanPlan {
   explanation: string; warnings: string[]; provider: string; model: string; prompt_version: string;
 }
 
-export interface RankedSymbol { symbol: string; score: number; thesis: string; risks: string; next_step: string; regime: string | null }
+export interface RankedSymbol { symbol: string; score: number | null; thesis: string; risks: string; next_step: string; regime: string | null }
 
 export interface ScanRead {
   summary: string; ranked: RankedSymbol[]; warnings: string[]; provider: string; model: string; prompt_version: string; disclaimer: string;
@@ -1919,9 +1919,9 @@ export interface InterviewOptionMeta {
   id: "safe" | "balanced" | "active";
   label: string;
   summary: string;
-  /** How well the template's regime filter and recent evidence fit today's market (data, not a recommendation).
-   * P0.8-D: there is no "match with you" score any more. */
-  market_fit: number;
+  /** P0.8-D: no score of any kind. Whether the template's own regime filter is open on today's candles
+   * (data, not a recommendation); null when no strategy could be tested. */
+  regime_filter_open: boolean | null;
   headline: { strategy: string; risk_pct: number; trades_per_day: number; min_rr: number } | null;
 }
 export interface FeedbackOption { code: string; en: string; mr: string }
@@ -2098,7 +2098,7 @@ export interface MarketStudy {
   levels: Record<string, number | null>;
   ladder: { name: string; key: string; price: number; distance_pct: number | null }[];
   atr_5m: number | null; atr_day: number | null; atr_5m_pct: number | null;
-  regime: string; higher_regime: string; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; bias_score: number; confidence: number;
+  regime: string; higher_regime: string; bias: "BULLISH" | "BEARISH" | "NEUTRAL"; bias_score: number; confidence: number | null; detail_shown?: boolean;
   character: "TREND" | "RANGE" | "VOLATILE";
   scenarios: { id: "bull" | "bear" | "range"; trigger: number | null; trigger_name?: string; target?: number; low?: number; high?: number; text: string }[];
   lines: string[]; vix: number | null; data_source?: string;

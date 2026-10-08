@@ -121,6 +121,15 @@ def test_read_ranks_matches_with_the_platform_regime_and_survives_a_bad_model_an
     matched = {m["symbol"] for m in result["matches"]}
     assert "RISING" in matched and "FALLING" not in matched
 
+    # P0.8-D: by default the read describes each match in the scanner's order - no score, no ranking, no "trade idea".
+    from tests.test_phase_bd2_thesis_eval import _flags
+    _flags(thesis_stock_targets=False)
+    plain = client.post("/api/scanner/ai/read", headers=headers, json={"request": request, "result": result}).json()
+    assert [r["symbol"] for r in plain["ranked"]] == [m["symbol"] for m in result["matches"]]
+    assert all(r["score"] is None for r in plain["ranked"]) and "not a ranking" in plain["summary"]
+    assert "Do not rank or score" in scanner_ai.read_system_prompt("en") and "trade idea" not in scanner_ai.read_system_prompt("en").split("do not call")[0]
+    _flags(thesis_stock_targets=True)      # the operator's per-stock flag brings the transparent score back
+
     # Deterministic read: regime agreement lifts the score; a thin series is capped as UNKNOWN.
     read = client.post("/api/scanner/ai/read", headers=headers, json={"request": request, "result": result})
     assert read.status_code == 200, read.text
@@ -158,6 +167,7 @@ def test_read_ranks_matches_with_the_platform_regime_and_survives_a_bad_model_an
     empty = ScannerResult(scanned_count=1, matched_count=0, matches=[])
     body = client.post("/api/scanner/ai/read", headers=headers, json={"request": request, "result": empty.model_dump()}).json()
     assert body["ranked"] == [] and "nothing to rank" in body["summary"]
+    _flags(thesis_stock_targets=False)
 
 
 def test_rule_based_read_penalises_conflicts_and_volatility():
@@ -166,7 +176,7 @@ def test_rule_based_read_penalises_conflicts_and_volatility():
                ScannerMatch(symbol="C", close=100, matched_structure_labels=["Bearish Pattern"])]
     regimes = {"A": {"kind": "TRENDING_DOWN", "confidence": 0.8, "reasons": []}, "B": {"kind": "TRENDING_UP", "confidence": 0.9, "reasons": []},
                "C": {"kind": "VOLATILE", "confidence": 0.7, "reasons": []}}
-    read = scanner_ai.rule_based_read(matches, regimes)
+    read = scanner_ai.rule_based_read(matches, regimes, scores=True)      # the operator per-stock flag on (P0.8-D)
     scores = {r.symbol: r.score for r in read.ranked}
     assert scores["B"] > scores["C"] > scores["A"] and read.ranked[0].symbol == "B"
     assert "conflicts" in next(r for r in read.ranked if r.symbol == "A").thesis and "Volatile" in next(r for r in read.ranked if r.symbol == "C").risks

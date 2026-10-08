@@ -65,7 +65,7 @@ function StudyView({ s, source }: { s: MarketStudy; source: string }) {
       <Card title={`Market चा अभ्यास · ${s.symbol}`}>
         <div className="flex items-baseline justify-between">
           <div className="font-tabular text-2xl font-extrabold text-slate-50">{fmt(s.last_price)}</div>
-          <div className={`text-sm font-bold ${biasCls}`}>{s.bias === "BULLISH" ? "तेजी" : s.bias === "BEARISH" ? "मंदी" : "तटस्थ"} · {s.confidence}%</div>
+          <div className={`text-sm font-bold ${biasCls}`}>{s.bias === "BULLISH" ? "तेजी" : s.bias === "BEARISH" ? "मंदी" : "तटस्थ"}{s.confidence != null ? ` · ${s.confidence}%` : ""}</div>
         </div>
         <div className="my-2"><BiasMeter s={s} /></div>
         <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${ch.cls}`}><ChIcon size={15} />{ch.mr}{s.vix != null && <span className="ml-auto text-xs text-muted">VIX {s.vix.toFixed(1)}</span>}</div>

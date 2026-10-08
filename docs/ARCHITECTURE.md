@@ -3644,7 +3644,12 @@ savepoint) with the user, feature, prompt version and both texts. `PUT /api/ai/p
 external provider. `marketplace.service._ai_origin_allowed` checks `marketplace_ai_listings`. `thesis.compose(...,
 stock_targets=)` hides targets and the confidence % for non-index symbols unless `thesis_stock_targets` is on;
 `strategist._side_for` never derives a side from the bias and `build()` returns `best=None` and no triggers;
-`advisor.build_options` returns no match score or best option; `interview.risk_plan` uses the entered capital.
+`advisor.build_options` returns no match score or best option (only `regime_filter_open`); `interview.risk_plan` uses
+the entered capital. Also gated: Telegram AI answers (`telegram_inbound.answer_text`), `/api/scanner/ai/*`, AI draft
+read/approve. `compliance_terms.latest` matches version and text hash. `settings.provider_for` returns
+`RuleBasedProvider(reason=...)` without the tenant's current data consent. `market_study.study(..., stock_detail=)` and
+`scanner.ai.read_scan` follow `thesis_stock_targets`; `marketplace.service.review/activate` re-check the AI-origin flag.
+Frontend: `components/AiAcknowledgementGate.tsx` (Copilot, Coach & Guide), `AI_ACK_REQUIRED_EVENT` on any 428.
 Tests: `tests/test_phase_p0_8d_compliance.py`.
 
 **P0.8-C (provider layer).** `ai/providers.py`: `Completion` (text + token counts), `complete_full` on every
@@ -3875,7 +3880,7 @@ and memory.
     (`desired()` = answers + preference biases), a style fit (simplicity, goal and trade-count
     leanings vs the strategy family) and whether the contract asked for could be honoured; halved for a
     strategy turned down, +3 for one chosen before. Feedback moves this number.
-  * `market_fit` (0-100): the strategy family's fit with today's regime and its recent evidence - the
+  * `market_fit` (0-100, internal only since P0.8-D; the API shows `regime_filter_open` yes/no instead): the strategy family's fit with today's regime and its recent evidence - the
     market's say, which feedback cannot change. `best_option` weighs both 70/30. A calmer option the
     trader wants can honestly show a low market fit on a choppy day.
 * **Feedback** (`apply_feedback`, `POST /api/ai/interview/refine`): `too_risky` (risk bias -1, option

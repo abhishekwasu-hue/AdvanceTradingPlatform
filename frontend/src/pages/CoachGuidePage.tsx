@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import GuideChat from "../components/GuideChat";
 import TradeCoach from "../components/TradeCoach";
+import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
 import { Card } from "../components/ui";
 
 /** Phase AW: the trade coach and the concept guide, on their own page - the AI Copilot is the
@@ -28,7 +29,8 @@ export default function CoachGuidePage() {
           </button>
         ))}
       </div>
-      {tab === "coach" ? <TradeCoach lang="mr" /> : <GuideChat plain />}
+      {/* P0.8-D: the same first-use acknowledgement as the AI Copilot page */}
+      <AiAcknowledgementGate lang="mr">{tab === "coach" ? <TradeCoach lang="mr" /> : <GuideChat plain />}</AiAcknowledgementGate>
     </div>
   );
 }

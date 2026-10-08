@@ -108,6 +108,8 @@ async def submit(session: AsyncSession, user: User, listing: MarketplaceListingR
 async def review(session: AsyncSession, admin: User, listing: MarketplaceListingRecord, *, publish: bool, note: Optional[str]) -> MarketplaceListingRecord:
     if listing.status != "PENDING_REVIEW" and publish:
         raise MarketplaceError("Only a listing pending review can be published")
+    if publish:      # P0.8-D: a listing submitted before the flag existed is caught here too
+        await _ai_origin_allowed(session, await session.get(CustomStrategyRecord, listing.custom_strategy_id))
     listing.status = "PUBLISHED" if publish else "REJECTED"
     listing.review_note = (note or "")[:500] or None
     listing.published_at = datetime.now(timezone.utc) if publish else listing.published_at
@@ -152,6 +154,7 @@ async def subscribe(session: AsyncSession, user: User, listing: MarketplaceListi
 async def activate(session: AsyncSession, user: User, listing: MarketplaceListingRecord,
                    existing: Optional[MarketplaceSubscriptionRecord]) -> MarketplaceSubscriptionRecord:
     """Copies the frozen config into the subscriber's strategies and marks the subscription ACTIVE."""
+    await _ai_origin_allowed(session, await session.get(CustomStrategyRecord, listing.custom_strategy_id))     # P0.8-D: published earlier
     config = CustomStrategyConfig.model_validate_json(listing.config_json)
     config = config.model_copy(update={"name": f"{config.name} (marketplace #{listing.id})"[:200]})
     copy = CustomStrategyRecord(tenant_id=user.tenant_id, user_id=user.id, name=config.name, config_json=config.model_dump_json())

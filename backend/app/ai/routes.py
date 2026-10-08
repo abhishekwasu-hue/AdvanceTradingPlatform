@@ -25,7 +25,7 @@ from app.db.session import get_session
 from app.plans.limits import require_feature
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -90,10 +90,13 @@ async def put_provider(body: ProviderBody, request: Request, user: User = Depend
     tenant = await _tenant(session, user)
     if body.provider != "rule_based":
         require_feature(tenant, "ai_features", "External AI providers")
-        if not body.data_consent:
-            raise HTTPException(status_code=400, detail={"code": "data_consent_required", "version": terms.DATA_CONSENT_VERSION,
-                                                         "message": "Read the data-sharing consent and confirm it (data_consent) before an external provider is saved"})
-        await terms.accept(session, user, terms.KIND_DATA, terms.DATA_CONSENT_VERSION, language=body.language, request=request)
+        # The current consent is asked once (and again when its text changes); a later save - a model change, a new key,
+        # switching it off - does not ask again.
+        if await terms.latest(session, terms.KIND_DATA, tenant_id=user.tenant_id) is None:
+            if not body.data_consent:
+                raise HTTPException(status_code=400, detail={"code": "data_consent_required", "version": terms.DATA_CONSENT_VERSION,
+                                                             "message": "Read the data-sharing consent and confirm it (data_consent) before an external provider is saved"})
+            await terms.accept(session, user, terms.KIND_DATA, terms.DATA_CONSENT_VERSION, language=body.language, request=request)
     try:
         record = await ai_settings.save_config(session, user, provider=body.provider, model=body.model, api_key=body.api_key, enabled=body.enabled)
     except ProviderError as exc:
@@ -172,7 +175,7 @@ async def _draft(session: AsyncSession, draft_id: int, user: User) -> AiStrategy
 
 
 @router.get("/drafts/{draft_id}")
-async def get_draft(draft_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def get_draft(draft_id: int, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     return generator.as_dict(await _draft(session, draft_id, user), include_raw=True)
 
 
@@ -206,7 +209,8 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
 
 
 @router.post("/drafts/{draft_id}/approve")
-async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                        _ack: None = Depends(ai_acknowledged)) -> dict:
     draft = await _draft(session, draft_id, user)
     tenant = await _tenant(session, user)
     try:
@@ -813,7 +817,8 @@ async def strategist_study(body: StrategistBody, user: User = Depends(require_ai
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
-        out = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+        out = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory,
+                                        stock_detail=await flag_enabled(session, "thesis_stock_targets", user.tenant_id))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     out["data_source"] = source
@@ -831,7 +836,8 @@ async def strategist_build(body: StrategistBody, user: User = Depends(require_ai
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
-        study = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+        study = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory,
+                                        stock_detail=await flag_enabled(session, "thesis_stock_targets", user.tenant_id))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()

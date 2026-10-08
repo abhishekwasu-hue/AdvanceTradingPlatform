@@ -359,11 +359,13 @@ function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose,
                   <li>🎯 {L(lang, "Reward:risk at least", "किमान reward:risk")} 1:{meta.headline.min_rr}</li>
                 </ul>
               )}
-              <div className="mt-2 flex items-center gap-2 text-[11px]">
-                <span className="text-slate-300">{L(lang, "Regime fit (data)", "स्थितीशी जुळणी (data)")}</span>
-                <div className="h-1.5 flex-1 rounded bg-panel3"><div className={`h-1.5 rounded ${meta.market_fit >= 60 ? "bg-emerald-400" : meta.market_fit >= 40 ? "bg-amber-400" : "bg-rose-400"}`} style={{ width: `${meta.market_fit}%` }} /></div>
-                <span className="font-semibold text-slate-100">{meta.market_fit}%</span>
-              </div>
+              {meta.regime_filter_open !== null && (
+                <div className="mt-2 text-[11px] text-slate-300">
+                  {meta.regime_filter_open
+                    ? L(lang, "Today's data: this template's regime filter is open", "आजचा data: या template चा regime filter उघडा आहे")
+                    : L(lang, "Today's data: this template's regime filter is closed (it would not enter)", "आजचा data: या template चा regime filter बंद आहे (entry घेणार नाही)")}
+                </div>
+              )}
               <div className="mt-2 flex gap-2">
                 <button disabled={busy} onClick={() => onChoose(o)} className="rounded bg-purple-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
                   <Check size={12} className="mr-1 inline" />{isSel ? L(lang, "Showing", "दिसत आहे") : L(lang, "Choose this", "हा निवडा")}
@@ -432,7 +434,10 @@ function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
 
       <div className="flex flex-wrap gap-2">
         <button disabled={busy} onClick={() => {
-          if (!window.confirm(L(lang, "Replace your current risk settings with this plan's?", "तुमच्या सध्याच्या risk settings ऐवजी या plan च्या settings लावायच्या?"))) return;
+          // P0.8-D: the capital is the figure the trader entered (no allocation advice) - say so before it sizes every trade.
+          const cap = `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}`;
+          if (!window.confirm(L(lang, `Replace your current risk settings with this plan's? Trading capital will be ${cap} - the amount you entered. Every PAPER (and later LIVE) trade is sized from it.`,
+                                `तुमच्या सध्याच्या risk settings ऐवजी या plan च्या settings लावायच्या? Trading भांडवल ${cap} - तुम्ही दिलेला आकडा. प्रत्येक PAPER (आणि पुढे LIVE) trade चा आकार यावरून ठरतो.`))) return;
           onAct(L(lang, "Saving…", "Save करत आहे…"), async () => { await api.updateRiskSettings(plan.risk_config); return L(lang, "Risk settings applied.", "Risk settings लागू झाल्या."); });
         }} className="rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50">
           <ShieldCheck size={12} className="mr-1 inline" />{L(lang, "Apply risk settings", "Risk settings लागू करा")}

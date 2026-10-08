@@ -215,3 +215,107 @@ def test_marketplace_refuses_ai_originated_strategies_until_the_flag_is_on():
     _flags(marketplace_ai_listings=True)
     assert client.post("/api/marketplace/listings", headers=headers, json={**body, "custom_strategy_id": ai_id}).status_code == 201
     _flags(marketplace_ai_listings=False)
+
+
+# --- review follow-ups --------------------------------------------------------------------------------------------------
+def test_the_acknowledgement_is_asked_again_when_its_version_or_text_changes_and_gates_drafts_and_the_scanner(monkeypatch):
+    headers = {"Authorization": f"Bearer {_register('p08d-ack-bump@example.com')}"}
+    assert client.post("/api/ai/copilot", headers=headers, json={"message": "how is the market?", "language": "en"}).status_code == 200
+    monkeypatch.setattr(terms, "ACK_TEXT", {**terms.ACK_TEXT, "en": terms.ACK_TEXT["en"] + " (edited)"})        # same version label, new text
+    assert client.post("/api/ai/copilot", headers=headers, json={"message": "how is the market?", "language": "en"}).status_code == 428
+    monkeypatch.setattr(terms, "ACK_VERSION", "2099-01-01")
+    status = client.get("/api/ai/acknowledgement", headers=headers).json()
+    assert status["accepted"] is False and status["version"] == "2099-01-01"
+    # Every AI content path waits for it: draft read / approve and both AI scanner routes.
+    assert client.get("/api/ai/drafts/1", headers=headers).status_code == 428
+    assert client.post("/api/ai/drafts/1/approve", headers=headers, json={}).status_code == 428
+    assert client.post("/api/scanner/ai/plan", headers=headers, json={"text": "stocks above ema 20"}).status_code == 428
+    assert client.post("/api/scanner/ai/read", headers=headers, json={"request": {"symbols": []}, "result": {"scanned_count": 0, "matched_count": 0, "matches": []}}).status_code == 428
+    assert client.get("/api/ai/actions", headers=headers).status_code == 200        # the proposals (exits) never wait
+    assert client.post("/api/ai/acknowledgement", headers=headers, json={"version": "2099-01-01"}).json()["accepted"] is True
+    assert client.post("/api/ai/copilot", headers=headers, json={"message": "how is the market?", "language": "en"}).status_code == 200
+
+
+def test_telegram_ai_answers_wait_for_the_acknowledgement_but_plain_commands_do_not():
+    from app.db.models import User
+    from app.telegram_inbound import service as tg
+    token = _register("p08d-telegram@example.com", ai_terms=False)
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
+
+    async def ask(text):
+        async with _session_factory() as session:
+            return await tg.answer_text(session, await session.get(Tenant, me["tenant_id"]), await session.get(User, me["id"]), text)
+    for text in ("how is the market today?", "/brief", "/thesis NIFTY 50"):
+        assert "accept its acknowledgement" in _run(ask(text)), text
+    assert "accept" not in _run(ask("/positions"))
+    client.post("/api/ai/acknowledgement", headers={"Authorization": f"Bearer {token}"}, json={"version": terms.ACK_VERSION})
+    assert "accept its acknowledgement" not in _run(ask("how is the market today?"))
+
+
+def test_no_data_leaves_for_an_outside_model_without_the_current_consent():
+    from app.db.models import User
+    headers = {"Authorization": f"Bearer {_register('p08d-consent-use@example.com')}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+    _upgrade_plan(me["tenant_id"], "pro")
+
+    async def provider():
+        async with _session_factory() as session:
+            tenant, user = await session.get(Tenant, me["tenant_id"]), await session.get(User, me["id"])
+            if await ai_settings.get_config(session, tenant.id) is None:          # a provider saved before the consent existed
+                await ai_settings.save_config(session, user, provider="anthropic", model=None, api_key="sk-ant-old-config-1234")
+            return await ai_settings.provider_for(session, tenant, task="copilot", user_id=user.id)
+    before = _run(provider())
+    assert before.name == "rule_based" and "data-sharing consent" in before.reason
+    # One consent, then later saves (a model change) do not ask again.
+    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-old-config-1234", "data_consent": True}).status_code == 200
+    assert _run(provider()).name != "rule_based"
+    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "model": "claude-sonnet-5-5"}).status_code == 200
+
+
+def test_the_market_study_and_thesis_api_hide_single_stock_confidence_and_targets():
+    from app.ai import market_study
+    from tests.test_phase_bd_thesis import _snapshot
+    df = _sessions(days=6, minutes=1)
+    stock = market_study.study(df, "RELIANCE", "en")
+    assert stock["confidence"] is None and stock["detail_shown"] is False
+    assert all("target" not in s and "next reference level" not in s["text"] for s in stock["scenarios"] if s["id"] in ("bull", "bear"))
+    index = market_study.study(df, "NIFTY 50", "en")
+    assert index["confidence"] is not None and any("target" in s for s in index["scenarios"])
+    flagged = market_study.study(df, "RELIANCE", "en", stock_detail=True)
+    assert flagged["confidence"] is not None
+    snapshot = _snapshot("RELIANCE") if "symbol" in _snapshot.__code__.co_varnames else _snapshot()
+    thesis = th.compose("RELIANCE", snapshot, {"symbols": [snapshot], "cues": [], "sentiment": None, "globals": []}, [], [], "en", NOW)
+    assert "confidence" not in thesis["agreement"] and thesis["confidence"] is None
+
+
+def test_marketplace_also_refuses_publishing_and_subscribing_ai_listings_while_the_flag_is_off():
+    from app.db.models import MarketplaceListingRecord, User
+    from app.marketplace import service as mkt
+    from tests.test_phase_bd2_thesis_eval import _flags
+    headers = {"Authorization": f"Bearer {_register('p08d-market2@example.com')}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+
+    async def seed():
+        async with _session_factory() as session:
+            cfg = {"name": "p08d pending", "timeframe": "5min", "long_conditions": [], "short_conditions": [], "stop_loss_atr_mult": 1.5, "target_rr": [1.5, 2.5]}
+            strategy = CustomStrategyRecord(tenant_id=me["tenant_id"], user_id=me["id"], name="p08d pending", config_json=json.dumps(cfg), origin="ai-strategist")
+            session.add(strategy)
+            await session.flush()
+            listing = MarketplaceListingRecord(tenant_id=me["tenant_id"], created_by=me["id"], custom_strategy_id=strategy.id, title="pending AI", description="d" * 50,
+                                               methodology="m", config_json=json.dumps(cfg), status="PENDING_REVIEW", version_number=1)
+            session.add(listing)
+            await session.commit()
+            return listing.id
+
+    async def attempt(fn):
+        async with _session_factory() as session:
+            listing, user = await session.get(MarketplaceListingRecord, listing_id), await session.get(User, me["id"])
+            try:
+                await fn(session, user, listing)
+                return "ok"
+            except mkt.MarketplaceError as exc:
+                return str(exc)
+    listing_id = _run(seed())                      # submitted while the flag was on (or before it existed)
+    _flags(marketplace_ai_listings=False)
+    assert "marketplace_ai_listings" in _run(attempt(lambda s, u, listing: mkt.review(s, u, listing, publish=True, note=None)))
+    assert "marketplace_ai_listings" in _run(attempt(lambda s, u, listing: mkt.activate(s, u, listing, None)))

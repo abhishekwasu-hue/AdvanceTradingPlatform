@@ -40,7 +40,8 @@ def test_three_options_each_a_deployable_plan_without_a_match_score():
     assert safe["risk_config"]["max_trades_per_day"] < active["risk_config"]["max_trades_per_day"]
     assert safe["risk_config"]["min_risk_reward"] > active["risk_config"]["min_risk_reward"]
     for o in r["options"]:
-        assert "match" not in o["option"] and 0 <= o["option"]["market_fit"] <= 100      # P0.8-D: no "match with you" score
+        assert "match" not in o["option"] and "market_fit" not in o["option"]      # P0.8-D: no score on a template
+        assert o["option"]["regime_filter_open"] in (True, False, None)
         DeploymentCreateRequest(**o["deployment"]).normalised()
     assert r["risk_config"] == balanced["risk_config"] and r["best_option"] is None and r["preferences"]["match_history"] == []
 

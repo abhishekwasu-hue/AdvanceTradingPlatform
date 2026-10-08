@@ -120,7 +120,9 @@ def _nearest(ladder: List[dict], last: float, above: bool, skip: tuple = ()) -> 
 
 
 def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[pd.DataFrame] = None,
-          memory: Optional[dict] = None) -> dict:
+          memory: Optional[dict] = None, stock_detail: bool = False) -> dict:
+    """`stock_detail` is the operator's `thesis_stock_targets` flag (P0.8-D): for a single stock, without it, the study
+    shows no confidence % and no next reference level beyond the trigger - the same rule as the market thesis."""
     lang = "mr" if lang == "mr" else "en"
     df_1m = df_1m.sort_index()
     if len(df_1m) < MIN_STUDY_BARS:
@@ -180,17 +182,25 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
     down = _nearest(ladder, last, False, skip=("day_open",))
     up2 = _nearest([r for r in ladder if up and r["price"] > up["price"] * 1.0005], up["price"], True) if up else None
     down2 = _nearest([r for r in ladder if down and r["price"] < down["price"] * 0.9995], down["price"], False) if down else None
+    from app.ai.thesis import is_index
+    detail = stock_detail or is_index(symbol)
     scenarios = []
     if up:
         tgt = up2["price"] if up2 else round(up["price"] + (atr5 * 3 if not pd.isna(atr5) else up["price"] * 0.004), 2)
-        scenarios.append({"id": "bull", "trigger": up["price"], "trigger_name": up["name"], "target": tgt,
-                          "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
-                                     f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+        bull = {"id": "bull", "trigger": up["price"], "trigger_name": up["name"],
+                "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}.", f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन.")}
+        if detail:
+            bull.update({"target": tgt, "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
+                                                   f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+        scenarios.append(bull)
     if down:
         tgt = down2["price"] if down2 else round(down["price"] - (atr5 * 3 if not pd.isna(atr5) else down["price"] * 0.004), 2)
-        scenarios.append({"id": "bear", "trigger": down["price"], "trigger_name": down["name"], "target": tgt,
-                          "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
-                                     f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+        bear = {"id": "bear", "trigger": down["price"], "trigger_name": down["name"],
+                "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}.", f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन.")}
+        if detail:
+            bear.update({"target": tgt, "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
+                                                   f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+        scenarios.append(bear)
     if up and down:
         scenarios.append({"id": "range", "trigger": None, "low": down["price"], "high": up["price"],
                           "text": tr(lang, f"Between {down['price']:,.2f} and {up['price']:,.2f} the data reads as a range.",
@@ -221,7 +231,7 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
         "atr_5m": _r(atr5), "atr_day": _r(atr_day), "atr_5m_pct": _r(atr5 / last * 100) if last and not pd.isna(atr5) else None,
         "regime": regime, "higher_regime": market["higher_regime"]["kind"], "structure": market["structure"],
         "support": market["support"], "resistance": market["resistance"],
-        "bias": bias, "bias_score": round(net, 2), "confidence": confidence, "character": character,
+        "bias": bias, "bias_score": round(net, 2), "confidence": confidence if detail else None, "character": character, "detail_shown": detail,
         "scenarios": scenarios, "lines": lines, "vix": vix, "today": market["today"],
     }
 

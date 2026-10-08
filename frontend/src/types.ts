@@ -1928,6 +1928,9 @@ export interface InterviewOptionMeta {
   id: "safe" | "balanced" | "active";
   label: string;
   summary: string;
+  /** P0.10: the Marathi lines under the template name and summary (the interview is bilingual). */
+  label_mr?: string;
+  summary_mr?: string;
   /** P0.8-D: no score of any kind. Whether the template's own regime filter is open on today's candles
    * (data, not a recommendation); null when no strategy could be tested. */
   regime_filter_open: boolean | null;
@@ -1952,7 +1955,7 @@ export interface InterviewPlan {
   alternatives: InterviewCandidate[];
   risk_config: RiskConfig;
   deployment: DeploymentCreateRequest | null;
-  sections: { id: string; title: string; lines: string[] }[];
+  sections: { id: string; title: string; title_mr?: string; lines: string[] }[];
   warnings: string[];
   ai_prompt: string;
   disclaimer: string;

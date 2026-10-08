@@ -37,10 +37,19 @@ export interface SampleOptions {
   end?: Date;
 }
 
-/** The `n` weekdays ending on the last weekday on or before `end`, oldest first, as UTC midnights. */
-export function tradingDays(n: number, end: Date = new Date()): number[] {
+/** The `n` weekdays ending on the last weekday on or before `end`, oldest first, as UTC midnights. Without `end` the
+ * series ends on the last COMPLETED session (today only after 15:30 IST), so no sample bar lies in the future. */
+export function tradingDays(n: number, end?: Date): number[] {
   const out: number[] = [];
-  const d = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+  let last = end;
+  if (!last) {
+    const now = new Date();
+    const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+    const istDay = new Date(now.getTime() + 330 * 60_000);
+    last = new Date(Date.UTC(istDay.getUTCFullYear(), istDay.getUTCMonth(), istDay.getUTCDate()));
+    if (istMinutes < 15 * 60 + 30) last.setUTCDate(last.getUTCDate() - 1);
+  }
+  const d = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()));
   while (out.length < n) {
     const wd = d.getUTCDay();
     if (wd !== 0 && wd !== 6) out.unshift(d.getTime());
@@ -99,26 +108,35 @@ function round2(n: number): number {
 }
 
 /** Groups 1-minute bars into `factor`-minute bars aligned to the 09:15 IST session open, one group never spanning two
- * days (P0.10: a 30- or 60-minute bar no longer straddles the close and the next open). */
+ * days (P0.10: a 30- or 60-minute bar no longer straddles the close and the next open). A last group that is still
+ * forming (fewer minutes than its slot, and not the session's short closing stub) is dropped - only closed bars. */
 export function resampleByFactor(bars: OHLCVBar[], factor: number): OHLCVBar[] {
   if (factor <= 1) return bars;
   const out: OHLCVBar[] = [];
   let key = "";
+  let count = 0;
+  let slotStart = 0;
   for (const b of bars) {
     const t = new Date(b.timestamp);
     const minuteOfDay = t.getUTCHours() * 60 + t.getUTCMinutes() - SESSION_OPEN_UTC_MINUTES;
-    const k = `${t.toISOString().slice(0, 10)}#${Math.floor(minuteOfDay / factor)}`;
+    const slot = Math.floor(minuteOfDay / factor);
+    const k = `${t.toISOString().slice(0, 10)}#${slot}`;
     const last = out[out.length - 1];
     if (k !== key || !last) {
       out.push({ ...b });
       key = k;
+      count = 1;
+      slotStart = slot * factor;
     } else {
       last.high = Math.max(last.high, b.high);
       last.low = Math.min(last.low, b.low);
       last.close = b.close;
       last.volume += b.volume;
+      count += 1;
     }
   }
+  const expected = Math.max(1, Math.min(factor, SESSION_BARS - slotStart));
+  if (out.length && count < expected) out.pop();
   return out;
 }
 

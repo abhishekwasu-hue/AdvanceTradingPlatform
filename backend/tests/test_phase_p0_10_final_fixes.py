@@ -73,6 +73,9 @@ def test_the_chosen_instrument_is_kept():
     sell, sell_notes, _ = iv.contract_plan(_answers(experience="new", vehicle="option_sell"), "NEUTRAL")
     assert sell["instrument_kind"] == "OPTION" and sell.get("option_position") != "BUY" and sell["option_strategy"] == "IRON_CONDOR"
     assert any("You chose option selling" in n for n in sell_notes)
+    assert sum("selling" in n.lower() for n in sell_notes) == 1                           # review fix: one note, not two
+    _, stock_notes, _ = iv.contract_plan(_answers(instrument="stock", symbol="RELIANCE", vehicle="option_sell"), "NEUTRAL")
+    assert not any("hedged" in n for n in stock_notes)                                     # no "hedged spread" for a cash stock
     buy, _, _ = iv.contract_plan(_answers(experience="new", vehicle="option_buy"), "BULLISH")
     buy_old, _, _ = iv.contract_plan(_answers(experience="experienced", vehicle="option_buy"), "BULLISH")
     assert buy == buy_old                                                                  # experience changes nothing
@@ -143,7 +146,7 @@ NOW = datetime(2026, 10, 8, 6, 0, tzinfo=timezone.utc)      # 11:30 IST, market 
 
 def _memory(age: timedelta, changes=(0.4, -0.7)):
     at = (NOW - age).isoformat()
-    return {"updated_at": at, "symbols": [{"symbol": s, "change_pct": c} for s, c in zip(("NIFTY 50", "RELIANCE"), changes)]}
+    return {"updated_at": at, "symbols": [{"symbol": s, "change_pct": c, "captured_at": at} for s, c in zip(("NIFTY 50", "RELIANCE"), changes)]}
 
 
 def test_briefing_figures_carry_their_age_and_are_hidden_when_stale_or_placeholder():
@@ -156,6 +159,20 @@ def test_briefing_figures_carry_their_age_and_are_hidden_when_stale_or_placehold
     overnight = briefing.data_freshness(_memory(timedelta(hours=16)), NOW, market_open=False)
     assert overnight["figures_shown"]                                    # last evening's read before the open is fine
     assert briefing.data_freshness({"symbols": []}, NOW, market_open=True)["state"] == "none"
+    # Review fix: fresh global cues (fetched without a broker) keep `updated_at` current - the age is the symbols' own read.
+    old_rows = dict(_memory(timedelta(hours=30)), updated_at=(NOW - timedelta(minutes=2)).isoformat())
+    assert briefing.data_freshness(old_rows, NOW, market_open=True)["state"] == "stale"
+
+
+def test_a_hidden_read_repeats_no_vix_or_global_figures_as_today():
+    stale = briefing.data_freshness(_memory(timedelta(hours=30)), NOW, market_open=True)
+    dt = {"kind": "TREND_UP", "regime": "TRENDING_UP", "vix": 22.3}
+    memory = {"globals": [{"symbol": "SP500_FUT", "change_pct": 1.2, "captured_at": NOW.isoformat()}]}
+    plan = briefing.game_plan("en", dt, memory, None, [], freshness=stale)
+    assert plan["headline"].startswith("Last market read (30 h ago, not today's)")
+    assert not any("VIX" in line for line in plan["lines"])
+    shown = briefing.game_plan("en", dt, memory, None, [])
+    assert any("VIX" in line for line in shown["lines"])
 
 
 # --- 1 / 9 -------------------------------------------------------------------------------------------------------------

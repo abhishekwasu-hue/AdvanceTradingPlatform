@@ -60,5 +60,12 @@ describe("sample candles (P0.10)", () => {
     expect(hourly.length).toBe(12 * 7);          // 6 full hours + the 15:15-15:29 stub each day
     const fives = resampleByFactor(bars, 5);
     expect(fives.length).toBe(12 * 75);
+    // a still-forming last bar is dropped: 12 days minus the last 3 minutes -> the last 15-minute slot is incomplete
+    expect(resampleByFactor(bars.slice(0, -3), 15).length).toBe(12 * 25 - 1);
+  });
+
+  it("never ends in the future by default", () => {
+    const last = generateSampleCandles(SESSION_BARS, 24_000, 3).at(-1)!;
+    expect(new Date(last.timestamp).getTime()).toBeLessThanOrEqual(Date.now());
   });
 });

@@ -113,7 +113,9 @@ export default function MarketMemoryCard() {
 
   const vix = memory?.cues.find((c) => c.symbol === "INDIA VIX");
   // P0.9: a memory older than three worker intervals is labelled stale and dimmed - its prices are not today's.
-  const age = minutesAgo(memory?.updated_at ?? null);
+  // P0.10 review: the age of the SYMBOL reads - global cues (fetched without a broker) keep `updated_at` current.
+  const symbolReads = (memory?.symbols ?? []).map((s) => s.captured_at).filter((t): t is string => !!t).sort();
+  const age = minutesAgo(symbolReads.length ? symbolReads[symbolReads.length - 1] : null);
   const stale = age != null && age > 3 * (memory?.interval_minutes ?? 15);
   // P0.10: prices and changes are only shown when they are a current read - not when stale, and not when every symbol
   // carries the same change (placeholder figures, not a market).

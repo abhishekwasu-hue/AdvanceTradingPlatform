@@ -351,8 +351,8 @@ function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onRej
             <div key={meta.id} className={`rounded-lg border border-border bg-panel2/30 p-3 ${isSel ? "ring-2 ring-purple-400" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-base font-extrabold text-slate-50">{meta.label}</div>
-                  <div className="text-xs text-slate-300">{meta.summary}</div>
+                  <div className="text-base font-extrabold text-slate-50">{meta.label}<Mr>{meta.label_mr}</Mr></div>
+                  <div className="text-xs text-slate-300">{meta.summary}<Mr>{meta.summary_mr}</Mr></div>
                 </div>
               </div>
               {meta.headline && (
@@ -432,7 +432,7 @@ function PlanView({ plan, sample, busy, onAct, onDraft, broker }: {
           const hide = sample && s.id === "strategy";
           return (
             <div key={s.id} className="relative overflow-hidden rounded-lg border border-border bg-panel2/40 p-3">
-              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}</div>
+              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}<Mr>{s.title_mr}</Mr></div>
               <ul className={`space-y-1 text-sm text-slate-100 ${hide ? "select-none blur-sm" : ""}`} aria-hidden={hide}>
                 {s.lines.map((l, i) => <li key={i} className="flex gap-1.5"><span className="text-purple-300">•</span><span>{l}</span></li>)}
               </ul>

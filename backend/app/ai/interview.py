@@ -125,7 +125,7 @@ QUESTIONS: List[Question] = [
              [], "NIFTY 50"),
     Question("vehicle", "choice", "How do you want to take the trade?", "Trade कशा प्रकारे घ्यायचा?",
              "Option buying caps the loss at the premium; option selling earns time decay but needs a hedge.",
-             "Option buying मध्ये तोटा premium इतकाच मर्यादित; option selling मध्ये time decay मिळतो पण hedge आणि अनुभव लागतो.",
+             "Option buying मध्ये तोटा premium इतकाच मर्यादित; option selling मध्ये time decay मिळतो पण hedge लागतो.",
              [Option("underlying", "The stock itself / futures", "Stock स्वतः / futures"),
               Option("option_buy", "Buy options (CE/PE)", "Option buy (CE/PE)"),
               Option("option_sell", "Sell options (hedged spreads)", "Option sell (hedge सोबत spread)")], "option_buy"),
@@ -480,9 +480,6 @@ def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = 
     underlying = instrument_master.underlying_of(a.symbol)
     is_index = underlying in instrument_master.INDEX_SYMBOLS or a.instrument == "index"
     vehicle = a.vehicle
-    if vehicle == "option_sell":
-        notes.append(tr(lang, "You chose option selling. Here it is always a hedged spread (the bought wing caps the worst case); one bad day can still cost several weeks of premium. Option buying caps the loss at the premium paid - change the answer to \"Buy options\" if you prefer that.",
-                        "तुम्ही option selling निवडले. इथे ते नेहमी hedge असलेला spread असतो (विकत घेतलेला wing जास्तीत जास्त तोटा मर्यादित ठेवतो); तरीही एका वाईट दिवसात काही आठवड्यांचा premium जाऊ शकतो. Option buying मध्ये तोटा भरलेल्या premium इतकाच असतो - तसे हवे असल्यास उत्तर \"Option buy\" करा."))
     if a.instrument == "stock" and vehicle != "underlying":
         vehicle = "underlying"
         notes.append(tr(lang, "A cash-market stock has no options - the plan trades the stock itself.",
@@ -525,8 +522,13 @@ def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = 
                 tr(lang, f"Buy one-step in-the-money {underlying} options (CE on a long signal, PE on a short), {expiry.lower()} expiry",
                    f"{underlying} चा एक step ITM option buy (long signal ला CE, short ला PE), {'पुढची' if expiry == 'NEXT' else 'जवळची'} expiry"))
     structure = {"BULLISH": "BULL_PUT_SPREAD", "BEARISH": "BEAR_CALL_SPREAD"}.get(bias, "IRON_CONDOR")
-    notes.append(tr(lang, f"Option selling only as a hedged {structure.replace('_', ' ').lower()} - the bought wing caps the worst case.",
-                    f"Option selling फक्त hedge सोबत ({structure.replace('_', ' ').lower()}) - विकत घेतलेला wing जास्तीत जास्त तोटा मर्यादित ठेवतो."))
+    # P0.10: the trader chose option selling - it stays selling (always hedged); the alternative is information only.
+    notes.append(tr(lang, f"You chose option selling. Here it is always a hedged {structure.replace('_', ' ').lower()} (the bought wing caps the worst case); "
+                          "one bad day can still cost several weeks of premium. Option buying caps the loss at the premium paid - change the answer to "
+                          "\"Buy options\" if you prefer that.",
+                    f"तुम्ही option selling निवडले. इथे ते नेहमी hedge असलेला {structure.replace('_', ' ').lower()} असतो (विकत घेतलेला wing जास्तीत जास्त "
+                    "तोटा मर्यादित ठेवतो); तरीही एका वाईट दिवसात काही आठवड्यांचा premium जाऊ शकतो. Option buying मध्ये तोटा भरलेल्या premium इतकाच असतो - "
+                    "तसे हवे असल्यास उत्तर \"Option buy\" करा."))
     return ({"instrument_kind": "OPTION", "option_strategy": structure, "expiry_rule": "NEAREST", "spread_width": 2,
              "target_credit_pct": 50.0, "stop_credit_pct": 150.0}, notes,
             tr(lang, f"{structure.replace('_', ' ').title()} on {underlying}, take profit at 50% of the credit, stop at 150%",
@@ -770,14 +772,14 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
            "LIVE फक्त Go-Live checklist मधूनच शक्य; LIVE जायचे की नाही हा निर्णय तुमचा."),
     ]
     sections = [
-        {"id": "market", "title": tr(lang, "Market view", "Market चे विश्लेषण"), "lines": m_lines},
-        {"id": "strategy", "title": tr(lang, "Template (you choose)", "Template (तुम्ही निवडा)"), "lines": s_lines},
-        {"id": "risk", "title": tr(lang, "Risk management", "Risk management"), "lines": r_lines},
-        {"id": "capital", "title": tr(lang, "Capital in these settings", "या settings मधले भांडवल"), "lines": c_lines},
-        {"id": "rr", "title": tr(lang, "Risk : reward and exits", "Risk : reward आणि exit"), "lines": rr_lines},
-        {"id": "contract", "title": tr(lang, "What will be traded", "काय trade होईल"), "lines": k_lines},
-        {"id": "checklist", "title": tr(lang, "Checked before every trade", "प्रत्येक trade आधी तपासले जाते"), "lines": checklist},
-        {"id": "steps", "title": tr(lang, "How it works if you choose", "निवडल्यास पुढे काय होते"), "lines": steps},
+        {"id": "market", "title": tr(lang, "Market view", "Market चे विश्लेषण"), "title_mr": "Market चे विश्लेषण", "lines": m_lines},
+        {"id": "strategy", "title": tr(lang, "Template (you choose)", "Template (तुम्ही निवडा)"), "title_mr": "Template (तुम्ही निवडा)", "lines": s_lines},
+        {"id": "risk", "title": tr(lang, "Risk management", "Risk management"), "title_mr": "Risk management", "lines": r_lines},
+        {"id": "capital", "title": tr(lang, "Capital in these settings", "या settings मधले भांडवल"), "title_mr": "या settings मधले भांडवल", "lines": c_lines},
+        {"id": "rr", "title": tr(lang, "Risk : reward and exits", "Risk : reward आणि exit"), "title_mr": "Risk : reward आणि exit", "lines": rr_lines},
+        {"id": "contract", "title": tr(lang, "What will be traded", "काय trade होईल"), "title_mr": "काय trade होईल", "lines": k_lines},
+        {"id": "checklist", "title": tr(lang, "Checked before every trade", "प्रत्येक trade आधी तपासले जाते"), "title_mr": "प्रत्येक trade आधी तपासले जाते", "lines": checklist},
+        {"id": "steps", "title": tr(lang, "How it works if you choose", "निवडल्यास पुढे काय होते"), "title_mr": "निवडल्यास पुढे काय होते", "lines": steps},
     ]
     deployment = None
     if pick:

@@ -82,7 +82,7 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
                 changes.append(tr(lang, "Option selling replaced by option buying (loss capped at the premium).", "Option selling ऐवजी option buying (तोटा premium इतकाच)."))
         elif code == "more_risk_ok":
             p.risk_bias = min(p.risk_bias + 1, 2)
-            changes.append(tr(lang, "A little more risk per trade - still inside your own risk answer and the platform's maximum.", "एका trade चा risk थोडा वाढवला - तरीही तुमच्या risk उत्तराच्या आणि platform च्या कमाल मर्यादेत."))
+            changes.append(tr(lang, "A little more risk per trade - at most a quarter above your own risk answer, inside the platform's maximum.", "एका trade चा risk थोडा वाढवला - तुमच्या risk उत्तरापेक्षा जास्तीत जास्त एक चतुर्थांश जास्त, platform च्या कमाल मर्यादेत."))
         elif code == "too_many_trades":
             p.trades_bias = max(p.trades_bias - 1, -3)
             changes.append(tr(lang, "Fewer trades a day; calmer strategies preferred.", "दिवसाला कमी trades; शांत strategies ला प्राधान्य."))
@@ -289,7 +289,7 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         pick = picks[oid]
         plan = iv.compose_plan(a, market, ranked, pick, cfg, notes, data_source, exit_rules=exit_rules)
         if background:
-            plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "lines": background})
+            plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "title_mr": "बाजाराची पार्श्वभूमी", "lines": background})
         if high_fear:
             plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are more frequent at such readings.",
                                        "India VIX 20 किंवा जास्त आहे - भीती जास्त; अशा वेळी gap जास्त वेळा येतात."))
@@ -298,7 +298,8 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         # market-fit %, no "closest to you", no best option. The one data fact is whether the template's own regime
         # filter is open on today's candles (the same yes/no the daily briefing shows).
         filter_open = None if pick is None else bool(pick["regime_fit"] >= 2)
-        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "regime_filter_open": filter_open,
+        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "label_mr": mr_label, "summary_mr": mr_sub,
+                          "regime_filter_open": filter_open,
                           "headline": None if pick is None else {"strategy": pick["name"], "risk_pct": cfg.risk_per_trade_pct,
                                                                  "trades_per_day": cfg.max_trades_per_day, "min_rr": cfg.min_risk_reward}}
         options.append(plan)

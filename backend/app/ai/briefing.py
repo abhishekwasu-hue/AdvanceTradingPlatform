@@ -44,10 +44,16 @@ STALE_CLOSED_MINUTES = 20 * 60
 def data_freshness(memory: dict, now: datetime, market_open: bool) -> dict:
     """How old the market figures are and whether they may be shown. Figures are hidden when there are none, when they
     are stale, and when every symbol carries the same change (a placeholder, not a market)."""
-    updated = memory.get("updated_at")
-    if not updated:
+    # The age is the newest SYMBOL / VIX read - not the memory's `updated_at`, which global cues (fetched without a broker
+    # session, every 15 minutes) keep current while the index rows can be days old.
+    reads = [s.get("captured_at") for s in memory.get("symbols", [])]
+    reads += [c.get("captured_at") for c in memory.get("cues", []) if c.get("symbol") == "INDIA VIX"]
+    stamps = [datetime.fromisoformat(str(r)) for r in reads if r]
+    if not stamps:
         return {"state": "none", "updated_at": None, "age_minutes": None, "figures_shown": False}
-    age = max((now - datetime.fromisoformat(str(updated))).total_seconds() / 60.0, 0.0)
+    newest = max(stamps)
+    updated = newest.isoformat()
+    age = max((now - newest).total_seconds() / 60.0, 0.0)
     stale = age > (STALE_OPEN_MINUTES if market_open else STALE_CLOSED_MINUTES)
     changes = [round(float(s["change_pct"]), 2) for s in memory.get("symbols", []) if s.get("change_pct") is not None]
     identical = len(changes) >= 2 and len(set(changes)) == 1
@@ -109,7 +115,7 @@ def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
 
 
 def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict], *,
-              cfg: Optional[RiskConfig] = None, cfg_saved: bool = False) -> dict:
+              cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None) -> dict:
     kind = dt["kind"]
     # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
@@ -132,12 +138,14 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
     if fam["avoid"]:
         lines.append(tr(lang, "Regime filters closed today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - these templates would not enter.",
                         "आज regime filter बंद: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["avoid"]) + " - हे templates entry घेणार नाहीत."))
-    vix = dt.get("vix")
+    # P0.10: when the market figures are not a current read, no VIX or global-cue numbers are repeated as today's.
+    hidden = freshness is not None and not freshness.get("figures_shown", True)
+    vix = None if hidden else dt.get("vix")
     if vix is not None:
         lines.append(market_memory.vix_text(lang, vix) + ".")
         if vix >= 20:
             lines.append(tr(lang, "VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop.", "VIX 20 किंवा जास्त: भीती जास्त, gap ची शक्यता जास्त; तुमच्या risk settings प्रत्येक trade ची size त्याच्या stop वरून ठरवतात."))
-    glines = global_cues.view(lang, memory.get("globals", []))
+    glines = [] if hidden else global_cues.view(lang, memory.get("globals", []))
     if glines:
         lines.append(glines[0])
     for e in events:
@@ -148,7 +156,12 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
             lines.append(tr(lang, f"Event today: {what} - position size is cut automatically.", f"आज event: {what} - position size आपोआप कमी होईल."))
     lines.append(risk_line(lang, cfg or RiskConfig(), cfg_saved))
     head = headlines[kind]
-    return {"headline": tr(lang, head[0], head[1]), "lines": lines, "fit_families": fam["fit"], "avoid_families": fam["avoid"]}
+    headline = tr(lang, head[0], head[1])
+    if hidden and kind != "UNKNOWN" and freshness and freshness.get("age_minutes") is not None:
+        hours = freshness["age_minutes"] / 60.0
+        ago = f"{hours:.0f} h" if hours >= 1 else f"{freshness['age_minutes']:.0f} min"
+        headline = tr(lang, f"Last market read ({ago} ago, not today's): ", f"शेवटचे market वाचन ({ago} पूर्वी, आजचे नाही): ") + headline
+    return {"headline": headline, "lines": lines, "fit_families": fam["fit"], "avoid_families": fam["avoid"]}
 
 
 async def your_day(session: AsyncSession, user: User, cfg: RiskConfig, now: datetime) -> dict:
@@ -236,7 +249,8 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
     events = [guardian.event_as_dict(e) for e in await guardian.events_on(session, user.tenant_id, now_ist.date())]
 
     dt = day_type(memory)
-    plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None)
+    freshness = data_freshness(memory, now, status.is_open)
+    plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness)
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
     from app.ai import sentiment as sentiment_mod                          # Phase BC
     sentiment_read = memory.get("sentiment")
@@ -246,7 +260,6 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
         StrategyDeploymentRecord.tenant_id == user.tenant_id, StrategyDeploymentRecord.status.in_(["ACTIVE", "PAUSED"]))
         .order_by(StrategyDeploymentRecord.id)))
     deployments = [_why(lang, d, now, status.is_open, memory, status.next_open) for d in deps]
-    freshness = data_freshness(memory, now, status.is_open)
 
     creds = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
     broker_ok = any(token_is_usable(c, now) for c in creds)

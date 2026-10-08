@@ -21,6 +21,13 @@ const FACTOR: Record<string, string> = {
   structure: "Structure", trend: "Trend", higher_regime: "Higher timeframe", sentiment: "Market sentiment", news: "News", global: "Global cues",
 };
 
+/** NSE cash session 09:15-15:30 IST on a weekday (holidays not known here - a holiday counts as closed only server-side). */
+function marketOpenNow(): boolean {
+  const ist = new Date(Date.now() + 330 * 60_000);
+  const minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return ist.getUTCDay() >= 1 && ist.getUTCDay() <= 5 && minutes >= 9 * 60 + 15 && minutes < 15 * 60 + 30;
+}
+
 function detail(e: unknown): string {
   const text = String(e).replace(/^Error:\s*/, "");
   const m = text.match(/\{.*\}/s);
@@ -60,11 +67,11 @@ export default function ThesisCard() {
   const dir = thesis ? DIR[thesis.direction] ?? DIR.NEUTRAL : null;
   const Icon = dir?.icon ?? Eye;
   const sb = history?.scoreboard;
-  // P0.10: the thesis is read from the market memory; when that read is older than the overnight gap (20 h) its levels
-  // and score are not today's - stamped and hidden, like the briefing's figures.
+  // P0.10: the thesis is read from the market memory; the same rule as the briefing decides when that read is not a
+  // current one (older than 45 minutes while the market is open, 20 hours while it is closed) - stamped, levels hidden.
   const readAt = thesis ? (thesis.inputs as { read_at?: string | null }).read_at ?? null : null;
   const ageH = readAt ? (Date.now() - new Date(readAt).getTime()) / 3_600_000 : null;
-  const stale = ageH != null && ageH > 20;
+  const stale = ageH != null && ageH > (marketOpenNow() ? 0.75 : 20);
   return (
     <Card title="Market thesis (shadow)">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">

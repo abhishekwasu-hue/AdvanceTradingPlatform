@@ -61,7 +61,7 @@ def test_interview_describes_templates_the_trader_chooses_without_recommending()
         # The trading capital is the trader's own figure - no allocation by experience.
         assert plan["risk_config"]["capital"] == 300000
         strategy = next(s for s in plan["sections"] if s["id"] == "strategy")
-        assert ("Template shown first" in strategy["lines"][0] or "प्रथम दाखवलेले template" in strategy["lines"][0])
+        assert ("This template:" in strategy["lines"][0] or "हे template:" in strategy["lines"][0])
         capital = next(s for s in plan["sections"] if s["id"] == "capital")
         assert any("your decision" in line or "निर्णय तुमचा" in line for line in capital["lines"])
         rr = next(s for s in plan["sections"] if s["id"] == "rr")
@@ -93,8 +93,8 @@ def test_thesis_of_a_stock_shows_no_targets_or_confidence_unless_the_flag_allows
     memory = {"symbols": [snapshot], "cues": [], "sentiment": None, "globals": []}
     stock = th.compose("RELIANCE", snapshot, memory, [], [], "en", NOW)
     assert stock["confidence"] is None and stock["detail_shown"] is False
-    assert "target" not in stock["scenarios"]["bull"] and "target" not in stock["scenarios"]["bear"]
-    assert "opens room" not in stock["scenarios"]["bull"]["text"] and "keeps the bullish read" in stock["scenarios"]["bull"]["text"]
+    assert stock["scenarios"] == {}                          # P0.9: no price levels at all for a stock without the flag
+    assert any("Price scenarios for a single stock are not shown" in line for line in stock["lines"])
     assert "not a view on what to do" in stock["lines"][0] and "%" not in stock["lines"][0]
     flagged = th.compose("RELIANCE", snapshot, memory, [], [], "en", NOW, stock_targets=True)
     assert flagged["confidence"] is not None and "target" in flagged["scenarios"]["bull"]

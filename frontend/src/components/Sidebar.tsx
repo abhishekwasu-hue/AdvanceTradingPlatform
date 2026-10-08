@@ -120,11 +120,15 @@ export const ADMIN_GROUP: NavGroup = {
 
 export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.items);
 
-export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
+/** P0.9: below the md breakpoint the sidebar is an off-canvas drawer (opened from the top bar's menu button) so the
+ * page keeps the full phone width; from md up it is the usual fixed column. */
+export default function Sidebar({ page, onChange, open = false, onClose }: { page: Page; onChange: (p: Page) => void; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
 
   return (
-    <aside className="w-60 shrink-0 border-r border-border bg-panel flex flex-col">
+    <>
+    {open && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
+    <aside className={`fixed inset-y-0 left-0 z-40 w-60 shrink-0 transform border-r border-border bg-panel flex flex-col transition-transform md:static md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
       <div className="px-4 py-4 border-b border-border">
         <Logo />
       </div>
@@ -140,7 +144,7 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
               return (
                 <button
                   key={item.id}
-                  onClick={() => onChange(item.id)}
+                  onClick={() => { onChange(item.id); onClose?.(); }}
                   className={`w-full flex items-center gap-3 px-4 py-2 text-sm text-left transition-colors border-r-2 ${
                     active
                       ? "bg-brand/15 text-white font-semibold border-brand"
@@ -177,5 +181,6 @@ export default function Sidebar({ page, onChange }: { page: Page; onChange: (p: 
         </div>
       </button>
     </aside>
+    </>
   );
 }

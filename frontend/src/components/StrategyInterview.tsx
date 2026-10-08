@@ -5,10 +5,12 @@ import type { AiStrategyDraft, FeedbackOption, InterviewPlan, InterviewQuestion,
 import { FNO_INDICES, FNO_STOCKS } from "../utils/fnoSymbols";
 import type { CandleSourceState } from "./DataSource";
 import { chartWindowUrl } from "./ProChart";
+import { INTERVIEW_MR } from "../i18n/interviewSecondary";
+import SampleStamp from "./SampleStamp";
 
 /**
  * Phase AP: the strategy interview. A beginner who asks "give me a strategy" is asked about
- * themselves first (in Marathi or English), then the platform reads the market and builds a plan:
+ * themselves first, then the platform reads the market and describes three templates:
  * a template with its evidence, risk management, R:R, the contract to trade and a PAPER deployment.
  * Nothing is applied until the trader presses a button.
  *
@@ -16,10 +18,12 @@ import { chartWindowUrl } from "./ProChart";
  * between - described, never recommended, no match %; "not this one" asks why and the next round is
  * rebuilt from the reasons. The answers
  * and what was learnt are remembered, so the next visit can skip the questions.
+ *
+ * P0.9: English UI. Each question shows its English text with a small muted Marathi line under it, and each
+ * answer chip shows both. No template is highlighted or pre-selected: the details appear only after the trader
+ * chooses one, and nothing states a market direction.
  */
 
-type Lang = "en" | "mr";
-const L = (lang: Lang, en: string, mr: string) => (lang === "mr" ? mr : en);
 const CAPITAL_CHIPS = [50_000, 100_000, 200_000, 500_000];
 
 interface Msg { from: "ai" | "me"; text: string }
@@ -59,7 +63,6 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   const fetched = useRef<{ tf: string; candles: OHLCVBar[]; label: string } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
-  const lang: Lang = (answers.language as Lang) || start?.language || "mr";
   const byId = (id: string) => start?.questions.find((q) => q.id === id);
   const current: InterviewQuestion | undefined = queue[step] ? byId(queue[step]) : undefined;
 
@@ -70,15 +73,14 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     fetched.current = null;
     api.aiInterviewStart(startPrompt).then((s) => {
       if (cancelled) return;
-      const prefill = { ...s.prefill };
-      // The language question always comes first unless the text already settled it.
+      // P0.9: the plan is written in English (the dashboard language); the language question is not asked.
+      const prefill: Record<string, string> = { ...s.prefill, language: "en" };
       const order = s.questions.map((q) => q.id).filter((id) => !(id in prefill));
       setStart(s); setAnswers(prefill); setQueue(order);
       const known = Object.keys(s.prefill).filter((k) => k !== "language");
       const intro: Msg[] = [{ from: "ai", text: s.intro }];
       if (known.length) {
-        intro.push({ from: "ai", text: L(s.language, "Already understood from your message: ", "तुमच्या संदेशातून आधीच समजले: ")
-          + known.map((k) => `${k} = ${prefill[k]}`).join(", ") });
+        intro.push({ from: "ai", text: "Already understood from your message: " + known.map((k) => `${k} = ${prefill[k]}`).join(", ") });
       }
       setLog(intro);
       setOfferProfile(!!s.profile);
@@ -91,11 +93,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
 
   if (!startKey || !start) return error ? <div className="text-sm text-danger">{error}</div> : null;
 
-  const qText = (q: InterviewQuestion) => (lang === "mr" ? q.mr : q.en);
-  const optLabel = (q: InterviewQuestion, value: string) => {
-    const o = q.options.find((x) => x.value === value);
-    return o ? (lang === "mr" ? o.mr : o.en) : value;
-  };
+  const optLabel = (q: InterviewQuestion, value: string) => q.options.find((x) => x.value === value)?.en ?? value;
 
   function answer(value: string, label?: string) {
     if (!current) return;
@@ -104,9 +102,8 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     // A stock-only trader is not offered index symbols as the default.
     if (q.id === "instrument" && value !== "index" && (answers.symbol ?? "NIFTY 50").startsWith("NIFTY")) delete next.symbol;
     setAnswers(next);
-    const qLang: Lang = q.id === "language" ? (value as Lang) : lang;
     setLog((prev) => [...prev,
-      { from: "ai", text: q.id === "language" ? q.mr + " / " + q.en : (qLang === "mr" ? q.mr : q.en) },
+      { from: "ai", text: q.en },
       { from: "me", text: label ?? optLabel(q, value) }]);
     setCustom("");
     setStep((s) => s + 1);
@@ -119,13 +116,13 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     setAnswers({ ...saved, ...start.prefill });
     setStep(queue.length);
     setOfferProfile(false);
-    setLog((prev) => [...prev, { from: "me", text: L(lang, "Yes, use my answers from last time", "हो, मागची उत्तरे वापरा") }]);
+    setLog((prev) => [...prev, { from: "me", text: "Yes, use my answers from last time" }]);
   }
 
   async function forgetProfile() {
-    await act(L(lang, "Forgetting…", "विसरत आहे…"), async () => {
+    await act("Forgetting…", async () => {
       await api.aiProfileDelete(); setOfferProfile(false);
-      return L(lang, "Your saved answers and preferences are deleted.", "तुमची साठवलेली उत्तरे आणि आवडी काढून टाकल्या.");
+      return "Your saved answers and preferences are deleted.";
     });
   }
 
@@ -169,12 +166,12 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   }
 
   async function buildPlan() {
-    setBusy(L(lang, "Reading the market and testing strategies…", "Market वाचत आहे आणि strategies तपासत आहे…")); setError(null); setDone(null);
+    setBusy("Reading the market and testing the templates…"); setError(null); setDone(null);
     try {
       const data = await candlesFor(answers.style || "intraday");
       fetched.current = { ...data, candles: data.candles.slice(-3000) };
       const result = await api.aiInterviewPlan(answersBody(), data.tf, fetched.current.candles, data.label);
-      setPlan(result); setSelected("balanced");
+      setPlan(result); setSelected(null);          // P0.9: nothing pre-selected - the trader opens a template
     } catch (e) { setError(cleanError(e)); } finally { setBusy(null); }
   }
 
@@ -182,12 +179,12 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   async function refine(option: InterviewPlan) {
     const f = fetched.current;
     if (!f || !option.option || reasons.length === 0) return;
-    setBusy(L(lang, "Finding options closer to what you want…", "तुमच्या पसंतीच्या जवळचे पर्याय शोधत आहे…")); setError(null); setDone(null);
+    setBusy("Finding templates closer to what you asked for…"); setError(null); setDone(null);
     try {
       const result = await api.aiInterviewRefine(answersBody(), f.tf, f.candles, f.label, reasons, option.option.id, option.recommended?.strategy_id ?? null);
       // Feedback may change answers (style, time, vehicle): keep the page in step with the server.
       setAnswers(Object.fromEntries(Object.entries(result.answers).map(([k, v]) => [k, String(v)])));
-      setPlan(result); setSelected("balanced"); setRejecting(null); setReasons([]);
+      setPlan(result); setSelected(null); setRejecting(null); setReasons([]);
     } catch (e) { setError(cleanError(e)); } finally { setBusy(null); }
   }
 
@@ -195,7 +192,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     if (!option.option) return;
     setSelected(option.option.id);
     try { await api.aiInterviewChoose(answersBody(), option.option.id, option.recommended?.strategy_id ?? null); } catch { /* remembering is best effort */ }
-    setDone(L(lang, `"${option.option.label}" chosen - details and buttons below.`, `"${option.option.label}" निवडला - तपशील आणि बटणे खाली.`));
+    setDone(`"${option.option.label}" chosen - its rules, backtest and buttons are below.`);
   }
 
   async function act(label: string, fn: () => Promise<string>) {
@@ -220,13 +217,14 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
           <div className="flex gap-2">
             <History size={16} className="mt-0.5 shrink-0 text-amber-300" />
             <div className="max-w-[90%] rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-slate-100">
-              {L(lang, "Welcome back! I remember your answers from last time", "पुन्हा स्वागत! मागच्या वेळची तुमची उत्तरे मला आठवतात")}
+              Welcome back! Your answers from last time are saved
               {" "}(₹{Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN")}, {String(start.profile.answers.style ?? "")}, {String(start.profile.answers.symbol ?? "")}).
-              {" "}{L(lang, "Use them and go straight to the options?", "तीच वापरून थेट पर्याय दाखवू का?")}
+              {" "}Use them and go straight to the templates?
+              <div className="text-[11px] text-muted">{INTERVIEW_MR.welcomeBack}</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <button onClick={applyProfile} className="rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-500">{L(lang, "Yes, use them", "हो, तीच वापरा")}</button>
-                <button onClick={() => setOfferProfile(false)} className="rounded border border-border px-3 py-1 text-xs text-slate-100 hover:bg-panel2">{L(lang, "No, ask me again", "नाही, पुन्हा विचारा")}</button>
-                <button onClick={() => void forgetProfile()} className="text-xs text-rose-300 hover:underline">{L(lang, "Forget me", "मला विसरा")}</button>
+                <button onClick={applyProfile} className="rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-500">Yes, use them</button>
+                <button onClick={() => setOfferProfile(false)} className="rounded border border-border px-3 py-1 text-xs text-slate-100 hover:bg-panel2">No, ask me again</button>
+                <button onClick={() => void forgetProfile()} className="text-xs text-rose-300 hover:underline">Forget me</button>
               </div>
             </div>
           </div>
@@ -235,14 +233,15 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
           <div className="flex gap-2">
             <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />
             <div className="max-w-[90%] space-y-1.5 rounded-lg bg-panel3 px-3 py-2 text-sm">
-              <div className="font-semibold text-slate-50">{current.id === "language" ? `${current.mr} / ${current.en}` : qText(current)}</div>
-              <div className="text-xs text-purple-200">💡 {lang === "mr" ? current.why_mr : current.why_en}</div>
+              <div className="font-semibold text-slate-50">{current.en}</div>
+              <div className="text-[11px] text-muted" lang="mr">{current.mr}</div>
+              <div className="text-xs text-purple-200">💡 {current.why_en}</div>
               {current.kind === "choice" && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {current.options.map((o) => (
                     <button key={o.value} onClick={() => answer(o.value)}
-                            className={`rounded-full border px-3 py-1 text-xs font-semibold hover:bg-brand/30 ${current.default === o.value ? "border-sky-400/60 text-sky-100" : "border-border text-slate-100"}`}>
-                      {lang === "mr" ? o.mr : o.en}
+                            className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-slate-100 hover:bg-brand/30">
+                      {o.en}{o.mr && o.mr !== o.en && <span className="ml-1 font-normal text-muted" lang="mr">/ {o.mr}</span>}
                     </button>
                   ))}
                 </div>
@@ -254,7 +253,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
                       ₹{c.toLocaleString("en-IN")}
                     </button>
                   ))}
-                  <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} placeholder={L(lang, "other amount", "दुसरी रक्कम")}
+                  <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} placeholder={`other amount / ${INTERVIEW_MR.otherAmount}`}
                          className="w-32 rounded border border-border bg-panel2 px-2 py-1 text-xs" />
                   <button disabled={Number(custom) < 5000} onClick={() => answer(custom, `₹${Number(custom).toLocaleString("en-IN")}`)}
                           className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK</button>
@@ -265,7 +264,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
                   {symbolChoices.map((s) => (
                     <button key={s} onClick={() => answer(s)} className="rounded-full border border-border px-3 py-1 text-xs font-semibold text-slate-100 hover:bg-brand/30">{s}</button>
                   ))}
-                  <input value={custom} list="interview-symbols" onChange={(e) => setCustom(e.target.value.toUpperCase())} placeholder={L(lang, "type a symbol", "symbol लिहा")}
+                  <input value={custom} list="interview-symbols" onChange={(e) => setCustom(e.target.value.toUpperCase())} placeholder={`type a symbol / ${INTERVIEW_MR.typeSymbol}`}
                          className="w-36 rounded border border-border bg-panel2 px-2 py-1 text-xs" />
                   <datalist id="interview-symbols">{[...FNO_INDICES, ...FNO_STOCKS].map((s) => <option key={s} value={s} />)}</datalist>
                   <button disabled={!custom.trim()} onClick={() => answer(custom.trim())} className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK</button>
@@ -278,13 +277,13 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
           <div className="flex gap-2">
             <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />
             <div className="rounded-lg bg-panel3 px-3 py-2 text-sm text-slate-100">
-              {L(lang, "Thank you - I know enough about you. Now I read the market (trend, structure, support/resistance, volatility) and test the templates.",
-                       "धन्यवाद - तुमच्याबद्दल पुरेसे समजले. आता market चा data वाचतो (trend, structure, support/resistance, volatility) आणि templates तपासतो.")}
+              Thank you - that is enough. Next the market data is read (trend, structure, support/resistance, volatility) and three templates are tested on it.
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button disabled={!!busy} onClick={() => void buildPlan()} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-                  <Compass size={12} className="mr-1 inline" />{L(lang, "Read the market and build my plan", "Market वाचा आणि माझा plan बनवा")}
+                  <Compass size={12} className="mr-1 inline" />Read the market and show the templates
                 </button>
-                <span className="text-xs text-muted">{source.mode === "sample" ? L(lang, "on sample data - pick broker candles above for today's real market", "sample data वर - आजच्या खऱ्या market साठी वर broker candles निवडा") : L(lang, "on broker candles", "broker candles वर")}</span>
+                <span className="text-xs text-muted">{source.mode === "sample" ? "on SAMPLE data - pick broker candles above for today's real market" : "on broker candles"}</span>
+                <span className="w-full text-[11px] text-muted" lang="mr">{INTERVIEW_MR.readMarket}</span>
               </div>
             </div>
           </div>
@@ -293,35 +292,31 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        {step > 0 && <button onClick={back} className="rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><ArrowLeft size={12} className="mr-1 inline" />{L(lang, "Back", "मागे")}</button>}
-        {!finished && <span className="text-muted">{L(lang, `Question ${step + 1} of ${queue.length}`, `प्रश्न ${step + 1} / ${queue.length}`)}</span>}
+        {step > 0 && <button onClick={back} className="rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><ArrowLeft size={12} className="mr-1 inline" />Back</button>}
+        {!finished && <span className="text-muted">Question {step + 1} of {queue.length}</span>}
         {busy && <span className="text-sky-300">{busy}</span>}
         {error && <span className="text-danger">{error}</span>}
         {done && <span className="text-emerald-300">{done}</span>}
       </div>
 
       {plan && plan.options && (
-        <OptionsView plan={plan} lang={plan.language} selected={selected} busy={!!busy} rejecting={rejecting} reasons={reasons}
+        <OptionsView plan={plan} selected={selected} busy={!!busy} rejecting={rejecting} reasons={reasons}
                      onChoose={(o) => void choose(o)} onReject={(id) => { setRejecting(rejecting === id ? null : id); setReasons([]); }}
                      onToggleReason={(code) => setReasons((r) => (r.includes(code) ? r.filter((c) => c !== code) : [...r, code]))}
                      onRefine={(o) => void refine(o)} />
       )}
       {plan && (() => {
-        const shown = plan.options?.find((o) => o.option?.id === selected) ?? plan;
-        return <PlanView plan={shown} lang={plan.language} busy={!!busy} onAct={act} onDraft={onDraft} broker={source.mode === "broker" ? source.broker : undefined} />;
+        // P0.9: details only for the template the trader chose - nothing is shown (or implied) before that.
+        const shown = plan.options ? plan.options.find((o) => o.option?.id === selected) : plan;
+        if (!shown) return <div className="text-xs text-muted">Choose a template above to see its rules, backtest, risk settings and buttons.</div>;
+        return <PlanView plan={shown} sample={fetched.current?.label === "sample"} busy={!!busy} onAct={act} onDraft={onDraft} broker={source.mode === "broker" ? source.broker : undefined} />;
       })()}
     </div>
   );
 }
 
-const OPTION_STYLE: Record<string, string> = {
-  safe: "border-emerald-500/50 bg-emerald-500/5",
-  balanced: "border-sky-500/50 bg-sky-500/5",
-  active: "border-amber-500/50 bg-amber-500/5",
-};
-
-function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose, onReject, onToggleReason, onRefine }: {
-  plan: InterviewPlan; lang: Lang; selected: string | null; busy: boolean; rejecting: string | null; reasons: string[];
+function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onReject, onToggleReason, onRefine }: {
+  plan: InterviewPlan; selected: string | null; busy: boolean; rejecting: string | null; reasons: string[];
   onChoose: (o: InterviewPlan) => void; onReject: (id: string) => void; onToggleReason: (code: string) => void; onRefine: (o: InterviewPlan) => void;
 }) {
   const feedback: FeedbackOption[] = plan.feedback_options ?? [];
@@ -329,13 +324,13 @@ function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose,
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="font-extrabold text-slate-50">{L(lang, "Three templates - you choose", "तीन templates - निवड तुमची")}</span>
-        <span className="text-xs text-muted">{L(lang, "Each template's rules are in words below; read the backtest; the decision is yours. This is not a recommendation.",
-          "प्रत्येक template चे नियम खाली शब्दांत आहेत; backtest पाहा; निर्णय तुमचा. ही शिफारस नाही.")}</span>
+        <span className="font-extrabold text-slate-50">Three templates - you choose</span>
+        <span className="text-xs text-muted">Open a template to read its rules in words and its backtest. The decision is yours; this is not a recommendation.</span>
+        <span className="w-full text-[11px] text-muted" lang="mr">{INTERVIEW_MR.chooseTemplate}</span>
       </div>
       {plan.changes && plan.changes.length > 0 && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-emerald-100">
-          <b>{L(lang, "Changed from your feedback:", "तुमच्या सांगण्यावरून बदल:")}</b>
+          <b>Changed from your feedback:</b>
           <ul className="mt-1 list-disc pl-5">{plan.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
         </div>
       )}
@@ -344,7 +339,7 @@ function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose,
           const meta = o.option!;
           const isSel = selected === meta.id;
           return (
-            <div key={meta.id} className={`rounded-lg border p-3 ${OPTION_STYLE[meta.id]} ${isSel ? "ring-2 ring-purple-400" : ""}`}>
+            <div key={meta.id} className={`rounded-lg border border-border bg-panel2/30 p-3 ${isSel ? "ring-2 ring-purple-400" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-base font-extrabold text-slate-50">{meta.label}</div>
@@ -354,39 +349,39 @@ function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose,
               {meta.headline && (
                 <ul className="mt-2 space-y-0.5 text-xs text-slate-100">
                   <li>📈 {meta.headline.strategy}</li>
-                  <li>🛡️ {L(lang, "Risk per trade", "एका trade चा risk")} {meta.headline.risk_pct}%</li>
-                  <li>🔁 {L(lang, "Up to", "दिवसाला")} {meta.headline.trades_per_day} {L(lang, "trades a day", "trades पर्यंत")}</li>
-                  <li>🎯 {L(lang, "Reward:risk at least", "किमान reward:risk")} 1:{meta.headline.min_rr}</li>
+                  <li>🛡️ Risk per trade {meta.headline.risk_pct}%</li>
+                  <li>🔁 Up to {meta.headline.trades_per_day} trades a day</li>
+                  <li>🎯 Reward:risk at least 1:{meta.headline.min_rr}</li>
                 </ul>
               )}
               {meta.regime_filter_open !== null && (
                 <div className="mt-2 text-[11px] text-slate-300">
                   {meta.regime_filter_open
-                    ? L(lang, "Today's data: this template's regime filter is open", "आजचा data: या template चा regime filter उघडा आहे")
-                    : L(lang, "Today's data: this template's regime filter is closed (it would not enter)", "आजचा data: या template चा regime filter बंद आहे (entry घेणार नाही)")}
+                    ? "Today's data: this template's regime filter is open"
+                    : "Today's data: this template's regime filter is closed (it would not enter)"}
                 </div>
               )}
               <div className="mt-2 flex gap-2">
                 <button disabled={busy} onClick={() => onChoose(o)} className="rounded bg-purple-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-                  <Check size={12} className="mr-1 inline" />{isSel ? L(lang, "Showing", "दिसत आहे") : L(lang, "Choose this", "हा निवडा")}
+                  <Check size={12} className="mr-1 inline" />{isSel ? "Chosen" : "Choose this"}
                 </button>
                 <button disabled={busy} onClick={() => onReject(meta.id)} className="rounded border border-rose-500/50 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">
-                  <ThumbsDown size={12} className="mr-1 inline" />{L(lang, "Not this", "हे नको")}
+                  <ThumbsDown size={12} className="mr-1 inline" />Not this
                 </button>
               </div>
               {rejecting === meta.id && (
                 <div className="mt-2 space-y-1.5 rounded border border-border bg-panel2/60 p-2">
-                  <div className="text-xs font-semibold text-slate-100">{L(lang, "Why not? (pick one or more)", "का नको? (एक किंवा जास्त निवडा)")}</div>
+                  <div className="text-xs font-semibold text-slate-100">Why not? (pick one or more)</div>
                   <div className="flex flex-wrap gap-1">
                     {feedback.map((f) => (
                       <button key={f.code} onClick={() => onToggleReason(f.code)}
                               className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-rose-400 bg-rose-500/30 text-white" : "border-border text-slate-200"}`}>
-                        {lang === "mr" ? f.mr : f.en}
+                        {f.en}
                       </button>
                     ))}
                   </div>
                   <button disabled={busy || reasons.length === 0} onClick={() => onRefine(o)} className="rounded bg-sky-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40">
-                    {L(lang, "Show me better options", "पुढचे पर्याय दाखवा")}
+                    Show other templates
                   </button>
                 </div>
               )}
@@ -398,8 +393,8 @@ function OptionsView({ plan, lang, selected, busy, rejecting, reasons, onChoose,
   );
 }
 
-function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
-  plan: InterviewPlan; lang: Lang; busy: boolean; broker?: string;
+function PlanView({ plan, sample, busy, onAct, onDraft, broker }: {
+  plan: InterviewPlan; sample: boolean; busy: boolean; broker?: string;
   onAct: (label: string, fn: () => Promise<string>) => void;
   onDraft?: (draft: AiStrategyDraft) => void;
 }) {
@@ -408,14 +403,13 @@ function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
   // P0.8 / A3: "Deploy in PAPER" goes through the server's candidate with the trader's risk acceptance.
   const [acceptRisk, setAcceptRisk] = useState(false);
   const perTrade = Math.round((plan.risk_config.capital * plan.risk_config.risk_per_trade_pct) / 100);
-  const biasCls = plan.market.bias === "BULLISH" ? "text-emerald-300" : plan.market.bias === "BEARISH" ? "text-rose-300" : "text-amber-200";
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-purple-500/40 bg-purple-500/10 p-3">
+        {/* P0.9: the template the trader chose and the symbol - no market direction, no "your plan". */}
         <div className="flex flex-wrap items-center gap-3">
           <Sparkles size={18} className="text-purple-300" />
-          <div className="text-base font-extrabold text-slate-50">{L(lang, "Your trading plan", "तुमचा trading plan")} · {symbol}</div>
-          <span className={`text-sm font-bold ${biasCls}`}>{plan.market.bias}</span>
+          <div className="text-base font-extrabold text-slate-50">Template{plan.option ? `: ${plan.option.label}` : ""} · {symbol}</div>
           {pick && <span className="rounded-full border border-sky-400/50 px-2 py-0.5 text-xs font-semibold text-sky-100">{pick.name}</span>}
         </div>
         {plan.warnings.length > 0 && (
@@ -424,48 +418,54 @@ function PlanView({ plan, lang, busy, onAct, onDraft, broker }: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        {plan.sections.map((s) => (
-          <div key={s.id} className="rounded-lg border border-border bg-panel2/40 p-3">
-            <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}</div>
-            <ul className="space-y-1 text-sm text-slate-100">{s.lines.map((l, i) => <li key={i} className="flex gap-1.5"><span className="text-purple-300">•</span><span>{l}</span></li>)}</ul>
-          </div>
-        ))}
+        {plan.sections.map((s) => {
+          // P0.9: on sample candles the backtest figures are not shown as performance - blurred under a stamp.
+          const hide = sample && s.id === "strategy";
+          return (
+            <div key={s.id} className="relative overflow-hidden rounded-lg border border-border bg-panel2/40 p-3">
+              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}</div>
+              <ul className={`space-y-1 text-sm text-slate-100 ${hide ? "select-none blur-sm" : ""}`} aria-hidden={hide}>
+                {s.lines.map((l, i) => <li key={i} className="flex gap-1.5"><span className="text-purple-300">•</span><span>{l}</span></li>)}
+              </ul>
+              {hide && <SampleStamp />}
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap gap-2">
         <button disabled={busy} onClick={() => {
           // P0.8-D: the capital is the figure the trader entered (no allocation advice) - say so before it sizes every trade.
           const cap = `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}`;
-          if (!window.confirm(L(lang, `Replace your current risk settings with this plan's? Trading capital will be ${cap} - the amount you entered. Every PAPER (and later LIVE) trade is sized from it.`,
-                                `तुमच्या सध्याच्या risk settings ऐवजी या plan च्या settings लावायच्या? Trading भांडवल ${cap} - तुम्ही दिलेला आकडा. प्रत्येक PAPER (आणि पुढे LIVE) trade चा आकार यावरून ठरतो.`))) return;
-          onAct(L(lang, "Saving…", "Save करत आहे…"), async () => { await api.updateRiskSettings(plan.risk_config); return L(lang, "Risk settings applied.", "Risk settings लागू झाल्या."); });
+          if (!window.confirm(`Replace your current risk settings with this template's? Trading capital will be ${cap} - the amount you entered. Every PAPER (and later LIVE) trade is sized from it.`)) return;
+          onAct("Saving…", async () => { await api.updateRiskSettings(plan.risk_config); return "Risk settings applied."; });
         }} className="rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50">
-          <ShieldCheck size={12} className="mr-1 inline" />{L(lang, "Apply risk settings", "Risk settings लागू करा")}
+          <ShieldCheck size={12} className="mr-1 inline" />Apply risk settings
         </button>
         {plan.deployment && plan.candidate_id != null && (
           <>
             <label className="flex items-center gap-1.5 text-[11px] text-slate-200">
               <input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              {L(lang, `I accept a maximum loss of about ₹${perTrade.toLocaleString("en-IN")} per trade`, `मी प्रति trade जास्तीत जास्त ₹${perTrade.toLocaleString("en-IN")} तोटा स्वीकारतो/स्वीकारते`)}
+              I accept a maximum loss of about ₹{perTrade.toLocaleString("en-IN")} per trade
             </label>
-            <button disabled={busy || !acceptRisk} onClick={() => onAct(L(lang, "Deploying…", "Deploy करत आहे…"), async () => {
+            <button disabled={busy || !acceptRisk} onClick={() => onAct("Deploying…", async () => {
               const d = await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk);
-              return L(lang, `Deployment #${d.deployment.id} is running in PAPER. Watch it on the Autopilot page.`, `Deployment #${d.deployment.id} PAPER मध्ये सुरू झाले. Autopilot page वर पहा.`);
+              return `Deployment #${d.deployment.id} is running in PAPER. Watch it on the Autopilot page.`;
             })} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-              <Rocket size={12} className="mr-1 inline" />{L(lang, "Deploy in PAPER", "PAPER मध्ये deploy करा")}
+              <Rocket size={12} className="mr-1 inline" />Deploy in PAPER
             </button>
           </>
         )}
         <button onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-panel2">
-          <CandlestickChart size={12} className="mr-1 inline" />{L(lang, "Open the chart", "Chart उघडा")}
+          <CandlestickChart size={12} className="mr-1 inline" />Open the chart
         </button>
         {onDraft && (
-          <button disabled={busy} onClick={() => onAct(L(lang, "Asking the AI…", "AI ला विचारत आहे…"), async () => {
-            const d = await api.aiGenerate(plan.ai_prompt, { language: lang, regime: plan.market.regime.kind, symbol });
+          <button disabled={busy} onClick={() => onAct("Asking the AI…", async () => {
+            const d = await api.aiGenerate(plan.ai_prompt, { language: "en", regime: plan.market.regime.kind, symbol });
             onDraft(d);
-            return L(lang, `AI draft #${d.id} is ready for review below.`, `AI draft #${d.id} तयार आहे - खाली तपासा.`);
+            return `AI draft #${d.id} is ready for review below.`;
           })} className="rounded border border-purple-500/50 px-3 py-1.5 text-xs font-semibold text-purple-100 hover:bg-purple-500/20 disabled:opacity-50">
-            <Sparkles size={12} className="mr-1 inline" />{L(lang, "Ask the AI for a custom rule set", "AI कडून custom strategy बनवा")}
+            <Sparkles size={12} className="mr-1 inline" />Ask the AI for a custom rule set
           </button>
         )}
       </div>

@@ -10,10 +10,10 @@ import { Card } from "./ui";
  */
 const money = (v: number | undefined | null) => (v == null ? "-" : `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`);
 const SEV: Record<string, { cls: string; label: string }> = {
-  high: { cls: "border-l-rose-500 bg-rose-500/[0.06]", label: "महत्त्वाचे" },
-  medium: { cls: "border-l-amber-400 bg-amber-500/[0.05]", label: "लक्ष द्या" },
-  low: { cls: "border-l-sky-400 bg-sky-500/[0.04]", label: "सूचना" },
-  good: { cls: "border-l-emerald-500 bg-emerald-500/[0.06]", label: "चांगले" },
+  high: { cls: "border-l-rose-500 bg-rose-500/[0.06]", label: "Important" },
+  medium: { cls: "border-l-amber-400 bg-amber-500/[0.05]", label: "Watch" },
+  low: { cls: "border-l-sky-400 bg-sky-500/[0.04]", label: "Note" },
+  good: { cls: "border-l-emerald-500 bg-emerald-500/[0.06]", label: "Good" },
 };
 
 /** Cumulative P&L after each closed trade - one series, so no legend; hover shows the trade and the running total. */
@@ -48,12 +48,12 @@ function EquityLine({ points }: { points: number[] }) {
       {hover != null && (
         <div className="pointer-events-none absolute top-1 rounded border border-border bg-panel px-2 py-1 text-xs text-slate-100 shadow-card"
              style={{ left: `${Math.min(80, (x(hover) / W) * 100)}%` }}>
-          {hover === 0 ? "सुरुवात" : `trade ${hover}`}: <b>{money(series[hover])}</b>
+          {hover === 0 ? "start" : `trade ${hover}`}: <b>{money(series[hover])}</b>
         </div>
       )}
       <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-muted">
-        <span>सुरुवात ₹0</span><span>शेवट <b className="text-slate-200">{money(last)}</b></span>
-        <span>सर्वोच्च <b className="text-slate-200">{money(max)}</b></span><span>सर्वात खाली <b className="text-slate-200">{money(min)}</b></span>
+        <span>Start ₹0</span><span>End <b className="text-slate-200">{money(last)}</b></span>
+        <span>High <b className="text-slate-200">{money(max)}</b></span><span>Low <b className="text-slate-200">{money(min)}</b></span>
       </div>
     </div>
   );
@@ -84,7 +84,7 @@ function Bars({ rows, labelOf }: { rows: CoachGroup[]; labelOf: (g: CoachGroup) 
   );
 }
 
-export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
+export default function TradeCoach() {
   const [days, setDays] = useState(30);
   const [mode, setMode] = useState<"ALL" | "PAPER" | "LIVE">("ALL");
   const [review, setReview] = useState<CoachReview | null>(null);
@@ -92,27 +92,27 @@ export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
   const [busy, setBusy] = useState(false);
   const load = () => {
     setBusy(true);
-    api.aiCoach(lang, days, mode).then((r) => { setReview(r); setError(null); }).catch((e) => setError(String(e).replace(/^Error:\s*/, ""))).finally(() => setBusy(false));
+    api.aiCoach("en", days, mode).then((r) => { setReview(r); setError(null); }).catch((e) => setError(String(e).replace(/^Error:\s*/, ""))).finally(() => setBusy(false));
   };
-  useEffect(load, [lang, days, mode]);
+  useEffect(load, [days, mode]);
   const s = review?.stats;
   const tiles = useMemo(() => s && s.trades ? [
-    { label: "Trades", value: String(s.trades), sub: `${s.trading_days} दिवस` },
+    { label: "Trades", value: String(s.trades), sub: `${s.trading_days} days` },
     { label: "Win rate", value: `${s.win_rate}%`, sub: `${s.wins} / ${s.losses}` },
-    { label: "निव्वळ P&L", value: money(s.net_pnl), tone: (s.net_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300", sub: `best ${money(s.best_day)} · worst ${money(s.worst_day)}` },
-    { label: "प्रति trade अपेक्षित", value: money(s.expectancy), tone: (s.expectancy ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300", sub: s.expectancy_r != null ? `${s.expectancy_r}R` : "R: stop नाही" },
-    { label: "Profit factor", value: s.profit_factor != null ? String(s.profit_factor) : "-", sub: `सरासरी ${money(s.avg_win)} / ${money(s.avg_loss)}` },
-    { label: "Max drawdown", value: money(-(s.max_drawdown ?? 0)), tone: "text-rose-200", sub: `सलग तोटे ${s.longest_losing_streak}` },
+    { label: "Net P&L", value: money(s.net_pnl), tone: (s.net_pnl ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300", sub: `best ${money(s.best_day)} · worst ${money(s.worst_day)}` },
+    { label: "Expectancy per trade", value: money(s.expectancy), tone: (s.expectancy ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300", sub: s.expectancy_r != null ? `${s.expectancy_r}R` : "R: no stop" },
+    { label: "Profit factor", value: s.profit_factor != null ? String(s.profit_factor) : "-", sub: `avg ${money(s.avg_win)} / ${money(s.avg_loss)}` },
+    { label: "Max drawdown", value: money(-(s.max_drawdown ?? 0)), tone: "text-rose-200", sub: `losing streak ${s.longest_losing_streak}` },
   ] : [], [s]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-muted">कालावधी</span>
-        {[7, 30, 90].map((d) => <button key={d} onClick={() => setDays(d)} className={`rounded border px-2 py-0.5 ${days === d ? "border-purple-400/60 bg-purple-500/15 text-purple-100" : "border-border text-muted"}`}>{d} दिवस</button>)}
+        <span className="text-muted">Period</span>
+        {[7, 30, 90].map((d) => <button key={d} onClick={() => setDays(d)} className={`rounded border px-2 py-0.5 ${days === d ? "border-purple-400/60 bg-purple-500/15 text-purple-100" : "border-border text-muted"}`}>{d} days</button>)}
         <span className="ml-2 text-muted">Mode</span>
-        {(["ALL", "PAPER", "LIVE"] as const).map((m) => <button key={m} onClick={() => setMode(m)} className={`rounded border px-2 py-0.5 ${mode === m ? "border-purple-400/60 bg-purple-500/15 text-purple-100" : "border-border text-muted"}`}>{m === "ALL" ? "सगळे" : m}</button>)}
-        <button onClick={load} disabled={busy} className="ml-auto rounded border border-border px-2 py-0.5 text-slate-200 hover:bg-panel2 disabled:opacity-50"><RefreshCw size={11} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />ताजे करा</button>
+        {(["ALL", "PAPER", "LIVE"] as const).map((m) => <button key={m} onClick={() => setMode(m)} className={`rounded border px-2 py-0.5 ${mode === m ? "border-purple-400/60 bg-purple-500/15 text-purple-100" : "border-border text-muted"}`}>{m === "ALL" ? "All" : m}</button>)}
+        <button onClick={load} disabled={busy} className="ml-auto rounded border border-border px-2 py-0.5 text-slate-200 hover:bg-panel2 disabled:opacity-50"><RefreshCw size={11} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />Refresh</button>
       </div>
       {error && <div className="text-sm text-danger">{error}</div>}
       {review && !s?.trades && (
@@ -122,7 +122,7 @@ export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
         <>
           <div className="grid gap-3 md:grid-cols-[180px_1fr]">
             <div className="flex flex-col items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/[0.07] p-4 text-center">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-muted">शिस्त श्रेणी</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Discipline grade</div>
               <div className="font-tabular text-5xl font-black text-purple-100">{review.grade}</div>
               <div className="text-xs text-muted">{review.score}/100</div>
             </div>
@@ -138,7 +138,7 @@ export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
           </div>
 
           {review.focus.length > 0 && (
-            <Card title="यावर काम करा · Your next three fixes">
+            <Card title="Your next three fixes">
               <ol className="space-y-1.5 text-sm text-slate-100">
                 {review.focus.map((f, i) => <li key={f} className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-500/25 text-xs font-bold text-purple-100">{i + 1}</span><span>{f}</span></li>)}
               </ol>
@@ -146,7 +146,7 @@ export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
           )}
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card title="Coach ची निरीक्षणे">
+            <Card title="Coach observations">
               <div className="space-y-2">
                 {review.flags.map((f) => (
                   <div key={f.id} className={`rounded-lg border border-border border-l-4 p-2.5 ${SEV[f.severity].cls}`}>
@@ -158,13 +158,13 @@ export default function TradeCoach({ lang }: { lang: "en" | "mr" }) {
               </div>
             </Card>
             <div className="space-y-4">
-              <Card title={`निव्वळ P&L - प्रत्येक trade नंतर (${review.period.from} → ${review.period.to})`}>
+              <Card title={`Net P&L after each trade (${review.period.from} → ${review.period.to})`}>
                 <EquityLine points={review.equity} />
               </Card>
-              <Card title="Strategy नुसार">
+              <Card title="By strategy">
                 <Bars rows={review.by_strategy} labelOf={(g) => g.key} />
               </Card>
-              <Card title="Entry च्या तासानुसार">
+              <Card title="By entry hour">
                 <Bars rows={review.by_hour} labelOf={(g) => g.key} />
               </Card>
             </div>

@@ -11,6 +11,7 @@ import DailyBriefing from "../components/DailyBriefing";
 import StrategistPanel from "../components/StrategistPanel";
 import ThesisCard from "../components/ThesisCard";
 import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
+import { INTERVIEW_MR } from "../i18n/interviewSecondary";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -26,11 +27,11 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 type Tab = "strategist" | "today" | "strategy" | "advanced";
-const TABS: { id: Tab; mr: string; en: string; icon: typeof Sun }[] = [
-  { id: "strategist", mr: "Market अभ्यास → Strategy", en: "Market study → Strategy", icon: ScanSearch },
-  { id: "today", mr: "आजचा market", en: "Today's market", icon: Sun },
-  { id: "strategy", mr: "Strategy मुलाखत", en: "Strategy interview", icon: Compass },
-  { id: "advanced", mr: "Advanced", en: "Drafts & agent", icon: Settings2 },
+const TABS: { id: Tab; en: string; icon: typeof Sun }[] = [
+  { id: "strategist", en: "Market study & templates", icon: ScanSearch },
+  { id: "today", en: "Today's market", icon: Sun },
+  { id: "strategy", en: "Strategy interview", icon: Compass },
+  { id: "advanced", en: "Drafts & agent", icon: Settings2 },
 ];
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try { const v = localStorage.getItem(key) as T | null; return v && allowed.includes(v) ? v : fallback; } catch { return fallback; }
@@ -39,9 +40,9 @@ function store(key: string, value: string) { try { localStorage.setItem(key, val
 
 /** Phase L: the AI Copilot - generate a strategy draft, backtest it, approve it (only then does
  * it exist as a strategy); read the market regime; decide on the monitoring agent's proposals.
- * Phase AV/AW: the Copilot is the live-market strategist - it studies the market and builds
- * validated strategies (default tab); today's market briefing, the strategy interview and the
- * draft / agent tools sit beside it. The coach and the guide have their own page. */
+ * Phase AV/AW: market study and rule templates (default tab), today's market briefing, the strategy
+ * interview and the draft / agent tools. The coach and the guide have their own page.
+ * P0.9: English only (no language toggle); it explains rules and data - decisions are the trader's. */
 export default function AiCopilotPage() {
   const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
@@ -59,9 +60,7 @@ export default function AiCopilotPage() {
   const [interviewKey, setInterviewKey] = useState(0);
   const [interviewPrompt, setInterviewPrompt] = useState("");
   const [tab, setTabState] = useState<Tab>(() => stored<Tab>("atp_copilot_tab", TABS.map((t) => t.id), "strategist"));
-  const [lang, setLangState] = useState<"en" | "mr">(() => stored<"en" | "mr">("atp_copilot_lang", ["en", "mr"], "mr"));
   const setTab = (t: Tab) => { setTabState(t); store("atp_copilot_tab", t); };
-  const setLang = (l: "en" | "mr") => { setLangState(l); store("atp_copilot_lang", l); };
   const startInterview = (text: string) => {
     setTab("strategy");
     setInterviewPrompt(text); setInterviewKey((k) => k + 1);
@@ -95,24 +94,19 @@ export default function AiCopilotPage() {
 
   // P0.8-D: nothing AI-written is shown until this user accepted the current acknowledgement (shared gate).
   return (
-    <AiAcknowledgementGate lang={lang} setLang={setLang}>
+    <AiAcknowledgementGate>
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
           <h1 className="text-xl font-extrabold text-purple-400 flex items-center gap-2"><Sparkles size={18} /> AI Copilot</h1>
-          <p className="text-sm text-purple-200">Live market चा अभ्यास करून आजच्या market साठी strategy बनवणारा, तपासणारा आणि deploy साठी तयार करणारा strategist. निर्णय नेहमी तुमचाच - तुमच्या मंजुरीशिवाय काहीही trade होत नाही.</p>
-        </div>
-        <div className="flex overflow-hidden rounded-lg border border-border text-xs">
-          {(["mr", "en"] as const).map((l) => (
-            <button key={l} onClick={() => setLang(l)} className={`px-2.5 py-1 ${lang === l ? "bg-purple-500/20 text-purple-100" : "text-muted"}`}>{l === "mr" ? "मराठी" : "English"}</button>
-          ))}
+          <p className="text-sm text-purple-200">Explains rules and data - market reads, templates, backtests and risk settings. Decisions are yours; nothing trades without your approval.</p>
         </div>
       </div>
 
       <DataSourceBar source={source} />
 
       {open.length > 0 && (
-        <Card title={`तुमच्या निर्णयाची वाट पाहणारे प्रस्ताव · Proposals waiting for you (${open.length})`}>
+        <Card title={`Proposals waiting for your decision (${open.length})`}>
           {open.map((a) => (
             <div key={a.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-2">
               <div className="flex items-center gap-2 text-sm font-bold"><ShieldAlert size={14} className="text-amber-400" /> {a.action.replace(/_/g, " ")} <span className="text-[11px] text-muted font-normal">· rule {a.rule} · deployment #{a.deployment_id ?? "-"}{a.trade_id ? ` · position #${a.trade_id}` : ""}</span></div>
@@ -134,7 +128,7 @@ export default function AiCopilotPage() {
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
                     className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${active ? "border-purple-400 text-purple-100" : "border-transparent text-muted hover:text-slate-200"}`}>
-              <Icon size={14} />{lang === "mr" ? t.mr : t.en}
+              <Icon size={14} />{t.en}
               {t.id === "strategy" && drafts.some((d) => d.status === "BACKTESTED") && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
             </button>
           );
@@ -143,30 +137,30 @@ export default function AiCopilotPage() {
 
       {tab === "today" && (
         <div className="space-y-4">
-          <DailyBriefing lang={lang} />
+          <DailyBriefing />
           <MarketMemoryCard />
-          <ThesisCard lang={lang} />
+          <ThesisCard />
         </div>
       )}
 
-      {tab === "strategist" && <StrategistPanel source={source} lang={lang} />}
+      {tab === "strategist" && <StrategistPanel source={source} />}
 
       {tab === "strategy" && (
         <div className="space-y-4">
       <div id="strategy-interview">
-        <Card title="Strategy मुलाखत · Build my strategy with me">
+        <Card title="Strategy interview">
           {interviewKey === 0 ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-slate-200 flex-1 min-w-[260px]">
-                नवीन आहात? आधी काही प्रश्न - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market चा data वाचून (trend, structure, support/resistance) तीन templates त्यांच्या नियमांसह, backtest आणि risk settings सह दाखवतो. Template तुम्ही निवडा; ही शिफारस नाही.
-                <span className="block text-xs text-muted mt-1">New to trading? A few questions first, then the market data and three templates with their rules, backtest and risk settings. You choose the template; this is not a recommendation. Marathi or English.</span>
+                A few questions first - capital, risk, style, time and goal. Then the market data is read (trend, structure, support/resistance) and three templates are shown with their rules, backtest and risk settings. You choose the template; this is not a recommendation.
+                <span className="block text-[11px] text-muted mt-1" lang="mr">{INTERVIEW_MR.start}</span>
               </p>
-              <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />सुरू करा / Start</button>
+              <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />Start</button>
             </div>
           ) : (
             <>
               <StrategyInterview source={source} startPrompt={interviewPrompt} startKey={interviewKey} onDraft={(d) => { setSelected(d); refresh(); }} />
-              <button onClick={() => startInterview("")} className="mt-2 text-xs text-sky-300 hover:underline">पुन्हा सुरू करा / Start over</button>
+              <button onClick={() => startInterview("")} className="mt-2 text-xs text-sky-300 hover:underline">Start over</button>
             </>
           )}
         </Card>
@@ -175,13 +169,13 @@ export default function AiCopilotPage() {
       <div className="grid lg:grid-cols-2 gap-4">
         <Card title="Generate a strategy draft">
           <p className="text-xs text-muted mb-2">Describe entries in plain language. The draft targets the same rule schema as the Strategy Builder; approve only after a backtest you have read.</p>
-          <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target. Or simply: ट्रेडिंग स्ट्रॅटेजी सांगा" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+          <textarea className={input} rows={4} placeholder="e.g. Buy pullbacks in a 5-minute uptrend: EMA20 above EMA50, RSI(14) crossing back above 40; 1.5 ATR stop, 1:2 target. Or simply: give me a trading strategy" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
           <button disabled={busy || prompt.trim().length < 10} onClick={() => run(null, async () => {
             // Phase AP: "give me a strategy" with no rules in it starts the interview instead of guessing.
             const s = await api.aiInterviewStart(prompt);
-            if (s.needs_interview) { setMessage(s.language === "mr" ? "आधी काही प्रश्न - Strategy मुलाखत पहा." : "A few questions first - see the strategy interview."); startInterview(prompt); return; }
+            if (s.needs_interview) { setMessage("A few questions first - see the strategy interview."); startInterview(prompt); return; }
             setMessage("Draft generated - review it on the right.");
-            const d = await api.aiGenerate(prompt, { language: s.prefill.language ?? (navigator.language || "en").slice(0, 2), regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
+            const d = await api.aiGenerate(prompt, { language: "en", regime: regime?.kind ?? null, symbol: symbol.trim() ? symbol : null }); setSelected(d); })} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-xs disabled:opacity-50">{busy ? "Working…" : "Generate draft"}</button>
 
           <div className="mt-4">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Recent drafts</div>
@@ -251,7 +245,10 @@ export default function AiCopilotPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <input className="rounded bg-panel2 border border-border px-2 py-1 text-xs w-28" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />
                 {(selected.status === "DRAFT" || selected.status === "BACKTESTED") && (
-                  <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", await candlesFor(selected.config?.timeframe ?? "1min")); setSelected(r.draft); setMessage(`Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (${dataLabel}${source.mode === "sample" ? " - switch Data to broker candles for a real read" : ""}).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on {dataLabel}</button>
+                  <button disabled={busy} onClick={() => run("Backtest recorded on the draft.", async () => { const r = await api.aiBacktestDraft(selected.id, symbol, selected.config?.timeframe ?? "1min", await candlesFor(selected.config?.timeframe ?? "1min")); setSelected(r.draft);
+                    // P0.9: figures from sample candles are never shown as performance.
+                    setMessage(source.mode === "sample" ? `Backtest recorded on SAMPLE data (${r.result.total_trades} trades) - its figures are not real performance; switch Data to broker candles for a real read.`
+                      : `Backtest: ${r.result.total_trades} trades, win rate ${(r.result.win_rate * (r.result.win_rate <= 1 ? 100 : 1)).toFixed(0)}%, net P&L ${r.result.net_pnl.toFixed(0)} (${dataLabel}).`); })} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 text-xs">Backtest on {dataLabel}</button>
                 )}
                 {selected.status === "BACKTESTED" && (
                   <button disabled={busy || !acceptRisk || (selected.compliance ? !selected.compliance.ok : false)} title={!acceptRisk ? "Tick the acceptance first" : undefined} onClick={() => run("Approved - it is now one of your strategies. Paper-trade it before LIVE.", async () => { const r = await api.aiApproveDraft(selected.id, undefined, true); setSelected(r.draft); setAcceptRisk(false); })} className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Approve as strategy</button>

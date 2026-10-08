@@ -18,11 +18,11 @@ export default function CoachGuidePage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-extrabold text-sky-300 flex items-center gap-2"><GraduationCap size={18} /> Coach & मार्गदर्शक</h1>
-        <p className="text-sm text-slate-300">तुमच्या trades चे विश्लेषण आणि trading च्या संकल्पना - मराठी किंवा English.</p>
+        <h1 className="text-xl font-extrabold text-sky-300 flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</h1>
+        <p className="text-sm text-slate-300">A review of your own trades and the trading concepts behind them. It explains rules and data; decisions are yours.</p>
       </div>
       <div className="flex gap-1 border-b border-border">
-        {([["coach", "Trade coach", GraduationCap], ["guide", "मार्गदर्शक", BookOpen]] as const).map(([id, label, Icon]) => (
+        {([["coach", "Trade coach", GraduationCap], ["guide", "Guide", BookOpen]] as const).map(([id, label, Icon]) => (
           <button key={id} onClick={() => choose(id)}
                   className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? "border-sky-400 text-sky-100" : "border-transparent text-muted hover:text-slate-200"}`}>
             <Icon size={14} />{label}
@@ -30,7 +30,7 @@ export default function CoachGuidePage() {
         ))}
       </div>
       {/* P0.8-D: the same first-use acknowledgement as the AI Copilot page */}
-      <AiAcknowledgementGate lang="mr">{tab === "coach" ? <TradeCoach lang="mr" /> : <GuideChat plain />}</AiAcknowledgementGate>
+      <AiAcknowledgementGate>{tab === "coach" ? <TradeCoach /> : <GuideChat plain />}</AiAcknowledgementGate>
     </div>
   );
 }

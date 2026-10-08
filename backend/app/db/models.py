@@ -79,6 +79,8 @@ class User(Base):
     # Deactivated (removed from the team) users keep their rows for attribution/audit history
     # but can no longer log in or use an existing token - see get_current_user.
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # P0.9: the language the AI writes its answers in (chat, guide). The dashboard itself is English only.
+    ai_language: Mapped[str] = mapped_column(String(4), nullable=False, default="en", server_default="en")
     # Phase M / V4.13: an OWNER or platform admin can stop one member from opening new positions
     # without deactivating the account (they can still watch, exit and report).
     trading_disabled_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)

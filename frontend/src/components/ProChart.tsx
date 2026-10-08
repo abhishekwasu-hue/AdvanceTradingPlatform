@@ -406,8 +406,8 @@ export default function ProChart({
         )}
         {liveError && <span className="max-w-[22rem] truncate text-[10px] text-rose-300" title={liveError}>live price unavailable: {liveError.replace(/^Error:\s*/, "")}</span>}
         {onLoadOlder && (loadingOlder
-          ? <span className="text-[10px] text-sky-300">जुना data येत आहे…</span>
-          : olderExhausted ? <span className="text-[10px] text-muted" title="The broker has no older history for this timeframe">इतकाच इतिहास उपलब्ध</span> : null)}
+          ? <span className="text-[10px] text-sky-300">Loading older data…</span>
+          : olderExhausted ? <span className="text-[10px] text-muted" title="The broker has no older history for this timeframe">No older history</span> : null)}
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (

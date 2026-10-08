@@ -185,23 +185,18 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
     from app.ai.thesis import is_index
     detail = stock_detail or is_index(symbol)
     scenarios = []
-    if up:
+    # P0.9: a single stock gets no price scenarios at all without the operator's `thesis_stock_targets` flag.
+    if up and detail:
         tgt = up2["price"] if up2 else round(up["price"] + (atr5 * 3 if not pd.isna(atr5) else up["price"] * 0.004), 2)
-        bull = {"id": "bull", "trigger": up["price"], "trigger_name": up["name"],
-                "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}.", f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन.")}
-        if detail:
-            bull.update({"target": tgt, "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
-                                                   f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
-        scenarios.append(bull)
-    if down:
+        scenarios.append({"id": "bull", "trigger": up["price"], "trigger_name": up["name"], "target": tgt,
+                          "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
+                                     f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+    if down and detail:
         tgt = down2["price"] if down2 else round(down["price"] - (atr5 * 3 if not pd.isna(atr5) else down["price"] * 0.004), 2)
-        bear = {"id": "bear", "trigger": down["price"], "trigger_name": down["name"],
-                "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}.", f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन.")}
-        if detail:
-            bear.update({"target": tgt, "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
-                                                   f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
-        scenarios.append(bear)
-    if up and down:
+        scenarios.append({"id": "bear", "trigger": down["price"], "trigger_name": down["name"], "target": tgt,
+                          "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
+                                     f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+    if up and down and detail:
         scenarios.append({"id": "range", "trigger": None, "low": down["price"], "high": up["price"],
                           "text": tr(lang, f"Between {down['price']:,.2f} and {up['price']:,.2f} the data reads as a range.",
                                      f"{down['price']:,.2f} ते {up['price']:,.2f} दरम्यान data range दाखवतो.")})

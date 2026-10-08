@@ -1592,6 +1592,13 @@ export interface AiProviderConfig {
   usage?: AiUsage | null;
   /** P0.8-D: the organisation's data-sharing consent (version, accepted, by whom). */
   data_consent?: AiAcknowledgement;
+  /** P0.9: per external provider, every AI task with the model it runs on and an estimated cost of one typical call. */
+  task_models?: Record<string, AiTaskModel[]>;
+  typical_call_tokens?: Record<string, { input: number; output: number }>;
+}
+export interface AiTaskModel {
+  task: string; label: string; tier: "fast" | "strong"; model: string;
+  price_per_mtok_usd: { input: number; output: number }; est_inr_per_call: number; estimated_price: boolean;
 }
 
 /** P0.8-D: a versioned acceptance - the Copilot first-use terms (per user) or the data-sharing consent (per organisation). */
@@ -2132,3 +2139,6 @@ export interface StrategistRequestParsed {
   matched: Partial<Record<"symbol" | "style" | "direction" | "language", string>>; text: string; summary?: string;
 }
 
+
+/** P0.9: the language of the AI's written answers; the dashboard is English only. */
+export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }

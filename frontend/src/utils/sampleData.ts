@@ -17,24 +17,34 @@ const TIMEFRAME_MINUTES: Record<string, number> = {
 };
 
 /**
- * Client-side stand-in for real broker market data: no live broker is connected yet (credential
- * endpoints deliberately don't exist until the secrets-storage phase), so every page that needs
- * candles generates this clearly-labeled sample series instead of pretending to have live data.
+ * Client-side stand-in for real broker market data, clearly labelled "sample" wherever it is shown.
+ *
+ * P0.9: a seeded random walk with slowly changing drift and volatility clustering, pulled gently back to
+ * the start price. The old series (a 40-bar sine wave of 1.5% plus a 25% drift) reversed every breakout
+ * on schedule - every breakout strategy lost exactly 1R on it - and carried NIFTY from 24,500 to 30,700
+ * in two weeks. Sample numbers are still not performance; they only have to look like a market.
  */
 export function generateSampleCandles(count = 400, startPrice = 100, seed = 7): OHLCVBar[] {
   const rand = mulberry32(seed);
+  const gauss = () => {
+    const u = Math.max(rand(), 1e-12);
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
+  };
   const bars: OHLCVBar[] = [];
   let close = startPrice;
+  let drift = 0;          // per-bar drift, re-drawn every ~150 bars (trend phases)
+  let vol = 0.0006;       // per-bar volatility (~0.06% a minute), clustered
   const start = new Date("2024-01-02T09:15:00Z").getTime();
 
   for (let i = 0; i < count; i++) {
-    const drift = (i / count) * startPrice * 0.25;
-    const wave = Math.sin((2 * Math.PI * i) / 40) * startPrice * 0.015;
-    const noise = (rand() - 0.5) * startPrice * 0.003;
+    if (i % 150 === 0) drift = (rand() - 0.5) * 0.00012;
+    vol = Math.min(0.0018, Math.max(0.0003, vol * 0.97 + 0.03 * 0.0006 + Math.abs(gauss()) * 0.00004));
+    const pull = ((startPrice - close) / startPrice) * 0.002;      // keeps the series near its start price
     const open = close;
-    close = startPrice + drift + wave + noise;
-    const high = Math.max(open, close) + Math.abs(noise) * 2;
-    const low = Math.min(open, close) - Math.abs(noise) * 2;
+    close = Math.max(startPrice * 0.2, open * Math.exp(drift + pull + vol * gauss()));
+    const wick = open * vol * (0.3 + rand() * 0.7);
+    const high = Math.max(open, close) + wick;
+    const low = Math.min(open, close) - wick;
     const volume = 800 + Math.round(rand() * 400);
 
     bars.push({

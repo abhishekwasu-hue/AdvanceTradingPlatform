@@ -49,6 +49,8 @@ LAST_ENTRY = (14, 45)      # IST
 SQUARE_OFF = (15, 15)
 IS_FRACTION = 0.7
 MIN_IS_TRADES = 4
+# P0.9: "held on unseen data" needs at least this many trades on the unseen sessions, and real broker candles.
+MIN_OOS_TRADES = 30
 
 
 def ind(name: str, period: int = 14, *, tf: Optional[str] = None, mult: float = 3.0) -> Operand:
@@ -202,14 +204,15 @@ def simulate(config: CustomStrategyConfig, df: pd.DataFrame, *, warmup: int = 0)
             exit_px = reason = None
             if d == 1:
                 if lo[i] <= pos["stop"]:
-                    exit_px, reason = pos["stop"], "stop"
+                    # P0.9: a bar that opens below the stop fills at its open (a gap), not at the stop price.
+                    exit_px, reason = min(pos["stop"], o[i]), "stop"
                 elif h[i] >= pos["t2"]:
                     exit_px, reason = pos["t2"], "t2"
                 elif h[i] >= pos["t1"]:
                     exit_px, reason = pos["t1"], "t1"
             else:
                 if h[i] >= pos["stop"]:
-                    exit_px, reason = pos["stop"], "stop"
+                    exit_px, reason = max(pos["stop"], o[i]), "stop"
                 elif lo[i] <= pos["t2"]:
                     exit_px, reason = pos["t2"], "t2"
                 elif lo[i] <= pos["t1"]:
@@ -295,12 +298,14 @@ def evaluate_template(t: Template, df: pd.DataFrame, base: str, htf: str, side: 
             "trades": all_trades[-60:], "oos_sessions": oos_sessions}
 
 
-def _verdict(lang: str, m_is: dict, m_oos: dict) -> Tuple[str, str]:
-    if m_is["trades"] + m_oos["trades"] < MIN_IS_TRADES:
-        return "thin", tr(lang, "Too few trades on these sessions to judge - treat it as an idea to paper-trade, not as evidence.",
-                          "या सत्रांत निर्णयासाठी trades खूप कमी - याला पुरावा नव्हे तर PAPER वर तपासायची कल्पना माना.")
-    if m_oos["trades"] == 0:
-        return "untested", tr(lang, "No trades in the later sessions - not yet validated on unseen data.", "नंतरच्या सत्रांत trade नाही - नवीन data वर अजून तपासलेली नाही.")
+def _verdict(lang: str, m_is: dict, m_oos: dict, real_data: bool = True) -> Tuple[str, str]:
+    """P0.9: a judgement only with real broker candles and MIN_OOS_TRADES trades on the unseen sessions; otherwise the
+    numbers are labelled for what they are (sample data, or too small a sample to judge)."""
+    if not real_data:
+        return "sample", tr(lang, "Sample data - these figures are not real performance.", "Sample data - हे आकडे खरे निकाल नाहीत.")
+    if m_oos["trades"] < MIN_OOS_TRADES:
+        return "insufficient", tr(lang, f"Insufficient sample: {m_oos['trades']} trade(s) on the unseen sessions; at least {MIN_OOS_TRADES} are needed to judge.",
+                                  f"नमुना अपुरा: न पाहिलेल्या सत्रांत {m_oos['trades']} trade; ठरवायला किमान {MIN_OOS_TRADES} लागतात.")
     if m_is["expectancy_r"] > 0 and m_oos["expectancy_r"] > 0:
         return "robust", tr(lang, "Positive on the sessions used to tune it and on the later sessions it never saw.",
                             "Tune केलेल्या सत्रांवर आणि कधीही न पाहिलेल्या नंतरच्या सत्रांवरही फायद्याची.")
@@ -423,7 +428,7 @@ def request_summary(lang: str, parsed: dict) -> str:
     return tr(lang, f"Understood: {parsed['symbol']}, {style_en}, {direction[0]}.", f"समजले: {parsed['symbol']}, {style_mr}, {direction[1]}.")
 
 
-def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> dict:
+def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, real_data: bool = True) -> dict:
     t: Template = r["template"]
     cfg: CustomStrategyConfig = r["config"]
     atr_pts = study.get("atr_5m") if cfg.timeframe == "5min" else None
@@ -435,7 +440,7 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> 
     # P0.8-D: no "today's triggers" with prices on a template the trader has not adopted - price levels with a rule set
     # read as a trade call. The levels stay in the study; the rules are described in words.
     triggers: List[dict] = []
-    verdict, verdict_text = _verdict(lang, r["in_sample"], r["out_of_sample"])
+    verdict, verdict_text = _verdict(lang, r["in_sample"], r["out_of_sample"], real_data)
     side = "LONG" if cfg.long_conditions and not cfg.short_conditions else "SHORT" if cfg.short_conditions and not cfg.long_conditions else "BOTH"
     return {
         "id": t.id, "name": tr(lang, t.en, t.mr), "family": t.family, "direction": side, "timeframe": cfg.timeframe,
@@ -468,7 +473,8 @@ def _side_for(study: dict, direction: str) -> List[str]:
 
 
 def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "intraday", direction: str = "both",
-          risk: Optional[RiskConfig] = None, extra_configs: Optional[List[Tuple[str, CustomStrategyConfig]]] = None) -> dict:
+          risk: Optional[RiskConfig] = None, extra_configs: Optional[List[Tuple[str, CustomStrategyConfig]]] = None,
+          real_data: bool = True) -> dict:
     """Shortlist, tune, validate and rank. `extra_configs` (name, config) - e.g. the AI's proposals -
     are validated the same way (no tuning: they are taken as written)."""
     lang = "mr" if lang == "mr" else "en"
@@ -501,7 +507,7 @@ def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "i
         return 0.6 * m_oos["expectancy_r"] + 0.4 * m_is["expectancy_r"] + (0.1 if m_is["expectancy_r"] > 0 and m_oos["expectancy_r"] > 0 else 0.0)
     results.sort(key=rank, reverse=True)
     traded = [r for r in results if r["all"]["trades"] > 0] or results
-    plans = [plan_for(lang, r, study, risk, study["symbol"]) for r in traded[:3]]
+    plans = [plan_for(lang, r, study, risk, study["symbol"], real_data) for r in traded[:3]]
     tested = len(results)
     notes = [tr(lang, f"{tested} candidate set(s) tuned on {len(set(pd.Series(_ist_index(df).date)))} sessions; "
                       f"parameters chosen on the first {int(IS_FRACTION * 100)}% and judged on the rest.",

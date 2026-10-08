@@ -843,6 +843,14 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `AI_PROVIDER_TIMEOUT_SECONDS`).
 - Prometheus: `atp_ai_tokens_total{provider,model,kind}` and `atp_ai_cost_usd_total{provider,model}`.
 
+### 1.6ab-11 English dashboard and AI answer language (P0.9)
+
+- The dashboard is English only. Each user picks the language of the AI's written answers (English or Marathi) under
+  Settings > AI provider; it starts as English for everyone. Telegram answers in the language of the message.
+- Migration `a1c3e5f7b9d2` adds `users.ai_language` (constant default, no table rewrite). Run it outside 09:15-15:30 IST.
+- Sample-data figures are stamped and blurred on purpose; switch Data to broker candles to read real numbers.
+- Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
+
 ### 1.6ab-10 AI Copilot compliance switches (P0.8-D)
 
 - **First use**: every user sees the AI Copilot acknowledgement once (not a SEBI-registered adviser; explains rules and

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
-import type { AiProviderConfig, AiProviderName } from "../types";
+import type { AiPreferences, AiProviderConfig, AiProviderName } from "../types";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1 text-xs";
 
@@ -17,6 +17,9 @@ export default function AiProviderCard() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
+  // P0.9: each user's AI answer language (the dashboard itself is English).
+  const [prefs, setPrefs] = useState<AiPreferences | null>(null);
+  useEffect(() => { api.aiPreferences().then(setPrefs).catch(() => undefined); }, []);
 
   function refresh() {
     api.aiProvider().then((c) => {
@@ -38,8 +41,8 @@ export default function AiProviderCard() {
   return (
     <Card title="AI provider">
       <p className="text-xs text-muted mb-3">
-        Powers the AI Copilot's strategy generator and the wording of monitoring proposals. Claude (Anthropic) is the recommended
-        provider: paste an Anthropic API key from console.anthropic.com. Without a key (or on the Free plan) everything falls back to the
+        Powers the AI Copilot's strategy drafts, its written answers and the wording of monitoring proposals. Claude (Anthropic) is the
+        default provider: paste an Anthropic API key from console.anthropic.com. Without a key (or on the Free plan) everything falls back to the
         built-in rule-based parser - no data leaves the platform. With an external provider the model receives the text needed to
         answer: your questions, your interview answers (capital, experience, risk appetite, goals), facts about your deployments and
         trades, market data and news headlines - never broker credentials, API keys or passwords. Nothing it produces can trade before
@@ -54,10 +57,38 @@ export default function AiProviderCard() {
           {!config.ai_features_allowed && <span className="text-amber-400">external providers need the Pro or Business plan</span>}
         </div>
       )}
-      {config?.configured && config.provider !== "rule_based" && config.models && (
-        <div className="text-xs text-muted mb-3">
-          Models: <span className="text-text">{config.models.strong}</span> writes strategies and scanner plans;{" "}
-          <span className="text-text">{config.models.fast}</span> narrates, classifies news and answers questions (set by the operator).
+      {prefs && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted">AI answer language (your account):</span>
+          <select className="rounded bg-panel2 border border-border px-2 py-1 text-xs" value={prefs.ai_language}
+                  onChange={(e) => void api.aiSavePreferences(e.target.value as "en" | "mr").then(setPrefs).catch((err) => setError(String(err)))}>
+            {prefs.languages.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+          <span className="text-muted">The dashboard stays in English; only the AI's written answers follow this.</span>
+        </div>
+      )}
+      {form.provider !== "rule_based" && config?.task_models?.[form.provider] && (
+        <div className="mb-3 overflow-x-auto">
+          {/* P0.9: the model of every task comes from the operator's settings per tier - cheap tasks on the fast model,
+              rule writing on the strong one - with the estimated cost of one typical call. */}
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-muted"><th className="py-1 font-normal">Task</th><th className="font-normal">Tier</th><th className="font-normal">Model</th><th className="text-right font-normal">≈ per call</th></tr></thead>
+            <tbody>
+              {config.task_models[form.provider].map((t) => (
+                <tr key={t.task} className="border-t border-border/50">
+                  <td className="py-1 text-slate-200">{t.label}</td>
+                  <td className="text-muted">{t.tier}</td>
+                  <td className="font-mono text-[11px] text-slate-300">{t.model}</td>
+                  <td className="text-right font-tabular text-slate-200" title={`$${t.price_per_mtok_usd.input}/$${t.price_per_mtok_usd.output} per million input/output tokens${t.estimated_price ? " (model not in the price table - most expensive row used)" : ""}`}>
+                    ₹{t.est_inr_per_call.toFixed(2)}{t.estimated_price ? "*" : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-1 text-[11px] text-muted">
+            Estimate for one typical call ({config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}); real calls are metered below. The fast and strong models are set by the operator; a model typed here replaces the strong one for this organisation.
+          </div>
         </div>
       )}
       {config?.usage && config.configured && config.provider !== "rule_based" && (
@@ -85,7 +116,7 @@ export default function AiProviderCard() {
           <select className={input} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as AiProviderName, model: "" })}>
             {(config?.providers ?? ["rule_based"]).map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
-          <input className={input} placeholder={form.provider === "rule_based" ? "rule-based" : `default: ${config?.default_models[form.provider] ?? "operator's model"}`} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
+          <input className={input} placeholder={form.provider === "rule_based" ? "rule-based" : "strong model: operator default"} value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} disabled={form.provider === "rule_based"} />
           <input className={input} type="password" autoComplete="off" placeholder={form.provider === "rule_based" ? "no key needed" : "API key (blank = keep stored)"} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} disabled={form.provider === "rule_based"} />
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> enabled</label>
@@ -100,10 +131,13 @@ export default function AiProviderCard() {
             {config.data_consent.accepted && <span className="ml-2 text-emerald-300">accepted {config.data_consent.accepted_at ? new Date(config.data_consent.accepted_at).toLocaleDateString() : ""}</span>}
           </div>
           <p className="text-slate-200">{config.data_consent.text.en}</p>
-          <p className="mt-1 text-slate-300">{config.data_consent.text.mr}</p>
+          <details className="mt-1 text-slate-300">
+            <summary className="cursor-pointer text-sky-300 hover:underline">Read in Marathi</summary>
+            <p className="mt-1" lang="mr">{config.data_consent.text.mr}</p>
+          </details>
           {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-slate-100">
             <input type="checkbox" checked={form.data_consent} onChange={(e) => setForm({ ...form, data_consent: e.target.checked })} />
-            <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider. · मी या संस्थेचा मालक आहे आणि वर नमूद उद्देशासाठी हा data निवडलेल्या provider कडे पाठवण्यास संमती देतो.</span>
+            <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider.</span>
           </label>}
         </div>
       )}

@@ -251,7 +251,8 @@ def compose(symbol: str, snapshot: dict, memory: dict, news_items: List[dict], e
     vix_row = next((c for c in memory.get("cues", []) if c.get("symbol") == "INDIA VIX"), None)
     vix = float(vix_row["last_price"]) if vix_row and vix_row.get("last_price") else None
     detail = is_index(symbol) or stock_targets
-    scen = scenarios(snapshot, lang, targets=detail)
+    # P0.9: a single stock gets no bull/base/bear price levels at all unless the operator's flag allows (indices keep them).
+    scen = scenarios(snapshot, lang, targets=detail) if detail else {}
     shadow = shadow_multiplier(agree, snapshot, vix, events)
     inputs = {"last_price": snapshot.get("last_price"), "change_pct": snapshot.get("change_pct"), "bias": snapshot.get("bias"), "regime": snapshot.get("regime"),
               "higher_regime": snapshot.get("higher_regime"), "structure": snapshot.get("structure"), "support": (snapshot.get("payload") or {}).get("support"),
@@ -277,8 +278,8 @@ def view(lang: str, thesis: dict) -> List[str]:
     word = _direction_word(lang, thesis["direction"])
     conf = thesis.get("confidence")
     if conf is not None:
-        lines = [tr(lang, f"{thesis['symbol']} data read: {word} ({conf}% confidence), {a['agreeing']} of {a['with_opinion']} factors agree.",
-                    f"{thesis['symbol']} data वाचन: {word} ({conf}% विश्वास), {a['with_opinion']} पैकी {a['agreeing']} घटक सहमत.")]
+        lines = [tr(lang, f"{thesis['symbol']} data read: {word} (model score {conf}/100 - factor agreement, not a forecast), {a['agreeing']} of {a['with_opinion']} factors agree.",
+                    f"{thesis['symbol']} data वाचन: {word} (model score {conf}/100 - घटकांची सहमती, अंदाज नाही), {a['with_opinion']} पैकी {a['agreeing']} घटक सहमत.")]
     else:
         lines = [tr(lang, f"{thesis['symbol']} data read: {word}, {a['agreeing']} of {a['with_opinion']} factors agree. This describes the data; it is not a view on what to do.",
                     f"{thesis['symbol']} data वाचन: {word}, {a['with_opinion']} पैकी {a['agreeing']} घटक सहमत. हे data चे वर्णन आहे; काय करावे याचे मत नाही.")]
@@ -289,6 +290,8 @@ def view(lang: str, thesis: dict) -> List[str]:
     for key in ("bull", "base", "bear"):
         if key in thesis["scenarios"]:
             lines.append(thesis["scenarios"][key]["text"])
+    if not thesis["scenarios"]:
+        lines.append(tr(lang, "Price scenarios for a single stock are not shown (operator setting).", "एका शेअरसाठी किंमत scenarios दाखवले जात नाहीत (operator setting)."))
     sh = thesis["shadow"]
     lines.append(tr(lang, f"Shadow overlay would size at {sh['size_multiplier']:.2f}x" + (f" ({'; '.join(sh['reasons'])})" if sh["reasons"] else "") + " - recorded, not applied.",
                     f"Shadow overlay ने size {sh['size_multiplier']:.2f}x केला असता" + (f" ({'; '.join(sh['reasons'])})" if sh["reasons"] else "") + " - फक्त नोंद, लागू नाही."))

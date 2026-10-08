@@ -118,6 +118,32 @@ class AcknowledgementBody(BaseModel):
     language: str = Field(default="en", pattern=r"^(en|mr)$")
 
 
+def _ai_language(user: User) -> str:
+    """P0.9: the language the AI answers in - the user's setting, English by default."""
+    lang = getattr(user, "ai_language", None) or "en"
+    return lang if lang in ("en", "mr") else "en"
+
+
+class PreferencesBody(BaseModel):
+    ai_language: str = Field(pattern=r"^(en|mr)$")
+
+
+@router.get("/preferences")
+async def get_preferences(user: User = Depends(get_current_user)) -> dict:
+    """The user's AI preferences. The dashboard is English; only the AI's written answers follow `ai_language`."""
+    return {"ai_language": _ai_language(user), "languages": [{"code": "en", "label": "English"}, {"code": "mr", "label": "Marathi"}]}
+
+
+@router.put("/preferences")
+async def put_preferences(body: PreferencesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    row = await session.get(User, user.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    row.ai_language = body.ai_language
+    await session.commit()
+    return {"ai_language": row.ai_language, "languages": [{"code": "en", "label": "English"}, {"code": "mr", "label": "Marathi"}]}
+
+
 @router.get("/acknowledgement")
 async def get_acknowledgement(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """P0.8-D: the current AI Copilot acknowledgement text (en/mr), its version and whether this user accepted it."""
@@ -421,7 +447,7 @@ async def delete_profile(user: User = Depends(get_current_user), session: AsyncS
 class MemoryRefreshBody(BaseModel):
     symbols: Optional[List[str]] = Field(default=None, max_length=market_memory.MAX_WATCH)
     broker: Optional[str] = Field(default=None, max_length=20)
-    language: str = Field(default="mr", pattern=r"^(en|mr)$")
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
 
 
 def _with_global(out: dict, lang: str) -> dict:
@@ -435,7 +461,7 @@ def _with_global(out: dict, lang: str) -> dict:
 
 
 @router.get("/market-memory")
-async def get_market_memory(symbol: Optional[str] = Query(default=None, max_length=50), language: str = Query(default="mr", pattern=r"^(en|mr)$"),
+async def get_market_memory(symbol: Optional[str] = Query(default=None, max_length=50), language: str = Query(default="en", pattern=r"^(en|mr)$"),
                             user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """The newest market read per watched symbol, the market cues (India VIX, index day change), the
     global cues with what they usually mean for India, and each symbol's bias over the last sessions
@@ -488,13 +514,13 @@ class AskBody(BaseModel):
 
 
 @router.get("/concepts")
-async def concepts(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
+async def concepts(language: str = Query(default="en", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
     """The guide's concept library (titles), for browsing."""
     return {"concepts": knowledge.catalogue(language)}
 
 
 @router.get("/concepts/{concept_id}")
-async def concept(concept_id: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
+async def concept(concept_id: str, language: str = Query(default="en", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
     found = knowledge.BY_ID.get(concept_id)
     if found is None:
         raise HTTPException(status_code=404, detail="No such concept")
@@ -506,7 +532,7 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     """Ask the guide: answered from the concept library and the market memory, or - with an external
     AI provider configured - by the AI grounded on the same notes, the memory and the trader's profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    lang = body.language or interview.detect_language(body.question)
+    lang = body.language or _ai_language(user)
     memory = await market_memory.latest(session, user.tenant_id)
     saved, _ = await advisor.load_profile(session, user)
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
@@ -616,7 +642,7 @@ async def _coach_review(session: AsyncSession, user: User, lang: str, days: int,
 
 
 @router.get("/brief")
-async def daily_brief(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(require_ai_acknowledged),
+async def daily_brief(language: str = Query(default="en", pattern=r"^(en|mr)$"), user: User = Depends(require_ai_acknowledged),
                       session: AsyncSession = Depends(get_session)) -> dict:
     """Today's briefing: the day type and game plan, the session, your P&L and risk budget, why each
     deployment is or is not trading, and the pre-trade checklist."""
@@ -644,7 +670,7 @@ async def thesis_report(user: User = Depends(get_current_user), session: AsyncSe
 
 
 @router.get("/thesis/{symbol}")
-async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), refresh: bool = Query(default=False),
+async def thesis_for(symbol: str, language: str = Query(default="en", pattern=r"^(en|mr)$"), refresh: bool = Query(default=False),
                      narrate: bool = Query(default=False, description="ask the organisation's own AI provider for a narrative (numbers-checked)"),
                      user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """The thesis of one watched symbol from the market memory: direction, agreement matrix, bull/base/bear
@@ -674,7 +700,7 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
 
 
 @router.get("/coach")
-async def trade_coach(language: str = Query(default="mr", pattern=r"^(en|mr)$"), days: int = Query(default=30, ge=1, le=365),
+async def trade_coach(language: str = Query(default="en", pattern=r"^(en|mr)$"), days: int = Query(default=30, ge=1, le=365),
                       mode: str = Query(default="ALL", pattern=r"^(ALL|PAPER|LIVE)$"), user: User = Depends(require_ai_acknowledged),
                       session: AsyncSession = Depends(get_session)) -> dict:
     """The trade coach: your closed trades' numbers, breakdowns and behaviour flags with fixes."""
@@ -733,7 +759,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
 async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """One box for everything - see `copilot_answer`."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    return await copilot_answer(session, user, body.message, body.language)
+    return await copilot_answer(session, user, body.message, body.language or _ai_language(user))
 
 
 # --- Phase AW the strategist: live market study -> validated strategies ----------------------------------
@@ -745,7 +771,7 @@ class StrategistBody(BaseModel):
     candles: Optional[List[OHLCVBar]] = Field(default=None, description="1-minute candles (sample mode); omitted = fetched from your broker")
     style: str = Field(default="intraday", pattern=r"^(intraday|scalping)$")
     direction: str = Field(default="auto", pattern=r"^(auto|long|short|both)$")
-    language: str = Field(default="mr", pattern=r"^(en|mr)$")
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
     # Phase BF: a plain-words request in Marathi or English ("बँक निफ्टी फक्त long scalping"); whatever it
     # names overrides the fields above, and its script sets the reply language.
     request: Optional[str] = Field(default=None, max_length=300)
@@ -754,7 +780,7 @@ class StrategistBody(BaseModel):
         if not (self.request or "").strip():
             return self, None
         parsed = strategist.parse_request(self.request, default_symbol=self.symbol)
-        update = {"language": "mr"} if parsed["language"] == "mr" else {}       # Latin-only text keeps the form's language
+        update: dict = {}      # P0.9: a Marathi request is still understood; the reply stays in the dashboard's language
         for key in ("symbol", "style", "direction"):
             if key in parsed["matched"]:
                 update[key] = parsed[key]
@@ -766,7 +792,7 @@ class StrategistBody(BaseModel):
 class StrategistParseBody(BaseModel):
     request: str = Field(min_length=1, max_length=300)
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
-    language: str = Field(default="mr", pattern=r"^(en|mr)$")
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
 
 
 async def _strategist_frames(session: AsyncSession, user: User, body: StrategistBody):
@@ -848,6 +874,7 @@ async def strategist_build(body: StrategistBody, user: User = Depends(require_ai
         await ai_settings.mark_used(session, user.tenant_id, error=None)
         await session.commit()
     result = await run_in_threadpool(strategist.build, df, study, body.language, style=body.style, direction=body.direction, risk=cfg,
+                                     real_data=str(source).startswith("broker"),
                                      extra_configs=extra)
     # P0.8 / A3: the validated candidates are held on the server; "adopt" takes a candidate id, never a config.
     now = datetime.now(timezone.utc)

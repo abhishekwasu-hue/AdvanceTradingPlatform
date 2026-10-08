@@ -3637,6 +3637,14 @@ the headlines in an untrusted block, then checks numbers and tickers with one re
 the reason in `note`; `knowledge.ai_answer` checks against the memory values, the concept notes and the question.
 Tests: `tests/test_phase_p0_8b_grounding.py`.
 
+**P0.9 (English dashboard).** `users.ai_language` + `GET/PUT /api/ai/preferences`; `/ai/ask` and `/ai/copilot` answer
+in the request's language, else the user's setting (no script detection). UI routes default to `en`. `thesis.compose`
+returns no scenarios for a non-index symbol without `thesis_stock_targets`; `market_study.study(..., stock_detail=)` the
+same. `strategist._verdict(..., real_data)` adds `sample` and `insufficient` (`MIN_OOS_TRADES = 30`); `simulate` fills a
+gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, tier, model, est. INR per call from
+`pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
+(the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
+
 **P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
 `ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the
 AI content routes, `accept()` with an audit event. `metering.MeteredProvider` also writes `llm_calls` (`log_call`,

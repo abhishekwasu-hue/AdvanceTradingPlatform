@@ -4,25 +4,31 @@ import { api } from "../api/client";
 import type { MarketStudy, OHLCVBar, StrategistRequestParsed, StrategistResult, StrategyCandidate } from "../types";
 import type { CandleSourceState } from "./DataSource";
 import { Card } from "./ui";
+import SampleStamp from "./SampleStamp";
 
 /**
- * Phase AW: the Copilot strategist. It studies the live market of a symbol (multi-timeframe trend,
- * levels, bias, scenarios), writes candidate strategies around today's levels, tunes them on the
- * earlier sessions and judges them on the later ones it never saw, and hands back the best three -
- * each ready to save as a strategy and deploy in PAPER.
+ * Phase AW: market study and rule templates. It reads a symbol's data (multi-timeframe trend, levels), tests rule
+ * templates on the earlier sessions and checks them on the later ones they never saw, and shows the results as
+ * data - each can be saved as a strategy and deployed in PAPER if the trader decides to.
+ *
+ * P0.9: English UI. Sample candles stamp every figure "SAMPLE DATA"; "held up on unseen data" needs real broker
+ * candles and 30+ unseen trades; a single stock shows no score and no price scenarios; an index's score is a model
+ * score of factor agreement, not a forecast.
  */
 const SYMBOLS = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "RELIANCE", "HDFCBANK", "INFY"];
-const VERDICT: Record<StrategyCandidate["verdict"], { mr: string; en: string; cls: string }> = {
-  robust: { mr: "नवीन data वरही टिकली", en: "Held up on unseen data", cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" },
-  overfit: { mr: "Over-fit धोका", en: "Over-fit risk", cls: "border-amber-500/50 bg-amber-500/10 text-amber-200" },
-  thin: { mr: "Trades कमी", en: "Too few trades", cls: "border-border bg-panel2 text-muted" },
-  untested: { mr: "नवीन data वर trade नाही", en: "No trades on unseen data", cls: "border-border bg-panel2 text-muted" },
-  weak: { mr: "फायदा दिसत नाही", en: "No edge", cls: "border-rose-500/50 bg-rose-500/10 text-rose-200" },
+const VERDICT: Record<string, { en: string; cls: string }> = {
+  robust: { en: "Held up on unseen data", cls: "border-emerald-500/50 bg-emerald-500/10 text-emerald-200" },
+  overfit: { en: "Over-fit risk", cls: "border-amber-500/50 bg-amber-500/10 text-amber-200" },
+  weak: { en: "No edge", cls: "border-rose-500/50 bg-rose-500/10 text-rose-200" },
+  insufficient: { en: "Insufficient sample", cls: "border-border bg-panel2 text-muted" },
+  sample: { en: "Sample data", cls: "border-amber-400/60 bg-amber-500/10 text-amber-200" },
+  thin: { en: "Insufficient sample", cls: "border-border bg-panel2 text-muted" },
+  untested: { en: "Insufficient sample", cls: "border-border bg-panel2 text-muted" },
 };
-const CHAR: Record<MarketStudy["character"], { mr: string; icon: typeof Waves; cls: string }> = {
-  TREND: { mr: "Trend चा दिवस", icon: TrendingUp, cls: "text-emerald-300" },
-  RANGE: { mr: "Range चा दिवस", icon: Waves, cls: "text-amber-200" },
-  VOLATILE: { mr: "अस्थिर दिवस", icon: Zap, cls: "text-fuchsia-300" },
+const CHAR: Record<MarketStudy["character"], { en: string; icon: typeof Waves; cls: string }> = {
+  TREND: { en: "Trending session", icon: TrendingUp, cls: "text-emerald-300" },
+  RANGE: { en: "Range-bound session", icon: Waves, cls: "text-amber-200" },
+  VOLATILE: { en: "Volatile session", icon: Zap, cls: "text-fuchsia-300" },
 };
 const fmt = (v: number | null | undefined, d = 2) => (v == null ? "-" : v.toLocaleString("en-IN", { maximumFractionDigits: d }));
 
@@ -48,7 +54,7 @@ function BiasMeter({ s }: { s: MarketStudy }) {
   const pct = Math.round(((s.bias_score + 1) / 2) * 100);
   return (
     <div>
-      <div className="mb-1 flex justify-between text-[11px] text-muted"><span>मंदी</span><span>तटस्थ</span><span>तेजी</span></div>
+      <div className="mb-1 flex justify-between text-[11px] text-muted"><span>Bearish</span><span>Neutral</span><span>Bullish</span></div>
       <div className="relative h-2 rounded-full bg-gradient-to-r from-rose-500/60 via-slate-600 to-emerald-500/60">
         <div className="absolute -top-1 h-4 w-1.5 rounded bg-white shadow" style={{ left: `calc(${Math.min(98, Math.max(1, pct))}% - 3px)` }} />
       </div>
@@ -57,23 +63,29 @@ function BiasMeter({ s }: { s: MarketStudy }) {
 }
 
 function StudyView({ s, source }: { s: MarketStudy; source: string }) {
-  const ch = CHAR[s.character];
+  const sample = !source.startsWith("broker");
+  const base = CHAR[s.character];
+  // A trending session follows the data's direction: a falling trend is not drawn with a rising, green icon.
+  const ch = s.character === "TREND" && s.bias === "BEARISH" ? { ...base, icon: TrendingDown, cls: "text-rose-300" } : base;
   const ChIcon = ch.icon;
   const biasCls = s.bias === "BULLISH" ? "text-emerald-300" : s.bias === "BEARISH" ? "text-rose-300" : "text-amber-200";
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <Card title={`Market चा अभ्यास · ${s.symbol}`}>
+      <Card title={`Market study · ${s.symbol}`}>
         <div className="flex items-baseline justify-between">
-          <div className="font-tabular text-2xl font-extrabold text-slate-50">{fmt(s.last_price)}</div>
-          <div className={`text-sm font-bold ${biasCls}`}>{s.bias === "BULLISH" ? "तेजी" : s.bias === "BEARISH" ? "मंदी" : "तटस्थ"}{s.confidence != null ? ` · ${s.confidence}%` : ""}</div>
+          <div className="font-tabular text-2xl font-extrabold text-slate-50">{fmt(s.last_price)}{sample && <span className="ml-2 align-middle text-[10px] font-bold text-amber-300">SAMPLE PRICE</span>}</div>
+          <div className={`text-right text-sm font-bold ${biasCls}`}>
+            Data read: {s.bias.toLowerCase()}
+            {s.confidence != null && <div className="text-[10px] font-normal text-muted">model score {s.confidence}/100 - factor agreement, not a forecast</div>}
+          </div>
         </div>
         <div className="my-2"><BiasMeter s={s} /></div>
-        <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${ch.cls}`}><ChIcon size={15} />{ch.mr}{s.vix != null && <span className="ml-auto text-xs text-muted">VIX {s.vix.toFixed(1)}</span>}</div>
+        <div className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${ch.cls}`}><ChIcon size={15} />{ch.en}{s.vix != null && <span className="ml-auto text-xs text-muted">VIX {s.vix.toFixed(1)}</span>}</div>
         <ul className="space-y-1 text-xs text-slate-300">{s.lines.map((l) => <li key={l}>• {l}</li>)}</ul>
         <div className="mt-2 text-[11px] text-muted">Data: {source.replace("broker:", "broker · ")}{s.atr_5m ? ` · ATR(5m) ${fmt(s.atr_5m)} (${s.atr_5m_pct}%)` : ""}</div>
       </Card>
 
-      <Card title="Timeframe नुसार trend">
+      <Card title="Trend by timeframe">
         <table className="w-full text-xs">
           <thead><tr className="text-left text-muted"><th className="py-1">TF</th><th>Trend</th><th>Regime</th><th className="text-right">RSI</th><th className="text-right">ADX</th></tr></thead>
           <tbody>
@@ -91,18 +103,19 @@ function StudyView({ s, source }: { s: MarketStudy; source: string }) {
           </tbody>
         </table>
         <div className="mt-3 space-y-1.5">
+          {s.scenarios.length === 0 && <div className="text-[11px] text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
           {s.scenarios.map((sc) => (
             <div key={sc.id} className={`rounded-lg border px-2 py-1.5 text-xs ${sc.id === "bull" ? "border-emerald-500/30 text-emerald-100" : sc.id === "bear" ? "border-rose-500/30 text-rose-100" : "border-amber-500/30 text-amber-100"}`}>{sc.text}</div>
           ))}
         </div>
       </Card>
 
-      <Card title="आजचे महत्त्वाचे भाव (levels)">
+      <Card title="Today's levels">
         <div className="space-y-0.5 text-xs">
           {(() => {
             const rows = [...s.ladder];
             const at = rows.findIndex((r) => r.price < s.last_price);
-            const priceRow = { name: "भाव आत्ता", key: "_last", price: s.last_price, distance_pct: 0 };
+            const priceRow = { name: "Last price", key: "_last", price: s.last_price, distance_pct: 0 };
             rows.splice(at === -1 ? rows.length : at, 0, priceRow);
             return rows.map((r) => (
               <div key={r.key + r.price} className={`flex items-center justify-between rounded px-2 py-0.5 ${r.key === "_last" ? "bg-purple-500/20 font-bold text-purple-100" : "text-slate-300"}`}>
@@ -129,22 +142,21 @@ function Metrics({ label, m }: { label: string; m: StrategyCandidate["in_sample"
   );
 }
 
-function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: StrategyCandidate; best: boolean; symbol: string; onAdopted: (msg: string) => void; lang?: "en" | "mr" }) {
-  const L = (mr: string, en: string) => (lang === "mr" ? mr : en);
+function CandidateCard({ c, symbol, sample, onAdopted }: { c: StrategyCandidate; symbol: string; sample: boolean; onAdopted: (msg: string) => void }) {
   const [showTechnical, setShowTechnical] = useState(false);
   const [saved, setSaved] = useState<{ strategy_id: string; deployment: Parameters<typeof api.createDeployment>[0] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // P0.8 / A3: the human confirms the maximum loss per trade before the server saves the candidate as a strategy.
   const [acceptRisk, setAcceptRisk] = useState(false);
-  const v = VERDICT[c.verdict];
+  const v = VERDICT[c.verdict] ?? VERDICT.insufficient;
   async function adopt() {
-    if (c.candidate_id == null) { setError(L("हा उमेदवार server वर नाही - पुन्हा build करा.", "This candidate is not on the server - build again.")); return; }
+    if (c.candidate_id == null) { setError("This candidate is not on the server - run the study again."); return; }
     setBusy(true); setError(null);
     try {
       const r = await api.aiStrategistAdopt(c.candidate_id, `${c.name} · ${symbol}`, acceptRisk);
       setSaved(r);
-      onAdopted(L(`"${r.name}" तुमच्या strategies मध्ये जतन झाली (${r.strategy_id}).`, `"${r.name}" saved to your strategies (${r.strategy_id}).`));
+      onAdopted(`"${r.name}" saved to your strategies (${r.strategy_id}).`);
     } catch (e) { setError(String(e).replace(/^Error:\s*/, "")); } finally { setBusy(false); }
   }
   async function deploy() {
@@ -152,16 +164,16 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
     setBusy(true); setError(null);
     try {
       const d = await api.createDeployment(saved.deployment);
-      onAdopted(`PAPER deployment #${d.id} सुरू झाले - Autopilot page वर पाहा. LIVE फक्त Go-Live checklist नंतर.`);
+      onAdopted(`PAPER deployment #${d.id} started - see the Autopilot page. LIVE only after the Go-Live checklist.`);
     } catch (e) { setError(String(e).replace(/^Error:\s*/, "")); } finally { setBusy(false); }
   }
   return (
     <div className="rounded-xl border border-border bg-panel p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-base font-extrabold text-slate-50">{c.name}</span>
-        <span className={`rounded border px-1.5 py-0.5 text-[11px] ${c.direction === "LONG" ? "border-emerald-500/40 text-emerald-300" : c.direction === "SHORT" ? "border-rose-500/40 text-rose-300" : "border-border text-slate-300"}`}>{c.direction_text ?? (c.direction === "LONG" ? L("फक्त LONG", "LONG only") : c.direction === "SHORT" ? L("फक्त SHORT", "SHORT only") : L("दोन्ही बाजू", "both sides"))}</span>
-        <span className="text-[11px] text-muted">{c.timeframe_text ?? c.timeframe}{c.source === "ai" ? L(" · AI ने सुचवलेली", " · proposed by your AI") : ""}</span>
-        <span className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] ${v.cls}`}>{lang === "mr" ? v.mr : v.en}</span>
+        <span className={`rounded border px-1.5 py-0.5 text-[11px] ${c.direction === "LONG" ? "border-emerald-500/40 text-emerald-300" : c.direction === "SHORT" ? "border-rose-500/40 text-rose-300" : "border-border text-slate-300"}`}>{c.direction_text ?? (c.direction === "LONG" ? "LONG only" : c.direction === "SHORT" ? "SHORT only" : "both sides")}</span>
+        <span className="text-[11px] text-muted">{c.timeframe_text ?? c.timeframe}{c.source === "ai" ? " · proposed by your AI" : ""}</span>
+        <span className={`ml-auto rounded border px-1.5 py-0.5 text-[11px] ${v.cls}`} title={c.verdict_text}>{v.en}</span>
       </div>
       <p className="mt-1.5 text-xs text-slate-300">{c.why}</p>
 
@@ -169,7 +181,7 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
         <div className="space-y-1.5 text-xs">
           {(["long", "short"] as const).map((side) => c.rules[side].length > 0 && (
             <div key={side}>
-              <div className={`mb-0.5 font-semibold ${side === "long" ? "text-emerald-300" : "text-rose-300"}`}>{side === "long" ? L("LONG जेव्हा", "LONG when") : L("SHORT जेव्हा", "SHORT when")}</div>
+              <div className={`mb-0.5 font-semibold ${side === "long" ? "text-emerald-300" : "text-rose-300"}`}>{side === "long" ? "LONG when" : "SHORT when"}</div>
               {showTechnical || !c.rules_text ? (
                 <div className="flex flex-wrap gap-1">{c.rules[side].map((r) => <span key={r} className="rounded border border-border bg-panel2/70 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">{r}</span>)}</div>
               ) : (
@@ -177,31 +189,34 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
               )}
             </div>
           ))}
-          {c.rules_text && <button onClick={() => setShowTechnical((v) => !v)} className="text-[11px] text-sky-300 hover:underline">{showTechnical ? L("शब्दांत दाखवा", "Show in words") : L("तांत्रिक नियम दाखवा", "Show technical rules")}</button>}
+          {c.rules_text && <button onClick={() => setShowTechnical((v) => !v)} className="text-[11px] text-sky-300 hover:underline">{showTechnical ? "Show in words" : "Show technical rules"}</button>}
           <div className="text-slate-300"><Target size={12} className="mr-1 inline text-sky-300" />{c.exits}</div>
           {c.triggers.length > 0 && (
-            <div className="text-slate-300"><Crosshair size={12} className="mr-1 inline text-amber-300" />{L("आजचे trigger", "Today's triggers")}: {c.triggers.map((t) => `${t.name} ${fmt(t.price)}`).join(" · ")}</div>
+            <div className="text-slate-300"><Crosshair size={12} className="mr-1 inline text-amber-300" />Today's triggers: {c.triggers.map((t) => `${t.name} ${fmt(t.price)}`).join(" · ")}</div>
           )}
           <div className="text-slate-300">
-            {L("Risk प्रति trade", "Risk per trade")}: <b>₹{fmt(c.risk_amount, 0)}</b>{c.stop_points ? <> · stop ≈ {fmt(c.stop_points)} points{c.quantity_hint ? <> · {L("सुमारे", "about")} {c.quantity_hint} qty</> : null}</> : null}
+            Risk per trade: <b>₹{fmt(c.risk_amount, 0)}</b>{c.stop_points ? <> · stop ≈ {fmt(c.stop_points)} points{c.quantity_hint ? <> · about {c.quantity_hint} qty</> : null}</> : null}
           </div>
         </div>
-        <div>
+        <div className="relative">
+          <div className={sample ? "select-none blur-sm" : ""} aria-hidden={sample}>
           <table className="w-full text-xs">
-            <thead><tr className="text-muted"><th className="text-left font-normal">{L("तपासणी", "Check")}</th><th className="text-right font-normal">Trades</th><th className="text-right font-normal">Win</th><th className="text-right font-normal">{L("अपेक्षित", "Expectancy")}</th><th className="text-right font-normal">PF</th></tr></thead>
+            <thead><tr className="text-muted"><th className="text-left font-normal">Check</th><th className="text-right font-normal">Trades</th><th className="text-right font-normal">Win</th><th className="text-right font-normal">Expectancy</th><th className="text-right font-normal">PF</th></tr></thead>
             <tbody>
-              <Metrics label={L("Tune केलेली सत्रे", "Tuning sessions")} m={c.in_sample} />
-              <Metrics label={L("नवीन सत्रे (कधी न पाहिलेली)", "Unseen sessions")} m={c.out_of_sample} />
+              <Metrics label="Tuning sessions" m={c.in_sample} />
+              <Metrics label="Unseen sessions" m={c.out_of_sample} />
             </tbody>
           </table>
           <div className="mt-1.5 text-[11px] text-slate-400">{c.verdict_text}</div>
           {c.trades.length > 0 && (
-            <div className="mt-2 flex h-8 items-end gap-px" title="प्रत्येक trade चा निकाल (R)">
+            <div className="mt-2 flex h-8 items-end gap-px" title="Each trade's result (R)">
               {c.trades.slice(-40).map((t, i) => (
                 <div key={i} className={`w-1.5 rounded-sm ${t.r > 0 ? "bg-emerald-400/80" : "bg-rose-400/80"}`} style={{ height: `${Math.min(100, Math.max(8, Math.abs(t.r) * 30))}%` }} title={`${t.date} ${t.dir} ${t.r > 0 ? "+" : ""}${t.r}R (${t.reason})`} />
               ))}
             </div>
           )}
+          </div>
+          {sample && <SampleStamp />}
         </div>
       </div>
 
@@ -210,17 +225,17 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
           <>
             <label className="flex items-center gap-1.5 text-[11px] text-slate-200">
               <input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              {L(`मी प्रति trade जास्तीत जास्त ₹${fmt(c.risk_amount, 0)} तोटा स्वीकारतो/स्वीकारते (नियम वाचले)`, `I accept a maximum loss of about ₹${fmt(c.risk_amount, 0)} per trade (I read the rules)`)}
+              I accept a maximum loss of about ₹{fmt(c.risk_amount, 0)} per trade (I read the rules)
             </label>
             <button disabled={busy || !acceptRisk} onClick={() => void adopt()} className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-              {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}{L("Strategy म्हणून जतन करा", "Save as a strategy")}
+              {busy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : <Save size={12} className="mr-1 inline" />}Save as a strategy
             </button>
           </>
         ) : (
           <>
-            <span className="text-xs text-emerald-300"><CheckCircle2 size={13} className="mr-1 inline" />{L("जतन झाली", "Saved")}: {saved.strategy_id}</span>
+            <span className="text-xs text-emerald-300"><CheckCircle2 size={13} className="mr-1 inline" />Saved: {saved.strategy_id}</span>
             <button disabled={busy} onClick={() => void deploy()} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-              <Rocket size={12} className="mr-1 inline" />{L("PAPER मध्ये deploy करा", "Deploy in PAPER")}
+              <Rocket size={12} className="mr-1 inline" />Deploy in PAPER
             </button>
           </>
         )}
@@ -230,7 +245,7 @@ function CandidateCard({ c, best, symbol, onAdopted, lang = "mr" }: { c: Strateg
   );
 }
 
-export default function StrategistPanel({ source, lang }: { source: CandleSourceState; lang: "en" | "mr" }) {
+export default function StrategistPanel({ source }: { source: CandleSourceState }) {
   const [symbol, setSymbol] = useState("NIFTY 50");
   const [style, setStyle] = useState<"intraday" | "scalping">("intraday");
   const [direction, setDirection] = useState<"long" | "short" | "both">("both");   // P0.8-D: the trader names the side; the market does not
@@ -238,17 +253,16 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StrategistResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  // Phase BF: a plain-words request ("बँक निफ्टी फक्त long scalping") the backend parses; the chips show what it understood.
+  // Phase BF: a plain-words request (English or Marathi) the backend parses; the chips show what it understood.
   const [requestText, setRequestText] = useState("");
   const [parsed, setParsed] = useState<StrategistRequestParsed | null>(null);
-  const L = (mr: string, en: string) => (lang === "mr" ? mr : en);
 
   useEffect(() => {
     const text = requestText.trim();
     if (!text) { setParsed(null); return; }
     let active = true;
     const handle = setTimeout(() => {
-      api.aiStrategistParse(text, symbol, lang).then((p) => {
+      api.aiStrategistParse(text, symbol, "en").then((p) => {
         if (!active) return;                       // a newer request or a cleared box wins
         setParsed(p);
         if (p.matched.symbol) setSymbol(p.symbol);
@@ -268,10 +282,9 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         const r = await source.fetch([sym], "1min", { count: 375 * 12, startPriceFor: () => (sym.includes("BANK") ? 52_000 : sym.includes("NIFTY") ? 24_500 : 1_500), seedFor: () => 7 });
         candles = sessionize(r.candles[sym] ?? []);
       }
-      // The parse already filled the form, so the form (which the trader may have corrected by hand) is what runs;
-      // only the detected script travels along so a Marathi request is answered in Marathi.
+      // The parse already filled the form, so the form (which the trader may have corrected by hand) is what runs.
       setResult(await api.aiStrategistBuild({ symbol: sym, candles, broker: source.mode === "broker" ? source.broker || undefined : undefined, style, direction,
-                                              language: parsed?.matched.language === "mr" ? "mr" : lang }));
+                                              language: "en" }));
     } catch (e) {
       const text = String(e).replace(/^Error:\s*/, "");
       const m = text.match(/\{.*\}/s);
@@ -287,13 +300,13 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
         <div className="mb-3 flex items-center gap-2">
           <div className="rounded-lg bg-purple-500/20 p-1.5"><ScanSearch size={18} className="text-purple-200" /></div>
           <div>
-            <div className="text-sm font-extrabold text-slate-50">Live market चा अभ्यास करून strategy बनवा</div>
-            <div className="text-[11px] text-muted">Copilot अनेक timeframes वरचा trend, आजचे levels आणि scenarios वाचतो, आजच्या market साठी strategies लिहितो, त्या मागच्या सत्रांवर tune करतो आणि कधीही न पाहिलेल्या सत्रांवर तपासतो.</div>
+            <div className="text-sm font-extrabold text-slate-50">Market study and rule templates</div>
+            <div className="text-[11px] text-muted">Reads the trend on several timeframes and today's levels, tests rule templates on earlier sessions and checks them on later ones they never saw. It explains rules and data; decisions are yours.</div>
           </div>
         </div>
         <label className="mb-3 block text-xs text-muted">
-          <span className="flex items-center gap-1"><MessageSquareText size={12} />{L("शब्दांत सांगा (मराठी किंवा English)", "Say it in words (Marathi or English)")}</span>
-          <input value={requestText} onChange={(e) => setRequestText(e.target.value)} placeholder={L("उदा. बँक निफ्टी फक्त long scalping (नकार समजत नाही - खाली तपासा)", "e.g. Bank Nifty long only scalping (no negations - check the fields below)")}
+          <span className="flex items-center gap-1"><MessageSquareText size={12} />Describe it in words</span>
+          <input value={requestText} onChange={(e) => setRequestText(e.target.value)} placeholder="e.g. Bank Nifty long only scalping (no negations - check the fields below)"
                  className="mt-0.5 block w-full rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100" />
           {parsed && (
             <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px]">
@@ -309,25 +322,25 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
           <div className="flex flex-wrap gap-1">
             {SYMBOLS.map((s) => <button key={s} onClick={() => setSymbol(s)} className={`rounded-full border px-2 py-0.5 text-[11px] ${symbol === s ? "border-purple-400/60 bg-purple-500/20 text-purple-100" : "border-border text-muted hover:text-slate-200"}`}>{s}</button>)}
           </div>
-          <label className="text-xs text-muted">पद्धत
+          <label className="text-xs text-muted">Style
             <select value={style} onChange={(e) => setStyle(e.target.value as "intraday" | "scalping")} className="mt-0.5 block rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100">
-              <option value="intraday">Intraday (5 मिनिट, 15 मिनिट filter)</option>
-              <option value="scalping">Scalping (1 मिनिट, 5 मिनिट filter)</option>
+              <option value="intraday">Intraday (5 min, 15 min filter)</option>
+              <option value="scalping">Scalping (1 min, 5 min filter)</option>
             </select>
           </label>
-          <label className="text-xs text-muted">दिशा
+          <label className="text-xs text-muted">Side
             <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)} className="mt-0.5 block rounded-lg border border-border bg-panel2 px-2 py-1.5 text-sm text-slate-100">
-              <option value="long">फक्त LONG</option>
-              <option value="short">फक्त SHORT</option>
-              <option value="both">दोन्ही बाजू</option>
+              <option value="long">LONG only</option>
+              <option value="short">SHORT only</option>
+              <option value="both">Both sides</option>
             </select>
           </label>
           <button disabled={busy || !symbol.trim()} onClick={() => void run()} className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-            {busy ? <Loader2 size={14} className="mr-1 inline animate-spin" /> : <Layers size={14} className="mr-1 inline" />}{busy ? "अभ्यास चालू आहे…" : "अभ्यास करा आणि strategy बनवा"}
+            {busy ? <Loader2 size={14} className="mr-1 inline animate-spin" /> : <Layers size={14} className="mr-1 inline" />}{busy ? "Studying…" : "Study the market and test templates"}
           </button>
         </div>
         {source.mode === "sample" && (
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-300"><FlaskConical size={12} />सध्या sample data - आजच्या खऱ्या market साठी वर Data मध्ये "Broker candles" निवडा.</div>
+          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-300"><FlaskConical size={12} />SAMPLE data - every figure below is stamped; choose "Broker candles" under Data for the real market.</div>
         )}
         {error && <div className="mt-2 flex items-center gap-1.5 text-xs text-danger"><CircleAlert size={13} />{error}</div>}
       </div>
@@ -335,14 +348,14 @@ export default function StrategistPanel({ source, lang }: { source: CandleSource
       {result && (
         <>
           <StudyView s={result.study} source={result.data_source} />
-          <Card title={`आजच्या market साठी strategies (${result.tested} तपासल्या${result.ai_candidates ? `, त्यात ${result.ai_candidates} AI च्या` : ""})`}>
+          <Card title={`Rule templates tested on this data (${result.tested}${result.ai_candidates ? `, ${result.ai_candidates} from your AI` : ""})`}>
             <ul className="mb-3 space-y-0.5 text-xs text-muted">{result.notes.map((n) => <li key={n}>• {n}</li>)}</ul>
             {message && <div className="mb-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">{message}</div>}
             <div className="space-y-3">
-              {result.candidates.map((c) => <CandidateCard key={c.id + c.direction} c={c} best={c.id === result.best} symbol={result.study.symbol} onAdopted={setMessage} lang={result.language ?? lang} />)}
-              {result.candidates.length === 0 && <div className="text-sm text-muted">या candles वर कोणतीही strategy trade घेत नाही - आज थांबणे हाच निर्णय.</div>}
+              {result.candidates.map((c) => <CandidateCard key={c.id + c.direction} c={c} symbol={result.study.symbol} sample={!result.data_source.startsWith("broker")} onAdopted={setMessage} />)}
+              {result.candidates.length === 0 && <div className="text-sm text-muted">No template takes a trade on these candles.</div>}
             </div>
-            <div className="mt-3 text-[11px] text-muted">चाचणी: प्रत्येक strategy एका वेळी एक position, signal च्या candle च्या close ला entry, आधी stop (pessimistic), खर्च 0.03%, 15:15 ला सगळे बंद. मागचे निकाल भविष्याची हमी नाहीत; आधी PAPER, मग Go-Live checklist नंतरच LIVE.</div>
+            <div className="mt-3 text-[11px] text-muted">Test: one position at a time, entry at the signal candle's close, the stop first (pessimistic; a gap through the stop fills at the open), costs 0.03%, flat by 15:15. "Held up on unseen data" needs real broker candles and 30+ trades on the unseen sessions. Past results do not predict the future; PAPER first, LIVE only after the Go-Live checklist.</div>
           </Card>
         </>
       )}

@@ -472,6 +472,30 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P0.9: English-only dashboard, compliance round 2, data fixes (after the P0.8 screenshot review)
+- A English UI: the Marathi toggle is gone; the Copilot (all tabs), the Coach & Guide page, the acknowledgement, the
+  data consent and Settings are English. The only Devanagari in the frontend is `src/i18n/interviewSecondary.ts`
+  (muted lines under the interview's own prompts); interview questions and answer chips show the server's English
+  text with a small muted Marathi line. The acknowledgement and the data consent have a closed "Read in Marathi".
+  `frontend/scripts/check-devanagari.mjs` runs in CI (`npm run check:devanagari`). AI answers (Copilot chat, guide)
+  follow the new per-user `users.ai_language` (migration `a1c3e5f7b9d2`, default `en`; `GET/PUT /api/ai/preferences`;
+  Settings > AI provider). UI routes default to English; a Marathi strategist request is understood, answered in English.
+- B persona "explains rules and data; decisions are yours". Interview: nothing pre-selected or highlighted - a
+  template's details appear only after "Choose this"; no "Built from your own answers", no "Your trading plan ·
+  BULLISH", no "Overall bias" line, no "the plan follows the market" warning. A single stock gets no bull/base/bear
+  price levels and no score (thesis and strategist study) unless `thesis_stock_targets` is on; an index's score reads
+  "model score N/100 - factor agreement, not a forecast". Sample data: the strategist's figures and the interview's
+  backtest section are blurred under a "SAMPLE DATA - not real performance" stamp, the price is tagged SAMPLE PRICE;
+  "Held up on unseen data" needs real broker candles and 30+ trades on the unseen sessions (`MIN_OOS_TRADES`),
+  otherwise "Insufficient sample" (or "Sample data").
+- C the two breakout templates' identical 0% / -1.02R came from the frontend sample series (a 40-bar sine of 1.5% plus
+  a 25% drift, which also carried NIFTY to 30,713): every breakout reversed on schedule and lost exactly 1R + costs.
+  The sample is now a seeded random walk near its start price. Real bug found on the way: a bar opening beyond the
+  stop filled at the stop - it now fills at the open (`strategist.simulate`). Market memory older than three worker
+  intervals is labelled STALE and dimmed. The AI provider card lists every task with its tier, model (operator env per
+  tier, tenant model for the strong tier) and an estimated INR cost per typical call; no hard-coded default model.
+- Tests: `tests/test_phase_p0_9_english_ui.py` (7); guide/copilot/strategist/compliance tests follow the new rules.
+
 ### 2026-10-07 - P0.8-D: compliance (SEBI / DPDP) of the AI Copilot (D1-D5)
 - D1 interview: three risk settings on **templates you choose** - no "Recommended/शिफारस", no "Three options for you",
   no match % ("matches you", "Closest to you", match history), no best option; the plan says "Template shown first ...

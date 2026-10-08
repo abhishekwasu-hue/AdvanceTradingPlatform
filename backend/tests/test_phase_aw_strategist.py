@@ -95,7 +95,8 @@ def test_strategist_builds_validated_candidates():
     assert out["sides"] == ["long"] and out["base_timeframe"] == "5min" and out["tested"] >= 3 and out["best"] is None
     best = out["candidates"][0]
     assert best["direction"] == "LONG" and not best["rules"]["short"] and best["triggers"] == []
-    assert best["all"]["trades"] > 0 and best["verdict"] in ("robust", "overfit", "weak", "untested", "thin")
+    # P0.9: a judgement needs real candles and 30+ unseen trades; this short fixture is an "insufficient sample".
+    assert best["all"]["trades"] > 0 and best["verdict"] in ("robust", "overfit", "weak", "insufficient")
     assert best["in_sample"]["trades"] + best["out_of_sample"]["trades"] <= best["all"]["trades"] + 1
     assert best["risk_amount"] == 500.0 and best["stop_points"] > 0
     CustomStrategyConfig.model_validate(best["config"])

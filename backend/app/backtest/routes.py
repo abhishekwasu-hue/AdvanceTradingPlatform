@@ -298,6 +298,9 @@ class OptimizeBody(BaseModel):
     metric: str = Field(default="net_pnl", pattern=r"^(net_pnl|expectancy|profit_factor|win_rate)$")
     split: float = Field(default=0.7, ge=0.5, le=0.9)
     risk_config: Optional[RiskConfig] = None
+    # Trade port (data_policy): bars from here on are the sealed holdout - dropped before the search (default: the
+    # operator's BACKTEST_HOLDOUT_START, unset = none).
+    holdout_start: Optional[datetime] = None
 
 
 @router.post("/api/backtest/optimize")
@@ -310,6 +313,7 @@ async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current
                                             candles=body.candles, risk_config=body.risk_config), user, session)
     try:
         return await run_in_threadpool(optimize, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe,
-                                       body.risk_config or RiskConfig(), body.param_grid, metric=body.metric, split=body.split)
+                                       body.risk_config or RiskConfig(), body.param_grid, metric=body.metric, split=body.split,
+                                       holdout_start=body.holdout_start)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -440,3 +440,25 @@ def test_strength_features_and_score():
     early = LS.strength_features(zone, df, 15)                                          # the zone did not exist at bar 15
     assert not early["origin_known"] and early["departure_mr"] is None
     assert LS.round_distance(24_950, "NIFTY") == 50 and LS.round_distance(51_250, "BANKNIFTY") == 250
+
+
+# --- API (chart annotations) ----------------------------------------------------------------------------------------------
+def test_reversal_endpoints_validate_settings_and_return_plain_json():
+    from tests.test_auth_api import _register, client
+    token = _register("pa-reversal@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    bars = []
+    t0 = pd.Timestamp("2026-10-05 09:15")
+    closes = [110, 108, 106, 104, 102, 101, 100.5, 100.2, 103, 104.5]
+    for i, c in enumerate(closes):
+        o = closes[i - 1] if i else c
+        bars.append({"timestamp": (t0 + pd.Timedelta(minutes=15 * i)).isoformat(), "open": o, "high": max(o, c) + 0.3,
+                     "low": min(o, c) - (2.5 if i == 8 else 0.3), "close": c, "volume": 1000})
+    r = client.post("/api/price-action/reversal", json={"candles": bars, "level": 100.0, "direction": "BULLISH"}, headers=headers)
+    assert r.status_code == 200 and set(r.json()) >= {"valid", "score", "parts", "reason", "label"}
+    bad = client.post("/api/price-action/reversal", json={"candles": bars, "level": 100.0, "direction": "BULLISH",
+                                                          "settings": {"nope": 1}}, headers=headers)
+    assert bad.status_code == 400 and "unknown setting" in bad.json()["detail"]
+    m = client.post("/api/price-action/reversal-markers", json={"candles": bars, "levels": [100.0]}, headers=headers)
+    assert m.status_code == 200 and isinstance(m.json(), list)
+    assert client.post("/api/price-action/reversal", json={"candles": bars, "level": 100.0, "direction": "UP"}, headers=headers).status_code == 422

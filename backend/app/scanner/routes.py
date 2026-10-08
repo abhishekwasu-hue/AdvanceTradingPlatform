@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.compliance_terms import ai_acknowledged
 from app.auth.dependencies import require_trader
 from app.db.models import Tenant, User
 from app.db.session import get_session
@@ -37,14 +38,16 @@ class ReadBody(BaseModel):
 
 
 @router.post("/plan", response_model=scanner_ai.ScanPlan)
-async def plan(body: PlanBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> scanner_ai.ScanPlan:
+async def plan(body: PlanBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+              _ack: None = Depends(ai_acknowledged)) -> scanner_ai.ScanPlan:
     await require_flag(session, "ai_copilot", user.tenant_id)
     tenant: Optional[Tenant] = await session.get(Tenant, user.tenant_id)
     return await scanner_ai.plan_scan(session, tenant, user, body.text, language=body.language)
 
 
 @router.post("/read", response_model=scanner_ai.ScanRead)
-async def read(body: ReadBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> scanner_ai.ScanRead:
+async def read(body: ReadBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+              _ack: None = Depends(ai_acknowledged)) -> scanner_ai.ScanRead:
     await require_flag(session, "ai_copilot", user.tenant_id)
     tenant: Optional[Tenant] = await session.get(Tenant, user.tenant_id)
     return await scanner_ai.read_scan(session, tenant, user, body.request, body.result, language=body.language)

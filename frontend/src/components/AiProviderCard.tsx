@@ -12,7 +12,7 @@ const input = "w-full rounded bg-panel2 border border-border px-2 py-1 text-xs";
 export default function AiProviderCard() {
   const { user } = useAuth();
   const [config, setConfig] = useState<AiProviderConfig | null>(null);
-  const [form, setForm] = useState({ provider: "rule_based" as AiProviderName, model: "", api_key: "", enabled: true });
+  const [form, setForm] = useState({ provider: "rule_based" as AiProviderName, model: "", api_key: "", enabled: true, data_consent: false });
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,8 +40,10 @@ export default function AiProviderCard() {
       <p className="text-xs text-muted mb-3">
         Powers the AI Copilot's strategy generator and the wording of monitoring proposals. Claude (Anthropic) is the recommended
         provider: paste an Anthropic API key from console.anthropic.com. Without a key (or on the Free plan) everything falls back to the
-        built-in rule-based parser - no data leaves the platform. The model only ever receives the text
-        you type; it never sees broker credentials, and nothing it produces can trade before you backtest and approve it.
+        built-in rule-based parser - no data leaves the platform. With an external provider the model receives the text needed to
+        answer: your questions, your interview answers (capital, experience, risk appetite, goals), facts about your deployments and
+        trades, market data and news headlines - never broker credentials, API keys or passwords. Nothing it produces can trade before
+        you backtest and approve it, and it gives no investment advice.
       </p>
       {config && (
         <div className="text-xs mb-3 flex flex-wrap gap-3">
@@ -87,9 +89,22 @@ export default function AiProviderCard() {
           <input className={input} type="password" autoComplete="off" placeholder={form.provider === "rule_based" ? "no key needed" : "API key (blank = keep stored)"} value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} disabled={form.provider === "rule_based"} />
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1 text-xs text-muted"><input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} /> enabled</label>
-            <button disabled={busy} onClick={() => run("AI provider saved.", () => api.aiSaveProvider({ provider: form.provider, model: form.model || null, api_key: form.api_key || null, enabled: form.enabled }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
+            <button disabled={busy || (form.provider !== "rule_based" && !form.data_consent && !config?.data_consent?.accepted)} onClick={() => run("AI provider saved.", () => api.aiSaveProvider({ provider: form.provider, model: form.model || null, api_key: form.api_key || null, enabled: form.enabled, data_consent: form.data_consent, language: "en" }))} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
             {config?.configured && <button disabled={busy} onClick={() => run("AI provider removed.", () => api.aiDeleteProvider())} className="text-xs text-danger hover:underline">Remove</button>}
           </div>
+        </div>
+      )}
+      {isOwner && form.provider !== "rule_based" && config?.data_consent && (
+        <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+          <div className="font-semibold text-amber-200 mb-1">Data-sharing consent (DPDP) · version {config.data_consent.version}
+            {config.data_consent.accepted && <span className="ml-2 text-emerald-300">accepted {config.data_consent.accepted_at ? new Date(config.data_consent.accepted_at).toLocaleDateString() : ""}</span>}
+          </div>
+          <p className="text-slate-200">{config.data_consent.text.en}</p>
+          <p className="mt-1 text-slate-300">{config.data_consent.text.mr}</p>
+          {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-slate-100">
+            <input type="checkbox" checked={form.data_consent} onChange={(e) => setForm({ ...form, data_consent: e.target.checked })} />
+            <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider. · मी या संस्थेचा मालक आहे आणि वर नमूद उद्देशासाठी हा data निवडलेल्या provider कडे पाठवण्यास संमती देतो.</span>
+          </label>}
         </div>
       )}
       {error && <div className="mt-3 text-sm text-danger">{error}</div>}

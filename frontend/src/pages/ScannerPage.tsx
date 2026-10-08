@@ -325,7 +325,7 @@ export default function ScannerPage() {
               <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-xs text-slate-200 disabled:opacity-50">
                 {aiBusy ? "Reading…" : "AI read of these matches"}
               </button>
-              <span className="text-[11px] text-muted">Ranks the matches from the labels and the regime the platform reads; analysis, never an order.</span>
+              <span className="text-[11px] text-muted">Describes each match: the filters it cleared and the regime the platform reads. Not a ranking or advice, never an order.</span>
             </div>
           )}
           {aiRead && (
@@ -333,7 +333,7 @@ export default function ScannerPage() {
               <div className="text-slate-200">{aiRead.summary} <span className="text-muted">· {aiRead.provider}{aiRead.model ? `/${aiRead.model}` : ""}</span></div>
               {aiRead.ranked.map((r) => (
                 <div key={r.symbol} className="rounded border border-border/60 p-2">
-                  <div className="flex items-center justify-between"><span className="font-bold text-slate-200">{r.symbol} <span className="text-muted font-normal">· regime {r.regime ?? "?"}</span></span><span className={`font-bold ${r.score >= 70 ? "text-accent" : r.score >= 50 ? "text-slate-200" : "text-danger"}`}>{r.score}</span></div>
+                  <div className="flex items-center justify-between"><span className="font-bold text-slate-200">{r.symbol} <span className="text-muted font-normal">· regime {r.regime ?? "?"}</span></span>{r.score != null && <span className={`font-bold ${r.score >= 70 ? "text-accent" : r.score >= 50 ? "text-slate-200" : "text-danger"}`}>{r.score}</span>}</div>
                   <div className="text-slate-300 mt-0.5">{r.thesis}</div>
                   {r.risks && <div className="text-amber-300 mt-0.5">Risks: {r.risks}</div>}
                   <div className="text-muted mt-0.5">Next: {r.next_step}</div>

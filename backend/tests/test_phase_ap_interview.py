@@ -52,7 +52,7 @@ def test_prefill_reads_what_the_trader_already_said():
 
 def test_risk_plan_caps_a_beginner_and_keeps_two_losses_inside_the_day():
     cfg, notes = iv.risk_plan(iv.InterviewAnswers(experience="new", risk="aggressive", daily_loss=3, capital=200_000))
-    assert cfg.risk_per_trade_pct == 0.5 and cfg.capital == 50_000          # 25% allocation for a beginner
+    assert cfg.risk_per_trade_pct == 0.5 and cfg.capital == 200_000         # P0.8-D: the entered capital - no allocation advice
     assert cfg.max_daily_loss_pct == 1.5 and cfg.max_open_positions == 1 and cfg.max_consecutive_losses == 2
     assert notes
     cfg, _ = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=1))
@@ -117,7 +117,7 @@ def test_plan_endpoint_end_to_end_in_english():
         "base_timeframe": "5min", "candles": candles, "data_source": "broker:upstox"})
     assert r.status_code == 200, r.text
     plan = r.json()
-    assert plan["language"] == "en" and plan["risk_config"]["capital"] == 150_000 and plan["risk_config"]["risk_per_trade_pct"] == 1.0
+    assert plan["language"] == "en" and plan["risk_config"]["capital"] == 300_000 and plan["risk_config"]["risk_per_trade_pct"] == 1.0
     assert plan["deployment"]["strategy_id"] == plan["recommended"]["strategy_id"]
     assert not any("SAMPLE" in w for w in plan["warnings"])
     assert client.post("/api/ai/interview/plan", headers=headers, json={"answers": {}, "base_timeframe": "day", "candles": candles}).status_code == 400

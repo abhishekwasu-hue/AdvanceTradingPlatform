@@ -409,7 +409,7 @@ def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
         if pattern.search(low):
             style, matched["style"] = name, name
             break
-    direction = "auto"
+    direction = "both"
     for pattern, name in DIRECTION_REQUEST_WORDS:
         if pattern.search(low):
             direction, matched["direction"] = name, name
@@ -419,7 +419,7 @@ def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
 
 def request_summary(lang: str, parsed: dict) -> str:
     style_en, style_mr = ("scalping (1-minute, 5-minute filter)", "scalping (1 मिनिट, 5 मिनिट filter)") if parsed["style"] == "scalping" else ("intraday (5-minute, 15-minute filter)", "intraday (5 मिनिट, 15 मिनिट filter)")
-    direction = {"long": ("LONG only", "फक्त LONG"), "short": ("SHORT only", "फक्त SHORT"), "both": ("both sides", "दोन्ही बाजू"), "auto": ("direction from the market's bias", "दिशा market च्या bias नुसार")}[parsed["direction"]]
+    direction = {"long": ("LONG only", "फक्त LONG"), "short": ("SHORT only", "फक्त SHORT"), "both": ("both sides", "दोन्ही बाजू"), "auto": ("both sides", "दोन्ही बाजू")}[parsed["direction"]]
     return tr(lang, f"Understood: {parsed['symbol']}, {style_en}, {direction[0]}.", f"समजले: {parsed['symbol']}, {style_mr}, {direction[1]}.")
 
 
@@ -432,12 +432,9 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> 
     stop_pts = round((atr_pts or 0) * cfg.stop_loss_atr_mult, 2) if atr_pts else None
     risk_amount = round(risk.capital * risk.risk_per_trade_pct / 100.0, 2)
     qty = int(risk_amount // stop_pts) if stop_pts else None
-    lv = study["levels"]
-    triggers = []
-    for key, label_en, label_mr in (("or_high", "Opening-range high", "Opening range high"), ("or_low", "Opening-range low", "Opening range low"),
-                                    ("pdh", "Previous-day high", "कालचा high"), ("pdl", "Previous-day low", "कालचा low"), ("vwap", "VWAP", "VWAP")):
-        if lv.get(key) is not None and any(key.upper().replace("_", "") in c.label().replace("_", "") for c in cfg.long_conditions + cfg.short_conditions):
-            triggers.append({"name": tr(lang, label_en, label_mr), "price": lv[key]})
+    # P0.8-D: no "today's triggers" with prices on a template the trader has not adopted - price levels with a rule set
+    # read as a trade call. The levels stay in the study; the rules are described in words.
+    triggers: List[dict] = []
     verdict, verdict_text = _verdict(lang, r["in_sample"], r["out_of_sample"])
     side = "LONG" if cfg.long_conditions and not cfg.short_conditions else "SHORT" if cfg.short_conditions and not cfg.long_conditions else "BOTH"
     return {
@@ -463,16 +460,14 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str) -> 
 
 
 def _side_for(study: dict, direction: str) -> List[str]:
-    if direction in ("long", "short", "both"):
+    """P0.8-D: the trader names the side; "auto" (older clients) means both sides - the platform no longer picks a
+    direction from the market bias."""
+    if direction in ("long", "short"):
         return [direction]
-    if study["bias"] == "BULLISH" and study["confidence"] >= 50:
-        return ["long"]
-    if study["bias"] == "BEARISH" and study["confidence"] >= 50:
-        return ["short"]
     return ["both"]
 
 
-def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "intraday", direction: str = "auto",
+def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "intraday", direction: str = "both",
           risk: Optional[RiskConfig] = None, extra_configs: Optional[List[Tuple[str, CustomStrategyConfig]]] = None) -> dict:
     """Shortlist, tune, validate and rank. `extra_configs` (name, config) - e.g. the AI's proposals -
     are validated the same way (no tuning: they are taken as written)."""
@@ -513,10 +508,10 @@ def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "i
                 f"{tested} उमेदवार strategies {len(set(pd.Series(_ist_index(df).date)))} सत्रांवर tune केल्या; parameters पहिल्या "
                 f"{int(IS_FRACTION * 100)}% सत्रांवर निवडले आणि उरलेल्या सत्रांवर तपासले.")]
     if plans and plans[0]["verdict"] != "robust":
-        notes.append(tr(lang, "No candidate held up on the unseen sessions - today, the professional choice may be to wait or paper-trade only.",
-                        "कोणतीच strategy नवीन सत्रांवर टिकली नाही - आज थांबणे किंवा फक्त PAPER हाच professional निर्णय असू शकतो."))
+        notes.append(tr(lang, "No candidate held up on the unseen sessions - the results are shown as data; what to do with them is your decision.",
+                        "कोणतीच strategy नवीन सत्रांवर टिकली नाही - निकाल data म्हणून दाखवले आहेत; त्यावर काय करायचे हा निर्णय तुमचा."))
     return {"style": style, "base_timeframe": base, "higher_timeframe": htf, "sides": sides, "candidates": plans,
-            "best": plans[0]["id"] if plans else None, "notes": notes, "tested": tested}
+            "best": None, "notes": notes, "tested": tested}       # P0.8-D: no "best" badge - ranked by data, chosen by the trader
 
 
 AI_PROMPT = """You are a professional Indian intraday strategist. From the MARKET STUDY below, write up to two rule sets that fit

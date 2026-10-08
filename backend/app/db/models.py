@@ -1721,3 +1721,50 @@ class NewsFeedbackRecord(Base):
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
+
+
+class AiAcknowledgementRecord(Base):
+    """P0.8-D: a versioned acceptance - the AI Copilot first-use acknowledgement (per user: the Copilot is not a
+    SEBI-registered adviser, it explains rules and data, the decision is the trader's) and the organisation's
+    data-sharing consent before anything goes to an external LLM provider (per tenant, by the owner). Kept for
+    good (`retention.NEVER_DELETED`)."""
+
+    __tablename__ = "ai_acknowledgements"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, index=True)     # copilot_terms / data_consent
+    version: Mapped[str] = mapped_column(String(24), nullable=False)
+    text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    language: Mapped[str] = mapped_column(String(4), nullable=False, default="en")
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class LlmCallRecord(Base):
+    """P0.8-D: every LLM input and output - the system prompt, the user text, the answer (or the error), with hashes,
+    the prompt version, provider, model, tokens, cost, tenant, user and feature. Append-only and never deleted
+    (`retention.NEVER_DELETED`), so an answer a trader acted on can be audited years later."""
+
+    __tablename__ = "llm_calls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    feature: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    prompt_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    system_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    system_text: Mapped[str] = mapped_column(Text, nullable=False)
+    user_text: Mapped[str] = mapped_column(Text, nullable=False)
+    response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(300), nullable=False, default="ok")     # ok / error: <reason>
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)

@@ -447,6 +447,12 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
     if cmd in ("/brief", "/risk") or not cmd.startswith("/"):
         if not await flag_enabled(session, "ai_copilot", tenant.id):          # the operator's AI kill flag binds Telegram too
             return tr(lang, "The AI Copilot is switched off on this platform right now.", "AI Copilot या platform वर सध्या बंद आहे.")
+    if cmd in ("/brief", "/thesis") or not cmd.startswith("/"):
+        # P0.8-D: the same first-use acknowledgement as the web app; approve/reject callbacks never depend on it.
+        from app.ai import compliance_terms as terms
+        if await terms.latest(session, terms.KIND_COPILOT, tenant_id=tenant.id, user_id=user.id) is None:
+            return tr(lang, "Open the AI Copilot in the web app once and accept its acknowledgement first (it is not an investment adviser).",
+                      "आधी web app मध्ये AI Copilot एकदा उघडा आणि त्याची सूचना स्वीकारा (तो गुंतवणूक सल्लागार नाही).")
     if cmd == "/brief":
         brief = await briefing.build(session, user, lang)
         return "\n".join(briefing.summary_lines(lang, brief))

@@ -57,7 +57,8 @@ async def delete_config(session: AsyncSession, user: User) -> None:
         await session.commit()
 
 
-async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optional[httpx.AsyncClient] = None, task: str = "general") -> LLMProvider:
+async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optional[httpx.AsyncClient] = None, task: str = "general",
+                       user_id: Optional[int] = None) -> LLMProvider:
     """The tenant's configured provider for `task`, metered (P0.8-C), or the rule-based one when none is set/enabled,
     when the plan has no AI features (the Free plan never calls out) or when the plan's monthly AI budget is spent.
     `task` picks the model tier: cheap tasks (narration, classification, Q&A) run the operator's fast model at low
@@ -66,13 +67,19 @@ async def provider_for(session: AsyncSession, tenant: Tenant, *, client: Optiona
     record = await get_config(session, tenant.id)
     if record is None or not record.enabled or not feature_allowed(tenant, "ai_features"):
         return RuleBasedProvider()
+    if record.provider != "rule_based":
+        # P0.8-D (DPDP): nothing leaves for an outside model until the owner accepted the current data-sharing consent -
+        # also for a provider saved before the consent existed, and again after the consent text changes.
+        from app.ai import compliance_terms as terms
+        if await terms.latest(session, terms.KIND_DATA, tenant_id=tenant.id) is None:
+            return RuleBasedProvider(reason="the account owner has not accepted the current data-sharing consent (Settings > AI provider)")
     if record.provider != "rule_based" and await metering.budget_exhausted(session, tenant):
         return RuleBasedProvider(reason=f"the plan's monthly AI budget ({metering.budget_inr(tenant):,.0f} INR) is spent; the rules answer until the 1st")
     key = decrypt_text(record.encrypted_api_key, PURPOSE_AI_PROVIDER_KEY, record.tenant_id) if record.encrypted_api_key else None
     inner = build_provider(record.provider, key, record.model, client=client, task=task)
     if isinstance(inner, RuleBasedProvider):
         return inner
-    return metering.MeteredProvider(inner, session, tenant.id, feature=task)
+    return metering.MeteredProvider(inner, session, tenant.id, feature=task, user_id=user_id)
 
 
 async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] = None) -> None:

@@ -42,10 +42,17 @@ app.dependency_overrides[mfa_rate_limit] = lambda: None
 client = TestClient(app)
 
 
-def _register(email: str, password: str = "S3cur3Pass!") -> str:
+def _register(email: str, password: str = "S3cur3Pass!", *, ai_terms: bool = True) -> str:
     response = client.post("/api/auth/register", json={"email": email, "password": password})
     assert response.status_code == 201, response.text
-    return response.json()["access_token"]
+    token = response.json()["access_token"]
+    if ai_terms:
+        # P0.8-D: every AI content route needs the Copilot acknowledgement; the suite's users accept the current version
+        # at registration (the acknowledgement test registers with ai_terms=False).
+        from app.ai.compliance_terms import ACK_VERSION
+        ack = client.post("/api/ai/acknowledgement", headers={"Authorization": f"Bearer {token}"}, json={"version": ACK_VERSION})
+        assert ack.status_code == 200, ack.text
+    return token
 
 
 def test_register_returns_token_and_creates_user():

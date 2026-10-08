@@ -40,7 +40,7 @@ def test_parse_request_reads_marathi_and_english_requests():
     p = st.parse_request("सेन्सेक्स वर खरेदी")
     assert p["symbol"] == "SENSEX" and p["direction"] == "long"
     p = st.parse_request("काहीतरी वेगळं", default_symbol="HDFCBANK")             # nothing recognised: defaults stay, only the script is noted
-    assert (p["symbol"], p["style"], p["direction"], p["language"], p["matched"]) == ("HDFCBANK", "intraday", "auto", "mr", {"language": "mr"})
+    assert (p["symbol"], p["style"], p["direction"], p["language"], p["matched"]) == ("HDFCBANK", "intraday", "both", "mr", {"language": "mr"})
     p = st.parse_request("1 min scalp on INFY, long and short")
     assert (p["symbol"], p["style"], p["direction"]) == ("INFY", "scalping", "both")
     # All-caps requests: grammar words are never the ticker, the first real ticker wins.

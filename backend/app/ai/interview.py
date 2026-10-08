@@ -450,7 +450,7 @@ def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) 
         notes.append(tr(lang, f"Daily loss limit set to {daily:g}% (3 losing trades) rather than {a.daily_loss:g}% - three losses in a day is the professional's stop signal.",
                         f"दिवसाची तोटा मर्यादा {a.daily_loss:g}% ऐवजी {daily:g}% (3 चुकलेले trades) ठेवली - दिवसात 3 तोटे म्हणजे professional साठी थांबण्याचा संकेत."))
     trades = TRADES_PER_DAY[a.style] if a.experience != "new" else min(TRADES_PER_DAY[a.style], 3)
-    trading_capital = round(a.capital * ALLOCATION[a.experience], 0)
+    trading_capital = round(a.capital, 0)        # P0.8-D: the figure the trader entered; the platform does not allocate for them
     cfg = RiskConfig(
         capital=trading_capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=daily,
         max_trades_per_day=trades, max_open_positions=OPEN_POSITIONS[a.experience],
@@ -677,8 +677,8 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         warnings.append(tr(lang, f"Your view is {a.view} but the market reads {market['bias'].lower()}. A professional trades what the market does, not what they expect - the plan follows the market and the strategy only takes signals the trend confirms.",
                            f"तुमचे मत {'तेजीचे' if a.view == 'bullish' else 'मंदीचे'} आहे पण market {'तेजी' if market['bias'] == 'BULLISH' else 'मंदी'} दाखवतो. Professional अंदाजावर नाही तर market जे करतो त्यावर trade करतो - plan market च्या सोबत आहे."))
     if market["volatile"]:
-        warnings.append(tr(lang, "The market is volatile right now: stops are wider in rupees, so the engine buys fewer lots. Consider waiting for it to settle.",
-                           "सध्या market अस्थिर आहे: stop रुपयांत मोठा असतो त्यामुळे engine कमी lots घेईल. शांत होईपर्यंत थांबणे चांगले."))
+        warnings.append(tr(lang, "The market is volatile right now: stops are wider in rupees, so the engine sizes fewer lots.",
+                           "सध्या market अस्थिर आहे: stop रुपयांत मोठा असतो त्यामुळे engine कमी lots घेईल."))
     if data_source == "sample":
         warnings.append(tr(lang, "This read used SAMPLE candles. Switch Data to broker candles for the real market today.",
                            "हे विश्लेषण SAMPLE candles वर आहे. आजच्या खऱ्या market साठी Data मध्ये broker candles निवडा."))
@@ -689,22 +689,24 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
     if pick:
         fam_en, fam_mr = FAMILY_TEXT[pick["family"]]
         regime_filter = REGIME_FILTERS[pick["family"]]
+        # P0.8-D: templates are described, ranked by data and chosen by the trader - never recommended.
         s_lines += [
-            tr(lang, f"Recommended: {pick['name']} ({fam_en}, {'/'.join(pick['timeframes'])}).", f"शिफारस: {pick['name']} ({fam_mr}, {'/'.join(pick['timeframes'])})."),
+            tr(lang, f"Template shown first: {pick['name']} ({fam_en}, {'/'.join(pick['timeframes'])}). You choose the template; this is a description, not a recommendation.",
+               f"प्रथम दाखवलेले template: {pick['name']} ({fam_mr}, {'/'.join(pick['timeframes'])}). Template तुम्ही निवडा; हे वर्णन आहे, शिफारस नाही."),
             pick["description"],
-            tr(lang, f"Why: it suits the current market ({market['regime_text']}) and your {STYLE_EN[a.style]} style; evidence - {pick['evidence']['text']}.",
-               f"का: {market['regime_text']} market आणि तुमच्या {STYLE_MR[a.style]} पद्धतीला ही योग्य आहे; पुरावा - {pick['evidence']['text']}."),
-            tr(lang, f"It only enters in these regimes: {', '.join(regime_filter)} - on other days it sits out, and that is part of the edge.",
-               f"ही फक्त या स्थितीत entry घेते: {', '.join(regime_filter)} - इतर दिवशी trade घेत नाही, आणि हेच शिस्तीचे बळ आहे."),
+            tr(lang, f"How it ranked: by fit with the current regime ({market['regime_text']}) and the backtest on these candles - {pick['evidence']['text']}.",
+               f"क्रम कसा ठरला: सध्याच्या स्थितीशी ({market['regime_text']}) जुळणी आणि या candles वरचा backtest - {pick['evidence']['text']}."),
+            tr(lang, f"Its rules enter only in these regimes: {', '.join(regime_filter)} - on other days it does not trade.",
+               f"याचे नियम फक्त या स्थितीत entry घेतात: {', '.join(regime_filter)} - इतर दिवशी trade घेत नाही."),
         ]
         if pick["regime_fit"] < 2:
-            warnings.append(tr(lang, "Even the best match does not fit today's market well - expect few or no trades today, which is the right outcome.",
-                               "सर्वात योग्य strategy सुद्धा आजच्या market ला नीट जुळत नाही - आज कमी किंवा शून्य trades होतील, आणि तेच योग्य आहे."))
+            warnings.append(tr(lang, "This template does not fit today's regime well - its rules would produce few or no trades today.",
+                               "हे template आजच्या market स्थितीला नीट जुळत नाही - आज त्याचे नियम कमी किंवा शून्य trades देतील."))
         if pick["evidence"]["total_trades"] >= 5 and pick["evidence"]["net_pnl"] <= 0:
-            warnings.append(tr(lang, "On these candles even the recommended strategy lost money. Paper-trade it and judge it on 30+ trades before any live money.",
-                               "या candles वर शिफारस केलेल्या strategy नेही तोटा दाखवला. PAPER मध्ये 30+ trades पाहूनच निर्णय घ्या."))
+            warnings.append(tr(lang, "On these candles this template lost money. Any template is judged on 30+ paper trades, not on one backtest.",
+                               "या candles वर या template ने तोटा दाखवला. कोणतेही template एका backtest वर नाही, 30+ PAPER trades वर तपासले जाते."))
         for alt in alternatives:
-            s_lines.append(tr(lang, f"Alternative: {alt['name']} - {alt['evidence']['text']}.", f"पर्याय: {alt['name']} - {alt['evidence']['text']}."))
+            s_lines.append(tr(lang, f"Other template: {alt['name']} - {alt['evidence']['text']}.", f"दुसरे template: {alt['name']} - {alt['evidence']['text']}."))
 
     # Risk and capital sentences.
     per_trade = cfg.capital * cfg.risk_per_trade_pct / 100
@@ -719,21 +721,18 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         tr(lang, f"After a stop-loss: {cfg.stop_cooldown_minutes} minutes cool-down on that symbol. Drawdown {cfg.dd_level_1_pct:g}% halves the size; {cfg.dd_level_2_pct:g}% pauses new entries.",
            f"Stop-loss लागल्यावर त्या symbol वर {cfg.stop_cooldown_minutes} मिनिटे थांबा. भांडवल {cfg.dd_level_1_pct:g}% खाली गेले की size अर्धी; {cfg.dd_level_2_pct:g}% खाली गेले की नवीन entry बंद."),
     ] + risk_notes
-    reserve = a.capital - cfg.capital
     c_lines = [
-        tr(lang, f"Total capital {_money(a.capital)}: trade with {_money(cfg.capital)} ({ALLOCATION[a.experience] * 100:.0f}%), keep {_money(reserve)} untouched as reserve.",
-           f"एकूण भांडवल {_money(a.capital)}: {_money(cfg.capital)} ({ALLOCATION[a.experience] * 100:.0f}%) ने trading, {_money(reserve)} राखीव - हात लावायचा नाही."),
+        tr(lang, f"The risk settings are computed on a trading capital of {_money(cfg.capital)} - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+           f"Risk settings {_money(cfg.capital)} या trading भांडवलावर मोजल्या आहेत - तुम्ही दिलेला आकडा. किती पैसे वापरायचे हा निर्णय तुमचा; platform allocation चा सल्ला देत नाही."),
         tr(lang, f"Open risk across all positions stays under {cfg.max_portfolio_risk_pct:g}% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket.",
            f"सगळ्या positions चा एकत्रित risk trading भांडवलाच्या {cfg.max_portfolio_risk_pct:g}% पेक्षा कमी; NIFTY/BANK NIFTY/FIN NIFTY एकच गट मानले जातात."),
-        tr(lang, "Raise the allocation only after 30+ paper trades with a positive expectancy - never to win back a loss.",
-           "30+ PAPER trades मध्ये सरासरी नफा दिसल्यानंतरच allocation वाढवा - तोटा भरून काढण्यासाठी कधीच नाही."),
     ]
     rr = cfg.min_risk_reward
     breakeven_win = 100.0 / (1.0 + rr)
     exit_rules = exit_rules or default_exit_rules(a)
     rr_lines = [
-        tr(lang, f"Minimum reward:risk 1:{rr:g} - a trade that cannot make {rr:g}x its risk is skipped. At 1:{rr:g} you stay profitable even winning only {breakeven_win:.0f}% of trades.",
-           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. 1:{rr:g} वर फक्त {breakeven_win:.0f}% trades जिंकले तरी तोटा होत नाही."),
+        tr(lang, f"Minimum reward:risk 1:{rr:g} - a trade that cannot make {rr:g}x its risk is skipped. Arithmetic: at 1:{rr:g} the break-even win rate before costs is {breakeven_win:.0f}%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
+           f"किमान reward:risk 1:{rr:g} - risk च्या {rr:g} पट नफा शक्य नसेल तर trade घेत नाही. गणित: 1:{rr:g} वर खर्चाआधीचा break-even win rate {breakeven_win:.0f}% आहे; brokerage, कर आणि slippage तो वाढवतात - या गुणोत्तरावर नाही, backtest च्या निव्वळ आकड्यांवर ठरवा."),
         tr(lang, f"Stop moves to cost once the trade is {exit_rules['break_even_at_r']:g}R in profit; it never moves against you.",
            f"Trade {exit_rules['break_even_at_r']:g}R नफ्यात आला की stop खरेदी भावावर येतो; stop कधीच विरुद्ध दिशेने सरकत नाही."),
     ]
@@ -751,21 +750,26 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         tr(lang, "Daily loss limit and losing-streak pause respected", "दिवसाची तोटा मर्यादा आणि सलग तोट्यानंतरचा थांबा पाळला"),
         tr(lang, "No entries on blocked event days (results, policy)", "मोठ्या घटनांच्या दिवशी (results, policy) entry नाही"),
     ]
+    # P0.8-D: what the platform's process is if the trader chooses a template - not an instruction to trade.
     steps = [
-        tr(lang, "Read this plan and apply the risk settings.", "हा plan वाचा आणि risk settings लागू करा."),
-        tr(lang, "Deploy in PAPER - the worker trades it with no real money.", "PAPER मध्ये deploy करा - worker खऱ्या पैशाशिवाय trade करेल."),
-        tr(lang, "Review after 2 weeks or 30 trades: win rate, average win vs loss, rule breaks.", "2 आठवडे किंवा 30 trades नंतर तपासा: win rate, सरासरी नफा विरुद्ध तोटा, नियम मोडले का."),
-        tr(lang, "Only then go LIVE small through the Go-Live checklist.", "त्यानंतरच Go-Live checklist पूर्ण करून छोट्या रकमेने LIVE."),
+        tr(lang, "If you choose a template: read its rules and backtest above; the risk settings apply only when you press the button.",
+           "तुम्ही template निवडलेत तर: वरचे नियम आणि backtest वाचा; risk settings फक्त button दाबल्यावर लागू होतात."),
+        tr(lang, "On this platform anything new runs in PAPER first - the worker trades it with no real money.",
+           "या platform वर नवीन काहीही आधी PAPER मध्ये चालते - worker खऱ्या पैशाशिवाय trade करतो."),
+        tr(lang, "The PAPER record after 2 weeks or 30 trades shows win rate, average win vs loss and rule breaks.",
+           "2 आठवडे किंवा 30 trades नंतर PAPER चा record win rate, सरासरी नफा विरुद्ध तोटा आणि नियम मोडले का ते दाखवतो."),
+        tr(lang, "LIVE is possible only through the Go-Live checklist; whether to go LIVE is your decision.",
+           "LIVE फक्त Go-Live checklist मधूनच शक्य; LIVE जायचे की नाही हा निर्णय तुमचा."),
     ]
     sections = [
         {"id": "market", "title": tr(lang, "Market view", "Market चे विश्लेषण"), "lines": m_lines},
-        {"id": "strategy", "title": tr(lang, "Strategy", "Strategy"), "lines": s_lines},
+        {"id": "strategy", "title": tr(lang, "Template (you choose)", "Template (तुम्ही निवडा)"), "lines": s_lines},
         {"id": "risk", "title": tr(lang, "Risk management", "Risk management"), "lines": r_lines},
-        {"id": "capital", "title": tr(lang, "Capital allocation", "भांडवलाचे नियोजन"), "lines": c_lines},
+        {"id": "capital", "title": tr(lang, "Capital in these settings", "या settings मधले भांडवल"), "lines": c_lines},
         {"id": "rr", "title": tr(lang, "Risk : reward and exits", "Risk : reward आणि exit"), "lines": rr_lines},
         {"id": "contract", "title": tr(lang, "What will be traded", "काय trade होईल"), "lines": k_lines},
         {"id": "checklist", "title": tr(lang, "Checked before every trade", "प्रत्येक trade आधी तपासले जाते"), "lines": checklist},
-        {"id": "steps", "title": tr(lang, "Your next steps", "पुढचे टप्पे"), "lines": steps},
+        {"id": "steps", "title": tr(lang, "How it works if you choose", "निवडल्यास पुढे काय होते"), "lines": steps},
     ]
     deployment = None
     if pick:
@@ -796,7 +800,7 @@ def ai_prompt(a: InterviewAnswers, market: dict, cfg: RiskConfig, pick: Optional
         f"Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:{cfg.min_risk_reward:g}.",
     ]
     if pick:
-        parts.append(f"For reference the platform's best inbuilt match is {pick['name']}; improve on it or explain why not.")
+        parts.append(f"For reference, the template ranked first on these candles was {pick['name']} (ranking by regime fit and backtest evidence, not a recommendation).")
     return " ".join(parts)
 
 

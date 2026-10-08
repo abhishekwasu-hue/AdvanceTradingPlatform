@@ -79,31 +79,32 @@ def _families(regime: str) -> Dict[str, List[str]]:
 
 def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict]) -> dict:
     kind = dt["kind"]
+    # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
-        "TREND_UP": ("A trending-up day: trade with the trend, buy the pullbacks; shorts are against the tide.",
-                     "वरच्या trend चा दिवस: trend सोबत trade, pullback वर खरेदी; short घेणे प्रवाहाविरुद्ध."),
-        "TREND_DOWN": ("A trending-down day: sell the rallies or stay out; buying dips is catching a falling knife.",
-                       "खालच्या trend चा दिवस: वर आलेल्या भावावर विक्री किंवा बाजूला थांबा; घसरणीत खरेदी म्हणजे पडणारी सुरी पकडणे."),
-        "RANGE": ("A sideways day: trend strategies will mostly sit out (correctly); range edges and reversion setups fit better.",
-                  "Sideways दिवस: trend strategies बहुतेक trade घेणार नाहीत (आणि ते बरोबर आहे); range च्या कडा आणि reversion setups जास्त जुळतात."),
-        "VOLATILE": ("A volatile day: wide swings and gaps - trade small or just watch; stops get hit by noise.",
-                     "अस्थिर दिवस: मोठे चढ-उतार आणि gap - लहान size किंवा फक्त निरीक्षण; गोंधळात stop लागतात."),
+        "TREND_UP": ("A trending-up day on the data: higher highs and higher lows; trend-family templates' filters are open, reversal ones mostly closed.",
+                     "data नुसार वरच्या trend चा दिवस: वाढते highs आणि lows; trend प्रकारच्या templates चे filter उघडे, reversal वाल्यांचे बहुतेक बंद."),
+        "TREND_DOWN": ("A trending-down day on the data: lower highs and lower lows; trend-family templates' filters are open, reversal ones mostly closed.",
+                       "data नुसार खालच्या trend चा दिवस: घटते highs आणि lows; trend प्रकारच्या templates चे filter उघडे, reversal वाल्यांचे बहुतेक बंद."),
+        "RANGE": ("A sideways day on the data: trend-family templates' regime filters keep them out; range and reversion templates' filters are open.",
+                  "data नुसार Sideways दिवस: trend प्रकारच्या templates ना त्यांचा regime filter बाहेर ठेवतो; range आणि reversion templates चे filter उघडे."),
+        "VOLATILE": ("A volatile day on the data: wide swings and gaps, so ATR-based stops are wider and position sizes come out smaller.",
+                     "data नुसार अस्थिर दिवस: मोठे चढ-उतार आणि gap, त्यामुळे ATR वर आधारित stop मोठे आणि position size लहान येतो."),
         "UNKNOWN": ("No market read yet - press \"Read now\" in Market memory (needs a broker session), or wait for the worker after 09:15.",
                     "अजून market वाचलेला नाही - Market memory मध्ये \"आत्ता वाचा\" दाबा (broker login लागतो), किंवा 09:15 नंतर worker ची वाट पाहा."),
     }
     lines: List[str] = []
     fam = _families(dt["regime"]) if kind != "UNKNOWN" else {"fit": [], "avoid": []}
     if fam["fit"]:
-        lines.append(tr(lang, "Fits today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["fit"]) + ".",
-                        "आज जुळणाऱ्या पद्धती: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["fit"]) + "."))
+        lines.append(tr(lang, "Regime filters open today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["fit"]) + ".",
+                        "आज regime filter उघडे: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["fit"]) + "."))
     if fam["avoid"]:
-        lines.append(tr(lang, "Leave alone today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - their regime filter will keep them out.",
-                        "आज टाळा: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["avoid"]) + " - त्यांचा regime filter त्यांना बाहेरच ठेवेल."))
+        lines.append(tr(lang, "Regime filters closed today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - these templates would not enter.",
+                        "आज regime filter बंद: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["avoid"]) + " - हे templates entry घेणार नाहीत."))
     vix = dt.get("vix")
     if vix is not None:
         lines.append(market_memory.vix_text(lang, vix) + ".")
         if vix >= 20 and experience in (None, "new", "learning"):
-            lines.append(tr(lang, "With VIX at 20+, a beginner should paper-trade or watch today.", "VIX 20+ असताना नवशिक्याने आज PAPER वर किंवा फक्त निरीक्षण करावे."))
+            lines.append(tr(lang, "VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop.", "VIX 20 किंवा जास्त: भीती जास्त, gap ची शक्यता जास्त; तुमच्या risk settings प्रत्येक trade ची size त्याच्या stop वरून ठरवतात."))
     glines = global_cues.view(lang, memory.get("globals", []))
     if glines:
         lines.append(glines[0])
@@ -114,8 +115,8 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
         else:
             lines.append(tr(lang, f"Event today: {what} - position size is cut automatically.", f"आज event: {what} - position size आपोआप कमी होईल."))
     if experience == "new":
-        lines.append(tr(lang, "Your rule as a beginner: one setup, small size, stop placed with the entry, done after two losses.",
-                        "नवशिक्या म्हणून तुमचा नियम: एकच setup, लहान size, entry सोबतच stop, दोन तोट्यांनंतर दिवस संपला."))
+        lines.append(tr(lang, "Your risk settings as a beginner: a small risk per trade, the stop placed with the entry, and a pause after two losses in a row.",
+                        "नवशिक्या म्हणून तुमच्या risk settings: प्रत्येक trade चा risk कमी, entry सोबतच stop, आणि सलग दोन तोट्यांनंतर थांबा."))
     head = headlines[kind]
     return {"headline": tr(lang, head[0], head[1]), "lines": lines, "fit_families": fam["fit"], "avoid_families": fam["avoid"]}
 

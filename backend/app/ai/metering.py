@@ -4,6 +4,7 @@ and a plan's monthly budget in rupees turns the tenant over to the rule-based pr
 first of the next month). `MeteredProvider` wraps the tenant's real provider so the eleven call sites need no change;
 recording failures are logged and never fail the AI call itself.
 """
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import pricing
 from app.ai.providers import Completion, LLMProvider, ProviderError
 from app.billing.service import meter
-from app.db.models import Tenant, UsageRecord
+from app.db.models import LlmCallRecord, Tenant, UsageRecord
 from app.observability.metrics import AI_COST_USD, AI_TOKENS
 from app.plans.registry import get_plan
 
@@ -108,16 +109,36 @@ async def budget_exhausted(session: AsyncSession, tenant: Tenant) -> bool:
     return pricing.usd_to_inr(float(spent or 0.0)) >= budget
 
 
+def _sha(text: Optional[str]) -> Optional[str]:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest() if text is not None else None
+
+
+async def log_call(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], feature: str, provider: str, model: str, prompt_version: Optional[str],
+                   system: str, user: str, response: Optional[str], status: str, result: Optional[Completion], cost_usd: float = 0.0) -> None:
+    """P0.8-D: the full LLM input and output, hashed and in clear, in `llm_calls` (never deleted). Joins the caller's
+    transaction in a savepoint like the usage rows."""
+    async with session.begin_nested():
+        session.add(LlmCallRecord(tenant_id=tenant_id, user_id=user_id, feature=feature, provider=provider, model=model or "", prompt_version=prompt_version,
+                                  system_sha256=_sha(system) or "", user_sha256=_sha(user) or "", response_sha256=_sha(response),
+                                  system_text=system or "", user_text=user or "", response_text=response, status=status[:300],
+                                  input_tokens=(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens) if result else 0,
+                                  output_tokens=result.output_tokens if result else 0, cost_usd=float(cost_usd or 0.0)))
+        await session.flush()
+
+
 @dataclass
 class MeteredProvider:
     """The tenant's provider with the meter attached: same `complete`/`complete_full`, every answer (and every failed
-    attempt that reported tokens) recorded against the tenant and the feature."""
+    attempt that reported tokens) recorded against the tenant and the feature, and every input/output logged in
+    `llm_calls` (P0.8-D) with the user who asked and the prompt version the caller sets."""
 
     inner: LLMProvider
     session: AsyncSession
     tenant_id: int
     feature: str
     source: str = "api"
+    user_id: Optional[int] = None
+    prompt_version: Optional[str] = None
 
     @property
     def name(self) -> str:
@@ -131,20 +152,27 @@ class MeteredProvider:
     def reason(self) -> str:
         return str(getattr(self.inner, "reason", "") or "")
 
-    async def _record(self, result: Completion) -> None:
+    async def _record(self, result: Optional[Completion], system: str, user: str, response: Optional[str], status: str) -> None:
+        cost = 0.0
+        if result is not None and (result.input_tokens or result.output_tokens or result.cost_usd_override is not None):
+            try:
+                cost = await record(self.session, self.tenant_id, self.feature, self.inner.name, result.model or self.inner.model, result, source=self.source)
+            except Exception as exc:  # noqa: BLE001 - metering must never fail the answer
+                logger.warning("AI usage not recorded for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
         try:
-            await record(self.session, self.tenant_id, self.feature, self.inner.name, result.model or self.inner.model, result, source=self.source)
-        except Exception as exc:  # noqa: BLE001 - metering must never fail the answer
-            logger.warning("AI usage not recorded for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
+            await log_call(self.session, tenant_id=self.tenant_id, user_id=self.user_id, feature=self.feature, provider=self.inner.name,
+                           model=(result.model if result else "") or self.inner.model, prompt_version=self.prompt_version, system=system, user=user,
+                           response=response, status=status, result=result, cost_usd=cost)
+        except Exception as exc:  # noqa: BLE001 - the audit row is logged, never the cause of a failed answer
+            logger.warning("LLM call not logged for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
 
     async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
         try:
             result = await self.inner.complete_full(system, user, max_tokens=max_tokens)
         except ProviderError as exc:
-            if exc.usage is not None and (exc.usage.input_tokens or exc.usage.output_tokens):
-                await self._record(exc.usage)
+            await self._record(exc.usage, system, user, None, f"error: {str(exc)[:280]}")
             raise
-        await self._record(result)
+        await self._record(result, system, user, result.text, "ok")
         return result
 
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:

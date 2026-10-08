@@ -129,7 +129,11 @@ import type {
   NewsFeedSource,
   NewsFeedStatus,
   BrokerLoginUrl,
+  AiAcknowledgement,
 } from "../types";
+
+/** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
+export const AI_ACK_REQUIRED_EVENT = "atp:ai-ack-required";
 
 const BASE = "/api/v1";
 // P0.3 / S6: the access token lives in memory only (a script injected into the page cannot read it from
@@ -222,6 +226,12 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // visitor gets a plain sentence instead of a raw 401 body.
     if (response.status === 401 && !getToken()) {
       throw new Error("Sign in from the Account tab to use this feature.");
+    }
+    // P0.8-D: an AI route before the first-use acknowledgement - every open acknowledgement gate re-reads its state
+    // (so the page shows the acknowledgement screen) and the caller gets a sentence, not a raw 428 body.
+    if (response.status === 428 && detail.includes("ai_acknowledgement_required")) {
+      window.dispatchEvent(new Event(AI_ACK_REQUIRED_EVENT));
+      throw new Error("Accept the AI Copilot acknowledgement first (AI Copilot page) - AI Copilot सूचना आधी स्वीकारा.");
     }
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }
@@ -648,7 +658,10 @@ export const api = {
     request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),
   // ---- Phase L: AI layer
   aiProvider: () => request<AiProviderConfig>("/ai/provider"),
-  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean }) =>
+  aiAcknowledgement: () => request<AiAcknowledgement>("/ai/acknowledgement"),
+  aiAcceptAcknowledgement: (version: string, language: "en" | "mr") =>
+    request<AiAcknowledgement>("/ai/acknowledgement", { method: "POST", body: JSON.stringify({ version, language }) }),
+  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" | "mr" }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}) =>
@@ -679,8 +692,8 @@ export const api = {
                       feedback: string[], optionId: string, strategyId: string | null) =>
     request<InterviewPlan>("/ai/interview/refine", { method: "POST", body: JSON.stringify({
       answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }) }),
-  aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null, match: number) =>
-    request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId, match }) }),
+  aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null) =>
+    request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   // Phase BD-lite: the market thesis (shadow overlay only) and its scoreboard.

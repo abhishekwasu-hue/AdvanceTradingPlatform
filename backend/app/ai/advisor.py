@@ -286,7 +286,6 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
     if not ranked and p.rejected:          # everything that fits was turned down: offer them again, with a note
         ranked = iv._rank(a, market, df, base_tf, base_cfg, family_bonus=bonus)
     picks = _assign(ranked, p)
-    honoured = _contract_honoured(a, iv.contract_plan(a, market["bias"])[0])
     options = []
     for oid in ("safe", "balanced", "active"):
         cfg, notes, exit_rules = _tilted_config(a, p, oid, ceilings)
@@ -295,22 +294,20 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         if background:
             plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "lines": background})
         if high_fear and a.experience != "experienced":
-            plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are likely. A beginner should paper-trade or just watch until it cools.",
-                                       "India VIX 20 किंवा जास्त आहे - भीती जास्त, gap ची शक्यता. नवशिक्याने VIX कमी होईपर्यंत PAPER मध्येच किंवा फक्त निरीक्षण करावे."))
-        match, market_fit, reasons = match_score(a, p, market, pick, cfg, honoured)
+            plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are more frequent at such readings.",
+                                       "India VIX 20 किंवा जास्त आहे - भीती जास्त; अशा वेळी gap जास्त वेळा येतात."))
         (en_label, en_sub), (mr_label, mr_sub) = OPTION_TEXT[oid]
-        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "match": match,
-                          "market_fit": market_fit, "match_reasons": reasons,
+        # P0.8-D: three risk settings on templates the trader chooses between. No score of any kind - no "match %", no
+        # market-fit %, no "closest to you", no best option. The one data fact is whether the template's own regime
+        # filter is open on today's candles (the same yes/no the daily briefing shows).
+        filter_open = None if pick is None else bool(pick["regime_fit"] >= 2)
+        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "regime_filter_open": filter_open,
                           "headline": None if pick is None else {"strategy": pick["name"], "risk_pct": cfg.risk_per_trade_pct,
                                                                  "trades_per_day": cfg.max_trades_per_day, "min_rr": cfg.min_risk_reward}}
         options.append(plan)
-    best = max(options, key=lambda o: 0.7 * o["option"]["match"] + 0.3 * o["option"]["market_fit"])
-    history = (p.match_history + [best["option"]["match"]])[-50:]
-    # The top level stays the balanced option (the trader's own answers) for older clients; the
-    # UI shows all three and marks `best_option`.
+    # The top level stays the balanced option (the trader's own answers) for older clients; the UI shows all three.
     result = dict(next(o for o in options if o["option"]["id"] == "balanced"))
-    result.update({"options": options, "best_option": best["option"]["id"], "preferences": p.model_copy(update={"match_history": history}).model_dump(),
-                   "feedback_options": feedback_options(), "desired": desired(a, p)})
+    result.update({"options": options, "best_option": None, "preferences": p.model_dump(), "feedback_options": feedback_options(), "desired": desired(a, p)})
     return result
 
 

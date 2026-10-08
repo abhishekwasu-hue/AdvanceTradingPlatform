@@ -10,6 +10,7 @@ import MarketMemoryCard from "../components/MarketMemoryCard";
 import DailyBriefing from "../components/DailyBriefing";
 import StrategistPanel from "../components/StrategistPanel";
 import ThesisCard from "../components/ThesisCard";
+import AiAcknowledgementGate from "../components/AiAcknowledgementGate";
 
 const input = "w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm";
 
@@ -89,11 +90,12 @@ export default function AiCopilotPage() {
   const dataLabel = source.mode === "broker" ? "broker candles" : "sample data";
 
   if (!user) return <Card><p className="text-sm text-muted">Log in to use the AI Copilot.</p></Card>;
-
   const open = actions.filter((a) => a.status === "PROPOSED");
   const decided = actions.filter((a) => a.status !== "PROPOSED").slice(0, 10);
 
+  // P0.8-D: nothing AI-written is shown until this user accepted the current acknowledgement (shared gate).
   return (
+    <AiAcknowledgementGate lang={lang} setLang={setLang}>
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
@@ -156,8 +158,8 @@ export default function AiCopilotPage() {
           {interviewKey === 0 ? (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-slate-200 flex-1 min-w-[260px]">
-                नवीन आहात? आधी मी तुम्हाला काही प्रश्न विचारतो - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market वाचून (trend, structure, support/resistance) तुमच्यासाठी पूर्ण plan बनवतो: strategy, risk management, भांडवलाचे नियोजन आणि R:R.
-                <span className="block text-xs text-muted mt-1">New to trading? I ask about you first, read the market, then build a complete plan. Marathi or English.</span>
+                नवीन आहात? आधी काही प्रश्न - भांडवल, risk, trading ची पद्धत, वेळ, ध्येय. मग market चा data वाचून (trend, structure, support/resistance) तीन templates त्यांच्या नियमांसह, backtest आणि risk settings सह दाखवतो. Template तुम्ही निवडा; ही शिफारस नाही.
+                <span className="block text-xs text-muted mt-1">New to trading? A few questions first, then the market data and three templates with their rules, backtest and risk settings. You choose the template; this is not a recommendation. Marathi or English.</span>
               </p>
               <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />सुरू करा / Start</button>
             </div>
@@ -306,5 +308,6 @@ export default function AiCopilotPage() {
       {error && <div className="text-sm text-danger">{error}</div>}
       {message && <div className="text-sm text-accent">{message}</div>}
     </div>
+    </AiAcknowledgementGate>
   );
 }

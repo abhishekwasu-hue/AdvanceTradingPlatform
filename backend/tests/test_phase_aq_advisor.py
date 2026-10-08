@@ -31,7 +31,7 @@ def test_desired_targets_follow_the_feedback():
     assert ad.desired(InterviewAnswers(experience="new", risk="aggressive"), ad.Preferences(risk_bias=2))["risk_pct"] == 0.5   # the cap holds
 
 
-def test_three_options_each_a_deployable_plan_with_a_match():
+def test_three_options_each_a_deployable_plan_without_a_match_score():
     a = InterviewAnswers(language="en", experience="learning", risk="moderate", vehicle="option_buy")
     r = ad.build_options(a, ad.Preferences(), _sessions(days=6), "5min")
     assert [o["option"]["id"] for o in r["options"]] == ["safe", "balanced", "active"]
@@ -40,10 +40,10 @@ def test_three_options_each_a_deployable_plan_with_a_match():
     assert safe["risk_config"]["max_trades_per_day"] < active["risk_config"]["max_trades_per_day"]
     assert safe["risk_config"]["min_risk_reward"] > active["risk_config"]["min_risk_reward"]
     for o in r["options"]:
-        assert 0 < o["option"]["match"] <= ad.MAX_MATCH and o["option"]["match_reasons"]
+        assert "match" not in o["option"] and "market_fit" not in o["option"]      # P0.8-D: no score on a template
+        assert o["option"]["regime_filter_open"] in (True, False, None)
         DeploymentCreateRequest(**o["deployment"]).normalised()
-    assert r["risk_config"] == balanced["risk_config"] and r["best_option"] in ("safe", "balanced", "active")
-    assert r["preferences"]["match_history"] == [max(o["option"]["match"] for o in r["options"])]
+    assert r["risk_config"] == balanced["risk_config"] and r["best_option"] is None and r["preferences"]["match_history"] == []
 
 
 def test_rejected_strategies_are_not_offered_again():
@@ -76,7 +76,7 @@ def test_plan_refine_choose_and_profile_endpoints():
     plan = client.post("/api/ai/interview/plan", headers=headers, json={"answers": answers, "candles": candles, "data_source": "broker:upstox"})
     assert plan.status_code == 200, plan.text
     body = plan.json()
-    assert len(body["options"]) == 3 and body["feedback_options"] and len(body["preferences"]["match_history"]) == 1
+    assert len(body["options"]) == 3 and body["feedback_options"] and body["preferences"]["match_history"] == []
 
     started = client.post("/api/ai/interview/start", headers=headers, json={"prompt": "strategy सांगा"}).json()
     assert started["profile"]["answers"]["capital"] == 200000          # remembered for next time
@@ -87,7 +87,7 @@ def test_plan_refine_choose_and_profile_endpoints():
         "option_id": "balanced", "strategy_id": target["recommended"]["strategy_id"]})
     assert r.status_code == 200, r.text
     refined = r.json()
-    assert refined["changes"] and len(refined["preferences"]["match_history"]) == 2
+    assert refined["changes"] and refined["preferences"]["match_history"] == []
     assert target["recommended"]["strategy_id"] in refined["preferences"]["rejected"]
     assert client.post("/api/ai/interview/refine", headers=headers, json={"answers": answers, "candles": candles, "feedback": ["bogus"]}).status_code == 400
 

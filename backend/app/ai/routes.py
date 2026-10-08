@@ -5,13 +5,15 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
+from app.ai import compliance_terms as terms
+from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_owner, require_trader
@@ -23,7 +25,7 @@ from app.db.session import get_session
 from app.plans.limits import require_feature
 from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -33,6 +35,10 @@ class ProviderBody(BaseModel):
     model: Optional[str] = Field(default=None, max_length=80)
     api_key: Optional[str] = Field(default=None, min_length=8, max_length=300)
     enabled: bool = True
+    # P0.8-D / DPDP: the owner confirms the data-sharing consent (what leaves the platform, where it goes, how to opt out)
+    # before an external provider is saved. Not needed for rule_based.
+    data_consent: bool = False
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
 
 
 class GenerateBody(BaseModel):
@@ -74,20 +80,30 @@ async def _tenant(session: AsyncSession, user: User) -> Tenant:
 async def get_provider(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     from app.ai import metering
     tenant = await _tenant(session, user)
-    return ai_settings.as_dict(await ai_settings.get_config(session, user.tenant_id), tenant, usage=await metering.budget_state(session, tenant))
+    consent = terms.status_dict(terms.KIND_DATA, await terms.latest(session, terms.KIND_DATA, tenant_id=user.tenant_id))
+    return {**ai_settings.as_dict(await ai_settings.get_config(session, user.tenant_id), tenant, usage=await metering.budget_state(session, tenant)),
+            "data_consent": consent}
 
 
 @router.put("/provider")
-async def put_provider(body: ProviderBody, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
+async def put_provider(body: ProviderBody, request: Request, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
     tenant = await _tenant(session, user)
     if body.provider != "rule_based":
         require_feature(tenant, "ai_features", "External AI providers")
+        # The current consent is asked once (and again when its text changes); a later save - a model change, a new key,
+        # switching it off - does not ask again.
+        if await terms.latest(session, terms.KIND_DATA, tenant_id=user.tenant_id) is None:
+            if not body.data_consent:
+                raise HTTPException(status_code=400, detail={"code": "data_consent_required", "version": terms.DATA_CONSENT_VERSION,
+                                                             "message": "Read the data-sharing consent and confirm it (data_consent) before an external provider is saved"})
+            await terms.accept(session, user, terms.KIND_DATA, terms.DATA_CONSENT_VERSION, language=body.language, request=request)
     try:
         record = await ai_settings.save_config(session, user, provider=body.provider, model=body.model, api_key=body.api_key, enabled=body.enabled)
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     from app.ai import metering
-    return ai_settings.as_dict(record, tenant, usage=await metering.budget_state(session, tenant))
+    consent = terms.status_dict(terms.KIND_DATA, await terms.latest(session, terms.KIND_DATA, tenant_id=user.tenant_id))
+    return {**ai_settings.as_dict(record, tenant, usage=await metering.budget_state(session, tenant)), "data_consent": consent}
 
 
 @router.delete("/provider", status_code=204)
@@ -97,8 +113,32 @@ async def delete_provider(user: User = Depends(require_owner), session: AsyncSes
 
 # --- L2 generator + review gate ------------------------------------------------------------------
 
+class AcknowledgementBody(BaseModel):
+    version: str = Field(min_length=4, max_length=24)
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
+
+
+@router.get("/acknowledgement")
+async def get_acknowledgement(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """P0.8-D: the current AI Copilot acknowledgement text (en/mr), its version and whether this user accepted it."""
+    row = await terms.latest(session, terms.KIND_COPILOT, tenant_id=user.tenant_id, user_id=user.id)
+    return terms.status_dict(terms.KIND_COPILOT, row)
+
+
+@router.post("/acknowledgement")
+async def accept_acknowledgement(body: AcknowledgementBody, request: Request, user: User = Depends(get_current_user),
+                                 session: AsyncSession = Depends(get_session)) -> dict:
+    """Records that this user read and accepted the current version (audited: `ai_copilot_terms_accepted`)."""
+    try:
+        row = await terms.accept(session, user, terms.KIND_COPILOT, body.version, language=body.language, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.commit()
+    return terms.status_dict(terms.KIND_COPILOT, row)
+
+
 @router.post("/drafts", status_code=201)
-async def generate_draft(body: GenerateBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def generate_draft(body: GenerateBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), _ack: None = Depends(ai_acknowledged)) -> dict:
     await require_flag(session, "ai_copilot", user.tenant_id)  # Phase N4 operator kill flag
     tenant = await _tenant(session, user)
     regime = body.regime.upper() if body.regime and body.regime.upper() in REGIMES else None
@@ -135,7 +175,7 @@ async def _draft(session: AsyncSession, draft_id: int, user: User) -> AiStrategy
 
 
 @router.get("/drafts/{draft_id}")
-async def get_draft(draft_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def get_draft(draft_id: int, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     return generator.as_dict(await _draft(session, draft_id, user), include_raw=True)
 
 
@@ -169,7 +209,8 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
 
 
 @router.post("/drafts/{draft_id}/approve")
-async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                        _ack: None = Depends(ai_acknowledged)) -> dict:
     draft = await _draft(session, draft_id, user)
     tenant = await _tenant(session, user)
     try:
@@ -213,7 +254,7 @@ class InterviewChooseBody(BaseModel):
     answers: interview.InterviewAnswers
     option_id: str = Field(max_length=20)
     strategy_id: Optional[str] = Field(default=None, max_length=100)
-    match: int = Field(default=0, ge=0, le=100)
+    match: int = Field(default=0, ge=0, le=100, description="ignored since P0.8-D (no match score); kept for older clients")
 
 
 @router.get("/interview/questions")
@@ -222,7 +263,7 @@ async def interview_questions(user: User = Depends(get_current_user)) -> dict:
 
 
 @router.post("/interview/start")
-async def interview_start(body: InterviewStartBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def interview_start(body: InterviewStartBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """Is the request vague (interview first) or a rule description (generate directly)? Plus the
     answers the text already gives, so they are not asked again, and the saved profile (Phase AQ)."""
     out = interview.start(body.prompt)
@@ -298,7 +339,7 @@ def _risk_statement(risk: dict) -> str:
 
 @router.post("/interview/deploy", status_code=201)
 async def interview_deploy(body: CandidateDeployBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
-                           session_id: Optional[int] = Depends(current_session_id)) -> dict:
+                           session_id: Optional[int] = Depends(current_session_id), _ack: None = Depends(ai_acknowledged)) -> dict:
     """P0.8 / A3: deploy an interview option in PAPER through the same gate as an AI draft - the candidate is the
     server's, its strategy carries backtest evidence with trades, and the human accepted the maximum loss per trade."""
     from app.deployments.routes import DeploymentCreateRequest, create_deployment
@@ -323,22 +364,21 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
 
 
 @router.post("/interview/plan")
-async def interview_plan(body: InterviewPlanBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """The professional's plan as three options (safe / balanced / active) with a match % each:
-    market read, strategy with evidence, risk settings, capital allocation, R:R, contract and a
-    PAPER deployment - shown, never applied. The answers are remembered in the trader profile."""
+async def interview_plan(body: InterviewPlanBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+    """Three risk settings (safe / balanced / active) on templates the trader chooses between (P0.8-D: described and
+    ranked by data, never recommended; no match %): market read, template with its evidence, risk settings, R:R,
+    contract and a PAPER deployment - shown, never applied. The answers are remembered in the trader profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     _df_for(body)
     prefs = body.preferences
     if prefs is None:
         _, prefs = await advisor.load_profile(session, user)
-    # A new plan starts a new conversation: the match history counts this conversation's rounds.
     prefs = prefs.model_copy(update={"match_history": []})
     return await _options(session, user, body.answers, prefs, body)
 
 
 @router.post("/interview/refine")
-async def interview_refine(body: InterviewRefineBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def interview_refine(body: InterviewRefineBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """"Not this one, because..." - the reasons become preferences and the options are rebuilt."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     bad = [c for c in body.feedback if c not in advisor.FEEDBACK_CODES]
@@ -355,11 +395,11 @@ async def interview_refine(body: InterviewRefineBody, user: User = Depends(get_c
 
 
 @router.post("/interview/choose")
-async def interview_choose(body: InterviewChooseBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def interview_choose(body: InterviewChooseBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """Remembers the option the trader picked; the next round leans towards it."""
     _, prefs = await advisor.load_profile(session, user)
     prefs.chosen = (prefs.chosen + [{"at": datetime.now(timezone.utc).isoformat(), "option": body.option_id,
-                                     "strategy_id": body.strategy_id, "match": body.match}])[-20:]
+                                     "strategy_id": body.strategy_id}])[-20:]
     await advisor.save_profile(session, user, body.answers, prefs)
     return {"preferences": prefs.model_dump()}
 
@@ -462,14 +502,14 @@ async def concept(concept_id: str, language: str = Query(default="mr", pattern=r
 
 
 @router.post("/ask")
-async def ask(body: AskBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """Ask the guide: answered from the concept library and the market memory, or - with an external
     AI provider configured - by the AI grounded on the same notes, the memory and the trader's profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     lang = body.language or interview.detect_language(body.question)
     memory = await market_memory.latest(session, user.tenant_id)
     saved, _ = await advisor.load_profile(session, user)
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge")
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
     if provider.name == "rule_based":
         out = knowledge.answer(body.question, lang, memory)
         if getattr(provider, "reason", ""):
@@ -576,7 +616,7 @@ async def _coach_review(session: AsyncSession, user: User, lang: str, days: int,
 
 
 @router.get("/brief")
-async def daily_brief(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user),
+async def daily_brief(language: str = Query(default="mr", pattern=r"^(en|mr)$"), user: User = Depends(require_ai_acknowledged),
                       session: AsyncSession = Depends(get_session)) -> dict:
     """Today's briefing: the day type and game plan, the session, your P&L and risk budget, why each
     deployment is or is not trading, and the pre-trade checklist."""
@@ -606,7 +646,7 @@ async def thesis_report(user: User = Depends(get_current_user), session: AsyncSe
 @router.get("/thesis/{symbol}")
 async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"^(en|mr)$"), refresh: bool = Query(default=False),
                      narrate: bool = Query(default=False, description="ask the organisation's own AI provider for a narrative (numbers-checked)"),
-                     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+                     user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """The thesis of one watched symbol from the market memory: direction, agreement matrix, bull/base/bear
     scenarios, the shadow size multiplier (recorded, never applied) and the rule-based sentences. 404
     until the memory has a read of the symbol."""
@@ -616,7 +656,7 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
     provider = None
     if narrate:
         try:
-            provider = await ai_settings.provider_for(session, await _tenant(session, user), task="thesis")
+            provider = await ai_settings.provider_for(session, await _tenant(session, user), task="thesis", user_id=user.id)
         except ProviderError:                       # a stale provider record: the rule-based narrative, with the reason
             provider = None
     news_items = []
@@ -635,7 +675,7 @@ async def thesis_for(symbol: str, language: str = Query(default="mr", pattern=r"
 
 @router.get("/coach")
 async def trade_coach(language: str = Query(default="mr", pattern=r"^(en|mr)$"), days: int = Query(default=30, ge=1, le=365),
-                      mode: str = Query(default="ALL", pattern=r"^(ALL|PAPER|LIVE)$"), user: User = Depends(get_current_user),
+                      mode: str = Query(default="ALL", pattern=r"^(ALL|PAPER|LIVE)$"), user: User = Depends(require_ai_acknowledged),
                       session: AsyncSession = Depends(get_session)) -> dict:
     """The trade coach: your closed trades' numbers, breakdowns and behaviour flags with fixes."""
     await require_flag(session, "ai_copilot", user.tenant_id)
@@ -675,7 +715,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             facts = briefing.summary_lines(lang, brief)[:2] + facts
         out.update(answer="\n".join(facts), brief={"day_type": brief["day_type"], "plan": brief["plan"], "checklist": brief["checklist"],
                                                    "deployments": brief["deployments"]})
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge")
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
     if provider.name != "rule_based" and name != "interview":
         text, why = await copilot.narrate(provider, lang, name, message, facts)
         await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
@@ -690,7 +730,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
 
 
 @router.post("/copilot")
-async def ask_copilot(body: CopilotBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """One box for everything - see `copilot_answer`."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     return await copilot_answer(session, user, body.message, body.language)
@@ -760,7 +800,7 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
 
 
 @router.post("/strategist/parse")
-async def strategist_parse(body: StrategistParseBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def strategist_parse(body: StrategistParseBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase BF: what the strategist understood from a plain-words request (Marathi or English) - symbol,
     style, direction, language - so the trader can see and correct it before the study runs."""
     await require_flag(session, "ai_copilot", user.tenant_id)
@@ -770,14 +810,15 @@ async def strategist_parse(body: StrategistParseBody, user: User = Depends(get_c
 
 
 @router.post("/strategist/study")
-async def strategist_study(body: StrategistBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def strategist_study(body: StrategistBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """The live market study of one symbol: multi-timeframe trend, levels, bias, scenarios."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     body, parsed = body.resolved()
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
-        out = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+        out = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory,
+                                        stock_detail=await flag_enabled(session, "thesis_stock_targets", user.tenant_id))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     out["data_source"] = source
@@ -786,7 +827,7 @@ async def strategist_study(body: StrategistBody, user: User = Depends(get_curren
 
 
 @router.post("/strategist/build")
-async def strategist_build(body: StrategistBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def strategist_build(body: StrategistBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """Study the market, then write, tune and validate strategies for it (walk-forward on the recent
     sessions) and return the best three as ready-to-adopt plans. With an AI provider, its own rule sets
     are validated alongside."""
@@ -795,12 +836,13 @@ async def strategist_build(body: StrategistBody, user: User = Depends(get_curren
     df, day, source = await _strategist_frames(session, user, body)
     memory = await market_memory.latest(session, user.tenant_id)
     try:
-        study = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory)
+        study = await run_in_threadpool(market_study.study, df, body.symbol, body.language, day=day, memory=memory,
+                                        stock_detail=await flag_enabled(session, "thesis_stock_targets", user.tenant_id))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     extra = []
-    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="strategist")
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="strategist", user_id=user.id)
     if provider.name != "rule_based":
         extra = await strategist.ai_proposals(provider, study, body.style)
         await ai_settings.mark_used(session, user.tenant_id, error=None)
@@ -830,7 +872,8 @@ class AdoptBody(BaseModel):
 
 
 @router.post("/strategist/adopt", status_code=201)
-async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                           _ack: None = Depends(ai_acknowledged)) -> dict:
     """Save a strategist candidate as one of your custom strategies (versioned), ready to deploy in PAPER.
     P0.8 / A3: the candidate is the server's (built and validated by /strategist/build - a config typed by the
     browser is not accepted), it must carry a simulation with trades, it runs the compliance checklist like an AI

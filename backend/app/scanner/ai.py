@@ -74,7 +74,7 @@ class ScanPlan(BaseModel):
 
 class RankedSymbol(BaseModel):
     symbol: str
-    score: int = Field(ge=0, le=100)
+    score: Optional[int] = Field(default=None, ge=0, le=100)     # P0.8-D: None unless the operator's per-stock flag is on
     thesis: str
     risks: str = ""
     next_step: str = ""
@@ -115,7 +115,22 @@ def plan_system_prompt(language: str = "en") -> str:
     )
 
 
-def read_system_prompt(language: str = "en") -> str:
+def read_system_prompt(language: str = "en", scores: bool = False) -> str:
+    if not scores:
+        # P0.8-D: a description of what each match cleared, not a ranking of trade ideas on individual stocks.
+        return (
+            "You are a market-structure analyst describing the output of a deterministic scanner. You receive, per symbol, the "
+            "filters it cleared (exact labels), its last close and the regime the platform's own classifier read (with the numbers "
+            "behind it). You have no other data: do not invent prices, volumes, news or targets. Do not rank or score the symbols, "
+            "do not call anything a trade idea or an opportunity, and do not tell the trader to buy, sell or hold.\n\n"
+            "Answer with ONE JSON object only:\n"
+            "{\n"
+            '  "summary": two or three sentences in the trader\'s language (' + language + ") describing the set as a whole,\n"
+            '  "ranked": [ {"symbol": str, "thesis": which filters it cleared and whether the regime agrees with or contradicts those labels, '
+            '"risks": what would change the read, "next_step": what the trader could verify (backtest, paper-trade)} ] in the order given,\n'
+            '  "warnings": [caveats: thin evidence, conflicting labels, unknown regime]\n'
+            "}"
+        )
     return (
         "You are a market-structure analyst reviewing the output of a deterministic scanner. You receive, per symbol, the "
         "filters it cleared (exact labels), its last close and the regime the platform's own classifier read (with the numbers "
@@ -279,7 +294,7 @@ def rule_based_plan(text: str) -> ScanPlan:
 
 async def plan_scan(session: AsyncSession, tenant: Tenant, user: User, text: str, *, language: str = "en",
                     provider: Optional[LLMProvider] = None) -> ScanPlan:
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_plan")
+    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_plan", user_id=user.id)
     if isinstance(provider, RuleBasedProvider):
         plan = rule_based_plan(text)
     else:
@@ -319,7 +334,7 @@ def _regimes_for(request: ScannerRequest, matches: List[ScannerMatch]) -> Dict[s
     return out
 
 
-def rule_based_read(matches: List[ScannerMatch], regimes: Dict[str, dict]) -> ScanRead:
+def rule_based_read(matches: List[ScannerMatch], regimes: Dict[str, dict], scores: bool = False) -> ScanRead:
     """No model: a transparent score from how many filter categories matched and whether the
     regime agrees with the labels' direction."""
     ranked: List[RankedSymbol] = []
@@ -348,17 +363,21 @@ def rule_based_read(matches: List[ScannerMatch], regimes: Dict[str, dict]) -> Sc
         risks = ("Regime unknown - too few bars to judge context. " if kind == "UNKNOWN" else "") + \
                 ("Volatile regime - stops need room. " if kind == "VOLATILE" else "") + \
                 ("Labels and regime point different ways. " if conflict else "") + "Filters describe the last bar only; the state can flip on the next one."
-        ranked.append(RankedSymbol(symbol=m.symbol, score=score, thesis=thesis, risks=risks.strip(),
+        ranked.append(RankedSymbol(symbol=m.symbol, score=score if scores else None, thesis=thesis, risks=risks.strip(),
                                    next_step="Backtest a strategy with these conditions on this symbol, then paper-trade it.", regime=kind))
         if kind == "UNKNOWN":
             warnings.append(f"{m.symbol}: regime unknown")
-    ranked.sort(key=lambda r: -r.score)
-    summary = (f"{len(ranked)} symbol(s) cleared every filter. Scores add 10 per filter category matched, 15 when the regime agrees with "
-               f"the labels' direction and subtract 20 when it conflicts; unknown regimes cap at 60." if ranked else "No symbol cleared every filter - nothing to rank.")
+    if scores:
+        ranked.sort(key=lambda r: -(r.score or 0))
+        summary = (f"{len(ranked)} symbol(s) cleared every filter. Scores add 10 per filter category matched, 15 when the regime agrees with "
+                   f"the labels' direction and subtract 20 when it conflicts; unknown regimes cap at 60." if ranked else "No symbol cleared every filter - nothing to rank.")
+    else:
+        summary = (f"{len(ranked)} symbol(s) cleared every filter, listed in the scanner's order with the filters each cleared and the regime the "
+                   f"platform reads. This describes the data; it is not a ranking or a trade idea." if ranked else "No symbol cleared every filter - nothing to describe.")
     return ScanRead(summary=summary, ranked=ranked, warnings=warnings[:10], provider="rule_based", model=RuleBasedProvider.model)
 
 
-def parse_read(raw: dict, matches: List[ScannerMatch], regimes: Dict[str, dict]) -> ScanRead:
+def parse_read(raw: dict, matches: List[ScannerMatch], regimes: Dict[str, dict], scores: bool = False) -> ScanRead:
     known = {m.symbol for m in matches}
     ranked: List[RankedSymbol] = []
     warnings = [str(w) for w in (raw.get("warnings") or []) if str(w).strip()][:10]
@@ -371,7 +390,7 @@ def parse_read(raw: dict, matches: List[ScannerMatch], regimes: Dict[str, dict])
             score = int(round(float(item.get("score", 50))))
             if regimes.get(symbol, {}).get("kind") == "UNKNOWN":
                 score = min(score, 60)
-            ranked.append(RankedSymbol(symbol=symbol, score=max(0, min(100, score)), thesis=str(item.get("thesis") or "")[:800],
+            ranked.append(RankedSymbol(symbol=symbol, score=max(0, min(100, score)) if scores else None, thesis=str(item.get("thesis") or "")[:800],
                                        risks=str(item.get("risks") or "")[:600], next_step=str(item.get("next_step") or "")[:300] or
                                        "Backtest a strategy with these conditions, then paper-trade it.", regime=regimes.get(symbol, {}).get("kind")))
         except (TypeError, ValueError, AttributeError) as exc:
@@ -379,7 +398,11 @@ def parse_read(raw: dict, matches: List[ScannerMatch], regimes: Dict[str, dict])
     missing = known - {r.symbol for r in ranked}
     if missing:
         warnings.append("not ranked by the model: " + ", ".join(sorted(missing)))
-    ranked.sort(key=lambda r: -r.score)
+    if scores:
+        ranked.sort(key=lambda r: -(r.score or 0))
+    else:
+        order = {m.symbol: i for i, m in enumerate(matches)}
+        ranked.sort(key=lambda r: order.get(r.symbol, len(order)))
     return ScanRead(summary=str(raw.get("summary") or "")[:1500], ranked=ranked, warnings=warnings)
 
 
@@ -387,9 +410,11 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
                     language: str = "en", provider: Optional[LLMProvider] = None) -> ScanRead:
     matches = result.matches[:MAX_MATCHES_TO_READ]
     regimes = _regimes_for(request, matches)
-    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_read")
+    provider = provider or await ai_settings.provider_for(session, tenant, task="scanner_read", user_id=user.id)
+    from app.platform.controls import flag_enabled
+    scores = bool(tenant is not None and await flag_enabled(session, "thesis_stock_targets", tenant.id))     # P0.8-D: per-stock scores off by default
     if isinstance(provider, RuleBasedProvider) or not matches:
-        read = rule_based_read(matches, regimes)
+        read = rule_based_read(matches, regimes, scores)
     else:
         payload = {"filters": {"indicator": [c.label() for c in request.indicator_conditions], "structure": [s.label() for s in request.structure_filters],
                                "option": [o.label() for o in request.option_filters]},
@@ -397,15 +422,15 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
                                 "regime": regimes.get(m.symbol)} for m in matches],
                    "regimes_possible": list(REGIMES) + ["UNKNOWN"]}
         try:
-            raw = await provider.complete(read_system_prompt(language), "SCAN RESULT:\n" + json.dumps(payload), max_tokens=3000)
+            raw = await provider.complete(read_system_prompt(language, scores), "SCAN RESULT:\n" + json.dumps(payload), max_tokens=3000)
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
-            read = parse_read(_extract_json(raw), matches, regimes)
+            read = parse_read(_extract_json(raw), matches, regimes, scores)
             read.provider, read.model = provider.name, provider.model
             await ai_settings.mark_used(session, tenant.id)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="error").inc()
             await ai_settings.mark_used(session, tenant.id, error=str(exc))
-            read = rule_based_read(matches, regimes)
+            read = rule_based_read(matches, regimes, scores)
             read.warnings.insert(0, f"{provider.name} did not answer usably ({str(exc)[:120]}); deterministic read used instead")
     if len(result.matches) > MAX_MATCHES_TO_READ:
         read.warnings.append(f"only the first {MAX_MATCHES_TO_READ} of {len(result.matches)} matches were read")

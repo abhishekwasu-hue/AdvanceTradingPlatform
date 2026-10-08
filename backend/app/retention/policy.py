@@ -21,6 +21,8 @@ NEVER_DELETED = (
     "audit_logs", "orders", "order_events", "trades", "signal_history", "custom_strategies", "strategy_versions",
     "risk_events",
     "users", "tenants", "market_holidays",
+    # P0.8-D: every LLM input/output and every accepted acknowledgement/consent (5+ years, like the audit trail).
+    "llm_calls", "ai_acknowledgements",
 )
 
 

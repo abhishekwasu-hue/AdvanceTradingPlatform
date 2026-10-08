@@ -123,7 +123,7 @@ def test_provider_config_is_owner_only_encrypted_and_never_returned():
     headers, me = _owner("ai-provider@example.com")
     default = client.get("/api/ai/provider", headers=headers).json()
     assert default["provider"] == "rule_based" and default["configured"] is False and default["ai_features_allowed"] is True
-    saved = client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "api_key": "sk-ant-secret-value-123", "model": "claude-opus-5"})
+    saved = client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "api_key": "sk-ant-secret-value-123", "model": "claude-opus-5"})
     assert saved.status_code == 200, saved.text
     assert saved.json()["api_key_set"] is True and "sk-ant-secret" not in saved.text
 
@@ -134,14 +134,14 @@ def test_provider_config_is_owner_only_encrypted_and_never_returned():
     cipher = _run(stored())
     assert cipher != "sk-ant-secret-value-123" and decrypt_text(cipher) == "sk-ant-secret-value-123"
     # Switching model keeps the stored key; switching provider without a key is refused.
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "anthropic", "model": "claude-sonnet-5"}).json()["api_key_set"] is True
-    assert client.put("/api/ai/provider", headers=headers, json={"provider": "openai"}).status_code == 400
+    assert client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "model": "claude-sonnet-5"}).json()["api_key_set"] is True
+    assert client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "openai"}).status_code == 400
     assert any(l["event"] == "ai_provider_configured" for l in client.get("/api/audit-logs", headers=headers).json())
     assert client.delete("/api/ai/provider", headers=headers).status_code == 204
     assert client.get("/api/ai/provider", headers=headers).json()["configured"] is False
 
     free_headers, _ = _owner("ai-provider-free@example.com", plan="free")
-    assert client.put("/api/ai/provider", headers=free_headers, json={"provider": "openai", "api_key": "sk-openai-xxxxxxxx"}).status_code == 402
+    assert client.put("/api/ai/provider", headers=free_headers, json={"data_consent": True, "provider": "openai", "api_key": "sk-openai-xxxxxxxx"}).status_code == 402
     assert client.put("/api/ai/provider", headers=free_headers, json={"provider": "rule_based"}).status_code == 200
 
 

@@ -481,6 +481,26 @@ default and G-LIVE gate before any LIVE wiring.
   `Badge` / `EmptyState`; the Signals form uses `Select` / `Input` / `Button` (no more horizontal overflow).
 - Checked in dark and light at 1440 px and 390 px with real data on each page (signal + chart, an analysed chain,
   paper orders, open positions). Initial JS 80.3 KB gzip.
+### 2026-10-08 - G-LIVE order fixes behind switches (nothing LIVE turned on)
+- `LIVE_MARKET_PROTECTION`: Zerodha and Upstox MARKET / SL-M orders carry `market_protection` (`-1` automatic band, or
+  `ORDER_MARKET_PROTECTION_PCT`). Kite rejects an API market order without a non-zero value (exchange rule for algo
+  orders, per Kite's forum); ATP's Zerodha adapter sent none.
+- `LIVE_UPSTOX_OPTION_STOP_LIMIT`: Upstox option stops as SL with the limit `STOP_LIMIT_BAND_PCT` past the trigger
+  (the exchanges discontinued SL-M on index options); a triggered-but-unfilled stop is closed by the software stop.
+- `LIVE_EXIT_IF_NO_STOP`: the broker clearly rejected the stop at entry or on re-arm -> immediate market exit + one
+  CRITICAL alert; never after a timeout / 5xx (the stop may stand), while broker-uncertain or with the market shut;
+  at most 3 tries. An exit skips cancelling an already rejected / cancelled / missing stop (found: today that cancel
+  fails and blocks the exit), and nets off a stop-limit's partial fill.
+- `STOP_LIMIT_BAND_PCT`: empty = today's 1%; set = rounded outward, at least one tick past the trigger.
+- Self-review fixes before merge: clear-rejection rule, uncertain / market-shut / retry guards, partial-fill netting,
+  outward band rounding, dead-status set (EXPIRED, LAPSED), modify keeps a standing SL-M, one alert at entry.
+- Second review round: a caller's "stop is dead" is trusted only when a fresh book read agrees (a stop still working
+  is cancelled first); CANCEL PENDING is not dead; the stop's fill is polled until terminal before netting, and an
+  unreadable fill or an exit that errors without a clear answer flags the tenant broker-uncertain (no more tries);
+  the immediate exit can never break the entry alert or the guard pass (try/except).
+- Tests: `tests/test_glive_order_flags.py` (mock brokers: payloads, band rounding, blocked vs. completed exit, closing
+  an unprotected position, the skip cases, retry limit, partial-fill netting, entry-path rejection flag, the four
+  strict wing-fill outcomes, defaults off).
 
 ### 2026-10-08 - BANKNIFTY expiries from NSE data (no weekday rule)
 - **Source**: NSE's own F&O bhavcopies - `EXPIRY_DT` (legacy file, to 5 Jul 2024) and `XpryDt` (UDiFF, from 8 Jul 2024).

@@ -1,11 +1,10 @@
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 
 /** Detects the backend's step-up signal: a 403 whose detail mentions two-factor. */
 export function isStepUpError(e: unknown): boolean {
-  const text = String(e);
-  return text.startsWith("Error: 403") && text.toLowerCase().includes("two-factor");
+  return e instanceof ApiError && e.status === 403 && e.message.toLowerCase().includes("two-factor");
 }
 
 /**

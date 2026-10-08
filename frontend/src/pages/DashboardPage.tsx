@@ -228,7 +228,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
 
       {error && (
         <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-          Could not reach the backend API ({error}). Is `uvicorn app.main:app` running on :8000?
+          Some dashboard data could not be loaded: {error}
         </div>
       )}
 

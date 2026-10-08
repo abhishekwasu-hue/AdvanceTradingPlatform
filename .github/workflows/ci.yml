@@ -160,8 +160,14 @@ jobs:
       - name: English-only UI (Devanagari only in the interview allowlist)
         run: npm run check:devanagari
 
+      - name: Unit tests (Vitest)
+        run: npm test
+
       - name: Type-check + production build
         run: npm run build
+
+      - name: Initial JS budget (300 KB gzip; pages and charts load on demand)
+        run: npm run check:bundle
 
       - name: Audit production dependencies for known vulnerabilities (npm audit)
         run: npm audit --omit=dev

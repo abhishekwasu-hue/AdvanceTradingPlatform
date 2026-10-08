@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
+import { toast } from "../components/Toast";
 import type {
   BacktestRunSummary, CustomStrategyResponse, MarketplaceCharge, MarketplaceEarnings, MarketplaceListing, MarketplacePayout, MarketplaceRevenue,
   MarketplaceSubscription, MarketplaceTerms,
@@ -266,7 +267,7 @@ export default function MarketplacePage() {
                 {payoutQueue.map((p) => (
                   <tr key={p.id} className="border-t border-border/60"><td className="py-1">#{p.id} creator org #{p.tenant_id}</td><td className="py-1">{inr(p.amount, p.currency)} to {p.destination_hint}</td>
                     <td className="py-1 text-right space-x-2">
-                      <button disabled={busy} onClick={() => api.adminMarketplacePayoutDestination(p.id).then((d) => window.alert(`Payout #${p.id}: ${inr(p.amount, p.currency)} to ${d.destination}`)).catch((e) => setError(String(e)))} className="text-slate-200 hover:underline">Show destination</button>
+                      <button disabled={busy} onClick={() => api.adminMarketplacePayoutDestination(p.id).then((d) => toast.info(`Payout #${p.id}: ${inr(p.amount, p.currency)} to ${d.destination}`)).catch((e) => setError(String(e)))} className="text-slate-200 hover:underline">Show destination</button>
                       <button disabled={busy} onClick={() => { const ref = window.prompt("Transfer reference (UTR / UPI ref)") ?? ""; if (ref) void run("Payout marked paid.", () => api.adminMarketplacePayoutSettle(p.id, true, ref)); }} className="text-emerald-400 hover:underline">Mark paid</button>
                       <button disabled={busy} onClick={() => { const note = window.prompt("Reason (shown to the creator)") ?? ""; void run("Payout rejected; the earnings are available again.", () => api.adminMarketplacePayoutSettle(p.id, false, undefined, note)); }} className="text-danger hover:underline">Reject</button>
                     </td></tr>

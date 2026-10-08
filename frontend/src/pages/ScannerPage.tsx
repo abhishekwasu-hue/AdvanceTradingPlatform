@@ -22,6 +22,7 @@ import {
 } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
 import type { OHLCVBar, OptionChain } from "../types";
+import { PageHeader } from "../components/primitives";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -140,32 +141,25 @@ export default function ScannerPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-indigo-400">Market Scanner</h1>
-        <p className="text-sm font-semibold text-indigo-200">
-          Filter a watchlist by indicator conditions (same building blocks as the Strategy
-          Builder), price-action structure, and option-chain signals - only symbols clearing
-          every configured filter are returned.
-        </p>
-      </div>
+      <PageHeader title="Market Scanner" description="Filter a watchlist by indicator conditions (same building blocks as the Strategy Builder), price-action structure, and option-chain signals - only symbols clearing every configured filter are returned." />
 
       <DataSourceBar source={source} note="Option-chain filters read the broker's live chain in Broker mode and a sample chain otherwise." />
-      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card title="Describe the scan (AI)">
         <div className="grid sm:grid-cols-[1fr_160px] gap-3 items-start">
-          <textarea rows={2} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" placeholder="e.g. NIFTY and BANKNIFTY stocks in an uptrend near support, RSI(14) above 55, PCR over 1.2, 15min"
+          <textarea rows={2} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" placeholder="e.g. NIFTY and BANKNIFTY stocks in an uptrend near support, RSI(14) above 55, PCR over 1.2, 15min"
             value={aiText} onChange={(e) => setAiText(e.target.value)} />
-          <button onClick={planWithAi} disabled={aiBusy || aiText.trim().length < 5} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+          <button onClick={planWithAi} disabled={aiBusy || aiText.trim().length < 5} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
             {aiBusy ? "Planning…" : "Plan filters with AI"}
           </button>
         </div>
-        <p className="text-[11px] text-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
+        <p className="text-[11px] text-fg-muted mt-2">The AI only translates your words into the filters below (same building blocks as the Strategy Builder); you review them and press Run. Without an AI provider under Settings the deterministic parser is used.</p>
         {aiPlan && (
           <div className="mt-2 text-xs space-y-1">
-            <div className="text-slate-200">{aiPlan.explanation} <span className="text-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
-            {aiPlan.warnings.map((w, i) => <div key={i} className="text-amber-300">{w}</div>)}
+            <div className="text-fg">{aiPlan.explanation} <span className="text-fg-muted">· {aiPlan.provider}{aiPlan.model ? `/${aiPlan.model}` : ""} · {aiPlan.prompt_version}</span></div>
+            {aiPlan.warnings.map((w, i) => <div key={i} className="text-warn">{w}</div>)}
           </div>
         )}
       </Card>
@@ -173,17 +167,17 @@ export default function ScannerPage() {
       <Card title="Watchlist">
         <div className="grid sm:grid-cols-[1fr_140px] gap-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Symbols (comma-separated)</label>
+            <label className="block text-xs text-fg-muted mb-1">Symbols (comma-separated)</label>
             <input
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={watchlist}
               onChange={(e) => setWatchlist(e.target.value)}
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Timeframe</label>
+            <label className="block text-xs text-fg-muted mb-1">Timeframe</label>
             <select
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={timeframe}
               onChange={(e) => setTimeframe(e.target.value)}
             >
@@ -206,9 +200,9 @@ export default function ScannerPage() {
       <Card title="Price-action / structure filters">
         <div className="space-y-1.5">
           {structureFilters.map((f, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-panel2/40 px-2 py-2">
+            <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2/40 px-2 py-2">
               <select
-                className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                 value={f.filter_type}
                 onChange={(e) => updateStructureFilter(i, { ...f, filter_type: e.target.value as StructureFilterType })}
               >
@@ -217,11 +211,11 @@ export default function ScannerPage() {
                 ))}
               </select>
               {(f.filter_type === "NEAR_SUPPORT" || f.filter_type === "NEAR_RESISTANCE") && (
-                <label className="flex items-center gap-1 text-xs text-muted">
+                <label className="flex items-center gap-1 text-xs text-fg-muted">
                   Tolerance %
                   <input
                     type="number" step="0.1"
-                    className="w-16 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                    className="w-16 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                     value={f.tolerance_pct}
                     onChange={(e) => updateStructureFilter(i, { ...f, tolerance_pct: Number(e.target.value) })}
                   />
@@ -229,7 +223,7 @@ export default function ScannerPage() {
               )}
               <button
                 onClick={() => setStructureFilters(structureFilters.filter((_, j) => j !== i))}
-                className="ml-auto text-xs text-danger hover:underline"
+                className="ml-auto text-xs text-down hover:underline"
               >
                 Remove
               </button>
@@ -245,15 +239,15 @@ export default function ScannerPage() {
       </Card>
 
       <Card title="Option-chain filters">
-        <p className="text-xs text-muted mb-2">
+        <p className="text-xs text-fg-muted mb-2">
           A sample option chain is generated per symbol only when at least one option filter is
           configured. A symbol never fabricates a pass when it has no chain data.
         </p>
         <div className="space-y-1.5">
           {optionFilters.map((f, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-panel2/40 px-2 py-2">
+            <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2/40 px-2 py-2">
               <select
-                className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                 value={f.filter_type}
                 onChange={(e) => updateOptionFilter(i, { ...f, filter_type: e.target.value as OptionFilterType })}
               >
@@ -264,7 +258,7 @@ export default function ScannerPage() {
               {f.filter_type === "PCR" && (
                 <>
                   <select
-                    className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                    className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                     value={f.operator ?? "GT"}
                     onChange={(e) => updateOptionFilter(i, { ...f, operator: e.target.value as ConditionOperator })}
                   >
@@ -274,18 +268,18 @@ export default function ScannerPage() {
                   </select>
                   <input
                     type="number" step="0.1"
-                    className="w-20 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                    className="w-20 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                     value={f.value ?? 0}
                     onChange={(e) => updateOptionFilter(i, { ...f, value: Number(e.target.value) })}
                   />
                 </>
               )}
               {f.filter_type === "NEAR_MAX_PAIN" && (
-                <label className="flex items-center gap-1 text-xs text-muted">
+                <label className="flex items-center gap-1 text-xs text-fg-muted">
                   Tolerance %
                   <input
                     type="number" step="0.1"
-                    className="w-16 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+                    className="w-16 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
                     value={f.tolerance_pct}
                     onChange={(e) => updateOptionFilter(i, { ...f, tolerance_pct: Number(e.target.value) })}
                   />
@@ -293,7 +287,7 @@ export default function ScannerPage() {
               )}
               <button
                 onClick={() => setOptionFilters(optionFilters.filter((_, j) => j !== i))}
-                className="ml-auto text-xs text-danger hover:underline"
+                className="ml-auto text-xs text-down hover:underline"
               >
                 Remove
               </button>
@@ -308,12 +302,12 @@ export default function ScannerPage() {
         </button>
       </Card>
 
-      {error && <div className="text-sm text-danger">{error}</div>}
+      {error && <div className="text-sm text-down">{error}</div>}
 
       <button
         onClick={handleRun}
         disabled={running}
-        className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+        className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
       >
         {running ? "Scanning…" : "Run Scanner"}
       </button>
@@ -322,41 +316,41 @@ export default function ScannerPage() {
         <Card title={`Results - ${result.matched_count} of ${result.scanned_count} matched`}>
           {result.matches.length > 0 && (
             <div className="mb-2 flex items-center gap-3">
-              <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-xs text-slate-200 disabled:opacity-50">
+              <button onClick={readWithAi} disabled={aiBusy || !lastRequest} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-xs text-fg disabled:opacity-50">
                 {aiBusy ? "Reading…" : "AI read of these matches"}
               </button>
-              <span className="text-[11px] text-muted">Describes each match: the filters it cleared and the regime the platform reads. Not a ranking or advice, never an order.</span>
+              <span className="text-[11px] text-fg-muted">Describes each match: the filters it cleared and the regime the platform reads. Not a ranking or advice, never an order.</span>
             </div>
           )}
           {aiRead && (
-            <div className="mb-3 rounded-lg border border-border bg-panel2/40 p-3 text-xs space-y-2">
-              <div className="text-slate-200">{aiRead.summary} <span className="text-muted">· {aiRead.provider}{aiRead.model ? `/${aiRead.model}` : ""}</span></div>
+            <div className="mb-3 rounded-lg border border-border bg-surface-2/40 p-3 text-xs space-y-2">
+              <div className="text-fg">{aiRead.summary} <span className="text-fg-muted">· {aiRead.provider}{aiRead.model ? `/${aiRead.model}` : ""}</span></div>
               {aiRead.ranked.map((r) => (
                 <div key={r.symbol} className="rounded border border-border/60 p-2">
-                  <div className="flex items-center justify-between"><span className="font-bold text-slate-200">{r.symbol} <span className="text-muted font-normal">· regime {r.regime ?? "?"}</span></span>{r.score != null && <span className={`font-bold ${r.score >= 70 ? "text-accent" : r.score >= 50 ? "text-slate-200" : "text-danger"}`}>{r.score}</span>}</div>
-                  <div className="text-slate-300 mt-0.5">{r.thesis}</div>
-                  {r.risks && <div className="text-amber-300 mt-0.5">Risks: {r.risks}</div>}
-                  <div className="text-muted mt-0.5">Next: {r.next_step}</div>
+                  <div className="flex items-center justify-between"><span className="font-bold text-fg">{r.symbol} <span className="text-fg-muted font-normal">· regime {r.regime ?? "?"}</span></span>{r.score != null && <span className={`font-bold ${r.score >= 70 ? "text-up" : r.score >= 50 ? "text-fg" : "text-down"}`}>{r.score}</span>}</div>
+                  <div className="text-fg-muted mt-0.5">{r.thesis}</div>
+                  {r.risks && <div className="text-warn mt-0.5">Risks: {r.risks}</div>}
+                  <div className="text-fg-muted mt-0.5">Next: {r.next_step}</div>
                 </div>
               ))}
-              {aiRead.warnings.map((w, i) => <div key={i} className="text-amber-300">{w}</div>)}
-              <div className="text-[11px] text-muted">{aiRead.disclaimer}</div>
+              {aiRead.warnings.map((w, i) => <div key={i} className="text-warn">{w}</div>)}
+              <div className="text-[11px] text-fg-muted">{aiRead.disclaimer}</div>
             </div>
           )}
           {result.matches.length === 0 ? (
-            <div className="text-sm text-muted py-2">No symbols cleared every filter.</div>
+            <div className="text-sm text-fg-muted py-2">No symbols cleared every filter.</div>
           ) : (
             <div className="space-y-1.5">
               {result.matches.map((m) => (
                 <div key={m.symbol} className="rounded border border-border px-3 py-2 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-200">{m.symbol}</span>
-                    <span className="text-muted text-xs">close {m.close}</span>
+                    <span className="font-medium text-fg">{m.symbol}</span>
+                    <span className="text-fg-muted text-xs">close {m.close}</span>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {[...m.matched_indicator_labels, ...m.matched_structure_labels, ...m.matched_option_labels].map(
                       (label, i) => (
-                        <span key={i} className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent">
+                        <span key={i} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg">
                           {label}
                         </span>
                       ),

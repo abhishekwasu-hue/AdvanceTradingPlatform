@@ -5,7 +5,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { Card } from "../components/ui";
+import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import MarketPulseCard from "../components/MarketPulseCard";
@@ -26,14 +26,15 @@ type Tone = "emerald" | "rose" | "sky" | "violet" | "amber" | "orange" | "fuchsi
 
 // P1.2: colour carries meaning only - up (money made / healthy), down (money lost / stopped), warn (attention).
 // Every other family of facts uses the neutral surface with the brand accent; the tone names stay for the call sites.
-const NEUTRAL = { ring: "border-border", text: "text-fg", bg: "bg-surface-2 text-brand", bar: "bg-brand", glow: "", grad: "from-transparent to-transparent" };
-const TONE: Record<Tone, { ring: string; text: string; bg: string; bar: string; glow: string; grad: string }> = {
-  emerald: { ring: "border-up/40", text: "text-up", bg: "bg-up/10", bar: "bg-up", glow: "", grad: "from-transparent to-transparent" },
-  rose:    { ring: "border-down/40", text: "text-down", bg: "bg-down/10", bar: "bg-down", glow: "", grad: "from-transparent to-transparent" },
-  amber:   { ring: "border-warn/40", text: "text-warn", bg: "bg-warn/10", bar: "bg-warn", glow: "", grad: "from-transparent to-transparent" },
+const NEUTRAL = { ring: "border-border", text: "text-fg", bg: "bg-surface-2", icon: "text-brand", bar: "bg-brand" };
+const TONE: Record<Tone, { ring: string; text: string; bg: string; icon: string; bar: string }> = {
+  emerald: { ring: "border-up/40", text: "text-up", bg: "bg-up/10", icon: "text-up", bar: "bg-up" },
+  rose:    { ring: "border-down/40", text: "text-down", bg: "bg-down/10", icon: "text-down", bar: "bg-down" },
+  amber:   { ring: "border-warn/40", text: "text-warn", bg: "bg-warn/10", icon: "text-warn", bar: "bg-warn" },
   sky: NEUTRAL, violet: NEUTRAL, orange: NEUTRAL, fuchsia: NEUTRAL, teal: NEUTRAL, indigo: NEUTRAL, lime: NEUTRAL,
 };
-const PALETTE: Tone[] = ["sky", "violet", "amber", "emerald", "fuchsia", "orange", "teal", "indigo", "lime", "rose"];
+// Categories (symbols, strategy families) carry no up/down meaning: neutral shades only.
+const PALETTE: Tone[] = ["sky", "violet", "teal", "indigo", "fuchsia", "orange", "lime"];
 
 const ENGINES: { icon: LucideIcon; tone: Tone; title: string; description: string }[] = [
   { icon: Activity, tone: "sky", title: "Strategy Engine", description: "Inbuilt multi-timeframe and indicator scalpers plus your own DSL strategies" },
@@ -60,14 +61,13 @@ function KpiTile({ icon: Icon, tone, label, value, sub, onClick }: { icon: Lucid
   return (
     <button onClick={onClick} disabled={!onClick}
       className={`group relative overflow-hidden rounded-xl border ${t.ring} bg-surface-1 text-left p-4 shadow-card transition-colors ${onClick ? "hover:bg-surface-2" : "cursor-default"}`}>
-      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${t.grad}`} />
       <div className="relative flex items-start justify-between gap-2">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
           <div className={`font-tabular mt-1.5 text-2xl font-extrabold leading-none ${t.text}`}>{value}</div>
           {sub && <div className="mt-1.5 text-[11px] text-fg-muted">{sub}</div>}
         </div>
-        <div className={`shrink-0 rounded-xl ${t.bg} ${t.text} p-2.5`}><Icon size={18} /></div>
+        <div className={`shrink-0 rounded-xl ${t.bg} ${t.icon} p-2.5`}><Icon size={18} /></div>
       </div>
     </button>
   );
@@ -98,8 +98,8 @@ function Ring({ segments, size = 128, label, sub }: { segments: { value: number;
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className={`font-tabular font-extrabold text-slate-100 ${String(label).length > 4 ? "text-sm" : "text-xl"}`}>{label}</div>
-        {sub && <div className="text-[10px] uppercase tracking-wider text-slate-300">{sub}</div>}
+        <div className={`font-tabular font-extrabold text-fg ${String(label).length > 4 ? "text-sm" : "text-xl"}`}>{label}</div>
+        {sub && <div className="text-[10px] uppercase tracking-wider text-fg-muted">{sub}</div>}
       </div>
     </div>
   );
@@ -110,15 +110,16 @@ function Bars({ rows, valueLabel, signed = false }: { rows: { key: string; value
   return (
     <div className="space-y-2">
       {rows.map((r) => {
-        const tone = signed ? (r.value >= 0 ? "emerald" : "rose") : r.tone;
+        const sign = signTone(r.value, 0);
+        const tone: Tone = signed ? (sign === "up" ? "emerald" : sign === "down" ? "rose" : "sky") : r.tone;
         return (
           <div key={r.key} className="flex items-center gap-3 text-xs">
-            <div className="w-36 shrink-0 truncate text-slate-300" title={r.key}>{r.key}</div>
-            <div className="flex-1 h-2.5 rounded-full bg-panel3 overflow-hidden">
+            <div className="w-36 shrink-0 truncate text-fg-muted" title={r.key}>{r.key}</div>
+            <div className="flex-1 h-2.5 rounded-full bg-surface-3 overflow-hidden">
               <div className={`h-2.5 rounded-full ${TONE[tone].bar} transition-all`} style={{ width: `${Math.max(3, (Math.abs(r.value) / max) * 100)}%` }} />
             </div>
-            <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? (r.value >= 0 ? "text-up" : "text-down") : TONE[tone].text}`}>{valueLabel(r.value)}</div>
-            {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-slate-300">{r.hint}</div>}
+            <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? signClass(r.value, 0) : TONE[tone].text}`}>{valueLabel(r.value)}</div>
+            {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-fg-muted">{r.hint}</div>}
           </div>
         );
       })}
@@ -229,7 +230,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           {user && byStrategy.length > 0 ? (
             <Bars signed rows={byStrategy.map((g, i) => ({ key: g.key, value: g.net_pnl, tone: PALETTE[i % PALETTE.length], hint: `${g.trades} tr · ${pct(g.win_rate, 0)}` }))} valueLabel={(v) => money(v)} />
           ) : (
-            <div className="flex h-32 items-center justify-center text-xs text-slate-300">{user ? "No closed trades yet - the first PAPER session fills this in." : "Log in to see your strategies' P&L."}</div>
+            <div className="flex h-32 items-center justify-center text-xs text-fg-muted">{user ? "No closed trades yet - the first PAPER session fills this in." : "Log in to see your strategies' P&L."}</div>
           )}
         </Card>
         <Card title="Strategy mix">
@@ -256,36 +257,36 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                   <div className="text-xs space-y-1">
                     <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-up" /><span className="text-fg-muted">Long</span><span className="ml-auto font-tabular text-up">{money(exposure.long_notional)}</span></div>
                     <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-down" /><span className="text-fg-muted">Short</span><span className="ml-auto font-tabular text-down">{money(exposure.short_notional)}</span></div>
-                    <div className="text-fg-muted">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={exposure.unrealised_pnl >= 0 ? "text-up" : "text-down"}>{money(exposure.unrealised_pnl)}</span></div>
+                    <div className="text-fg-muted">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={signClass(exposure.unrealised_pnl, 0)}>{money(exposure.unrealised_pnl)}</span></div>
                   </div>
                 </div>
                 <Bars rows={bySymbol.map((s, i) => ({ key: s.symbol, value: s.notional, tone: PALETTE[i % PALETTE.length], hint: `${s.positions} pos` }))} valueLabel={(v) => money(v)} />
               </>
             ) : (
-              <div className="flex h-32 items-center justify-center text-xs text-slate-300">No open positions - exposure is empty.</div>
+              <div className="flex h-32 items-center justify-center text-xs text-fg-muted">No open positions - exposure is empty.</div>
             )}
           </Card>
 
           {/* Deployments */}
           <Card title="Running deployments">
             {deployments.length === 0 ? (
-              <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-slate-300">
+              <div className="flex h-32 flex-col items-center justify-center gap-2 text-xs text-fg-muted">
                 Nothing deployed yet.
                 {onNavigate && <Button size="sm" variant="primary" onClick={() => onNavigate("deployments")}>Deploy the first one</Button>}
               </div>
             ) : (
               <ul className="space-y-2">
                 {deployments.slice(0, 6).map((d) => (
-                  <li key={d.id} className="flex items-center gap-2 rounded-xl border border-border bg-panel2 px-3 py-2 text-xs">
-                    <span className={`rounded-md px-1.5 py-0.5 font-bold ${d.mode === "LIVE" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>{d.mode}</span>
+                  <li key={d.id} className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
+                    <span className={`rounded-md px-1.5 py-0.5 font-bold ${d.mode === "LIVE" ? "bg-warn/15 text-warn" : "border border-border text-fg-muted"}`}>{d.mode}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold text-slate-100">{d.strategy_id} <span className="text-slate-300">on</span> {d.symbol}</div>
-                      <div className="truncate text-[10px] text-slate-300">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
+                      <div className="truncate font-semibold text-fg">{d.strategy_id} <span className="text-fg-muted">on</span> {d.symbol}</div>
+                      <div className="truncate text-[10px] text-fg-muted">{d.timeframe} · {d.broker_name ?? "paper"} · {d.open_positions} open{d.last_error ? ` · ${d.last_error}` : ""}</div>
                     </div>
                     <span className={`h-2 w-2 rounded-full ${TONE[STATUS_TONE[d.status] ?? "sky"].bar}`} title={d.status} />
                   </li>
                 ))}
-                {deployments.length > 6 && onNavigate && <button onClick={() => onNavigate("deployments")} className="text-[11px] text-amber-300 hover:underline">+{deployments.length - 6} more</button>}
+                {deployments.length > 6 && onNavigate && <button onClick={() => onNavigate("deployments")} className="text-[11px] text-brand hover:underline">+{deployments.length - 6} more</button>}
               </ul>
             )}
           </Card>
@@ -294,36 +295,36 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           <div className="space-y-4">
             <Card title="Open positions">
               {positions.length === 0 ? (
-                <div className="text-xs text-slate-300">Flat. Nothing at risk right now.</div>
+                <div className="text-xs text-fg-muted">Flat. Nothing at risk right now.</div>
               ) : (
                 <ul className="space-y-1.5">
                   {positions.slice(0, 5).map((p) => (
                     <li key={p.id} className="flex items-center gap-2 text-xs">
-                      <span className={`rounded-md px-1.5 py-0.5 font-bold ${p.direction === "LONG" ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>{p.direction === "LONG" ? "L" : "S"}</span>
-                      <span className="min-w-0 flex-1 truncate font-semibold text-slate-100">{p.symbol}</span>
-                      <span className="font-tabular text-slate-300">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
-                      <span className={`rounded px-1 text-[10px] ${p.mode === "LIVE" ? "text-emerald-300" : "text-sky-300"}`}>{p.mode}</span>
+                      <span className={`rounded-md px-1.5 py-0.5 font-bold ${p.direction === "LONG" ? "bg-up/20 text-up" : "bg-down/20 text-down"}`}>{p.direction === "LONG" ? "L" : "S"}</span>
+                      <span className="min-w-0 flex-1 truncate font-semibold text-fg">{p.symbol}</span>
+                      <span className="font-tabular text-fg-muted">{p.quantity} @ {p.entry_price.toLocaleString("en-IN")}</span>
+                      <span className={`rounded px-1 text-[10px] ${p.mode === "LIVE" ? "font-semibold text-warn" : "text-fg-muted"}`}>{p.mode}</span>
                     </li>
                   ))}
-                  {positions.length > 5 && onNavigate && <button onClick={() => onNavigate("positions")} className="text-[11px] text-violet-300 hover:underline">+{positions.length - 5} more</button>}
+                  {positions.length > 5 && onNavigate && <button onClick={() => onNavigate("positions")} className="text-[11px] text-brand hover:underline">+{positions.length - 5} more</button>}
                 </ul>
               )}
             </Card>
             <Card title={`Latest alerts${unread ? ` · ${unread} unread` : ""}`}>
               {alerts.length === 0 ? (
-                <div className="text-xs text-slate-300">Quiet. Entries, exits and risk events will show here.</div>
+                <div className="text-xs text-fg-muted">Quiet. Entries, exits and risk events will show here.</div>
               ) : (
                 <ul className="space-y-1.5">
                   {alerts.map((a) => (
                     <li key={a.id} className="flex items-start gap-2 text-xs">
                       <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${TONE[SEVERITY[a.severity] ?? "sky"].bar}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`truncate ${a.read ? "text-slate-300" : "font-semibold text-slate-100"}`}>{a.title}</div>
-                        <div className="text-[10px] text-slate-300">{a.event_type} · {ago(a.created_at)}</div>
+                        <div className={`truncate ${a.read ? "text-fg-muted" : "font-semibold text-fg"}`}>{a.title}</div>
+                        <div className="text-[10px] text-fg-muted">{a.event_type} · {ago(a.created_at)}</div>
                       </div>
                     </li>
                   ))}
-                  {onNavigate && <button onClick={() => onNavigate("notifications")} className="flex items-center gap-1 text-[11px] text-sky-300 hover:underline"><Bell size={11} /> All notifications</button>}
+                  {onNavigate && <button onClick={() => onNavigate("notifications")} className="flex items-center gap-1 text-[11px] text-brand hover:underline"><Bell size={11} /> All notifications</button>}
                 </ul>
               )}
             </Card>
@@ -339,11 +340,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
             const t = TONE[tone];
             return (
               <div key={title} className={`relative overflow-hidden rounded-xl border ${t.ring} bg-surface-2 p-3.5`}>
-                <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${t.grad}`} />
                 <div className="relative">
-                  <div className={`mb-2 inline-flex rounded-xl ${t.bg} ${t.text} p-2`}><Icon size={16} /></div>
-                  <div className="text-sm font-bold text-slate-100">{title}</div>
-                  <div className="mt-0.5 text-xs leading-relaxed text-slate-300">{description}</div>
+                  <div className={`mb-2 inline-flex rounded-xl ${t.bg} ${t.icon} p-2`}><Icon size={16} /></div>
+                  <div className="text-sm font-bold text-fg">{title}</div>
+                  <div className="mt-0.5 text-xs leading-relaxed text-fg-muted">{description}</div>
                 </div>
               </div>
             );

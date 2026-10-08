@@ -7,6 +7,7 @@ from typing import Optional
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import breaker_for, observe_call
+from app.brokers.exceptions import is_clear_rejection
 from app.brokers.models import BrokerOrderRequest
 from app.core.enums import ExecutionMode, SignalDirection, OrderSide
 from app.core.models import RiskConfig, Signal, Trade
@@ -32,8 +33,11 @@ class ExecutionResult:
         broker_order_id: Optional[str] = None, system_failure: bool = False,
         sl_order_id: Optional[str] = None, sl_failed: bool = False, algo_tag: Optional[str] = None,
         partial_fill: bool = False, requested_quantity: Optional[float] = None, broker_uncertain: bool = False,
+        sl_rejected: bool = False,
     ) -> None:
         self.executed = executed
+        # G-LIVE: the stop failed because the broker clearly declined it (not a timeout) - no stop can be standing.
+        self.sl_rejected = sl_rejected
         # P0.5 / T1: the broker's book could not confirm what filled (book unsupported, cancel of an unfilled
         # order failed) - the position is recorded as requested and the tenant must be reconciled before the
         # next LIVE entry (signal_execution marks it broker-uncertain).
@@ -251,7 +255,7 @@ class OrderRouter:
         )
 
         sl_order_id: Optional[str] = None
-        sl_failed = False
+        sl_failed = sl_rejected = False
         if self.place_protective_stop:
             # The broker-side stop is the platform's safety net for the case this process dies
             # (or loses connectivity) while a live position is open: the exchange then still
@@ -269,6 +273,7 @@ class OrderRouter:
                 reasons.append(f"Protective stop-loss placed: {sl_order_id} @ {signal.stop_loss}" + (f" ({stop_type}, limit {stop_limit})" if stop_type != "SL-M" else ""))
             except Exception as exc:  # noqa: BLE001 - a failed stop must never undo a real fill
                 sl_failed = True
+                sl_rejected = is_clear_rejection(exc)
                 reasons.append(f"WARNING: protective stop-loss order failed ({exc}) - software stop only")
                 logger.error("Protective SL placement failed for %s after live fill %s: %s", signal.symbol, response.order_id, exc)
 
@@ -276,6 +281,7 @@ class OrderRouter:
             executed=True, reasons=reasons, trade=trade, broker_order_id=response.order_id,
             sl_order_id=sl_order_id, sl_failed=sl_failed, algo_tag=entry_tag,
             partial_fill=partial_fill, requested_quantity=requested_quantity, broker_uncertain=broker_uncertain,
+            sl_rejected=sl_rejected,
         )
 
     async def _resolve_fill_price(self, order_id: str, fallback: float) -> float:

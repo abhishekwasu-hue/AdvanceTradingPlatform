@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import ProChart, { directionMarker, type ChartMarker } from "../components/ProChart";
 import EquityCurveChart from "../components/EquityCurveChart";
-import { Card, StatTile, Disclaimer } from "../components/ui";
+import { Card, StatTile, Disclaimer, signClass, signTone } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import {
   type BacktestResult, type BacktestRunSummary, type ExitRules, type MonteCarloResult, type OHLCVBar, type OptimizeResult, type StrategyInfo, type WalkForwardResult,
@@ -234,15 +234,15 @@ export default function BacktestPage() {
       <PageHeader title="Backtesting" description="Event-driven simulation with position sizing, stop / target management and dated Indian charges." />
 
       <DataSourceBar source={source} note="Bars below applies to sample data; broker candles use the lookback." />
-      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="backtest" />
 
       <Card>
         <div className="grid sm:grid-cols-4 gap-3 items-end">
           <div>
-            <label className="block text-xs text-muted mb-1">Strategy</label>
+            <label className="block text-xs text-fg-muted mb-1">Strategy</label>
             <select
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={strategyId}
               onChange={(e) => setStrategyId(e.target.value)}
             >
@@ -254,18 +254,18 @@ export default function BacktestPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Symbol</label>
+            <label className="block text-xs text-fg-muted mb-1">Symbol</label>
             <input
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Sample bars</label>
+            <label className="block text-xs text-fg-muted mb-1">Sample bars</label>
             <input
               type="number"
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={bars}
               onChange={(e) => setBars(Number(e.target.value))}
             />
@@ -273,48 +273,48 @@ export default function BacktestPage() {
           <button
             onClick={runBacktest}
             disabled={!selected || loading}
-            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {loading ? "Running…" : "Run Backtest"}
           </button>
         </div>
-        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2">Dynamic exits (same rules the live monitor applies)</div>
+        <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">Dynamic exits (same rules the live monitor applies)</div>
           <div className="grid sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">Trailing stop %</label>
-              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={trail} onChange={(e) => setTrail(e.target.value)} />
+              <label className="block text-xs text-fg-muted mb-1">Trailing stop %</label>
+              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={trail} onChange={(e) => setTrail(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Break-even at R</label>
-              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={breakEven} onChange={(e) => setBreakEven(e.target.value)} />
+              <label className="block text-xs text-fg-muted mb-1">Break-even at R</label>
+              <input type="number" step="0.1" min={0} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={breakEven} onChange={(e) => setBreakEven(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Time exit (minutes)</label>
-              <input type="number" min={1} placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={timeExitMin} onChange={(e) => setTimeExitMin(e.target.value)} />
+              <label className="block text-xs text-fg-muted mb-1">Time exit (minutes)</label>
+              <input type="number" min={1} placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={timeExitMin} onChange={(e) => setTimeExitMin(e.target.value)} />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Flat at (HH:MM IST)</label>
-              <input placeholder="off" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={timeExitAt} onChange={(e) => setTimeExitAt(e.target.value)} />
+              <label className="block text-xs text-fg-muted mb-1">Flat at (HH:MM IST)</label>
+              <input placeholder="off" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={timeExitAt} onChange={(e) => setTimeExitAt(e.target.value)} />
             </div>
           </div>
         </div>
 
-        <div className="mt-3 rounded-lg border border-border bg-panel2/40 p-3">
+        <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Trade as</div>
-            <select className="rounded bg-panel2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Trade as</div>
+            <select className="rounded bg-surface-2 border border-border px-2 py-1 text-sm" value={tradeAs} onChange={(e) => setTradeAs(e.target.value as "UNDERLYING" | "OPTION")}>
               <option value="UNDERLYING">Underlying (cash / index level)</option>
               <option value="OPTION">Options (historical option-chain backtest)</option>
             </select>
-            {tradeAs === "OPTION" && <span className="text-[11px] text-muted">Same structures, strikes, expiries, exits and lot sizing a deployment uses - priced bar by bar.</span>}
+            {tradeAs === "OPTION" && <span className="text-[11px] text-fg-muted">Same structures, strikes, expiries, exits and lot sizing a deployment uses - priced bar by bar.</span>}
           </div>
           {tradeAs === "OPTION" && (
             <div className="space-y-3">
               <div className="grid sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs text-muted mb-1">Structure</label>
-                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={structure} onChange={(e) => setStructure(e.target.value as OptionStrategy)}>
+                  <label className="block text-xs text-fg-muted mb-1">Structure</label>
+                  <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={structure} onChange={(e) => setStructure(e.target.value as OptionStrategy)}>
                     <option value="SINGLE">Single option</option>
                     <option value="BULL_PUT_SPREAD">Bull put spread (LONG)</option>
                     <option value="BEAR_CALL_SPREAD">Bear call spread (SHORT)</option>
@@ -333,68 +333,68 @@ export default function BacktestPage() {
                 </div>
                 {structure === "SINGLE" && (
                   <div>
-                    <label className="block text-xs text-muted mb-1">Position</label>
-                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => setPosition(e.target.value as OptionPosition)}>
+                    <label className="block text-xs text-fg-muted mb-1">Position</label>
+                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={position} onChange={(e) => setPosition(e.target.value as OptionPosition)}>
                       <option value="BUY">Buy (CE on LONG, PE on SHORT)</option>
                       <option value="WRITE">Write (PE on LONG, CE on SHORT)</option>
                     </select>
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs text-muted mb-1">Expiry</label>
-                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => setExpiryRule(e.target.value as ExpiryRule)}>
+                  <label className="block text-xs text-fg-muted mb-1">Expiry</label>
+                  <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryRule} onChange={(e) => setExpiryRule(e.target.value as ExpiryRule)}>
                     <option value="NEAREST">Nearest</option><option value="NEXT">Next</option><option value="MONTHLY">Monthly</option>
                   </select>
                 </div>
                 {structure !== "CUSTOM" && (
                   <div>
-                    <label className="block text-xs text-muted mb-1">Strike</label>
+                    <label className="block text-xs text-fg-muted mb-1">Strike</label>
                     <div className="flex gap-2">
-                      <select className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => setStrikeRule(e.target.value as StrikeRule)}>
+                      <select className="flex-1 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeRule} onChange={(e) => setStrikeRule(e.target.value as StrikeRule)}>
                         <option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option>
                       </select>
-                      <input type="number" min={0} max={10} className="w-16 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeOffset} onChange={(e) => setStrikeOffset(Number(e.target.value))} title="steps in/out of the money" />
+                      <input type="number" min={0} max={10} className="w-16 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeOffset} onChange={(e) => setStrikeOffset(Number(e.target.value))} title="steps in/out of the money" />
                     </div>
                   </div>
                 )}
                 {WIDTH_STRUCTURES.includes(structure) && (
                   <div>
-                    <label className="block text-xs text-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}</label>
-                    <input type="number" min={1} max={20} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => setSpreadWidth(Number(e.target.value))} />
+                    <label className="block text-xs text-fg-muted mb-1">{WINGED_STRUCTURES.includes(structure) || structure === "LONG_BUTTERFLY" ? "Wing width (steps)" : "Short strike distance (steps)"}</label>
+                    <input type="number" min={1} max={20} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={spreadWidth} onChange={(e) => setSpreadWidth(Number(e.target.value))} />
                   </div>
                 )}
                 {structure === "SINGLE" ? (
                   <div>
-                    <label className="block text-xs text-muted mb-1">Premium {position === "BUY" ? "floor" : "ceiling"} %</label>
-                    <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
+                    <label className="block text-xs text-fg-muted mb-1">Premium {position === "BUY" ? "floor" : "ceiling"} %</label>
+                    <input type="number" min={5} max={95} placeholder={position === "BUY" ? "30" : "50"} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={premiumStop} onChange={(e) => setPremiumStop(e.target.value)} />
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-xs text-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
+                    <label className="block text-xs text-fg-muted mb-1">Target / stop (% of {PAYOFF_STRUCTURES.includes(structure) ? "max profit / risk" : DEBIT_STRUCTURES.includes(structure) ? "debit" : "credit"})</label>
                     <div className="flex gap-2">
-                      <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} />
-                      <input type="number" min={10} max={500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} />
+                      <input type="number" min={5} max={95} placeholder="50" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={targetCredit} onChange={(e) => setTargetCredit(e.target.value)} />
+                      <input type="number" min={10} max={500} placeholder={DEBIT_STRUCTURES.includes(structure) ? "50" : "100"} className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={stopCredit} onChange={(e) => setStopCredit(e.target.value)} />
                     </div>
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs text-muted mb-1">Max lots</label>
-                  <input type="number" min={1} placeholder="risk-sized" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
+                  <label className="block text-xs text-fg-muted mb-1">Max lots</label>
+                  <input type="number" min={1} placeholder="risk-sized" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={maxLots} onChange={(e) => setMaxLots(e.target.value)} />
                 </div>
               </div>
 
               {structure === "CUSTOM" && (
                 <div className="rounded border border-border p-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1">Legs ({customLegs.length}/{MAX_CUSTOM_LEGS})</div>
                   <div className="space-y-1 text-xs">
                     {customLegs.map((leg, i) => (
                       <div key={i} className="grid grid-cols-6 gap-2 items-center">
-                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}><option value="SHORT">Sell</option><option value="LONG">Buy</option></select>
-                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}><option value="CE">CE</option><option value="PE">PE</option></select>
-                        <select className="rounded bg-panel2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule })}><option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option></select>
-                        <input type="number" min={0} max={20} className="rounded bg-panel2 border border-border px-1 py-1" value={leg.strike_offset} onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) })} title="steps" />
-                        <input type="number" min={1} max={4} className="rounded bg-panel2 border border-border px-1 py-1" value={leg.ratio} onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })} title="ratio" />
-                        <button className="text-danger text-left" onClick={() => setCustomLegs((cur) => cur.filter((_, j) => j !== i))} disabled={customLegs.length <= 2}>remove</button>
+                        <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.role} onChange={(e) => updateLeg(i, { role: e.target.value as CustomLeg["role"] })}><option value="SHORT">Sell</option><option value="LONG">Buy</option></select>
+                        <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.right} onChange={(e) => updateLeg(i, { right: e.target.value as CustomLeg["right"] })}><option value="CE">CE</option><option value="PE">PE</option></select>
+                        <select className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.strike_rule} onChange={(e) => updateLeg(i, { strike_rule: e.target.value as StrikeRule })}><option value="ATM">ATM</option><option value="ITM">ITM</option><option value="OTM">OTM</option></select>
+                        <input type="number" min={0} max={20} className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.strike_offset} onChange={(e) => updateLeg(i, { strike_offset: Number(e.target.value) })} title="steps" />
+                        <input type="number" min={1} max={4} className="rounded bg-surface-2 border border-border px-1 py-1" value={leg.ratio} onChange={(e) => updateLeg(i, { ratio: Math.max(1, Math.min(4, Number(e.target.value) || 1)) })} title="ratio" />
+                        <button className="text-down text-left" onClick={() => setCustomLegs((cur) => cur.filter((_, j) => j !== i))} disabled={customLegs.length <= 2}>remove</button>
                       </div>
                     ))}
                   </div>
@@ -404,55 +404,55 @@ export default function BacktestPage() {
 
               <div className="grid sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs text-muted mb-1">Premiums from</label>
-                  <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={pricing} onChange={(e) => setPricing(e.target.value as OptionPricingModel)}>
+                  <label className="block text-xs text-fg-muted mb-1">Premiums from</label>
+                  <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pricing} onChange={(e) => setPricing(e.target.value as OptionPricingModel)}>
                     <option value="synthetic">Synthetic (Black-Scholes)</option>
                     <option value="snapshots">Recorded chain quotes</option>
                     <option value="uploaded">Uploaded chain CSV</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-muted mb-1">Implied volatility % {pricing !== "synthetic" ? "(fallback)" : ""}</label>
-                  <input type="number" min={1} max={300} step="0.5" placeholder="realised vol" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={ivPct} onChange={(e) => setIvPct(e.target.value)} title="blank = annualised realised volatility of the trailing closes" />
+                  <label className="block text-xs text-fg-muted mb-1">Implied volatility % {pricing !== "synthetic" ? "(fallback)" : ""}</label>
+                  <input type="number" min={1} max={300} step="0.5" placeholder="realised vol" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={ivPct} onChange={(e) => setIvPct(e.target.value)} title="blank = annualised realised volatility of the trailing closes" />
                 </div>
                 <div>
-                  <label className="block text-xs text-muted mb-1">Lot size / strike step</label>
+                  <label className="block text-xs text-fg-muted mb-1">Lot size / strike step</label>
                   <div className="flex gap-2">
-                    <input type="number" min={1} placeholder="auto" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
-                    <input type="number" min={0.05} step="0.05" placeholder="auto" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={strikeStep} onChange={(e) => setStrikeStep(e.target.value)} />
+                    <input type="number" min={1} placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={lotSize} onChange={(e) => setLotSize(e.target.value)} />
+                    <input type="number" min={0.05} step="0.05" placeholder="auto" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={strikeStep} onChange={(e) => setStrikeStep(e.target.value)} />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-muted mb-1">Expiry day / weekly</label>
+                  <label className="block text-xs text-fg-muted mb-1">Expiry day / weekly</label>
                   <div className="flex gap-2">
-                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={expiryWeekday} onChange={(e) => setExpiryWeekday(e.target.value)}>
+                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={expiryWeekday} onChange={(e) => setExpiryWeekday(e.target.value)}>
                       <option value="">auto</option>{WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
                     </select>
-                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={weeklyExpiry} onChange={(e) => setWeeklyExpiry(e.target.value)}>
+                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={weeklyExpiry} onChange={(e) => setWeeklyExpiry(e.target.value)}>
                       <option value="">auto</option><option value="yes">weekly</option><option value="no">monthly</option>
                     </select>
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-4 text-xs text-slate-300">
+              <div className="flex flex-wrap gap-4 text-xs text-fg-muted">
                 <label className="flex items-center gap-1"><input type="checkbox" checked={intraday} onChange={(e) => setIntraday(e.target.checked)} /> intraday (no entries after 15:00, square-off 15:15 IST)</label>
                 {pricing !== "synthetic" && <label className="flex items-center gap-1"><input type="checkbox" checked={allowFallback} onChange={(e) => setAllowFallback(e.target.checked)} /> price legs without a fresh quote synthetically</label>}
               </div>
               {pricing === "uploaded" && (
                 <div className="text-xs">
                   <input type="file" accept=".csv,text/csv" onChange={(e) => onSnapshotFile(e.target.files?.[0] ?? null)} />
-                  <span className="ml-2 text-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
+                  <span className="ml-2 text-fg-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
                   {uploadedRows.length > 0 && user && <button className="ml-2 text-brand" onClick={saveUploadedRows}>store as platform history</button>}
-                  {uploadNote && <div className="text-muted mt-1">{uploadNote}</div>}
+                  {uploadNote && <div className="text-fg-muted mt-1">{uploadNote}</div>}
                 </div>
               )}
               {pricing === "snapshots" && (
-                <div className="text-xs text-muted">
+                <div className="text-xs text-fg-muted">
                   {coverage.length === 0 ? "No recorded chain quotes yet - the worker records the chains of ACTIVE option deployments every few minutes while the market is open." :
                     <>Recorded: {coverage.map((c) => `${c.underlying} ${c.rows} quotes, ${c.expiries} expiries, ${c.from?.slice(0, 10)} to ${c.to?.slice(0, 10)}`).join(" · ")}</>}
                 </div>
               )}
-              <div className="text-[11px] text-muted">
+              <div className="text-[11px] text-fg-muted">
                 Synthetic premiums approximate the market (no smile, no bid/ask, no liquidity): use them to study structure mechanics - strikes, expiries, exits, sizing - not to claim an edge. Recorded quotes are what the market actually showed.
               </div>
             </div>
@@ -460,18 +460,18 @@ export default function BacktestPage() {
         </div>
       </Card>
 
-      {error && <div className="text-sm text-danger">{error}</div>}
+      {error && <div className="text-sm text-down">{error}</div>}
 
       {result && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatTile label="Total Trades" value={result.total_trades} />
             <StatTile label="Win Rate" value={`${result.win_rate.toFixed(1)}%`} />
-            <StatTile label="Net P&L" value={result.net_pnl.toFixed(2)} tone={result.net_pnl >= 0 ? "up" : "down"} />
-            <StatTile label="Max Drawdown" value={result.max_drawdown.toFixed(2)} tone="down" />
+            <StatTile label="Net P&L" value={result.net_pnl.toFixed(2)} tone={signTone(result.net_pnl)} />
+            <StatTile label="Max Drawdown" value={result.max_drawdown.toFixed(2)} tone={result.max_drawdown > 0 ? "down" : "default"} />
             <StatTile label="Profit Factor" value={result.profit_factor?.toFixed(2) ?? "-"} />
-            <StatTile label="Avg Win" value={result.avg_win.toFixed(2)} tone="up" />
-            <StatTile label="Avg Loss" value={result.avg_loss.toFixed(2)} tone="down" />
+            <StatTile label="Avg Win" value={result.avg_win.toFixed(2)} tone={signTone(result.avg_win)} />
+            <StatTile label="Avg Loss" value={result.avg_loss.toFixed(2)} tone={signTone(result.avg_loss)} />
             <StatTile label="Expectancy" value={result.expectancy.toFixed(2)} />
           </div>
 
@@ -491,39 +491,39 @@ export default function BacktestPage() {
                 <StatTile label="Expiries" value={result.options.expiry_calendar} />
                 <StatTile label="Expiry settlements" value={result.options.expiry_settlements} />
               </div>
-              <div className="text-xs text-slate-300 mb-2">Options engine v{result.options.engine_version} · Premiums: {result.options.pricing}
+              <div className="text-xs text-fg-muted mb-2">Options engine v{result.options.engine_version} · Premiums: {result.options.pricing}
                 {result.options.snapshot_hits != null ? ` · ${result.options.snapshot_hits} recorded quotes used, ${result.options.synthetic_fallbacks ?? 0} synthetic fallbacks` : ""}
               </div>
               {Object.keys(result.options.signals_skipped).length > 0 && (
-                <div className="text-xs text-muted mb-2">Signals not traded: {Object.entries(result.options.signals_skipped).map(([k, v]) => `${k} (${v})`).join("; ")}</div>
+                <div className="text-xs text-fg-muted mb-2">Signals not traded: {Object.entries(result.options.signals_skipped).map(([k, v]) => `${k} (${v})`).join("; ")}</div>
               )}
               <div className="flex items-center gap-2 text-xs mb-1">
-                <span className="text-muted">Sort</span>
-                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "time" ? "bg-panel2" : ""}`} onClick={() => setStructureSort("time")}>time</button>
-                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "pnl" ? "bg-panel2" : ""}`} onClick={() => setStructureSort("pnl")}>P&amp;L</button>
+                <span className="text-fg-muted">Sort</span>
+                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "time" ? "bg-surface-2" : ""}`} onClick={() => setStructureSort("time")}>time</button>
+                <button className={`px-2 py-0.5 rounded border border-border ${structureSort === "pnl" ? "bg-surface-2" : ""}`} onClick={() => setStructureSort("pnl")}>P&amp;L</button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead className="text-muted uppercase text-[10px] tracking-wide">
+                  <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
                     <tr className="text-left"><th className="py-1 pr-3">Structure</th><th className="py-1 pr-3">Legs (entry → exit)</th><th className="py-1 pr-3">Lots</th><th className="py-1 pr-3">Credit / debit</th><th className="py-1 pr-3">Max loss</th><th className="py-1 pr-3">Exit</th><th className="py-1 pr-3">P&amp;L</th></tr>
                   </thead>
                   <tbody>
                     {[...result.options.structures].sort((a, b) => (structureSort === "pnl" ? a.pnl - b.pnl : a.entry_time.localeCompare(b.entry_time))).map((st, i) => (
                       <tr key={i} className="border-t border-border align-top">
-                        <td className="py-1 pr-3 text-slate-200 whitespace-nowrap">{st.label}<div className="text-muted">{st.entry_time.slice(0, 16).replace("T", " ")} → {st.exit_time.slice(0, 16).replace("T", " ")}</div></td>
+                        <td className="py-1 pr-3 text-fg whitespace-nowrap">{st.label}<div className="text-fg-muted">{st.entry_time.slice(0, 16).replace("T", " ")} → {st.exit_time.slice(0, 16).replace("T", " ")}</div></td>
                         <td className="py-1 pr-3">{st.legs.map((l, j) => <div key={j}>{l.role === "SHORT" ? "sell" : "buy"} {l.ratio > 1 ? `${l.ratio}x ` : ""}{l.strike} {l.right} @ {l.entry_price.toFixed(2)} → {l.exit_price?.toFixed(2) ?? "-"}</div>)}</td>
                         <td className="py-1 pr-3">{st.lots}</td>
                         <td className="py-1 pr-3">{st.net_credit != null ? (st.net_credit >= 0 ? `credit ${st.net_credit.toFixed(2)}` : `debit ${(-st.net_credit).toFixed(2)}`) : "-"}</td>
                         <td className="py-1 pr-3">{st.max_loss != null ? st.max_loss.toFixed(2) : "undefined"}</td>
                         <td className="py-1 pr-3">{st.exit_reason}</td>
-                        <td className={`py-1 pr-3 whitespace-nowrap ${st.pnl >= 0 ? "text-accent" : "text-danger"}`}>{st.pnl.toFixed(0)}<div className="text-muted">charges {st.charges.toFixed(0)}</div></td>
+                        <td className={`py-1 pr-3 whitespace-nowrap ${signClass(st.pnl, 0)}`}>{st.pnl.toFixed(0)}<div className="text-fg-muted">charges {st.charges.toFixed(0)}</div></td>
                       </tr>
                     ))}
-                    {result.options.structures.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-muted">No structure was opened.</td></tr>}
+                    {result.options.structures.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-fg-muted">No structure was opened.</td></tr>}
                   </tbody>
                 </table>
               </div>
-              <div className="mt-2 text-[11px] text-muted">{result.options.disclaimer}</div>
+              <div className="mt-2 text-[11px] text-fg-muted">{result.options.disclaimer}</div>
             </Card>
           )}
 
@@ -538,16 +538,16 @@ export default function BacktestPage() {
               <div className="grid md:grid-cols-2 gap-4 text-xs">
                 {([["Monthly", result.analytics.monthly], ["Day of week", result.analytics.day_of_week], ["Hour of day", result.analytics.hour_of_day], ["Exit reasons", result.analytics.exit_reasons]] as const).map(([title, rows]) => (
                   <div key={title}>
-                    <div className="text-[10px] uppercase tracking-wide text-muted mb-1">{title}</div>
-                    {rows.length === 0 ? <div className="text-muted">-</div> : (
+                    <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">{title}</div>
+                    {rows.length === 0 ? <div className="text-fg-muted">-</div> : (
                       <table className="w-full">
                         <tbody>
                           {rows.map((r) => (
                             <tr key={r.key} className="border-t border-border">
-                              <td className="py-0.5 pr-2 text-slate-300">{r.key}</td>
-                              <td className="py-0.5 pr-2 text-muted">{r.trades} trades</td>
-                              <td className="py-0.5 pr-2 text-muted">{r.win_rate}% win</td>
-                              <td className={`py-0.5 text-right ${r.pnl >= 0 ? "text-accent" : "text-danger"}`}>{r.pnl.toFixed(0)}</td>
+                              <td className="py-0.5 pr-2 text-fg-muted">{r.key}</td>
+                              <td className="py-0.5 pr-2 text-fg-muted">{r.trades} trades</td>
+                              <td className="py-0.5 pr-2 text-fg-muted">{r.win_rate}% win</td>
+                              <td className={`py-0.5 text-right ${signClass(r.pnl, 0)}`}>{r.pnl.toFixed(0)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -556,7 +556,7 @@ export default function BacktestPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 text-[11px] text-muted">
+              <div className="mt-3 text-[11px] text-fg-muted">
                 Charges {result.analytics.costs.total_charges.toFixed(0)} ({result.analytics.costs.charges_pct_of_gross ?? "-"}% of gross)
                 {result.analytics.slippage.avg_per_unit != null ? ` · avg slippage ${result.analytics.slippage.avg_per_unit}/unit` : ""}
                 {result.run_id ? ` · saved as run #${result.run_id}` : ""}
@@ -566,48 +566,48 @@ export default function BacktestPage() {
 
           <Card title="Parameter optimisation (ranked in-sample, validated out-of-sample)">
             <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
-              <input className="flex-1 min-w-[260px] rounded bg-panel2 border border-border px-2 py-1 font-mono" value={optGrid} onChange={(e) => setOptGrid(e.target.value)} />
-              <select className="rounded bg-panel2 border border-border px-1 py-1" value={optMetric} onChange={(e) => setOptMetric(e.target.value)}>
+              <input className="flex-1 min-w-[260px] rounded bg-surface-2 border border-border px-2 py-1 font-mono" value={optGrid} onChange={(e) => setOptGrid(e.target.value)} />
+              <select className="rounded bg-surface-2 border border-border px-1 py-1" value={optMetric} onChange={(e) => setOptMetric(e.target.value)}>
                 {["net_pnl", "expectancy", "profit_factor", "win_rate"].map((m) => <option key={m}>{m}</option>)}
               </select>
-              <button onClick={runOptimize} disabled={optBusy || !result} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-slate-200 disabled:opacity-50">{optBusy ? "Searching…" : "Optimise"}</button>
-              <span className="text-muted">Grid as JSON (max 60 combinations). First 70% of the bars fit, last 30% judge.</span>
+              <button onClick={runOptimize} disabled={optBusy || !result} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-fg disabled:opacity-50">{optBusy ? "Searching…" : "Optimise"}</button>
+              <span className="text-fg-muted">Grid as JSON (max 60 combinations). First 70% of the bars fit, last 30% judge.</span>
             </div>
-            {optError && <div className="text-xs text-danger">{optError}</div>}
+            {optError && <div className="text-xs text-down">{optError}</div>}
             {optResult && (
               <div className="text-xs">
-                <div className="text-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
+                <div className="text-fg-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
                   {optResult.best_confirmed_out_of_sample != null && (
-                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-emerald-900/40 text-emerald-300" : "bg-amber-900/40 text-amber-300"}`}>
+                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-up/10 text-up" : "bg-warn/10 text-warn"}`}>
                       {optResult.best_confirmed_out_of_sample ? "winner confirmed out-of-sample" : "winner NOT confirmed out-of-sample (in-sample ranking only)"}
                     </span>
                   )}</div>
-                <table className="w-full"><thead className="text-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
+                <table className="w-full"><thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Params</th><th className="py-1 pr-3">In-sample {optResult.metric}</th><th className="py-1 pr-3">Out-of-sample {optResult.metric}</th><th className="py-1 pr-3">OOS trades</th><th className="py-1 pr-3">Overfit gap</th><th className="py-1 pr-3">Flags</th></tr></thead>
                   <tbody>{optResult.results.slice(0, 12).map((r: OptimizeResult["results"][number], i: number) => {
                     const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];
                     const ins = r.in_sample[key]; const oos = r.out_of_sample[key];
                     return (
-                      <tr key={i} className={`border-t border-border/60 ${i === 0 ? "text-accent" : ""}`}>
+                      <tr key={i} className={`border-t border-border/60 ${i === 0 ? "font-semibold" : ""}`}>
                         <td className="py-1 pr-3 font-mono">{JSON.stringify(r.params)}</td>
                         <td className="py-1 pr-3">{typeof ins === "number" ? ins.toFixed(2) : "-"}</td>
                         <td className="py-1 pr-3">{typeof oos === "number" ? oos.toFixed(2) : "-"}</td>
                         <td className="py-1 pr-3">{r.out_of_sample.trades}</td>
-                        <td className={`py-1 pr-3 ${(r.overfit_gap ?? 0) > 0 ? "text-amber-400" : ""}`}>{r.overfit_gap?.toFixed(2) ?? "-"}</td>
-                        <td className="py-1 pr-3 text-muted">{r.flags.join("; ")}</td>
+                        <td className={`py-1 pr-3 ${(r.overfit_gap ?? 0) > 0 ? "text-warn" : ""}`}>{r.overfit_gap?.toFixed(2) ?? "-"}</td>
+                        <td className="py-1 pr-3 text-fg-muted">{r.flags.join("; ")}</td>
                       </tr>
                     );
                   })}</tbody></table>
-                <div className="text-[11px] text-muted mt-1">{optResult.note}</div>
+                <div className="text-[11px] text-fg-muted mt-1">{optResult.note}</div>
               </div>
             )}
           </Card>
 
           <Card title="Robustness">
             <div className="flex flex-wrap items-center gap-3 text-xs mb-3">
-              <button onClick={runRobustness} disabled={robustBusy || !result} className="rounded border border-border hover:bg-panel2 px-3 py-1 text-slate-200 disabled:opacity-50">
+              <button onClick={runRobustness} disabled={robustBusy || !result} className="rounded border border-border hover:bg-surface-2 px-3 py-1 text-fg disabled:opacity-50">
                 {robustBusy ? "Running…" : "Run Monte Carlo + walk-forward"}
               </button>
-              <span className="text-muted">Monte Carlo reshuffles the trade sequence; walk-forward reruns the same parameters on consecutive windows.</span>
+              <span className="text-fg-muted">Monte Carlo reshuffles the trade sequence; walk-forward reruns the same parameters on consecutive windows.</span>
             </div>
             {monteCarlo && monteCarlo.runs > 0 && monteCarlo.final_pnl && monteCarlo.max_drawdown && (
               <div className="grid sm:grid-cols-4 gap-3 text-xs mb-3">
@@ -617,24 +617,24 @@ export default function BacktestPage() {
                 <StatTile label="P(DD > original)" value={`${monteCarlo.probability_dd_exceeds_original_pct}%`} />
               </div>
             )}
-            {monteCarlo && monteCarlo.runs === 0 && <div className="text-xs text-muted">{monteCarlo.note}</div>}
+            {monteCarlo && monteCarlo.runs === 0 && <div className="text-xs text-fg-muted">{monteCarlo.note}</div>}
             {walkForward && (
-              walkForward.folds === 0 ? <div className="text-xs text-muted">{walkForward.note}</div> : (
+              walkForward.folds === 0 ? <div className="text-xs text-fg-muted">{walkForward.note}</div> : (
                 <div className="text-xs">
-                  <div className="mb-1 text-slate-300">Consistency {walkForward.consistency_pct}% ({walkForward.profitable_windows}/{walkForward.folds} windows profitable) · mean window P&L {walkForward.mean_window_pnl}</div>
+                  <div className="mb-1 text-fg-muted">Consistency {walkForward.consistency_pct}% ({walkForward.profitable_windows}/{walkForward.folds} windows profitable) · mean window P&L {walkForward.mean_window_pnl}</div>
                   <table className="w-full">
-                    <thead className="text-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Bars</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr></thead>
+                    <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Window</th><th className="py-1 pr-3">Bars</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr></thead>
                     <tbody>
                       {walkForward.windows.map((w) => (
                         <tr key={w.window} className="border-t border-border">
                           <td className="py-1 pr-3">{w.window}</td><td className="py-1 pr-3">{w.bars}</td><td className="py-1 pr-3">{w.trades}</td>
-                          <td className={`py-1 pr-3 ${w.net_pnl >= 0 ? "text-accent" : "text-danger"}`}>{w.net_pnl.toFixed(0)}</td>
+                          <td className={`py-1 pr-3 ${signClass(w.net_pnl, 0)}`}>{w.net_pnl.toFixed(0)}</td>
                           <td className="py-1 pr-3">{w.win_rate}%</td><td className="py-1 pr-3">{w.max_drawdown.toFixed(0)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <div className="mt-1 text-muted">{walkForward.note}</div>
+                  <div className="mt-1 text-fg-muted">{walkForward.note}</div>
                 </div>
               )
             )}
@@ -643,7 +643,7 @@ export default function BacktestPage() {
           <Card title={`Trades (${result.trades.length})`}>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-muted uppercase text-[10px] tracking-wide">
+                <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
                   <tr className="text-left">
                     <th className="py-1 pr-3">Direction</th>
                     <th className="py-1 pr-3">Entry</th>
@@ -656,19 +656,19 @@ export default function BacktestPage() {
                 <tbody>
                   {result.trades.map((t, i) => (
                     <tr key={i} className="border-t border-border">
-                      <td className="py-1 pr-3">{t.direction}{result.options ? <span className="text-muted"> · {t.symbol}</span> : null}</td>
+                      <td className="py-1 pr-3">{t.direction}{result.options ? <span className="text-fg-muted"> · {t.symbol}</span> : null}</td>
                       <td className="py-1 pr-3">{t.entry_price.toFixed(2)}</td>
                       <td className="py-1 pr-3">{t.exit_price?.toFixed(2) ?? "-"}</td>
                       <td className="py-1 pr-3">{t.quantity}</td>
                       <td className="py-1 pr-3">{t.exit_reason ?? "-"}</td>
-                      <td className={`py-1 pr-3 ${(t.pnl ?? 0) >= 0 ? "text-accent" : "text-danger"}`}>
+                      <td className={`py-1 pr-3 ${signClass(t.pnl)}`}>
                         {t.pnl?.toFixed(2) ?? "-"}
                       </td>
                     </tr>
                   ))}
                   {result.trades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-3 text-center text-muted">
+                      <td colSpan={6} className="py-3 text-center text-fg-muted">
                         No trades were triggered on this sample dataset.
                       </td>
                     </tr>
@@ -684,19 +684,19 @@ export default function BacktestPage() {
         <Card title={`Backtest history (${runs.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
                 <tr className="text-left"><th className="py-1 pr-3">When</th><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Data</th><th className="py-1 pr-3">Exits</th><th className="py-1 pr-3">Trades</th><th className="py-1 pr-3">Net P&L</th><th className="py-1 pr-3">Win %</th><th className="py-1 pr-3">Max DD</th></tr>
               </thead>
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-muted whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
-                    <td className="py-1 pr-3 text-slate-200">{r.strategy_id}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{r.created_at ? new Date(r.created_at).toLocaleString() : "-"}</td>
+                    <td className="py-1 pr-3 text-fg">{r.strategy_id}</td>
                     <td className="py-1 pr-3">{r.symbol} · {r.base_timeframe}</td>
-                    <td className="py-1 pr-3 text-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>
-                    <td className="py-1 pr-3 text-muted">{r.exit_rules ? Object.entries(r.exit_rules).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") : "-"}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? Object.entries(r.exit_rules).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") : "-"}</td>
                     <td className="py-1 pr-3">{r.total_trades ?? "-"}</td>
-                    <td className={`py-1 pr-3 ${(r.net_pnl ?? 0) >= 0 ? "text-accent" : "text-danger"}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
+                    <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
                     <td className="py-1 pr-3">{r.win_rate ?? "-"}%</td>
                     <td className="py-1 pr-3">{r.max_drawdown?.toFixed(0) ?? "-"}</td>
                   </tr>

@@ -48,6 +48,12 @@ export function signTone(value: number | null | undefined, decimals = 2): "defau
   return shown > 0 ? "up" : shown < 0 ? "down" : "default";
 }
 
+/** Text class for a signed figure: up / down, neutral when it shows as zero. */
+export function signClass(value: number | null | undefined, decimals = 2): string {
+  const tone = signTone(value, decimals);
+  return tone === "up" ? "text-up" : tone === "down" ? "text-down" : "";
+}
+
 export function StatTile({
   label, value, tone = "default", icon: Icon, accentClass,
 }: {

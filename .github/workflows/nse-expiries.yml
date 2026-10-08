@@ -3,7 +3,9 @@ name: NSE expiry data
 # Rebuilds backend/app/instruments/data/nse_index_expiries.csv from NSE's daily F&O bhavcopies (expiry dates as the
 # exchange printed them - no weekday rule). The archive is not reachable from every network, so this runs on a
 # GitHub runner. The result is committed to `data/nse-expiries` (from main) for review as a pull request - never
-# straight to main. Run it from the Actions tab (optional start / end dates) or let the monthly schedule refresh it.
+# straight to main. Run it from the Actions tab (optional start / end dates) or let the weekly schedule refresh it.
+# The build refuses (exit 2, nothing committed) on a week with no file, an unexplained BANKNIFTY expiry, or a result
+# that knows less than the committed file.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +16,10 @@ on:
         description: "Last date to read (YYYY-MM-DD, empty = today)"
         default: ""
   schedule:
-    - cron: "17 2 2 * *"   # 07:47 IST on the 2nd of each month
+    - cron: "17 2 * * 6"   # Saturday 07:47 IST, after the week's last bhavcopy
+  push:   # TEMPORARY: rebuild on the pull request branch; removed before merge
+    branches: ["claude/banknifty-expiries"]
+    paths: ["backend/app/instruments/nse_expiries.py", ".github/workflows/nse-expiries.yml"]
 
 concurrency:
   group: nse-expiries
@@ -22,6 +27,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:

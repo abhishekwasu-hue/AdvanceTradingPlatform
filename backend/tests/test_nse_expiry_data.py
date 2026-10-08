@@ -10,6 +10,7 @@ from collections import defaultdict
 import pytest
 
 from app.backtest.options import ExpiryCalendar
+from app.core.enums import ExpiryRule
 from app.instruments import expiry_calendar, expiry_data, nse_expiries as ne
 
 D = dt.date.fromisoformat
@@ -71,6 +72,32 @@ def test_build_confirms_each_expiry_on_its_own_day_and_reads_the_kind_from_futur
     assert (meta["coverage_start"], meta["coverage_end"]) == ("2024-01-02", "2024-01-22")
 
 
+def test_build_refuses_holes_unexplained_drops_and_shrinking():
+    base = {D("2024-01-02"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-03"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-15"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024"))}
+    # the week of 8 Jan has no file at all (a block, not a holiday week)
+    with pytest.raises(ne.BuildRefused, match="week"):
+        ne.build(D("2024-01-01"), D("2024-01-16"), base.get, workers=1)
+    # every week has a file, but the 3 Jan expiry has no file on its day and no move explains it
+    files = {**base, D("2024-01-08"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024"))}
+    del files[D("2024-01-03")]
+    with pytest.raises(ne.BuildRefused, match="no move"):
+        ne.build(D("2024-01-01"), D("2024-01-16"), files.get, workers=1)
+    # a new result that knows less than the committed file is refused
+    import tempfile
+    from pathlib import Path
+    good = {**base, D("2024-01-08"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024"))}
+    rows, meta = ne.build(D("2024-01-01"), D("2024-01-16"), good.get, workers=1)
+    with tempfile.TemporaryDirectory() as tmp:
+        ne.write(rows, meta, Path(tmp))
+        ne.check_against(Path(tmp), rows, meta)                        # the same result passes
+        with pytest.raises(ne.BuildRefused, match="before the current"):
+            ne.check_against(Path(tmp), rows, dict(meta, coverage_end="2024-01-08"))
+        with pytest.raises(ne.BuildRefused, match="fewer"):
+            ne.check_against(Path(tmp), rows[1:], meta)
+
+
 # --- part 2: the committed data and the backtest calendar ----------------------------------------------------------------
 def _bank():
     rows = expiry_data.listed("BANKNIFTY")
@@ -103,15 +130,16 @@ def test_every_month_of_every_year_matches_the_data():
     checked = 0
     for (prev, _, _), (exp, kind, seen) in zip(rows, rows[1:]):
         day = prev + dt.timedelta(days=1)
-        if day < start or day > end or seen > day + dt.timedelta(days=6 - day.weekday()):
-            continue                                            # not listed yet on that day (weekly precision)
+        if day < start or day > end or seen > day:
+            continue                                            # not yet seen listed on that day (causal)
         assert every.expiries(day, 1) == [exp], f"after {prev}"
         checked += 1
     assert checked >= 0.9 * (len(rows) - 1)
-    for exp, kind, _ in rows:
+    for exp, kind, _ in rows:          # `_` = first_seen
         first = exp.replace(day=1)
-        if kind == "monthly" and first >= start:
+        if kind == "monthly" and first >= start and _ <= first:
             assert monthly_only.expiries(first, 1) == [exp], f"monthly of {first:%b %Y}"
+            assert every.select(ExpiryRule.MONTHLY, first) == exp, f"MONTHLY rule in {first:%b %Y}"
             assert every.expiries(exp, 1) == [exp]
 
 
@@ -137,10 +165,20 @@ def test_no_weekday_rule_is_left_for_banknifty_and_outside_the_data_is_an_error(
     with pytest.raises(expiry_data.ExpiryDataMissing):
         expiry_calendar.rule_expiries(expiry_calendar.TradingCalendar([]), D("2024-01-01"), D("2024-02-01"), "BANKNIFTY")
     start, end = expiry_data.coverage()
+    cal = ExpiryCalendar.for_underlying("BANKNIFTY")
     with pytest.raises(expiry_data.ExpiryDataMissing):
-        ExpiryCalendar.for_underlying("BANKNIFTY").expiries(end + dt.timedelta(days=1))
-    with pytest.raises(expiry_data.ExpiryDataMissing):
-        ExpiryCalendar.for_underlying("BANKNIFTY").expiries(start - dt.timedelta(days=1))
+        cal.expiries(start - dt.timedelta(days=1))
+    # after the last file read: only what was listed by then, nothing invented; none left -> no expiry for that bar
+    later = end + dt.timedelta(days=10)
+    assert cal.expiries(later, 3) == [e for e, _, seen in _bank() if e >= later][:3]
+    assert cal.expiries(D("2099-01-01")) == [] and cal.select(ExpiryRule.NEAREST, D("2099-01-01")) is None
+    # the far leg is chosen as listed on the bar day, also when the near expiry lies past the last file read
+    near = cal.select(ExpiryRule.NEAREST, end)
+    assert cal.far_expiry(near, as_of=end) == next(e for e, _, seen in _bank() if e > near and seen <= end)
+    # aliases reach the same data; MONTHLY never picks a weekly that falls after the monthly (31 Jan 2024)
+    assert ExpiryCalendar.for_underlying("NIFTY BANK").data_symbol == "BANKNIFTY"
+    assert ExpiryCalendar.for_underlying("Bank Nifty").expiries(D("2024-01-02"), 1) == cal.expiries(D("2024-01-02"), 1)
+    assert cal.select(ExpiryRule.MONTHLY, D("2024-01-02")) == D("2024-01-25")
     # the ExpiryBook (ported from Trade) reads the same data
     book = expiry_calendar.ExpiryBook(expiry_calendar.TradingCalendar([D("2024-01-02")]), underlying="NIFTY BANK")
     assert book.source == "listed" and len(book.items) == len(_bank())

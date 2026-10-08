@@ -513,10 +513,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   weeklies were Thursdays before September 2025), and `lot_size` / `strike_step` when those differed.
   **BANKNIFTY has no rule**: its expiries are the dates NSE printed in its F&O bhavcopies
   (`backend/app/instruments/data/nse_index_expiries.csv`, every one confirmed by the bhavcopy of its own
-  day). `weekly_expiry=false` keeps the monthlies only. A run outside the file's coverage fails with
-  "NSE expiry data ... covers A to B" - refresh the file: GitHub > Actions > "NSE expiry data" > Run
-  workflow (it also runs on the 2nd of each month); the result arrives on the `data/nse-expiries` branch
-  for a pull request. On a machine that reaches nsearchives.nseindia.com the same build is
+  day). `weekly_expiry=false` keeps the monthlies only; the MONTHLY rule always takes the monthly. Bars after
+  the file's last day (`options.expiry_calendar` says "data through ...") see only the contracts listed by
+  then - nothing is invented; a bar with none left counts as "no expiry". A run before 2016 fails. Refresh:
+  GitHub > Actions > "NSE expiry data" > Run workflow (it also runs every Saturday); the result arrives on
+  the `data/nse-expiries` branch for a pull request. The build refuses (nothing committed) when a week has
+  no file, a BANKNIFTY expiry has no file on its day and no move explains it, or the result knows less than
+  the committed file - re-run later (NSE may have been blocking) and read the job log. On a machine that reaches nsearchives.nseindia.com the same build is
   `python backend/app/instruments/nse_expiries.py --start 2016-01-01 --out backend/app/instruments/data`.
 - **Signals not traded**: `options.signals_skipped` counts why - the sizer refusing a lot bigger than
   the risk per trade, no quote for a leg, or quotes that make the structure a debit where a credit

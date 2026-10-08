@@ -3,8 +3,11 @@
 The file holds every index expiry the exchange printed (EXPIRY_DT / XpryDt) from the first week read to the last
 (`coverage_start` .. `coverage_end` in the meta file), each confirmed by the bhavcopy of its own day, with its kind
 ("monthly" when a futures contract expired that day, else "weekly") and the week it was first seen. Underlyings in
-`DATA_DRIVEN` take their backtest expiries from here only - no weekday rule: a date outside the coverage raises
-`ExpiryDataMissing` instead of guessing. Live trading never reads this file (it uses the broker instrument master).
+`DATA_DRIVEN` take their backtest expiries from here only - no weekday rule. A date before the coverage raises
+`ExpiryDataMissing`; a date after it gets the contracts already listed on the last day read (monthlies are listed
+months ahead) and nothing invented - no listed contract left is "no expiry" for that bar. A contract counts from the
+day it was first seen (causal; `first_seen` is the weekly sample, so a contract listed mid-week counts a few days
+late, never early). Live trading never reads this file (it uses the broker instrument master).
 """
 from __future__ import annotations
 
@@ -64,20 +67,25 @@ def listed(symbol: str) -> List[Listed]:
     return list(_load()[0].get(symbol.upper(), []))
 
 
-def expiries(symbol: str, on_or_after: dt.date, count: int = 6, monthly_only: bool = False) -> List[dt.date]:
-    """The next `count` expiries on/after the date that were already listed on it (first seen on or before it).
-    Raises ExpiryDataMissing when the date is outside the file's coverage or the underlying is not in it."""
+def expiries(symbol: str, on_or_after: dt.date, count: int = 6, monthly_only: bool = False,
+             as_of: Optional[dt.date] = None) -> List[dt.date]:
+    """The next `count` expiries on/after `on_or_after` that were listed on `as_of` (default: the same day), i.e. first
+    seen on or before it. Raises ExpiryDataMissing before the coverage or for an underlying not in the file."""
     cov = coverage()
     rows = _load()[0].get(symbol.upper())
     if cov is None or not rows:
         raise ExpiryDataMissing(f"no NSE expiry data for {symbol.upper()} (file {CSV_PATH.name} missing or empty)")
     start, end = cov
-    if not start <= on_or_after <= end:
+    day = as_of or on_or_after
+    if day < start:
         raise ExpiryDataMissing(
-            f"NSE expiry data for {symbol.upper()} covers {start} to {end}; {on_or_after} is outside it. "
-            "Refresh it with the 'NSE expiry data' workflow (app/instruments/nse_expiries.py).")
-    # first_seen has weekly precision: a contract first read in the week of `on_or_after` was listed by then.
-    week_end = on_or_after + dt.timedelta(days=6 - on_or_after.weekday())
+            f"NSE expiry data for {symbol.upper()} starts on {start}; {day} is before it.")
     out = [e for e, kind, seen in rows
-           if e >= on_or_after and seen <= week_end and (kind == "monthly" or not monthly_only)]
+           if e >= on_or_after and seen <= day and (kind == "monthly" or not monthly_only)]
     return out[:count]
+
+
+def stale_after() -> Optional[dt.date]:
+    """The last day the file read; later bar days see only what was listed by then."""
+    cov = coverage()
+    return cov[1] if cov else None

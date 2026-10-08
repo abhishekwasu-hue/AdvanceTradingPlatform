@@ -42,6 +42,7 @@ from app.execution.paper_broker import PaperBroker
 from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
 )
+from app.instruments import expiry_data
 from app.instruments.expiry_data import ExpiryDataMissing
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
@@ -54,7 +55,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "4-options"   # P0.6: settlement charges and dated lots changed every option run's numbers
+ENGINE_VERSION = "5-options"   # BANKNIFTY expiries from NSE data (weeklies where listed by default); was 4 (P0.6 dated lots)
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -420,7 +421,8 @@ def run_option_backtest(
         "engine_version": ENGINE_VERSION, "pricing_model": pricer.name, "pricing": pricer.describe(), "underlying": underlying,
         "structure": config.option_strategy.value, "position": config.option_position.value if config.is_single else None,
         "lot_size": lot if len(lots_used) <= 1 else sorted(lots_used), "strike_step": step_used or config.strike_step or default_strike_step(underlying, float(primary_df["close"].iloc[-1])),
-        "expiry_calendar": ("NSE listed expiries (bhavcopy data), " if calendar.data_symbol
+        "expiry_calendar": (f"NSE listed expiries ({'all listed' if calendar.weekly else 'monthly only'}; data through "
+                            f"{expiry_data.stale_after()}), " if calendar.data_symbol
                             else f"{'weekly' if calendar.weekly else 'monthly'}, ")
                            + "/".join(sorted({["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][e.weekday()] for e in expiries_used},
                                              key=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index)
@@ -452,7 +454,7 @@ class _Skip(Exception):
 def _skip_key(text: str) -> str:
     """Skip reasons are counted by kind, so numbers in the message don't fragment the tally."""
     for marker in ("Risk per lot", "would be a net", "cannot profit", "shows no loss", "not entered on", "No premium quote",
-                   "no recorded quote", "No CE strike", "No PE strike", "no expiry"):
+                   "no recorded quote", "No CE strike", "No PE strike", "no expiry", "no listed far expiry"):
         if marker.lower() in text.lower():
             return marker.lower()
     return text[:80]
@@ -493,9 +495,9 @@ def _open_structure(signal: Signal, rules: ContractRules, config: OptionBacktest
     planned = plan_structure(strategy, signal.direction, rules, spot=spot, strikes_by_right={"CE": ladder, "PE": ladder},
                              spread_width=config.spread_width, custom_legs=config.custom_legs)
     try:
-        far = calendar.far_expiry(expiry) if any(l.far_expiry for l in planned) else None
+        far = calendar.far_expiry(expiry, as_of=at.astimezone(IST).date()) if any(l.far_expiry for l in planned) else None
     except (ExpiryDataMissing, StopIteration) as exc:
-        raise OptionBacktestError(f"no listed far expiry after {expiry}") from exc
+        raise _Skip(f"no listed far expiry after {expiry}") from exc
     structure = _resolved_structure(strategy, planned, underlying=underlying, underlying_symbol=underlying_symbol, near=expiry, far=far, lot=lot)
     premiums = {leg.contract.tradingsymbol: pricer.price(leg.contract.right, leg.contract.strike, leg.contract.expiry, spot=spot, at=at)
                 for leg in structure.legs}

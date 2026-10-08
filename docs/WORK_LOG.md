@@ -482,9 +482,16 @@ default and G-LIVE gate before any LIVE wiring.
   GitHub workflow "NSE expiry data" builds it (monthly schedule + manual run; result on `data/nse-expiries` for a PR).
 - **Use**: `app.instruments.expiry_data` - BANKNIFTY's backtest calendar (`ExpiryCalendar`, `ExpiryBook`) reads only
   this file; the weekday rule for BANKNIFTY is gone from `expiry_calendar.UNDERLYINGS` and the rule helpers refuse it.
-  A date outside the coverage is an `OptionBacktestError` naming the refresh, never a guessed expiry. Default: every
-  listed expiry (weeklies while they existed); `weekly_expiry=false`: monthlies only. Live trading is unchanged (it
+  A contract counts from the day it was first seen (causal). After the file's last day a bar sees only what was
+  listed by then (no invented dates, "no expiry" when none is left); before 2016 is an error. Default: every listed
+  expiry (weeklies while they existed; `ENGINE_VERSION` 5 - old BANKNIFTY runs re-run with weeklies before Nov 2024);
+  `weekly_expiry=false`: monthlies only; the MONTHLY rule always takes the monthly. Live trading is unchanged (it
   uses the broker instrument master).
+- **Self-review fixes**: the builder also reads the last file on or before `end`; a 403 is retried; the build refuses
+  a week with no file, an unexplained BANKNIFTY drop, or a result that knows less than the committed file; weekly
+  schedule; the far leg is chosen as listed on the bar day; "NIFTY BANK" / "Bank Nifty" reach the data. Known limit:
+  a contract re-dated by the exchange shows its final date from its first listing (DTE off by a few days before the
+  announcement).
 - **What the data shows for BANKNIFTY** (checked by `tests/test_nse_expiry_data.py`): weeklies from 2 Jun 2016 to
   13 Nov 2024 - Thursdays until Aug 2023, Wednesdays from 6 Sep 2023 (2024: Wednesdays, Tuesday when Wednesday was a
   holiday); monthlies only after Nov 2024. Monthly day: last Thursday to Feb 2024, last Wednesday Mar-Dec 2024 (24 Dec

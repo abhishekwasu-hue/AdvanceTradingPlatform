@@ -112,8 +112,10 @@ def test_conventions_calendar_and_ladder():
     assert shifted.expiries(date(2026, 10, 7), count=1) == [date(2026, 10, 12)]
     # BANKNIFTY: the dates NSE listed (monthly only since Nov 2024; Nov 2026 moved to Monday 23rd by the exchange);
     # SENSEX: weekly Thursday; overrides win.
+    from app.instruments import expiry_data
     bank = ExpiryCalendar.for_underlying("BANKNIFTY")
-    assert bank.data_symbol == "BANKNIFTY" and bank.expiries(date(2026, 10, 5), count=2) == [date(2026, 10, 27), date(2026, 11, 23)]
+    listed = [e for e, _, seen in expiry_data.listed("BANKNIFTY") if e >= date(2026, 10, 5) and seen <= date(2026, 10, 5)][:2]
+    assert bank.data_symbol == "BANKNIFTY" and bank.expiries(date(2026, 10, 5), count=2) == listed and listed[0] == date(2026, 10, 27)
     assert ExpiryCalendar.for_underlying("SENSEX").expiries(date(2026, 10, 5), count=1) == [date(2026, 10, 8)]
     legacy = ExpiryCalendar.for_underlying("NIFTY", weekday=3, weekly=True)
     assert legacy.expiries(date(2024, 3, 4), count=1) == [date(2024, 3, 7)]
@@ -297,7 +299,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "4-options"
+    assert run["engine_version"] == ENGINE_VERSION == "5-options"
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}

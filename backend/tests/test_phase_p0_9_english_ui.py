@@ -119,3 +119,39 @@ def test_the_provider_card_lists_every_task_model_and_an_estimated_cost():
     assert rows["narration"]["model"] != rows["strategy_generation"]["model"]
     assert 0 < rows["narration"]["est_inr_per_call"] < rows["strategy_generation"]["est_inr_per_call"]
     assert body["typical_call_tokens"]["fast"]["input"] > 0 and "general" not in rows
+
+
+# --- review follow-ups --------------------------------------------------------------------------------------------------
+def test_a_candidate_without_unseen_session_trades_cannot_be_adopted():
+    import asyncio
+    from app.db.models import AiCandidateRecord
+    from tests.test_auth_api import _session_factory
+    headers = {"Authorization": f"Bearer {_register('p09-adopt@example.com')}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+    cfg = {"name": "t", "timeframe": "5min", "long_conditions": [], "short_conditions": [], "stop_loss_atr_mult": 1.5, "target_rr": [1.5, 2.5]}
+
+    async def seed():
+        async with _session_factory() as session:
+            row = AiCandidateRecord(tenant_id=me["tenant_id"], user_id=me["id"], source="strategist", symbol="NIFTY 50", name="t",
+                                    config_json=json.dumps(cfg), metrics_json=json.dumps({"all": {"trades": 9}, "out_of_sample": {"trades": 0}, "verdict": "insufficient"}),
+                                    expires_at=th.datetime.now(th.timezone.utc) + th.timedelta(hours=6))
+            session.add(row)
+            await session.commit()
+            return row.id
+    refused = client.post("/api/ai/strategist/adopt", headers=headers, json={"candidate_id": asyncio.run(seed()), "accept_risk": True})
+    assert refused.status_code == 400 and "unseen sessions" in refused.text
+
+
+def test_the_thesis_narrative_asks_for_no_price_cases_on_a_stock_without_scenarios():
+    import asyncio
+
+    class Capture:
+        name = "anthropic"
+        system = ""
+
+        async def complete(self, system, user, *, max_tokens=2000):
+            Capture.system = system
+            return ""
+    stock = th.compose("RELIANCE", _snapshot("RELIANCE"), {"symbols": [], "cues": [], "sentiment": None, "globals": []}, [], [], "en", NOW)
+    asyncio.run(th.narrate(Capture(), stock, "en"))
+    assert "do not describe bull, bear or base cases" in Capture.system and "describe the bull, base and bear cases" not in Capture.system

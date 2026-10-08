@@ -494,7 +494,15 @@ default and G-LIVE gate before any LIVE wiring.
   stop filled at the stop - it now fills at the open (`strategist.simulate`). Market memory older than three worker
   intervals is labelled STALE and dimmed. The AI provider card lists every task with its tier, model (operator env per
   tier, tenant model for the strong tier) and an estimated INR cost per typical call; no hard-coded default model.
-- Tests: `tests/test_phase_p0_9_english_ui.py` (7); guide/copilot/strategist/compliance tests follow the new rules.
+- Review follow-ups: a returning user's saved profile no longer brings back a Marathi plan (language forced to English,
+  `InterviewAnswers.language` defaults to `en`); a strategist candidate with no trades on the unseen sessions cannot be
+  adopted; the market background (interview, briefing, Telegram) states data only - no bias trail, no "trade with it",
+  no size advice, no "a beginner should watch"; the worker's daily theses are built in English (no duplicate rows for
+  the scoreboard); the AI's thesis narrative is not asked for bull/bear cases on a stock without scenarios; the
+  strategist parse summary follows the UI language; the provider card applies the tenant's model only to its own
+  provider; a separate note when no judgement was possible (sample / insufficient); the mobile drawer closes on
+  Escape and on the account link and leaves the tab order when closed.
+- Tests: `tests/test_phase_p0_9_english_ui.py` (9); guide/copilot/strategist/market-memory/compliance tests follow the new rules.
 
 ### 2026-10-07 - P0.8-D: compliance (SEBI / DPDP) of the AI Copilot (D1-D5)
 - D1 interview: three risk settings on **templates you choose** - no "Recommended/शिफारस", no "Three options for you",

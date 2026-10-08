@@ -113,7 +113,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   function applyProfile() {
     if (!start?.profile) return;
     const saved = Object.fromEntries(Object.entries(start.profile.answers).map(([k, v]) => [k, String(v)]));
-    setAnswers({ ...saved, ...start.prefill });
+    setAnswers({ ...saved, ...start.prefill, language: "en" });     // P0.9: older profiles saved "mr"; the plan is English
     setStep(queue.length);
     setOfferProfile(false);
     setLog((prev) => [...prev, { from: "me", text: "Yes, use my answers from last time" }]);

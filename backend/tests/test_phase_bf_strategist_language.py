@@ -70,7 +70,9 @@ def test_plans_carry_words_and_the_api_accepts_a_request_in_marathi():
     headers = {"Authorization": f"Bearer {_register('bf-strategist@example.com')}"}
     candles = _bars(_sessions(days=10, minutes=1))
     parsed = client.post("/api/ai/strategist/parse", headers=headers, json={"request": "निफ्टी फक्त long scalping", "symbol": "RELIANCE"}).json()
-    assert parsed["symbol"] == "NIFTY 50" and parsed["style"] == "scalping" and parsed["direction"] == "long" and parsed["language"] == "mr" and "समजले" in parsed["summary"]
+    # P0.9: a Marathi request is understood; the summary is in the dashboard's language (English by default).
+    assert parsed["symbol"] == "NIFTY 50" and parsed["style"] == "scalping" and parsed["direction"] == "long" and parsed["language"] == "mr"
+    assert parsed["summary"].startswith("Understood: NIFTY 50")
 
     # The request overrides the fields it names; P0.9: a Marathi request is understood but the reply stays in the
     # dashboard's language (English), and candles sent by the page are sample data.

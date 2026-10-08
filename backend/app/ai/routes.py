@@ -831,7 +831,7 @@ async def strategist_parse(body: StrategistParseBody, user: User = Depends(requi
     style, direction, language - so the trader can see and correct it before the study runs."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     parsed = strategist.parse_request(body.request, default_symbol=body.symbol)
-    parsed["summary"] = strategist.request_summary(parsed["language"] if parsed["language"] == "mr" else body.language, parsed)
+    parsed["summary"] = strategist.request_summary(body.language, parsed)      # P0.9: understood in any script, summarised in the UI's language
     return parsed
 
 
@@ -916,6 +916,8 @@ async def strategist_adopt(body: AdoptBody, user: User = Depends(require_trader)
     metrics = json.loads(candidate.metrics_json or "{}")
     if int(((metrics.get("all") or {}).get("trades")) or 0) <= 0 or metrics.get("verdict") == "untested":
         raise HTTPException(status_code=400, detail="This candidate has no server-side simulation with trades - it cannot be adopted")
+    if int(((metrics.get("out_of_sample") or {}).get("trades")) or 0) <= 0:      # P0.9: "untested" became "insufficient"/"sample"
+        raise HTTPException(status_code=400, detail="This candidate took no trades on the unseen sessions - it cannot be adopted")
     try:
         config = CustomStrategyConfig.model_validate({**json.loads(candidate.config_json or "{}"), "name": (body.name or candidate.name).strip()})
     except Exception as exc:  # noqa: BLE001

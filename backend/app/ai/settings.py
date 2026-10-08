@@ -97,7 +97,7 @@ TASK_LABELS = {"strategy_generation": "Strategy drafts", "strategist": "Strategi
                "classification": "News classification", "scanner_read": "Scanner reads"}
 
 
-def task_models(tenant_model: Optional[str] = None) -> dict:
+def task_models(tenant_model: Optional[str] = None, tenant_provider: Optional[str] = None) -> dict:
     """Per external provider: every AI task with its tier, the model it runs on (environment per tier; the tenant's model
     only for the strong tier of the configured provider) and an estimated cost of one typical call in INR."""
     from app.ai import pricing
@@ -108,7 +108,7 @@ def task_models(tenant_model: Optional[str] = None) -> dict:
         for task, tier in TASK_TIERS.items():
             if task == "general":
                 continue
-            model = model_for(provider, tenant_model, task)
+            model = model_for(provider, tenant_model if provider == tenant_provider else None, task)
             tokens_in, tokens_out = TYPICAL_CALL_TOKENS[tier]
             cost = pricing.cost_usd(provider, model, input_tokens=tokens_in, output_tokens=tokens_out)
             rows.append({"task": task, "label": TASK_LABELS.get(task, task), "tier": tier, "model": model,
@@ -123,7 +123,7 @@ def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant, usage: Opt
     allowed = feature_allowed(tenant, "ai_features")
     base = {"ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS.as_dict(), "default_provider": DEFAULT_PROVIDER,
             "tier_models": default_models(), "usage": usage,
-            "task_models": task_models(record.model if record is not None else None),
+            "task_models": task_models(record.model if record is not None else None, record.provider if record is not None else None),
             "typical_call_tokens": {tier: {"input": i, "output": o} for tier, (i, o) in TYPICAL_CALL_TOKENS.items()}}
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,

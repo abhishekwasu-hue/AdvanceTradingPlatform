@@ -151,7 +151,7 @@ QUESTION_IDS = [q.id for q in QUESTIONS]
 
 
 class InterviewAnswers(BaseModel):
-    language: Lang = "mr"
+    language: Lang = "en"
     experience: Literal["new", "learning", "experienced"] = "new"
     capital: float = Field(default=100_000.0, ge=5_000, le=10_000_000_000)
     risk: Literal["conservative", "moderate", "aggressive"] = "conservative"

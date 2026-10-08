@@ -226,8 +226,8 @@ def vix_text(lang: str, vix: float) -> str:
     if vix < 16:
         return tr(lang, f"India VIX {vix:.1f}: normal", f"India VIX {vix:.1f}: सामान्य")
     if vix < 20:
-        return tr(lang, f"India VIX {vix:.1f}: elevated - wider swings, keep size small", f"India VIX {vix:.1f}: वाढलेला - मोठे चढ-उतार, size लहान ठेवा")
-    return tr(lang, f"India VIX {vix:.1f}: high fear - big gaps possible; a beginner should mostly watch", f"India VIX {vix:.1f}: जास्त भीती - मोठे gap शक्य; नवशिक्याने शक्यतो फक्त पाहावे")
+        return tr(lang, f"India VIX {vix:.1f}: elevated - wider swings", f"India VIX {vix:.1f}: वाढलेला - मोठे चढ-उतार")
+    return tr(lang, f"India VIX {vix:.1f}: high fear - big gaps are more frequent at such readings", f"India VIX {vix:.1f}: जास्त भीती - अशा वेळी मोठे gap जास्त वेळा येतात")
 
 
 def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = None) -> List[str]:
@@ -242,18 +242,8 @@ def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = Non
     moves = [f"{name} {c['change_pct']:+.2f}%" for name, c in cues.items() if name != "INDIA VIX" and c.get("change_pct") is not None]
     if moves:
         lines.append(tr(lang, "Last session: ", "मागचे सत्र: ") + ", ".join(moves) + ".")
-    hist = memory.get("history", {}).get(symbol.strip().upper(), [])
-    if len(hist) >= 2:
-        words = {"BULLISH": tr(lang, "up", "तेजी"), "BEARISH": tr(lang, "down", "मंदी"), "NEUTRAL": tr(lang, "neutral", "तटस्थ")}
-        trail = " → ".join(f"{d['date'][5:]} {words.get(d['bias'] or '', '-')}" for d in hist)
-        lines.append(tr(lang, f"{symbol.upper()} bias over the last days: {trail}.", f"{symbol.upper()} चा गेल्या काही दिवसांचा कल: {trail}."))
-        biases = [d["bias"] for d in hist if d["bias"]]
-        if len(biases) >= 3 and len(set(biases[-3:])) == 1 and biases[-1] != "NEUTRAL":
-            lines.append(tr(lang, "The same bias three sessions running - an established trend; trade with it, not against it.",
-                            "सलग तीन सत्रे एकच कल - trend प्रस्थापित आहे; त्याच्या सोबत trade करा, विरुद्ध नाही."))
-        elif len(set(biases[-3:])) == 3:
-            lines.append(tr(lang, "The bias changed every session lately - a choppy market; smaller size, fewer trades.",
-                            "अलीकडे प्रत्येक सत्रात कल बदलला - choppy market; size लहान, trades कमी."))
+    # P0.9: no bias trail and no "trade with it" / sizing advice here - this text reaches the interview plan, the
+    # briefing and Telegram, which state data, not a market direction or what to do.
     if lines and memory.get("updated_at"):
         try:
             age = int((now - datetime.fromisoformat(memory["updated_at"])).total_seconds() // 60)

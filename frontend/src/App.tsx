@@ -46,7 +46,7 @@ function TopBar({ page, onChange, onMenu }: { page: Page; onChange: (p: Page) =>
   return (
     <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-3 md:px-6">
       <div className="flex items-center gap-3 min-w-0">
-        <button onClick={onMenu} aria-label="Open navigation menu" className="rounded-md p-1.5 text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
+        <button onClick={onMenu} aria-label="Open navigation menu" aria-controls="app-navigation" className="rounded-md p-1.5 text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
         <h1 className="text-[15px] font-semibold text-slate-100">{title}</h1>
         {status?.maintenance_mode && (
           <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title={status.maintenance_message ?? ""}>

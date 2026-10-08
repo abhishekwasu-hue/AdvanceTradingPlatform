@@ -103,7 +103,7 @@ function StudyView({ s, source }: { s: MarketStudy; source: string }) {
           </tbody>
         </table>
         <div className="mt-3 space-y-1.5">
-          {s.scenarios.length === 0 && <div className="text-[11px] text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
+          {s.detail_shown === false && <div className="text-[11px] text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
           {s.scenarios.map((sc) => (
             <div key={sc.id} className={`rounded-lg border px-2 py-1.5 text-xs ${sc.id === "bull" ? "border-emerald-500/30 text-emerald-100" : sc.id === "bear" ? "border-rose-500/30 text-rose-100" : "border-amber-500/30 text-amber-100"}`}>{sc.text}</div>
           ))}

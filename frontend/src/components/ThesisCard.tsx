@@ -95,7 +95,7 @@ export default function ThesisCard() {
               </span>
             ))}
           </div>
-          {Object.keys(thesis.scenarios).length === 0 && <div className="text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
+          {thesis.detail_shown === false && <div className="text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
           <div className="grid gap-2 md:grid-cols-3">
             {(["bull", "base", "bear"] as const).map((k) => thesis.scenarios[k] && (
               <div key={k} className={`rounded-lg border p-2 ${k === "bull" ? "border-emerald-500/30 bg-emerald-500/[0.05]" : k === "bear" ? "border-rose-500/30 bg-rose-500/[0.05]" : "border-border bg-panel2/40"}`}>

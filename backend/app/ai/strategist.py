@@ -513,7 +513,12 @@ def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "i
                       f"parameters chosen on the first {int(IS_FRACTION * 100)}% and judged on the rest.",
                 f"{tested} उमेदवार strategies {len(set(pd.Series(_ist_index(df).date)))} सत्रांवर tune केल्या; parameters पहिल्या "
                 f"{int(IS_FRACTION * 100)}% सत्रांवर निवडले आणि उरलेल्या सत्रांवर तपासले.")]
-    if plans and plans[0]["verdict"] != "robust":
+    if plans and all(p["verdict"] in ("sample", "insufficient") for p in plans):
+        notes.append(tr(lang, "No judgement on these candles: " + ("sample data is not performance." if not real_data else
+                              f"fewer than {MIN_OOS_TRADES} trades on the unseen sessions.") + " The results are shown as data; what to do with them is your decision.",
+                        "या candles वर निर्णय नाही: " + ("sample data म्हणजे निकाल नव्हे." if not real_data else f"न पाहिलेल्या सत्रांत {MIN_OOS_TRADES} पेक्षा कमी trades.")
+                        + " निकाल data म्हणून दाखवले आहेत; त्यावर काय करायचे हा निर्णय तुमचा."))
+    elif plans and plans[0]["verdict"] != "robust":
         notes.append(tr(lang, "No candidate held up on the unseen sessions - the results are shown as data; what to do with them is your decision.",
                         "कोणतीच strategy नवीन सत्रांवर टिकली नाही - निकाल data म्हणून दाखवले आहेत; त्यावर काय करायचे हा निर्णय तुमचा."))
     return {"style": style, "base_timeframe": base, "higher_timeframe": htf, "sides": sides, "candidates": plans,

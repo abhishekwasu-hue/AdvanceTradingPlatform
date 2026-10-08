@@ -1,6 +1,6 @@
 import { Bell, Menu, UserCircle2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -8,9 +8,16 @@ import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, pageFromPath, pathFor } from "./routes";
+import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+
+/** The old Copilot addresses (/ai-copilot/study, /today, ...) open the redesigned tab that now holds that content. */
+function LegacyCopilot() {
+  const { tab } = useParams<{ tab?: string }>();
+  return <Navigate to={legacyCopilotPath(tab)} replace />;
+}
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
   const title = page === null ? "Page not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
@@ -80,6 +87,7 @@ function legacyTarget(search: string): Page | null {
   if (params.has("invite") || params.has("reset") || params.has("verify")) return "account";
   if (params.has("broker")) return "settings";
   const named = params.get("page");                // web-push notifications open /?page=notifications
+  if (named === "ai-copilot") return "copilot";        // the Copilot's old page id
   if (named && (PAGES as string[]).includes(named)) return named as Page;
   return null;
 }
@@ -138,7 +146,9 @@ function AppShell() {
       <Sidebar page={page} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar page={page} onMenu={() => setMenuOpen(true)} />
-        <main ref={mainRef} tabIndex={-1} className="flex-1 overflow-y-auto p-3 md:p-6 max-w-6xl outline-none">
+        {/* The window scrolls, not <main>: overflow-x-clip keeps wide content inside without making <main> a scroll
+            container, so `position: sticky` (the Copilot's tab bar) sticks to the viewport. */}
+        <main ref={mainRef} tabIndex={-1} className="flex-1 overflow-x-clip p-3 md:p-6 max-w-6xl outline-none">
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>
@@ -147,10 +157,11 @@ function AppShell() {
                   {PAGES.map((p) => {
                     const PageComponent = PAGE_COMPONENTS[p];
                     const element = <PageComponent onNavigate={go} />;
-                    return p === "ai-copilot"
-                      ? <Route key={p} path="/ai-copilot/:tab?" caseSensitive element={element} />
+                    return p === "copilot"
+                      ? <Route key={p} path="/copilot/:tab?" caseSensitive element={element} />
                       : <Route key={p} path={pathFor(p)} caseSensitive element={element} />;
                   })}
+                  <Route path="/ai-copilot/:tab?" caseSensitive element={<LegacyCopilot />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               )}

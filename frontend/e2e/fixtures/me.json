@@ -1,0 +1,22 @@
+{
+ "id": 2,
+ "email": "demo@example.com",
+ "tenant_id": 2,
+ "role": "OWNER",
+ "mfa_enabled": false,
+ "email_verified": false,
+ "scopes": [
+  "ai:manage",
+  "alerts:write",
+  "analytics:read",
+  "api_keys:manage",
+  "billing:manage",
+  "brokers:write",
+  "marketplace:publish",
+  "risk:write",
+  "strategies:write",
+  "team:manage",
+  "trading:live",
+  "trading:write"
+ ]
+}

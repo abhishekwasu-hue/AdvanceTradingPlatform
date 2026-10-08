@@ -196,7 +196,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         actions={onNavigate && <>
           <Button variant="primary" icon={<Rocket size={15} />} onClick={() => onNavigate("deployments")}>Deploy a strategy</Button>
           <Button icon={<Briefcase size={15} />} onClick={() => onNavigate("positions")}>Positions</Button>
-          <Button icon={<Sparkles size={15} />} onClick={() => onNavigate("ai-copilot")}>AI Copilot</Button>
+          <Button icon={<Sparkles size={15} />} onClick={() => onNavigate("copilot")}>AI Copilot</Button>
         </>}
       />
 

@@ -1,0 +1,200 @@
+[
+ {
+  "id": 5,
+  "headline": "US Fed minutes signal patience on further rate moves",
+  "source": "pib",
+  "source_url": "https://pib.gov.in/",
+  "published_at": "2026-10-08T05:28:46",
+  "category": "GLOBAL_MACRO",
+  "symbols": [],
+  "verified": false,
+  "origin": "FEED",
+  "classification": {
+   "type": "GLOBAL",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 3,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "US rate outlook; global cue for Indian markets.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "keyword": {
+   "type": "GLOBAL",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 3,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "US rate outlook; global cue for Indian markets.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "ai": null
+ },
+ {
+  "id": 4,
+  "headline": "Auto sales: September dispatches rise across two-wheelers",
+  "source": "NSE corporate announcements",
+  "source_url": "https://www.nseindia.com/",
+  "published_at": "2026-10-08T08:28:46",
+  "category": "SECTOR",
+  "symbols": [
+   "TATAMOTORS",
+   "M&M"
+  ],
+  "verified": false,
+  "origin": "FEED",
+  "classification": {
+   "type": "SECTOR",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "BULLISH",
+   "severity": 2,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Monthly auto dispatch numbers; sector read only.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "keyword": {
+   "type": "SECTOR",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "BULLISH",
+   "severity": 2,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Monthly auto dispatch numbers; sector read only.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "ai": null
+ },
+ {
+  "id": 3,
+  "headline": "Reliance Industries board meeting on 17 October to consider quarterly results",
+  "source": "NSE corporate announcements",
+  "source_url": "https://www.nseindia.com/",
+  "published_at": "2026-10-08T11:28:46",
+  "category": "CORPORATE",
+  "symbols": [
+   "RELIANCE"
+  ],
+  "verified": false,
+  "origin": "FEED",
+  "classification": {
+   "type": "RESULTS",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 3,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Results date set; a scheduled event for RELIANCE.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "keyword": {
+   "type": "RESULTS",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 3,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Results date set; a scheduled event for RELIANCE.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "ai": null
+ },
+ {
+  "id": 2,
+  "headline": "SEBI issues circular on algorithmic trading by retail investors",
+  "source": "sebi_circulars",
+  "source_url": "https://www.sebi.gov.in/",
+  "published_at": "2026-10-08T12:58:46",
+  "category": "GOVT_POLICY",
+  "symbols": [],
+  "verified": false,
+  "origin": "FEED",
+  "classification": {
+   "type": "REGULATORY",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 4,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "New rules for retail algo trading; read the circular for the dates.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "keyword": {
+   "type": "REGULATORY",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 4,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "New rules for retail algo trading; read the circular for the dates.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "ai": null
+ },
+ {
+  "id": 1,
+  "headline": "RBI keeps repo rate unchanged at 5.50%; stance stays neutral",
+  "source": "RBI press releases",
+  "source_url": "https://www.rbi.org.in/",
+  "published_at": "2026-10-08T13:58:46",
+  "category": "RBI_POLICY",
+  "symbols": [
+   "NIFTY 50",
+   "NIFTY BANK"
+  ],
+  "verified": false,
+  "origin": "FEED",
+  "classification": {
+   "type": "POLICY",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 5,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Repo rate unchanged; banks and rate-sensitive stocks watch the stance.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "keyword": {
+   "type": "POLICY",
+   "scope": [
+    "INDEX"
+   ],
+   "direction": "NEUTRAL",
+   "severity": 5,
+   "horizon": "days",
+   "confidence": 0.6,
+   "one_line_en": "Repo rate unchanged; banks and rate-sensitive stocks watch the stance.",
+   "one_line_mr": "",
+   "method": "keyword"
+  },
+  "ai": null
+ }
+]

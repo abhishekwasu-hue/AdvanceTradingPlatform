@@ -1,0 +1,110 @@
+{
+ "symbols": [
+  {
+   "symbol": "RELIANCE",
+   "exchange": "NSE",
+   "kind": "SYMBOL",
+   "source": "upstox",
+   "last_price": 2950.0,
+   "change_pct": 0.4,
+   "bias": "BULLISH",
+   "regime": "TRENDING_UP",
+   "higher_regime": "TRENDING_UP",
+   "structure": "UPTREND",
+   "captured_at": "2026-10-07T02:23:35.477458+00:00",
+   "payload": {
+    "last_price": 2950.0,
+    "bias": "BULLISH",
+    "bias_score": 0.8,
+    "structure": {
+     "trend": "UPTREND"
+    },
+    "higher_regime": {
+     "kind": "TRENDING_UP"
+    },
+    "support": {
+     "low": 2932.3,
+     "high": 2938.2,
+     "source": "zone"
+    },
+    "resistance": {
+     "low": 2967.7,
+     "high": 2973.6,
+     "source": "zone"
+    },
+    "atr_pct": 0.5
+   }
+  },
+  {
+   "symbol": "NIFTY 50",
+   "exchange": "NSE",
+   "kind": "SYMBOL",
+   "source": "upstox",
+   "last_price": 25000.0,
+   "change_pct": 0.4,
+   "bias": "BULLISH",
+   "regime": "TRENDING_UP",
+   "higher_regime": "TRENDING_UP",
+   "structure": "UPTREND",
+   "captured_at": "2026-10-07T02:23:35.477458+00:00",
+   "payload": {
+    "last_price": 25000.0,
+    "bias": "BULLISH",
+    "bias_score": 0.8,
+    "structure": {
+     "trend": "UPTREND"
+    },
+    "higher_regime": {
+     "kind": "TRENDING_UP"
+    },
+    "support": {
+     "low": 24850.0,
+     "high": 24900.0,
+     "source": "zone"
+    },
+    "resistance": {
+     "low": 25150.0,
+     "high": 25200.0,
+     "source": "zone"
+    },
+    "atr_pct": 0.5
+   }
+  }
+ ],
+ "cues": [],
+ "globals": [],
+ "history": {
+  "RELIANCE": [
+   {
+    "date": "2026-10-07",
+    "bias": "BULLISH",
+    "regime": "TRENDING_UP",
+    "last_price": 2950.0,
+    "change_pct": 0.4
+   }
+  ],
+  "NIFTY 50": [
+   {
+    "date": "2026-10-07",
+    "bias": "BULLISH",
+    "regime": "TRENDING_UP",
+    "last_price": 25000.0,
+    "change_pct": 0.4
+   }
+  ]
+ },
+ "updated_at": "2026-10-07T02:23:35.477458+00:00",
+ "sentiment": null,
+ "watchlist": [
+  "NIFTY 50",
+  "NIFTY BANK"
+ ],
+ "interval_minutes": 15,
+ "sentiment_view": [
+  "Market sentiment: not read yet (needs a broker session for the option chain and quotes)."
+ ],
+ "global_view": [],
+ "global_source": "free public data (Yahoo Finance / Stooq), delayed about 15 minutes",
+ "global_gift_note": "GIFT Nifty has no free reliable source; the US index futures stand in for the overnight mood.",
+ "global_enabled": true
+}

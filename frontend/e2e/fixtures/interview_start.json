@@ -1,0 +1,410 @@
+{
+ "needs_interview": true,
+ "language": "en",
+ "prefill": {},
+ "remaining": [
+  "language",
+  "experience",
+  "capital",
+  "risk",
+  "daily_loss",
+  "style",
+  "instrument",
+  "symbol",
+  "vehicle",
+  "time",
+  "goal",
+  "view"
+ ],
+ "questions": [
+  {
+   "id": "language",
+   "kind": "choice",
+   "en": "Which language should I talk in?",
+   "mr": "\u092e\u0940 \u0915\u094b\u0923\u0924\u094d\u092f\u093e \u092d\u093e\u0937\u0947\u0924 \u092c\u094b\u0932\u0942?",
+   "why_en": "Everything after this - questions and your plan - comes in this language.",
+   "why_mr": "\u092f\u093e\u092a\u0941\u0922\u091a\u0947 \u0938\u0917\u0933\u0947 \u092a\u094d\u0930\u0936\u094d\u0928 \u0906\u0923\u093f \u0924\u0941\u092e\u091a\u093e plan \u092f\u093e\u091a \u092d\u093e\u0937\u0947\u0924 \u092f\u0947\u0908\u0932.",
+   "options": [
+    {
+     "value": "mr",
+     "en": "\u092e\u0930\u093e\u0920\u0940",
+     "mr": "\u092e\u0930\u093e\u0920\u0940"
+    },
+    {
+     "value": "en",
+     "en": "English",
+     "mr": "English"
+    }
+   ],
+   "default": "mr"
+  },
+  {
+   "id": "experience",
+   "kind": "choice",
+   "en": "How long have you been trading?",
+   "mr": "\u0924\u0941\u092e\u094d\u0939\u0940 \u0915\u093f\u0924\u0940 \u0926\u093f\u0935\u0938\u093e\u0902\u092a\u093e\u0938\u0942\u0928 trading \u0915\u0930\u0924 \u0906\u0939\u093e\u0924?",
+   "why_en": "Smaller risk per trade and PAPER first is a common way to start; you set your own risk.",
+   "why_mr": "\u092a\u094d\u0930\u0924\u094d\u092f\u0947\u0915 trade \u092e\u0927\u094d\u092f\u0947 \u0915\u092e\u0940 risk \u0906\u0923\u093f \u0906\u0927\u0940 PAPER \u0939\u0940 \u0938\u0941\u0930\u0941\u0935\u093e\u0924\u0940\u091a\u0940 \u090f\u0915 \u0938\u093e\u092e\u093e\u0928\u094d\u092f \u092a\u0926\u094d\u0927\u0924 \u0906\u0939\u0947; \u0924\u0941\u092e\u091a\u093e risk \u0924\u0941\u092e\u094d\u0939\u0940\u091a \u0920\u0930\u0935\u0924\u093e.",
+   "options": [
+    {
+     "value": "new",
+     "en": "New - under 6 months",
+     "mr": "\u0928\u0935\u0940\u0928 - 6 \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u0902\u092a\u0947\u0915\u094d\u0937\u093e \u0915\u092e\u0940"
+    },
+    {
+     "value": "learning",
+     "en": "Learning - 6 months to 2 years",
+     "mr": "\u0936\u093f\u0915\u0924 \u0906\u0939\u0947 - 6 \u092e\u0939\u093f\u0928\u0947 \u0924\u0947 2 \u0935\u0930\u094d\u0937\u0947"
+    },
+    {
+     "value": "experienced",
+     "en": "Experienced - over 2 years",
+     "mr": "\u0905\u0928\u0941\u092d\u0935\u0940 - 2 \u0935\u0930\u094d\u0937\u093e\u0902\u092a\u0947\u0915\u094d\u0937\u093e \u091c\u093e\u0938\u094d\u0924"
+    }
+   ],
+   "default": "new"
+  },
+  {
+   "id": "capital",
+   "kind": "number",
+   "en": "How much capital do you have for trading (\u20b9)?",
+   "mr": "Trading \u0938\u093e\u0920\u0940 \u0924\u0941\u092e\u091a\u094d\u092f\u093e\u0915\u0921\u0947 \u0915\u093f\u0924\u0940 \u092d\u093e\u0902\u0921\u0935\u0932 \u0906\u0939\u0947 (\u20b9)?",
+   "why_en": "Position size is calculated from capital and risk, never guessed. Only money you can afford to lose belongs here.",
+   "why_mr": "Quantity \u092d\u093e\u0902\u0921\u0935\u0932 \u0906\u0923\u093f risk \u0935\u0930\u0942\u0928 \u092e\u094b\u091c\u0932\u0940 \u091c\u093e\u0924\u0947, \u0905\u0902\u0926\u093e\u091c\u093e\u0928\u0947 \u0928\u093e\u0939\u0940. \u091c\u0947 \u092a\u0948\u0938\u0947 \u0917\u092e\u093e\u0935\u0932\u0947 \u0924\u0930\u0940 \u091a\u093e\u0932\u0924\u0940\u0932 \u0924\u0947\u0935\u0922\u0947\u091a \u0907\u0925\u0947 \u0932\u093f\u0939\u093e.",
+   "options": [],
+   "default": "100000"
+  },
+  {
+   "id": "risk",
+   "kind": "choice",
+   "en": "If a trade goes wrong, how much of your capital can you lose on it?",
+   "mr": "\u090f\u0916\u093e\u0926\u093e trade \u091a\u0941\u0915\u0932\u093e \u0924\u0930 \u0924\u094d\u092f\u093e\u0924 \u092d\u093e\u0902\u0921\u0935\u0932\u093e\u091a\u094d\u092f\u093e \u0915\u093f\u0924\u0940 \u091f\u0915\u094d\u0915\u0947 \u0924\u094b\u091f\u093e \u0938\u0939\u0928 \u0915\u0930\u0942 \u0936\u0915\u0924\u093e?",
+   "why_en": "Professionals risk 0.5-1% per trade, so ten losses in a row still leave 90%+ of the account.",
+   "why_mr": "Professional trader \u090f\u0915\u093e trade \u092e\u0927\u094d\u092f\u0947 0.5-1% risk \u0918\u0947\u0924\u093e\u0924 - \u0938\u0932\u0917 10 trades \u091a\u0941\u0915\u0932\u0947 \u0924\u0930\u0940 90% \u092a\u0947\u0915\u094d\u0937\u093e \u091c\u093e\u0938\u094d\u0924 \u092d\u093e\u0902\u0921\u0935\u0932 \u0936\u093f\u0932\u094d\u0932\u0915 \u0930\u093e\u0939\u0924\u0947.",
+   "options": [
+    {
+     "value": "conservative",
+     "en": "0.5% - careful",
+     "mr": "0.5% - \u0938\u093e\u0935\u0927"
+    },
+    {
+     "value": "moderate",
+     "en": "1% - balanced",
+     "mr": "1% - \u092e\u0927\u094d\u092f\u092e"
+    },
+    {
+     "value": "aggressive",
+     "en": "1.5% - aggressive",
+     "mr": "1.5% - \u0906\u0915\u094d\u0930\u092e\u0915"
+    }
+   ],
+   "default": "conservative"
+  },
+  {
+   "id": "daily_loss",
+   "kind": "choice",
+   "en": "What is the most you can lose in one day before stopping?",
+   "mr": "\u090f\u0915\u093e \u0926\u093f\u0935\u0938\u093e\u0924 \u091c\u093e\u0938\u094d\u0924\u0940\u0924 \u091c\u093e\u0938\u094d\u0924 \u0915\u093f\u0924\u0940 \u0924\u094b\u091f\u093e \u091d\u093e\u0932\u093e \u0915\u0940 \u0925\u093e\u0902\u092c\u093e\u092f\u091a\u0947?",
+   "why_en": "When the day's loss reaches this, the platform stops new trades for the day - no revenge trading.",
+   "why_mr": "\u0926\u093f\u0935\u0938\u093e\u091a\u093e \u0924\u094b\u091f\u093e \u0907\u0925\u092a\u0930\u094d\u092f\u0902\u0924 \u0906\u0932\u093e \u0915\u0940 platform \u0924\u094d\u092f\u093e \u0926\u093f\u0935\u0936\u0940 \u0928\u0935\u0940\u0928 trades \u092c\u0902\u0926 \u0915\u0930\u0924\u094b - revenge trading \u0939\u094b\u0924 \u0928\u093e\u0939\u0940.",
+   "options": [
+    {
+     "value": "1",
+     "en": "1% of capital",
+     "mr": "\u092d\u093e\u0902\u0921\u0935\u0932\u093e\u091a\u094d\u092f\u093e 1%"
+    },
+    {
+     "value": "2",
+     "en": "2% of capital",
+     "mr": "\u092d\u093e\u0902\u0921\u0935\u0932\u093e\u091a\u094d\u092f\u093e 2%"
+    },
+    {
+     "value": "3",
+     "en": "3% of capital",
+     "mr": "\u092d\u093e\u0902\u0921\u0935\u0932\u093e\u091a\u094d\u092f\u093e 3%"
+    }
+   ],
+   "default": "2"
+  },
+  {
+   "id": "style",
+   "kind": "choice",
+   "en": "How do you want to trade?",
+   "mr": "\u0924\u0941\u092e\u094d\u0939\u093e\u0932\u093e \u0915\u0938\u0947 trading \u0915\u0930\u093e\u092f\u091a\u0947 \u0906\u0939\u0947?",
+   "why_en": "This decides the candle timeframe and how many trades a day are reasonable.",
+   "why_mr": "\u092f\u093e\u0935\u0930\u0942\u0928 candle \u091a\u093e timeframe \u0906\u0923\u093f \u0926\u093f\u0935\u0938\u093e\u0932\u093e \u0915\u093f\u0924\u0940 trades \u092f\u094b\u0917\u094d\u092f \u0924\u0947 \u0920\u0930\u0924\u0947.",
+   "options": [
+    {
+     "value": "scalping",
+     "en": "Scalping - minutes, many small trades",
+     "mr": "Scalping - \u0915\u093e\u0939\u0940 \u092e\u093f\u0928\u093f\u091f\u0947, \u0905\u0928\u0947\u0915 \u091b\u094b\u091f\u0947 trades"
+    },
+    {
+     "value": "intraday",
+     "en": "Intraday - hours, closed the same day",
+     "mr": "Intraday - \u0915\u093e\u0939\u0940 \u0924\u093e\u0938, \u0924\u094d\u092f\u093e\u091a \u0926\u093f\u0935\u0936\u0940 \u092c\u0902\u0926"
+    },
+    {
+     "value": "positional",
+     "en": "Calmer intraday - follow the bigger trend, few trades",
+     "mr": "\u0936\u093e\u0902\u0924 intraday - \u092e\u094b\u0920\u094d\u092f\u093e trend \u0938\u094b\u092c\u0924, \u0915\u092e\u0940 trades"
+    },
+    {
+     "value": "swing",
+     "en": "Swing - days to weeks, held overnight",
+     "mr": "Swing - \u0915\u093e\u0939\u0940 \u0926\u093f\u0935\u0938 \u0924\u0947 \u0906\u0920\u0935\u0921\u0947 (position \u0930\u093e\u0924\u094d\u0930\u092d\u0930)"
+    }
+   ],
+   "default": "intraday"
+  },
+  {
+   "id": "instrument",
+   "kind": "choice",
+   "en": "What do you want to trade?",
+   "mr": "\u0924\u0941\u092e\u094d\u0939\u093e\u0932\u093e \u0915\u093e\u092f trade \u0915\u0930\u093e\u092f\u091a\u0947 \u0906\u0939\u0947?",
+   "why_en": "Indices move smoothly and are liquid; a stock can gap on news.",
+   "why_mr": "Index \u0938\u0939\u091c \u0939\u0932\u0924\u094b \u0906\u0923\u093f liquidity \u091c\u093e\u0938\u094d\u0924 \u0905\u0938\u0924\u0947; stock \u092c\u093e\u0924\u092e\u0940\u0935\u0930 \u0905\u091a\u093e\u0928\u0915 gap \u0915\u0930\u0942 \u0936\u0915\u0924\u094b.",
+   "options": [
+    {
+     "value": "index",
+     "en": "Index - NIFTY / BANK NIFTY",
+     "mr": "Index - NIFTY / BANK NIFTY"
+    },
+    {
+     "value": "fno_stock",
+     "en": "An F&O stock",
+     "mr": "F&O stock"
+    },
+    {
+     "value": "stock",
+     "en": "A cash-market stock",
+     "mr": "Cash market stock"
+    }
+   ],
+   "default": "index"
+  },
+  {
+   "id": "symbol",
+   "kind": "symbol",
+   "en": "Which symbol?",
+   "mr": "\u0915\u094b\u0923\u0924\u093e symbol?",
+   "why_en": "The market read and the backtest run on this symbol's candles.",
+   "why_mr": "Market \u091a\u0947 \u0935\u093f\u0936\u094d\u0932\u0947\u0937\u0923 \u0906\u0923\u093f backtest \u092f\u093e\u091a symbol \u091a\u094d\u092f\u093e candles \u0935\u0930 \u0939\u094b\u0908\u0932.",
+   "options": [],
+   "default": "NIFTY 50"
+  },
+  {
+   "id": "vehicle",
+   "kind": "choice",
+   "en": "How do you want to take the trade?",
+   "mr": "Trade \u0915\u0936\u093e \u092a\u094d\u0930\u0915\u093e\u0930\u0947 \u0918\u094d\u092f\u093e\u092f\u091a\u093e?",
+   "why_en": "Option buying caps the loss at the premium; option selling earns time decay but needs a hedge.",
+   "why_mr": "Option buying \u092e\u0927\u094d\u092f\u0947 \u0924\u094b\u091f\u093e premium \u0907\u0924\u0915\u093e\u091a \u092e\u0930\u094d\u092f\u093e\u0926\u093f\u0924; option selling \u092e\u0927\u094d\u092f\u0947 time decay \u092e\u093f\u0933\u0924\u094b \u092a\u0923 hedge \u0932\u093e\u0917\u0924\u094b.",
+   "options": [
+    {
+     "value": "underlying",
+     "en": "The stock itself / futures",
+     "mr": "Stock \u0938\u094d\u0935\u0924\u0903 / futures"
+    },
+    {
+     "value": "option_buy",
+     "en": "Buy options (CE/PE)",
+     "mr": "Option buy (CE/PE)"
+    },
+    {
+     "value": "option_sell",
+     "en": "Sell options (hedged spreads)",
+     "mr": "Option sell (hedge \u0938\u094b\u092c\u0924 spread)"
+    }
+   ],
+   "default": "option_buy"
+  },
+  {
+   "id": "time",
+   "kind": "choice",
+   "en": "How much time can you give during market hours?",
+   "mr": "Market \u091a\u093e\u0932\u0942 \u0905\u0938\u0924\u093e\u0928\u093e \u0924\u0941\u092e\u094d\u0939\u0940 \u0915\u093f\u0924\u0940 \u0935\u0947\u0933 \u0926\u0947\u090a \u0936\u0915\u0924\u093e?",
+   "why_en": "The platform trades for you either way; this decides how many alerts and how much manual checking to plan for.",
+   "why_mr": "Platform \u0926\u094b\u0928\u094d\u0939\u0940 \u092a\u094d\u0930\u0915\u093e\u0930\u0947 trade \u0915\u0930\u0924\u094b; \u092f\u093e\u0935\u0930\u0942\u0928 \u0915\u093f\u0924\u0940 alerts \u0906\u0923\u093f \u0915\u093f\u0924\u0940 \u0935\u0947\u0933\u093e \u0924\u092a\u093e\u0938\u093e\u092f\u091a\u0947 \u0924\u0947 \u0920\u0930\u0924\u0947.",
+   "options": [
+    {
+     "value": "active",
+     "en": "I watch the screen all day",
+     "mr": "\u0926\u093f\u0935\u0938\u092d\u0930 screen \u0938\u092e\u094b\u0930 \u0905\u0938\u0924\u094b"
+    },
+    {
+     "value": "few_checks",
+     "en": "I check a few times a day",
+     "mr": "\u0926\u093f\u0935\u0938\u093e\u0924\u0942\u0928 \u0915\u093e\u0939\u0940 \u0935\u0947\u0933\u093e \u092a\u093e\u0939\u0924\u094b"
+    },
+    {
+     "value": "auto",
+     "en": "Fully automatic - alerts only",
+     "mr": "\u092a\u0942\u0930\u094d\u0923 automatic - \u092b\u0915\u094d\u0924 alerts"
+    }
+   ],
+   "default": "auto"
+  },
+  {
+   "id": "goal",
+   "kind": "choice",
+   "en": "What do you want most right now?",
+   "mr": "\u0938\u0927\u094d\u092f\u093e \u0924\u0941\u092e\u094d\u0939\u093e\u0932\u093e \u0938\u0917\u0933\u094d\u092f\u093e\u0924 \u091c\u093e\u0938\u094d\u0924 \u0915\u093e\u092f \u0939\u0935\u0947 \u0906\u0939\u0947?",
+   "why_en": "Honest goals pick honest methods: catching trends and steady small gains need different strategies.",
+   "why_mr": "\u092a\u094d\u0930\u093e\u092e\u093e\u0923\u093f\u0915 \u0927\u094d\u092f\u0947\u092f = \u092f\u094b\u0917\u094d\u092f \u092a\u0926\u094d\u0927\u0924: \u092e\u094b\u0920\u0947 trend \u092a\u0915\u0921\u0923\u0947 \u0906\u0923\u093f \u0930\u094b\u091c \u091b\u094b\u091f\u093e \u0928\u092b\u093e \u092f\u093e\u0938\u093e\u0920\u0940 \u0935\u0947\u0917\u0933\u094d\u092f\u093e strategies \u0932\u093e\u0917\u0924\u093e\u0924.",
+   "options": [
+    {
+     "value": "learn",
+     "en": "Learn properly first",
+     "mr": "\u0906\u0927\u0940 \u0928\u0940\u091f \u0936\u093f\u0915\u093e\u092f\u091a\u0947 \u0906\u0939\u0947"
+    },
+    {
+     "value": "steady",
+     "en": "Steady small gains",
+     "mr": "\u0930\u094b\u091c \u0925\u094b\u0921\u093e \u092a\u0923 \u0938\u094d\u0925\u093f\u0930 \u0928\u092b\u093e"
+    },
+    {
+     "value": "big_trends",
+     "en": "Catch big trend moves",
+     "mr": "\u092e\u094b\u0920\u0947 trend moves \u092a\u0915\u0921\u093e\u092f\u091a\u0947"
+    }
+   ],
+   "default": "learn"
+  },
+  {
+   "id": "view",
+   "kind": "choice",
+   "en": "What do you think the market will do?",
+   "mr": "Market \u0915\u0941\u0920\u0947 \u091c\u093e\u0908\u0932 \u0905\u0938\u0947 \u0924\u0941\u092e\u094d\u0939\u093e\u0932\u093e \u0935\u093e\u091f\u0924\u0947?",
+   "why_en": "Your view is compared with what the market is actually doing; a professional does not fight the trend.",
+   "why_mr": "\u0924\u0941\u092e\u091a\u0947 \u092e\u0924 market \u092a\u094d\u0930\u0924\u094d\u092f\u0915\u094d\u0937\u093e\u0924 \u0915\u093e\u092f \u0915\u0930\u0924\u094b \u0906\u0939\u0947 \u0924\u094d\u092f\u093e\u091a\u094d\u092f\u093e\u0936\u0940 \u0924\u0941\u0932\u0928\u093e \u0915\u0947\u0932\u0940 \u091c\u093e\u0924\u0947; professional trend \u091a\u094d\u092f\u093e \u0935\u093f\u0930\u0941\u0926\u094d\u0927 \u091c\u093e\u0924 \u0928\u093e\u0939\u0940.",
+   "options": [
+    {
+     "value": "bullish",
+     "en": "Up",
+     "mr": "\u0935\u0930"
+    },
+    {
+     "value": "bearish",
+     "en": "Down",
+     "mr": "\u0916\u093e\u0932\u0940"
+    },
+    {
+     "value": "neutral",
+     "en": "Sideways",
+     "mr": "\u090f\u0915\u093e \u092a\u091f\u094d\u091f\u094d\u092f\u093e\u0924"
+    },
+    {
+     "value": "unsure",
+     "en": "Don't know - you read it",
+     "mr": "\u092e\u093e\u0939\u0940\u0924 \u0928\u093e\u0939\u0940 - \u0924\u0941\u092e\u094d\u0939\u0940\u091a \u0920\u0930\u0935\u093e"
+    }
+   ],
+   "default": "unsure"
+  }
+ ],
+ "intro": "A few quick questions first (anything your message already said is skipped). Then the market data is read and three templates are shown with their rules and backtest - you choose; nothing is recommended.",
+ "intro_mr": "\u0906\u0927\u0940 \u0915\u093e\u0939\u0940 \u091b\u094b\u091f\u0947 \u092a\u094d\u0930\u0936\u094d\u0928 (\u0924\u0941\u092e\u091a\u094d\u092f\u093e message \u092e\u0927\u094d\u092f\u0947 \u0906\u0927\u0940\u091a \u0938\u093e\u0902\u0917\u093f\u0924\u0932\u0947\u0932\u0947 \u0935\u093f\u091a\u093e\u0930\u0932\u0947 \u091c\u093e\u0923\u093e\u0930 \u0928\u093e\u0939\u0940). \u092e\u0917 market \u091a\u093e data \u0935\u093e\u091a\u0932\u093e \u091c\u093e\u0924\u094b \u0906\u0923\u093f \u0924\u0940\u0928 templates \u0924\u094d\u092f\u093e\u0902\u091a\u094d\u092f\u093e \u0928\u093f\u092f\u092e \u0906\u0923\u093f backtest \u0938\u0939 \u0926\u093e\u0916\u0935\u0932\u0947 \u091c\u093e\u0924\u093e\u0924 - \u0928\u093f\u0935\u0921 \u0924\u0941\u092e\u091a\u0940; \u0915\u0936\u093e\u091a\u0940\u0939\u0940 \u0936\u093f\u092b\u093e\u0930\u0938 \u0928\u093e\u0939\u0940.",
+ "profile": {
+  "answers": {
+   "language": "en",
+   "experience": "new",
+   "capital": 50000.0,
+   "risk": "conservative",
+   "daily_loss": 1.0,
+   "style": "scalping",
+   "instrument": "index",
+   "symbol": "NIFTY 50",
+   "vehicle": "underlying",
+   "time": "active",
+   "goal": "learn",
+   "view": "bullish"
+  },
+  "preferences": {
+   "risk_bias": 0,
+   "trades_bias": 0,
+   "reward_bias": 0,
+   "simplicity": 0,
+   "rejected": [],
+   "chosen": [
+    {
+     "at": "2026-10-07T02:35:29.473141+00:00",
+     "option": "balanced",
+     "strategy_id": null
+    },
+    {
+     "at": "2026-10-08T06:31:57.735637+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T06:35:53.989735+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T06:37:50.735706+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T06:40:44.645369+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T07:15:55.527174+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T07:17:52.603488+00:00",
+     "option": "balanced",
+     "strategy_id": "mtf_1m_15m_trend_pullback"
+    },
+    {
+     "at": "2026-10-08T07:44:00.543323+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T07:46:08.525301+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T07:51:57.691776+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T07:55:22.248945+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T07:57:22.354579+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T08:35:40.237593+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T08:37:53.033618+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    },
+    {
+     "at": "2026-10-08T08:39:59.664264+00:00",
+     "option": "balanced",
+     "strategy_id": "bb_rsi_reversion_5m"
+    }
+   ],
+   "feedback_log": [],
+   "match_history": []
+  }
+ }
+}

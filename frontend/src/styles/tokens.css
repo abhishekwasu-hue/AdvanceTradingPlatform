@@ -22,6 +22,10 @@
   --chart-grid: 26 35 51;
   --chart-text: 194 202 216;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.02);
+  /* The Copilot accent ("AI violet / cyan"): decoration of the AI surfaces only - never a profit, loss or warning. */
+  --ai: 167 139 250;
+  --ai-2: 34 211 238;
+  --glass: 16 20 29;
 }
 
 :root[data-theme="light"] {
@@ -43,6 +47,9 @@
   --chart-grid: 229 233 240;
   --chart-text: 71 85 105;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.03);
+  --ai: 109 40 217;
+  --ai-2: 8 145 178;
+  --glass: 255 255 255;
 }
 
 /* Red-green colour blindness: profit blue, loss orange (Okabe-Ito sky blue / blue; an orange kept clear of the amber "warn"), in both

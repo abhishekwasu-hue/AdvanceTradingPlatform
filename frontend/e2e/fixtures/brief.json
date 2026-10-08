@@ -1,0 +1,184 @@
+{
+ "as_of": "2026-10-08T14:30:51.457430+00:00",
+ "language": "en",
+ "experience": "new",
+ "session": {
+  "open": false,
+  "text": "Market closed - opens Fri 09 Oct 09:15 IST",
+  "next_open": "2026-10-09T09:15:00+05:30",
+  "holidays_next_7_days": []
+ },
+ "day_type": {
+  "kind": "TREND_UP",
+  "regime": "TRENDING_UP",
+  "symbol": "NIFTY 50",
+  "bias": "BULLISH",
+  "change_pct": 0.4,
+  "higher_regime": "TRENDING_UP",
+  "vix": null
+ },
+ "plan": {
+  "headline": "Last market read (36 h ago, not today's): A trending-up day on the data: higher highs and higher lows; trend-family templates' filters are open, reversal ones mostly closed.",
+  "lines": [
+   "Regime filters open today: trend following, momentum, breakout.",
+   "Regime filters closed today: mean reversion - these templates would not enter.",
+   "Default risk settings (not set yet): 0.5% risk per trade, daily loss limit 3%, pause after 4 losses in a row. You set your own under Risk Management."
+  ],
+  "fit_families": [
+   "trend",
+   "momentum",
+   "breakout"
+  ],
+  "avoid_families": [
+   "reversion"
+  ]
+ },
+ "global_mood": null,
+ "sentiment": null,
+ "sentiment_view": [],
+ "market_updated_at": "2026-10-07T02:23:35.477458+00:00",
+ "market": {
+  "symbols": [
+   {
+    "symbol": "RELIANCE",
+    "exchange": "NSE",
+    "kind": "SYMBOL",
+    "source": "upstox",
+    "last_price": 2950.0,
+    "change_pct": 0.4,
+    "bias": "BULLISH",
+    "regime": "TRENDING_UP",
+    "higher_regime": "TRENDING_UP",
+    "structure": "UPTREND",
+    "captured_at": "2026-10-07T02:23:35.477458+00:00",
+    "payload": {
+     "last_price": 2950.0,
+     "bias": "BULLISH",
+     "bias_score": 0.8,
+     "structure": {
+      "trend": "UPTREND"
+     },
+     "higher_regime": {
+      "kind": "TRENDING_UP"
+     },
+     "support": {
+      "low": 2932.3,
+      "high": 2938.2,
+      "source": "zone"
+     },
+     "resistance": {
+      "low": 2967.7,
+      "high": 2973.6,
+      "source": "zone"
+     },
+     "atr_pct": 0.5
+    }
+   },
+   {
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "kind": "SYMBOL",
+    "source": "upstox",
+    "last_price": 25000.0,
+    "change_pct": 0.4,
+    "bias": "BULLISH",
+    "regime": "TRENDING_UP",
+    "higher_regime": "TRENDING_UP",
+    "structure": "UPTREND",
+    "captured_at": "2026-10-07T02:23:35.477458+00:00",
+    "payload": {
+     "last_price": 25000.0,
+     "bias": "BULLISH",
+     "bias_score": 0.8,
+     "structure": {
+      "trend": "UPTREND"
+     },
+     "higher_regime": {
+      "kind": "TRENDING_UP"
+     },
+     "support": {
+      "low": 24850.0,
+      "high": 24900.0,
+      "source": "zone"
+     },
+     "resistance": {
+      "low": 25150.0,
+      "high": 25200.0,
+      "source": "zone"
+     },
+     "atr_pct": 0.5
+    }
+   }
+  ],
+  "cues": [],
+  "globals": []
+ },
+ "market_data": {
+  "state": "stale",
+  "updated_at": "2026-10-07T02:23:35.477458+00:00",
+  "age_minutes": 2167.3,
+  "figures_shown": false
+ },
+ "events": [],
+ "you": {
+  "PAPER": {
+   "realised_pnl": 125,
+   "trades_today": 4,
+   "max_trades": 20,
+   "open_positions": 2,
+   "max_open": 3,
+   "loss_limit": 3000.0,
+   "loss_used": 0.0,
+   "loss_left": 3000.0,
+   "consecutive_losses": 1,
+   "max_consecutive_losses": 4,
+   "active": true
+  },
+  "LIVE": {
+   "realised_pnl": 0,
+   "trades_today": 0,
+   "max_trades": 20,
+   "open_positions": 0,
+   "max_open": 3,
+   "loss_limit": 3000.0,
+   "loss_used": 0.0,
+   "loss_left": 3000.0,
+   "consecutive_losses": 0,
+   "max_consecutive_losses": 4,
+   "active": false
+  }
+ },
+ "deployments": [],
+ "checklist": [
+  {
+   "id": "broker",
+   "ok": false,
+   "text": "No usable broker session - log in under Settings > Brokers (needed for real candles and LIVE)"
+  },
+  {
+   "id": "risk",
+   "ok": false,
+   "text": "Risk settings are still the defaults - set capital and daily loss limit (Risk Management)"
+  },
+  {
+   "id": "worker",
+   "ok": false,
+   "text": "Worker not seen in the last minutes - deployments will not trade (check the worker container)"
+  },
+  {
+   "id": "loss_budget",
+   "ok": true,
+   "text": "Loss budget left today (PAPER): \u20b93,000 of \u20b93,000"
+  },
+  {
+   "id": "vix",
+   "ok": null,
+   "text": "India VIX not read yet"
+  },
+  {
+   "id": "events",
+   "ok": true,
+   "text": "No market events today"
+  }
+ ]
+}

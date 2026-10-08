@@ -1,0 +1,75 @@
+{
+ "enabled": true,
+ "flag": "news_feed",
+ "sources": [
+  {
+   "id": "rbi_press",
+   "name": "RBI press releases",
+   "publisher": "Reserve Bank of India",
+   "url": "https://www.rbi.org.in/pressreleases_rss.xml",
+   "category": "RBI_POLICY",
+   "official": true,
+   "default_on": true,
+   "on": true,
+   "terms": "Official RSS feed published by RBI for syndication; headline + link stored."
+  },
+  {
+   "id": "sebi_press",
+   "name": "SEBI press releases and circulars",
+   "publisher": "Securities and Exchange Board of India",
+   "url": "https://www.sebi.gov.in/sebirss.xml",
+   "category": "GOVT_POLICY",
+   "official": true,
+   "default_on": true,
+   "on": true,
+   "terms": "Official RSS feed published by SEBI; headline + link stored."
+  },
+  {
+   "id": "nse_announcements",
+   "name": "NSE corporate announcements",
+   "publisher": "National Stock Exchange of India",
+   "url": "https://nsearchives.nseindia.com/content/RSS/Online_announcements.xml",
+   "category": "CORPORATE",
+   "official": true,
+   "default_on": false,
+   "on": false,
+   "terms": "NSE's terms restrict automated access and redistribution of site content; OFF until the operator confirms the feed may be used."
+  },
+  {
+   "id": "bse_announcements",
+   "name": "BSE corporate announcements",
+   "publisher": "BSE Ltd",
+   "url": "https://www.bseindia.com/data/xml/announcements.xml",
+   "category": "CORPORATE",
+   "official": true,
+   "default_on": false,
+   "on": false,
+   "terms": "BSE's terms restrict automated access and redistribution; OFF until the operator confirms the feed may be used."
+  },
+  {
+   "id": "et_markets",
+   "name": "Economic Times - Markets",
+   "publisher": "The Economic Times",
+   "url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+   "category": "OTHER",
+   "official": false,
+   "default_on": false,
+   "on": false,
+   "terms": "Publisher RSS for personal, non-commercial syndication; headline + link only, no body stored; OFF by default."
+  },
+  {
+   "id": "moneycontrol_markets",
+   "name": "Moneycontrol - Market reports",
+   "publisher": "Moneycontrol",
+   "url": "https://www.moneycontrol.com/rss/marketreports.xml",
+   "category": "OTHER",
+   "official": false,
+   "default_on": false,
+   "on": false,
+   "terms": "Publisher RSS; headline + link only, no body stored; OFF by default."
+  }
+ ],
+ "last_run": {},
+ "cadence_seconds": 900,
+ "note": "Feed items are unverified: headline and link from the publisher's own feed, nothing scraped, no body stored. Read the source before acting."
+}

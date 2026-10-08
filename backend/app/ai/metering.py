@@ -7,7 +7,7 @@ recording failures are logged and never fail the AI call itself.
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -139,6 +139,8 @@ class MeteredProvider:
     source: str = "api"
     user_id: Optional[int] = None
     prompt_version: Optional[str] = None
+    # What this provider object spent so far (one request's calls): the Copilot shows it under the answer.
+    spent: Dict[str, float] = field(default_factory=lambda: {"calls": 0, "tokens_input": 0, "tokens_output": 0, "cost_usd": 0.0})
 
     @property
     def name(self) -> str:
@@ -159,6 +161,10 @@ class MeteredProvider:
                 cost = await record(self.session, self.tenant_id, self.feature, self.inner.name, result.model or self.inner.model, result, source=self.source)
             except Exception as exc:  # noqa: BLE001 - metering must never fail the answer
                 logger.warning("AI usage not recorded for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
+            self.spent["calls"] += 1
+            self.spent["tokens_input"] += result.input_tokens + result.cache_read_tokens + result.cache_write_tokens
+            self.spent["tokens_output"] += result.output_tokens
+            self.spent["cost_usd"] += cost
         try:
             await log_call(self.session, tenant_id=self.tenant_id, user_id=self.user_id, feature=self.feature, provider=self.inner.name,
                            model=(result.model if result else "") or self.inner.model, prompt_version=self.prompt_version, system=system, user=user,
@@ -177,3 +183,13 @@ class MeteredProvider:
 
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
+
+
+def spent_by(provider: Any) -> Optional[Dict[str, Any]]:
+    """The tokens and rupees one metered provider spent (its calls in this request), or None for the rule-based
+    provider or when no call reported usage - the Copilot's per-answer cost chip."""
+    spent = getattr(provider, "spent", None) if isinstance(provider, MeteredProvider) else None
+    if not spent or not spent.get("calls"):
+        return None
+    return {"calls": int(spent["calls"]), "tokens_input": int(spent["tokens_input"]), "tokens_output": int(spent["tokens_output"]),
+            "cost_inr": round(pricing.usd_to_inr(float(spent["cost_usd"])), 4)}

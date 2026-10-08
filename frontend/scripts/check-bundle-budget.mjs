@@ -47,3 +47,66 @@ if (totalKb > BUDGET_KB) {
   console.error(`Over budget by ${(totalKb - BUDGET_KB).toFixed(1)} KB. Lazy-load the new code (React.lazy / dynamic import).`);
   process.exit(1);
 }
+
+// Copilot redesign: the Copilot route's own JS (the page chunk, everything it imports statically and the default tab,
+// Market Pulse, with its imports - not the shared shell counted above) and the 3D "AI Core" chunk (three.js, loaded
+// when the browser is idle) have their own budgets.
+const COPILOT_BUDGET_KB = Number(process.env.COPILOT_JS_BUDGET_KB ?? 120);
+const CORE3D_BUDGET_KB = Number(process.env.COPILOT_3D_BUDGET_KB ?? 180);
+let manifest;
+try {
+  manifest = JSON.parse(readFileSync(join(dist, ".vite", "manifest.json"), "utf8"));
+} catch {
+  console.error("dist/.vite/manifest.json not found - build with `build.manifest: true` (vite.config.ts).");
+  process.exit(2);
+}
+const gz = (file) => gzipSync(readFileSync(join(dist, file)), { level: 9 }).length;
+const shellFiles = new Set([...files].map((f) => f.replace(/^\//, "")));
+/** A manifest entry's own file plus every chunk it imports statically, minus `skip`. */
+function closure(key, skip, seen = new Set()) {
+  const entry = manifest[key];
+  if (!entry || seen.has(key)) return seen;
+  seen.add(key);
+  for (const dep of entry.imports ?? []) closure(dep, skip, seen);
+  return seen;
+}
+function measure(keys, skip) {
+  const out = new Map();
+  for (const key of keys) {
+    for (const k of closure(key, skip)) {
+      const file = manifest[k].file;
+      if (!skip.has(file) && file.endsWith(".js")) out.set(file, gz(file));
+    }
+  }
+  return out;
+}
+// A source module is keyed by its path - unless Rollup hoisted it into a shared chunk, which is keyed "_<name>-<hash>.js".
+const keyOf = (suffix, name) => Object.keys(manifest).find((k) => k.endsWith(suffix))
+  ?? Object.keys(manifest).find((k) => manifest[k].name === name && manifest[k].file.endsWith(".js") && manifest[k].isDynamicEntry);
+const pageKey = keyOf("src/pages/AiCopilotPage.tsx", "AiCopilotPage");
+const pulseKey = keyOf("src/copilot/tabs/MarketPulseTab.tsx", "MarketPulseTab");
+const coreKey = keyOf("src/copilot/components/AICore3D.tsx", "AICore3D");
+if (!pageKey || !pulseKey || !coreKey) {
+  console.error("The Copilot page, its Market Pulse tab or the AI Core 3D chunk is missing from the manifest.");
+  process.exit(1);
+}
+const route = measure([pageKey, pulseKey], shellFiles);
+const routeKb = [...route.values()].reduce((a, b) => a + b, 0) / 1024;
+const core = measure([coreKey], new Set([...shellFiles, ...route.keys()]));
+const coreKb = [...core.values()].reduce((a, b) => a + b, 0) / 1024;
+for (const [f, size] of route) console.log(`${(size / 1024).toFixed(1).padStart(8)} KB gzip  copilot route  ${f}`);
+for (const [f, size] of core) console.log(`${(size / 1024).toFixed(1).padStart(8)} KB gzip  copilot 3D     ${f}`);
+console.log(`Copilot route JS: ${routeKb.toFixed(1)} KB gzip (budget ${COPILOT_BUDGET_KB} KB; plus the shared shell ${totalKb.toFixed(1)} KB = ${(routeKb + totalKb).toFixed(1)} KB on a first visit).`);
+console.log(`Copilot 3D chunk: ${coreKb.toFixed(1)} KB gzip (budget ${CORE3D_BUDGET_KB} KB, loaded when the browser is idle).`);
+if ([...route.keys()].some((f) => core.has(f)) || [...route.keys()].some((f) => /AICore3D/.test(f))) {
+  console.error("The 3D scene is in the Copilot's first download - it must stay a lazily loaded chunk.");
+  process.exit(1);
+}
+if (routeKb > COPILOT_BUDGET_KB) {
+  console.error(`The Copilot route is over budget by ${(routeKb - COPILOT_BUDGET_KB).toFixed(1)} KB.`);
+  process.exit(1);
+}
+if (coreKb > CORE3D_BUDGET_KB) {
+  console.error(`The 3D chunk is over budget by ${(coreKb - CORE3D_BUDGET_KB).toFixed(1)} KB.`);
+  process.exit(1);
+}

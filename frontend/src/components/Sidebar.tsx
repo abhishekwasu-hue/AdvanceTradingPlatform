@@ -41,7 +41,7 @@ export type Page =
   | "quant"
   | "backtest"
   | "marketplace"
-  | "ai-copilot"
+  | "copilot"
   | "coach"
   | "option-chain"
   | "instruments"
@@ -77,7 +77,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "scanner", label: "Market Scanner", icon: Radar },
       { id: "strategies", label: "Strategy Library", icon: ListTree },
       { id: "strategy-builder", label: "Strategy Builder", icon: Wand2 },
-      { id: "ai-copilot", label: "AI Copilot", icon: Sparkles },
+      { id: "copilot", label: "AI Copilot", icon: Sparkles },
       { id: "deployments", label: "Autopilot", icon: Bot },
       { id: "backtest", label: "Backtesting", icon: History },
       { id: "marketplace", label: "Marketplace", icon: Store },

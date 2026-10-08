@@ -1,4 +1,5 @@
 import { Moon, Sun } from "lucide-react";
+import { useCopilotLanguage, type SecondaryLocale } from "../copilot/languagePrefs";
 import { useAppearance, type ThemeChoice } from "../theme";
 import { Button } from "./primitives";
 import { Card } from "./ui";
@@ -7,7 +8,26 @@ const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: "dark", label: "Dark" }, { value: "light", label: "Light" }, { value: "system", label: "Follow the device" },
 ];
 
-/** P1.2: theme and the colour-blind option, saved in this browser. */
+const SECONDARY_OPTIONS: { value: SecondaryLocale; label: string }[] = [{ value: "mr", label: "Marathi" }, { value: "off", label: "None" }];
+
+/** The AI Copilot's languages: the interface (English; more locales later) and the interview's second line. */
+function CopilotLanguageRows() {
+  const [lang, save] = useCopilotLanguage();
+  return (
+    <div role="group" aria-labelledby="copilot-lang-label" className="border-t border-border pt-3">
+      <div id="copilot-lang-label" className="mb-1 text-xs font-medium text-fg-muted">AI Copilot languages</div>
+      <p className="mb-2 text-xs text-fg-muted">Interface: English. The strategy interview shows each question in English with a small second line in:</p>
+      <div className="flex flex-wrap gap-2">
+        {SECONDARY_OPTIONS.map((o) => (
+          <Button key={o.value} size="sm" variant={lang.secondary === o.value ? "primary" : "secondary"} aria-pressed={lang.secondary === o.value}
+            onClick={() => save({ ...lang, secondary: o.value })}>{o.label}</Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion, interview language. */
 export default function AppearanceCard() {
   const [a, save] = useAppearance();
   return (
@@ -34,6 +54,15 @@ export default function AppearanceCard() {
           <span className="font-tabular text-up">+1,250.00</span><span className="font-tabular text-down">-830.50</span>
           <span>preview</span>
         </div>
+        <label className="flex items-start gap-3 text-sm text-fg">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" checked={a.reduceMotion}
+            onChange={(e) => save({ ...a, reduceMotion: e.target.checked })} />
+          <span>
+            Reduce motion
+            <span className="mt-0.5 block text-xs text-fg-muted">Turns off animations, card tilt and the AI Copilot's 3D scene (a still image is shown). The device's own reduced-motion setting does the same.</span>
+          </span>
+        </label>
+        <CopilotLanguageRows />
       </div>
     </Card>
   );

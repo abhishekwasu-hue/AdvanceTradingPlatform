@@ -1,0 +1,95 @@
+{
+ "period": {
+  "days": 30,
+  "mode": "ALL",
+  "from": "2026-10-08",
+  "to": "2026-10-08"
+ },
+ "stats": {
+  "trades": 2,
+  "wins": 1,
+  "losses": 1,
+  "win_rate": 50.0,
+  "net_pnl": 125.0,
+  "avg_win": 275.0,
+  "avg_loss": -150.0,
+  "profit_factor": 1.83,
+  "expectancy": 62.5,
+  "expectancy_r": -0.06,
+  "avg_win_r": 1.38,
+  "avg_loss_r": -1.5,
+  "max_drawdown": 150.0,
+  "longest_losing_streak": 1,
+  "trading_days": 1,
+  "best_day": 125.0,
+  "worst_day": 125.0
+ },
+ "flags": [
+  {
+   "id": "stop_discipline",
+   "severity": "medium",
+   "title": "Losses bigger than the stop",
+   "text": "1 losses were 1.5R or worse (worst -1.5R) - the stop was moved, gapped or not placed.",
+   "tip": "Never widen a stop. Keep the broker-side stop order (the platform places it in LIVE) and size smaller before results or events.",
+   "evidence": [
+    2
+   ]
+  },
+  {
+   "id": "sample",
+   "severity": "low",
+   "title": "Too few trades to judge",
+   "text": "Only 2 closed trades; any edge (or flaw) is not reliable before about 20-30.",
+   "tip": "Keep paper trading the same rules; do not change three things at once.",
+   "evidence": []
+  }
+ ],
+ "focus": [
+  "Never widen a stop. Keep the broker-side stop order (the platform places it in LIVE) and size smaller before results or events."
+ ],
+ "score": 89,
+ "grade": "A",
+ "by_strategy": [
+  {
+   "key": "ema_rsi_scalper_1m",
+   "trades": 2,
+   "wins": 1,
+   "win_rate": 50.0,
+   "net_pnl": 125.0,
+   "avg_pnl": 62.5
+  }
+ ],
+ "by_hour": [
+  {
+   "key": "15:00",
+   "trades": 1,
+   "wins": 1,
+   "win_rate": 100.0,
+   "net_pnl": 275.0,
+   "avg_pnl": 275.0
+  },
+  {
+   "key": "16:00",
+   "trades": 1,
+   "wins": 0,
+   "win_rate": 0.0,
+   "net_pnl": -150.0,
+   "avg_pnl": -150.0
+  }
+ ],
+ "by_weekday": [
+  {
+   "key": "3",
+   "trades": 2,
+   "wins": 1,
+   "win_rate": 50.0,
+   "net_pnl": 125.0,
+   "avg_pnl": 62.5,
+   "label": "Thu"
+  }
+ ],
+ "equity": [
+  275.0,
+  125.0
+ ]
+}

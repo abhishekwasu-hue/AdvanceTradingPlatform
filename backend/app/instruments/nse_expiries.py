@@ -8,8 +8,9 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
    every index contract (OPTIDX / FUTIDX, IDO / IDF) with the day it was first seen;
 2. confirms each expiry with the bhavcopy OF that day: an expiry counts only if contracts expiring that day are in
    that day's file. A date that fails (a late holiday or a change of weekday moved the contract) is dropped and
-   reported, and the files of the six days before it are read for the date it actually expired on, so a contract
-   moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is still found;
+   reported, and the files of the six days either side (nearest first, earlier on a tie) are read for the date it
+   actually expired on - so a contract moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is
+   still found, and a re-dated contract (BANKNIFTY Jan 2025: Wed 29 -> Thu 30) keeps its first listing date;
 3. an expiry with a futures contract is "monthly", the rest "weekly" - read from the data, not inferred. A contract
    listed too far ahead to have a future yet is "monthly" when it is the last listed expiry of its month.
 
@@ -197,10 +198,10 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         if exp > last or (sym, exp) in kept:
             continue
-        # where did it go? the nearest earlier trading day on which this underlying had an expiry
-        for back in range(1, 7):
-            d = exp - dt.timedelta(days=back)
-            text = fetch(d) if start <= d else None
+        # where did it go? the nearest trading day (either side, earlier first) on which this underlying had an expiry
+        for off in (o for k in range(1, 7) for o in (-k, k)):
+            d = exp + dt.timedelta(days=off)
+            text = fetch(d) if start <= d <= end else None
             if text is None:
                 continue
             here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}

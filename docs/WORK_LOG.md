@@ -472,6 +472,18 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - NIFTY expiries from NSE data too (no weekday rule); refresh PR opens itself
+- `expiry_data.DATA_DRIVEN` = NIFTY and BANKNIFTY. NIFTY's Thursday/Tuesday rule is gone from
+  `expiry_calendar`; backtests read the dates NSE printed in its F&O bhavcopies (same file, same causal rules).
+- Verified from the data: first weekly 2019-02-14; Thursday weeklies up to 2025-08-28 (holiday moves to the
+  Wednesday before, e.g. 2018-03-28 monthly, 2021-11-03 Diwali week); Tuesday from 2025-09-02; holiday moves after
+  that (2026-10-19 Monday). Tests: every NIFTY expiry since 2016 matches the file, per symbol.
+- Builder fix found on NIFTY: a re-dated or long-dated contract (quarterly / half-yearly listings) merges into the
+  contract whose future expired that day, not the nearest weekly (Sep 2025, Dec 2025, Mar / Jun 2026 were wrong).
+- Options engine version 6 (`6-options`), shown on every options backtest report and run row.
+- `nse-expiries.yml` now starts CI on `data/nse-expiries` and opens the refresh pull request itself (needs the
+  repository setting that lets Actions create pull requests); the operator only reviews and merges.
+
 ### 2026-10-08 - BANKNIFTY expiries from NSE data (no weekday rule)
 - **Source**: NSE's own F&O bhavcopies - `EXPIRY_DT` (legacy file, to 5 Jul 2024) and `XpryDt` (UDiFF, from 8 Jul 2024).
   `backend/app/instruments/nse_expiries.py` (stdlib only) reads one file per week from 1 Jan 2016, confirms every

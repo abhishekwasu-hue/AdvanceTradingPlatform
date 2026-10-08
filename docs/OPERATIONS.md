@@ -511,14 +511,17 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **Wrong expiries in an old year**: conventions default to the exchange's current listings.
   Override `expiry_weekday` (0 = Monday) and `weekly_expiry` for the period being tested (NIFTY
   weeklies were Thursdays before September 2025), and `lot_size` / `strike_step` when those differed.
-  **BANKNIFTY has no rule**: its expiries are the dates NSE printed in its F&O bhavcopies
+  **NIFTY and BANKNIFTY have no rule**: their expiries are the dates NSE printed in its F&O bhavcopies
   (`backend/app/instruments/data/nse_index_expiries.csv`, every one confirmed by the bhavcopy of its own
   day). `weekly_expiry=false` keeps the monthlies only; the MONTHLY rule always takes the monthly. Bars after
   the file's last day (`options.expiry_calendar` says "data through ...") see only the contracts listed by
   then - nothing is invented; a bar with none left counts as "no expiry". A run before 2016 fails. Refresh:
   GitHub > Actions > "NSE expiry data" > Run workflow (it also runs every Saturday); the result arrives on
-  the `data/nse-expiries` branch for a pull request. The build refuses (nothing committed) when a week has
-  no file, a BANKNIFTY expiry has no file on its day and no move explains it, or the result knows less than
+  the `data/nse-expiries` branch and the job opens the pull request itself and starts CI on it - review and
+  merge it once CI is green. For the job to open the pull request, the repository setting Settings > Actions >
+  General > "Allow GitHub Actions to create and approve pull requests" must be on; without it the job fails
+  with an error naming that setting (the data is still pushed to the branch). The build refuses (nothing committed) when a week has
+  no file, a NIFTY / BANKNIFTY expiry has no file on its day and no move explains it, or the result knows less than
   the committed file - re-run later (NSE may have been blocking) and read the job log. On a machine that reaches nsearchives.nseindia.com the same build is
   `python backend/app/instruments/nse_expiries.py --start 2016-01-01 --out backend/app/instruments/data`.
 - **Signals not traded**: `options.signals_skipped` counts why - the sizer refusing a lot bigger than

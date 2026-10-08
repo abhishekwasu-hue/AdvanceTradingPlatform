@@ -491,7 +491,7 @@ export default function BacktestPage() {
                 <StatTile label="Expiries" value={result.options.expiry_calendar} />
                 <StatTile label="Expiry settlements" value={result.options.expiry_settlements} />
               </div>
-              <div className="text-xs text-slate-300 mb-2">Premiums: {result.options.pricing}
+              <div className="text-xs text-slate-300 mb-2">Options engine v{result.options.engine_version} · Premiums: {result.options.pricing}
                 {result.options.snapshot_hits != null ? ` · ${result.options.snapshot_hits} recorded quotes used, ${result.options.synthetic_fallbacks ?? 0} synthetic fallbacks` : ""}
               </div>
               {Object.keys(result.options.signals_skipped).length > 0 && (

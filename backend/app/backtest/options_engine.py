@@ -55,7 +55,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "5-options"   # BANKNIFTY expiries from NSE data (weeklies where listed by default); was 4 (P0.6 dated lots)
+ENGINE_VERSION = "6-options"   # NIFTY expiries from NSE data too (5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure

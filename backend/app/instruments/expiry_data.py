@@ -23,7 +23,7 @@ CSV_PATH = DATA_DIR / "nse_index_expiries.csv"
 META_PATH = DATA_DIR / "nse_index_expiries.meta.json"
 
 # Underlyings whose backtest calendar is this data (and nothing else).
-DATA_DRIVEN = frozenset({"BANKNIFTY"})
+DATA_DRIVEN = frozenset({"NIFTY", "BANKNIFTY"})
 
 # (expiry, kind, first_seen)
 Listed = Tuple[dt.date, str, dt.date]

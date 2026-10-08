@@ -141,12 +141,11 @@ def bars_per_year(timeframe: str) -> float:
 class ExpiryCalendar:
     """Synthetic listing calendar: weekly expiries on `weekday` (or only the last such weekday
     of each month when `weekly` is False), moved to the previous trading day when they fall
-    on a holiday - the exchange's own rule. With `dated_underlying` (an underlying the dated
-    table in `app.instruments.expiry_calendar` knows, and no pinned weekday) the weekday is the
-    one in force on each date - NIFTY expired on Thursdays until 31 Aug 2025 and on Tuesdays
-    since - and weeklies exist only from that underlying's first weekly listing. With `data_symbol`
-    (an underlying in `expiry_data.DATA_DRIVEN`, no pinned weekday) the expiries are the ones NSE
-    listed, read from its bhavcopies - no weekday rule; `weekly` False keeps the monthly ones only,
+    on a holiday - the exchange's own rule. With `dated_underlying` (an underlying with a dated
+    weekday table in `app.instruments.expiry_calendar`, today SENSEX, and no pinned weekday) the
+    weekday is the one in force on each date. With `data_symbol` (NIFTY, BANKNIFTY - an underlying
+    in `expiry_data.DATA_DRIVEN`, no pinned weekday) the expiries are the ones NSE listed, read
+    from its bhavcopies - no weekday rule; `weekly` False keeps the monthly ones only,
     otherwise every listed expiry counts (BANKNIFTY weeklies until they ended, monthlies after)."""
     weekday: int
     weekly: bool

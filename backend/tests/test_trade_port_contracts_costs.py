@@ -12,6 +12,7 @@ from app.backtest.options import ExpiryCalendar, lot_size_on
 from app.execution import india_costs as CO
 from app.execution.paper_broker import PaperBroker
 from app.instruments import expiry_calendar as CT
+from app.instruments import expiry_data
 
 
 def weekdays(a, b, minus=()):
@@ -28,19 +29,24 @@ def D(x):
 
 
 # --- expiry calendar / choice (ported) -----------------------------------------------------------------------------------
-def test_rule_expiries_tuesday_era_and_holiday_shift():
-    cal = CT.TradingCalendar(weekdays("2026-09-01", "2026-11-30", minus=["2026-10-02", "2026-10-20"]))
-    ex = dict(CT.rule_expiries(cal, "2026-09-15", "2026-10-31"))
-    assert ex[D("2026-09-29")] == "monthly" and ex[D("2026-10-06")] == "weekly"
-    assert D("2026-10-19") in ex and D("2026-10-20") not in ex                     # Tuesday holiday -> the trading day before
-    assert ex[D("2026-10-27")] == "monthly"
+def test_rule_expiries_weekday_and_holiday_shift():
+    # The rule calendar now serves only underlyings without NSE data (SENSEX: Thursday since Sep 2025).
+    cal = CT.TradingCalendar(weekdays("2026-09-01", "2026-11-30", minus=["2026-10-02", "2026-10-22"]))
+    ex = dict(CT.rule_expiries(cal, "2026-09-15", "2026-10-31", "SENSEX"))
+    assert ex[D("2026-09-24")] == "monthly" and ex[D("2026-10-08")] == "weekly"
+    assert D("2026-10-21") in ex and D("2026-10-22") not in ex                     # Thursday holiday -> the trading day before
+    assert ex[D("2026-10-29")] == "monthly"
 
 
-def test_rule_expiries_thursday_era_and_pre_weekly():
-    cal = CT.TradingCalendar(weekdays("2018-01-01", "2024-12-31"))
-    ex = {d: k for d, k in CT.rule_expiries(cal, "2018-03-01", "2018-04-30") if D("2018-03-01") <= d <= D("2018-04-30")}
-    assert set(ex) == {D("2018-03-29"), D("2018-04-26")} and set(ex.values()) == {"monthly"}   # monthly only before weeklies
-    ex2 = {d: k for d, k in CT.rule_expiries(cal, "2024-10-01", "2024-10-31") if d.month == 10 and d.year == 2024}
+def test_nifty_has_no_rule_and_its_book_reads_the_exchange_dates():
+    with pytest.raises(expiry_data.ExpiryDataMissing):                         # data, not a rule
+        CT.rule_expiries(CT.TradingCalendar(weekdays("2018-01-01", "2018-12-31")), "2018-03-01", "2018-04-30")
+    book = CT.ExpiryBook(CT.TradingCalendar(weekdays("2018-01-01", "2024-12-31")))
+    assert book.source == "listed"
+    ex = {e: k for e, k, _ in book.items if D("2018-03-01") <= e <= D("2018-04-30")}
+    # monthly only before weeklies; March 2018 on Wed 28 - NSE moved it off the Mahavir Jayanti holiday
+    assert ex == {D("2018-03-28"): "monthly", D("2018-04-26"): "monthly"}
+    ex2 = {e: k for e, k, _ in book.items if e.year == 2024 and e.month == 10}
     assert D("2024-10-03") in ex2 and ex2[D("2024-10-31")] == "monthly" and all(d.weekday() == 3 for d in ex2)
 
 
@@ -90,9 +96,9 @@ def test_calendar_from_spot_drops_muhurat_and_weekend_sessions():
     rows += [pd.Timestamp("2021-10-31 18:15") + pd.Timedelta(minutes=i) for i in range(60)]   # a Sunday special session
     cal = CT.TradingCalendar.from_spot(pd.DataFrame({"timestamp": rows}))
     assert not cal.is_trading(D("2021-11-04")) and not cal.is_trading(D("2021-10-31"))
-    ex = dict(CT.rule_expiries(cal, "2021-10-25", "2021-11-12"))
-    assert D("2021-11-03") in ex and D("2021-11-04") not in ex                      # the actual expiry was 3 Nov
     book = CT.ExpiryBook(cal, start="2021-10-25", end="2021-11-12")
+    dates = [e for e, _, _ in book.items]
+    assert D("2021-11-03") in dates and D("2021-11-04") not in dates                # the actual expiry was 3 Nov
     assert book.choose(pd.Timestamp("2021-11-03 10:00"))[0] == D("2021-11-11")
     assert CT.dte_days(cal, D("2021-11-01"), D("2021-11-03")) == 2
 
@@ -172,10 +178,10 @@ def test_option_backtest_calendar_follows_the_weekday_of_each_date():
     nifty = ExpiryCalendar.for_underlying("NIFTY")
     assert nifty.expiries(D("2025-08-18"), 4) == [D("2025-08-21"), D("2025-08-28"), D("2025-09-02"), D("2025-09-09")]
     assert nifty.expiries(D("2026-10-05"), 2) == [D("2026-10-06"), D("2026-10-13")]
-    pinned = ExpiryCalendar.for_underlying("NIFTY", weekday=3)                  # a pinned weekday keeps the old behaviour
-    assert pinned.dated_underlying is None and pinned.expiries(D("2026-10-05"), 1) == [D("2026-10-08")]
-    holiday = ExpiryCalendar.for_underlying("NIFTY", holidays=[D("2024-10-31")])
-    assert D("2024-10-30") in holiday.expiries(D("2024-10-28"), 2)              # Thursday holiday -> Wednesday
+    pinned = ExpiryCalendar.for_underlying("NIFTY", weekday=3)                  # a pinned weekday = a what-if rule run
+    assert pinned.data_symbol is None and pinned.expiries(D("2026-10-05"), 1) == [D("2026-10-08")]
+    holiday = ExpiryCalendar.for_underlying("NIFTY", weekday=3, holidays=[D("2024-10-31")])
+    assert D("2024-10-30") in holiday.expiries(D("2024-10-28"), 2)              # what-if: Thursday holiday -> Wednesday
     assert lot_size_on("NIFTY", D("2023-01-02")) == 50 and lot_size_on("BANKNIFTY", D("2026-10-05")) == 35
 
 

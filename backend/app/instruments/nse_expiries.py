@@ -9,8 +9,8 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
    seen;
 2. confirms each expiry with the bhavcopy OF that day: an expiry counts only if contracts expiring that day are in
    that day's file. A date that fails (a late holiday or a change of weekday moved the contract) is dropped and
-   reported, and the files of the six days either side are read for the date it actually expired on (a monthly goes
-   to the day a future of the underlying expired - NIFTY Thu 25 -> Tue 30 Sep 2025, not the weekly of the 23rd; else
+   reported, and the files of the six days either side are read for the date it actually expired on (the day a future
+   of the underlying expired when there is one - NIFTY Thu 25 -> Tue 30 Sep 2025, not the weekly of the 23rd; else
    the nearest day, earlier on a tie) - so a contract moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is
    still found, and a re-dated contract (BANKNIFTY Jan 2025: Wed 29 -> Thu 30) keeps its first listing date;
 3. an expiry with a futures contract is "monthly", the rest "weekly" - read from the data, not inferred. A contract
@@ -234,8 +234,9 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         if exp > last or (sym, exp) in kept:
             continue
-        # where did it go? A monthly (it had a future) to the day a future of this underlying expired; anything else
-        # to the nearest day (either side, earlier first) on which this underlying had an expiry. Six days at most.
+        # where did it go? To the day a future of this underlying expired when there is one within six days (a
+        # re-dated monthly or long-dated contract is that month's monthly - merging its early first_seen into a weekly
+        # would list the weekly years early); else to the nearest day (earlier first) with an expiry of the underlying.
         candidates = []
         for off in (o for k in range(1, 7) for o in (-k, k)):
             d = exp + dt.timedelta(days=off)
@@ -245,8 +246,7 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
             here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}
             if here:
                 candidates.append((d, here))
-        if s["future"]:
-            candidates = [c for c in candidates if (sym, True) in c[1]] or candidates
+        candidates = [c for c in candidates if (sym, True) in c[1]] or candidates
         if candidates:
             d, here = candidates[0]
             moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})

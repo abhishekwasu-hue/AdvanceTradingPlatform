@@ -472,6 +472,12 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P1.3 batch 2: Dashboard, Positions, Backtesting, Strategy Library, Analytics, Scanner
+- Same rules as batch 1: hue classes -> semantic tokens, colour only for meaning, `PageHeader` on every page.
+- Signed figures use `signClass` / `signTone` (`components/ui.tsx`): up / down by sign, neutral when the figure shows as
+  zero (a 0.00 average win or an empty gross loss is no longer green / red). `brand-dim` -> `brand-strong`.
+- Checked in dark and light at 1440 px and 390 px with data on each page (paper trades, a run backtest, a run scan).
+
 ### 2026-10-08 - P1.3 batch 1: six pages on the design system (G-DESIGN approved)
 - Pages: Signals, Autopilot (Deployments), Orders, Portfolio, Option Chain, Risk Management, plus the components they
   use (RiskLimitsCard, SignalCard, BrokerTokenBanner, BrokerUncertainBanner, StepUpDialog, DataSource).

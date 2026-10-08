@@ -23,7 +23,7 @@ _LIST_PRICES: Dict[str, Price] = {
     "claude-opus-5-5": (4.0, 20.0, 0.20), "claude-opus-5": (5.0, 25.0, 0.50), "claude-opus-4-8": (5.0, 25.0, 0.50),
     "claude-opus-4-7": (5.0, 25.0, 0.50), "claude-opus-4-6": (5.0, 25.0, 0.50),
     "claude-sonnet-5-5": (2.0, 10.0, 0.20), "claude-sonnet-5": (2.0, 10.0, 0.20), "claude-sonnet-4-6": (3.0, 15.0, 0.30),
-    "claude-haiku-4-5": (1.0, 5.0, 0.10),
+    "claude-haiku-5-5": (1.0, 5.0, 0.10), "claude-haiku-4-5": (1.0, 5.0, 0.10),
     # OpenAI
     "gpt-4.1-mini": (0.4, 1.6, 0.1), "gpt-4.1-nano": (0.1, 0.4, 0.025), "gpt-4.1": (2.0, 8.0, 0.5),
     "gpt-4o-mini": (0.15, 0.6, 0.075), "gpt-4o": (2.5, 10.0, 1.25),

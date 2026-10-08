@@ -215,3 +215,11 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 RAZORPAY_BASE_URL = os.environ.get("RAZORPAY_BASE_URL", "https://api.razorpay.com/v1")
+
+# Trade port (order_safety): exchange market protection on MARKET / SL-M orders (SEBI retail-algo framework, April
+# 2026; Upstox `market_protection`). Unset = the field is not sent (today's behaviour; Upstox then applies its own
+# automatic protection). 1-25 = that percentage on every Upstox MARKET / SL-M order (entries, stops, exits).
+ORDER_MARKET_PROTECTION_PCT = os.environ.get("ORDER_MARKET_PROTECTION_PCT", "").strip() or None
+# Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
+# confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
+LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")

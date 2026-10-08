@@ -827,9 +827,11 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 - **Which model does what**: the operator sets the models in the host `.env` - `AI_ANTHROPIC_STRONG_MODEL` (writes
   strategies, strategist proposals, scanner plans) and `AI_ANTHROPIC_FAST_MODEL` (narration, Copilot and knowledge
-  answers, the thesis text, news classification, scanner reads); the same pair for OpenAI. The model an organisation
-  types under Settings > AI provider replaces the strong one for that organisation only (leave it blank to follow your
-  default); cheap tasks always use the fast model. The Settings card shows both. When the budget is spent, Copilot
+  answers, the thesis text) and, from P0.10, `AI_ANTHROPIC_CHEAP_MODEL` (default `claude-haiku-5-5`: news
+  classification and scanner reads - frequent, short jobs); the same three for OpenAI (`gpt-4.1-nano` for the cheap
+  tier). The model an organisation types under Settings > AI provider replaces the strong one for that organisation
+  only (leave it blank to follow your default); the fast and cheap tasks always use the operator's models. The
+  Settings card lists every task with its tier, model and an estimated cost per call. When the budget is spent, Copilot
   and guide answers carry the note "AI not used (the plan's monthly AI budget ... is spent)".
 - **Spend**: every call is recorded (calls, tokens, USD at list price, INR at `AI_USD_INR_RATE`, default 84) per
   organisation, feature and model; the card shows this month's figure against the plan's budget. The Pro plan has
@@ -851,6 +853,27 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Sample-data figures are stamped and blurred on purpose; switch Data to broker candles to read real numbers.
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 
+
+### 1.6ab-13 Dated costs, NSE contracts and order-safety switches (Trade port)
+
+- Paper and backtest charges use the statutory rates of each trade's own date (STT 0.15% on option sales from
+  1 Apr 2026). Contract notes still replace the estimate. NIFTY's fallback lot is 65; the live instrument master wins.
+- New optional `.env` keys, all off by default (no LIVE behaviour changes until an operator sets them):
+  `ORDER_MARKET_PROTECTION_PCT` (1-25: Upstox `market_protection` on MARKET / SL-M orders),
+  `LIVE_STRICT_WING_FILL=true` (a multi-leg entry sends its shorts only after every wing filled in full, else unwinds),
+  `BACKTEST_HOLDOUT_START` (e.g. `2026-04-01`: the optimizer never uses bars from that date on).
+- No migration in this release.
+
+### 1.6ab-12 Interview language, data age and the cheap AI tier (P0.10)
+
+- The strategy interview is the one bilingual screen (English line + muted Marathi line); everything else is English.
+- Today's market shows how old the market memory is; a stale read (older than 45 minutes while the market is open,
+  20 hours while it is closed) or placeholder figures are stamped and their prices hidden. "Read now" (with a broker
+  session) or the worker refreshes it.
+- Risk settings never change with experience; until an organisation saves its own, the briefing labels them
+  "Default risk settings (not set yet)".
+- New optional `.env` keys: `AI_ANTHROPIC_CHEAP_MODEL` (default `claude-haiku-5-5`) and `AI_OPENAI_CHEAP_MODEL`
+  (default `gpt-4.1-nano`) for news classification and scanner reads. No migration in this release.
 ### 1.6ab-10 AI Copilot compliance switches (P0.8-D)
 
 - **First use**: every user sees the AI Copilot acknowledgement once (not a SEBI-registered adviser; explains rules and

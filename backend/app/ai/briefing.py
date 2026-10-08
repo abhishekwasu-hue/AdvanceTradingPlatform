@@ -35,6 +35,30 @@ from app.market_data.calendar import IST, load_holidays, session_status
 from app.risk_engine import guardian
 
 WORKER_STALE_MINUTES = 5
+# P0.10: the market memory behind the briefing is "stale" when older than three worker reads while the market is open,
+# or older than the overnight gap while it is closed; its figures are then not shown as today's.
+STALE_OPEN_MINUTES = 3 * market_memory.INTERVAL_MINUTES
+STALE_CLOSED_MINUTES = 20 * 60
+
+
+def data_freshness(memory: dict, now: datetime, market_open: bool) -> dict:
+    """How old the market figures are and whether they may be shown. Figures are hidden when there are none, when they
+    are stale, and when every symbol carries the same change (a placeholder, not a market)."""
+    # The age is the newest SYMBOL / VIX read - not the memory's `updated_at`, which global cues (fetched without a broker
+    # session, every 15 minutes) keep current while the index rows can be days old.
+    reads = [s.get("captured_at") for s in memory.get("symbols", [])]
+    reads += [c.get("captured_at") for c in memory.get("cues", []) if c.get("symbol") == "INDIA VIX"]
+    stamps = [datetime.fromisoformat(str(r)) for r in reads if r]
+    if not stamps:
+        return {"state": "none", "updated_at": None, "age_minutes": None, "figures_shown": False}
+    newest = max(stamps)
+    updated = newest.isoformat()
+    age = max((now - newest).total_seconds() / 60.0, 0.0)
+    stale = age > (STALE_OPEN_MINUTES if market_open else STALE_CLOSED_MINUTES)
+    changes = [round(float(s["change_pct"]), 2) for s in memory.get("symbols", []) if s.get("change_pct") is not None]
+    identical = len(changes) >= 2 and len(set(changes)) == 1
+    state = "stale" if stale else "suspect" if identical else "fresh"
+    return {"state": state, "updated_at": updated, "age_minutes": round(age, 1), "figures_shown": state == "fresh"}
 DAY_TYPES = ("TREND_UP", "TREND_DOWN", "RANGE", "VOLATILE", "UNKNOWN")
 REGIME_MR = {"TRENDING_UP": "वरचा trend", "TRENDING_DOWN": "खालचा trend", "RANGING": "sideways", "VOLATILE": "अस्थिर", "QUIET": "शांत", "UNKNOWN": "-"}
 
@@ -77,7 +101,21 @@ def _families(regime: str) -> Dict[str, List[str]]:
     return {"fit": [f for f, v in fits.items() if v >= 2], "avoid": [f for f, v in fits.items() if v == 0]}
 
 
-def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict]) -> dict:
+def risk_line(lang: str, cfg: RiskConfig, saved: bool) -> str:
+    """P0.10: the risk settings the trades will actually use - the trader's own, or the platform defaults labelled as
+    such. Experience never changes them (the Risk Management page does, when the trader decides)."""
+    values = (f"{cfg.risk_per_trade_pct:g}% risk per trade, daily loss limit {cfg.max_daily_loss_pct:g}%, "
+              f"pause after {cfg.max_consecutive_losses} losses in a row")
+    values_mr = (f"प्रत्येक trade ला {cfg.risk_per_trade_pct:g}% risk, दिवसाची तोटा मर्यादा {cfg.max_daily_loss_pct:g}%, "
+                 f"सलग {cfg.max_consecutive_losses} तोट्यांनंतर थांबा")
+    if saved:
+        return tr(lang, f"Your risk settings: {values}.", f"तुमच्या risk settings: {values_mr}.")
+    return tr(lang, f"Default risk settings (not set yet): {values}. You set your own under Risk Management.",
+              f"Default risk settings (अजून ठरवलेल्या नाहीत): {values_mr}. Risk Management मध्ये तुम्ही स्वतः ठरवा.")
+
+
+def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], events: List[dict], *,
+              cfg: Optional[RiskConfig] = None, cfg_saved: bool = False, freshness: Optional[dict] = None) -> dict:
     kind = dt["kind"]
     # P0.8-D: the day described by the data - never "buy the pullbacks", "sell the rallies" or "stay out".
     headlines = {
@@ -100,12 +138,14 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
     if fam["avoid"]:
         lines.append(tr(lang, "Regime filters closed today: " + ", ".join(FAMILY_TEXT[f][0] for f in fam["avoid"]) + " - these templates would not enter.",
                         "आज regime filter बंद: " + ", ".join(FAMILY_TEXT[f][1] for f in fam["avoid"]) + " - हे templates entry घेणार नाहीत."))
-    vix = dt.get("vix")
+    # P0.10: when the market figures are not a current read, no VIX or global-cue numbers are repeated as today's.
+    hidden = freshness is not None and not freshness.get("figures_shown", True)
+    vix = None if hidden else dt.get("vix")
     if vix is not None:
         lines.append(market_memory.vix_text(lang, vix) + ".")
-        if vix >= 20 and experience in (None, "new", "learning"):
+        if vix >= 20:
             lines.append(tr(lang, "VIX is 20 or higher: fear is high and gaps are more likely; your risk settings size every trade from its stop.", "VIX 20 किंवा जास्त: भीती जास्त, gap ची शक्यता जास्त; तुमच्या risk settings प्रत्येक trade ची size त्याच्या stop वरून ठरवतात."))
-    glines = global_cues.view(lang, memory.get("globals", []))
+    glines = [] if hidden else global_cues.view(lang, memory.get("globals", []))
     if glines:
         lines.append(glines[0])
     for e in events:
@@ -114,11 +154,14 @@ def game_plan(lang: str, dt: dict, memory: dict, experience: Optional[str], even
             lines.append(tr(lang, f"Event today: {what} - new entries are blocked in its window.", f"आज event: {what} - त्या वेळेत नवीन entries बंद."))
         else:
             lines.append(tr(lang, f"Event today: {what} - position size is cut automatically.", f"आज event: {what} - position size आपोआप कमी होईल."))
-    if experience == "new":
-        lines.append(tr(lang, "Your risk settings as a beginner: a small risk per trade, the stop placed with the entry, and a pause after two losses in a row.",
-                        "नवशिक्या म्हणून तुमच्या risk settings: प्रत्येक trade चा risk कमी, entry सोबतच stop, आणि सलग दोन तोट्यांनंतर थांबा."))
+    lines.append(risk_line(lang, cfg or RiskConfig(), cfg_saved))
     head = headlines[kind]
-    return {"headline": tr(lang, head[0], head[1]), "lines": lines, "fit_families": fam["fit"], "avoid_families": fam["avoid"]}
+    headline = tr(lang, head[0], head[1])
+    if hidden and kind != "UNKNOWN" and freshness and freshness.get("age_minutes") is not None:
+        hours = freshness["age_minutes"] / 60.0
+        ago = f"{hours:.0f} h" if hours >= 1 else f"{freshness['age_minutes']:.0f} min"
+        headline = tr(lang, f"Last market read ({ago} ago, not today's): ", f"शेवटचे market वाचन ({ago} पूर्वी, आजचे नाही): ") + headline
+    return {"headline": headline, "lines": lines, "fit_families": fam["fit"], "avoid_families": fam["avoid"]}
 
 
 async def your_day(session: AsyncSession, user: User, cfg: RiskConfig, now: datetime) -> dict:
@@ -206,7 +249,8 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
     events = [guardian.event_as_dict(e) for e in await guardian.events_on(session, user.tenant_id, now_ist.date())]
 
     dt = day_type(memory)
-    plan = game_plan(lang, dt, memory, experience, events)
+    freshness = data_freshness(memory, now, status.is_open)
+    plan = game_plan(lang, dt, memory, experience, events, cfg=cfg, cfg_saved=cfg_saved is not None, freshness=freshness)
     mood = global_cues.mood(memory.get("globals", []), now) if memory.get("globals") else None
     from app.ai import sentiment as sentiment_mod                          # Phase BC
     sentiment_read = memory.get("sentiment")
@@ -250,6 +294,7 @@ async def build(session: AsyncSession, user: User, lang: str = "mr", now: Option
                     "holidays_next_7_days": [d.isoformat() for d in upcoming]},
         "day_type": dt, "plan": plan, "global_mood": mood, "sentiment": sentiment_read, "sentiment_view": sentiment_lines, "market_updated_at": memory.get("updated_at"),
         "market": {"symbols": memory.get("symbols", [])[:4], "cues": memory.get("cues", []), "globals": memory.get("globals", [])},
+        "market_data": freshness,
         "events": events, "you": day, "deployments": deployments, "checklist": checklist,
     }
 

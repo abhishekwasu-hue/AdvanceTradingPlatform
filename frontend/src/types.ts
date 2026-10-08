@@ -1588,7 +1588,7 @@ export interface AiProviderConfig {
   default_provider?: AiProviderName;
   /** P0.8-C: the model each tier runs on (strong = rule writing, fast = narration/classification/Q&A). */
   models?: { strong: string; fast: string };
-  tier_models?: Record<string, { strong: string; fast: string }>;
+  tier_models?: Record<string, { strong: string; fast: string; cheap?: string }>;
   usage?: AiUsage | null;
   /** P0.8-D: the organisation's data-sharing consent (version, accepted, by whom). */
   data_consent?: AiAcknowledgement;
@@ -1597,7 +1597,7 @@ export interface AiProviderConfig {
   typical_call_tokens?: Record<string, { input: number; output: number }>;
 }
 export interface AiTaskModel {
-  task: string; label: string; tier: "fast" | "strong"; model: string;
+  task: string; label: string; tier: "cheap" | "fast" | "strong"; model: string;
   price_per_mtok_usd: { input: number; output: number }; est_inr_per_call: number; estimated_price: boolean;
 }
 
@@ -1909,6 +1909,8 @@ export interface InterviewStart {
   remaining: string[];
   questions: InterviewQuestion[];
   intro: string;
+  /** P0.10: the Marathi line under the intro. */
+  intro_mr?: string;
   /** Phase AQ: what the Copilot remembers from last time (null on a first visit). */
   profile: { answers: Record<string, string | number>; preferences: InterviewPreferences } | null;
 }
@@ -1926,6 +1928,9 @@ export interface InterviewOptionMeta {
   id: "safe" | "balanced" | "active";
   label: string;
   summary: string;
+  /** P0.10: the Marathi lines under the template name and summary (the interview is bilingual). */
+  label_mr?: string;
+  summary_mr?: string;
   /** P0.8-D: no score of any kind. Whether the template's own regime filter is open on today's candles
    * (data, not a recommendation); null when no strategy could be tested. */
   regime_filter_open: boolean | null;
@@ -1950,7 +1955,7 @@ export interface InterviewPlan {
   alternatives: InterviewCandidate[];
   risk_config: RiskConfig;
   deployment: DeploymentCreateRequest | null;
-  sections: { id: string; title: string; lines: string[] }[];
+  sections: { id: string; title: string; title_mr?: string; lines: string[] }[];
   warnings: string[];
   ai_prompt: string;
   disclaimer: string;
@@ -2069,6 +2074,8 @@ export interface DailyBrief {
   sentiment?: SentimentRead | null;
   sentiment_view?: string[];
   market_updated_at: string | null;
+  /** P0.10: how old the market figures are; `figures_shown` false = none, stale, or a placeholder (every symbol the same). */
+  market_data?: { state: "fresh" | "stale" | "suspect" | "none"; updated_at: string | null; age_minutes: number | null; figures_shown: boolean };
   market: { symbols: MemorySnapshot[]; cues: MemorySnapshot[]; globals: MemorySnapshot[] };
   events: { kind: string; action: string; description: string; start_time: string | null; end_time: string | null }[];
   you: { PAPER: BriefDay; LIVE: BriefDay };

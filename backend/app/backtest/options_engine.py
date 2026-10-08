@@ -32,7 +32,7 @@ import pandas as pd
 from app.backtest.analytics import build_analytics
 from app.backtest.options import (
     ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
-    default_lot_size, default_strike_step, lot_size_on, strike_ladder, to_utc, underlying_name,
+    default_lot_size, default_strike_step, lot_size_for, strike_ladder, to_utc, underlying_name,
 )
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
@@ -195,9 +195,11 @@ def run_option_backtest(
     is_daily = bars_per_year(primary_tf) == 250.0
 
     underlying, underlying_symbol = underlying_name(symbol)
-    # P0.6 / B5: the lot size is the exchange's lot *on the entry day* (lot_size_on), unless the run pins one.
+    # P0.6 / B5: the lot size is the exchange's lot for the contract traded (lot_size_for: by expiry where the dated
+    # table has one, else by entry day), unless the run pins one.
     lot = int(config.lot_size or default_lot_size(underlying))
     lots_used: set = set()
+    expiries_used: set = set()            # the report's calendar label comes from the expiries actually traded
     vol = VolatilityModel(fixed_iv=config.implied_volatility, window=config.realised_vol_window, annualisation=bars_per_year(primary_tf))
     synthetic = SyntheticPricer(vol, config.risk_free_rate)
     if pricer is None:
@@ -240,11 +242,13 @@ def run_option_backtest(
             # traded: entry-side charges only, and a bought leg in the money is exercised (STT on the intrinsic value
             # instead of a sell-side premium STT). A far-expiry leg (calendar spread) is closed at market as usual.
             if settled and leg.expiry == pos.near_expiry:
-                charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION", sold_first=leg.role == "SHORT", settled=True)
+                charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION", sold_first=leg.role == "SHORT", settled=True,
+                                                            entry_date=pos.entry_time, exit_date=when)
                 if leg.role == "LONG":
-                    charges += broker.exercise_charges(price, leg.quantity)
+                    charges += broker.exercise_charges(price, leg.quantity, trade_date=when)
             else:
-                charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION", sold_first=leg.role == "SHORT")
+                charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION", sold_first=leg.role == "SHORT",
+                                                            entry_date=pos.entry_time, exit_date=when)
         value = sum((leg.exit_price if leg.role == "SHORT" else -leg.exit_price) * leg.ratio for leg in pos.legs)
         exit_unit = value if pos.direction == SignalDirection.SHORT else -value
         pnl = round(gross - charges, 2)
@@ -372,7 +376,8 @@ def run_option_backtest(
             if expiry == bar_day and at_ist.time() >= SETTLEMENT_FROM and not is_daily:
                 skipped["expiry day too late to enter"] += 1
                 continue
-            lot = int(config.lot_size or lot_size_on(underlying, bar_day))
+            lot = int(config.lot_size or lot_size_for(underlying, bar_day, expiry))
+            expiries_used.add(expiry)
             lots_used.add(lot)
             try:
                 if config.is_single:
@@ -411,7 +416,10 @@ def run_option_backtest(
         "engine_version": ENGINE_VERSION, "pricing_model": pricer.name, "pricing": pricer.describe(), "underlying": underlying,
         "structure": config.option_strategy.value, "position": config.option_position.value if config.is_single else None,
         "lot_size": lot if len(lots_used) <= 1 else sorted(lots_used), "strike_step": step_used or config.strike_step or default_strike_step(underlying, float(primary_df["close"].iloc[-1])),
-        "expiry_calendar": f"{'weekly' if calendar.weekly else 'monthly'}, {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][calendar.weekday]}",
+        "expiry_calendar": f"{'weekly' if calendar.weekly else 'monthly'}, "
+                           + "/".join(sorted({["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][e.weekday()] for e in expiries_used},
+                                             key=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].index)
+                                      or [["Mon", "Tue", "Wed", "Thu", "Fri"][calendar.weekday]]),
         "intraday": config.intraday, "structures_opened": len(structures), "expiry_settlements": settlements,
         "signals_skipped": dict(skipped), "structures": structures,
         "disclaimer": ("Synthetic premiums (Black-Scholes) approximate what the market would have quoted; they carry no smile, "

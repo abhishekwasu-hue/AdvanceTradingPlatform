@@ -91,7 +91,7 @@ async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] 
 
 # P0.9: the token sizes behind the per-call cost estimate on the provider card (a typical call of each tier, thinking
 # included in the output) - an estimate for the owner, not a bill; the real figures are metered per call.
-TYPICAL_CALL_TOKENS = {"fast": (3000, 1200), "strong": (6000, 4000)}
+TYPICAL_CALL_TOKENS = {"cheap": (1500, 300), "fast": (3000, 1200), "strong": (6000, 4000)}
 TASK_LABELS = {"strategy_generation": "Strategy drafts", "strategist": "Strategist rule proposals", "scanner_plan": "Scanner plans",
                "narration": "Narration", "copilot": "Copilot chat", "knowledge": "Guide answers", "thesis": "Thesis wording",
                "classification": "News classification", "scanner_read": "Scanner reads"}
@@ -127,8 +127,9 @@ def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant, usage: Opt
             "typical_call_tokens": {tier: {"input": i, "output": o} for tier, (i, o) in TYPICAL_CALL_TOKENS.items()}}
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,
-                "models": {"strong": DEFAULT_MODELS["rule_based"], "fast": DEFAULT_MODELS["rule_based"]}, **base}
+                "models": {"strong": DEFAULT_MODELS["rule_based"], "fast": DEFAULT_MODELS["rule_based"], "cheap": DEFAULT_MODELS["rule_based"]}, **base}
     return {"provider": record.provider, "model": record.model or "", "api_key_set": bool(record.encrypted_api_key), "enabled": record.enabled,
             "configured": True, "last_used_at": record.last_used_at.isoformat() if record.last_used_at else None, "last_error": record.last_error,
-            "models": {"strong": model_for(record.provider, record.model, "strategy_generation"), "fast": model_for(record.provider, record.model, "narration")},
+            "models": {"strong": model_for(record.provider, record.model, "strategy_generation"), "fast": model_for(record.provider, record.model, "narration"),
+                       "cheap": model_for(record.provider, record.model, "classification")},
             **base}

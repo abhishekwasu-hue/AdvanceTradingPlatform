@@ -33,6 +33,7 @@ from app.core.enums import ExpiryRule
 from app.instruments.contracts import select_expiry
 from app.instruments.master import INDEX_SYMBOLS, underlying_of
 from app.market_data.calendar import IST
+from app.instruments import expiry_calendar
 from app.option_chain.greeks import BSInputs, black_scholes
 from app.option_chain.models import OptionType
 
@@ -45,7 +46,7 @@ DEFAULT_RISK_FREE_RATE = 0.07
 MIN_TIME_TO_EXPIRY_YEARS = 1.0 / 365.0 / 24.0   # one hour, as the Greeks module floors it
 
 # Current exchange conventions (September 2026). Overridable per run.
-LOT_SIZES: Dict[str, int] = {"NIFTY": 75, "BANKNIFTY": 35, "FINNIFTY": 65, "MIDCPNIFTY": 140, "NIFTYNXT50": 25,
+LOT_SIZES: Dict[str, int] = {"NIFTY": 65, "BANKNIFTY": 35, "FINNIFTY": 65, "MIDCPNIFTY": 140, "NIFTYNXT50": 25,
                              "SENSEX": 20, "BANKEX": 30}
 STRIKE_STEPS: Dict[str, float] = {"NIFTY": 50.0, "BANKNIFTY": 100.0, "FINNIFTY": 50.0, "MIDCPNIFTY": 25.0, "NIFTYNXT50": 100.0,
                                   "SENSEX": 100.0, "BANKEX": 100.0}
@@ -80,12 +81,24 @@ LOT_SIZE_HISTORY: Dict[str, List[Tuple[date, int]]] = {
 
 def lot_size_on(underlying: str, day: date) -> int:
     """The contract lot that applied to entries on `day`: the current lot after the last dated revision, the
-    pre-revision lot before it."""
+    pre-revision lot before it. Underlyings with a full dated lot table in `app.instruments.expiry_calendar` (NIFTY,
+    ported from Trade) use that table instead."""
+    dated = expiry_calendar.dated_lot_size(underlying, day)
+    if dated is not None:
+        return dated
     key = underlying.upper()
     for effective_from, before in sorted(LOT_SIZE_HISTORY.get(key, []), key=lambda e: e[0]):
         if day < effective_from:
             return before
     return default_lot_size(key)
+
+
+def lot_size_for(underlying: str, entry_day: date, expiry: Optional[date] = None) -> int:
+    """The lot of the contract actually traded: the dated table is keyed by the contract's EXPIRY where it exists (a
+    revision applies to the series expiring on or after its date); otherwise the entry-day lot (`lot_size_on`)."""
+    if expiry is not None and expiry_calendar.dated_lot_size(underlying, expiry) is not None:
+        return expiry_calendar.lot_size(expiry, underlying)
+    return lot_size_on(underlying, entry_day)
 
 
 def default_strike_step(underlying: str, spot: float) -> float:
@@ -128,10 +141,15 @@ def bars_per_year(timeframe: str) -> float:
 class ExpiryCalendar:
     """Synthetic listing calendar: weekly expiries on `weekday` (or only the last such weekday
     of each month when `weekly` is False), moved to the previous trading day when they fall
-    on a holiday - the exchange's own rule."""
+    on a holiday - the exchange's own rule. With `dated_underlying` (an underlying the dated
+    table in `app.instruments.expiry_calendar` knows, and no pinned weekday) the weekday is the
+    one in force on each date - NIFTY expired on Thursdays until 31 Aug 2025 and on Tuesdays
+    since - and weeklies exist only from that underlying's first weekly listing."""
     weekday: int
     weekly: bool
     holidays: frozenset = field(default_factory=frozenset)
+    dated_underlying: Optional[str] = None
+    force_weekly: bool = False          # an explicit weekly=True: weeklies on every date, listed or not
 
     @classmethod
     def for_underlying(cls, underlying: str, holidays: Iterable[date] = (), *, weekday: Optional[int] = None,
@@ -139,10 +157,12 @@ class ExpiryCalendar:
         key = underlying.upper()
         default_weekly = key in WEEKLY_EXPIRY_WEEKDAY
         is_weekly = default_weekly if weekly is None else weekly
+        dated = key if weekday is None and expiry_calendar.known(key) else None
         if weekday is None:
             weekday = WEEKLY_EXPIRY_WEEKDAY.get(key) if is_weekly and key in WEEKLY_EXPIRY_WEEKDAY else \
                 MONTHLY_EXPIRY_WEEKDAY.get(key, DEFAULT_MONTHLY_WEEKDAY)
-        return cls(weekday=weekday, weekly=is_weekly, holidays=frozenset(holidays))
+        return cls(weekday=weekday, weekly=is_weekly, holidays=frozenset(holidays), dated_underlying=dated,
+                   force_weekly=bool(weekly))
 
     def _trading_day_on_or_before(self, day: date) -> date:
         for _ in range(15):
@@ -156,8 +176,28 @@ class ExpiryCalendar:
         last = nxt - timedelta(days=1)
         return last - timedelta(days=(last.weekday() - self.weekday) % 7)
 
+    def _dated_expiries(self, on_or_after: date, count: int) -> List[date]:
+        """Day-by-day walk with the weekday of each date (expiry_calendar): a weekly where the
+        underlying listed weeklies on that date, else only the last such weekday of the month."""
+        assert self.dated_underlying is not None
+        out: List[date] = []
+        day = on_or_after - timedelta(days=7)
+        for _ in range(400 * max(1, count)):
+            if day.weekday() == expiry_calendar.expiry_weekday(day, self.dated_underlying):
+                last_of_month = (day + timedelta(days=7)).month != day.month
+                if last_of_month or (self.weekly and (self.force_weekly or expiry_calendar.weekly_listed(day, self.dated_underlying))):
+                    actual = self._trading_day_on_or_before(day)
+                    if actual >= on_or_after and actual not in out:
+                        out.append(actual)
+                        if len(out) >= count:
+                            break
+            day += timedelta(days=1)
+        return sorted(out)
+
     def expiries(self, on_or_after: date, count: int = 6) -> List[date]:
         """The next `count` listed expiries on/after the date (post holiday shift)."""
+        if self.dated_underlying is not None:
+            return self._dated_expiries(on_or_after, count)
         out: List[date] = []
         if self.weekly:
             nominal = on_or_after + timedelta(days=(self.weekday - on_or_after.weekday()) % 7)

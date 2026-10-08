@@ -40,6 +40,60 @@ class Concept:
         return {"id": self.id, "title": tr(lang, self.en, self.mr), "body": tr(lang, self.body_en, self.body_mr), "related": list(self.related)}
 
 
+# Marathi bodies of the Trade-port concept entries (same facts, sources and limits as the English text).
+MR_BODIES: Dict[str, str] = {
+    "candlestick_patterns": (
+        "प्रत्येक candle म्हणजे buyers आणि sellers च्या एका लढाईचा निकाल: open = सुरुवात, high/low = कोणी किती ढकलले, close = शेवटी "
+        "कोणाच्या हातात नियंत्रण. लांब खालची wick = sellers नी भाव खाली नेला आणि buyers नी परत आणला (rejection). पुरावा काय सांगतो: "
+        "एकट्या pattern चे नाव जवळजवळ नाणेफेक आहे. Bulkowski च्या आकडेवारीत (US daily stocks, ~47 लाख candles, costs नाहीत, significance "
+        "test नाही) बहुतेक single candles 50-60% - hammer ~60%, doji 50-52% - आणि काही 'classic' patterns उलटे वागतात (hanging man ~59% वेळा "
+        "bullish continuation). Peer-reviewed अभ्यास मिश्र, costs आणि data-snooping correction नंतर नकाराकडे झुकलेले (Marshall, Young & Rose "
+        "2006; Marshall et al. 2008 Tokyo; Duvinage et al. 2013 - 5-minute DJIA वर 83 पैकी फक्त 5 patterns costs नंतर टिकले, buy-and-hold ला "
+        "कोणीही हरवले नाही); लहान positive निकाल मुख्यतः bullish patterns, योग्य trend आणि 2-3 दिवसांच्या holding सह (Caginalp & Laurent 1998; "
+        "Lu 2014; Lu, Chen & Hsu 2015). Context मदत करतो: level वरचे location, मोठ्या trend मधला pullback, पुढच्या bar ची confirmation. "
+        "RSI/stochastic filters ने SET50 अभ्यासात सुधारणा झाली नाही (Tharavanij et al. 2017). मर्यादा: NIFTY/SENSEX किंवा 15-minute bars वर "
+        "एकही rigorous अभ्यास नाही - edge फक्त तुमच्या स्वतःच्या backtest, walk-forward आणि holdout मधूनच दिसू शकते."),
+    "reversal_candle": (
+        "प्रत्येक खऱ्या reversal मागे एकच order-flow कथा: उशिराचे traders move मध्ये शिरतात, level वर विस्तार नाकारला जातो, आणि दुसरी बाजू "
+        "खोल आत close करते - उशिराचे traders अडकतात आणि त्यांचे stops वळण चालवतात. ही शेवटची पायरी नसलेले patterns (harami, matching low) "
+        "चाचणीत random निघतात. Platform pattern च्या नावाशिवाय हे वाचतो: level ला touch झाल्यापासूनच्या candles एका composite candle मध्ये "
+        "जोडल्या जातात (पहिला open, सर्वोच्च high, सर्वात कमी low, शेवटचा close - Nison चे 'blending'), त्यामुळे engulfing, piercing किंवा "
+        "morning star सगळे hammer-सारखे दिसतात. मग touch, level चा reclaim, composite चा आकार अलीकडच्या bars च्या median range च्या "
+        "तुलनेत (fixed points नाहीत), स्वतःच्या range मध्ये close कुठे झाला (मध्ये close = अनिश्चितता, follow-through bar हवा), wick आणि "
+        "bounce किती वेगाने आला हे तपासले जाते. दोन modes: टप्प्याटप्प्याने composite तपासणी (default) आणि 0-100 score - दोन्ही फक्त बंद "
+        "candles वापरतात. मर्यादा: score म्हणजे level वर काय घडले याचे वर्णन, अंदाज नाही; चांगल्या score ची candle NIFTY वर चांगला निकाल देते "
+        "हे कोणत्याही स्रोताने दाखवलेले नाही - तुमच्या backtest मध्ये तपासायचा filter म्हणून वापरा."),
+    "false_breakout": (
+        "Level च्या थोडे पलीकडे stop orders जमा होतात. Sweep म्हणजे level मधून झटकन पलीकडे जाऊन ते stops लावणे आणि लगेच परत येणे - "
+        "Wyckoff याला spring (support खाली) किंवा upthrust (resistance वर) म्हणतो; break वर विकणारे traders आता अडकले. खरा break वेगळा: "
+        "भाव level पलीकडे अर्थपूर्ण अंतराने close होतो (अलीकडच्या median range किंवा ATR च्या पटीत मोजलेले, fixed points नाहीत), "
+        "displacement दिसते - level सोडून जाणारे मोठे bodies - आणि retest वर तिथेच टिकतो (acceptance). Failed breakout उलटा: level पलीकडचा "
+        "close काही bars मध्येच परत जातो. Platform हे सगळे फक्त बंद candles वरून ठरवतो, त्यामुळे label नंतर बदलत नाही. मर्यादा: 'stop-hunt' "
+        "setups चे प्रसिद्ध win-rates vendors कडून, costs आणि samples शिवाय; एकच move 15 minutes वर sweep आणि daily वर खरा break असू शकतो, "
+        "म्हणून timeframe नेहमी सांगा."),
+    "gap_trading": (
+        "Opening gap म्हणजे आजच्या 09:15 च्या open आणि कालच्या close (PDC) मधले अंतर; full gap मध्ये कालच्या high-low range शी अजिबात "
+        "overlap नसतो. NSE वर open हा stocks आणि index futures च्या pre-open call auction मधून ठरतो - options auction मध्ये नसतात, त्यामुळे "
+        "gap दिसण्याआधी short option मधून बाहेर पडता येत नाही; strike अंतर, spread width आणि size हेच संरक्षण. Gap चे 'प्रकार' (common, "
+        "breakaway, runaway, exhaustion, island) बहुतेक नंतरच कळतात - Bulkowski: 'by the time you properly identify them, the move is nearly "
+        "over'. आकडे काय सांगतात: size सर्वात महत्त्वाचा - SPY वर 0.2% पेक्षा लहान gaps त्याच दिवशी ~80-90% वेळा भरतात, 0.4% पेक्षा मोठे "
+        "अर्ध्यापेक्षा खूप कमी (practitioner data, rolling windows जे 10-20 points हलतात). Peer-reviewed अभ्यासात equity index मध्ये टिकाऊ "
+        "gap fade नाही (Caporale & Plastun 2017: Dow gaps 1-5 दिवसांत फक्त 27-39% भरले); खूप मोठे opening moves अंशतः परत येतात (Fung, Mok "
+        "& Lam 2000). भारतात index चा बहुतेक परतावा overnight आला आहे (secondary स्रोत, Capitalmind analysis). NIFTY साठी प्रकाशित, तपासता "
+        "येणारा fill तक्ता नाही: एक forum दावा (gap-up ~44%, gap-down ~24% same-day) आणि एक vendor page दिशेबद्दल असहमत; NIFTY 1-minute "
+        "data च्या descriptive तपासणीत 0.30% किंवा मोठ्या gaps नी त्याच दिवशी PDC ला ~43-47% वेळा touch केले - हे वर्णन आहे, backtest नाही. "
+        "Gap edge ला कमकुवत support/resistance माना आणि पहिल्या bars मध्ये acceptance की rejection ते पाहा."),
+    "overfitting_checks": (
+        "खूप parameter combinations वापरून पाहिली तर एखादे योगायोगाने छान दिसतेच. म्हणून optimizer combinations फक्त in-sample भागावर "
+        "क्रमवारी लावतो, प्रत्येकाचा out-of-sample आकडा दाखवतो पण निवडीसाठी वापरत नाही, आणि दोन तपासण्या देतो. PBO (probability of "
+        "backtest overfitting, Bailey, Borwein, Lopez de Prado & Zhu 2015) in-sample दिवसांचे blocks करून विचारतो की in-sample winner दुसऱ्या "
+        "अर्ध्यात median च्या खाली किती वेळा येतो - 0.05 पेक्षा जास्त म्हणजे इशारा. Deflated Sharpe ratio (Bailey & Lopez de Prado 2014) "
+        "किती combinations वापरली त्यानुसार winner च्या Sharpe मधून योगायोगाचा फायदा वजा करतो. Sealed holdout - operator ने ठरवलेला सर्वात "
+        "अलीकडचा काळ - search ला कधीच दिसत नाही; तो एका निवडलेल्या configuration च्या एकाच अंतिम तपासणीसाठी. त्याच module मधली इतर साधने: "
+        "त्याच setups मधला random-entry baseline, day-block bootstrap (एका दिवसाचे trades स्वतंत्र नसतात) आणि variants वर White चा Reality "
+        "Check. मर्यादा: या तपासण्या पार केल्याने स्वतःला फसवण्याची शक्यता कमी होते; strategy फायदेशीर होत नाही."),
+}
+
 CONCEPTS: List[Concept] = [
     Concept("trend", "Trend", "Trend (कल)", ("trend", "uptrend", "downtrend", "ट्रेंड", "कल", "तेजी", "मंदी"),
             "A trend is the market's direction over time: higher highs and higher lows in an uptrend, lower highs and lower lows in a downtrend. "
@@ -221,6 +275,77 @@ CONCEPTS: List[Concept] = [
             "परदेशी गुंतवणूकदार (FII) विक्री करण्याची शक्यता. ही पहिल्या काही मिनिटांची प्रवृत्ती आहे, signal नाही - opening range च शेवटी ठरवते. "
             "Market चा साठा ही माहिती मोफत, उशिराच्या सार्वजनिक data वरून घेतो (GIFT Nifty साठी मोफत भरवशाचा source नाही; त्याऐवजी US futures).",
             ("gap_risk", "vix", "trend")),
+    # Trade port (E): teaching entries from the "Candlestick patterns and psychology" and "Gap trading" research reports
+    # (Oct 2026), written in English; the Marathi body (`MR_BODIES`) serves users whose AI answer language is Marathi.
+    *[Concept(cid, title, title, kw, body, MR_BODIES[cid], rel) for cid, title, kw, body, rel in (
+        ("candlestick_patterns", "Candlestick patterns: psychology and evidence",
+         ("candlestick", "candle pattern", "hammer", "doji", "engulfing", "shooting star", "morning star", "evening star", "harami",
+          "pin bar", "marubozu", "कँडल", "कॅण्डल", "पॅटर्न"),
+         "Each candle is the result of one fight between buyers and sellers: the open is where it started, the high and low how far each "
+         "side pushed, and the close who was in control at the end. A long lower wick means sellers pushed price down and buyers took it "
+         "back - a rejection. What the evidence says: on its own a named pattern is close to a coin toss. In Bulkowski's practitioner data "
+         "(US daily stocks, about 4.7 million candles, no costs, no significance tests) most single candles land at 50-60% - hammer about 60%, "
+         "doji types 50-52% - and some 'classic' patterns behave the opposite way (hanging man is a bullish continuation about 59% of the "
+         "time). Peer-reviewed studies are mixed and lean negative after costs and data-snooping corrections (Marshall, Young & Rose 2006 on "
+         "the DJIA; Marshall et al. 2008 on Tokyo; Duvinage et al. 2013 on 5-minute DJIA bars, where only 5 of 83 patterns survived costs and "
+         "none beat buy-and-hold); small positive results appear mostly for bullish patterns, with the right prior trend and 2-3 day holds "
+         "(Caginalp & Laurent 1998; Lu 2014; Lu, Chen & Hsu 2015). Context helps: location at a level, a pullback inside a larger trend, "
+         "confirmation by the next bar. RSI / stochastic filters did not help in the SET50 study (Tharavanij et al. 2017). Limits: no "
+         "rigorous study exists for NIFTY / SENSEX or 15-minute bars - only your own backtest, walk-forward and holdout can show an edge.",
+         ("reversal_candle", "support_resistance", "trend", "backtest")),
+        ("reversal_candle", "Reversal candle (how this platform scores it)",
+         ("reversal candle", "rejection", "reclaim", "wick", "blending", "composite candle", "follow-through", "close location", "trapped"),
+         "Behind every real reversal pattern is one order-flow story: late traders join the move, the extension is rejected at a level, and "
+         "the other side closes deep back inside, trapping the late traders whose stops then drive the turn. Patterns without that last "
+         "step (harami, matching low) are the ones that test as random. The platform reads this without pattern names: the candles since "
+         "the level was touched are blended into one composite candle (first open, highest high, lowest low, last close - Nison's "
+         "'blending'), so an engulfing, a piercing line or a morning star all become a hammer-like shape. It then checks the touch, the "
+         "reclaim of the level, the size of the composite against the median range of recent bars (no fixed points), where it closed inside "
+         "its own range (a close in the middle is indecision and needs a follow-through bar), the wick, and whether the bounce came fast. "
+         "Two modes exist - a step-by-step composite check (default) and a 0-100 score - and both only use closed candles. Limits: the score "
+         "is a description of what happened at a level, not a forecast; no source has shown that a better-scored candle predicts better "
+         "outcomes on NIFTY, so treat it as a filter to validate in your own backtest.",
+         ("candlestick_patterns", "false_breakout", "support_resistance")),
+        ("false_breakout", "False breakout, liquidity sweep and real break",
+         ("false breakout", "false break", "fake breakout", "liquidity sweep", "stop hunt", "spring", "upthrust", "real break", "acceptance",
+          "failed breakout", "स्वीप", "फेक"),
+         "A level attracts stop orders just beyond it. A sweep is a quick push through the level that triggers those stops and comes straight "
+         "back - Wyckoff calls it a spring (below support) or an upthrust (above resistance); the traders who sold the break are now trapped. "
+         "A real break is different: price closes beyond the level by a meaningful distance (measured in multiples of the recent median range "
+         "or ATR, not fixed points), shows displacement - large bodies leaving the level - and holds there on a retest (acceptance). A failed "
+         "breakout is the opposite case: the close beyond the level is given back within a few bars. The platform labels each of these from "
+         "closed candles only, so a label never changes after the fact. Limits: published win-rates for 'stop-hunt' setups come from vendors "
+         "without costs or samples; the same move can be a sweep on 15 minutes and a real break on the daily chart, so name the timeframe.",
+         ("support_resistance", "reversal_candle", "market_structure", "breakout")),
+        ("gap_trading", "Opening gaps: types, fill statistics and limits",
+         ("gap trading", "gap fill", "gap up", "gap down", "opening gap", "breakaway gap", "exhaustion gap", "runaway gap", "island reversal",
+          "fvg", "fair value gap", "pdc", "गॅप"),
+         "An opening gap is the distance between today's 09:15 open and yesterday's close (PDC); a full gap leaves no overlap with "
+         "yesterday's high-low range. On NSE the open comes from a pre-open call auction for stocks and index futures - options are not in "
+         "the auction, so a short option cannot be exited before the gap prints; strike distance, spread width and size are the only "
+         "protection. Gap 'types' (common, breakaway, runaway, exhaustion, island) are mostly labelled in hindsight - Bulkowski: 'by the time "
+         "you properly identify them, the move is nearly over'. What the numbers say: size matters most - on SPY gaps under 0.2% fill the same "
+         "day about 80-90% of the time while gaps above 0.4% fill well under half (practitioner data, rolling windows that move 10-20 points). "
+         "Peer-reviewed work finds no robust gap fade in equity indices (Caporale & Plastun 2017: Dow gaps filled within 1-5 days only 27-39% "
+         "of the time); very large opening moves partly reverse (Fung, Mok & Lam 2000). In India most index return has come overnight "
+         "(secondary source, Capitalmind analysis). For NIFTY there is no published, verifiable fill table: a forum claim (gap-up ~44%, "
+         "gap-down ~24% same-day) and a vendor page disagree on direction; a descriptive check of NIFTY 1-minute data found that gaps of "
+         "0.30% or more touched PDC the same day about 43-47% of the time - descriptive, not a backtest. Treat gap edges as weak "
+         "support/resistance and wait for acceptance or rejection in the first bars.",
+         ("gap_risk", "global_cues", "false_breakout", "intraday_swing")),
+        ("overfitting_checks", "Overfitting checks: PBO, deflated Sharpe and the holdout",
+         ("overfitting", "over-fitting", "pbo", "deflated sharpe", "dsr", "holdout", "out of sample", "out-of-sample", "data snooping",
+          "reality check", "walk forward", "bootstrap", "random entry"),
+         "Try enough parameter combinations and one will look great by chance. The optimizer therefore ranks combinations on the in-sample part "
+         "only, shows each one's out-of-sample figure without using it to pick, and reports two checks. PBO (probability of backtest "
+         "overfitting, Bailey, Borwein, Lopez de Prado & Zhu 2015) cuts the in-sample days into blocks and asks how often the in-sample winner "
+         "ranks below the median on the other half - above 0.05 is a warning. The deflated Sharpe ratio (Bailey & Lopez de Prado 2014) "
+         "discounts the winner's Sharpe for the number of combinations tried. A sealed holdout - the most recent period, set by the operator - "
+         "is never seen by the search and is meant for one final check of one chosen configuration. Other tools in the same module: a "
+         "random-entry baseline in the same setups, a day-block bootstrap (trades on one day are not independent) and White's Reality Check "
+         "across variants. Limits: passing these checks lowers the chance of fooling yourself; it does not make a strategy profitable.",
+         ("backtest", "expectancy", "paper_trading")),
+    )],
 ]
 BY_ID: Dict[str, Concept] = {c.id: c for c in CONCEPTS}
 

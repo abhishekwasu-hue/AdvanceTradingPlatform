@@ -19,7 +19,7 @@ export default function CoachGuidePage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-extrabold text-sky-300 flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</h1>
-        <p className="text-sm text-slate-300">A review of your own trades and the trading concepts behind them. It explains rules and data; decisions are yours.</p>
+        <p className="text-sm text-slate-300">The coach shows patterns in your own trades (rules followed or broken); the guide explains the concepts behind them. Decisions are yours.</p>
       </div>
       <div className="flex gap-1 border-b border-border">
         {([["coach", "Trade coach", GraduationCap], ["guide", "Guide", BookOpen]] as const).map(([id, label, Icon]) => (

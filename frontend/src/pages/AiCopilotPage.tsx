@@ -114,7 +114,8 @@ export default function AiCopilotPage() {
         </div>
       </div>
 
-      <DataSourceBar source={source} />
+      {/* P0.10: Today's market reads the stored market memory, never sample candles - the switch does not apply there. */}
+      {tab !== "today" && <DataSourceBar source={source} />}
 
       {open.length > 0 && (
         <Card title={`Proposals waiting for your decision (${open.length})`}>
@@ -164,14 +165,17 @@ export default function AiCopilotPage() {
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-slate-200 flex-1 min-w-[260px]">
                 A few questions first - capital, risk, style, time and goal. Then the market data is read (trend, structure, support/resistance) and three templates are shown with their rules, backtest and risk settings. You choose the template; this is not a recommendation.
-                <span className="block text-[11px] text-muted mt-1" lang="mr">{INTERVIEW_MR.start}</span>
+                <span className="block text-[11px] text-muted mt-1" lang="mr">{INTERVIEW_MR.startIntro}</span>
               </p>
-              <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm"><Compass size={14} className="inline mr-1" />Start</button>
+              <button onClick={() => startInterview("")} className="rounded bg-purple-600 hover:bg-purple-500 text-white font-bold px-4 py-2 text-sm leading-tight">
+                <Compass size={14} className="inline mr-1" />Start the interview
+                <span className="block text-[10px] font-normal opacity-80" lang="mr">{INTERVIEW_MR.start}</span>
+              </button>
             </div>
           ) : (
             <>
               <StrategyInterview source={source} startPrompt={interviewPrompt} startKey={interviewKey} onDraft={(d) => { setSelected(d); refresh(); }} />
-              <button onClick={() => startInterview("")} className="mt-2 text-xs text-sky-300 hover:underline">Start over</button>
+              <button onClick={() => startInterview("")} className="mt-2 text-left text-xs text-sky-300 hover:underline">Start over<span lang="mr" className="block text-[10px] text-muted">{INTERVIEW_MR.startOver}</span></button>
             </>
           )}
         </Card>

@@ -3645,6 +3645,27 @@ gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, 
 `pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
 (the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
 
+**P1.1 (router).** `frontend/src/routes.ts` maps each `Page` to a path and a `React.lazy` chunk; `App.tsx` renders
+them under `react-router` with a per-page `ErrorBoundary` and `Suspense`; `Sidebar` links preload chunks. `api/errors.ts`
+(`ApiError`, `apiErrorFrom`) is the one error shape; `Toast` shows unhandled ones. `vite.config.ts` splits
+`lightweight-charts` into `charts`; `scripts/check-bundle-budget.mjs` enforces 300 KB gzip of initial JS in CI.
+
+**Trade port (Trade@0df3e09).** `price_action/` gains `pa_settings` (all thresholds in median-range / ATR multiples),
+`reversal.evaluate_reversal` (composite E2+C1 or the 0-100 score, closed candles only), `breaks`, `level_strength`,
+`causal_swings` and a `gap_context` placeholder. `instruments/expiry_calendar` (dated weekday, holiday shift, expiry
+choice, DTE, dated NIFTY lot) drives `backtest.options.ExpiryCalendar` / `lot_size_on`. `execution/india_costs` is the
+one cost table (`PaperBroker.estimate_round_trip_costs(..., entry_date, exit_date, delivery)`). `execution/order_safety`
+holds pure order-path helpers; `LIVE_STRICT_WING_FILL` and `ORDER_MARKET_PROTECTION_PCT` gate its two LIVE uses.
+`backtest/validation` (DSR, PBO/CSCV, bootstrap, random entry, Reality Check) and `backtest/data_policy` (sealed
+holdout) feed the optimizer's `overfitting` block.
+
+**P0.10 (screenshot review fixes).** The strategy interview is the only bilingual screen (`INTERVIEW_MR` namespace,
+enforced by `scripts/check-devanagari.mjs`). `briefing.data_freshness` labels the market memory behind the briefing
+(fresh / stale / placeholder / none) and the UI hides figures that are not a current read. Risk settings and the
+contract never depend on experience (`interview.DEFAULT_*`, `contract_plan(..., last_price)`); only facts change a
+choice. Sample candles follow NSE sessions (`utils/sampleData.ts`, ported in `tests/sample_market.py`). A third AI tier,
+`cheap`, runs classification and scanner reads.
+
 **P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
 `ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the
 AI content routes, `accept()` with an audit event. `metering.MeteredProvider` also writes `llm_calls` (`log_call`,

@@ -16,12 +16,9 @@ import { useChartStrategies } from "./ChartStrategies";
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
 /** URL of the full-window chart for a broker symbol (opened in a new browser tab; see ChartWindow). */
-export function chartWindowUrl(symbol: string, timeframe = "5min", exchange = "NSE", broker?: string): string {
-  const q = new URLSearchParams({ chart: symbol, tf: timeframe, exchange });
-  if (broker) q.set("broker_name", broker);
-  return `${window.location.pathname}?${q.toString()}`;
-}
 export { directionMarker } from "./CandleChart";
+// The light helpers live in chartHelpers (no chart engine) so pages can link to a chart without loading it.
+export { chartWindowUrl, useLiveLtp } from "./chartHelpers";
 
 /**
  * Phase AN: the Pro Chart. TradingView's open-source Lightweight Charts engine (the same one the
@@ -80,25 +77,6 @@ function lineData(times: UTCTimestamp[], s: Series, color?: (i: number) => strin
 }
 
 /** Poll the backend for a symbol's last price while `enabled` and the tab is visible. */
-export function useLiveLtp(enabled: boolean, symbol: string | undefined, exchange = "NSE", broker?: string, intervalMs = 5000) {
-  const [ltp, setLtp] = useState<LtpResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setLtp(null); setError(null);
-    if (!enabled || !symbol) return;
-    let cancelled = false;
-    const tick = async () => {
-      if (document.visibilityState !== "visible") return;
-      try { const r = await api.marketDataLtp(symbol, exchange, broker); if (!cancelled) { setLtp(r); setError(null); } }
-      catch (e) { if (!cancelled) setError(String(e)); }
-    };
-    void tick();
-    const id = window.setInterval(tick, intervalMs);
-    return () => { cancelled = true; window.clearInterval(id); };
-  }, [enabled, symbol, exchange, broker, intervalMs]);
-  return { ltp, error };
-}
-
 export interface ProChartProps {
   candles: OHLCVBar[];
   symbol?: string;

@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { AiStrategyDraft, FeedbackOption, InterviewPlan, InterviewQuestion, InterviewStart, OHLCVBar } from "../types";
 import { FNO_INDICES, FNO_STOCKS } from "../utils/fnoSymbols";
 import type { CandleSourceState } from "./DataSource";
-import { chartWindowUrl } from "./ProChart";
+import { chartWindowUrl } from "./chartHelpers";
 import { INTERVIEW_MR } from "../i18n/interviewSecondary";
 import SampleStamp from "./SampleStamp";
 
@@ -22,11 +22,19 @@ import SampleStamp from "./SampleStamp";
  * P0.9: English UI. Each question shows its English text with a small muted Marathi line under it, and each
  * answer chip shows both. No template is highlighted or pre-selected: the details appear only after the trader
  * chooses one, and nothing states a market direction.
+ * P0.10: the whole interview is bilingual in one style - intro, questions, options, tips, every button, the template
+ * headings: the English line first, a small muted Marathi line under it (`Mr`).
  */
+
+/** The muted Marathi line under an English one (the interview's only secondary language). */
+function Mr({ children, inline = false }: { children?: string; inline?: boolean }) {
+  if (!children) return null;
+  return <span lang="mr" className={`${inline ? "" : "block "}text-[10px] font-normal leading-snug text-muted`}>{children}</span>;
+}
 
 const CAPITAL_CHIPS = [50_000, 100_000, 200_000, 500_000];
 
-interface Msg { from: "ai" | "me"; text: string }
+interface Msg { from: "ai" | "me"; text: string; mr?: string }
 
 /** "Error: 402 Payment Required: {"detail":"..."}" -> the detail alone. */
 function cleanError(e: unknown): string {
@@ -78,9 +86,10 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
       const order = s.questions.map((q) => q.id).filter((id) => !(id in prefill));
       setStart(s); setAnswers(prefill); setQueue(order);
       const known = Object.keys(s.prefill).filter((k) => k !== "language");
-      const intro: Msg[] = [{ from: "ai", text: s.intro }];
+      const intro: Msg[] = [{ from: "ai", text: s.intro, mr: s.intro_mr }];
       if (known.length) {
-        intro.push({ from: "ai", text: "Already understood from your message: " + known.map((k) => `${k} = ${prefill[k]}`).join(", ") });
+        const list = known.map((k) => `${k} = ${prefill[k]}`).join(", ");
+        intro.push({ from: "ai", text: "Already understood from your message: " + list, mr: `${INTERVIEW_MR.alreadyUnderstood} ${list}` });
       }
       setLog(intro);
       setOfferProfile(!!s.profile);
@@ -94,6 +103,10 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   if (!startKey || !start) return error ? <div className="text-sm text-danger">{error}</div> : null;
 
   const optLabel = (q: InterviewQuestion, value: string) => q.options.find((x) => x.value === value)?.en ?? value;
+  const optLabelMr = (q: InterviewQuestion, value: string) => {
+    const o = q.options.find((x) => x.value === value);
+    return o?.mr && o.mr !== o.en ? o.mr : undefined;
+  };
 
   function answer(value: string, label?: string) {
     if (!current) return;
@@ -103,8 +116,8 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     if (q.id === "instrument" && value !== "index" && (answers.symbol ?? "NIFTY 50").startsWith("NIFTY")) delete next.symbol;
     setAnswers(next);
     setLog((prev) => [...prev,
-      { from: "ai", text: q.en },
-      { from: "me", text: label ?? optLabel(q, value) }]);
+      { from: "ai", text: q.en, mr: q.mr },
+      { from: "me", text: label ?? optLabel(q, value), mr: label ? undefined : optLabelMr(q, value) }]);
     setCustom("");
     setStep((s) => s + 1);
   }
@@ -116,7 +129,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
     setAnswers({ ...saved, ...start.prefill, language: "en" });     // P0.9: older profiles saved "mr"; the plan is English
     setStep(queue.length);
     setOfferProfile(false);
-    setLog((prev) => [...prev, { from: "me", text: "Yes, use my answers from last time" }]);
+    setLog((prev) => [...prev, { from: "me", text: "Yes, use my answers from last time", mr: INTERVIEW_MR.usedLastAnswers }]);
   }
 
   async function forgetProfile() {
@@ -138,17 +151,10 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   async function candlesFor(style: string): Promise<{ tf: string; candles: OHLCVBar[]; label: string }> {
     const symbol = (answers.symbol || "NIFTY 50").trim().toUpperCase();
     if (source.mode === "sample") {
-      const r = await source.fetch([symbol], "1min", { count: style === "swing" ? 300 : 3000, startPriceFor: () => 24_000, seedFor: () => 11 });
-      const bars = r.candles[symbol] ?? [];
-      if (style !== "swing") return { tf: "1min", candles: bars, label: "sample" };
-      // Sample bars are one minute apart: re-date them one trading day apart for a swing read.
-      const days: string[] = [];
-      const d = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
-      while (days.length < bars.length) {
-        d.setUTCDate(d.getUTCDate() - 1);
-        if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) days.unshift(new Date(d).toISOString());
-      }
-      return { tf: "day", candles: bars.map((b, i) => ({ ...b, timestamp: days[i] })), label: "sample" };
+      // P0.10: a swing read gets sample DAILY bars (day-sized moves), not minute bars re-dated as days.
+      const swing = style === "swing";
+      const r = await source.fetch([symbol], swing ? "day" : "1min", { count: swing ? 300 : 3000, startPriceFor: () => 24_000, seedFor: () => 11, daily: swing });
+      return { tf: swing ? "day" : "1min", candles: r.candles[symbol] ?? [], label: "sample" };
     }
     // Phase AS: a swing plan reads a year of daily candles.
     const tf = style === "swing" ? "day" : style === "scalping" ? "1min" : "5min";
@@ -166,7 +172,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
   }
 
   async function buildPlan() {
-    setBusy("Reading the market and testing the templates…"); setError(null); setDone(null);
+    setBusy("Reading the market and testing the templates…"); setError(null); setDone(null);   // the Marathi line is shown with it
     try {
       const data = await candlesFor(answers.style || "intraday");
       fetched.current = { ...data, candles: data.candles.slice(-3000) };
@@ -209,7 +215,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
         {log.map((m, i) => (
           <div key={i} className={`flex gap-2 ${m.from === "me" ? "justify-end" : ""}`}>
             {m.from === "ai" && <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />}
-            <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${m.from === "ai" ? "bg-panel3 text-slate-100" : "bg-brand/30 text-white"}`}>{m.text}</div>
+            <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${m.from === "ai" ? "bg-panel3 text-slate-100" : "bg-brand/30 text-white"}`}>{m.text}<Mr>{m.mr}</Mr></div>
             {m.from === "me" && <User size={16} className="mt-0.5 shrink-0 text-sky-300" />}
           </div>
         ))}
@@ -220,11 +226,11 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
               Welcome back! Your answers from last time are saved
               {" "}(₹{Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN")}, {String(start.profile.answers.style ?? "")}, {String(start.profile.answers.symbol ?? "")}).
               {" "}Use them and go straight to the templates?
-              <div className="text-[11px] text-muted">{INTERVIEW_MR.welcomeBack}</div>
+              <Mr>{INTERVIEW_MR.welcomeBack}</Mr>
               <div className="mt-2 flex flex-wrap gap-2">
-                <button onClick={applyProfile} className="rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-500">Yes, use them</button>
-                <button onClick={() => setOfferProfile(false)} className="rounded border border-border px-3 py-1 text-xs text-slate-100 hover:bg-panel2">No, ask me again</button>
-                <button onClick={() => void forgetProfile()} className="text-xs text-rose-300 hover:underline">Forget me</button>
+                <button onClick={applyProfile} className="rounded bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-500">Yes, use them<Mr>{INTERVIEW_MR.yesUse}</Mr></button>
+                <button onClick={() => setOfferProfile(false)} className="rounded border border-border px-3 py-1 text-xs text-slate-100 hover:bg-panel2">No, ask me again<Mr>{INTERVIEW_MR.noAsk}</Mr></button>
+                <button onClick={() => void forgetProfile()} className="text-xs text-rose-300 hover:underline">Forget me<Mr>{INTERVIEW_MR.forget}</Mr></button>
               </div>
             </div>
           </div>
@@ -234,8 +240,8 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
             <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />
             <div className="max-w-[90%] space-y-1.5 rounded-lg bg-panel3 px-3 py-2 text-sm">
               <div className="font-semibold text-slate-50">{current.en}</div>
-              <div className="text-[11px] text-muted" lang="mr">{current.mr}</div>
-              <div className="text-xs text-purple-200">💡 {current.why_en}</div>
+              <Mr>{current.mr}</Mr>
+              <div className="text-xs text-purple-200">💡 {current.why_en}<Mr>{current.why_mr}</Mr></div>
               {current.kind === "choice" && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {current.options.map((o) => (
@@ -256,7 +262,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
                   <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} placeholder={`other amount / ${INTERVIEW_MR.otherAmount}`}
                          className="w-32 rounded border border-border bg-panel2 px-2 py-1 text-xs" />
                   <button disabled={Number(custom) < 5000} onClick={() => answer(custom, `₹${Number(custom).toLocaleString("en-IN")}`)}
-                          className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK</button>
+                          className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK<Mr>{INTERVIEW_MR.ok}</Mr></button>
                 </div>
               )}
               {current.kind === "symbol" && (
@@ -267,7 +273,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
                   <input value={custom} list="interview-symbols" onChange={(e) => setCustom(e.target.value.toUpperCase())} placeholder={`type a symbol / ${INTERVIEW_MR.typeSymbol}`}
                          className="w-36 rounded border border-border bg-panel2 px-2 py-1 text-xs" />
                   <datalist id="interview-symbols">{[...FNO_INDICES, ...FNO_STOCKS].map((s) => <option key={s} value={s} />)}</datalist>
-                  <button disabled={!custom.trim()} onClick={() => answer(custom.trim())} className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK</button>
+                  <button disabled={!custom.trim()} onClick={() => answer(custom.trim())} className="rounded bg-brand px-2 py-1 text-xs font-semibold text-white disabled:opacity-40">OK<Mr>{INTERVIEW_MR.ok}</Mr></button>
                 </div>
               )}
             </div>
@@ -278,12 +284,16 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
             <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />
             <div className="rounded-lg bg-panel3 px-3 py-2 text-sm text-slate-100">
               Thank you - that is enough. Next the market data is read (trend, structure, support/resistance, volatility) and three templates are tested on it.
+              <Mr>{INTERVIEW_MR.thanks}</Mr>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button disabled={!!busy} onClick={() => void buildPlan()} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
+                <button disabled={!!busy} onClick={() => void buildPlan()} className="rounded bg-emerald-600 px-3 py-1.5 text-left text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
                   <Compass size={12} className="mr-1 inline" />Read the market and show the templates
+                  <Mr>{INTERVIEW_MR.readMarket}</Mr>
                 </button>
-                <span className="text-xs text-muted">{source.mode === "sample" ? "on SAMPLE data - pick broker candles above for today's real market" : "on broker candles"}</span>
-                <span className="w-full text-[11px] text-muted" lang="mr">{INTERVIEW_MR.readMarket}</span>
+                <span className="text-xs text-muted">
+                  {source.mode === "sample" ? "on SAMPLE data - pick broker candles above for today's real market" : "on broker candles"}
+                  <Mr>{source.mode === "sample" ? INTERVIEW_MR.onSample : INTERVIEW_MR.onBroker}</Mr>
+                </span>
               </div>
             </div>
           </div>
@@ -292,9 +302,9 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        {step > 0 && <button onClick={back} className="rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><ArrowLeft size={12} className="mr-1 inline" />Back</button>}
-        {!finished && <span className="text-muted">Question {step + 1} of {queue.length}</span>}
-        {busy && <span className="text-sky-300">{busy}</span>}
+        {step > 0 && <button onClick={back} className="rounded border border-border px-2 py-1 text-left text-slate-200 hover:bg-panel2"><ArrowLeft size={12} className="mr-1 inline" />Back<Mr>{INTERVIEW_MR.back}</Mr></button>}
+        {!finished && <span className="text-muted">Question {step + 1} of {queue.length}<Mr>{`${INTERVIEW_MR.question} ${step + 1} / ${queue.length}`}</Mr></span>}
+        {busy && <span className="text-sky-300">{busy}{busy.startsWith("Reading the market") && <Mr>{INTERVIEW_MR.reading}</Mr>}</span>}
         {error && <span className="text-danger">{error}</span>}
         {done && <span className="text-emerald-300">{done}</span>}
       </div>
@@ -308,7 +318,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
       {plan && (() => {
         // P0.9: details only for the template the trader chose - nothing is shown (or implied) before that.
         const shown = plan.options ? plan.options.find((o) => o.option?.id === selected) : plan;
-        if (!shown) return <div className="text-xs text-muted">Choose a template above to see its rules, backtest, risk settings and buttons.</div>;
+        if (!shown) return <div className="text-xs text-muted">Choose a template above to see its rules, backtest, risk settings and buttons.<Mr>{INTERVIEW_MR.openTemplate}</Mr></div>;
         return <PlanView plan={shown} sample={fetched.current?.label === "sample"} busy={!!busy} onAct={act} onDraft={onDraft} broker={source.mode === "broker" ? source.broker : undefined} />;
       })()}
     </div>
@@ -324,13 +334,12 @@ function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onRej
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="font-extrabold text-slate-50">Three templates - you choose</span>
-        <span className="text-xs text-muted">Open a template to read its rules in words and its backtest. The decision is yours; this is not a recommendation.</span>
-        <span className="w-full text-[11px] text-muted" lang="mr">{INTERVIEW_MR.chooseTemplate}</span>
+        <span className="font-extrabold text-slate-50">Three templates - you choose<Mr>{INTERVIEW_MR.chooseTemplate}</Mr></span>
+        <span className="text-xs text-muted">Open a template to read its rules in words and its backtest. The decision is yours; this is not a recommendation.<Mr>{INTERVIEW_MR.chooseTemplateHint}</Mr></span>
       </div>
       {plan.changes && plan.changes.length > 0 && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-emerald-100">
-          <b>Changed from your feedback:</b>
+          <b>Changed from your feedback:</b><Mr>{INTERVIEW_MR.changedFromFeedback}</Mr>
           <ul className="mt-1 list-disc pl-5">{plan.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
         </div>
       )}
@@ -342,8 +351,8 @@ function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onRej
             <div key={meta.id} className={`rounded-lg border border-border bg-panel2/30 p-3 ${isSel ? "ring-2 ring-purple-400" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-base font-extrabold text-slate-50">{meta.label}</div>
-                  <div className="text-xs text-slate-300">{meta.summary}</div>
+                  <div className="text-base font-extrabold text-slate-50">{meta.label}<Mr>{meta.label_mr}</Mr></div>
+                  <div className="text-xs text-slate-300">{meta.summary}<Mr>{meta.summary_mr}</Mr></div>
                 </div>
               </div>
               {meta.headline && (
@@ -362,26 +371,26 @@ function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onRej
                 </div>
               )}
               <div className="mt-2 flex gap-2">
-                <button disabled={busy} onClick={() => onChoose(o)} className="rounded bg-purple-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
-                  <Check size={12} className="mr-1 inline" />{isSel ? "Chosen" : "Choose this"}
+                <button disabled={busy} onClick={() => onChoose(o)} className="rounded bg-purple-600 px-2.5 py-1 text-left text-xs font-bold text-white hover:bg-purple-500 disabled:opacity-50">
+                  <Check size={12} className="mr-1 inline" />{isSel ? "Chosen" : "Choose this"}<Mr>{isSel ? INTERVIEW_MR.chosen : INTERVIEW_MR.chooseThis}</Mr>
                 </button>
-                <button disabled={busy} onClick={() => onReject(meta.id)} className="rounded border border-rose-500/50 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">
-                  <ThumbsDown size={12} className="mr-1 inline" />Not this
+                <button disabled={busy} onClick={() => onReject(meta.id)} className="rounded border border-rose-500/50 px-2.5 py-1 text-left text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">
+                  <ThumbsDown size={12} className="mr-1 inline" />Not this<Mr>{INTERVIEW_MR.notThis}</Mr>
                 </button>
               </div>
               {rejecting === meta.id && (
                 <div className="mt-2 space-y-1.5 rounded border border-border bg-panel2/60 p-2">
-                  <div className="text-xs font-semibold text-slate-100">Why not? (pick one or more)</div>
+                  <div className="text-xs font-semibold text-slate-100">Why not? (pick one or more)<Mr>{INTERVIEW_MR.whyNot}</Mr></div>
                   <div className="flex flex-wrap gap-1">
                     {feedback.map((f) => (
                       <button key={f.code} onClick={() => onToggleReason(f.code)}
                               className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-rose-400 bg-rose-500/30 text-white" : "border-border text-slate-200"}`}>
-                        {f.en}
+                        {f.en}{f.mr && f.mr !== f.en && <span lang="mr" className="ml-1 text-muted">/ {f.mr}</span>}
                       </button>
                     ))}
                   </div>
-                  <button disabled={busy || reasons.length === 0} onClick={() => onRefine(o)} className="rounded bg-sky-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40">
-                    Show other templates
+                  <button disabled={busy || reasons.length === 0} onClick={() => onRefine(o)} className="rounded bg-sky-600 px-2.5 py-1 text-left text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-40">
+                    Show other templates<Mr>{INTERVIEW_MR.showOther}</Mr>
                   </button>
                 </div>
               )}
@@ -423,7 +432,7 @@ function PlanView({ plan, sample, busy, onAct, onDraft, broker }: {
           const hide = sample && s.id === "strategy";
           return (
             <div key={s.id} className="relative overflow-hidden rounded-lg border border-border bg-panel2/40 p-3">
-              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}</div>
+              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-purple-200">{s.title}<Mr>{s.title_mr}</Mr></div>
               <ul className={`space-y-1 text-sm text-slate-100 ${hide ? "select-none blur-sm" : ""}`} aria-hidden={hide}>
                 {s.lines.map((l, i) => <li key={i} className="flex gap-1.5"><span className="text-purple-300">•</span><span>{l}</span></li>)}
               </ul>
@@ -439,33 +448,33 @@ function PlanView({ plan, sample, busy, onAct, onDraft, broker }: {
           const cap = `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}`;
           if (!window.confirm(`Replace your current risk settings with this template's? Trading capital will be ${cap} - the amount you entered. Every PAPER (and later LIVE) trade is sized from it.`)) return;
           onAct("Saving…", async () => { await api.updateRiskSettings(plan.risk_config); return "Risk settings applied."; });
-        }} className="rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50">
-          <ShieldCheck size={12} className="mr-1 inline" />Apply risk settings
+        }} className="rounded bg-sky-600 px-3 py-1.5 text-left text-xs font-bold text-white hover:bg-sky-500 disabled:opacity-50">
+          <ShieldCheck size={12} className="mr-1 inline" />Apply risk settings<Mr>{INTERVIEW_MR.applyRisk}</Mr>
         </button>
         {plan.deployment && plan.candidate_id != null && (
           <>
             <label className="flex items-center gap-1.5 text-[11px] text-slate-200">
               <input type="checkbox" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              I accept a maximum loss of about ₹{perTrade.toLocaleString("en-IN")} per trade
+              <span>I accept a maximum loss of about ₹{perTrade.toLocaleString("en-IN")} per trade<Mr>{INTERVIEW_MR.acceptLoss}</Mr></span>
             </label>
             <button disabled={busy || !acceptRisk} onClick={() => onAct("Deploying…", async () => {
               const d = await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk);
               return `Deployment #${d.deployment.id} is running in PAPER. Watch it on the Autopilot page.`;
-            })} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
-              <Rocket size={12} className="mr-1 inline" />Deploy in PAPER
+            })} className="rounded bg-emerald-600 px-3 py-1.5 text-left text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
+              <Rocket size={12} className="mr-1 inline" />Deploy in PAPER<Mr>{INTERVIEW_MR.deployPaper}</Mr>
             </button>
           </>
         )}
-        <button onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")} className="rounded border border-border px-3 py-1.5 text-xs font-semibold text-slate-100 hover:bg-panel2">
-          <CandlestickChart size={12} className="mr-1 inline" />Open the chart
+        <button onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")} className="rounded border border-border px-3 py-1.5 text-left text-xs font-semibold text-slate-100 hover:bg-panel2">
+          <CandlestickChart size={12} className="mr-1 inline" />Open the chart<Mr>{INTERVIEW_MR.openChart}</Mr>
         </button>
         {onDraft && (
           <button disabled={busy} onClick={() => onAct("Asking the AI…", async () => {
             const d = await api.aiGenerate(plan.ai_prompt, { language: "en", regime: plan.market.regime.kind, symbol });
             onDraft(d);
             return `AI draft #${d.id} is ready for review below.`;
-          })} className="rounded border border-purple-500/50 px-3 py-1.5 text-xs font-semibold text-purple-100 hover:bg-purple-500/20 disabled:opacity-50">
-            <Sparkles size={12} className="mr-1 inline" />Ask the AI for a custom rule set
+          })} className="rounded border border-purple-500/50 px-3 py-1.5 text-left text-xs font-semibold text-purple-100 hover:bg-purple-500/20 disabled:opacity-50">
+            <Sparkles size={12} className="mr-1 inline" />Ask the AI for a custom rule set<Mr>{INTERVIEW_MR.askAi}</Mr>
           </button>
         )}
       </div>

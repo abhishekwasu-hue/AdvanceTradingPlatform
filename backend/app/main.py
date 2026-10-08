@@ -2,14 +2,14 @@ import copy
 import hashlib
 import json
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi import Request, Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -441,6 +441,52 @@ def price_action_structure(request: CandlesRequest, _: User = Depends(get_curren
 def price_action_patterns(request: CandlesRequest, _: User = Depends(get_current_user)) -> List[PatternMatch]:
     df = bars_to_dataframe(request.candles)
     return detect_patterns(df)
+
+
+class ReversalRequest(BaseModel):
+    """Trade port: a logical-reversal check at a level on CLOSED candles (oldest first). `settings` = price_action
+    pa_settings overrides (reversal_mode "composite" (default) or "score100", thresholds in median-range multiples)."""
+    candles: List[OHLCVBar] = Field(min_length=3, max_length=5000)
+    level: Union[float, List[float]]
+    direction: Literal["BULLISH", "BEARISH"]
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ReversalMarkersRequest(BaseModel):
+    candles: List[OHLCVBar] = Field(min_length=3, max_length=3000)
+    levels: List[float] = Field(min_length=1, max_length=20)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _pa_settings_or_400(overrides: Dict[str, Any]) -> Dict[str, Any]:
+    from app.price_action import pa_settings
+    clean, errors = pa_settings.validate(overrides)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    return clean
+
+
+def _plain(value: Any) -> Any:
+    """numpy scalars -> Python, for the JSON response."""
+    return json.loads(json.dumps(value, default=lambda o: o.item() if hasattr(o, "item") else str(o)))
+
+
+@app.post("/api/price-action/reversal")
+def price_action_reversal(request: ReversalRequest, _: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """Did price logically reverse at the level on the last closed candle? Education / chart annotation only."""
+    from app.price_action.reversal import evaluate_reversal
+    s = _pa_settings_or_400(request.settings)
+    df = bars_to_dataframe(request.candles).reset_index()
+    return _plain(evaluate_reversal(df, request.level, request.direction, s))
+
+
+@app.post("/api/price-action/reversal-markers")
+def price_action_reversal_markers(request: ReversalMarkersRequest, _: User = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Chart annotations: each closed candle's passing reversal at a nearby level (each marker uses only bars up to its own)."""
+    from app.price_action.reversal import scan_markers
+    s = _pa_settings_or_400(request.settings)
+    df = bars_to_dataframe(request.candles).reset_index()
+    return _plain(scan_markers(df, request.levels, s))
 
 
 def _cache_key(prefix: str, payload: str) -> str:

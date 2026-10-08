@@ -220,7 +220,9 @@ async def close_position(
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
     charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING",
-                                                      sold_first=trade.direction == "SHORT")
+                                                      sold_first=trade.direction == "SHORT", entry_date=trade.entry_time,
+                                                      exit_date=now or datetime.now(timezone.utc),
+                                                      delivery=(getattr(trade, "holding", None) or "") == "SWING")
     trade.exit_price = round(realised_price, 2)
     trade.exit_time = now or datetime.now(timezone.utc)
     trade.exit_reason = reason

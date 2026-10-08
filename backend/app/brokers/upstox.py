@@ -27,8 +27,10 @@ from app.brokers.models import (
     OptionChainRow,
     Quote,
 )
+from app.core import config
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
+from app.execution.order_safety import apply_market_protection
 
 UPSTOX_INTERVAL_MAP = {
     "1min": "1minute", "30min": "30minute", "day": "day", "week": "week", "month": "month",
@@ -357,7 +359,7 @@ class UpstoxBroker(BrokerInterface):
         data = await self._request(
             "POST",
             "/order/place",
-            json={
+            json=apply_market_protection({
                 "instrument_token": match.instrument_token,
                 "transaction_type": order.transaction_type.value,
                 "order_type": order.order_type,
@@ -369,7 +371,7 @@ class UpstoxBroker(BrokerInterface):
                 "disclosed_quantity": 0,
                 "is_amo": False,
                 "tag": order.tag or "",
-            },
+            }, config.ORDER_MARKET_PROTECTION_PCT),
         )
         return BrokerOrderResponse(order_id=data["order_id"], status="OPEN", raw=data)
 

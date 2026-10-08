@@ -472,6 +472,61 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - Trade port: price action, NSE contracts, India costs, order safety, validation
+Source: `https://github.com/abhishekwasu-hue/Trade` (read-only clone, nothing changed or pushed there) at
+**Trade@0df3e09d0aa5942e3352327d5b998c5f6939ac61**. Logic only - no bots, Streamlit pages, Supabase/Upstox-specific
+code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Every ported file starts with
+"Ported from Trade@<sha>, <path>"; thresholds come from settings in median-range / ATR multiples.
+
+| ATP file | Trade source |
+|---|---|
+| `backend/app/price_action/pa_settings.py` | `elliott/settings.py` (candle / break / swing keys), `price_action/candles.py` settings |
+| `backend/app/price_action/reversal.py` | `elliott/reversal.py` (E2+C1 composite) + `price_action/candles.py` (#241 0-100 score), one `evaluate_reversal` API, mode `composite` (default) or `score100` |
+| `backend/app/price_action/level_strength.py` | `price_action/level_strength.py` (sweep, real break, failed breakout, strength features) |
+| `backend/app/price_action/breaks.py` | `elliott/breaks.py` (real vs false break) |
+| `backend/app/price_action/causal_swings.py` | `elliott/swings.py` (causal multi-degree swings, confirmed pivots, auto timeframe) |
+| `backend/app/price_action/gap_context.py` | placeholder only (TODO: port Trade's unified gap context in its own PR once merged there) |
+| `backend/app/instruments/expiry_calendar.py` | `elliott/contracts.py` (expiry calendar, expiry choice, DTE, dated NIFTY lot) |
+| `backend/app/execution/india_costs.py` | `elliott/costs.py` (dated STT / exchange / SEBI / stamp / GST), extended to futures and equity |
+| `backend/app/execution/order_safety.py` | `order_safety.py` (market protection, full-failure test, exit re-send plan) |
+| `backend/app/backtest/validation.py` | `research_stats.py` (DSR, PBO/CSCV, shuffle p) + `research/elliott_candle_merge_report.py` (day-block bootstrap, random-entry baseline, Reality Check) |
+| `backend/app/backtest/data_policy.py` | `elliott/data_policy.py` (sealed holdout; boundary is a setting in ATP) |
+
+- **Costs**: `PaperBroker` now prices every leg with the rates of its own day (option STT 0.15% on the sale from
+  1 Apr 2026, older rates before; exercise STT 0.125% -> 0.15%; futures 0.05% from 1 Apr 2026). The old equity profile
+  charged STT on both legs of an intraday trade ("STT on the wrong side") - now STT sits on the executed sell order only
+  (both sides only for delivery / SWING holds). The option backtester and the position monitor pass the trade dates.
+- **Contracts**: the option backtester's calendar follows the weekday in force on each date (NIFTY Thursday until
+  31 Aug 2025, Tuesday since; weeklies only after the first weekly listing); `lot_size_on("NIFTY", day)` uses Trade's dated
+  table (50 from Jul 2021, 25 from Apr 2024, 75 from Nov 2024, 65 from the Jan 2026 series) and `LOT_SIZES["NIFTY"]` is
+  65. Other underlyings keep ATP's table.
+- **Order safety audit (G-LIVE, nothing enabled)**: router - the protective SL-M is sized to the filled quantity on a
+  partial fill (test added); when the fill cannot be confirmed (book unreadable / cancel unconfirmed) the stop is placed
+  for the requested quantity - reported, unchanged. Multi-leg - wings go before shorts and a short waits for a confirmed
+  wing fill, but a *partly* filled wing still let the short go at full size: fixed behind `LIVE_STRICT_WING_FILL`
+  (default off). Kill switch - shorts are bought back before longs are sold; pending orders (including broker stops) are
+  cancelled first, so a close that then fails leaves that position without a broker stop - reported, unchanged. Upstox
+  `market_protection` on MARKET / SL-M orders behind `ORDER_MARKET_PROTECTION_PCT` (unset = not sent, today's behaviour).
+- **Validation**: the optimizer drops bars from the sealed holdout (`BACKTEST_HOLDOUT_START` or a per-run
+  `holdout_start`) before the in-sample / out-of-sample split and reports `overfitting.pbo` (CSCV, 8 blocks of in-sample
+  days) and the winner's DSR.
+- **API**: `POST /api/price-action/reversal`, `POST /api/price-action/reversal-markers` (chart annotations; settings
+  validated, unknown keys -> 400). DSL v2 blocks (P4) will call the same functions.
+- **Concept library**: candlestick patterns (psychology and evidence), the reversal candle score, false breakout / sweep /
+  real break, opening gaps (types, fill statistics, limits), overfitting checks - written in English, with sources and
+  limits, from the two research reports; each also has a Marathi body for users whose AI answer language is Marathi.
+- **Self-review fixes**: a per-run `holdout_start` can only seal more (the earlier of it and `BACKTEST_HOLDOUT_START`
+  wins); in strict wing mode a seen partial fill is unwound even if the book then becomes unreadable; numeric price-action
+  settings have ranges (bad values -> 400, not 500) and the reversal endpoints cap candles/levels, the marker scan reads a
+  bounded tail (identical results, tested); the option backtester's lot follows the contract's expiry (an entry on
+  31 Dec 2025 into the 6 Jan 2026 series uses 65), an explicit `weekly=True` is honoured for BANKNIFTY, and the report's
+  calendar label comes from the expiries actually traded; `build_frame` keeps a bar only when its own minutes reach its
+  end (as in Trade). Open (verify before relying on it): BANKNIFTY's monthly expiry weekday in 2024 (reported as Wednesday
+  for part of that year) is not in the dated table.
+- Tests: `test_trade_port_price_action.py` (49, incl. no-lookahead truncation tests for swings, breaks, reversal, markers
+  and zone events), `test_trade_port_contracts_costs.py` (15), `test_trade_port_order_safety.py` (9),
+  `test_trade_port_validation.py` (11); existing cost / lot tests moved to dated rates.
+
 ### 2026-10-08 - P0.10: last fixes from the P0.9 screenshot review
 1. **Interview fully bilingual, rest English**: the intro (`intro_mr` from `/ai/interview/start`), questions, options,
    tips, every button (OK, Back, Start / Start over, Choose this, Not this, Show other templates, Apply risk settings,

@@ -2,6 +2,8 @@
 contract price books; premium floor/ceiling as the safety net; futures on their own levels;
 per-kind charge profiles; the monitor's two quotes; LIVE exit on the derivatives exchange."""
 import asyncio
+
+import pytest
 from datetime import date
 from typing import Dict
 
@@ -80,14 +82,19 @@ def test_future_and_cash_use_their_own_levels():
 
 def test_cost_profiles_differ_by_instrument_kind():
     pb = PaperBroker()
-    equity = pb.estimate_round_trip_costs(100.0, 104.0, 100)
-    option = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION")
-    future = pb.estimate_round_trip_costs(24500.0, 24600.0, 75, "FUTURE")
-    assert equity == pb.estimate_round_trip_costs(100.0, 104.0, 100, "UNDERLYING")
+    day = {"entry_date": date(2025, 6, 2), "exit_date": date(2025, 6, 2)}
+    equity = pb.estimate_round_trip_costs(100.0, 104.0, 100, **day)
+    option = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **day)
+    future = pb.estimate_round_trip_costs(24500.0, 24600.0, 75, "FUTURE", **day)
+    assert equity == pb.estimate_round_trip_costs(100.0, 104.0, 100, "UNDERLYING", **day)
     # Options: 0.1% STT on the sell leg (150*75=11250 -> 11.25) + 0.035% exchange on 20250 turnover (7.09) + brokerage 40 + GST...
     assert 55 < option < 70
     # Futures: 0.02% STT on the sell leg (24600*75 -> 369) dominates.
     assert 480 < future < 580
+    # From 1 Apr 2026 the sell-side STT is 0.15% (options) and 0.05% (futures) - the rates of the trade's own day apply.
+    later = {"entry_date": date(2026, 4, 1), "exit_date": date(2026, 4, 1)}
+    assert pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **later) - option == pytest.approx(150 * 75 * 0.0005, abs=0.02)
+    assert pb.estimate_round_trip_costs(24500.0, 24600.0, 75, "FUTURE", **later) - future == pytest.approx(24600 * 75 * 0.0003, abs=0.02)
 
 
 def test_underlying_exchange_mapping():

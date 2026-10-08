@@ -106,14 +106,16 @@ def test_gapped_levels_fill_at_the_open():
 # --- B2 ------------------------------------------------------------------------------------------------------------------
 def test_stt_lands_on_the_leg_that_was_sold_and_on_exercise():
     pb = PaperBroker()
-    bought = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION")
-    written = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", sold_first=True)
+    old = {"entry_date": date(2025, 6, 2), "exit_date": date(2025, 6, 2)}             # 0.1% option STT (before 1 Apr 2026)
+    bought = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **old)
+    written = pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", sold_first=True, **old)
     assert bought != written
     # Written: STT on the entry premium (120), stamp duty on the exit (150); bought: the other way round.
     stt_b, stt_w = 150 * 75 * 0.1 / 100, 120 * 75 * 0.1 / 100
     stamp_b, stamp_w = 120 * 75 * 0.003 / 100, 150 * 75 * 0.003 / 100
     assert bought - written == pytest.approx((stt_b + stamp_b) - (stt_w + stamp_w), abs=0.02)
-    assert pb.exercise_charges(40.0, 75) == pytest.approx(40 * 75 * 0.125 / 100) and pb.exercise_charges(0.0, 75) == 0.0
+    assert pb.exercise_charges(40.0, 75, trade_date=date(2025, 6, 2)) == pytest.approx(40 * 75 * 0.125 / 100)
+    assert pb.exercise_charges(40.0, 75, trade_date=date(2026, 4, 1)) == pytest.approx(40 * 75 * 0.15 / 100) and pb.exercise_charges(0.0, 75) == 0.0
     # A settled leg: one brokerage order, no stamp duty on the settlement (exit passed as 0.0).
     settled_long = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION", settled=True)
     traded_long = pb.estimate_round_trip_costs(120.0, 0.0, 75, "OPTION")
@@ -149,7 +151,9 @@ def test_optimizer_ranks_in_sample_and_reports_out_of_sample_validation():
 
 # --- B5 ------------------------------------------------------------------------------------------------------------------
 def test_option_backtests_size_with_the_lot_of_the_entry_day():
-    assert lot_size_on("NIFTY", date(2024, 6, 3)) == 25 and lot_size_on("NIFTY", date(2024, 11, 20)) == LOT_SIZES["NIFTY"]
+    assert lot_size_on("NIFTY", date(2024, 6, 3)) == 25 and lot_size_on("NIFTY", date(2024, 11, 20)) == 75
+    # NIFTY uses the dated table ported from Trade: 50 from Jul 2021, 65 from the Jan 2026 series (current).
+    assert lot_size_on("NIFTY", date(2023, 1, 2)) == 50 and lot_size_on("NIFTY", date(2026, 2, 2)) == LOT_SIZES["NIFTY"] == 65
     # Before the oldest dated row the table falls back to that row's "before" lot (a stated approximation, not the
     # historical lot: BANKNIFTY traded 25 a lot in early 2023); a stock without a row keeps its current lot.
     assert lot_size_on("BANKNIFTY", date(2023, 1, 2)) == LOT_SIZE_HISTORY["BANKNIFTY"][0][1] and lot_size_on("RELIANCE", date(2024, 1, 1)) == 1

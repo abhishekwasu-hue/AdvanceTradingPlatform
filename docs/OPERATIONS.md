@@ -854,6 +854,16 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 
 
+### 1.6ab-13 Dated costs, NSE contracts and order-safety switches (Trade port)
+
+- Paper and backtest charges use the statutory rates of each trade's own date (STT 0.15% on option sales from
+  1 Apr 2026). Contract notes still replace the estimate. NIFTY's fallback lot is 65; the live instrument master wins.
+- New optional `.env` keys, all off by default (no LIVE behaviour changes until an operator sets them):
+  `ORDER_MARKET_PROTECTION_PCT` (1-25: Upstox `market_protection` on MARKET / SL-M orders),
+  `LIVE_STRICT_WING_FILL=true` (a multi-leg entry sends its shorts only after every wing filled in full, else unwinds),
+  `BACKTEST_HOLDOUT_START` (e.g. `2026-04-01`: the optimizer never uses bars from that date on).
+- No migration in this release.
+
 ### 1.6ab-12 Interview language, data age and the cheap AI tier (P0.10)
 
 - The strategy interview is the one bilingual screen (English line + muted Marathi line); everything else is English.

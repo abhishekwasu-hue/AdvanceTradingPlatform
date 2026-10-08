@@ -1,9 +1,9 @@
 {
  "source": "NSE F&O bhavcopy (legacy EXPIRY_DT until 2024-07-05, UDiFF XpryDt from 2024-07-08)",
  "coverage_start": "2016-01-01",
- "coverage_end": "2026-10-05",
- "weeks_sampled": 563,
- "expiry_days_checked": 874,
+ "coverage_end": "2026-10-07",
+ "weeks_sampled": 564,
+ "expiry_days_checked": 875,
  "symbols": [
   "NIFTY",
   "BANKNIFTY",
@@ -11,7 +11,7 @@
   "MIDCPNIFTY",
   "NIFTYNXT50"
  ],
- "rows": 1370,
+ "rows": 1371,
  "dropped": [
   {
    "symbol": "BANKNIFTY",
@@ -581,5 +581,6 @@
    "to": "2025-03-27"
   }
  ],
- "files_read": 1376
+ "files_read": 1378,
+ "forbidden": 0
 }

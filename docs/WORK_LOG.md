@@ -485,6 +485,10 @@ default and G-LIVE gate before any LIVE wiring.
 - `STOP_LIMIT_BAND_PCT`: empty = today's 1%; set = rounded outward, at least one tick past the trigger.
 - Self-review fixes before merge: clear-rejection rule, uncertain / market-shut / retry guards, partial-fill netting,
   outward band rounding, dead-status set (EXPIRED, LAPSED), modify keeps a standing SL-M, one alert at entry.
+- Second review round: a caller's "stop is dead" is trusted only when a fresh book read agrees (a stop still working
+  is cancelled first); CANCEL PENDING is not dead; the stop's fill is polled until terminal before netting, and an
+  unreadable fill or an exit that errors without a clear answer flags the tenant broker-uncertain (no more tries);
+  the immediate exit can never break the entry alert or the guard pass (try/except).
 - Tests: `tests/test_glive_order_flags.py` (mock brokers: payloads, band rounding, blocked vs. completed exit, closing
   an unprotected position, the skip cases, retry limit, partial-fill netting, entry-path rejection flag, the four
   strict wing-fill outcomes, defaults off).

@@ -175,7 +175,7 @@ class _StopRefusedBroker(_BookBroker):
 
     async def place_order(self, order):
         if self.exit_fails:
-            raise ConnectionError("exit refused")
+            raise BrokerOrderRejected("exit refused: RMS")     # a definite no - the next cycle may try again
         return await super().place_order(order)
 
     async def cancel_order(self, order_id):
@@ -347,3 +347,115 @@ def test_strict_wing_fill_outcomes(monkeypatch, strict):
         assert not ok and "shorts not sent" in failure and orders == [("BUY", lot), ("SELL", lot / 2)]   # unwound
     else:
         assert ok and orders == [("BUY", lot), ("SELL", lot)]                           # today: short at full size
+
+
+# --- second review round ----------------------------------------------------------------------------------------------
+def test_switches_off_keep_the_stop_guard_counts_unchanged():
+    t = _tenant("glive-counts-off@example.com")
+    _seed(t["tenant_id"], t["user_id"], sl_order_id=None)
+    counts = _guard(t, _StopRefusedBroker([], BrokerOrderRejected("no")))
+    assert counts == {"checked": 1, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 1}
+
+
+def test_a_stop_still_working_in_the_book_is_cancelled_before_the_no_stop_exit(monkeypatch):
+    """The guard's caller says "dead", but the fresh read shows the old stop live (e.g. a refused trailing modify left
+    it NOT MODIFIED): it is cancelled first, so the market exit never sits next to a live stop."""
+    monkeypatch.setattr(config, "LIVE_EXIT_IF_NO_STOP", True)
+    t = _tenant("glive-live-stop@example.com")
+    trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-LIVE")
+    live = BrokerOrderStatus(order_id="SL-LIVE", symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=10,
+                             order_type="SL-M", status="NOT MODIFIED")
+
+    class B(_StopRefusedBroker):
+        async def cancel_order(self, order_id):
+            self.cancels.append(order_id)
+            self.book = [live.model_copy(update={"status": "CANCELLED"})]
+            return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+
+    broker = B([live], BrokerOrderRejected("trigger above LTP"))
+    assert _guard(t, broker)["closed"] == 1
+    assert broker.cancels == ["SL-LIVE"] and [o.quantity for o in broker.placed] == [10]
+    assert _get(TradeRecord, trade_id).exit_time is not None
+
+
+def test_cancel_pending_is_not_dead_and_a_dead_stop_with_a_partial_fill_is_netted(monkeypatch):
+    from app.trading.position_monitor import _stop_is_dead
+    assert not _stop_is_dead("CANCEL PENDING") and _stop_is_dead("CANCELLED AMO") and _stop_is_dead("lapsed")
+    monkeypatch.setattr(config, "LIVE_EXIT_IF_NO_STOP", True)
+    t = _tenant("glive-dead-partial@example.com")
+    trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-D")
+    dead = BrokerOrderStatus(order_id="SL-D", symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=10, filled_quantity=3,
+                             order_type="SL", status="EXPIRED", average_price=98.0)
+    broker = _RejectingStopBroker([dead])
+
+    async def go():
+        async with _session_factory() as session:
+            return await close_position(session, await session.get(TradeRecord, trade_id), 97.0, "Stop Loss", broker=broker)
+    outcome = _run(go())
+    assert outcome.closed and [o.quantity for o in broker.placed] == [7]
+
+
+def test_an_unreadable_stop_fill_or_an_ambiguous_exit_flags_the_tenant(monkeypatch):
+    monkeypatch.setattr(config, "LIVE_UPSTOX_OPTION_STOP_LIMIT", True)
+    monkeypatch.setattr("app.trading.position_monitor.FILL_POLL_DELAY_SECONDS", 0)
+    from app.reconciliation.service import broker_uncertain_reason
+
+    class Blind(_BookBroker):          # cancel works, but the book never shows the stop again
+        async def cancel_order(self, order_id):
+            self.book = []
+            return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+
+    class Timeout(_BookBroker):        # the exit order errors with no answer
+        async def cancel_order(self, order_id):
+            self.book = [self.book[0].model_copy(update={"status": "CANCELLED"})]
+            return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+
+        async def place_order(self, order):
+            raise BrokerAPIError("gateway timeout", 504)
+
+    for name, cls, closed in (("blind", Blind, True), ("timeout", Timeout, False)):
+        t = _tenant(f"glive-uncertain-{name}@example.com")
+        trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-U")
+        broker = cls([BrokerOrderStatus(order_id="SL-U", symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=10,
+                                        order_type="SL", status="TRIGGER PENDING")])
+
+        async def go():
+            async with _session_factory() as session:
+                outcome = await close_position(session, await session.get(TradeRecord, trade_id), 97.0, "Stop Loss", broker=broker)
+                return outcome, broker_uncertain_reason(await session.get(Tenant, t["tenant_id"]))
+        outcome, reason = _run(go())
+        assert outcome.closed is closed and reason, name
+
+
+class _EntryStopRejected:
+    """A LIVE broker whose protective stop is refused outright at entry."""
+
+    @staticmethod
+    def make(error):
+        from tests.test_live_execution import _LiveBroker
+
+        class B(_LiveBroker):
+            async def place_order(self, order):
+                if order.order_type in ("SL-M", "SL"):
+                    raise error
+                return await super().place_order(order)
+        return B()
+
+
+def test_the_entry_path_closes_at_once_with_one_critical(monkeypatch):
+    from app.execution.router import OrderRouter
+    from tests.test_live_execution import _execute, _user
+    monkeypatch.setattr(OrderRouter, "fill_poll_delay_seconds", 0)
+    monkeypatch.setattr("app.trading.position_monitor.FILL_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(config, "LIVE_EXIT_IF_NO_STOP", True)
+    user = _user("glive-entry-rejected@example.com")
+    result, order, trade, notes = _execute(user, _EntryStopRejected.make(BrokerOrderRejected("RMS: SL-M not allowed")))
+    assert result.sl_failed and result.sl_rejected and trade.exit_time is not None
+    assert "Closed at once: no broker-side stop" in result.reasons
+    critical = [n for n in notes if n.severity == "CRITICAL"]
+    assert len(critical) == 1 and "closed at once" in critical[0].message
+
+    user = _user("glive-entry-timeout@example.com")                       # a timeout: the stop may stand - no exit
+    result, order, trade, notes = _execute(user, _EntryStopRejected.make(BrokerAPIError("timeout", 504)))
+    assert result.sl_failed and not result.sl_rejected and trade.exit_time is None
+    assert len([n for n in notes if n.severity == "CRITICAL"]) == 1

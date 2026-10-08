@@ -63,7 +63,9 @@ async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: Br
       market exit next to a live stop could later open a position the other way;
     - the tenant is broker-uncertain (what the broker holds is unknown until reconciliation passes);
     - the exchange session is closed (a market order would only be queued or refused);
-    - MAX_EXIT_ATTEMPTS immediate exits already failed for this position."""
+    - MAX_EXIT_ATTEMPTS immediate exits already failed for this position (a clear refusal each time - an exit that
+      errored without a clear answer flags the tenant broker-uncertain, which stops further tries until
+      reconciliation passes). The count lives in the worker's memory: a restart starts it again."""
     if not rejected:
         logger.warning("No-stop exit skipped for trade %s: the stop was not clearly rejected (%s)", trade.id, why)
         return None
@@ -165,7 +167,12 @@ async def verify_protective_stops(
             counts["failed"] += 1
             logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
             if config.LIVE_EXIT_IF_NO_STOP:
-                done = await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}", rejected=is_clear_rejection(exc))
+                try:
+                    done = await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}",
+                                                  rejected=is_clear_rejection(exc))
+                except Exception as exit_exc:  # noqa: BLE001 - never lose the rest of the guard pass; today's alert follows
+                    logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
+                    done = None
                 if done:
                     counts["closed"] += 1
                 if done is not None:      # tried: exit_unprotected already alerted (or is inside its cooldown)

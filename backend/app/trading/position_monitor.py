@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface
+from app.brokers.exceptions import is_clear_rejection
 from app.brokers.models import BrokerOrderRequest, BrokerOrderStatus
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable
 from app.core import config
@@ -62,6 +63,9 @@ class CloseOutcome:
     pnl: Optional[float] = None
     broker_exit_order_id: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
+    # G-LIVE: what the broker holds is unknown (an exit order errored without a clear answer, or a stop's fill could
+    # not be read before netting) - close_position flags the tenant broker-uncertain so reconciliation decides.
+    broker_uncertain: Optional[str] = None
 
 
 def exchange_for_symbol(symbol: str) -> str:
@@ -147,13 +151,24 @@ def _stop_already_filled(trade: TradeRecord, sl_order: BrokerOrderStatus, reason
     return float(sl_order.average_price) if sl_order.average_price else trade.stop_loss
 
 
-# A stop the broker no longer works: nothing to cancel, nothing more will fill.
-_DEAD_STOP_STATUSES = ("REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "LAPSED")
+# A stop the broker no longer works: nothing to cancel, nothing more will fill. Explicit statuses only - a
+# "CANCEL PENDING" stop can still fill.
+_DEAD_STOP_STATUSES = ("REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "EXPIRED", "LAPSED")
 
 
 def _stop_is_dead(status: str) -> bool:
-    text = (status or "").upper()
-    return text in _DEAD_STOP_STATUSES or text.startswith("CANCEL")
+    return (status or "").upper() in _DEAD_STOP_STATUSES
+
+
+async def _settled_stop(broker: BrokerInterface, order_id: str) -> Optional[BrokerOrderStatus]:
+    """The stop once it is terminal (dead or filled), polled like a fill; None when the book cannot say."""
+    for attempt in range(FILL_POLL_ATTEMPTS):
+        order = await _find_order(broker, order_id)
+        if order is not None and (_stop_is_dead(order.status) or order.status.upper() in _FILLED_STATUSES):
+            return order
+        if attempt < FILL_POLL_ATTEMPTS - 1:
+            await asyncio.sleep(FILL_POLL_DELAY_SECONDS)
+    return None
 
 
 def _partial_aware() -> bool:
@@ -182,8 +197,10 @@ async def _square_off_live(
             return _stop_already_filled(trade, sl_order, reason, outcome)
         dead = sl_order is not None and _stop_is_dead(sl_order.status)
         # G-LIVE (LIVE_EXIT_IF_NO_STOP): a stop the broker rejected or cancelled has nothing to cancel - asking would
-        # fail and block the exit (ADR-0004: exits are never blocked). Default off = today's cancel attempt.
-        if stop_dead or (dead and config.LIVE_EXIT_IF_NO_STOP):
+        # fail and block the exit (ADR-0004: exits are never blocked). Default off = today's cancel attempt. A caller's
+        # `stop_dead` is trusted only when this fresh read agrees (missing or dead): a stop the book still shows
+        # working is cancelled first, whatever its status string.
+        if (stop_dead and (sl_order is None or dead)) or (dead and config.LIVE_EXIT_IF_NO_STOP):
             stop_after = sl_order
         else:
             try:
@@ -197,7 +214,11 @@ async def _square_off_live(
                 logger.error("Cancel of SL %s failed for trade %s: %s", trade.sl_order_id, trade.id, exc)
                 return None
             if _partial_aware():
-                stop_after = await _find_order(broker, trade.sl_order_id)
+                stop_after = await _settled_stop(broker, trade.sl_order_id)
+                if stop_after is None:
+                    outcome.broker_uncertain = (f"stop {trade.sl_order_id} on trade {trade.id}: its fill could not be read "
+                                                "after the cancel - the exit went out for the full quantity")
+                    outcome.warnings.append(outcome.broker_uncertain)
 
     # G-LIVE: a stop-limit can fill in part before it is cancelled (or before it lapsed); exiting the full quantity
     # would then open a fresh position the other way. Only the rest goes out, and the booking blends both fills.
@@ -218,6 +239,8 @@ async def _square_off_live(
     except Exception as exc:  # noqa: BLE001
         outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
         logger.error("Exit order failed for trade %s: %s", trade.id, exc)
+        if _partial_aware() and not is_clear_rejection(exc):
+            outcome.broker_uncertain = f"exit order for trade {trade.id} errored without a clear answer: {exc}"
         return None
     if response.status.upper() in ("REJECTED", "CANCELLED"):
         outcome.warnings.append(f"Exit order rejected by {broker.name}: {response.message or response.status}")
@@ -256,6 +279,10 @@ async def close_position(
             trade, broker, reason, exit_price, outcome, algo_id=tenant.algo_id if tenant is not None else None,
             stop_dead=stop_dead,
         )
+        if outcome.broker_uncertain and tenant is not None:
+            from app.reconciliation.service import mark_broker_uncertain   # local: reconciliation imports this module
+            await mark_broker_uncertain(session, tenant, outcome.broker_uncertain)
+            await session.commit()
         if realised is None:
             return outcome
         realised_price = realised
@@ -423,7 +450,7 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
                 stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, update.stop_loss,
                                                                       is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")
-                if stop_type == "SL" and config.LIVE_UPSTOX_OPTION_STOP_LIMIT:
+                if stop_type == "SL" and config.LIVE_UPSTOX_OPTION_STOP_LIMIT and live_broker.name == "upstox":
                     # G-LIVE: a stop placed as SL-M before the switch went on stays SL-M - a modify keeps its type.
                     standing = await _find_order(live_broker, trade.sl_order_id)
                     if standing is not None and (standing.order_type or "").upper() == "SL-M":

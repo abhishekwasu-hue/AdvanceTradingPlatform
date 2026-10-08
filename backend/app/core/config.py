@@ -228,7 +228,8 @@ LIVE_MARKET_PROTECTION = os.environ.get("LIVE_MARKET_PROTECTION", "false").lower
 # - Upstox protective stops on option contracts go as SL (stop-limit) instead of SL-M (the exchanges stopped SL-M on
 #   index options); the limit sits STOP_LIMIT_BAND_PCT past the trigger.
 LIVE_UPSTOX_OPTION_STOP_LIMIT = os.environ.get("LIVE_UPSTOX_OPTION_STOP_LIMIT", "false").lower() in ("1", "true", "yes")
-# - a LIVE position whose broker-side stop cannot be placed (at entry) or re-armed (stop guard) is closed at once.
+# - a LIVE position whose broker-side stop the broker clearly rejected (at entry, or on a stop-guard re-arm) is closed
+#   at once - never after a timeout / 5xx, while broker-uncertain or with the market shut; at most 3 tries.
 LIVE_EXIT_IF_NO_STOP = os.environ.get("LIVE_EXIT_IF_NO_STOP", "false").lower() in ("1", "true", "yes")
 # How far past the trigger a stop-limit's limit sits (% of the trigger; Zerodha options today, Upstox options with
 # the flag above). Unset = today's stop-limit (1%, nearest tick). Set = that band, rounded outward to the 0.05 tick

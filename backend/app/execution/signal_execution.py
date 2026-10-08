@@ -373,9 +373,13 @@ async def execute_signal_for_user(
                 closed_note = ""
                 if config.LIVE_EXIT_IF_NO_STOP and broker is not None:
                     from app.trading.stop_guard import exit_unprotected   # local: stop_guard imports the monitor
-                    done = await exit_unprotected(session, trade_record, broker, "the protective stop failed at entry",
-                                                  rejected=result.sl_rejected, broker_uncertain=result.broker_uncertain,
-                                                  alert=False)
+                    try:
+                        done = await exit_unprotected(session, trade_record, broker, "the protective stop failed at entry",
+                                                      rejected=result.sl_rejected, broker_uncertain=result.broker_uncertain,
+                                                      alert=False)
+                    except Exception as exit_exc:  # noqa: BLE001 - the CRITICAL below must still go out
+                        logger.error("No-stop exit errored for trade %s: %s", trade_record.id, exit_exc)
+                        done = None
                     if done is not None:
                         closed_note = (" It was closed at once with a market exit (LIVE_EXIT_IF_NO_STOP)." if done else
                                        " The immediate market exit failed too - close it at the broker by hand.")
@@ -384,8 +388,8 @@ async def execute_signal_for_user(
                 await notify(
                     session, user.tenant_id, NotificationType.SYSTEM_FAILURE,
                     title=f"No broker-side stop-loss on {result.trade.symbol}",
-                    message=("The entry filled but the protective SL-M order failed." + closed_note) if closed_note else
-                            ("The entry filled but the protective SL-M order failed. The position monitor will "
+                    message=("The entry filled but the protective stop order failed." + closed_note) if closed_note else
+                            ("The entry filled but the protective stop order failed. The position monitor will "
                              "enforce the stop in software; place a manual stop at the broker as a backup."),
                     severity=NotificationSeverity.CRITICAL, user_id=user.id,
                     related_trade_id=trade_record.id, related_order_id=order.id,

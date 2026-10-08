@@ -863,26 +863,6 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 
 
-### 1.6ab-14 G-LIVE order switches (all off; LIVE unchanged until set)
-
-| Key | Off (today) | On |
-|---|---|---|
-| `LIVE_MARKET_PROTECTION` | Zerodha sends no `market_protection`; Upstox only `ORDER_MARKET_PROTECTION_PCT` when set | every Zerodha / Upstox MARKET and SL-M order carries `market_protection` = `ORDER_MARKET_PROTECTION_PCT` (1-25) or `-1` (the broker's automatic band); limit / stop-limit orders never do |
-| `LIVE_UPSTOX_OPTION_STOP_LIMIT` | Upstox protective stops are SL-M everywhere | on option contracts the stop is SL (stop-limit): trigger = the stop, limit = trigger -/+ `STOP_LIMIT_BAND_PCT` (sell stop below, buy stop above, at least one tick); stocks / futures keep SL-M |
-| `LIVE_EXIT_IF_NO_STOP` | a stop that fails at entry or cannot be re-armed raises a CRITICAL alert; the software stop keeps watching | when the broker **clearly rejected** the stop (`BrokerOrderRejected` or a 4xx other than 408/429), the position is closed at once with a market exit and ONE CRITICAL alert says whether the exit worked. Not after a timeout / 5xx / rate limit (the stop may be standing - a market exit next to it could later open a position the other way), not while the tenant is broker-uncertain, not while the exchange is shut, and at most 3 tries per position (alerts on a 30-minute cooldown). An exit also skips cancelling a stop the broker already rejected / cancelled / expired, which today fails and blocks the exit |
-| `STOP_LIMIT_BAND_PCT` | empty = 1%, nearest tick | the stop-limit band, 0-20 (Zerodha options today; Upstox options with the switch above), rounded outward (down for a sell stop, up for a buy stop) and at least one 0.05 tick past the trigger. An unreadable value is ignored with a warning |
-
-With `LIVE_UPSTOX_OPTION_STOP_LIMIT` or `LIVE_EXIT_IF_NO_STOP` on, an exit nets off what a stop-limit already filled
-(a partial fill before the cancel): only the rest is sent at market, and the booking blends both fills. A trailing
-stop that was placed as SL-M before the Upstox switch went on is modified as SL-M (its type is kept).
-
-A stop-limit that triggers but does not fill (price gapped through the limit) is still covered: the position monitor's
-software stop sees the price past the stop on its next cycle (`WORKER_CYCLE_SECONDS`, default 60), cancels the
-broker stop and sends a market exit (with `market_protection` when that switch is on). Suggested order of switching
-on, in PAPER first: `LIVE_MARKET_PROTECTION`, `LIVE_UPSTOX_OPTION_STOP_LIMIT` with `STOP_LIMIT_BAND_PCT=3`, then
-`LIVE_EXIT_IF_NO_STOP`. Upstox's `-1` (automatic) value is from its market-protection announcement; check it once
-against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upstox.
-
 ### 1.6ab-13 Dated costs, NSE contracts and order-safety switches (Trade port)
 
 - Paper and backtest charges use the statutory rates of each trade's own date (STT 0.15% on option sales from
@@ -892,6 +872,26 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
   `LIVE_STRICT_WING_FILL=true` (a multi-leg entry sends its shorts only after every wing filled in full, else unwinds),
   `BACKTEST_HOLDOUT_START` (e.g. `2026-04-01`: the optimizer never uses bars from that date on).
 - No migration in this release.
+
+### 1.6ab-14 G-LIVE order switches (all off; LIVE unchanged until set)
+
+| Key | Off (today) | On |
+|---|---|---|
+| `LIVE_MARKET_PROTECTION` | Zerodha sends no `market_protection`; Upstox only `ORDER_MARKET_PROTECTION_PCT` when set | every Zerodha / Upstox MARKET and SL-M order carries `market_protection` = `ORDER_MARKET_PROTECTION_PCT` (1-25) or `-1` (the broker's automatic band); limit / stop-limit orders never do |
+| `LIVE_UPSTOX_OPTION_STOP_LIMIT` | Upstox protective stops are SL-M everywhere | on option contracts the stop is SL (stop-limit): trigger = the stop, limit = trigger -/+ `STOP_LIMIT_BAND_PCT` (sell stop below, buy stop above, at least one tick); stocks / futures keep SL-M |
+| `LIVE_EXIT_IF_NO_STOP` | a stop that fails at entry or cannot be re-armed raises a CRITICAL alert; the software stop keeps watching | when the broker **clearly rejected** the stop (`BrokerOrderRejected` or a 4xx other than 408/429), the position is closed at once with a market exit and ONE CRITICAL alert says whether the exit worked. Not after a timeout / 5xx / rate limit (the stop may be standing - a market exit next to it could later open a position the other way), not while the tenant is broker-uncertain, not while the exchange is shut, and at most 3 tries per position (alerts on a 30-minute cooldown). An exit also skips cancelling a stop the broker already rejected / cancelled / expired / lapsed (a fresh book read must agree; a stop still working is cancelled first), which today fails and blocks the exit. An exit order that errors without a clear answer flags the tenant broker-uncertain (no further tries until reconciliation passes) |
+| `STOP_LIMIT_BAND_PCT` | empty = 1%, nearest tick | the stop-limit band, 0-20 (Zerodha options today; Upstox options with the switch above), rounded outward (down for a sell stop, up for a buy stop) and at least one 0.05 tick past the trigger (a sell stop triggered at 0.05 keeps 0.05: there is no lower price). An unreadable value is ignored with a warning |
+
+With `LIVE_UPSTOX_OPTION_STOP_LIMIT` or `LIVE_EXIT_IF_NO_STOP` on, an exit nets off what a stop-limit already filled
+(a partial fill before the cancel, read once the stop is cancelled or filled): only the rest is sent at market, and the booking blends both fills. If the stop's fill cannot be read, the full quantity goes out and the tenant is flagged broker-uncertain for reconciliation. A trailing
+stop that was placed as SL-M before the Upstox switch went on is modified as SL-M (its type is kept).
+
+A stop-limit that triggers but does not fill (price gapped through the limit) is still covered: the position monitor's
+software stop sees the price past the stop on its next cycle (`WORKER_CYCLE_SECONDS`, default 60), cancels the
+broker stop and sends a market exit (with `market_protection` when that switch is on). Suggested order of switching
+on, in PAPER first: `LIVE_MARKET_PROTECTION`, `LIVE_UPSTOX_OPTION_STOP_LIMIT` with `STOP_LIMIT_BAND_PCT=3`, then
+`LIVE_EXIT_IF_NO_STOP`. Upstox's `-1` (automatic) value is from its market-protection announcement; check it once
+against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upstox.
 
 ### 1.6ab-12 Interview language, data age and the cheap AI tier (P0.10)
 

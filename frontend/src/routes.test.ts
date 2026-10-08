@@ -17,5 +17,8 @@ describe("routes", () => {
     expect(pageFromPath("/ai-copilot/today")).toBe("ai-copilot");
     expect(pageFromPath("/settings/")).toBe("settings");
     expect(pageFromPath("/no-such-page")).toBeNull();
+    expect(pageFromPath("/Settings")).toBeNull();                    // case-sensitive, like the router
+    expect(pageFromPath("/settings/foo")).toBeNull();
+    expect(pageFromPath("/ai-copilot/today/x")).toBeNull();
   });
 });

@@ -50,9 +50,14 @@ export function pathFor(page: Page): string {
   return page === "dashboard" ? "/" : `/${page}`;
 }
 
-/** The page a URL shows: the first path segment (`/ai-copilot/today` -> ai-copilot), `/` -> dashboard, unknown -> null. */
+/** The page a URL shows - the same rule as the router (case-sensitive, one segment, `/ai-copilot/<tab>` the only
+ * two-segment path): `/` -> dashboard, `/ai-copilot/today` -> ai-copilot, anything else (`/Settings`,
+ * `/settings/foo`) -> null, which renders the not-found card. */
 export function pageFromPath(pathname: string): Page | null {
-  const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";
-  if (!first) return "dashboard";
-  return (PAGES as string[]).includes(first) ? (first as Page) : null;
+  const parts = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+  if (parts.length === 0) return "dashboard";
+  const first = parts[0];
+  if (!(PAGES as string[]).includes(first)) return null;
+  if (parts.length > (first === "ai-copilot" ? 2 : 1)) return null;
+  return first as Page;
 }

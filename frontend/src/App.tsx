@@ -77,7 +77,17 @@ function legacyTarget(search: string): Page | null {
   const params = new URLSearchParams(search);
   if (params.has("invite") || params.has("reset") || params.has("verify")) return "account";
   if (params.has("broker")) return "settings";
+  const named = params.get("page");                // web-push notifications open /?page=notifications
+  if (named && (PAGES as string[]).includes(named)) return named as Page;
   return null;
+}
+
+/** The query to carry to a forwarded page, minus the `page=` that only chose the destination. */
+function withoutPageParam(search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete("page");
+  const rest = params.toString();
+  return rest ? `?${rest}` : "";
 }
 
 function PageLoading() {
@@ -115,7 +125,7 @@ function AppShell() {
     const label = page === null ? "Not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
     document.title = label ? `${label} · Advance Trading` : "Advance Trading";
     if (first.current) { first.current = false; return; }
-    mainRef.current?.scrollTo({ top: 0 });
+    window.scrollTo(0, 0);                       // the window scrolls (the shell is min-h-screen), not <main>
     mainRef.current?.focus({ preventScroll: true });
   }, [page]);
 
@@ -130,14 +140,14 @@ function AppShell() {
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>
-              {legacy ? <Navigate to={`${pathFor(legacy)}${location.search}`} replace /> : (
+              {legacy ? <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace /> : (
                 <Routes>
                   {PAGES.map((p) => {
                     const PageComponent = PAGE_COMPONENTS[p];
                     const element = <PageComponent onNavigate={go} />;
                     return p === "ai-copilot"
-                      ? <Route key={p} path="/ai-copilot/:tab?" element={element} />
-                      : <Route key={p} path={pathFor(p)} element={element} />;
+                      ? <Route key={p} path="/ai-copilot/:tab?" caseSensitive element={element} />
+                      : <Route key={p} path={pathFor(p)} caseSensitive element={element} />;
                   })}
                   <Route path="*" element={<NotFound />} />
                 </Routes>

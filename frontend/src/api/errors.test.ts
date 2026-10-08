@@ -52,3 +52,13 @@ describe("friendlyError", () => {
     expect(readableDetail("Internal Server Error")).toBe("");
   });
 });
+
+describe("detail objects and server references", () => {
+  it("keeps a detail object's reasons and adds the reference to every server error", async () => {
+    const body = JSON.stringify({ detail: { message: "provider returned nothing usable", errors: ["NSE: timeout", "BSE: 404"] } });
+    const err = await apiErrorFrom(new Response(body, { status: 502, headers: { "x-request-id": "req-9" } }));
+    expect(err.message).toBe("provider returned nothing usable: NSE: timeout; BSE: 404. Reference: req-9.");
+    const plain = await apiErrorFrom(new Response(JSON.stringify({ detail: "Broker down." }), { status: 503, headers: { "x-request-id": "r1" } }));
+    expect(plain.message).toBe("Broker down. Reference: r1.");
+  });
+});

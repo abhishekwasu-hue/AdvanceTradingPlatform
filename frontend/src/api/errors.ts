@@ -62,8 +62,13 @@ export function readableDetail(body: string): string {
     if (typeof d === "string") return d.trim();
     if (Array.isArray(d)) return fromValidation(d as ValidationItem[]);
     if (d && typeof d === "object") {
-      const m = (d as { message?: unknown; detail?: unknown }).message ?? (d as { detail?: unknown }).detail;
-      if (typeof m === "string") return m.trim();
+      const o = d as { message?: unknown; detail?: unknown; errors?: unknown };
+      const m = o.message ?? o.detail;
+      if (typeof m === "string") {
+        // Keep the reasons a detail object carries (e.g. a provider's list of errors), not just its headline.
+        const reasons = Array.isArray(o.errors) ? o.errors.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+        return reasons.length ? `${m.trim()}: ${reasons.slice(0, 3).join("; ")}${reasons.length > 3 ? ` (+${reasons.length - 3} more)` : ""}` : m.trim();
+      }
     }
   } catch {
     /* not JSON */
@@ -81,13 +86,11 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   const detail = readableDetail(body);
   let message = detail;
   if (!message) {
-    if (status >= 500) {
-      message = `The server could not complete this request (error ${status}). Try again in a moment.`;
-      if (requestId) message += ` Reference: ${requestId}.`;
-    } else {
-      message = GENERIC[status] ?? `The request failed (error ${status}).`;
-    }
+    message = status >= 500 ? `The server could not complete this request (error ${status}). Try again in a moment.`
+      : GENERIC[status] ?? `The request failed (error ${status}).`;
   }
+  // Every server error carries the reference support needs to find the log line, readable detail or not.
+  if (status >= 500 && requestId) message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
   return new ApiError(status, message, detail, body.slice(0, 2000), requestId);
 }
 

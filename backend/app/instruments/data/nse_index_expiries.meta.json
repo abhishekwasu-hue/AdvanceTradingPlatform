@@ -11,7 +11,7 @@
   "MIDCPNIFTY",
   "NIFTYNXT50"
  ],
- "rows": 1371,
+ "rows": 1364,
  "dropped": [
   {
    "symbol": "BANKNIFTY",
@@ -488,7 +488,7 @@
   {
    "symbol": "MIDCPNIFTY",
    "from": "2023-08-23",
-   "to": "2023-08-28"
+   "to": "2023-08-21"
   },
   {
    "symbol": "MIDCPNIFTY",
@@ -579,6 +579,43 @@
    "symbol": "NIFTYNXT50",
    "from": "2025-03-28",
    "to": "2025-03-27"
+  }
+ ],
+ "delisted": [
+  {
+   "symbol": "NIFTY",
+   "expiry": "2026-12-31",
+   "first_seen": "2022-01-03"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2027-06-24",
+   "first_seen": "2022-07-04"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2027-12-30",
+   "first_seen": "2023-01-02"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2028-06-29",
+   "first_seen": "2023-07-03"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2028-12-28",
+   "first_seen": "2024-01-01"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2029-06-28",
+   "first_seen": "2024-07-01"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2029-12-27",
+   "first_seen": "2024-12-30"
   }
  ],
  "files_read": 1434,

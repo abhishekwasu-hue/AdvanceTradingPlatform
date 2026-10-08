@@ -24,6 +24,22 @@ const STATE: Record<string, { en: string; cls: string }> = {
   stale: { en: "Check the worker", cls: "border-rose-500/40 text-rose-300" },
   error: { en: "Error", cls: "border-rose-500/40 text-rose-300" },
 };
+/** "5 min", "3 h", "2 days" */
+function ageText(minutes: number): string {
+  if (minutes < 60) return `${Math.max(1, Math.round(minutes))} min`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
+  return `${Math.round(minutes / 1440)} days`;
+}
+
+/** P0.10: a bold stamp on the banner when its figures are not today's live read. */
+function DataStamp({ data }: { data: NonNullable<DailyBrief["market_data"]> }) {
+  if (data.state === "fresh") return null;
+  const text = data.state === "stale" ? `STALE (${ageText(data.age_minutes ?? 0)} ago)` : data.state === "suspect" ? "PLACEHOLDER DATA" : "NO MARKET DATA YET";
+  return (
+    <span className="rounded-md border-2 border-amber-400/80 bg-black/40 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wider text-amber-300">{text}</span>
+  );
+}
+
 const money = (v: number) => `${v < 0 ? "-" : ""}₹${Math.abs(v).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
 function Meter({ label, used, max, money: isMoney = false, invert = false }: { label: string; used: number; max: number; money?: boolean; invert?: boolean }) {
@@ -69,8 +85,10 @@ export default function DailyBriefing() {
   const kind = KIND[brief.day_type.kind];
   const Icon = kind.icon;
   const shownMode = mode ?? (brief.you.LIVE.active ? "LIVE" : "PAPER");
-  const snaps = brief.market.symbols;
-  const vix = brief.day_type.vix;
+  const data = brief.market_data ?? { state: "fresh" as const, updated_at: brief.market_updated_at, age_minutes: null, figures_shown: true };
+  // Figures that are not today's live read (none, stale, every symbol the same) are not shown as if they were.
+  const snaps = data.figures_shown ? brief.market.symbols : [];
+  const vix = data.figures_shown ? brief.day_type.vix : null;
 
   return (
     <div className="space-y-4">
@@ -78,9 +96,21 @@ export default function DailyBriefing() {
         <div className="flex flex-wrap items-start gap-3">
           <div className="rounded-xl bg-black/20 p-2"><Icon size={26} /></div>
           <div className="min-w-[240px] flex-1">
-            <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">Today · {kind.en}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider opacity-80">Today · {kind.en}{brief.day_type.symbol ? ` · ${brief.day_type.symbol}` : ""}</span>
+              <DataStamp data={data} />
+            </div>
             <div className="mt-0.5 text-lg font-extrabold leading-snug text-slate-50">{brief.plan.headline}</div>
-            <div className="mt-1 text-xs opacity-80">{brief.session.text}{brief.session.holidays_next_7_days.length ? ` · Holidays: ${brief.session.holidays_next_7_days.join(", ")}` : ""}</div>
+            <div className="mt-1 text-xs opacity-80">
+              {brief.session.text}
+              {data.age_minutes != null ? ` · market data read ${ageText(data.age_minutes)} ago` : " · no market data read yet"}
+              {brief.session.holidays_next_7_days.length ? ` · Holidays: ${brief.session.holidays_next_7_days.join(", ")}` : ""}
+            </div>
+            {!data.figures_shown && data.state !== "none" && (
+              <div className="mt-1 text-xs text-amber-200">
+                {data.state === "stale" ? "The last market read is old, so its prices and changes are hidden; the read above describes that older data." : "Every symbol shows the same change - these look like placeholder figures, so they are hidden until the next real read."}
+              </div>
+            )}
           </div>
           <button onClick={load} disabled={busy} className="rounded-lg border border-white/15 px-2.5 py-1 text-xs text-slate-100 hover:bg-white/5 disabled:opacity-50">
             <RefreshCw size={12} className={`mr-1 inline ${busy ? "animate-spin" : ""}`} />Refresh

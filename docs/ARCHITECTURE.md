@@ -3645,6 +3645,13 @@ gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, 
 `pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
 (the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
 
+**P0.10 (screenshot review fixes).** The strategy interview is the only bilingual screen (`INTERVIEW_MR` namespace,
+enforced by `scripts/check-devanagari.mjs`). `briefing.data_freshness` labels the market memory behind the briefing
+(fresh / stale / placeholder / none) and the UI hides figures that are not a current read. Risk settings and the
+contract never depend on experience (`interview.DEFAULT_*`, `contract_plan(..., last_price)`); only facts change a
+choice. Sample candles follow NSE sessions (`utils/sampleData.ts`, ported in `tests/sample_market.py`). A third AI tier,
+`cheap`, runs classification and scanner reads.
+
 **P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
 `ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the
 AI content routes, `accept()` with an audit event. `metering.MeteredProvider` also writes `llm_calls` (`log_call`,

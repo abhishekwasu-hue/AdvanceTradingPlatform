@@ -138,7 +138,7 @@ export default function TradeCoach() {
           </div>
 
           {review.focus.length > 0 && (
-            <Card title="Your next three fixes">
+            <Card title="Patterns in your own trades">
               <ol className="space-y-1.5 text-sm text-slate-100">
                 {review.focus.map((f, i) => <li key={f} className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-purple-500/25 text-xs font-bold text-purple-100">{i + 1}</span><span>{f}</span></li>)}
               </ol>

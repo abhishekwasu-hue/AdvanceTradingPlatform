@@ -60,6 +60,11 @@ export default function ThesisCard() {
   const dir = thesis ? DIR[thesis.direction] ?? DIR.NEUTRAL : null;
   const Icon = dir?.icon ?? Eye;
   const sb = history?.scoreboard;
+  // P0.10: the thesis is read from the market memory; when that read is older than the overnight gap (20 h) its levels
+  // and score are not today's - stamped and hidden, like the briefing's figures.
+  const readAt = thesis ? (thesis.inputs as { read_at?: string | null }).read_at ?? null : null;
+  const ageH = readAt ? (Date.now() - new Date(readAt).getTime()) / 3_600_000 : null;
+  const stale = ageH != null && ageH > 20;
   return (
     <Card title="Market thesis (shadow)">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -78,7 +83,8 @@ export default function ThesisCard() {
         <div className="space-y-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-bold ${dir.cls}`}><Icon size={13} />{thesis.symbol} · data read {thesis.direction.toLowerCase()}</span>
-            {thesis.confidence != null && <span className="text-slate-200" title="How many factors agree, weighted - a model score, not a forecast">model score {thesis.confidence}/100 <span className="text-muted">(not a forecast)</span></span>}
+            {stale && <span className="rounded-md border-2 border-amber-400/80 bg-black/40 px-2 py-0.5 font-extrabold uppercase tracking-wider text-amber-300">STALE ({Math.round(ageH ?? 0)} h ago)</span>}
+            {thesis.confidence != null && !stale && <span className="text-slate-200" title="How many factors agree, weighted - a model score, not a forecast">model score {thesis.confidence}/100 <span className="text-muted">(not a forecast)</span></span>}
             <span className="text-muted">· {thesis.agreement.agreeing}/{thesis.agreement.with_opinion} factors agree · coverage {(thesis.agreement.coverage * 100).toFixed(0)}%</span>
             <span className="ml-auto rounded border border-border px-2 py-0.5 text-muted" title={thesis.shadow.reasons.join("; ") || "no reduction"}>
               shadow ×{thesis.shadow.size_multiplier.toFixed(2)} <span className="text-amber-300">(not applied)</span>
@@ -96,14 +102,15 @@ export default function ThesisCard() {
             ))}
           </div>
           {thesis.detail_shown === false && <div className="text-muted">Price scenarios for a single stock are not shown (operator setting).</div>}
-          <div className="grid gap-2 md:grid-cols-3">
+          {stale && <div className="text-amber-200">Built from a market read {Math.round(ageH ?? 0)} h old - its price levels are hidden. Refresh the market memory ("Read now") and press Rebuild.</div>}
+          {!stale && <div className="grid gap-2 md:grid-cols-3">
             {(["bull", "base", "bear"] as const).map((k) => thesis.scenarios[k] && (
               <div key={k} className={`rounded-lg border p-2 ${k === "bull" ? "border-emerald-500/30 bg-emerald-500/[0.05]" : k === "bear" ? "border-rose-500/30 bg-rose-500/[0.05]" : "border-border bg-panel2/40"}`}>
                 <div className="font-semibold text-slate-200 uppercase">{k}</div>
                 <div className="text-muted">{thesis.scenarios[k]?.text}</div>
               </div>
             ))}
-          </div>
+          </div>}
           {thesis.events.length > 0 && <div className="text-amber-200">Today's events: {thesis.events.map((e) => `${e.kind} (${e.action})`).join(", ")}</div>}
           <details className="text-muted">
             <summary className="cursor-pointer">In words {thesis.narrative_source === "model" ? "(AI, numbers checked)" : ""}</summary>

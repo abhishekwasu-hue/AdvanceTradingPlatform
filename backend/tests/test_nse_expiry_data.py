@@ -1,4 +1,4 @@
-"""BANKNIFTY expiries come from NSE's bhavcopies, never from a weekday rule.
+"""NIFTY and BANKNIFTY expiries come from NSE's bhavcopies, never from a weekday rule.
 
 Part 1 checks the builder (both bhavcopy layouts, confirmation on the expiry day, monthly = has a future) on small
 hand-made files. Part 2 checks the committed data file (built by the 'NSE expiry data' workflow from the real
@@ -88,6 +88,41 @@ def test_a_moved_monthly_goes_to_the_day_its_future_expired_not_the_nearest_week
     got = {(r["expiry"], r["kind"], r["first_seen"]) for r in rows}
     assert ("2025-09-23", "weekly", "2025-09-01") in got and ("2025-09-30", "monthly", "2025-09-01") in got
     assert {"symbol": "NIFTY", "from": "2025-09-25", "to": "2025-09-30"} in meta["moved"]
+
+
+def test_a_moved_weekly_goes_to_the_nearest_day_not_into_a_nearby_monthly():
+    # A Tue 23 weekly (no future, listed a few weeks ahead) re-dated by a late holiday to Mon 22; the monthly (with its
+    # future) expires Tue 29, six days later. The weekly lands on the 22nd and keeps its first listing date.
+    files = {
+        D("2026-09-01"): legacy(("OPTIDX", "NIFTY", "23-Sep-2026"), ("FUTIDX", "NIFTY", "29-Sep-2026"),
+                                ("OPTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-07"): legacy(("OPTIDX", "NIFTY", "23-Sep-2026"), ("FUTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-14"): legacy(("OPTIDX", "NIFTY", "23-Sep-2026"), ("FUTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-21"): legacy(("OPTIDX", "NIFTY", "22-Sep-2026"), ("FUTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-22"): legacy(("OPTIDX", "NIFTY", "22-Sep-2026"), ("FUTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-28"): legacy(("FUTIDX", "NIFTY", "29-Sep-2026")),
+        D("2026-09-29"): legacy(("FUTIDX", "NIFTY", "29-Sep-2026"), ("OPTIDX", "NIFTY", "29-Sep-2026")),
+    }
+    rows, meta = ne.build(D("2026-09-01"), D("2026-09-29"), files.get, workers=1)
+    got = {(r["expiry"], r["kind"], r["first_seen"]) for r in rows}
+    assert ("2026-09-22", "weekly", "2026-09-01") in got and ("2026-09-29", "monthly", "2026-09-01") in got
+    assert {"symbol": "NIFTY", "from": "2026-09-23", "to": "2026-09-22"} in meta["moved"]
+
+
+def test_a_far_contract_gone_from_the_newest_file_is_not_listed():
+    # A long-dated Thursday contract listed in 2025, re-dated to Tuesday later: the newest file only prints the Tuesday.
+    files = {
+        D("2025-08-04"): legacy(("OPTIDX", "NIFTY", "31-Dec-2026"), ("OPTIDX", "NIFTY", "29-Dec-2026"),
+                                ("FUTIDX", "NIFTY", "28-Aug-2025")),
+        D("2025-08-11"): legacy(("OPTIDX", "NIFTY", "29-Dec-2026"), ("FUTIDX", "NIFTY", "28-Aug-2025")),
+    }
+    rows, meta = ne.build(D("2025-08-04"), D("2025-08-11"), files.get, workers=1)
+    assert [r["expiry"] for r in rows if r["expiry"] > "2026"] == ["2026-12-29"]
+    assert meta["delisted"] == [{"symbol": "NIFTY", "expiry": "2026-12-31", "first_seen": "2025-08-04"}]
+
+
+def test_every_data_driven_symbol_is_strict_in_the_builder():
+    assert set(expiry_data.DATA_DRIVEN) <= set(ne.STRICT)
 
 
 def test_build_refuses_holes_unexplained_drops_and_shrinking():

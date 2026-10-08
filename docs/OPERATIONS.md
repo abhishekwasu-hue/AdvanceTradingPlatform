@@ -508,12 +508,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `pricing=snapshots` with the fallback off over a span nothing was recorded. Allow the fallback,
   upload rows (`POST /api/backtest/option-chain/snapshots`, CSV columns timestamp, expiry, strike,
   right, ltp) or use synthetic pricing.
-- **Wrong expiries in an old year**: conventions default to the exchange's current listings.
-  Override `expiry_weekday` (0 = Monday) and `weekly_expiry` for the period being tested (NIFTY
-  weeklies were Thursdays before September 2025), and `lot_size` / `strike_step` when those differed.
-  **NIFTY and BANKNIFTY have no rule**: their expiries are the dates NSE printed in its F&O bhavcopies
+- **Wrong expiries in an old year**: for the other indices conventions default to the exchange's current
+  listings - override `expiry_weekday` (0 = Monday) and `weekly_expiry` for the period being tested, and
+  `lot_size` / `strike_step` when those differed. **NIFTY and BANKNIFTY have no rule** (a pinned
+  `expiry_weekday` on them is a what-if run on a made-up calendar, not the exchange's dates): their expiries are the dates NSE printed in its F&O bhavcopies
   (`backend/app/instruments/data/nse_index_expiries.csv`, every one confirmed by the bhavcopy of its own
-  day). `weekly_expiry=false` keeps the monthlies only; the MONTHLY rule always takes the monthly. Bars after
+  day; a far contract the exchange re-dated is listed only under the date its newest file prints).
+  `weekly_expiry=false` keeps the monthlies only; the MONTHLY rule always takes the monthly. Bars after
   the file's last day (`options.expiry_calendar` says "data through ...") see only the contracts listed by
   then - nothing is invented; a bar with none left counts as "no expiry". A run before 2016 fails. Refresh:
   GitHub > Actions > "NSE expiry data" > Run workflow (it also runs every Saturday); the result arrives on

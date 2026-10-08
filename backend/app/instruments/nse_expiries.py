@@ -17,7 +17,7 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
    listed too far ahead to have a future yet is "monthly" when it is the last listed expiry of its month.
 
 Guards (the build fails, nothing is written): a calendar week with no file at all (NSE never closes a whole week -
-the archive refused or was cut), an expiry of a STRICT underlying (BANKNIFTY) with no file on its day that no move
+the archive refused or was cut), an expiry of a STRICT underlying (NIFTY, BANKNIFTY) with no file on its day that no move
 explains, and - against the files already in `--out` - an earlier coverage end or fewer expired rows for any
 underlying. A 403 is retried, then counted as "no file" (the guards catch a block).
 
@@ -47,7 +47,8 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 INDEX_SYMBOLS = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50")
-STRICT = ("BANKNIFTY",)          # underlyings whose backtests read this file: every expiry must be explained
+STRICT = ("NIFTY", "BANKNIFTY")  # underlyings whose backtests read this file (expiry_data.DATA_DRIVEN): every
+                                 # expiry must be explained
 UDIFF_FROM = dt.date(2024, 7, 8)
 ARCHIVE = "https://nsearchives.nseindia.com"
 HEADERS = {
@@ -188,6 +189,7 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
 
     seen: Dict[Tuple[str, dt.date], Dict] = {}
     sampled: List[dt.date] = []
+    latest: Tuple[Optional[dt.date], Set[Tuple[str, dt.date]]] = (None, set())   # the newest file read and its contracts
     holes: List[str] = []
     with ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(first_day_of_week, weeks))
@@ -199,6 +201,8 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
                 holes.append(monday.isoformat())
             continue
         sampled.append(d)
+        if latest[0] is None or d > latest[0]:
+            latest = (d, {(sym, exp) for sym, exp, _ in contracts})
         for sym, exp, fut in contracts:
             s = seen.setdefault((sym, exp), {"first_seen": d, "future": False})
             s["first_seen"] = min(s["first_seen"], d)
@@ -246,7 +250,10 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
             here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}
             if here:
                 candidates.append((d, here))
-        candidates = [c for c in candidates if (sym, True) in c[1]] or candidates
+        # A future's day wins only for a contract that was a monthly (it had a future) or was listed far ahead (the
+        # quarterly / half-yearly listings); a re-dated weekly goes to the nearest day, never into a nearby monthly.
+        if s["future"] or (exp - s["first_seen"]).days > 92:
+            candidates = [c for c in candidates if (sym, True) in c[1]] or candidates
         if candidates:
             d, here = candidates[0]
             moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})
@@ -257,8 +264,13 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
             if (sym, d) not in kept:
                 kept.add((sym, d))
                 confirmed[d] = (confirmed.get(d) or set()) | here
+    delisted: List[Dict[str, str]] = []
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         future = s["future"]
+        if exp > last and (sym, exp) not in latest[1]:
+            # listed once, gone from the newest file (re-dated to another day): not a contract any more
+            delisted.append({"symbol": sym, "expiry": exp.isoformat(), "first_seen": s["first_seen"].isoformat()})
+            continue
         if exp <= last:
             got = confirmed.get(exp)
             on_day = got is not None and any(x == sym for x, _ in got)
@@ -290,6 +302,7 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
         "coverage_start": min(sampled).isoformat(), "coverage_end": last.isoformat(),
         "weeks_sampled": len(sampled), "expiry_days_checked": len(days),
         "symbols": list(INDEX_SYMBOLS), "rows": len(rows), "dropped": dropped, "moved": moved,
+        "delisted": delisted,
     }
     return rows, meta
 

@@ -477,9 +477,14 @@ default and G-LIVE gate before any LIVE wiring.
   `expiry_calendar`; backtests read the dates NSE printed in its F&O bhavcopies (same file, same causal rules).
 - Verified from the data: first weekly 2019-02-14; Thursday weeklies up to 2025-08-28 (holiday moves to the
   Wednesday before, e.g. 2018-03-28 monthly, 2021-11-03 Diwali week); Tuesday from 2025-09-02; holiday moves after
-  that (2026-10-19 Monday). Tests: every NIFTY expiry since 2016 matches the file, per symbol.
+  that (2026-10-19 Monday). Tests: the backtest calendar serves exactly the file's NIFTY expiries for every month
+  since 2016 (causal first_seen), and the dates above are pinned against the exchange's history.
 - Builder fix found on NIFTY: a re-dated or long-dated contract (quarterly / half-yearly listings) merges into the
   contract whose future expired that day, not the nearest weekly (Sep 2025, Dec 2025, Mar / Jun 2026 were wrong).
+- Review fixes: NIFTY is STRICT in the builder too (an unexplained NIFTY expiry refuses the build); only a monthly or a
+  far-listed contract that the exchange re-dated merges into the day of a future, a re-dated weekly goes to the nearest
+  day; a far contract missing from the newest file (old Thursday long-dated NIFTY dates re-dated to Tuesday) is no
+  longer listed (`meta.delisted`). Workflow: no token in the checkout, PR opened before CI is started.
 - Options engine version 6 (`6-options`), shown on every options backtest report and run row.
 - `nse-expiries.yml` now starts CI on `data/nse-expiries` and opens the refresh pull request itself (needs the
   repository setting that lets Actions create pull requests); the operator only reviews and merges.

@@ -12,6 +12,7 @@ from app.backtest.options import ExpiryCalendar, lot_size_on
 from app.execution import india_costs as CO
 from app.execution.paper_broker import PaperBroker
 from app.instruments import expiry_calendar as CT
+from app.instruments import expiry_data
 
 
 def weekdays(a, b, minus=()):
@@ -38,7 +39,7 @@ def test_rule_expiries_weekday_and_holiday_shift():
 
 
 def test_nifty_has_no_rule_and_its_book_reads_the_exchange_dates():
-    with pytest.raises(ValueError):                                             # ExpiryDataMissing: data, not a rule
+    with pytest.raises(expiry_data.ExpiryDataMissing):                         # data, not a rule
         CT.rule_expiries(CT.TradingCalendar(weekdays("2018-01-01", "2018-12-31")), "2018-03-01", "2018-04-30")
     book = CT.ExpiryBook(CT.TradingCalendar(weekdays("2018-01-01", "2024-12-31")))
     assert book.source == "listed"

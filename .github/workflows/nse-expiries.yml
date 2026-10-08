@@ -4,8 +4,8 @@ name: NSE expiry data
 # exchange printed them - no weekday rule). The archive is not reachable from every network, so this runs on a
 # GitHub runner. From main the result is committed to `data/nse-expiries`, CI is started on it and a pull request
 # to main is opened (or the open one updated) - never straight to main; the merge is a person's. Run it from the Actions tab (optional start / end dates) or let the weekly schedule refresh it.
-# The build refuses (exit 2, nothing committed) on a week with no file, an unexplained BANKNIFTY expiry, or a result
-# that knows less than the committed file.
+# The build refuses (exit 2, nothing committed) on a week with no file, an unexplained NIFTY / BANKNIFTY expiry, or a
+# result that knows less than the committed file.
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +33,8 @@ jobs:
       actions: write         # start CI on the data branch (pushes made with this token start no workflows)
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false   # the token is handed only to the push and gh steps, not to the NSE download
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -50,7 +52,10 @@ jobs:
         id: commit
         env:
           REF: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ github.token }}
         run: |
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${REPO}.git"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/app/instruments/data/nse_index_expiries.csv backend/app/instruments/data/nse_index_expiries.meta.json
@@ -68,7 +73,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run ci.yml --ref data/nse-expiries
           if [ "$(gh pr list --head data/nse-expiries --base main --state open --json number --jq length)" = "0" ]; then
             meta=backend/app/instruments/data/nse_index_expiries.meta.json
             body="Weekly rebuild of the NSE index expiry file from the F&O bhavcopies (coverage $(python -c "import json;m=json.load(open('$meta'));print(m['coverage_start'],'to',m['coverage_end'],'-',m['rows'],'expiries')")). CI runs on this branch; merge after it is green. Opened by the 'NSE expiry data' workflow."
@@ -78,3 +82,4 @@ jobs:
           else
             echo "the open refresh pull request now carries this rebuild"
           fi
+          gh workflow run ci.yml --ref data/nse-expiries

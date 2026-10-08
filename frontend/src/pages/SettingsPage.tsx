@@ -140,7 +140,7 @@ export default function SettingsPage() {
         <PageHeader title="Settings" />
         <AppearanceCard />
         <Card>
-          <p className="text-sm text-muted">Log in from the Account tab to manage broker credentials.</p>
+          <p className="text-sm text-fg-muted">Log in from the Account tab to manage broker credentials.</p>
         </Card>
       </div>
     );
@@ -153,13 +153,13 @@ export default function SettingsPage() {
       <AppearanceCard />
 
       {oauthOutcome && (
-        <div className={`rounded-lg border px-3 py-2 text-sm ${oauthOutcome.ok ? "border-accent/40 bg-accent/10 text-accent" : "border-danger/40 bg-danger/10 text-danger"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-sm ${oauthOutcome.ok ? "border-up/40 bg-up/10 text-up" : "border-down/40 bg-down/10 text-down"}`}>
           {oauthOutcome.text}
         </div>
       )}
 
       <Card title="Broker session health">
-        <p className="text-xs text-muted mb-3">
+        <p className="text-xs text-fg-muted mb-3">
           Broker access tokens expire every trading morning (Upstox 03:30 IST, Kite and Fyers 06:00 IST)
           and cannot be refreshed automatically - log in again each day before the market opens, or
           LIVE deployments stay on hold. For Upstox the button below completes the login in your
@@ -172,21 +172,21 @@ export default function SettingsPage() {
 
       <Card title={`Connected brokers (${stored.length})`}>
         {stored.length === 0 ? (
-          <div className="text-sm text-muted py-2">None stored yet.</div>
+          <div className="text-sm text-fg-muted py-2">None stored yet.</div>
         ) : (
           <div className="space-y-1.5">
             {stored.map((s) => (
               <div key={`${s.broker_name}/${s.account_label ?? "primary"}`} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
                 <div>
-                  <span className="font-medium text-slate-200 capitalize">{s.broker_name}</span>{" "}
-                  <span className="text-xs text-muted">/ {s.account_label ?? "primary"}</span>{" "}
-                  <span className="text-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
+                  <span className="font-medium text-fg capitalize">{s.broker_name}</span>{" "}
+                  <span className="text-xs text-fg-muted">/ {s.account_label ?? "primary"}</span>{" "}
+                  <span className="text-fg-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
                 </div>
                 <div className="flex gap-3">
                   <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
                     Authenticate
                   </button>
-                  <button onClick={() => handleDelete(s.broker_name, s.account_label ?? "primary")} className="text-xs text-danger hover:underline">
+                  <button onClick={() => handleDelete(s.broker_name, s.account_label ?? "primary")} className="text-xs text-down hover:underline">
                     Remove
                   </button>
                 </div>
@@ -199,9 +199,9 @@ export default function SettingsPage() {
       <Card title="Add / update broker credentials">
         <div className="space-y-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Broker</label>
+            <label className="block text-xs text-fg-muted mb-1">Broker</label>
             <select
-              className="w-full sm:w-64 rounded bg-panel2 border border-border px-2 py-1.5 text-sm capitalize"
+              className="w-full sm:w-64 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm capitalize"
               value={selectedBroker}
               onChange={(e) => setSelectedBroker(e.target.value)}
             >
@@ -212,11 +212,11 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-muted mb-1">Account label <span className="text-muted">(a second account at the same broker gets its own label)</span></label>
-            <input className="w-full sm:w-64 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={accountLabel} onChange={(e) => setAccountLabel(e.target.value)} placeholder="primary" />
+            <label className="block text-xs text-fg-muted mb-1">Account label <span className="text-fg-muted">(a second account at the same broker gets its own label)</span></label>
+            <input className="w-full sm:w-64 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={accountLabel} onChange={(e) => setAccountLabel(e.target.value)} placeholder="primary" />
           </div>
 
-          <p className="text-xs text-slate-300">
+          <p className="text-xs text-fg-muted">
             Fill only what you are changing - a field left blank keeps its stored value (e.g. paste just today's
             Access Token and the saved API key/secret stay). Values are encrypted on save and never shown again.
           </p>
@@ -224,11 +224,11 @@ export default function SettingsPage() {
           <div className="grid sm:grid-cols-2 gap-3">
             {CRED_FIELDS.map((f) => (
               <div key={f.key}>
-                <label className="block text-xs text-muted mb-1">{f.label}</label>
+                <label className="block text-xs text-fg-muted mb-1">{f.label}</label>
                 <input
                   type="password"
                   autoComplete="off"
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={credentials[f.key] ?? ""}
                   onChange={(e) => setCredentials({ ...credentials, [f.key]: e.target.value })}
                 />
@@ -236,13 +236,13 @@ export default function SettingsPage() {
             ))}
           </div>
 
-          {error && <div className="text-sm text-danger">{error}</div>}
-          {message && <div className="text-sm text-accent">{message}</div>}
+          {error && <div className="text-sm text-down">{error}</div>}
+          {message && <div className="text-sm text-up">{message}</div>}
 
           <button
             onClick={handleStore}
             disabled={busy || !selectedBroker}
-            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {busy ? "Saving…" : "Store credentials"}
           </button>
@@ -260,7 +260,7 @@ export default function SettingsPage() {
       <AiProviderCard />
 
       <Card title="TradingView webhook">
-        <p className="text-sm text-muted mb-3">
+        <p className="text-sm text-fg-muted mb-3">
           Paste this URL into a TradingView alert's "Webhook URL" field, with a JSON message body
           of <code className="text-xs">{"{ strategy_id, symbol, direction, entry, stop_loss, target1, target2?, alert_id? }"}</code>.
           Every alert runs through the same risk engine and kill switches as a manual paper
@@ -268,7 +268,7 @@ export default function SettingsPage() {
           ever leaks.
         </p>
         {webhook && !webhook.webhook_url && (
-          <p className="text-xs text-slate-300 mb-2">
+          <p className="text-xs text-fg-muted mb-2">
             The URL is stored only as a hash on the server (it is a credential). Press <b>Rotate</b> to get a new
             one - it is shown once, so copy it into TradingView right away.
             {webhook.configured ? " The current URL keeps working until you rotate." : ""}
@@ -280,13 +280,13 @@ export default function SettingsPage() {
             <div className="flex gap-2">
               <input
                 readOnly
-                className="flex-1 rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono"
+                className="flex-1 rounded bg-surface-2 border border-border px-2 py-1.5 text-xs font-mono"
                 value={new URL(webhook.webhook_url, window.location.origin).toString()}
                 onFocus={(e) => e.target.select()}
               />
               <button
                 onClick={handleCopyWebhookUrl}
-                className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs shrink-0"
+                className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs shrink-0"
               >
                 {webhookCopied ? "Copied!" : "Copy"}
               </button>
@@ -295,7 +295,7 @@ export default function SettingsPage() {
             <button
               onClick={handleRotateWebhook}
               disabled={busy}
-              className="text-xs text-danger hover:underline disabled:opacity-50"
+              className="text-xs text-down hover:underline disabled:opacity-50"
             >
               {webhook.webhook_url ? "Rotate URL (invalidates the old one)" : "Rotate: issue a new webhook URL (owner)"}
             </button>

@@ -1,6 +1,6 @@
 export default function EquityCurveChart({ equity }: { equity: number[] }) {
   if (equity.length < 2) {
-    return <div className="text-sm text-muted py-8 text-center">Not enough trades to plot an equity curve.</div>;
+    return <div className="text-sm text-fg-muted py-8 text-center">Not enough trades to plot an equity curve.</div>;
   }
 
   const width = 720;

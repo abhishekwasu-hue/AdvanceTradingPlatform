@@ -50,14 +50,14 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
 
   return (
     <Card title={`Broker accounts (${accounts.length})`}>
-      <p className="text-xs text-muted mb-3">
+      <p className="text-xs text-fg-muted mb-3">
         One account per stored credential; store a second credential for the same broker with a different account label
         to trade two accounts. LIVE deployments route to the account they name, else the broker's default (★).
         Disabling an account stops new LIVE entries to it; exits still run.
       </p>
-      {error && <div className="text-xs text-danger mb-2">{error}</div>}
+      {error && <div className="text-xs text-down mb-2">{error}</div>}
       {accounts.length === 0 ? (
-        <div className="text-sm text-muted">No accounts yet - store broker credentials first.</div>
+        <div className="text-sm text-fg-muted">No accounts yet - store broker credentials first.</div>
       ) : (
         <div className="space-y-1.5">
           {accounts.map((a) => (
@@ -65,42 +65,42 @@ export default function BrokerAccountsCard({ refreshKey = 0 }: { refreshKey?: nu
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {a.is_default && <Star size={12} className="text-warn" />}
-                  <span className="font-semibold text-slate-200 capitalize">{a.display_name ?? `${a.broker_name} ${a.account_label}`}</span>
-                  <span className="text-muted">#{a.id} · {a.broker_name}/{a.account_label}{a.broker_account_identifier ? ` · ${a.broker_account_identifier}` : ""}</span>
-                  <span className={`rounded border px-1.5 py-0.5 font-semibold ${a.status === "ACTIVE" ? "border-accent/40 text-accent" : "border-warn/40 text-warn"}`}>{a.status}</span>
-                  <span className="text-muted">token {a.token_status ?? "?"}</span>
+                  <span className="font-semibold text-fg capitalize">{a.display_name ?? `${a.broker_name} ${a.account_label}`}</span>
+                  <span className="text-fg-muted">#{a.id} · {a.broker_name}/{a.account_label}{a.broker_account_identifier ? ` · ${a.broker_account_identifier}` : ""}</span>
+                  <span className={`rounded border px-1.5 py-0.5 font-semibold ${a.status === "ACTIVE" ? "border-up/40 text-up" : "border-warn/40 text-warn"}`}>{a.status}</span>
+                  <span className="text-fg-muted">token {a.token_status ?? "?"}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={() => act(a.id, () => api.syncAccount(a.id))} disabled={busy === a.id} className="flex items-center gap-1 text-brand hover:underline disabled:opacity-50">
                     <RefreshCw size={11} className={busy === a.id ? "animate-spin" : ""} /> Sync
                   </button>
-                  <button onClick={() => runSmoke(a)} disabled={smokeBusy === a.id} title="Read-only: profile, funds, instruments, an index quote, one option contract through the worker's symbol translation, the option chain, positions, order book. Places nothing." className="text-slate-200 hover:underline disabled:opacity-50">
+                  <button onClick={() => runSmoke(a)} disabled={smokeBusy === a.id} title="Read-only: profile, funds, instruments, an index quote, one option contract through the worker's symbol translation, the option chain, positions, order book. Places nothing." className="text-fg hover:underline disabled:opacity-50">
                     {smokeBusy === a.id ? "Checking…" : "Read-only check"}
                   </button>
-                  {!a.is_default && <button onClick={() => act(a.id, () => api.setDefaultAccount(a.id))} className="text-muted hover:underline">Make default</button>}
-                  <button onClick={() => act(a.id, () => api.setAccountStatus(a.id, a.status !== "ACTIVE"))} className={`${a.status === "ACTIVE" ? "text-warn" : "text-accent"} hover:underline`}>
+                  {!a.is_default && <button onClick={() => act(a.id, () => api.setDefaultAccount(a.id))} className="text-fg-muted hover:underline">Make default</button>}
+                  <button onClick={() => act(a.id, () => api.setAccountStatus(a.id, a.status !== "ACTIVE"))} className={`${a.status === "ACTIVE" ? "text-warn" : "text-up"} hover:underline`}>
                     {a.status === "ACTIVE" ? "Disable" : "Enable"}
                   </button>
                 </div>
               </div>
-              <div className="mt-1 flex flex-wrap gap-4 text-muted">
-                <span>balance <span className="text-slate-200">{money(a.available_balance)}</span></span>
-                <span>margin used <span className="text-slate-200">{money(a.used_margin)}</span></span>
-                <span>realised <span className={a.realized_pnl != null && a.realized_pnl < 0 ? "text-danger" : "text-slate-200"}>{money(a.realized_pnl)}</span></span>
-                <span>unrealised <span className={a.unrealized_pnl != null && a.unrealized_pnl < 0 ? "text-danger" : "text-slate-200"}>{money(a.unrealized_pnl)}</span></span>
+              <div className="mt-1 flex flex-wrap gap-4 text-fg-muted">
+                <span>balance <span className="text-fg">{money(a.available_balance)}</span></span>
+                <span>margin used <span className="text-fg">{money(a.used_margin)}</span></span>
+                <span>realised <span className={a.realized_pnl != null && a.realized_pnl < 0 ? "text-down" : "text-fg"}>{money(a.realized_pnl)}</span></span>
+                <span>unrealised <span className={a.unrealized_pnl != null && a.unrealized_pnl < 0 ? "text-down" : "text-fg"}>{money(a.unrealized_pnl)}</span></span>
                 <span>{a.last_sync_at ? `synced ${new Date(a.last_sync_at).toLocaleString()}` : "never synced"}{a.last_sync_error ? ` · ${a.last_sync_error}` : ""}</span>
               </div>
               {smoke[a.id] && (
-                <div className={`mt-2 rounded border px-2 py-1.5 ${smoke[a.id]!.ok ? "border-accent/40" : "border-danger/40"}`}>
-                  <div className={`font-semibold ${smoke[a.id]!.ok ? "text-accent" : "text-danger"}`}>
+                <div className={`mt-2 rounded border px-2 py-1.5 ${smoke[a.id]!.ok ? "border-up/40" : "border-down/40"}`}>
+                  <div className={`font-semibold ${smoke[a.id]!.ok ? "text-up" : "text-down"}`}>
                     Read-only check {smoke[a.id]!.ok ? "passed" : "failed"} · {smoke[a.id]!.summary} · {new Date(smoke[a.id]!.started_at).toLocaleTimeString()}
                   </div>
                   <ul className="mt-1 space-y-0.5">
                     {smoke[a.id]!.steps.map((st) => (
                       <li key={st.name} className="flex gap-2">
-                        <span className={`w-10 shrink-0 font-semibold ${st.status === "ok" ? "text-accent" : st.status === "fail" ? "text-danger" : "text-muted"}`}>{st.status}</span>
-                        <span className="w-28 shrink-0 text-slate-200">{st.name.replace("_", " ")}</span>
-                        <span className="text-muted">{st.detail}{st.ms ? ` (${st.ms} ms)` : ""}</span>
+                        <span className={`w-10 shrink-0 font-semibold ${st.status === "ok" ? "text-up" : st.status === "fail" ? "text-down" : "text-fg-muted"}`}>{st.status}</span>
+                        <span className="w-28 shrink-0 text-fg">{st.name.replace("_", " ")}</span>
+                        <span className="text-fg-muted">{st.detail}{st.ms ? ` (${st.ms} ms)` : ""}</span>
                       </li>
                     ))}
                   </ul>

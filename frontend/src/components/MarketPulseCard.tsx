@@ -21,9 +21,9 @@ function readSymbols(): string[] {
 function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; candles: OHLCVBar[]; broker?: string; onRemove: () => void }) {
   const live = useLiveLtp(true, symbol, "NSE", broker, 5000);
   return (
-    <div className="relative rounded-xl border border-border bg-panel2 p-3">
-      <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-panel p-0.5 text-muted hover:text-rose-300"><X size={12} /></button>
-      <Suspense fallback={<div className="h-[160px] animate-pulse rounded-lg bg-panel" aria-label={`Loading ${symbol} chart`} />}>
+    <div className="relative rounded-xl border border-border bg-surface-2 p-3">
+      <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-surface-1 p-0.5 text-fg-muted hover:text-down"><X size={12} /></button>
+      <Suspense fallback={<div className="h-[160px] animate-pulse rounded-lg bg-surface-1" aria-label={`Loading ${symbol} chart`} />}>
         <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
                   openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} deployable />
       </Suspense>
@@ -75,9 +75,9 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
   return (
     <Card title="Market pulse · live 5-minute charts">
       {!usable ? (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
           Live index charts need a broker with a valid session today.
-          {onNavigate && <button onClick={() => onNavigate("settings")} className="text-sky-300 hover:underline">Log in under Settings &gt; Brokers</button>}
+          {onNavigate && <button onClick={() => onNavigate("settings")} className="text-fg-muted hover:underline">Log in under Settings &gt; Brokers</button>}
         </div>
       ) : (
         <>
@@ -88,20 +88,20 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
             {symbols.length < 4 && (
               <>
                 <select value="" onChange={(e) => { if (e.target.value) add(e.target.value); }} title="NSE indices and F&O stocks"
-                        className="w-48 rounded bg-panel2 border border-border px-2 py-1 text-slate-200">
+                        className="w-48 rounded bg-surface-2 border border-border px-2 py-1 text-fg">
                   <option value="">Pick index / F&amp;O stock…</option>
                   <optgroup label="Indices">{FNO_INDICES.filter((x) => !symbols.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>
                   <optgroup label="F&O stocks">{FNO_STOCKS.filter((x) => !symbols.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}</optgroup>
                 </select>
                 <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} list="fno-symbols"
                        placeholder="…or type to search (any broker symbol)"
-                       className="w-56 rounded bg-panel2 border border-border px-2 py-1 text-slate-200" />
+                       className="w-56 rounded bg-surface-2 border border-border px-2 py-1 text-fg" />
                 <datalist id="fno-symbols">{[...FNO_INDICES, ...FNO_STOCKS].map((x) => <option key={x} value={x} />)}</datalist>
-                <button onClick={() => add()} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-slate-200 hover:bg-panel2"><Plus size={12} /> Add</button>
+                <button onClick={() => add()} className="flex items-center gap-1 rounded border border-border px-2 py-1 text-fg hover:bg-surface-2"><Plus size={12} /> Add</button>
               </>
             )}
-            {error && <span className="text-rose-300">{error}</span>}
-            <span className="ml-auto text-muted">candles via {source.broker} · last price every 5 s</span>
+            {error && <span className="text-down">{error}</span>}
+            <span className="ml-auto text-fg-muted">candles via {source.broker} · last price every 5 s</span>
           </div>
         </>
       )}

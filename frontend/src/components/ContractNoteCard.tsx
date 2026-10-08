@@ -44,7 +44,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
 
   return (
     <Card title="Contract notes (actual charges)">
-      <p className="text-xs text-muted mb-3">
+      <p className="text-xs text-fg-muted mb-3">
         Charges and P&amp;L on a closed trade are the platform's estimate until you upload your broker's contract note or
         tradebook CSV for that day. Legs are matched to trades by broker order id first, then by symbol, side, quantity
         and date; matched trades get the broker's actual charges and a recomputed P&amp;L. Column names from Zerodha,
@@ -52,22 +52,22 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
         exchange charges, GST, SEBI fee, stamp duty or a total). Preview before applying.
       </p>
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <input ref={fileRef} type="file" accept=".csv,text/csv" className="text-xs text-slate-300" disabled={busy} onChange={() => setPreview(null)} />
-        <input className="rounded bg-panel2 border border-border px-2 py-1 text-sm w-32" placeholder="Broker (optional)" value={broker} onChange={(e) => setBroker(e.target.value)} />
-        <button disabled={busy} onClick={() => run(false)} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1 disabled:opacity-50">Preview</button>
-        <button disabled={busy || !preview} onClick={() => run(true)} className="inline-flex items-center gap-1 rounded bg-brand/20 border border-brand/40 hover:bg-brand/30 text-slate-100 px-3 py-1 disabled:opacity-50">
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="text-xs text-fg-muted" disabled={busy} onChange={() => setPreview(null)} />
+        <input className="rounded bg-surface-2 border border-border px-2 py-1 text-sm w-32" placeholder="Broker (optional)" value={broker} onChange={(e) => setBroker(e.target.value)} />
+        <button disabled={busy} onClick={() => run(false)} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 disabled:opacity-50">Preview</button>
+        <button disabled={busy || !preview} onClick={() => run(true)} className="inline-flex items-center gap-1 rounded bg-brand/20 border border-brand/40 hover:bg-brand/30 text-fg px-3 py-1 disabled:opacity-50">
           <FileUp className="w-3 h-3" /> Apply
         </button>
       </div>
-      {error && <div className="mt-2 text-xs text-danger">{error}</div>}
-      {message && <div className="mt-2 text-xs text-accent">{message}</div>}
+      {error && <div className="mt-2 text-xs text-down">{error}</div>}
+      {message && <div className="mt-2 text-xs text-up">{message}</div>}
       {preview && (
         <div className="mt-3 text-xs space-y-2">
-          <div className="text-slate-200 font-semibold">Preview: {preview.matched}/{preview.lines} legs matched, {preview.trades_updated.length} trade(s) would change; total charges {preview.total_charges.toFixed(2)}</div>
+          <div className="text-fg font-semibold">Preview: {preview.matched}/{preview.lines} legs matched, {preview.trades_updated.length} trade(s) would change; total charges {preview.total_charges.toFixed(2)}</div>
           {preview.warnings.map((w) => <div key={w} className="text-warn">{w}</div>)}
           {preview.trades_updated.length > 0 && (
             <table className="w-full text-xs">
-              <thead className="text-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Trade</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Legs</th><th className="py-1 pr-3">Charges est. → actual</th><th className="py-1 pr-3">P&amp;L est. → actual</th></tr></thead>
+              <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Trade</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Legs</th><th className="py-1 pr-3">Charges est. → actual</th><th className="py-1 pr-3">P&amp;L est. → actual</th></tr></thead>
               <tbody>
                 {preview.trades_updated.map((u) => (
                   <tr key={u.trade_id} className="border-t border-border">
@@ -80,16 +80,16 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
             </table>
           )}
           {preview.unmatched.length > 0 && (
-            <details><summary className="cursor-pointer text-muted">{preview.unmatched.length} unmatched leg(s)</summary>
-              <ul className="mt-1 text-muted list-disc pl-4">{preview.unmatched.map((l) => <li key={l.row}>row {l.row}: {l.side} {l.quantity} {l.symbol} @ {l.price}{l.order_id ? ` (order ${l.order_id})` : ""}{l.date ? ` on ${l.date}` : ""}</li>)}</ul>
+            <details><summary className="cursor-pointer text-fg-muted">{preview.unmatched.length} unmatched leg(s)</summary>
+              <ul className="mt-1 text-fg-muted list-disc pl-4">{preview.unmatched.map((l) => <li key={l.row}>row {l.row}: {l.side} {l.quantity} {l.symbol} @ {l.price}{l.order_id ? ` (order ${l.order_id})` : ""}{l.date ? ` on ${l.date}` : ""}</li>)}</ul>
             </details>
           )}
         </div>
       )}
       {notes.length > 0 && (
         <div className="mt-3">
-          <div className="text-[10px] uppercase tracking-wide text-muted mb-1">Uploaded</div>
-          <ul className="text-xs text-slate-300 space-y-0.5">
+          <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">Uploaded</div>
+          <ul className="text-xs text-fg-muted space-y-0.5">
             {notes.slice(0, 8).map((n) => (
               <li key={n.id}>{n.note_date ?? "?"} · {n.filename}{n.broker_name ? ` (${n.broker_name})` : ""} · {n.matched_lines}/{n.line_count} legs matched · {n.trades_updated} trade(s) · charges {n.total_charges.toFixed(2)}</li>
             ))}

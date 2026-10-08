@@ -78,20 +78,20 @@ export default function AccountPage() {
               {user.email[0]?.toUpperCase()}
             </div>
             <div>
-              <div className="text-xs text-muted">Signed in as</div>
-              <div className="text-sm font-medium text-slate-100">{user.email}</div>
+              <div className="text-xs text-fg-muted">Signed in as</div>
+              <div className="text-sm font-medium text-fg">{user.email}</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={logout}
-              className="flex items-center gap-2 rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm transition-colors"
+              className="flex items-center gap-2 rounded border border-border hover:bg-surface-2 text-fg px-4 py-1.5 text-sm transition-colors"
             >
               <LogOut size={14} /> Log out
             </button>
             <button
               onClick={() => api.logoutEverywhere().catch(() => {}).finally(logout)}
-              className="rounded border border-danger/40 hover:bg-danger/10 text-danger px-4 py-1.5 text-sm transition-colors"
+              className="rounded border border-down/40 hover:bg-down/10 text-down px-4 py-1.5 text-sm transition-colors"
               title="Ends every session of your account on every device"
             >
               Log out everywhere
@@ -100,26 +100,26 @@ export default function AccountPage() {
         </Card>
         <Card title="Email verification">
           {user.email_verified ? (
-            <div className="text-xs text-accent flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
+            <div className="text-xs text-up flex items-center gap-2"><ShieldCheck size={14} /> {user.email} is verified.</div>
           ) : (
             <div className="space-y-2 text-xs">
-              <p className="text-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
+              <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
               <button
-                className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5"
+                className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
                 onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "No platform mailer is configured - ask the operator to verify your address or configure PLATFORM_SMTP_*.")).catch((e) => setVerifyMessage(String(e)))}
               >
                 Resend verification email
               </button>
             </div>
           )}
-          {verifyMessage && <div className="mt-2 text-xs text-slate-300">{verifyMessage}</div>}
+          {verifyMessage && <div className="mt-2 text-xs text-fg-muted">{verifyMessage}</div>}
         </Card>
         {user.scopes && user.scopes.length > 0 && (
           <Card title="Your permissions">
             <div className="flex flex-wrap gap-1.5">
-              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-panel2 px-2 py-0.5 text-[11px] font-mono text-slate-300">{s}</span>)}
+              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-mono text-fg-muted">{s}</span>)}
             </div>
-            <p className="mt-2 text-[11px] text-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
+            <p className="mt-2 text-[11px] text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
           </Card>
         )}
         <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
@@ -141,34 +141,34 @@ export default function AccountPage() {
               }
             }}
           >
-            <input type="password" required autoComplete="current-password" placeholder="Current password" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
-            <input type="password" required minLength={10} autoComplete="new-password" placeholder="New password (10+ characters, not too common)" className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={pwNew} onChange={(e) => setPwNew(e.target.value)} />
+            <input type="password" required autoComplete="current-password" placeholder="Current password" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
+            <input type="password" required minLength={10} autoComplete="new-password" placeholder="New password (10+ characters, not too common)" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={pwNew} onChange={(e) => setPwNew(e.target.value)} />
             <div className="flex items-center gap-3">
-              <button type="submit" className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm">Change password</button>
-              {pwMessage && <span className={`text-xs ${pwMessage.startsWith("Password changed") ? "text-accent" : "text-danger"}`}>{pwMessage}</span>}
+              <button type="submit" className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm">Change password</button>
+              {pwMessage && <span className={`text-xs ${pwMessage.startsWith("Password changed") ? "text-up" : "text-down"}`}>{pwMessage}</span>}
             </div>
           </form>
         </Card>
         <Card title={`Active sessions (${sessions.length})`}>
           {sessions.length === 0 ? (
-            <div className="text-xs text-muted">No session data.</div>
+            <div className="text-xs text-fg-muted">No session data.</div>
           ) : (
             <table className="w-full text-xs">
               <tbody>
                 {sessions.map((s) => (
                   <tr key={s.id} className="border-t border-border">
-                    <td className="py-1.5 pr-3 text-slate-200">{s.current ? "This device" : "Other device"}</td>
-                    <td className="py-1.5 pr-3 text-muted">{s.ip_address ?? "-"}</td>
-                    <td className="py-1.5 pr-3 text-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
-                    <td className="py-1.5 pr-3 text-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
-                    <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-danger hover:underline">revoke</button>}</td>
+                    <td className="py-1.5 pr-3 text-fg">{s.current ? "This device" : "Other device"}</td>
+                    <td className="py-1.5 pr-3 text-fg-muted">{s.ip_address ?? "-"}</td>
+                    <td className="py-1.5 pr-3 text-fg-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
+                    <td className="py-1.5 pr-3 text-fg-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
+                    <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">revoke</button>}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </Card>
-        <p className="text-xs text-muted leading-relaxed">
+        <p className="text-xs text-fg-muted leading-relaxed">
           Broker credentials and paper trades are tied to this account. Anonymous use of Signals
           and Backtesting still works without logging in - signing in additionally saves your
           paper-execute fills to the Positions tab.
@@ -212,10 +212,10 @@ export default function AccountPage() {
       <div className="flex flex-col items-center text-center gap-3 pt-4">
         <LogoMark size={44} />
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">
+          <h1 className="text-lg font-semibold text-fg">
             {mode === "login" ? "Welcome back" : mode === "mfa" ? "Two-factor check" : mode === "invite" ? "Join your team" : mode === "forgot" ? "Forgot your password?" : mode === "reset" ? "Choose a new password" : "Create your account"}
           </h1>
-          <p className="text-xs text-muted mt-0.5">
+          <p className="text-xs text-fg-muted mt-0.5">
             {mode === "login"
               ? "Log in to your trading console"
               : mode === "mfa"
@@ -240,11 +240,11 @@ export default function AccountPage() {
         <form onSubmit={handleSubmit} className="space-y-3">
           {mode === "mfa" && (
             <div>
-              <label className="block text-xs text-muted mb-1">Authenticator code</label>
+              <label className="block text-xs text-fg-muted mb-1">Authenticator code</label>
               <input
                 autoFocus
                 required
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-1 focus:ring-brand"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono tracking-widest focus:outline-none focus:ring-1 focus:ring-brand"
                 value={mfaCode}
                 onChange={(e) => setMfaCode(e.target.value)}
                 placeholder="123 456"
@@ -253,42 +253,42 @@ export default function AccountPage() {
           )}
           {mode !== "reset" && mode !== "mfa" && (
           <div>
-            <label className="block text-xs text-muted mb-1">Email</label>
+            <label className="block text-xs text-fg-muted mb-1">Email</label>
             <div className="relative">
-              <Mail size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <Mail size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
               <input
                 type="email"
                 required
                 readOnly={mode === "invite"}
-                className="w-full rounded bg-panel2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors read-only:text-muted"
+                className="w-full rounded bg-surface-2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors read-only:text-fg-muted"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
           </div>
           )}
-          {notice && <div className="text-xs text-accent">{notice}</div>}
+          {notice && <div className="text-xs text-up">{notice}</div>}
           {mode !== "forgot" && mode !== "mfa" && (
           <div>
-            <label className="block text-xs text-muted mb-1">{mode === "reset" ? "New password" : "Password"}</label>
+            <label className="block text-xs text-fg-muted mb-1">{mode === "reset" ? "New password" : "Password"}</label>
             <div className="relative">
-              <Lock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <Lock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
               <input
                 type="password"
                 required
                 minLength={mode === "login" ? 1 : 10}
-                className="w-full rounded bg-panel2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
+                className="w-full rounded bg-surface-2 border border-border pl-8 pr-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
           </div>
           )}
-          {error && <div className="text-xs text-danger">{error}</div>}
+          {error && <div className="text-xs text-down">{error}</div>}
           <button
             type="submit"
             disabled={loading || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
-            className="w-full rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
+            className="w-full rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
           >
             {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
           </button>
@@ -301,7 +301,7 @@ export default function AccountPage() {
             {mode === "login" ? "Need an account? Register" : "Already have an account? Log in"}
           </button>
           {mode === "login" && (
-            <button onClick={() => { setNotice(null); setMode("forgot"); }} className="text-xs text-muted hover:text-slate-200 hover:underline">
+            <button onClick={() => { setNotice(null); setMode("forgot"); }} className="text-xs text-fg-muted hover:text-fg hover:underline">
               Forgot password?
             </button>
           )}

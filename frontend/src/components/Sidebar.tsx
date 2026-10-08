@@ -141,14 +141,14 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
     {open && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
     {/* Closed on a phone it is also `invisible`, so its links leave the tab order; from md up it is always visible. */}
     <aside id="app-navigation" aria-label="Navigation"
-           className={`fixed inset-y-0 left-0 z-40 w-60 shrink-0 transform border-r border-border bg-panel flex flex-col transition-transform md:visible md:static md:translate-x-0 ${open ? "visible translate-x-0" : "invisible -translate-x-full"}`}>
+           className={`fixed inset-y-0 left-0 z-40 w-60 shrink-0 transform border-r border-border bg-surface-1 flex flex-col transition-transform md:visible md:static md:translate-x-0 ${open ? "visible translate-x-0" : "invisible -translate-x-full"}`}>
       <div className="px-4 py-4 border-b border-border">
         <Logo />
       </div>
       <nav className="flex-1 overflow-y-auto py-3 space-y-4">
         {[...NAV_GROUPS, ...(user?.role === "SUPER_ADMIN" ? [ADMIN_GROUP] : [])].map((group) => (
           <div key={group.title}>
-            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">
+            <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
               {group.title}
             </div>
             {group.items.map((item) => {
@@ -185,12 +185,12 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
         }`}
       >
         <div className="flex items-center gap-2">
-          <UserCircle2 size={18} className={user ? "text-accent" : "text-muted"} />
+          <UserCircle2 size={18} className={user ? "text-up" : "text-fg-muted"} />
           <span className="truncate">{loading ? "…" : user ? user.email : "Not signed in - click to log in"}</span>
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
           {user && (
-            <span className="inline-flex items-center rounded-full bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+            <span className="inline-flex items-center rounded-full bg-surface-2 border border-border px-2 py-0.5 text-[10px] font-medium text-fg">
               {user.role.replace("_", " ")}
             </span>
           )}

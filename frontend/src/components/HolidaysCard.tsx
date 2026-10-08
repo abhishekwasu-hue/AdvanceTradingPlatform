@@ -49,39 +49,39 @@ export default function HolidaysCard() {
   return (
     <Card title="Exchange holidays">
       <div className="flex flex-wrap items-center gap-3 text-xs mb-3">
-        <CalendarOff size={14} className="text-muted" />
-        <span className="text-muted">Closed days the worker stays idle on. Shared across every organisation.</span>
-        <select value={exchange} onChange={(e) => setExchange(e.target.value)} className="rounded bg-panel2 border border-border px-2 py-0.5 text-xs text-slate-200">
+        <CalendarOff size={14} className="text-fg-muted" />
+        <span className="text-fg-muted">Closed days the worker stays idle on. Shared across every organisation.</span>
+        <select value={exchange} onChange={(e) => setExchange(e.target.value)} className="rounded bg-surface-2 border border-border px-2 py-0.5 text-xs text-fg">
           {["NSE", "BSE", "MCX"].map((x) => <option key={x}>{x}</option>)}
         </select>
-        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded bg-panel2 border border-border px-2 py-0.5 text-xs text-slate-200">
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="rounded bg-surface-2 border border-border px-2 py-0.5 text-xs text-fg">
           {[year - 1, year, year + 1, year + 2].filter((v, i, a) => a.indexOf(v) === i).sort().map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
-        <span className="text-muted ml-auto">{rows.length} holiday{rows.length === 1 ? "" : "s"}</span>
+        <span className="text-fg-muted ml-auto">{rows.length} holiday{rows.length === 1 ? "" : "s"}</span>
       </div>
-      {error && <div className="text-xs text-danger mb-2">{error}</div>}
-      {message && <div className="text-xs text-emerald-400 mb-2">{message}</div>}
+      {error && <div className="text-xs text-down mb-2">{error}</div>}
+      {message && <div className="text-xs text-up mb-2">{message}</div>}
       {rows.length === 0 ? (
-        <div className="text-xs text-amber-300 mb-3">No {exchange} holidays recorded for {year}. Without them the worker treats every weekday as a trading day.</div>
+        <div className="text-xs text-warn mb-3">No {exchange} holidays recorded for {year}. Without them the worker treats every weekday as a trading day.</div>
       ) : (
         <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-1 text-xs mb-3">
           {rows.map((r) => (
             <li key={r.id} className="flex items-center justify-between rounded border border-border/60 px-2 py-1">
-              <span><span className="text-slate-200 font-semibold">{r.holiday_date}</span> <span className="text-muted">{r.description}</span></span>
-              {isAdmin && <button disabled={busy} onClick={() => remove(r)} title="Remove" className="text-muted hover:text-danger disabled:opacity-50"><Trash2 size={12} /></button>}
+              <span><span className="text-fg font-semibold">{r.holiday_date}</span> <span className="text-fg-muted">{r.description}</span></span>
+              {isAdmin && <button disabled={busy} onClick={() => remove(r)} title="Remove" className="text-fg-muted hover:text-down disabled:opacity-50"><Trash2 size={12} /></button>}
             </li>
           ))}
         </ul>
       )}
       {isAdmin ? (
         <div>
-          <label className="block text-[11px] text-muted mb-1">Add holidays, one per line as <code>YYYY-MM-DD description</code> (paste the NSE annual circular)</label>
+          <label className="block text-[11px] text-fg-muted mb-1">Add holidays, one per line as <code>YYYY-MM-DD description</code> (paste the NSE annual circular)</label>
           <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={3} placeholder={`${year}-10-20 Diwali Laxmi Pujan\n${year}-11-05 Guru Nanak Jayanti`}
-            className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono" />
-          <button disabled={busy || !bulk.trim()} onClick={addBulk} className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 text-xs disabled:opacity-50">Add to {exchange} {year}</button>
+            className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-xs font-mono" />
+          <button disabled={busy || !bulk.trim()} onClick={addBulk} className="mt-2 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Add to {exchange} {year}</button>
         </div>
       ) : (
-        <div className="text-[11px] text-muted">Only a platform administrator can change this list.</div>
+        <div className="text-[11px] text-fg-muted">Only a platform administrator can change this list.</div>
       )}
     </Card>
   );

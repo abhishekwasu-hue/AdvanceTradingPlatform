@@ -308,8 +308,9 @@ export default function IdeaBuilderTab() {
       {plan && (() => {
         const shown = plan.options ? plan.options.find((o) => o.option?.id === selected) : plan;
         if (!shown) return <p className="text-sm text-fg-muted">{t("idea.openTemplate")}<Secondary lang={lang}>{line("openTemplate")}</Secondary></p>;
-        return <ChosenTemplate plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined} lang={lang} line={line} sv={sv}
-                               onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onAskAi={(prompt) => navigate(copilotPath("strategy-lab"), { state: { prompt } })} />;
+        // keyed by the template: the risk acceptance of one template never carries over to another
+        return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined} lang={lang} line={line} sv={sv}
+                               onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onDraft={(draftId) => navigate(copilotPath("strategy-lab"), { state: { draftId } })} />;
       })()}
     </div>
   );
@@ -340,7 +341,7 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, 
           const rules = o.sections.find((s) => s.id === "strategy");
           return (
             <StaggerItem key={meta.id}>
-              <TiltCard as="article" className={`flex h-full flex-col gap-2 ${isSel ? "ring-2 ring-ai" : ""}`} data-testid="strategy-card">
+              <TiltCard as="article" tilt={false} className={`flex h-full flex-col gap-2 ${isSel ? "ring-2 ring-ai" : ""}`} data-testid="strategy-card">
                 <h3 className="text-base font-semibold text-fg">{meta.label}<Secondary lang={lang}>{sv(meta.label_mr)}</Secondary></h3>
                 <p className="text-xs text-fg-muted">{meta.summary}<Secondary lang={lang}>{sv(meta.summary_mr)}</Secondary></p>
                 {meta.headline && (
@@ -394,9 +395,9 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, 
   );
 }
 
-function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError, onAskAi }: {
+function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError, onDraft }: {
   plan: InterviewPlan; sample: boolean; broker?: string; lang: string | null; line: Line; sv: (mr?: string | null) => string | null;
-  onDone: (m: string) => void; onError: (e: unknown) => void; onAskAi: (prompt: string) => void;
+  onDone: (m: string) => void; onError: (e: unknown) => void; onDraft: (draftId: number) => void;
 }) {
   const t = useCopilotT();
   const symbol = String(plan.answers.symbol ?? "NIFTY 50");
@@ -441,7 +442,12 @@ function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError,
         <Button size="sm" variant="ghost" icon={<CandlestickChart size={13} />} onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")}>
           <span className="text-left leading-tight">{t("idea.openChart")}<Secondary lang={lang}>{line("openChart")}</Secondary></span>
         </Button>
-        <Button size="sm" variant="ghost" icon={<Sparkles size={13} />} onClick={() => onAskAi(plan.ai_prompt)}>
+        {/* the AI writes a draft from this template's prompt, today's regime and the interview's symbol; it opens in Strategy Lab for review */}
+        <Button size="sm" variant="ghost" icon={<Sparkles size={13} />} disabled={busy} onClick={() => void act(async () => {
+          const d = await api.aiGenerate(plan.ai_prompt, { language: "en", regime: plan.market.regime.kind, symbol });
+          onDraft(d.id);
+          return t("idea.draftReady", { id: d.id });
+        })}>
           <span className="text-left leading-tight">{t("idea.askAi")}<Secondary lang={lang}>{line("askAi")}</Secondary></span>
         </Button>
       </div>

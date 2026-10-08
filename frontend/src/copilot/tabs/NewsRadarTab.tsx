@@ -1,5 +1,5 @@
 import { ExternalLink, Radar, RefreshCw, Search, ThumbsDown, ThumbsUp, Waves } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../../api/client";
 import { Badge, Button, EmptyState, fieldClass, Select, type Tone } from "../../components/primitives";
@@ -37,18 +37,22 @@ export default function NewsRadarTab() {
   const [trust, setTrust] = useState<NewsTrust | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const latest = useRef(0);
   async function load() {
+    const id = ++latest.current;               // a slower, older answer never overwrites a newer filter's
     setBusy(true); setError(null);
     try {
       const st = await api.newsFeedStatus();
+      if (id !== latest.current) return;
       if (!st.enabled) { setOff(true); setItems([]); return; }
       setOff(false);
       const list = await api.newsFeedItems(Number(hours), Number(minSeverity));
+      if (id !== latest.current) return;
       setItems(list);
       markNewsSeen(list);
       api.newsFeedbackMine(list.map((i) => i.id)).then((r) => setVerdicts(r.verdicts)).catch(() => undefined);
       api.newsFeedbackSummary().then((r) => setTrust(r.trust)).catch(() => setTrust(null));
-    } catch (e) { setError(friendlyError(e, t)); setItems([]); } finally { setBusy(false); }
+    } catch (e) { if (id === latest.current) { setError(friendlyError(e, t)); setItems([]); } } finally { if (id === latest.current) setBusy(false); }
   }
   useEffect(() => { void load(); }, [hours, minSeverity]); // eslint-disable-line react-hooks/exhaustive-deps
 

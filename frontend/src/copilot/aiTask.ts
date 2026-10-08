@@ -61,12 +61,17 @@ export function useAiTask(t: (key: string) => string, timeoutMs = DEFAULT_TIMEOU
     stepTimer.current = window.setInterval(() => setState((s) => (s.phase === "running" && s.step < steps.length - 1 ? { ...s, step: s.step + 1 } : s)), 2500);
     let timedOut = false;
     timer.current = window.setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+    // A step that does not listen to the signal (a candle fetch) must not keep the task "running" past a Cancel or
+    // the timeout: the abort wins the race.
+    const aborted = new Promise<never>((_, reject) => ctl.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
     try {
-      const out = await fn(ctl.signal, advance);
+      const out = await Promise.race([fn(ctl.signal, advance), aborted]);
+      if (controller.current !== ctl) return undefined;           // a newer run replaced this one: it owns the state
       if (ctl.signal.aborted) throw timedOut ? new TimeoutError() : new DOMException("Aborted", "AbortError");
       setState((s) => ({ ...s, phase: "done", error: null }));
       return out;
     } catch (e) {
+      if (controller.current !== ctl) return undefined;
       const err = timedOut ? new TimeoutError() : e;
       const cancelled = !timedOut && ctl.signal.aborted;
       setState((s) => ({ ...s, phase: cancelled ? "cancelled" : "error", error: cancelled ? null : friendlyError(err, t) }));

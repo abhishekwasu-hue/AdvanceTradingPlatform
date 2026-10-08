@@ -31,11 +31,12 @@ export default function AICore({ tone, variant = "orb", className }: { tone: Cor
   const [, , theme] = useAppearance();
   const idle = useIdle();
   const [gl] = useState(webglAvailable);
+  const [failed, setFailed] = useState(false);
   const fallback = <AICoreFallback tone={tone} className={className} />;
-  if (reduced || !gl || !idle) return fallback;
+  if (reduced || !gl || !idle || failed) return fallback;
   return (
     <Suspense fallback={fallback}>
-      <AICore3D tone={tone} variant={variant} lowPower={isPhone()} light={theme === "light"} className={className} />
+      <AICore3D tone={tone} variant={variant} lowPower={isPhone()} light={theme === "light"} className={className} onFail={() => setFailed(true)} />
     </Suspense>
   );
 }

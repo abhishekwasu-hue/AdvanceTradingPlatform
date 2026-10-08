@@ -20,16 +20,20 @@ export function copilotPath(tab: CopilotTab): string {
   return `/copilot/${tab}`;
 }
 
-/** /ai-copilot/<old slug> -> /copilot/<tab> (an unknown or missing slug opens the default tab). */
-export function legacyCopilotPath(slug: string | undefined): string {
-  return copilotPath((slug && LEGACY_TAB[slug]) || (isCopilotTab(slug) ? slug : DEFAULT_TAB));
+/** The old page remembered its last tab by id (localStorage atp_copilot_tab). */
+const LEGACY_STORED: Record<string, CopilotTab> = { strategist: "strategy-lab", today: "market-pulse", strategy: "idea-builder", advanced: "watchtower" };
+
+/** /ai-copilot/<old slug> -> /copilot/<tab>. A bare /ai-copilot opens the tab the old page last showed (`stored`, its
+ * remembered id), else the default tab. */
+export function legacyCopilotPath(slug: string | undefined, stored?: string | null): string {
+  return copilotPath((slug && LEGACY_TAB[slug]) || (isCopilotTab(slug) ? slug : (stored && LEGACY_STORED[stored]) || DEFAULT_TAB));
 }
 
 /** The server's Copilot router names a tab in its answer ("interview", "coach", ...): the tab that shows it. */
 export function tabForAction(action: string): CopilotTab {
   const map: Record<string, CopilotTab> = {
     interview: "idea-builder", strategy: "idea-builder", coach: "coach", deployments: "market-pulse", brief: "market-pulse",
-    today: "market-pulse", guide: "ask", strategist: "strategy-lab", study: "strategy-lab", news: "news-radar", actions: "watchtower",
+    today: "market-pulse", strategist: "strategy-lab", study: "strategy-lab", news: "news-radar", actions: "watchtower",
   };
   return map[action] ?? (isCopilotTab(action) ? action : DEFAULT_TAB);
 }

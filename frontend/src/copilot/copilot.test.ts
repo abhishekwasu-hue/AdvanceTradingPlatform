@@ -38,13 +38,14 @@ describe("tabs and addresses", () => {
     expect(legacyCopilotPath("advanced")).toBe("/copilot/watchtower");
     expect(legacyCopilotPath(undefined)).toBe("/copilot/market-pulse");
     expect(legacyCopilotPath("coach")).toBe("/copilot/coach");
+    expect(legacyCopilotPath(undefined, "strategy")).toBe("/copilot/idea-builder");   // the old page's last tab
+    expect(legacyCopilotPath(undefined, "nonsense")).toBe("/copilot/market-pulse");
   });
 
   it("opens the tab the server's router names in an answer", () => {
     expect(tabForAction("strategy")).toBe("idea-builder");
     expect(tabForAction("today")).toBe("market-pulse");
     expect(tabForAction("coach")).toBe("coach");
-    expect(tabForAction("guide")).toBe("ask");
     expect(tabForAction("anything-else")).toBe("market-pulse");
   });
 });

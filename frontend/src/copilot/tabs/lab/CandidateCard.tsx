@@ -56,7 +56,7 @@ export default function CandidateCard({ c, symbol, sample }: { c: StrategyCandid
 
   const sides = (["long", "short"] as const).filter((s) => c.rules[s].length > 0);
   return (
-    <TiltCard as="article" className="space-y-3" data-testid="strategy-card">
+    <TiltCard as="article" tilt={false} className="space-y-3" data-testid="strategy-card">
       <header className="flex flex-wrap items-center gap-2">
         <h3 className="text-base font-semibold text-fg">{c.name}</h3>
         <Badge tone="neutral">{c.direction_text ?? t(`lab.direction.${c.direction}`)}</Badge>

@@ -16,7 +16,9 @@ const ChartWindow = lazy(() => import("./pages/ChartWindow"));
 /** The old Copilot addresses (/ai-copilot/study, /today, ...) open the redesigned tab that now holds that content. */
 function LegacyCopilot() {
   const { tab } = useParams<{ tab?: string }>();
-  return <Navigate to={legacyCopilotPath(tab)} replace />;
+  let stored: string | null = null;
+  try { stored = localStorage.getItem("atp_copilot_tab"); } catch { /* storage unavailable */ }
+  return <Navigate to={legacyCopilotPath(tab, stored)} replace />;
 }
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
@@ -146,9 +148,10 @@ function AppShell() {
       <Sidebar page={page} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar page={page} onMenu={() => setMenuOpen(true)} />
-        {/* The window scrolls, not <main>: overflow-x-clip keeps wide content inside without making <main> a scroll
-            container, so `position: sticky` (the Copilot's tab bar) sticks to the viewport. */}
-        <main ref={mainRef} tabIndex={-1} className="flex-1 overflow-x-clip p-3 md:p-6 max-w-6xl outline-none">
+        {/* The window scrolls, not <main>. Other pages keep overflow-y-auto (wide tables without their own wrapper
+            scroll inside <main>); the Copilot uses overflow-x-clip, which is not a scroll container, so its sticky tab
+            bar sticks to the viewport (its own wide content scrolls in its own wrappers). */}
+        <main ref={mainRef} tabIndex={-1} className={`flex-1 ${page === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} p-3 md:p-6 max-w-6xl outline-none`}>
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>

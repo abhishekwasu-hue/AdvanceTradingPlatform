@@ -1,5 +1,5 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Eye, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../../../api/client";
 import { Badge, Button, fieldClass } from "../../../components/primitives";
 import type { MarketThesis, ThesisHistory } from "../../../types";
@@ -30,15 +30,22 @@ export default function ThesisPanel() {
   const [error, setError] = useState<string | null>(null);
   const [off, setOff] = useState(false);
 
+  const latest = useRef(0);
   async function load(refresh = false) {
+    const id = ++latest.current;               // switching symbols quickly: only the newest answer is shown
     setBusy(true); setError(null);
     try {
-      setThesis(await api.aiThesis(symbol, "en", refresh)); setOff(false);
-      setHistory(await api.aiThesisHistory(symbol));
+      const th = await api.aiThesis(symbol, "en", refresh);
+      if (id !== latest.current) return;
+      setThesis(th); setOff(false);
+      const hist = await api.aiThesisHistory(symbol);
+      if (id !== latest.current) return;
+      setHistory(hist);
     } catch (e) {
+      if (id !== latest.current) return;
       if (e instanceof ApiError && e.status === 503 && e.body.includes("market_thesis")) { setOff(true); setThesis(null); }
       else { setError(friendlyError(e, t)); setThesis(null); }
-    } finally { setBusy(false); }
+    } finally { if (id === latest.current) setBusy(false); }
   }
   useEffect(() => { void load(); }, [symbol]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {

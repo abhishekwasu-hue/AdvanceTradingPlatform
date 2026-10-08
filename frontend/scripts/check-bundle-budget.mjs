@@ -98,8 +98,13 @@ for (const [f, size] of route) console.log(`${(size / 1024).toFixed(1).padStart(
 for (const [f, size] of core) console.log(`${(size / 1024).toFixed(1).padStart(8)} KB gzip  copilot 3D     ${f}`);
 console.log(`Copilot route JS: ${routeKb.toFixed(1)} KB gzip (budget ${COPILOT_BUDGET_KB} KB; plus the shared shell ${totalKb.toFixed(1)} KB = ${(routeKb + totalKb).toFixed(1)} KB on a first visit).`);
 console.log(`Copilot 3D chunk: ${coreKb.toFixed(1)} KB gzip (budget ${CORE3D_BUDGET_KB} KB, loaded when the browser is idle).`);
-if ([...route.keys()].some((f) => core.has(f)) || [...route.keys()].some((f) => /AICore3D/.test(f))) {
-  console.error("The 3D scene is in the Copilot's first download - it must stay a lazily loaded chunk.");
+// The 3D scene's own chunk and the three.js code it imports (whatever chunk Rollup puts it in) must not be part of the
+// route's download - checked against the scene's full import list, not the shell-less measurement above.
+const coreFiles = [...closure(coreKey, new Set())].map((k) => manifest[k].file);
+const heavy = coreFiles.filter((f) => f === manifest[coreKey].file || /three/i.test(f));
+const leaked = [...route.keys()].filter((f) => heavy.includes(f));
+if (leaked.length) {
+  console.error(`The 3D scene is in the Copilot's first download (${leaked.join(", ")}) - it must stay a lazily loaded chunk.`);
   process.exit(1);
 }
 if (routeKb > COPILOT_BUDGET_KB) {

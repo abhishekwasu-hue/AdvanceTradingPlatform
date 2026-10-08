@@ -44,6 +44,14 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
 
   const refresh = () => { api.aiDrafts().then(setDrafts).catch((e) => setError(friendlyError(e, t))); };
   useEffect(refresh, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // A prompt or a draft handed over by another tab is used once, then dropped from the history entry (a reload does
+  // not bring it back).
+  useEffect(() => {
+    const handed = location.state as { prompt?: string; draftId?: number } | null;
+    if (!handed) return;
+    if (handed.draftId) api.aiDraft(handed.draftId).then(setSelected).catch((e) => setError(friendlyError(e, t)));
+    navigate(".", { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate() {
     setMessage(null);

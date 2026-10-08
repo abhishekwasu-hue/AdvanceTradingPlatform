@@ -2,6 +2,7 @@ import { ArrowRight, Bot, Send, ShieldAlert, Square, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/client";
+import { pathFor } from "../../routes";
 import { Badge, Button, fieldClass } from "../../components/primitives";
 import { useReducedMotion } from "../../theme";
 import type { CopilotReply } from "../../types";
@@ -48,6 +49,9 @@ export default function AskCopilotTab() {
   const bottom = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const revealing = turns.some((x) => x.role === "ai" && x.shown < x.text.length);
+  // Screen readers hear each answer once, whole - not every word of the progressive reveal.
+  const lastAi = [...turns].reverse().find((x) => x.role === "ai");
+  const announce = lastAi && lastAi.shown >= lastAi.text.length ? lastAi.text : "";
 
   useEffect(() => { bottom.current?.scrollIntoView?.({ block: "nearest" }); }, [turns.length, task.state.phase]);
 
@@ -80,11 +84,21 @@ export default function AskCopilotTab() {
 
   const suggestions = ["skip", "risk", "regime", "month"].map((k) => t(`ask.suggest.${k}`));
 
+  /** The answer's button: the concept library lives on the Coach & Guide page; everything else is a Copilot tab. */
+  function openAction(reply: CopilotReply) {
+    if (reply.action.tab === "guide") {
+      try { localStorage.setItem("atp_coach_tab", "guide"); } catch { /* storage unavailable */ }
+      navigate(pathFor("coach"));
+      return;
+    }
+    navigate(copilotPath(tabForAction(reply.action.tab)), reply.prompt ? { state: { prompt: reply.prompt } } : undefined);
+  }
+
   return (
     <div className="space-y-4" data-testid="tab-panel-ask">
       <Panel title={t("ask.title")} icon={<Bot size={15} />}>
         <p className="mb-3 text-xs text-fg-muted">{t("ask.intro")}</p>
-        <div className="max-h-[480px] min-h-[200px] space-y-3 overflow-y-auto rounded-xl border border-border/70 bg-surface-2/30 p-3" aria-live="polite" data-testid="ask-log">
+        <div className="max-h-[480px] min-h-[200px] space-y-3 overflow-y-auto rounded-xl border border-border/70 bg-surface-2/30 p-3" aria-busy={revealing || task.busy} data-testid="ask-log">
           {turns.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <Bot size={28} className="text-ai" aria-hidden />
@@ -112,7 +126,7 @@ export default function AskCopilotTab() {
                       {m.reply.usage && <CostChip tokens={m.reply.usage.tokens_input + m.reply.usage.tokens_output} inr={m.reply.usage.cost_inr} />}
                       {m.reply.action && (
                         <Button size="sm" variant="ghost" icon={<ArrowRight size={13} />}
-                                onClick={() => navigate(copilotPath(tabForAction(m.reply!.action.tab)), m.reply!.prompt ? { state: { prompt: m.reply!.prompt } } : undefined)}>
+                                onClick={() => openAction(m.reply!)}>
                           {m.reply.action.label}
                         </Button>
                       )}
@@ -143,6 +157,7 @@ export default function AskCopilotTab() {
           </div>
         )}
       </Panel>
+      <div className="sr-only" aria-live="polite" aria-atomic="true">{announce}</div>
       <PrivacyNote />
     </div>
   );

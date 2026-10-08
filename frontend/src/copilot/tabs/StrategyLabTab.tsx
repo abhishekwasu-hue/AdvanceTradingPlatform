@@ -1,9 +1,9 @@
-import { FlaskConical, Layers, MessageSquareText } from "lucide-react";
+import { FlaskConical, Gauge, Layers, MessageSquareText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { DataSourceBar, useCandleSource } from "../../components/DataSource";
 import { Badge, Button, Input, Select } from "../../components/primitives";
-import type { OHLCVBar, StrategistRequestParsed, StrategistResult } from "../../types";
+import type { OHLCVBar, Regime, StrategistRequestParsed, StrategistResult } from "../../types";
 import { useAiTask } from "../aiTask";
 import AiProgress from "../components/AiProgress";
 import CostChip from "../components/CostChip";
@@ -37,6 +37,37 @@ export function sessionize(bars: OHLCVBar[], now = new Date()): OHLCVBar[] {
     const day = days[Math.floor(i / perDay)];
     return { ...b, timestamp: new Date(day.getTime() + (3 * 60 + 45 + (i % perDay)) * 60_000).toISOString() };
   });
+}
+
+/** The regime classifier a deployment's regime filter uses, on the chosen symbol's 5-minute candles (sample or broker). */
+function RegimeCheck({ source, symbol }: { source: ReturnType<typeof useCandleSource>; symbol: string }) {
+  const t = useCopilotT();
+  const task = useAiTask(t, 60_000);
+  const [regime, setRegime] = useState<Regime | null>(null);
+  async function run() {
+    const sym = symbol.trim().toUpperCase();
+    const r = await task.run([t("lab.regime.step")], async (signal) => {
+      const data = await source.fetch([sym], "5min", { count: 600, startPriceFor: () => 100, seedFor: () => 11 });
+      const candles = data.candles[sym];
+      if (!candles?.length) throw new Error(t("lab.drafts.noCandles", { symbol: sym }));
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      return api.aiRegime(candles);
+    });
+    if (r) setRegime(r);
+  }
+  return (
+    <Panel title={t("lab.regime.title")} icon={<Gauge size={15} />} testId="lab-regime"
+           action={<Button size="sm" disabled={task.busy || !symbol.trim()} onClick={() => void run()}>{t("lab.regime.run", { symbol: symbol.trim().toUpperCase() })}</Button>}>
+      <p className="text-xs text-fg-muted">{t("lab.regime.intro")}</p>
+      <div className="mt-2"><AiProgress state={task.state} onCancel={task.cancel} /></div>
+      {regime && (
+        <div className="mt-2 text-sm">
+          <div className="font-semibold text-fg">{t("lab.regime.result", { kind: regime.kind.replace(/_/g, " ").toLowerCase(), confidence: regime.confidence })}</div>
+          <ul className="mt-1 list-disc pl-4 text-xs text-fg-muted">{regime.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      )}
+    </Panel>
+  );
 }
 
 export default function StrategyLabTab() {
@@ -138,6 +169,7 @@ export default function StrategyLabTab() {
       )}
 
       <DraftsPanel source={source} symbol={symbol} />
+      <RegimeCheck source={source} symbol={symbol} />
     </div>
   );
 }

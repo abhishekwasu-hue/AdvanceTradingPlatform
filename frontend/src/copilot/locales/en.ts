@@ -175,6 +175,13 @@ export const COPILOT_EN = {
   },
   lab: {
     title: "Strategy Lab",
+    regime: {
+      title: "Regime check",
+      intro: "The same classifier a deployment's regime filter uses: ADX for trend strength, EMA20/50 for direction, ATR against its median for volatility - on 5-minute candles of the symbol above.",
+      run: "Classify {{symbol}}",
+      result: "{{kind}} · confidence {{confidence}}",
+      step: "Classifying the regime…",
+    },
     intro: "Describe an idea in plain words. The Copilot reads the market, writes the rules in words you can check, backtests them on earlier sessions and checks them on later sessions they never saw.",
     ideaLabel: "Your idea in plain words",
     ideaPlaceholder: "e.g. Bank Nifty long-only scalping on pullbacks",
@@ -334,6 +341,7 @@ export const COPILOT_EN = {
     deployed: "Deployment #{{id}} is running in PAPER. Watch it on the Autopilot page.",
     openChart: "Open the chart",
     askAi: "Ask the AI for a custom rule set",
+    draftReady: "AI draft #{{id}} is ready - it opens in Strategy Lab for review.",
     paperFirst: "Anything new runs in PAPER first",
   },
   ask: {

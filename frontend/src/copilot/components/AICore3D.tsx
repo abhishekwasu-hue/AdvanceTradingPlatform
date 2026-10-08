@@ -113,9 +113,9 @@ function spherePoints(count: number): { positions: number[]; seeds: number[] } {
   return { positions, seeds };
 }
 
-export interface AICore3DProps { tone: CoreTone; variant?: CoreVariant; lowPower?: boolean; light?: boolean; className?: string }
+export interface AICore3DProps { tone: CoreTone; variant?: CoreVariant; lowPower?: boolean; light?: boolean; className?: string; onFail?: () => void }
 
-export default function AICore3D({ tone, variant = "orb", lowPower = false, light = false, className }: AICore3DProps) {
+export default function AICore3D({ tone, variant = "orb", lowPower = false, light = false, className, onFail }: AICore3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const uniforms = useRef<{ uA: { value: Color }; uB: { value: Color }; uLight: { value: number } } | null>(null);
 
@@ -127,6 +127,7 @@ export default function AICore3D({ tone, variant = "orb", lowPower = false, ligh
       renderer = new WebGLRenderer({ antialias: !lowPower, alpha: true, powerPreference: lowPower ? "low-power" : "default" });
     } catch {
       el.dataset.webgl = "failed";
+      onFail?.();                         // the caller shows the SVG core instead of an empty box
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowPower ? 1.5 : 2));
@@ -210,10 +211,12 @@ export default function AICore3D({ tone, variant = "orb", lowPower = false, ligh
       io?.disconnect();
       disposables.forEach((d) => d.dispose());
       renderer.dispose();
+      renderer.forceContextLoss();        // free the GPU context now, not at garbage collection
       renderer.domElement.remove();
       uniforms.current = null;
     };
-  }, [variant, lowPower]); // eslint-disable-line react-hooks/exhaustive-deps
+    // The theme picks the blending (additive glow on dark, normal on light), so a theme change rebuilds the scene.
+  }, [variant, lowPower, light]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A regime or theme change recolours the running scene.
   useEffect(() => {

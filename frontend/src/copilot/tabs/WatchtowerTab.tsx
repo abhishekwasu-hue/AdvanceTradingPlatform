@@ -45,7 +45,7 @@ function ProposalCard({ a, onDecided }: { a: AiAction; onDecided: (msg: string) 
   }
 
   return (
-    <TiltCard glow="ai" className="space-y-2" data-testid="watch-proposal">
+    <TiltCard tilt={false} glow="ai" className="space-y-2" data-testid="watch-proposal">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <ShieldAlert size={15} className="text-warn" aria-hidden />
         <b className="text-fg">{t(`watch.action.${a.action}`)}</b>

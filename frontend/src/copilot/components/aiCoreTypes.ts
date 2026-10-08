@@ -10,13 +10,20 @@ export function toneFor(kind: string | null | undefined): CoreTone {
   return "neutral";
 }
 
-/** True when this browser can draw WebGL. A test or an old device without it gets the SVG core. */
+let probed: boolean | null = null;
+
+/** True when this browser can draw WebGL. A test or an old device without it gets the SVG core. Probed once per page
+ * load, and the probe's context is released at once (browsers cap the number of live WebGL contexts). */
 export function webglAvailable(): boolean {
+  if (probed !== null) return probed;
   try {
     if (typeof document === "undefined") return false;
     const c = document.createElement("canvas");
-    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+    const gl = (c.getContext("webgl2") || c.getContext("webgl")) as WebGLRenderingContext | null;
+    probed = !!gl;
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {
-    return false;
+    probed = false;
   }
+  return probed;
 }

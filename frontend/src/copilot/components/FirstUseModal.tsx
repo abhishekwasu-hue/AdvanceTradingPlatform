@@ -21,7 +21,7 @@ export default function FirstUseModal({ children, placeholder }: { children: Rea
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    const load = () => { api.aiAcknowledgement().then((a) => { setAck(a); setOpen(true); }).catch((e) => setLoadError(friendlyError(e, t))); };
+    const load = () => { api.aiAcknowledgement().then((a) => { setAck(a); setLoadError(null); setOpen(true); }).catch((e) => setLoadError(friendlyError(e, t))); };
     load();
     window.addEventListener(AI_ACK_REQUIRED_EVENT, load);
     return () => window.removeEventListener(AI_ACK_REQUIRED_EVENT, load);

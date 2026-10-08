@@ -3,7 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# The build manifest (dist/.vite) is read by the CI bundle check only - it lists source paths, so it is not served.
+RUN npm run build && rm -rf dist/.vite
 
 # Mainline rather than the 1.28 stable line: the official image installs nginx.org's own apk
 # with a pinned version, so Alpine's backported nginx security revisions (the ones the image

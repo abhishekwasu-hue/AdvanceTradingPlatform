@@ -7,8 +7,11 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
 1. reads one bhavcopy per calendar week (the first trading day the archive has) from `start` to `end` and collects
    every index contract (OPTIDX / FUTIDX, IDO / IDF) with the day it was first seen;
 2. confirms each expiry with the bhavcopy OF that day: an expiry counts only if contracts expiring that day are in
-   that day's file (a date moved for a holiday shows up under its new date; the old one is dropped and reported);
-3. an expiry with a futures contract is "monthly", the rest "weekly" - read from the data, not inferred.
+   that day's file. A date that fails (a late holiday or a change of weekday moved the contract) is dropped and
+   reported, and the files of the six days before it are read for the date it actually expired on, so a contract
+   moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is still found;
+3. an expiry with a futures contract is "monthly", the rest "weekly" - read from the data, not inferred. A contract
+   listed too far ahead to have a future yet is "monthly" when it is the last listed expiry of its month.
 
 Output (committed, read by `app.instruments.expiry_data`): `data/nse_index_expiries.csv`
 (symbol, expiry, kind, first_seen, status) and `data/nse_index_expiries.meta.json` (coverage, files read, drops).
@@ -98,7 +101,7 @@ class Archive:
         for attempt in range(self.retries):
             try:
                 req = urllib.request.Request(url, headers=HEADERS)
-                with urllib.request.urlopen(req, timeout=60) as r:  # nosec B310 - fixed https archive host
+                with urllib.request.urlopen(req, timeout=60) as r:  # nosec B310
                     return r.read()
             except urllib.error.HTTPError as e:
                 if e.code in (403, 404):
@@ -189,6 +192,27 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
 
     rows: List[Dict[str, str]] = []
     dropped: List[Dict[str, str]] = []
+    moved: List[Dict[str, str]] = []
+    kept = {k for k in seen if k[1] > last or (confirmed.get(k[1]) is not None and any(x == k[0] for x, _ in confirmed[k[1]]))}
+    for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        if exp > last or (sym, exp) in kept:
+            continue
+        # where did it go? the nearest earlier trading day on which this underlying had an expiry
+        for back in range(1, 7):
+            d = exp - dt.timedelta(days=back)
+            text = fetch(d) if start <= d else None
+            if text is None:
+                continue
+            here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}
+            if here:
+                moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})
+                if (sym, d) not in kept:
+                    kept.add((sym, d))
+                    t = seen.setdefault((sym, d), {"first_seen": s["first_seen"], "future": False})
+                    t["first_seen"] = min(t["first_seen"], s["first_seen"])
+                    t["future"] = t["future"] or s["future"]
+                    confirmed[d] = (confirmed.get(d) or set()) | here
+                break
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         future = s["future"]
         if exp <= last:
@@ -204,11 +228,19 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
             status = "listed"
         rows.append({"symbol": sym, "expiry": exp.isoformat(), "kind": "monthly" if future else "weekly",
                      "first_seen": s["first_seen"].isoformat(), "status": status})
+    # Far contracts listed before their future: the last listed expiry of a month with no monthly yet is the monthly.
+    by_month: Dict[Tuple[str, int, int], List[Dict[str, str]]] = {}
+    for row in rows:
+        e = dt.date.fromisoformat(row["expiry"])
+        by_month.setdefault((row["symbol"], e.year, e.month), []).append(row)
+    for group in by_month.values():
+        if group[-1]["status"] == "listed" and not any(g["kind"] == "monthly" for g in group):
+            group[-1]["kind"] = "monthly"
     meta = {
         "source": "NSE F&O bhavcopy (legacy EXPIRY_DT until 2024-07-05, UDiFF XpryDt from 2024-07-08)",
         "coverage_start": min(sampled).isoformat(), "coverage_end": last.isoformat(),
         "weeks_sampled": len(sampled), "expiry_days_checked": len(days),
-        "symbols": list(INDEX_SYMBOLS), "rows": len(rows), "dropped": dropped,
+        "symbols": list(INDEX_SYMBOLS), "rows": len(rows), "dropped": dropped, "moved": moved,
     }
     return rows, meta
 

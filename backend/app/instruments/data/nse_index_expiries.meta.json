@@ -1,0 +1,303 @@
+{
+ "source": "NSE F&O bhavcopy (legacy EXPIRY_DT until 2024-07-05, UDiFF XpryDt from 2024-07-08)",
+ "coverage_start": "2016-01-01",
+ "coverage_end": "2026-10-05",
+ "weeks_sampled": 563,
+ "expiry_days_checked": 874,
+ "symbols": [
+  "NIFTY",
+  "BANKNIFTY",
+  "FINNIFTY",
+  "MIDCPNIFTY",
+  "NIFTYNXT50"
+ ],
+ "rows": 1368,
+ "dropped": [
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-03-30",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-06-29",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-09-07",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-09-14",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-09-21",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2023-10-05",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2024-03-28",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2024-04-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2024-06-27",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2024-09-26",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2024-12-26",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-01-29",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-02-26",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-03-26",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-06-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-09-24",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-09-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-12-24",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2025-12-31",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2026-03-26",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "expiry": "2026-03-31",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-10-21",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-10-28",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-11-03",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-11-11",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-11-18",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-11-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-12-02",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-12-09",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2021-12-30",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2025-01-28",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "expiry": "2025-02-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-05-02",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-05-09",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-05-16",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-05-23",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-05-30",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-08-23",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-08-30",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-09-06",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-09-13",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-09-27",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2023-10-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2024-01-22",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2025-01-27",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "expiry": "2025-02-24",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2018-03-29",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2023-03-30",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2023-06-29",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2025-09-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2025-12-24",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2026-03-26",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2026-03-31",
+   "reason": "no bhavcopy that day"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2026-06-25",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "expiry": "2025-01-31",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "expiry": "2025-02-28",
+   "reason": "not in that day's bhavcopy"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "expiry": "2025-03-28",
+   "reason": "not in that day's bhavcopy"
+  }
+ ],
+ "files_read": 1345
+}

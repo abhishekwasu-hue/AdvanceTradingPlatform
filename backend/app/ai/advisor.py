@@ -136,7 +136,7 @@ TILTS = {
 }
 OPTION_TEXT = {
     "safe": (("Safe", "Less risk, fewer trades, bigger reward per trade"), ("सावध", "कमी risk, कमी trades, प्रत्येक trade मध्ये मोठे target")),
-    "balanced": (("Balanced", "Built from your own answers"), ("संतुलित", "तुमच्या उत्तरांवरून बनवलेला")),
+    "balanced": (("Balanced", "Middle risk, middle number of trades"), ("संतुलित", "मध्यम risk, मध्यम trades")),     # P0.9: not "built from your answers"
     "active": (("Active", "More opportunities, same safety rules"), ("सक्रिय", "जास्त संधी, सुरक्षेचे नियम तेच")),
 }
 

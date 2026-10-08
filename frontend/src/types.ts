@@ -1592,6 +1592,13 @@ export interface AiProviderConfig {
   usage?: AiUsage | null;
   /** P0.8-D: the organisation's data-sharing consent (version, accepted, by whom). */
   data_consent?: AiAcknowledgement;
+  /** P0.9: per external provider, every AI task with the model it runs on and an estimated cost of one typical call. */
+  task_models?: Record<string, AiTaskModel[]>;
+  typical_call_tokens?: Record<string, { input: number; output: number }>;
+}
+export interface AiTaskModel {
+  task: string; label: string; tier: "fast" | "strong"; model: string;
+  price_per_mtok_usd: { input: number; output: number }; est_inr_per_call: number; estimated_price: boolean;
 }
 
 /** P0.8-D: a versioned acceptance - the Copilot first-use terms (per user) or the data-sharing consent (per organisation). */
@@ -2003,6 +2010,8 @@ export interface MarketThesis {
   confidence: number | null;   // P0.8-D: null for a single stock (no confidence %), unless the operator's flag allows
   agreement: { net: number; direction: string; confidence: number; agreeing: number; with_opinion: number; share: number; coverage: number; conflict: boolean; matrix: ThesisFactor[] };
   scenarios: Partial<Record<"bull" | "base" | "bear", ThesisScenario>>;
+  /** P0.9: false for a single stock without the operator's flag - no price scenarios and no score. */
+  detail_shown?: boolean;
   shadow: { size_multiplier: number; reasons: string[]; mode: "shadow"; applied: false; note: string };
   events: { kind: string; action: string; size_cut_pct: number | null; start_time: string | null; end_time: string | null; description: string | null; global: boolean }[];
   inputs: Record<string, unknown>;
@@ -2114,7 +2123,7 @@ export interface StrategyCandidate {
   rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;
   triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
   in_sample: SimMetrics; out_of_sample: SimMetrics; all: SimMetrics; oos_sessions: string[];
-  verdict: "robust" | "overfit" | "weak" | "untested" | "thin"; verdict_text: string;
+  verdict: "robust" | "overfit" | "weak" | "insufficient" | "sample" | "untested" | "thin"; verdict_text: string;
   trades: { date: string; dir: string; entry: number; exit: number; reason: string; pts: number; r: number }[];
   config: CustomStrategyConfig; source: "template" | "ai";
   /** P0.8 / A3: the server-held candidate this card stands for; adopt sends this id, never the config. */
@@ -2132,3 +2141,6 @@ export interface StrategistRequestParsed {
   matched: Partial<Record<"symbol" | "style" | "direction" | "language", string>>; text: string; summary?: string;
 }
 
+
+/** P0.9: the language of the AI's written answers; the dashboard is English only. */
+export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }

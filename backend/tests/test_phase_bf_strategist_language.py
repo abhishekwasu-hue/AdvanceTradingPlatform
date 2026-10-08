@@ -70,16 +70,20 @@ def test_plans_carry_words_and_the_api_accepts_a_request_in_marathi():
     headers = {"Authorization": f"Bearer {_register('bf-strategist@example.com')}"}
     candles = _bars(_sessions(days=10, minutes=1))
     parsed = client.post("/api/ai/strategist/parse", headers=headers, json={"request": "निफ्टी फक्त long scalping", "symbol": "RELIANCE"}).json()
-    assert parsed["symbol"] == "NIFTY 50" and parsed["style"] == "scalping" and parsed["direction"] == "long" and parsed["language"] == "mr" and "समजले" in parsed["summary"]
+    # P0.9: a Marathi request is understood; the summary is in the dashboard's language (English by default).
+    assert parsed["symbol"] == "NIFTY 50" and parsed["style"] == "scalping" and parsed["direction"] == "long" and parsed["language"] == "mr"
+    assert parsed["summary"].startswith("Understood: NIFTY 50")
 
-    # The request overrides the fields it names and sets the language; the study and plans come back in Marathi.
+    # The request overrides the fields it names; P0.9: a Marathi request is understood but the reply stays in the
+    # dashboard's language (English), and candles sent by the page are sample data.
     r = client.post("/api/ai/strategist/build", headers=headers, json={"symbol": "NIFTY 50", "candles": candles, "language": "en", "direction": "short",
                                                                         "request": "निफ्टी फक्त long"})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["language"] == "mr" and body["sides"] == ["long"] and body["request_parsed"]["matched"] == {"language": "mr", "symbol": "NIFTY 50", "direction": "long"}
-    assert body["base_timeframe"] == "5min" and all(t["trend_text"] in ("वरचा trend", "खालचा trend", "मिश्र") for t in body["study"]["timeframes"])
-    assert all(c["direction_text"] == "फक्त LONG" for c in body["candidates"]) and body["study"]["lines"]
+    assert body["language"] == "en" and body["sides"] == ["long"] and body["request_parsed"]["matched"] == {"language": "mr", "symbol": "NIFTY 50", "direction": "long"}
+    assert body["base_timeframe"] == "5min" and all(t["trend_text"] in ("uptrend", "downtrend", "mixed") for t in body["study"]["timeframes"])
+    assert all(c["direction_text"] == "LONG only" for c in body["candidates"]) and body["study"]["lines"]
+    assert all(c["verdict"] == "sample" and "not real performance" in c["verdict_text"] for c in body["candidates"])
     # A Latin-only request keeps the form's language (a Marathi UI stays Marathi even though tickers are Latin).
     study_mr = client.post("/api/ai/strategist/study", headers=headers, json={"symbol": "NIFTY 50", "candles": candles, "language": "mr", "request": "nifty both sides intraday"}).json()
     assert study_mr["request_parsed"]["language"] == "en" and all(t["trend_text"] in ("वरचा trend", "खालचा trend", "मिश्र") for t in study_mr["timeframes"])

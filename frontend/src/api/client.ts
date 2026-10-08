@@ -130,6 +130,7 @@ import type {
   NewsFeedStatus,
   BrokerLoginUrl,
   AiAcknowledgement,
+  AiPreferences,
 } from "../types";
 
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
@@ -231,7 +232,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // (so the page shows the acknowledgement screen) and the caller gets a sentence, not a raw 428 body.
     if (response.status === 428 && detail.includes("ai_acknowledgement_required")) {
       window.dispatchEvent(new Event(AI_ACK_REQUIRED_EVENT));
-      throw new Error("Accept the AI Copilot acknowledgement first (AI Copilot page) - AI Copilot सूचना आधी स्वीकारा.");
+      throw new Error("Accept the AI Copilot acknowledgement first (AI Copilot page).");
     }
     throw new Error(`${response.status} ${response.statusText}: ${detail}`);
   }
@@ -658,6 +659,9 @@ export const api = {
     request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),
   // ---- Phase L: AI layer
   aiProvider: () => request<AiProviderConfig>("/ai/provider"),
+  // P0.9: the language the AI writes its answers in (the dashboard itself is English).
+  aiPreferences: () => request<AiPreferences>("/ai/preferences"),
+  aiSavePreferences: (ai_language: "en" | "mr") => request<AiPreferences>("/ai/preferences", { method: "PUT", body: JSON.stringify({ ai_language }) }),
   aiAcknowledgement: () => request<AiAcknowledgement>("/ai/acknowledgement"),
   aiAcceptAcknowledgement: (version: string, language: "en" | "mr") =>
     request<AiAcknowledgement>("/ai/acknowledgement", { method: "POST", body: JSON.stringify({ version, language }) }),
@@ -697,7 +701,7 @@ export const api = {
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   // Phase BD-lite: the market thesis (shadow overlay only) and its scoreboard.
-  aiThesis: (symbol: string, language: "mr" | "en" = "mr", refresh = false) =>
+  aiThesis: (symbol: string, language: "mr" | "en" = "en", refresh = false) =>
     request<MarketThesis>(`/ai/thesis/${encodeURIComponent(symbol)}?language=${language}${refresh ? "&refresh=true" : ""}`),
   aiThesisHistory: (symbol?: string, limit = 30) =>
     request<ThesisHistory>(`/ai/thesis/history?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`),

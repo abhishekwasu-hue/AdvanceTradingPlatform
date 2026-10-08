@@ -157,6 +157,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: English-only UI (Devanagari only in the interview allowlist)
+        run: npm run check:devanagari
+
       - name: Type-check + production build
         run: npm run build
 

@@ -106,6 +106,8 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
     assert client.get("/api/ai/coach?mode=BAD", headers=headers).status_code == 422
 
     ask = lambda m: client.post("/api/ai/copilot", headers=headers, json={"message": m}).json()
+    assert "closed trades" in ask("माझे trades कसे आहेत?")["answer"]          # P0.9: English unless the user chose Marathi
+    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})
     coached = ask("माझे trades कसे आहेत?")
     assert coached["intent"] == "coach" and coached["action"]["tab"] == "coach" and "बंद trades" in coached["answer"] and coached["source"] == "rules"
     interviewed = ask("मला intraday strategy सांगा")
@@ -114,6 +116,7 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
     assert why["intent"] == "deployments" and "deployment चालू नाही" in why["answer"]
     guide = ask("RSI म्हणजे काय?")
     assert guide["intent"] == "guide" and guide["concepts"][0]["id"] == "rsi"
+    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "en"})
     today = ask("What should I do today?")
     assert today["intent"] == "brief" and today["language"] == "en" and today["brief"]["day_type"]["kind"] == "UNKNOWN"
 
@@ -129,6 +132,7 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
         return Provider()
     from app.ai import routes as ai_routes
     monkeypatch.setattr(ai_routes.ai_settings, "provider_for", provider_for)
+    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})      # the AI writes in the chosen language
     narrated = ask("आज काय करू?")
     assert narrated["source"] == "ai" and narrated["answer"].startswith("आज बाजार") and "Marathi" in Provider.seen and "=== FACTS ===" in Provider.seen
 

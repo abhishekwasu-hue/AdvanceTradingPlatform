@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:devanagari": "node scripts/check-devanagari.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

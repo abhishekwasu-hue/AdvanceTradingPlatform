@@ -113,7 +113,9 @@ def test_latest_keeps_one_row_per_day_and_describe_tells_the_story():
     assert [d["bias"] for d in memory["history"]["NIFTY BANK"]] == ["BULLISH", "BULLISH", "BULLISH"]
     lines = mm.describe("mr", memory, "NIFTY BANK", now=NOW)
     text = " ".join(lines)
-    assert "India VIX 21.5" in text and "जास्त भीती" in text and "सलग तीन सत्रे" in text and "मिनिटांपूर्वी" in text
+    assert "India VIX 21.5" in text and "जास्त भीती" in text and "मिनिटांपूर्वी" in text
+    # P0.9: data only - no bias trail and no "trade with it" / sizing advice in the market background.
+    assert "सलग तीन सत्रे" not in text and "trade करा" not in text and "size लहान" not in text
     assert "high fear" in " ".join(mm.describe("en", memory, "NIFTY BANK", now=NOW))
     assert mm.describe("en", {"symbols": [], "cues": [], "history": {}}, "NIFTY 50") == []
 

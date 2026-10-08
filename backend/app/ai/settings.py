@@ -89,11 +89,42 @@ async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] 
         record.last_error = (error or "")[:300] or None
 
 
+# P0.9: the token sizes behind the per-call cost estimate on the provider card (a typical call of each tier, thinking
+# included in the output) - an estimate for the owner, not a bill; the real figures are metered per call.
+TYPICAL_CALL_TOKENS = {"fast": (3000, 1200), "strong": (6000, 4000)}
+TASK_LABELS = {"strategy_generation": "Strategy drafts", "strategist": "Strategist rule proposals", "scanner_plan": "Scanner plans",
+               "narration": "Narration", "copilot": "Copilot chat", "knowledge": "Guide answers", "thesis": "Thesis wording",
+               "classification": "News classification", "scanner_read": "Scanner reads"}
+
+
+def task_models(tenant_model: Optional[str] = None, tenant_provider: Optional[str] = None) -> dict:
+    """Per external provider: every AI task with its tier, the model it runs on (environment per tier; the tenant's model
+    only for the strong tier of the configured provider) and an estimated cost of one typical call in INR."""
+    from app.ai import pricing
+    from app.ai.providers import TASK_TIERS
+    out: dict = {}
+    for provider in ("anthropic", "openai"):
+        rows = []
+        for task, tier in TASK_TIERS.items():
+            if task == "general":
+                continue
+            model = model_for(provider, tenant_model if provider == tenant_provider else None, task)
+            tokens_in, tokens_out = TYPICAL_CALL_TOKENS[tier]
+            cost = pricing.cost_usd(provider, model, input_tokens=tokens_in, output_tokens=tokens_out)
+            rows.append({"task": task, "label": TASK_LABELS.get(task, task), "tier": tier, "model": model,
+                         "price_per_mtok_usd": {"input": cost.price[0], "output": cost.price[1]},
+                         "est_inr_per_call": round(pricing.usd_to_inr(cost.amount), 2), "estimated_price": cost.estimated})
+        out[provider] = rows
+    return out
+
+
 def as_dict(record: Optional[AiProviderConfigRecord], tenant: Tenant, usage: Optional[dict] = None) -> dict:
     """`usage` (P0.8-C) is `metering.budget_state(...)` - this month's calls, tokens and spend against the plan budget."""
     allowed = feature_allowed(tenant, "ai_features")
     base = {"ai_features_allowed": allowed, "providers": list(PROVIDERS), "default_models": DEFAULT_MODELS.as_dict(), "default_provider": DEFAULT_PROVIDER,
-            "tier_models": default_models(), "usage": usage}
+            "tier_models": default_models(), "usage": usage,
+            "task_models": task_models(record.model if record is not None else None, record.provider if record is not None else None),
+            "typical_call_tokens": {tier: {"input": i, "output": o} for tier, (i, o) in TYPICAL_CALL_TOKENS.items()}}
     if record is None:
         return {"provider": "rule_based", "model": DEFAULT_MODELS["rule_based"], "api_key_set": False, "enabled": True, "configured": False,
                 "models": {"strong": DEFAULT_MODELS["rule_based"], "fast": DEFAULT_MODELS["rule_based"]}, **base}

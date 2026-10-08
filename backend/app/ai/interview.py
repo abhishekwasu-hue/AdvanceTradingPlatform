@@ -151,7 +151,7 @@ QUESTION_IDS = [q.id for q in QUESTIONS]
 
 
 class InterviewAnswers(BaseModel):
-    language: Lang = "mr"
+    language: Lang = "en"
     experience: Literal["new", "learning", "experienced"] = "new"
     capital: float = Field(default=100_000.0, ge=5_000, le=10_000_000_000)
     risk: Literal["conservative", "moderate", "aggressive"] = "conservative"
@@ -238,18 +238,17 @@ def prefill_from_prompt(prompt: str) -> Dict[str, str]:
 
 def start(prompt: str) -> dict:
     prefill = prefill_from_prompt(prompt)
-    language = prefill.get("language", "mr")
+    language = prefill.get("language", "en")
     return {
         "needs_interview": is_vague(prompt),
         "language": language,
         "prefill": prefill,
         "remaining": [q for q in QUESTION_IDS if q not in prefill],
         "questions": [q.as_dict() for q in QUESTIONS],
-        "intro": tr(language,
-                    "Before I suggest any strategy I need to know you - a professional never gives one strategy to everybody. "
-                    "A few quick questions (I've skipped what you already told me).",
-                    "कोणतीही strategy सांगण्याआधी मला तुम्हाला ओळखायचे आहे - professional trader सगळ्यांना एकच strategy देत नाही. "
-                    "काही छोटे प्रश्न विचारतो (तुम्ही आधीच सांगितलेले प्रश्न वगळले आहेत)."),
+        # P0.9: the dashboard is English, so the intro is too (the questions carry their Marathi line themselves); it
+        # says what happens next - three templates the trader chooses from - not that a strategy will be suggested.
+        "intro": "A few quick questions first (anything your message already said is skipped). Then the market data is read "
+                 "and three templates are shown with their rules and backtest - you choose; nothing is recommended.",
     }
 
 
@@ -668,14 +667,11 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         res = f"{market['resistance']['low']:,}-{market['resistance']['high']:,}" if market["resistance"] else "-"
         m_lines.append(tr(lang, f"Nearest support {sup}, resistance {res} (last price {market['last_price']:,}).",
                           f"जवळचा support {sup}, resistance {res} (सध्याचा भाव {market['last_price']:,})."))
-    bias_word = {"BULLISH": tr(lang, "BULLISH (up)", "तेजी (BULLISH)"), "BEARISH": tr(lang, "BEARISH (down)", "मंदी (BEARISH)"),
-                 "NEUTRAL": tr(lang, "NEUTRAL - no clear side", "NEUTRAL - स्पष्ट दिशा नाही")}[market["bias"]]
-    m_lines.append(tr(lang, f"Overall bias: {bias_word}" + (f" because {', '.join(market['bias_reasons'])}" if market["bias_reasons"] else "") + ".",
-                      f"एकूण कल: {bias_word}" + (f" कारण {', '.join(market['bias_reasons'])}" if market["bias_reasons"] else "") + "."))
+    # P0.9: no "overall bias" - the plan states the data (trend per timeframe, structure, levels), not a market direction.
     view_map = {"bullish": "BULLISH", "bearish": "BEARISH", "neutral": "NEUTRAL"}
     if a.view in ("bullish", "bearish") and market["bias"] not in ("NEUTRAL", view_map[a.view]):
-        warnings.append(tr(lang, f"Your view is {a.view} but the market reads {market['bias'].lower()}. A professional trades what the market does, not what they expect - the plan follows the market and the strategy only takes signals the trend confirms.",
-                           f"तुमचे मत {'तेजीचे' if a.view == 'bullish' else 'मंदीचे'} आहे पण market {'तेजी' if market['bias'] == 'BULLISH' else 'मंदी'} दाखवतो. Professional अंदाजावर नाही तर market जे करतो त्यावर trade करतो - plan market च्या सोबत आहे."))
+        warnings.append(tr(lang, f"Your view ({a.view}) and the data's trend read differ. Each template's rules take only the signals its own filters confirm, whatever the view.",
+                           f"तुमचे मत ({'तेजीचे' if a.view == 'bullish' else 'मंदीचे'}) आणि data चे trend वाचन वेगळे आहे. प्रत्येक template फक्त त्याच्या filters ने पक्के केलेले signals घेतो."))
     if market["volatile"]:
         warnings.append(tr(lang, "The market is volatile right now: stops are wider in rupees, so the engine sizes fewer lots.",
                            "सध्या market अस्थिर आहे: stop रुपयांत मोठा असतो त्यामुळे engine कमी lots घेईल."))
@@ -691,11 +687,11 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         regime_filter = REGIME_FILTERS[pick["family"]]
         # P0.8-D: templates are described, ranked by data and chosen by the trader - never recommended.
         s_lines += [
-            tr(lang, f"Template shown first: {pick['name']} ({fam_en}, {'/'.join(pick['timeframes'])}). You choose the template; this is a description, not a recommendation.",
-               f"प्रथम दाखवलेले template: {pick['name']} ({fam_mr}, {'/'.join(pick['timeframes'])}). Template तुम्ही निवडा; हे वर्णन आहे, शिफारस नाही."),
+            tr(lang, f"This template: {pick['name']} ({fam_en}, {'/'.join(pick['timeframes'])}). A description of its rules, not a recommendation - you choose.",
+               f"हे template: {pick['name']} ({fam_mr}, {'/'.join(pick['timeframes'])}). त्याच्या नियमांचे वर्णन, शिफारस नाही - निवड तुमची."),
             pick["description"],
-            tr(lang, f"How it ranked: by fit with the current regime ({market['regime_text']}) and the backtest on these candles - {pick['evidence']['text']}.",
-               f"क्रम कसा ठरला: सध्याच्या स्थितीशी ({market['regime_text']}) जुळणी आणि या candles वरचा backtest - {pick['evidence']['text']}."),
+            tr(lang, f"Backtest on these candles ({market['regime_text']} regime): {pick['evidence']['text']}.",
+               f"या candles वरचा backtest ({market['regime_text']} स्थिती): {pick['evidence']['text']}."),
             tr(lang, f"Its rules enter only in these regimes: {', '.join(regime_filter)} - on other days it does not trade.",
                f"याचे नियम फक्त या स्थितीत entry घेतात: {', '.join(regime_filter)} - इतर दिवशी trade घेत नाही."),
         ]

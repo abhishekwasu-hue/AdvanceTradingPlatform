@@ -60,6 +60,12 @@ def test_ai_answer_is_grounded_and_falls_back():
 
 def test_guide_endpoints():
     headers = {"Authorization": f"Bearer {_register('guide@example.com')}"}
+    # P0.9: the answer language is the user's AI setting (default English), whatever script the question uses.
+    assert client.get("/api/ai/preferences", headers=headers).json()["ai_language"] == "en"
+    default = client.post("/api/ai/ask", headers=headers, json={"question": "theta म्हणजे काय?"}).json()
+    assert default["concepts"][0]["id"] == "theta" and "loses value every day" in default["answer"]
+    assert client.put("/api/ai/preferences", headers=headers, json={"ai_language": "xx"}).status_code == 422
+    assert client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"}).json()["ai_language"] == "mr"
     r = client.post("/api/ai/ask", headers=headers, json={"question": "theta म्हणजे काय?"})
     assert r.status_code == 200, r.text
     body = r.json()

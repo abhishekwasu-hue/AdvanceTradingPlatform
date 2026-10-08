@@ -1,4 +1,4 @@
-import { Bell, UserCircle2 } from "lucide-react";
+import { Bell, Menu, UserCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
@@ -32,7 +32,7 @@ import StrategyBuilderPage from "./pages/StrategyBuilderPage";
 import SystemLogsPage from "./pages/SystemLogsPage";
 import TeamPage from "./pages/TeamPage";
 
-function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void }) {
+function TopBar({ page, onChange, onMenu }: { page: Page; onChange: (p: Page) => void; onMenu: () => void }) {
   const { user } = useAuth();
   const title = page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
   const [status, setStatus] = useState<SystemStatus | null>(null);
@@ -44,8 +44,9 @@ function TopBar({ page, onChange }: { page: Page; onChange: (p: Page) => void })
   }, []);
 
   return (
-    <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-6">
+    <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-3 md:px-6">
       <div className="flex items-center gap-3 min-w-0">
+        <button onClick={onMenu} aria-label="Open navigation menu" aria-controls="app-navigation" className="rounded-md p-1.5 text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
         <h1 className="text-[15px] font-semibold text-slate-100">{title}</h1>
         {status?.maintenance_mode && (
           <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title={status.maintenance_message ?? ""}>
@@ -102,13 +103,14 @@ function initialPage(): Page {
 
 function AppShell() {
   const [page, setPage] = useState<Page>(initialPage);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex">
-      <Sidebar page={page} onChange={setPage} />
+      <Sidebar page={page} onChange={setPage} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar page={page} onChange={setPage} />
-        <main className="flex-1 overflow-y-auto p-6 max-w-6xl">
+        <TopBar page={page} onChange={setPage} onMenu={() => setMenuOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-3 md:p-6 max-w-6xl">
           {page === "dashboard" && <DashboardPage onNavigate={setPage} />}
           {page === "strategies" && <StrategiesPage />}
           {page === "strategy-builder" && <StrategyBuilderPage />}

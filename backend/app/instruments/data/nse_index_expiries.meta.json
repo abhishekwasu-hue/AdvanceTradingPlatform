@@ -357,8 +357,48 @@
   },
   {
    "symbol": "BANKNIFTY",
+   "from": "2025-01-29",
+   "to": "2025-01-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-02-26",
+   "to": "2025-02-27"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-03-26",
+   "to": "2025-03-27"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-06-25",
+   "to": "2025-06-26"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-09-24",
+   "to": "2025-09-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-09-25",
+   "to": "2025-09-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-12-24",
+   "to": "2025-12-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
    "from": "2025-12-31",
    "to": "2025-12-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2026-03-26",
+   "to": "2026-03-30"
   },
   {
    "symbol": "BANKNIFTY",
@@ -411,24 +451,39 @@
    "to": "2021-12-28"
   },
   {
+   "symbol": "FINNIFTY",
+   "from": "2025-01-28",
+   "to": "2025-01-30"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2025-02-25",
+   "to": "2025-02-27"
+  },
+  {
    "symbol": "MIDCPNIFTY",
-   "from": "2023-05-09",
+   "from": "2023-05-02",
    "to": "2023-05-03"
   },
   {
    "symbol": "MIDCPNIFTY",
-   "from": "2023-05-16",
+   "from": "2023-05-09",
    "to": "2023-05-10"
   },
   {
    "symbol": "MIDCPNIFTY",
-   "from": "2023-05-23",
+   "from": "2023-05-16",
    "to": "2023-05-17"
   },
   {
    "symbol": "MIDCPNIFTY",
-   "from": "2023-05-30",
+   "from": "2023-05-23",
    "to": "2023-05-24"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-05-30",
+   "to": "2023-05-31"
   },
   {
    "symbol": "MIDCPNIFTY",
@@ -459,6 +514,16 @@
    "symbol": "MIDCPNIFTY",
    "from": "2023-10-25",
    "to": "2023-10-23"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2025-01-27",
+   "to": "2025-01-30"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2025-02-24",
+   "to": "2025-02-27"
   },
   {
    "symbol": "NIFTY",
@@ -516,5 +581,5 @@
    "to": "2025-03-27"
   }
  ],
- "files_read": 1378
+ "files_read": 1376
 }

@@ -3,7 +3,8 @@
 Ported from Trade@0df3e09d0aa5942e3352327d5b998c5f6939ac61, elliott/contracts.py (NIFTY only there), generalised to
 several underlyings through the `UNDERLYINGS` table.
 
-An expiry is never "next Tuesday": a holiday moves it to the previous trading day. Sources, in order:
+An expiry is never "next Tuesday": a holiday moves it to the previous trading day. BANKNIFTY has no rule here at all:
+its expiries are the dates NSE printed in its bhavcopies (`app.instruments.expiry_data`). Sources, in order:
   1. a listed-contracts calendar (the broker instrument master / bhavcopy: expiries with the day they were first listed),
      used causally - a contract counts only from its listing day;
   2. the rule calendar below (for backtests and as a fallback): the weekly weekday by date, the monthly = the last such
@@ -45,8 +46,9 @@ UNDERLYINGS: Dict[str, Dict] = {
         "strike_step": 100,
     },
     "BANKNIFTY": {
-        # Monthly only after the weekly series ended (Nov 2024); last Thursday, last Tuesday from 1 Sep 2025 (verify).
-        "weekday": [(dt.date(2000, 1, 1), 3), (dt.date(2025, 9, 1), 1)],
+        # No weekday rule: every expiry (weekly and monthly, with each change of weekday) comes from NSE's bhavcopies -
+        # app.instruments.expiry_data. The rule helpers below refuse it.
+        "weekday": None,
         "weekly_start": None,
         "weekly_end": None,
         "lots": None,                               # no dated history here: app.backtest.options LOT_SIZES / LOT_SIZE_HISTORY
@@ -101,7 +103,7 @@ def lot_size(expiry, underlying: str = "NIFTY", listed_lots: Optional[Dict[dt.da
 
 def weekly_listed(day, underlying: str = "NIFTY") -> bool:
     """Whether the underlying had weekly expiries on `day` (the first weekly expiry is a few days after the listing)."""
-    spec = _spec(underlying)
+    spec = _rule(underlying)
     d = pd.Timestamp(day).date()
     ws, we = spec["weekly_start"], spec["weekly_end"]
     return ws is not None and d >= ws + dt.timedelta(days=3) and (we is None or d <= we)
@@ -111,8 +113,16 @@ def strike_step(underlying: str = "NIFTY") -> int:
     return int(_spec(underlying)["strike_step"])
 
 
+def _rule(underlying: str) -> Dict:
+    spec = _spec(underlying)
+    if spec["weekday"] is None:
+        from app.instruments.expiry_data import ExpiryDataMissing
+        raise ExpiryDataMissing(f"{underlying} expiries come from NSE data (app.instruments.expiry_data), not a weekday rule")
+    return spec
+
+
 def expiry_weekday(day, underlying: str = "NIFTY") -> int:
-    return int(_at(_spec(underlying)["weekday"], pd.Timestamp(day).date()))
+    return int(_at(_rule(underlying)["weekday"], pd.Timestamp(day).date()))
 
 
 class TradingCalendar:
@@ -153,7 +163,7 @@ class TradingCalendar:
 
 def rule_expiries(cal: TradingCalendar, start, end, underlying: str = "NIFTY") -> List[Tuple[dt.date, str]]:
     """Rule calendar: [(expiry date, "weekly" | "monthly")]; holiday -> the previous trading day."""
-    _spec(underlying)                                   # unknown underlying -> KeyError
+    _rule(underlying)                                   # unknown underlying -> KeyError; data-only -> ExpiryDataMissing
     out: Dict[dt.date, str] = {}
     d = pd.Timestamp(start).date() - dt.timedelta(days=7)
     stop = pd.Timestamp(end).date() + dt.timedelta(days=40)
@@ -168,11 +178,18 @@ def rule_expiries(cal: TradingCalendar, start, end, underlying: str = "NIFTY") -
 
 
 class ExpiryBook:
-    """Expiry choice. `listed` = DataFrame (expiry, kind, first_seen) from the instrument master / bhavcopy; else the rules."""
+    """Expiry choice. `listed` = DataFrame (expiry, kind, first_seen) from the instrument master / bhavcopy; an underlying
+    without a rule (BANKNIFTY) reads `app.instruments.expiry_data`; else the rules."""
 
     def __init__(self, cal: TradingCalendar, listed: Optional[pd.DataFrame] = None, start=None, end=None, underlying: str = "NIFTY") -> None:
         self.cal = cal
         spec = _spec(underlying)
+        if (listed is None or not len(listed)) and spec["weekday"] is None:
+            from app.instruments import expiry_data
+            rows = expiry_data.listed(ALIASES[" ".join(str(underlying).upper().split())])
+            if not rows:
+                raise expiry_data.ExpiryDataMissing(f"no NSE expiry data for {underlying}")
+            listed = pd.DataFrame(rows, columns=["expiry", "kind", "first_seen"])
         if listed is not None and len(listed):
             b = listed.sort_values("expiry")
             self.items = [(pd.Timestamp(e).date(), k, pd.Timestamp(f).date()) for e, k, f in zip(b["expiry"], b["kind"], b["first_seen"])]

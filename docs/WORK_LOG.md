@@ -472,6 +472,36 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - BANKNIFTY expiries from NSE data (no weekday rule)
+- **Source**: NSE's own F&O bhavcopies - `EXPIRY_DT` (legacy file, to 5 Jul 2024) and `XpryDt` (UDiFF, from 8 Jul 2024).
+  `backend/app/instruments/nse_expiries.py` (stdlib only) reads one file per week from 1 Jan 2016, confirms every
+  expiry with the file of its own day, finds a contract the exchange moved (late holiday, change of weekday) in the
+  files six days either side, and calls an expiry "monthly" when a future expired that day. Result:
+  `backend/app/instruments/data/nse_index_expiries.csv` (+ `.meta.json`: coverage, drops, moves) for NIFTY,
+  BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50. NSE's archive is not reachable from the build sandbox, so the
+  GitHub workflow "NSE expiry data" builds it (monthly schedule + manual run; result on `data/nse-expiries` for a PR).
+- **Use**: `app.instruments.expiry_data` - BANKNIFTY's backtest calendar (`ExpiryCalendar`, `ExpiryBook`) reads only
+  this file; the weekday rule for BANKNIFTY is gone from `expiry_calendar.UNDERLYINGS` and the rule helpers refuse it.
+  A contract counts from the day it was first seen (causal). After the file's last day a bar sees only what was
+  listed by then (no invented dates, "no expiry" when none is left); before 2016 is an error. Default: every listed
+  expiry (weeklies while they existed; `ENGINE_VERSION` 5 - old BANKNIFTY runs re-run with weeklies before Nov 2024);
+  `weekly_expiry=false`: monthlies only; the MONTHLY rule always takes the monthly. Live trading is unchanged (it
+  uses the broker instrument master).
+- **Self-review fixes**: the builder also reads the last file on or before `end`; a 403 is retried; the build refuses
+  a week with no file, an unexplained BANKNIFTY drop, or a result that knows less than the committed file; weekly
+  schedule; the far leg is chosen as listed on the bar day; "NIFTY BANK" / "Bank Nifty" reach the data. Known limit:
+  a contract re-dated by the exchange shows its final date from its first listing (DTE off by a few days before the
+  announcement).
+- **What the data shows for BANKNIFTY** (checked by `tests/test_nse_expiry_data.py`): weeklies from 2 Jun 2016 to
+  13 Nov 2024 - Thursdays until Aug 2023, Wednesdays from 6 Sep 2023 (2024: Wednesdays, Tuesday when Wednesday was a
+  holiday); monthlies only after Nov 2024. Monthly day: last Thursday to Feb 2024, last Wednesday Mar-Dec 2024 (24 Dec
+  2024 for the Christmas holiday), last Thursday Jan-Aug 2025, last Tuesday from 30 Sep 2025. Holiday moves found in
+  the data, e.g. 29 Mar 2023 (Ram Navami), 28 Jun 2023 (Bakri Id, announced late), 30 Mar 2026, 23 Nov 2026.
+- Tests: every BANKNIFTY expiry in the coverage is the calendar's next expiry after the previous one, every month's
+  monthly matches, the 2024 changes, no rule left for BANKNIFTY, out-of-coverage errors; the builder on hand-made
+  legacy / UDiFF files (moved and re-dated contracts, far monthlies). NIFTY still uses the dated rule (Trade port);
+  it can move to the same data in a follow-up.
+
 ### 2026-10-08 - P1.2: design system (tokens, themes, primitives, Storybook) -> G-DESIGN
 - **Tokens** (`src/styles/tokens.css`): surface / surface-1..3 / fg / fg-muted / border / brand / up / down / warn / info,
   as RGB CSS variables. Dark (default) and light themes; a colour-blind option makes profit blue and loss orange in

@@ -33,7 +33,7 @@ from app.core.enums import ExpiryRule
 from app.instruments.contracts import select_expiry
 from app.instruments.master import INDEX_SYMBOLS, underlying_of
 from app.market_data.calendar import IST
-from app.instruments import expiry_calendar
+from app.instruments import expiry_calendar, expiry_data
 from app.option_chain.greeks import BSInputs, black_scholes
 from app.option_chain.models import OptionType
 
@@ -144,17 +144,26 @@ class ExpiryCalendar:
     on a holiday - the exchange's own rule. With `dated_underlying` (an underlying the dated
     table in `app.instruments.expiry_calendar` knows, and no pinned weekday) the weekday is the
     one in force on each date - NIFTY expired on Thursdays until 31 Aug 2025 and on Tuesdays
-    since - and weeklies exist only from that underlying's first weekly listing."""
+    since - and weeklies exist only from that underlying's first weekly listing. With `data_symbol`
+    (an underlying in `expiry_data.DATA_DRIVEN`, no pinned weekday) the expiries are the ones NSE
+    listed, read from its bhavcopies - no weekday rule; `weekly` False keeps the monthly ones only,
+    otherwise every listed expiry counts (BANKNIFTY weeklies until they ended, monthlies after)."""
     weekday: int
     weekly: bool
     holidays: frozenset = field(default_factory=frozenset)
     dated_underlying: Optional[str] = None
     force_weekly: bool = False          # an explicit weekly=True: weeklies on every date, listed or not
+    data_symbol: Optional[str] = None   # expiries from NSE data (app.instruments.expiry_data)
 
     @classmethod
     def for_underlying(cls, underlying: str, holidays: Iterable[date] = (), *, weekday: Optional[int] = None,
                        weekly: Optional[bool] = None) -> "ExpiryCalendar":
         key = underlying.upper()
+        canonical = expiry_calendar.ALIASES.get(" ".join(key.split()), key)
+        if weekday is None and expiry_data.data_driven(canonical):
+            # Listed expiries only; `weekday` stays as a label fallback for a run that traded nothing.
+            return cls(weekday=MONTHLY_EXPIRY_WEEKDAY.get(key, DEFAULT_MONTHLY_WEEKDAY), weekly=weekly is not False,
+                       holidays=frozenset(holidays), data_symbol=canonical)
         default_weekly = key in WEEKLY_EXPIRY_WEEKDAY
         is_weekly = default_weekly if weekly is None else weekly
         dated = key if weekday is None and expiry_calendar.known(key) else None
@@ -196,6 +205,8 @@ class ExpiryCalendar:
 
     def expiries(self, on_or_after: date, count: int = 6) -> List[date]:
         """The next `count` listed expiries on/after the date (post holiday shift)."""
+        if self.data_symbol is not None:
+            return expiry_data.expiries(self.data_symbol, on_or_after, count, monthly_only=not self.weekly)
         if self.dated_underlying is not None:
             return self._dated_expiries(on_or_after, count)
         out: List[date] = []
@@ -225,9 +236,17 @@ class ExpiryCalendar:
         return out
 
     def select(self, rule: ExpiryRule, today: date) -> Optional[date]:
+        if self.data_symbol is not None and rule == ExpiryRule.MONTHLY:
+            # a weekly can fall after the monthly in its month (BANKNIFTY 31 Jan 2024): MONTHLY means the monthly
+            return select_expiry(expiry_data.expiries(self.data_symbol, today, monthly_only=True), rule, today)
         return select_expiry(self.expiries(today), rule, today)
 
-    def far_expiry(self, near: date) -> date:
+    def far_expiry(self, near: date, as_of: Optional[date] = None) -> date:
+        """The next expiry after `near`, as listed on `as_of` (the bar day; data calendars only). StopIteration if none."""
+        if self.data_symbol is not None:
+            listed = expiry_data.expiries(self.data_symbol, near + timedelta(days=1), monthly_only=not self.weekly,
+                                          as_of=as_of or near)
+            return next(e for e in listed if e > near)
         return next(e for e in self.expiries(near + timedelta(days=1)) if e > near)
 
 

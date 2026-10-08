@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, Disclaimer } from "../components/ui";
+import { PageHeader } from "../components/primitives";
 import {
   defaultCondition,
   defaultCustomStrategyConfig,
@@ -32,7 +33,7 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <select
-        className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+        className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
         value={operand.type}
         onChange={(e) => onChange({ ...operand, type: e.target.value as "value" | "indicator" })}
       >
@@ -42,14 +43,14 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
       {operand.type === "value" ? (
         <input
           type="number"
-          className="w-20 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+          className="w-20 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
           value={operand.value}
           onChange={(e) => onChange({ ...operand, value: Number(e.target.value) })}
         />
       ) : (
         <>
           <select
-            className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+            className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
             value={operand.indicator}
             onChange={(e) => onChange({ ...operand, indicator: e.target.value as IndicatorName })}
           >
@@ -61,7 +62,7 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
             <input
               type="number"
               title={operand.indicator === "OR_HIGH" || operand.indicator === "OR_LOW" ? "opening range, minutes" : "period"}
-              className="w-14 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+              className="w-14 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
               value={operand.period}
               onChange={(e) => onChange({ ...operand, period: Number(e.target.value) })}
             />
@@ -71,14 +72,14 @@ export function OperandEditor({ operand, onChange }: { operand: Operand; onChang
               type="number"
               step="0.1"
               title={operand.indicator === "SUPERTREND" ? "ATR multiplier" : "standard deviations"}
-              className="w-14 rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+              className="w-14 rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
               value={operand.multiplier}
               onChange={(e) => onChange({ ...operand, multiplier: Number(e.target.value) })}
             />
           )}
           <select
             title="Evaluate on a higher timeframe (completed bars only)"
-            className="rounded bg-panel2 border border-border px-1 py-1 text-[11px] text-muted"
+            className="rounded bg-surface-2 border border-border px-1 py-1 text-[11px] text-fg-muted"
             value={operand.timeframe ?? ""}
             onChange={(e) => onChange({ ...operand, timeframe: e.target.value || null })}
           >
@@ -98,10 +99,10 @@ export function ConditionEditor({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded border border-border bg-panel2/40 px-2 py-2">
+    <div className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-2/40 px-2 py-2">
       <OperandEditor operand={condition.left} onChange={(left) => onChange({ ...condition, left })} />
       <select
-        className="rounded bg-panel2 border border-border px-1.5 py-1 text-xs"
+        className="rounded bg-surface-2 border border-border px-1.5 py-1 text-xs"
         value={condition.operator}
         onChange={(e) => onChange({ ...condition, operator: e.target.value as ConditionOperator })}
       >
@@ -110,7 +111,7 @@ export function ConditionEditor({
         ))}
       </select>
       <OperandEditor operand={condition.right} onChange={(right) => onChange({ ...condition, right })} />
-      <button onClick={onRemove} className="ml-auto text-xs text-danger hover:underline">
+      <button onClick={onRemove} className="ml-auto text-xs text-down hover:underline">
         Remove
       </button>
     </div>
@@ -126,7 +127,7 @@ export function ConditionListEditor({
 }) {
   return (
     <div>
-      <div className="text-xs text-muted mb-1.5">{title} (all must hold - AND)</div>
+      <div className="text-xs text-fg-muted mb-1.5">{title} (all must hold - AND)</div>
       <div className="space-y-1.5">
         {conditions.map((c, i) => (
           <ConditionEditor
@@ -212,9 +213,9 @@ export default function StrategyBuilderPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-purple-400">Strategy Builder</h1>
+        <PageHeader title="Strategy Builder" />
         <Card>
-          <p className="text-sm text-muted">
+          <p className="text-sm text-fg-muted">
             Log in from the Account tab to build and save your own no-code strategies. A saved
             strategy runs through the exact same signal/backtest engine as the inbuilt ones.
           </p>
@@ -225,18 +226,12 @@ export default function StrategyBuilderPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-purple-400">Strategy Builder</h1>
-        <p className="text-sm font-semibold text-purple-200">
-          Compose entry rules from indicators - no code. Every rule set produces a real signal
-          through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest).
-        </p>
-      </div>
+      <PageHeader title="Strategy Builder" description="Compose entry rules from indicators - no code. Every rule set produces a real signal through the same engine as the inbuilt strategies (score, entry/SL/targets, backtest)." />
 
       <Disclaimer kind="ai" />
 
       <Card title="Describe your strategy in plain English">
-        <p className="text-xs text-muted mb-2">
+        <p className="text-xs text-fg-muted mb-2">
           A deterministic, rule-based parser - not a call to an external AI (no AI-provider
           credentials are configured). It recognizes a fixed set of phrasings (e.g. "Buy when
           RSI(14) crosses above 60 and price is above EMA 50. Sell when RSI crosses below 40. Use
@@ -245,17 +240,17 @@ export default function StrategyBuilderPage() {
           builder. Nothing is saved until you review it below and click "Save strategy".
         </p>
         <textarea
-          className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+          className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
           rows={4}
           placeholder="Buy when RSI(14) crosses above 60 and price is above EMA 50. Sell when RSI crosses below 40..."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        {parseError && <div className="mt-2 text-sm text-danger">{parseError}</div>}
+        {parseError && <div className="mt-2 text-sm text-down">{parseError}</div>}
         <button
           onClick={handleParse}
           disabled={parsing || !description.trim()}
-          className="mt-2 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+          className="mt-2 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
         >
           {parsing ? "Parsing…" : "Parse"}
         </button>
@@ -264,17 +259,17 @@ export default function StrategyBuilderPage() {
           <div className="mt-3 space-y-2">
             {parseResult.interpreted.length > 0 && (
               <div>
-                <div className="text-xs text-muted mb-1">Understood as:</div>
+                <div className="text-xs text-fg-muted mb-1">Understood as:</div>
                 <ul className="space-y-0.5">
                   {parseResult.interpreted.map((line, i) => (
-                    <li key={i} className="text-xs text-accent">✓ {line}</li>
+                    <li key={i} className="text-xs text-up">✓ {line}</li>
                   ))}
                 </ul>
               </div>
             )}
             {parseResult.warnings.length > 0 && (
               <div>
-                <div className="text-xs text-muted mb-1">Not understood (won't be included):</div>
+                <div className="text-xs text-fg-muted mb-1">Not understood (won't be included):</div>
                 <ul className="space-y-0.5">
                   {parseResult.warnings.map((line, i) => (
                     <li key={i} className="text-xs text-warn">⚠ {line}</li>
@@ -295,16 +290,16 @@ export default function StrategyBuilderPage() {
 
       <Card title={`Your saved strategies (${saved.length})`}>
         {saved.length === 0 ? (
-          <div className="text-sm text-muted py-2">None yet - build one below.</div>
+          <div className="text-sm text-fg-muted py-2">None yet - build one below.</div>
         ) : (
           <div className="space-y-1.5">
             {saved.map((s) => (
               <div key={s.id} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
                 <div>
-                  <span className="font-medium text-slate-200">{s.config.name}</span>{" "}
-                  <span className="text-muted text-xs">({s.config.timeframe}, id {s.strategy_id})</span>
+                  <span className="font-medium text-fg">{s.config.name}</span>{" "}
+                  <span className="text-fg-muted text-xs">({s.config.timeframe}, id {s.strategy_id})</span>
                 </div>
-                <button onClick={() => handleDelete(s.id)} className="text-xs text-danger hover:underline">
+                <button onClick={() => handleDelete(s.id)} className="text-xs text-down hover:underline">
                   Delete
                 </button>
               </div>
@@ -317,17 +312,17 @@ export default function StrategyBuilderPage() {
         <div className="space-y-4">
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">Name</label>
+              <label className="block text-xs text-fg-muted mb-1">Name</label>
               <input
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.name}
                 onChange={(e) => setConfig({ ...config, name: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Timeframe</label>
+              <label className="block text-xs text-fg-muted mb-1">Timeframe</label>
               <select
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.timeframe}
                 onChange={(e) => setConfig({ ...config, timeframe: e.target.value })}
               >
@@ -351,63 +346,63 @@ export default function StrategyBuilderPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-muted mb-1">Stop loss (x ATR)</label>
+              <label className="block text-xs text-fg-muted mb-1">Stop loss (x ATR)</label>
               <input
                 type="number" step="0.1"
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.stop_loss_atr_mult}
                 onChange={(e) => setConfig({ ...config, stop_loss_atr_mult: Number(e.target.value) })}
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">ATR period</label>
+              <label className="block text-xs text-fg-muted mb-1">ATR period</label>
               <input
                 type="number"
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.atr_period}
                 onChange={(e) => setConfig({ ...config, atr_period: Number(e.target.value) })}
               />
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Target R:R (1 / 2)</label>
+              <label className="block text-xs text-fg-muted mb-1">Target R:R (1 / 2)</label>
               <div className="flex gap-1">
                 <input
                   type="number" step="0.1"
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={config.target_rr[0]}
                   onChange={(e) => setConfig({ ...config, target_rr: [Number(e.target.value), config.target_rr[1]] })}
                 />
                 <input
                   type="number" step="0.1"
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={config.target_rr[1]}
                   onChange={(e) => setConfig({ ...config, target_rr: [config.target_rr[0], Number(e.target.value)] })}
                 />
               </div>
             </div>
             <div>
-              <label className="block text-xs text-muted mb-1">Min R:R to trade</label>
+              <label className="block text-xs text-fg-muted mb-1">Min R:R to trade</label>
               <input
                 type="number" step="0.1"
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={config.min_rr}
                 onChange={(e) => setConfig({ ...config, min_rr: Number(e.target.value) })}
               />
             </div>
           </div>
 
-          {error && <div className="text-sm text-danger">{error}</div>}
-          {message && <div className="text-sm text-accent">{message}</div>}
+          {error && <div className="text-sm text-down">{error}</div>}
+          {message && <div className="text-sm text-up">{message}</div>}
 
           <button
             onClick={handleSave}
             disabled={saving || (config.long_conditions.length === 0 && config.short_conditions.length === 0)}
-            className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+            className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save strategy"}
           </button>
           {config.long_conditions.length === 0 && config.short_conditions.length === 0 && (
-            <div className="text-xs text-muted">Add at least one long or short condition before saving.</div>
+            <div className="text-xs text-fg-muted">Add at least one long or short condition before saving.</div>
           )}
         </div>
       </Card>

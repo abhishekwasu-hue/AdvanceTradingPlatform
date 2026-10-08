@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, CollapsibleCard } from "../components/ui";
+import { PageHeader } from "../components/primitives";
 import {
   NEWS_EVENT_CATEGORY_LABELS,
   defaultNewsEvent,
@@ -16,10 +17,10 @@ import {
 
 /** Phase BB: feed items are unverified - a severity chip and the badge say so on every row. */
 function severityClass(severity: number): string {
-  if (severity >= 5) return "bg-danger/20 text-danger border-danger/50";
-  if (severity >= 4) return "bg-amber-500/15 text-amber-200 border-amber-400/50";
-  if (severity >= 3) return "bg-sky-500/10 text-sky-200 border-sky-400/40";
-  return "bg-slate-700/30 text-muted border-border";
+  if (severity >= 5) return "bg-down/20 text-down border-down/50";
+  if (severity >= 4) return "bg-warn/15 text-warn border-warn/50";
+  if (severity >= 3) return "bg-info/10 text-info border-info/40";
+  return "bg-surface-2 text-fg-muted border-border";
 }
 
 function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
@@ -39,27 +40,27 @@ function FeedSourcesCard({ isAdmin }: { isAdmin: boolean }) {
   };
   return (
     <CollapsibleCard title="Live feed sources" subtitle={status.enabled ? `on · fetch every ${Math.round(status.cadence_seconds / 60)} min` : "off (feature flag news_feed)"} storageKey="news-feed-sources">
-      <p className="text-xs text-muted mb-2">{status.note}</p>
-      {error && <div className="text-xs text-danger mb-2">{error}</div>}
+      <p className="text-xs text-fg-muted mb-2">{status.note}</p>
+      {error && <div className="text-xs text-down mb-2">{error}</div>}
       <div className="space-y-1.5">
         {status.sources.map((src) => (
           <div key={src.id} className="flex items-start gap-2 rounded border border-border px-2 py-1.5 text-xs">
-            <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${src.on ? "bg-emerald-400" : "bg-slate-600"}`} />
+            <span className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${src.on ? "bg-up" : "bg-fg-muted/40"}`} title={src.on ? "on" : "off"}><span className="sr-only">{src.on ? "on" : "off"}</span></span>
             <div className="flex-1">
-              <div className="font-semibold text-slate-200">{src.name} <span className="font-normal text-muted">· {src.publisher}{src.official ? "" : " · not a primary source"}</span></div>
-              <div className="text-muted">{src.terms}</div>
+              <div className="font-semibold text-fg">{src.name} <span className="font-normal text-fg-muted">· {src.publisher}{src.official ? "" : " · not a primary source"}</span></div>
+              <div className="text-fg-muted">{src.terms}</div>
             </div>
             {isAdmin && (
-              <button disabled={busy} onClick={() => toggle(src.id, !src.on)} className="shrink-0 rounded border border-border px-2 py-0.5 text-slate-200 hover:bg-panel2 disabled:opacity-50">
+              <button disabled={busy} onClick={() => toggle(src.id, !src.on)} className="shrink-0 rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2 disabled:opacity-50">
                 {src.on ? "Turn off" : "Turn on"}
               </button>
             )}
           </div>
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-fg-muted">
         {status.last_run.at && <span>last fetch {new Date(status.last_run.at).toLocaleString()} · {status.last_run.new ?? 0} new · {status.last_run.alerts ?? 0} alerts · {(status.last_run.errors ?? []).length} errors</span>}
-        {isAdmin && status.enabled && <button disabled={busy} onClick={refresh} className="rounded border border-border px-2 py-0.5 text-slate-200 hover:bg-panel2 disabled:opacity-50">Fetch now</button>}
+        {isAdmin && status.enabled && <button disabled={busy} onClick={refresh} className="rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2 disabled:opacity-50">Fetch now</button>}
       </div>
     </CollapsibleCard>
   );
@@ -69,9 +70,9 @@ const CATEGORIES = Object.keys(NEWS_EVENT_CATEGORY_LABELS) as NewsEventCategory[
 const SENTIMENTS: NewsSentiment[] = ["Bullish", "Neutral", "Bearish"];
 
 function sentimentClass(sentiment: NewsSentiment): string {
-  if (sentiment === "Bullish") return "bg-accent/15 text-accent border-accent/40";
-  if (sentiment === "Bearish") return "bg-danger/15 text-danger border-danger/40";
-  return "bg-slate-700/30 text-muted border-border";
+  if (sentiment === "Bullish") return "bg-up/15 text-up border-up/40";
+  if (sentiment === "Bearish") return "bg-down/15 text-down border-down/40";
+  return "bg-surface-2/30 text-fg-muted border-border";
 }
 
 export default function NewsEventsPage() {
@@ -145,24 +146,16 @@ export default function NewsEventsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-pink-400">News & Events</h1>
-        <p className="text-sm font-semibold text-pink-200">
-          Structured, cited entries for RBI policy decisions, the Union Budget, government
-          policy changes, corporate news, and other market-moving events. Entries a person adds must
-          cite a source.{trust && <span className="ml-1 text-slate-300">News trust: <b>{trust.trust.toFixed(2)}</b> ({trust.ratings} verdict{trust.ratings === 1 ? "" : "s"}{trust.applied ? ", applied to the thesis" : `, ${trust.note}`}).</span>} Items marked <span className="rounded border border-amber-400/50 bg-amber-500/10 px-1 text-amber-200">unverified feed</span> come
-          from a publisher's own public feed (RBI, SEBI, ...): headline and link only, never checked by the platform - read the source before acting.
-        </p>
-      </div>
+      <PageHeader title={<>News & Events</>} description={<>Structured, cited entries for RBI policy decisions, the Union Budget, government policy changes, corporate news, and other market-moving events. Entries a person adds must cite a source.{trust && <span className="ml-1 text-fg-muted">News trust: <b>{trust.trust.toFixed(2)}</b> ({trust.ratings} verdict{trust.ratings === 1 ? "" : "s"}{trust.applied ? ", applied to the thesis" : `, ${trust.note}`}).</span>} Items marked <span className="rounded border border-warn/50 bg-warn/10 px-1 text-warn">unverified feed</span> come from a publisher's own public feed (RBI, SEBI, ...): headline and link only, never checked by the platform - read the source before acting.</>} />
 
       <FeedSourcesCard isAdmin={!!user && user.role === "SUPER_ADMIN"} />
 
       <Card title="Filter">
         <div className="grid sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Origin</label>
+            <label className="block text-xs text-fg-muted mb-1">Origin</label>
             <select
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={originFilter}
               onChange={(e) => setOriginFilter(e.target.value as "" | "MANUAL" | "FEED")}
             >
@@ -172,9 +165,9 @@ export default function NewsEventsPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Category</label>
+            <label className="block text-xs text-fg-muted mb-1">Category</label>
             <select
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as NewsEventCategory | "")}
             >
@@ -185,9 +178,9 @@ export default function NewsEventsPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1">Symbol</label>
+            <label className="block text-xs text-fg-muted mb-1">Symbol</label>
             <input
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               placeholder="e.g. RELIANCE"
               value={symbolFilter}
               onChange={(e) => setSymbolFilter(e.target.value.toUpperCase())}
@@ -198,23 +191,23 @@ export default function NewsEventsPage() {
 
       <Card title={`Events (${events.length})`}>
         {loading ? (
-          <div className="text-sm text-muted py-2">Loading…</div>
+          <div className="text-sm text-fg-muted py-2">Loading…</div>
         ) : events.length === 0 ? (
-          <div className="text-sm text-muted py-2">No events match this filter.</div>
+          <div className="text-sm text-fg-muted py-2">No events match this filter.</div>
         ) : (
           <div className="space-y-2">
             {events.map((e) => (
               <div key={e.id} className="rounded border border-border px-3 py-2 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted mr-2">
+                    <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-fg-muted mr-2">
                       {NEWS_EVENT_CATEGORY_LABELS[e.category]}
                     </span>
                     <span className={`inline-block rounded border px-1.5 py-0.5 text-[11px] font-semibold ${sentimentClass(e.sentiment)}`}>
                       {e.sentiment}
                     </span>
                     {e.origin === "FEED" && (
-                      <span className="ml-2 inline-block rounded border border-amber-400/50 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-200" title="From a public feed; not verified by the platform">
+                      <span className="ml-2 inline-block rounded border border-warn/50 bg-warn/10 px-1.5 py-0.5 text-[11px] text-warn" title="From a public feed; not verified by the platform">
                         unverified feed
                       </span>
                     )}
@@ -223,16 +216,16 @@ export default function NewsEventsPage() {
                         {e.classification.type.toLowerCase().replace("_", " ")} · severity {e.classification.severity}{e.classification.method === "ai" ? " · AI" : ""}
                       </span>
                     )}
-                    <div className="mt-1 font-medium text-slate-200">{e.headline}</div>
-                    {e.description && <div className="mt-0.5 text-xs text-muted">{e.description}</div>}
+                    <div className="mt-1 font-medium text-fg">{e.headline}</div>
+                    {e.description && <div className="mt-0.5 text-xs text-fg-muted">{e.description}</div>}
                     {e.affected_symbols.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {e.affected_symbols.map((s) => (
-                          <span key={s} className="rounded border border-border px-1 py-0.5 text-[10px] text-muted">{s}</span>
+                          <span key={s} className="rounded border border-border px-1 py-0.5 text-[10px] text-fg-muted">{s}</span>
                         ))}
                       </div>
                     )}
-                    <div className="mt-1 text-[11px] text-muted">
+                    <div className="mt-1 text-[11px] text-fg-muted">
                       {e.event_date} · Source:{" "}
                       {e.source.source_url ? (
                         <a href={e.source.source_url} target="_blank" rel="noreferrer" className="text-brand hover:underline">
@@ -244,15 +237,15 @@ export default function NewsEventsPage() {
                     </div>
                   </div>
                   {user && user.id === e.created_by && (
-                    <button onClick={() => handleDelete(e.id)} className="text-xs text-danger hover:underline shrink-0">
+                    <button onClick={() => handleDelete(e.id)} className="text-xs text-down hover:underline shrink-0">
                       Delete
                     </button>
                   )}
                   {user && feedOn && e.origin === "FEED" && (
                     <div className="flex shrink-0 flex-col items-end gap-1 text-[11px]" title="Your verdict teaches the thesis how much to trust the feed (organisation-wide, after 10 verdicts)">
                       {(["useful", "noise", "wrong_direction"] as NewsVerdict[]).map((v) => (
-                        <button key={v} onClick={() => void vote(e.id, v)}
-                                className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-purple-400/60 bg-purple-500/20 text-purple-100" : "border-border text-muted hover:text-slate-200"}`}>
+                        <button key={v} onClick={() => void vote(e.id, v)} aria-pressed={verdicts[String(e.id)] === v}
+                                className={`rounded border px-1.5 py-0.5 ${verdicts[String(e.id)] === v ? "border-brand bg-brand/15 text-fg" : "border-border text-fg-muted hover:text-fg"}`}>
                           {v === "useful" ? "👍 useful" : v === "noise" ? "👎 noise" : "↔ wrong direction"}
                         </button>
                       ))}
@@ -267,16 +260,16 @@ export default function NewsEventsPage() {
 
       {authLoading ? null : !user ? (
         <Card>
-          <p className="text-sm text-muted">Log in from the Account tab to add a cited news event.</p>
+          <p className="text-sm text-fg-muted">Log in from the Account tab to add a cited news event.</p>
         </Card>
       ) : (
         <Card title="Add a cited event">
           <div className="space-y-3">
             <div className="grid sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-muted mb-1">Category</label>
+                <label className="block text-xs text-fg-muted mb-1">Category</label>
                 <select
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value as NewsEventCategory })}
                 >
@@ -286,18 +279,18 @@ export default function NewsEventsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-muted mb-1">Event date</label>
+                <label className="block text-xs text-fg-muted mb-1">Event date</label>
                 <input
                   type="date"
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={form.event_date}
                   onChange={(e) => setForm({ ...form, event_date: e.target.value })}
                 />
               </div>
               <div>
-                <label className="block text-xs text-muted mb-1">Sentiment</label>
+                <label className="block text-xs text-fg-muted mb-1">Sentiment</label>
                 <select
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={form.sentiment}
                   onChange={(e) => setForm({ ...form, sentiment: e.target.value as NewsSentiment })}
                 >
@@ -309,18 +302,18 @@ export default function NewsEventsPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-muted mb-1">Headline</label>
+              <label className="block text-xs text-fg-muted mb-1">Headline</label>
               <input
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={form.headline}
                 onChange={(e) => setForm({ ...form, headline: e.target.value })}
               />
             </div>
 
             <div>
-              <label className="block text-xs text-muted mb-1">Description (optional)</label>
+              <label className="block text-xs text-fg-muted mb-1">Description (optional)</label>
               <textarea
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 rows={2}
                 value={form.description ?? ""}
                 onChange={(e) => setForm({ ...form, description: e.target.value || null })}
@@ -328,9 +321,9 @@ export default function NewsEventsPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-muted mb-1">Affected symbols (comma-separated, blank = market-wide)</label>
+              <label className="block text-xs text-fg-muted mb-1">Affected symbols (comma-separated, blank = market-wide)</label>
               <input
-                className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                 value={form.affected_symbols.join(", ")}
                 onChange={(e) =>
                   setForm({
@@ -343,29 +336,29 @@ export default function NewsEventsPage() {
 
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-muted mb-1">Source name</label>
+                <label className="block text-xs text-fg-muted mb-1">Source name</label>
                 <input
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={form.source.source}
                   onChange={(e) => setForm({ ...form, source: { ...form.source, source: e.target.value } })}
                 />
               </div>
               <div>
-                <label className="block text-xs text-muted mb-1">Source URL (optional)</label>
+                <label className="block text-xs text-fg-muted mb-1">Source URL (optional)</label>
                 <input
-                  className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                  className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                   value={form.source.source_url ?? ""}
                   onChange={(e) => setForm({ ...form, source: { ...form.source, source_url: e.target.value || null } })}
                 />
               </div>
             </div>
 
-            {error && <div className="text-sm text-danger">{error}</div>}
+            {error && <div className="text-sm text-down">{error}</div>}
 
             <button
               onClick={handleSubmit}
               disabled={submitting || !form.headline || !form.source.source}
-              className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+              className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
             >
               {submitting ? "Saving…" : "Add event"}
             </button>

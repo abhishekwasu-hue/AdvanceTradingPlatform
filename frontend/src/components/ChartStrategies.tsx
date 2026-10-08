@@ -27,8 +27,8 @@ export function strategyLabel(name: string): string {
 function Switch({ on, onChange, disabled, title }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string }) {
   return (
     <button type="button" role="switch" aria-checked={on} disabled={disabled} title={title} onClick={() => onChange(!on)}
-            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? "bg-brand" : "bg-surface-2"}`}>
-      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
+            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? "bg-brand" : "bg-fg-muted/40"}`}>
+      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-surface-1 shadow ring-1 ring-border transition-all ${on ? "left-3.5" : "left-0.5"}`} />
     </button>
   );
 }
@@ -172,7 +172,7 @@ export function useChartStrategies({ enabled, candles, symbol, timeframe, exchan
                   {on && r && !("error" in r) && r.compatible && r.last_signal && (
                     <span className="block text-fg-muted">
                       {r.total_trades} trades · win {r.win_rate.toFixed(0)}% ·{" "}
-                      <b className={signClass(r.net_pnl)}>{r.net_pnl >= 0 ? "+" : ""}₹{Math.round(r.net_pnl).toLocaleString("en-IN")}</b>
+                      <b className={signClass(r.net_pnl, 0)}>{Math.round(r.net_pnl) > 0 ? "+" : ""}₹{Math.round(r.net_pnl).toLocaleString("en-IN")}</b>
                       {r.last_signal && r.last_signal.direction !== "NO_TRADE" && <span className="text-fg-muted"> · now {r.last_signal.direction} @ {r.last_signal.entry}</span>}
                     </span>
                   )}

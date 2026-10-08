@@ -100,7 +100,7 @@ export default function AiProviderCard() {
           </div>
           {config.usage.budget_inr > 0 && (
             <div className="mt-1 h-1.5 w-full rounded bg-border overflow-hidden">
-              <div className={`h-full ${config.usage.exhausted ? "bg-brand" : "bg-brand"}`} style={{ width: `${Math.min(100, (config.usage.spent_inr / config.usage.budget_inr) * 100)}%` }} />
+              <div className={`h-full ${config.usage.exhausted ? "bg-warn" : "bg-brand"}`} style={{ width: `${Math.min(100, (config.usage.spent_inr / config.usage.budget_inr) * 100)}%` }} />
             </div>
           )}
           {Object.keys(config.usage.by_feature).length > 0 && (
@@ -132,7 +132,7 @@ export default function AiProviderCard() {
           </div>
           <p className="text-fg">{config.data_consent.text.en}</p>
           <details className="mt-1 text-fg-muted">
-            <summary className="cursor-pointer text-fg-muted hover:underline">Read in Marathi</summary>
+            <summary className="cursor-pointer text-brand hover:underline">Read in Marathi</summary>
             <p className="mt-1" lang="mr">{config.data_consent.text.mr}</p>
           </details>
           {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-fg">

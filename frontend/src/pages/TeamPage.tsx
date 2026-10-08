@@ -4,15 +4,15 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, StatTile } from "../components/ui";
 import { ROLE_LABELS, ROUTING_POLICIES, type MemberScopes, type ScopeCatalogueEntry, type TeamInvite, type TeamMember, type TenantInfo, type TenantRole } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
 
 function RoleBadge({ role }: { role: TenantRole }) {
   const cls =
-    role === "OWNER" ? "border-warn/40 text-warn bg-warn/10"
-      : role === "SUPER_ADMIN" ? "border-down/40 text-down bg-down/10"
+    role === "OWNER" ? "border-brand/40 text-brand bg-brand/10"
+      : role === "SUPER_ADMIN" ? "border-brand text-brand bg-brand/15"
         : role === "VIEWER" || role === "SUPPORT" ? "border-border text-fg-muted bg-surface-2"
           : "border-border text-fg bg-surface-2";
   return <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-bold ${cls}`}>{ROLE_LABELS[role] ?? role}</span>;
@@ -124,10 +124,10 @@ export default function TeamPage() {
       <PageHeader title="Team" description="Everyone in your organisation shares the same broker connections, deployments, positions and alerts. Owners manage the team; traders and strategy creators can trade and configure; viewers see everything and change nothing." />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile icon={Users} label="Organisation" value={tenant?.name ?? "…"} accentClass="text-fg" />
-        <StatTile icon={ShieldCheck} label="Your role" value={ROLE_LABELS[user.role as TenantRole] ?? user.role} accentClass="text-warn" />
-        <StatTile icon={UserPlus} label="Active members" value={active.length} accentClass="text-fg" />
-        <StatTile icon={Link2} label="Open invites" value={isOwner ? invites.length : "-"} accentClass="text-fg" />
+        <StatTile icon={Users} label="Organisation" value={tenant?.name ?? "…"} />
+        <StatTile icon={ShieldCheck} label="Your role" value={ROLE_LABELS[user.role as TenantRole] ?? user.role} />
+        <StatTile icon={UserPlus} label="Active members" value={active.length} />
+        <StatTile icon={Link2} label="Open invites" value={isOwner ? invites.length : "-"} />
       </div>
 
       {error && <div className="text-sm text-down">{error}</div>}

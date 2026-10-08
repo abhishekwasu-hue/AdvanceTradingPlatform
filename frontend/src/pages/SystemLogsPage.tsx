@@ -4,8 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import ExportCard from "../components/ExportCard";
 import { Card } from "../components/ui";
 import type { AuditLogEntry, LoginEvent } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 export default function SystemLogsPage() {
   const { user, loading: authLoading } = useAuth();
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);

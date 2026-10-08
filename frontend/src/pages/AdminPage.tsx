@@ -7,8 +7,8 @@ import { Card, StatTile } from "../components/ui";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 const STATUSES = ["active", "suspended"];
 
 export default function AdminPage() {
@@ -83,10 +83,10 @@ export default function AdminPage() {
       <PageHeader title="Admin Console" description="Every organisation on the platform: plans, suspension, what the worker is running, the platform-wide audit trail, and the global kill switch. Every change here lands on the affected tenant's own audit trail and notifies them." />
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <StatTile icon={Building2} label="Tenants" value={overview?.tenants_total ?? "…"} accentClass="text-down" />
-        <StatTile icon={Users} label="Active users" value={overview?.users_total ?? "…"} accentClass="text-fg" />
-        <StatTile icon={ShieldEllipsis} label="Active / LIVE deployments" value={overview ? `${overview.active_deployments} / ${overview.live_deployments}` : "…"} accentClass="text-fg" />
-        <StatTile icon={ScrollText} label="Open positions (LIVE)" value={overview ? `${overview.open_positions} (${overview.open_live_positions})` : "…"} accentClass="text-fg" />
+        <StatTile icon={Building2} label="Tenants" value={overview?.tenants_total ?? "…"} />
+        <StatTile icon={Users} label="Active users" value={overview?.users_total ?? "…"} />
+        <StatTile icon={ShieldEllipsis} label="Active / LIVE deployments" value={overview ? `${overview.active_deployments} / ${overview.live_deployments}` : "…"} />
+        <StatTile icon={ScrollText} label="Open positions (LIVE)" value={overview ? `${overview.open_positions} (${overview.open_live_positions})` : "…"} />
         <StatTile icon={Bot} label="Worker" value={overview === null ? "…" : overview.worker_running ? "Running" : "Down"} tone={overview === null ? "default" : overview.worker_running ? "up" : "down"} />
       </div>
 

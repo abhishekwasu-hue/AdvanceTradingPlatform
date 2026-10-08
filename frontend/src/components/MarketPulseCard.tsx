@@ -77,7 +77,7 @@ export default function MarketPulseCard({ onNavigate }: { onNavigate?: (page: Pa
       {!usable ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted">
           Live index charts need a broker with a valid session today.
-          {onNavigate && <button onClick={() => onNavigate("settings")} className="text-fg-muted hover:underline">Log in under Settings &gt; Brokers</button>}
+          {onNavigate && <button onClick={() => onNavigate("settings")} className="text-brand hover:underline">Log in under Settings &gt; Brokers</button>}
         </div>
       ) : (
         <>

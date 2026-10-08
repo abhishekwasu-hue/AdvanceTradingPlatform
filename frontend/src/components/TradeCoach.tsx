@@ -70,7 +70,7 @@ function Bars({ rows, labelOf }: { rows: CoachGroup[]; labelOf: (g: CoachGroup) 
             <td className="w-24 py-1 pr-2 text-fg-muted">{labelOf(g)}</td>
             <td className="py-1">
               <div className="relative h-3">
-                <div className="absolute left-1/2 top-0 h-3 w-px bg-surface-2" />
+                <div className="absolute left-1/2 top-0 h-3 w-px bg-fg-muted/40" />
                 <div className={`absolute top-0.5 h-2 rounded-sm ${g.net_pnl > 0 ? "bg-up/60" : g.net_pnl < 0 ? "bg-down/60" : "bg-fg-muted/40"}`}
                      style={g.net_pnl >= 0 ? { left: "50%", width: `${(g.net_pnl / max) * 50}%` } : { right: "50%", width: `${(-g.net_pnl / max) * 50}%` }} />
               </div>
@@ -99,8 +99,8 @@ export default function TradeCoach() {
   const tiles = useMemo(() => s && s.trades ? [
     { label: "Trades", value: String(s.trades), sub: `${s.trading_days} days` },
     { label: "Win rate", value: `${s.win_rate}%`, sub: `${s.wins} / ${s.losses}` },
-    { label: "Net P&L", value: money(s.net_pnl), tone: signClass(s.net_pnl), sub: `best ${money(s.best_day)} · worst ${money(s.worst_day)}` },
-    { label: "Expectancy per trade", value: money(s.expectancy), tone: signClass(s.expectancy), sub: s.expectancy_r != null ? `${s.expectancy_r}R` : "R: no stop" },
+    { label: "Net P&L", value: money(s.net_pnl), tone: signClass(s.net_pnl, 0), sub: `best ${money(s.best_day)} · worst ${money(s.worst_day)}` },
+    { label: "Expectancy per trade", value: money(s.expectancy), tone: signClass(s.expectancy, 0), sub: s.expectancy_r != null ? `${s.expectancy_r}R` : "R: no stop" },
     { label: "Profit factor", value: s.profit_factor != null ? String(s.profit_factor) : "-", sub: `avg ${money(s.avg_win)} / ${money(s.avg_loss)}` },
     { label: "Max drawdown", value: money(-(s.max_drawdown ?? 0)), tone: "text-down", sub: `losing streak ${s.longest_losing_streak}` },
   ] : [], [s]);
@@ -123,14 +123,14 @@ export default function TradeCoach() {
           <div className="grid gap-3 md:grid-cols-[180px_1fr]">
             <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-surface-2 p-4 text-center">
               <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">Discipline grade</div>
-              <div className="font-tabular text-5xl font-black text-fg-muted">{review.grade}</div>
+              <div className="font-tabular text-5xl font-black text-fg">{review.grade}</div>
               <div className="text-xs text-fg-muted">{review.score}/100</div>
             </div>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               {tiles.map((t) => (
                 <div key={t.label} className="rounded-xl border border-border bg-surface-1 px-3 py-2">
                   <div className="text-[11px] uppercase tracking-wider text-fg-muted">{t.label}</div>
-                  <div className={`font-tabular text-xl font-extrabold ${t.tone ?? "text-fg"}`}>{t.value}</div>
+                  <div className={`font-tabular text-xl font-extrabold ${t.tone || "text-fg"}`}>{t.value}</div>
                   <div className="text-[11px] text-fg-muted">{t.sub}</div>
                 </div>
               ))}

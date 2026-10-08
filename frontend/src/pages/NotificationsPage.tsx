@@ -3,8 +3,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
 import type { NotificationEntry, NotificationSeverity } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
     case "CRITICAL":
@@ -12,7 +12,7 @@ function severityClasses(severity: NotificationSeverity): string {
     case "WARNING":
       return "border-warn/40 text-warn";
     default:
-      return "border-border text-fg";
+      return "border-info/40 text-info";
   }
 }
 

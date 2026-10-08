@@ -400,7 +400,7 @@ export default function ProChart({
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
         {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
         {lastClose != null && (
-          <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-down" : "text-up"}`}>
+          <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-down" : change != null && change > 0 ? "text-up" : "text-fg"}`}>
             {fmt(lastClose)}{change != null && <span className="ml-1.5 text-xs font-semibold">{change >= 0 ? "+" : ""}{fmt(change)} ({changePct?.toFixed(2)}%)</span>}
           </span>
         )}
@@ -417,7 +417,7 @@ export default function ProChart({
         {timeframes && timeframes.length > 1 && onTimeframeChange && (
           <div className="flex overflow-hidden rounded-md border border-border">
             {timeframes.map((tf) => (
-              <button key={tf} onClick={() => onTimeframeChange(tf)} className={`px-2 py-0.5 ${tf === timeframe ? "bg-surface-2 text-fg-muted" : "text-fg-muted hover:text-fg"}`}>{tf.replace("min", "m")}</button>
+              <button key={tf} onClick={() => onTimeframeChange(tf)} className={`px-2 py-0.5 ${tf === timeframe ? "bg-brand/15 text-brand font-semibold" : "text-fg-muted hover:text-fg"}`}>{tf.replace("min", "m")}</button>
             ))}
           </div>
         )}
@@ -425,12 +425,12 @@ export default function ProChart({
           <div className="ml-auto flex flex-wrap items-center gap-1">
             {[...OVERLAYS, ...PANES].map((id) => (
               <button key={id} onClick={() => toggle(id)} title={INDICATOR_LABELS[id]}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg-muted"}`}>
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
                 {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
               </button>
             ))}
             <button onClick={() => strat.setOpen(!strat.open)} title="Strategies on this chart: draw their trades, deploy them"
-                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-border bg-surface-2 text-fg-muted" : "border-border text-fg hover:bg-surface-2"}`}>
+                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
               <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
             </button>
             <button onClick={fit} title="Fit all candles" className="rounded p-1 text-fg-muted hover:text-fg"><Scan size={12} /></button>

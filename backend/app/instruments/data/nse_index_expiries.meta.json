@@ -513,7 +513,7 @@
   {
    "symbol": "MIDCPNIFTY",
    "from": "2023-10-25",
-   "to": "2023-10-23"
+   "to": "2023-10-30"
   },
   {
    "symbol": "MIDCPNIFTY",
@@ -543,7 +543,7 @@
   {
    "symbol": "NIFTY",
    "from": "2025-09-25",
-   "to": "2025-09-23"
+   "to": "2025-09-30"
   },
   {
    "symbol": "NIFTY",
@@ -581,6 +581,6 @@
    "to": "2025-03-27"
   }
  ],
- "files_read": 1378,
+ "files_read": 1434,
  "forbidden": 0
 }

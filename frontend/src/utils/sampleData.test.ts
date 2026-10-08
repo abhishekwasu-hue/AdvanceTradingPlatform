@@ -65,7 +65,8 @@ describe("sample candles (P0.10)", () => {
   });
 
   it("never ends in the future by default", () => {
-    const last = generateSampleCandles(SESSION_BARS, 24_000, 3).at(-1)!;
+    const bars = generateSampleCandles(SESSION_BARS, 24_000, 3);
+    const last = bars[bars.length - 1];
     expect(new Date(last.timestamp).getTime()).toBeLessThanOrEqual(Date.now());
   });
 });

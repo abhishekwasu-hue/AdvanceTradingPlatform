@@ -46,13 +46,13 @@ export default function BrokerUncertainBanner() {
   if (!status || !status.broker_uncertain) return null;
 
   return (
-    <div className="rounded-lg border border-danger/50 bg-danger/[0.08] px-3 py-2.5 text-xs space-y-2">
+    <div className="rounded-lg border border-down/50 bg-down/[0.08] px-3 py-2.5 text-xs space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-start gap-2">
-          <AlertOctagon size={14} className="text-danger shrink-0 mt-0.5" />
+          <AlertOctagon size={14} className="text-down shrink-0 mt-0.5" />
           <div>
-            <div className="font-bold text-danger">LIVE entries blocked - broker state uncertain</div>
-            <div className="text-slate-300">
+            <div className="font-bold text-down">LIVE entries blocked - broker state uncertain</div>
+            <div className="text-fg-muted">
               {status.broker_uncertain_reason}
               {status.broker_uncertain_since && ` (since ${new Date(status.broker_uncertain_since).toLocaleString()})`}.
               Exits keep running. The worker reconciles against the broker every cycle and lifts the block
@@ -68,24 +68,24 @@ export default function BrokerUncertainBanner() {
               onClick={() => reconcile(b.broker_name)}
               disabled={busy || b.needs_login}
               title={b.needs_login ? "Log in to the broker first" : "Fetch positions from the broker and compare"}
-              className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1 disabled:opacity-50 capitalize"
+              className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1 disabled:opacity-50 capitalize"
             >
               <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Reconcile {b.broker_name}
             </button>
           ))}
         </div>
       </div>
-      {error && <div className="text-danger">{error}</div>}
+      {error && <div className="text-down">{error}</div>}
       {report && (
-        <div className="rounded border border-border bg-panel2 px-2 py-1.5">
-          <div className="flex items-center gap-1.5 font-semibold text-slate-200">
-            {report.mismatched_count === 0 ? <ShieldCheck size={12} className="text-accent" /> : <AlertOctagon size={12} className="text-danger" />}
+        <div className="rounded border border-border bg-surface-2 px-2 py-1.5">
+          <div className="flex items-center gap-1.5 font-semibold text-fg">
+            {report.mismatched_count === 0 ? <ShieldCheck size={12} className="text-up" /> : <AlertOctagon size={12} className="text-down" />}
             {report.broker_name}{report.accounts && report.accounts.length > 0 ? ` (${report.accounts.join(", ")})` : ""}: {report.mismatched_count} mismatch(es) across {report.items.length} symbol(s)
           </div>
           {report.items.filter((i) => i.status !== "MATCHED").map((i) => (
-            <div key={`${i.account_label ?? ""}:${i.symbol}`} className="text-muted">
-              {i.account_label && <span className="text-slate-300">[{i.account_label}] </span>}
-              <span className="font-mono text-slate-300">{i.symbol}</span> {i.status}: {i.detail}
+            <div key={`${i.account_label ?? ""}:${i.symbol}`} className="text-fg-muted">
+              {i.account_label && <span className="text-fg-muted">[{i.account_label}] </span>}
+              <span className="font-mono text-fg-muted">{i.symbol}</span> {i.status}: {i.detail}
             </div>
           ))}
         </div>

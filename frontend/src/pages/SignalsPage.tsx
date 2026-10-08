@@ -9,6 +9,7 @@ import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData } from "../utils/sampleData";
 
+import { Button, Input, PageHeader, Select } from "../components/primitives";
 export default function SignalsPage() {
   const { user } = useAuth();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
@@ -134,79 +135,36 @@ export default function SignalsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-sky-400">Signals</h1>
-        <p className="text-sm font-semibold text-sky-200">Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</p>
-      </div>
+      <PageHeader title="Signals" description={<>Generate a signal from any inbuilt strategy and see the full "why this trade" breakdown.</>} />
 
       <DataSourceBar source={source} note="Bars and seed apply to sample data only." />
-      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-amber-300">{w}</div>)}
+      {dataWarnings.map((w, i) => <div key={i} className="text-xs text-warn">{w}</div>)}
       <Disclaimer kind="signals" />
 
       <Card>
-        <div className="grid sm:grid-cols-5 gap-3 items-end">
-          <div>
-            <label className="block text-xs text-muted mb-1">Strategy</label>
-            <select
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
-              value={strategyId}
-              onChange={(e) => setStrategyId(e.target.value)}
-            >
-              {strategies.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-muted mb-1">Symbol</label>
-            <input
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted mb-1">Sample bars</label>
-            <input
-              type="number"
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
-              value={bars}
-              onChange={(e) => setBars(Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted mb-1">Sample data seed</label>
-            <input
-              type="number"
-              className="w-full rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
-              value={seed}
-              onChange={(e) => setSeed(Number(e.target.value))}
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleGenerate}
-              disabled={!selected || loading}
-              className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
-            >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,1.4fr)_repeat(3,minmax(7rem,1fr))_auto] items-end">
+          <Select
+            label="Strategy"
+            value={strategyId}
+            onChange={setStrategyId}
+            options={strategies.map((s) => ({ value: s.id, label: s.name }))}
+          />
+          <Input label="Symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
+          <Input label="Sample bars" type="number" value={bars} onChange={(e) => setBars(Number(e.target.value))} />
+          <Input label="Sample data seed" type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} />
+          <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-1">
+            <Button variant="primary" onClick={handleGenerate} disabled={!selected || loading} loading={loading}>
               {loading ? "Generating…" : "Generate Signal"}
-            </button>
-            <button
-              onClick={handlePaperExecute}
-              disabled={!lastGenerated}
-              title={lastGenerated ? undefined : "Generate a signal first"}
-              className="rounded border border-border hover:bg-panel2 text-slate-200 px-4 py-1.5 text-sm disabled:opacity-50"
-            >
+            </Button>
+            <Button onClick={handlePaperExecute} disabled={!lastGenerated} title={lastGenerated ? undefined : "Generate a signal first"}>
               Paper Execute
-            </button>
+            </Button>
           </div>
         </div>
-        {executeMsg && <div className="mt-3 text-xs text-slate-300">{executeMsg}</div>}
+        {executeMsg && <div className="mt-3 text-xs text-fg-muted">{executeMsg}</div>}
       </Card>
 
-      {error && <div className="text-sm text-danger">{error}</div>}
+      {error && <div className="text-sm text-down">{error}</div>}
 
       {chartCandles.length > 0 && (
         <Card title="Chart — strategy indicators, entry / stop / targets, support &amp; resistance">
@@ -225,7 +183,7 @@ export default function SignalsPage() {
         <Card title={`Recent signal history (${history.length})`}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
                 <tr className="text-left">
                   <th className="py-1 pr-3">Time</th>
                   <th className="py-1 pr-3">Strategy</th>
@@ -238,12 +196,12 @@ export default function SignalsPage() {
               <tbody>
                 {history.slice(0, 20).map((h) => (
                   <tr key={h.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-muted whitespace-nowrap">{new Date(h.created_at).toLocaleString()}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(h.created_at).toLocaleString()}</td>
                     <td className="py-1 pr-3">{h.strategy_id}</td>
-                    <td className="py-1 pr-3 font-medium text-slate-200">{h.symbol}</td>
+                    <td className="py-1 pr-3 font-medium text-fg">{h.symbol}</td>
                     <td className="py-1 pr-3">{h.direction}</td>
                     <td className="py-1 pr-3">{h.score}</td>
-                    <td className="py-1 pr-3 text-muted">{h.grade}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{h.grade}</td>
                   </tr>
                 ))}
               </tbody>

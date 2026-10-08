@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Card, DirectionBadge } from "../components/ui";
 import type { TradeRecord } from "../types";
 
+import { Badge, EmptyState, PageHeader, Table } from "../components/primitives";
 interface OrderRow {
   key: string;
   time: string;
@@ -54,9 +55,9 @@ export default function OrdersPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-orange-400">Orders</h1>
+        <PageHeader title="Orders" />
         <Card>
-          <p className="text-sm text-muted">Log in from the Account tab to see your order blotter.</p>
+          <p className="text-sm text-fg-muted">Log in from the Account tab to see your order blotter.</p>
         </Card>
       </div>
     );
@@ -64,56 +65,27 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-orange-400">Orders</h1>
-        <p className="text-sm font-semibold text-orange-200">
-          Every entry and exit fill from your paper trades, most recent first - a broker-style order blotter view.
-        </p>
-      </div>
+      <PageHeader title="Orders" description="Every entry and exit fill from your paper trades, most recent first - a broker-style order blotter view." />
 
-      {error && <div className="text-sm text-danger">{error}</div>}
+      {error && <div className="text-sm text-down">{error}</div>}
 
       <Card title={`Orders (${orders.length})`}>
-        {orders.length === 0 ? (
-          <div className="text-sm text-muted py-4 text-center">No orders yet - execute a signal from the Signals tab.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="text-muted uppercase text-[10px] tracking-wide">
-                <tr className="text-left">
-                  <th className="py-1 pr-3">Time</th>
-                  <th className="py-1 pr-3">Action</th>
-                  <th className="py-1 pr-3">Symbol</th>
-                  <th className="py-1 pr-3">Direction</th>
-                  <th className="py-1 pr-3">Strategy</th>
-                  <th className="py-1 pr-3">Price</th>
-                  <th className="py-1 pr-3">Qty</th>
-                  <th className="py-1 pr-3">Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => (
-                  <tr key={o.key} className="border-t border-border">
-                    <td className="py-1 pr-3 text-muted">{new Date(o.time).toLocaleString()}</td>
-                    <td className="py-1 pr-3">
-                      <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${o.action === "ENTRY" ? "border-sky-500/40 text-sky-400" : "border-border text-muted"}`}>
-                        {o.action}
-                      </span>
-                    </td>
-                    <td className="py-1 pr-3 font-medium text-slate-200">{o.symbol}</td>
-                    <td className="py-1 pr-3">
-                      <DirectionBadge direction={o.direction as "LONG" | "SHORT"} />
-                    </td>
-                    <td className="py-1 pr-3 text-muted">{o.strategy_id}</td>
-                    <td className="py-1 pr-3">{o.price.toFixed(2)}</td>
-                    <td className="py-1 pr-3">{o.quantity}</td>
-                    <td className="py-1 pr-3 text-muted">{o.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <Table
+          caption="Orders"
+          rows={orders}
+          rowKey={(o) => o.key}
+          empty={<EmptyState title="No orders yet" body="Execute a signal from the Signals page; its entry and exit fills appear here." />}
+          columns={[
+            { key: "time", header: "Time", cell: (o) => <span className="text-fg-muted">{new Date(o.time).toLocaleString()}</span> },
+            { key: "action", header: "Action", cell: (o) => <Badge tone={o.action === "ENTRY" ? "brand" : "neutral"}>{o.action}</Badge> },
+            { key: "symbol", header: "Symbol", cell: (o) => <span className="font-medium">{o.symbol}</span> },
+            { key: "direction", header: "Direction", cell: (o) => <DirectionBadge direction={o.direction as "LONG" | "SHORT"} /> },
+            { key: "strategy", header: "Strategy", cell: (o) => <span className="text-fg-muted">{o.strategy_id}</span> },
+            { key: "price", header: "Price", numeric: true, cell: (o) => o.price.toFixed(2) },
+            { key: "qty", header: "Qty", numeric: true, cell: (o) => o.quantity },
+            { key: "reason", header: "Reason", cell: (o) => <span className="text-fg-muted">{o.reason}</span> },
+          ]}
+        />
       </Card>
     </div>
   );

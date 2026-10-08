@@ -74,7 +74,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
   return (
     <>
       <Card title={`Risk limits (${limits.length})`}>
-        <p className="text-xs text-muted mb-3">
+        <p className="text-xs text-fg-muted mb-3">
           Every order is checked against all limits that apply to it - organisation, user, broker account, strategy and
           instrument - and the strictest of each kind wins. A breached loss limit also engages the matching kill switch
           so the next signal is refused at the door. Warnings fire at 80% of a limit.
@@ -82,48 +82,48 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
         {canEdit && (
           <div className="grid sm:grid-cols-5 gap-2 items-end text-xs mb-3">
             <div>
-              <label className="block text-[10px] text-muted mb-0.5">Scope</label>
-              <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={scope} onChange={(e) => setScope(e.target.value as RiskScope)}>
+              <label className="block text-[10px] text-fg-muted mb-0.5">Scope</label>
+              <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={scope} onChange={(e) => setScope(e.target.value as RiskScope)}>
                 {SCOPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-muted mb-0.5">{needsId ?? "Scope id"}</label>
-              <input className="w-full rounded bg-panel2 border border-border px-2 py-1.5 disabled:opacity-40" disabled={!needsId} placeholder={needsId ?? "-"} value={scopeId} onChange={(e) => setScopeId(e.target.value)} />
+              <label className="block text-[10px] text-fg-muted mb-0.5">{needsId ?? "Scope id"}</label>
+              <input className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 disabled:opacity-40" disabled={!needsId} placeholder={needsId ?? "-"} value={scopeId} onChange={(e) => setScopeId(e.target.value)} />
             </div>
             <div>
-              <label className="block text-[10px] text-muted mb-0.5">Limit</label>
-              <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={type} onChange={(e) => setType(e.target.value as RiskLimitType)}>
+              <label className="block text-[10px] text-fg-muted mb-0.5">Limit</label>
+              <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={type} onChange={(e) => setType(e.target.value as RiskLimitType)}>
                 {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] text-muted mb-0.5">Value <span className="text-muted">({TYPES.find((t) => t.value === type)?.unit})</span></label>
-              <input type="number" step="any" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={value} onChange={(e) => setValue(e.target.value)} />
+              <label className="block text-[10px] text-fg-muted mb-0.5">Value <span className="text-fg-muted">({TYPES.find((t) => t.value === type)?.unit})</span></label>
+              <input type="number" step="any" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={value} onChange={(e) => setValue(e.target.value)} />
             </div>
-            <button onClick={add} disabled={busy || !value} className="flex items-center justify-center gap-1 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 disabled:opacity-50">
+            <button onClick={add} disabled={busy || !value} className="flex items-center justify-center gap-1 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1.5 disabled:opacity-50">
               <Plus size={12} /> Set limit
             </button>
           </div>
         )}
-        {error && <div className="text-xs text-danger mb-2">{error}</div>}
+        {error && <div className="text-xs text-down mb-2">{error}</div>}
         {limits.length === 0 ? (
-          <div className="text-xs text-muted">No limits yet - the risk settings above are the only guard.</div>
+          <div className="text-xs text-fg-muted">No limits yet - the risk settings above are the only guard.</div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="text-muted uppercase text-[10px] tracking-wide">
+            <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
               <tr className="text-left"><th className="py-1 pr-3">Scope</th><th className="py-1 pr-3">Limit</th><th className="py-1 pr-3">Value</th><th className="py-1 pr-3">Note</th><th className="py-1 pr-3"></th></tr>
             </thead>
             <tbody>
               {limits.map((l) => (
                 <tr key={l.id} className="border-t border-border">
-                  <td className="py-1 pr-3 text-slate-200">{l.scope.toLowerCase()}{l.scope_id ? ` · ${l.scope_id}` : ""}</td>
+                  <td className="py-1 pr-3 text-fg">{l.scope.toLowerCase()}{l.scope_id ? ` · ${l.scope_id}` : ""}</td>
                   <td className="py-1 pr-3">{TYPES.find((t) => t.value === l.limit_type)?.label ?? l.limit_type}</td>
                   <td className="py-1 pr-3 font-mono">{l.limit_value.toLocaleString()}</td>
-                  <td className="py-1 pr-3 text-muted">{l.note ?? ""}{!l.enabled ? " (disabled)" : ""}{l.scope === "GLOBAL" ? " (platform)" : ""}</td>
+                  <td className="py-1 pr-3 text-fg-muted">{l.note ?? ""}{!l.enabled ? " (disabled)" : ""}{l.scope === "GLOBAL" ? " (platform)" : ""}</td>
                   <td className="py-1 pr-3 text-right">
                     {canEdit && l.scope !== "GLOBAL" && (
-                      <button onClick={() => remove(l.id)} className="text-muted hover:text-danger" title="Remove"><Trash2 size={12} /></button>
+                      <button onClick={() => remove(l.id)} className="text-fg-muted hover:text-down" title="Remove"><Trash2 size={12} /></button>
                     )}
                   </td>
                 </tr>
@@ -135,20 +135,20 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
 
       <Card title={`Risk events (last ${events.length})`}>
         {events.length === 0 ? (
-          <div className="text-xs text-muted">No checks recorded yet - events appear as orders are evaluated.</div>
+          <div className="text-xs text-fg-muted">No checks recorded yet - events appear as orders are evaluated.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="text-muted uppercase text-[10px] tracking-wide">
+              <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
                 <tr className="text-left"><th className="py-1 pr-3">Time</th><th className="py-1 pr-3">Result</th><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Detail</th></tr>
               </thead>
               <tbody>
                 {events.map((e) => (
                   <tr key={e.id} className="border-t border-border">
-                    <td className="py-1 pr-3 text-muted whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString() : "-"}</td>
-                    <td className={`py-1 pr-3 font-semibold ${e.status === "BLOCK" ? "text-danger" : e.status === "WARN" ? "text-warn" : "text-accent"}`}>{e.status}{e.action !== "ALLOW" && e.action !== "BLOCK_ORDER" && e.action !== "WARN" ? ` · ${e.action.toLowerCase().replace("_", " ")}` : ""}</td>
-                    <td className="py-1 pr-3 text-slate-300">{e.strategy_id ?? "-"}{e.symbol ? ` · ${e.symbol}` : ""}</td>
-                    <td className="py-1 pr-3 text-muted">{e.reason}{e.order_id ? ` (order #${e.order_id})` : ""}</td>
+                    <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{e.created_at ? new Date(e.created_at).toLocaleString() : "-"}</td>
+                    <td className={`py-1 pr-3 font-semibold ${e.status === "BLOCK" ? "text-down" : e.status === "WARN" ? "text-warn" : "text-up"}`}>{e.status}{e.action !== "ALLOW" && e.action !== "BLOCK_ORDER" && e.action !== "WARN" ? ` · ${e.action.toLowerCase().replace("_", " ")}` : ""}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{e.strategy_id ?? "-"}{e.symbol ? ` · ${e.symbol}` : ""}</td>
+                    <td className="py-1 pr-3 text-fg-muted">{e.reason}{e.order_id ? ` (order #${e.order_id})` : ""}</td>
                   </tr>
                 ))}
               </tbody>

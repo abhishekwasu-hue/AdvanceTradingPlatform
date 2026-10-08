@@ -11,7 +11,7 @@
   "MIDCPNIFTY",
   "NIFTYNXT50"
  ],
- "rows": 1368,
+ "rows": 1370,
  "dropped": [
   {
    "symbol": "BANKNIFTY",
@@ -299,5 +299,222 @@
    "reason": "not in that day's bhavcopy"
   }
  ],
- "files_read": 1345
+ "moved": [
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-03-30",
+   "to": "2023-03-29"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-06-29",
+   "to": "2023-06-28"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-09-07",
+   "to": "2023-09-06"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-09-14",
+   "to": "2023-09-13"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-09-21",
+   "to": "2023-09-20"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2023-10-05",
+   "to": "2023-10-04"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2024-03-28",
+   "to": "2024-03-27"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2024-04-25",
+   "to": "2024-04-24"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2024-06-27",
+   "to": "2024-06-26"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2024-09-26",
+   "to": "2024-09-25"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2024-12-26",
+   "to": "2024-12-24"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2025-12-31",
+   "to": "2025-12-30"
+  },
+  {
+   "symbol": "BANKNIFTY",
+   "from": "2026-03-31",
+   "to": "2026-03-30"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-10-21",
+   "to": "2021-10-19"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-10-28",
+   "to": "2021-10-26"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-11-03",
+   "to": "2021-11-02"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-11-11",
+   "to": "2021-11-09"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-11-18",
+   "to": "2021-11-16"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-11-25",
+   "to": "2021-11-23"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-12-02",
+   "to": "2021-11-30"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-12-09",
+   "to": "2021-12-07"
+  },
+  {
+   "symbol": "FINNIFTY",
+   "from": "2021-12-30",
+   "to": "2021-12-28"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-05-09",
+   "to": "2023-05-03"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-05-16",
+   "to": "2023-05-10"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-05-23",
+   "to": "2023-05-17"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-05-30",
+   "to": "2023-05-24"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-08-23",
+   "to": "2023-08-21"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-08-30",
+   "to": "2023-08-28"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-09-06",
+   "to": "2023-09-04"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-09-13",
+   "to": "2023-09-11"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-09-27",
+   "to": "2023-09-25"
+  },
+  {
+   "symbol": "MIDCPNIFTY",
+   "from": "2023-10-25",
+   "to": "2023-10-23"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2018-03-29",
+   "to": "2018-03-28"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2023-03-30",
+   "to": "2023-03-29"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2023-06-29",
+   "to": "2023-06-28"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2025-09-25",
+   "to": "2025-09-23"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2025-12-24",
+   "to": "2025-12-23"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2026-03-26",
+   "to": "2026-03-24"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2026-03-31",
+   "to": "2026-03-30"
+  },
+  {
+   "symbol": "NIFTY",
+   "from": "2026-06-25",
+   "to": "2026-06-23"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "from": "2025-01-31",
+   "to": "2025-01-30"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "from": "2025-02-28",
+   "to": "2025-02-27"
+  },
+  {
+   "symbol": "NIFTYNXT50",
+   "from": "2025-03-28",
+   "to": "2025-03-27"
+  }
+ ],
+ "files_read": 1378
 }

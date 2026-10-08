@@ -31,11 +31,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import breaker_for
 from app.brokers.models import BrokerOrderRequest
+from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
 from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
 from app.execution.order_persistence import create_order, transition_order
+from app.execution.order_safety import wing_fill_complete
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
@@ -389,6 +391,10 @@ async def _place_live_legs(
             price, filled, _ = await router._resolve_fill_with_status(response.order_id, fallback=0.0)
             if filled <= 0 or price <= 0:
                 return await _fail(leg, f"{leg.side.value} {leg.contract.tradingsymbol} ({phase}) not filled within the confirmation window", response.order_id)
+            if phase == "wing" and config.LIVE_STRICT_WING_FILL and not wing_fill_complete(quantity * leg.ratio, filled):
+                # Trade port (order_safety): a partly filled wing protects only part of the short - stop and unwind
+                # (`_fail` cancels the remainder and re-reads the book, which adds this wing's fill to the unwind).
+                return await _fail(leg, f"wing {leg.contract.tradingsymbol} filled {filled:g} of {quantity * leg.ratio:g} - shorts not sent", response.order_id)
             placed.append((leg, filled))
             fills[leg.contract.tradingsymbol] = (round(price, 2), response.order_id)
             notes.append(f"Live {leg.side.value} {leg.contract.tradingsymbol} via {broker.name}: {response.order_id} filled @ {price:g}")

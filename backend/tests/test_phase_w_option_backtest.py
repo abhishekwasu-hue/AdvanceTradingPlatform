@@ -96,7 +96,7 @@ def test_plan_structure_matches_resolve_structure_strikes():
 # --- conventions, calendar, pricers -----------------------------------------------------------
 
 def test_conventions_calendar_and_ladder():
-    assert default_lot_size("NIFTY") == 75 and default_lot_size("BANKNIFTY") == 35 and default_lot_size("RELIANCE") == 1
+    assert default_lot_size("NIFTY") == 65 and default_lot_size("BANKNIFTY") == 35 and default_lot_size("RELIANCE") == 1
     assert default_strike_step("NIFTY", 24500) == 50.0 and default_strike_step("RELIANCE", 1450) == 20.0 and default_strike_step("X", 30) == 1.0
     assert strike_ladder(24512, 50, span=2) == [24400.0, 24450.0, 24500.0, 24550.0, 24600.0]
     assert bars_per_year("1min") == 250 * 375 and bars_per_year("5min") == 250 * 75 and bars_per_year("1d") == 250
@@ -167,12 +167,12 @@ def test_bull_put_spread_reaches_its_target_in_a_rally():
     assert trade.direction == SignalDirection.SHORT and trade.exit_reason.startswith("Spread target")
     assert [(l["role"], l["strike"], l["right"]) for l in st["legs"]] == [("SHORT", 24500.0, "PE"), ("LONG", 24400.0, "PE")]
     assert st["net_credit"] > 0 and st["max_loss"] == round(100 - st["net_credit"], 2) and trade.pnl > 0
-    # Lots off max loss: 1% of 10L = 10,000 over (max loss x 75).
-    assert st["lots"] == int(10_000 // (st["max_loss"] * 75)) and trade.quantity == st["lots"] * 75
+    # Lots off max loss: 1% of 10L = 10,000 over (max loss x 65 - the NIFTY lot since the Jan 2026 series).
+    assert st["lots"] == int(10_000 // (st["max_loss"] * 65)) and trade.quantity == st["lots"] * 65
     # One Trade per structure: entry = credit per unit, exit = cost to close, P&L nets the legs and charges.
     legs_pnl = sum((l["entry_price"] - l["exit_price"]) * l["quantity"] * (1 if l["role"] == "SHORT" else -1) for l in st["legs"])
     assert trade.pnl == round(legs_pnl - st["charges"], 2)
-    assert result.options["lot_size"] == 75 and result.options["strike_step"] == 50.0 and result.options["pricing_model"] == "synthetic"
+    assert result.options["lot_size"] == 65 and result.options["strike_step"] == 50.0 and result.options["pricing_model"] == "synthetic"
     assert result.options["expiry_calendar"] == "weekly, Tue" and result.analytics is not None
     assert result.equity_curve[-1] == RISK.capital + trade.pnl
 

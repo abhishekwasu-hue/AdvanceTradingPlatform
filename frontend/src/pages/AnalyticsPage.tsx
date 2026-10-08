@@ -5,8 +5,8 @@ import { Card, StatTile, signClass, signTone } from "../components/ui";
 import type { AnalyticsSummary, DegradationReport, GroupStats, TaxReport } from "../types";
 import { getToken } from "../api/client";
 import { apiErrorFrom, friendlyError } from "../api/errors";
-
 import { PageHeader } from "../components/primitives";
+
 function TaxReportCard() {
   const [years, setYears] = useState<string[]>([]);
   const [fy, setFy] = useState<string>("");
@@ -42,9 +42,9 @@ function TaxReportCard() {
               <tr key={k} className="border-t border-border/60">
                 <td className="py-1 pr-3"><div className="font-medium">{k.replace("_", " ")}</div><div className="text-[10px] text-fg-muted">{c.income_head}</div></td>
                 <td className="py-1 pr-3">{c.trades}</td>
-                <td className={`py-1 pr-3 ${signClass(c.gross_pnl)}`}>{money(c.gross_pnl)}</td>
+                <td className={`py-1 pr-3 ${signClass(c.gross_pnl, 0)}`}>{money(c.gross_pnl)}</td>
                 <td className="py-1 pr-3">{money(c.charges)}</td>
-                <td className={`py-1 pr-3 font-semibold ${signClass(c.net_pnl)}`}>{money(c.net_pnl)}</td>
+                <td className={`py-1 pr-3 font-semibold ${signClass(c.net_pnl, 0)}`}>{money(c.net_pnl)}</td>
                 <td className="py-1 pr-3">{money(c.turnover)}</td>
                 <td className="py-1 pr-3">{money(c.stt_estimate + c.ctt_estimate)}</td>
                 <td className="py-1 pr-3">{k === "CRYPTO" ? `${money(c.tds_estimate)} / ${money(c.tax_estimate)}${c.disallowed_losses ? ` (losses ${money(c.disallowed_losses)} not set off)` : ""}` : "-"}</td>
@@ -122,6 +122,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-4">
+      <PageHeader title="Analytics" description="Aggregated from your full persisted trade history (Positions/Trade Journal)." />
       {degradation && degradation.strategies.length > 0 && (
         <Card title={`Live vs backtest (${degradation.degraded} degraded, ${degradation.watch} on watch)`}>
           <table className="w-full text-xs"><thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left"><th className="py-1 pr-3">Strategy</th><th className="py-1 pr-3">Status</th><th className="py-1 pr-3">Live trades</th><th className="py-1 pr-3">Live win rate</th><th className="py-1 pr-3">Recent-20 win rate</th><th className="py-1 pr-3">Backtest win rate</th><th className="py-1 pr-3">Live expectancy</th><th className="py-1 pr-3">Why</th></tr></thead>
@@ -133,7 +134,7 @@ export default function AnalyticsPage() {
                 <td className="py-1 pr-3">{r.live.win_rate != null ? `${(r.live.win_rate * 100).toFixed(0)}%` : "-"}</td>
                 <td className="py-1 pr-3">{r.recent_20.win_rate != null ? `${(r.recent_20.win_rate * 100).toFixed(0)}%` : "-"}</td>
                 <td className="py-1 pr-3">{r.backtest?.win_rate != null ? `${(r.backtest.win_rate * 100).toFixed(0)}%` : "-"}</td>
-                <td className={`py-1 pr-3 ${signClass(r.live.expectancy)}`}>{r.live.expectancy?.toFixed(1) ?? "-"}</td>
+                <td className={`py-1 pr-3 ${signClass(r.live.expectancy, 1)}`}>{r.live.expectancy?.toFixed(1) ?? "-"}</td>
                 <td className="py-1 pr-3 text-fg-muted">{r.reasons.join("; ")}</td>
               </tr>
             ))}</tbody></table>
@@ -141,7 +142,6 @@ export default function AnalyticsPage() {
         </Card>
       )}
       <TaxReportCard />
-      <PageHeader title="Analytics" description="Aggregated from your full persisted trade history (Positions/Trade Journal)." />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatTile label="Total Trades" value={summary.total_trades} />

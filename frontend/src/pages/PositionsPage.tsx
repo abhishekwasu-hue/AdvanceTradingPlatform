@@ -238,7 +238,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
                 {r.pnl?.toFixed(2) ?? "-"}
               </td>
               <td className="py-1 pr-3 text-fg-muted" title={r.charges_source === "CONTRACT_NOTE" ? "Broker's actual charges from an uploaded contract note" : "Platform estimate (NSE cost model)"}>
-                {r.charges.toFixed(2)} <span className={`text-[10px] uppercase ${r.charges_source === "CONTRACT_NOTE" ? "text-up" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
+                {r.charges.toFixed(2)} <span className={`text-[10px] uppercase ${r.charges_source === "CONTRACT_NOTE" ? "font-semibold text-fg" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
               </td>
               <td className="py-1 pr-3 text-fg-muted">
                 {r.regime_at_entry && <div className="text-[10px] uppercase">{r.regime_at_entry.replace("_", " ").toLowerCase()}</div>}

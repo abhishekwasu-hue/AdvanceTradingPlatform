@@ -516,7 +516,7 @@ export default function BacktestPage() {
                         <td className="py-1 pr-3">{st.net_credit != null ? (st.net_credit >= 0 ? `credit ${st.net_credit.toFixed(2)}` : `debit ${(-st.net_credit).toFixed(2)}`) : "-"}</td>
                         <td className="py-1 pr-3">{st.max_loss != null ? st.max_loss.toFixed(2) : "undefined"}</td>
                         <td className="py-1 pr-3">{st.exit_reason}</td>
-                        <td className={`py-1 pr-3 whitespace-nowrap ${signClass(st.pnl)}`}>{st.pnl.toFixed(0)}<div className="text-fg-muted">charges {st.charges.toFixed(0)}</div></td>
+                        <td className={`py-1 pr-3 whitespace-nowrap ${signClass(st.pnl, 0)}`}>{st.pnl.toFixed(0)}<div className="text-fg-muted">charges {st.charges.toFixed(0)}</div></td>
                       </tr>
                     ))}
                     {result.options.structures.length === 0 && <tr><td colSpan={7} className="py-3 text-center text-fg-muted">No structure was opened.</td></tr>}
@@ -547,7 +547,7 @@ export default function BacktestPage() {
                               <td className="py-0.5 pr-2 text-fg-muted">{r.key}</td>
                               <td className="py-0.5 pr-2 text-fg-muted">{r.trades} trades</td>
                               <td className="py-0.5 pr-2 text-fg-muted">{r.win_rate}% win</td>
-                              <td className={`py-0.5 text-right ${signClass(r.pnl)}`}>{r.pnl.toFixed(0)}</td>
+                              <td className={`py-0.5 text-right ${signClass(r.pnl, 0)}`}>{r.pnl.toFixed(0)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -578,7 +578,7 @@ export default function BacktestPage() {
               <div className="text-xs">
                 <div className="text-fg-muted mb-1">{optResult.combinations} combinations · {optResult.in_sample_bars} in-sample / {optResult.out_of_sample_bars} out-of-sample bars · {optResult.robust_count} robust
                   {optResult.best_confirmed_out_of_sample != null && (
-                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-up/40 text-up" : "bg-warn/40 text-warn"}`}>
+                    <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${optResult.best_confirmed_out_of_sample ? "bg-up/10 text-up" : "bg-warn/10 text-warn"}`}>
                       {optResult.best_confirmed_out_of_sample ? "winner confirmed out-of-sample" : "winner NOT confirmed out-of-sample (in-sample ranking only)"}
                     </span>
                   )}</div>
@@ -587,7 +587,7 @@ export default function BacktestPage() {
                     const key = optResult.metric as keyof OptimizeResult["results"][number]["in_sample"];
                     const ins = r.in_sample[key]; const oos = r.out_of_sample[key];
                     return (
-                      <tr key={i} className={`border-t border-border/60 ${i === 0 ? "text-up" : ""}`}>
+                      <tr key={i} className={`border-t border-border/60 ${i === 0 ? "font-semibold" : ""}`}>
                         <td className="py-1 pr-3 font-mono">{JSON.stringify(r.params)}</td>
                         <td className="py-1 pr-3">{typeof ins === "number" ? ins.toFixed(2) : "-"}</td>
                         <td className="py-1 pr-3">{typeof oos === "number" ? oos.toFixed(2) : "-"}</td>
@@ -628,7 +628,7 @@ export default function BacktestPage() {
                       {walkForward.windows.map((w) => (
                         <tr key={w.window} className="border-t border-border">
                           <td className="py-1 pr-3">{w.window}</td><td className="py-1 pr-3">{w.bars}</td><td className="py-1 pr-3">{w.trades}</td>
-                          <td className={`py-1 pr-3 ${signClass(w.net_pnl)}`}>{w.net_pnl.toFixed(0)}</td>
+                          <td className={`py-1 pr-3 ${signClass(w.net_pnl, 0)}`}>{w.net_pnl.toFixed(0)}</td>
                           <td className="py-1 pr-3">{w.win_rate}%</td><td className="py-1 pr-3">{w.max_drawdown.toFixed(0)}</td>
                         </tr>
                       ))}
@@ -696,7 +696,7 @@ export default function BacktestPage() {
                     <td className="py-1 pr-3 text-fg-muted">{r.data_source} · {r.bars} bars · engine v{r.engine_version}</td>
                     <td className="py-1 pr-3 text-fg-muted">{r.exit_rules ? Object.entries(r.exit_rules).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") : "-"}</td>
                     <td className="py-1 pr-3">{r.total_trades ?? "-"}</td>
-                    <td className={`py-1 pr-3 ${signClass(r.net_pnl)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
+                    <td className={`py-1 pr-3 ${signClass(r.net_pnl, 0)}`}>{r.net_pnl?.toFixed(0) ?? "-"}</td>
                     <td className="py-1 pr-3">{r.win_rate ?? "-"}%</td>
                     <td className="py-1 pr-3">{r.max_drawdown?.toFixed(0) ?? "-"}</td>
                   </tr>

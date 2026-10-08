@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/ui";
 import type { StrategyInfo } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
   const [error, setError] = useState<string | null>(null);

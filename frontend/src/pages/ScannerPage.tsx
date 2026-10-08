@@ -22,8 +22,8 @@ import {
 } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
 import type { OHLCVBar, OptionChain } from "../types";
-
 import { PageHeader } from "../components/primitives";
+
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
 const OPERATORS: { value: ConditionOperator; label: string }[] = [
@@ -350,7 +350,7 @@ export default function ScannerPage() {
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {[...m.matched_indicator_labels, ...m.matched_structure_labels, ...m.matched_option_labels].map(
                       (label, i) => (
-                        <span key={i} className="rounded border border-up/40 bg-up/10 px-1.5 py-0.5 text-[11px] text-up">
+                        <span key={i} className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[11px] text-fg">
                           {label}
                         </span>
                       ),

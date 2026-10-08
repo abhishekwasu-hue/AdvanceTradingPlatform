@@ -513,8 +513,8 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - **API**: `POST /api/price-action/reversal`, `POST /api/price-action/reversal-markers` (chart annotations; settings
   validated, unknown keys -> 400). DSL v2 blocks (P4) will call the same functions.
 - **Concept library**: candlestick patterns (psychology and evidence), the reversal candle score, false breakout / sweep /
-  real break, opening gaps (types, fill statistics, limits), overfitting checks - English, with sources and limits, from
-  the two research reports.
+  real break, opening gaps (types, fill statistics, limits), overfitting checks - written in English, with sources and
+  limits, from the two research reports; each also has a Marathi body for users whose AI answer language is Marathi.
 - Tests: `test_trade_port_price_action.py` (49, incl. no-lookahead truncation tests for swings, breaks, reversal, markers
   and zone events), `test_trade_port_contracts_costs.py` (15), `test_trade_port_order_safety.py` (9),
   `test_trade_port_validation.py` (11); existing cost / lot tests moved to dated rates.

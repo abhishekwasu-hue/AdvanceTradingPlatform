@@ -118,26 +118,26 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
   const { user } = useAuth();
   const brokerMode = source.mode === "broker";
   return (
-    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>
+    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-info/30 bg-info/[0.06] text-info" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>
       {brokerMode ? <Database size={14} className="shrink-0" /> : <FlaskConical size={14} className="shrink-0" />}
       <span className="font-semibold">Data</span>
       <div className="flex rounded border border-border overflow-hidden">
-        <button onClick={() => source.setMode("sample")} className={`px-2 py-0.5 ${!brokerMode ? "bg-panel2 text-slate-200" : "text-muted"}`}>Sample</button>
+        <button onClick={() => source.setMode("sample")} className={`px-2 py-0.5 ${!brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"}`}>Sample</button>
         <button onClick={() => source.setMode("broker")} disabled={!source.usable} title={source.usable ? "" : user ? "No broker with a valid session today - add the API key under Settings > Brokers and log in" : "Log in first"}
-          className={`px-2 py-0.5 border-l border-border ${brokerMode ? "bg-panel2 text-slate-200" : "text-muted"} disabled:opacity-40`}>Broker candles</button>
+          className={`px-2 py-0.5 border-l border-border ${brokerMode ? "bg-surface-2 text-fg" : "text-fg-muted"} disabled:opacity-40`}>Broker candles</button>
       </div>
       {brokerMode && (
         <>
-          <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-panel2 border border-border px-2 py-0.5 text-xs text-slate-200">
+          <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded bg-surface-2 border border-border px-2 py-0.5 text-xs text-fg">
             {source.sources.filter((s) => s.usable).map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker} ({s.account_label})</option>)}
           </select>
-          <label className="flex items-center gap-1 text-muted">lookback
-            <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded bg-panel2 border border-border px-1 py-0.5 text-xs text-slate-200" /> days
+          <label className="flex items-center gap-1 text-fg-muted">lookback
+            <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded bg-surface-2 border border-border px-1 py-0.5 text-xs text-fg" /> days
           </label>
-          {source.loading && <span className="text-muted">fetching…</span>}
+          {source.loading && <span className="text-fg-muted">fetching…</span>}
         </>
       )}
-      <span className="text-muted">
+      <span className="text-fg-muted">
         {brokerMode
           ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
           : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in under Settings.${note ? " " + note : ""}`}

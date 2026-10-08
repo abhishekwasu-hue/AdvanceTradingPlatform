@@ -109,7 +109,7 @@ def test_data_policy_boundary_and_filters(monkeypatch):
     assert DP.holdout_start() is None and DP.check_range("2030-01-01", "2031-01-01", None)
     monkeypatch.setenv("BACKTEST_HOLDOUT_START", "2024-01-03")
     b = DP.holdout_start()
-    assert b == pd.Timestamp("2024-01-03") and DP.holdout_start("2025-01-01") == pd.Timestamp("2025-01-01")
+    assert b == pd.Timestamp("2024-01-03") and DP.holdout_start("2023-06-01") == pd.Timestamp("2023-06-01")
     df = make_series(list(range(3 * 1440)), start="2024-01-01 00:00")
     assert len(DP.filter_allowed(df, b)) == 2 * 1440 and DP.final_holdout_mask(df.index, b).sum() == 1440
     aware = df.tz_localize("Asia/Kolkata")
@@ -141,3 +141,11 @@ def test_optimizer_never_runs_holdout_bars_and_reports_pbo(monkeypatch):
     assert ov["blocks"] == 8 and ov["pbo"] is not None and 0 <= ov["pbo"] <= 1 and ov["pbo_splits"] == 70
     with pytest.raises(ValueError, match="sealed holdout"):
         optimize(strategy, df, "TEST", "day", RiskConfig(), grid, holdout_start="2022-12-01")
+
+
+def test_a_run_can_seal_more_but_never_open_the_operator_holdout(monkeypatch):
+    monkeypatch.setenv("BACKTEST_HOLDOUT_START", "2026-04-01")
+    assert DP.holdout_start("2099-01-01") == pd.Timestamp("2026-04-01")             # a later per-run date cannot open it
+    assert DP.holdout_start("2025-01-01") == pd.Timestamp("2025-01-01")             # an earlier one seals more
+    monkeypatch.delenv("BACKTEST_HOLDOUT_START")
+    assert DP.holdout_start(pd.Timestamp("2026-03-31 20:00", tz="UTC")) == pd.Timestamp("2026-04-01 01:30")   # aware -> IST

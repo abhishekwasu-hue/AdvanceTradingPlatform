@@ -177,3 +177,14 @@ def test_option_backtest_calendar_follows_the_weekday_of_each_date():
     holiday = ExpiryCalendar.for_underlying("NIFTY", holidays=[D("2024-10-31")])
     assert D("2024-10-30") in holiday.expiries(D("2024-10-28"), 2)              # Thursday holiday -> Wednesday
     assert lot_size_on("NIFTY", D("2023-01-02")) == 50 and lot_size_on("BANKNIFTY", D("2026-10-05")) == 35
+
+
+def test_lot_is_keyed_by_the_contract_expiry_and_explicit_weekly_is_honoured():
+    from app.backtest.options import lot_size_for
+    assert lot_size_for("NIFTY 50", D("2025-12-31"), D("2026-01-06")) == 65     # the Jan 2026 series, entered in Dec 2025
+    assert lot_size_for("NIFTY 50", D("2025-12-31"), D("2025-12-30")) == 75
+    assert lot_size_for("BANKNIFTY", D("2026-10-05"), D("2026-10-27")) == lot_size_on("BANKNIFTY", D("2026-10-05"))
+    forced = ExpiryCalendar.for_underlying("BANKNIFTY", weekly=True)
+    assert forced.expiries(D("2023-03-06"), 2) == [D("2023-03-09"), D("2023-03-16")]   # weekly Thursdays as asked
+    monthly = ExpiryCalendar.for_underlying("BANKNIFTY")
+    assert monthly.expiries(D("2023-03-06"), 1) == [D("2023-03-30")]                  # monthly only: the last Thursday

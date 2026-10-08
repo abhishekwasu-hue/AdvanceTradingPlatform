@@ -93,6 +93,14 @@ def lot_size_on(underlying: str, day: date) -> int:
     return default_lot_size(key)
 
 
+def lot_size_for(underlying: str, entry_day: date, expiry: Optional[date] = None) -> int:
+    """The lot of the contract actually traded: the dated table is keyed by the contract's EXPIRY where it exists (a
+    revision applies to the series expiring on or after its date); otherwise the entry-day lot (`lot_size_on`)."""
+    if expiry is not None and expiry_calendar.dated_lot_size(underlying, expiry) is not None:
+        return expiry_calendar.lot_size(expiry, underlying)
+    return lot_size_on(underlying, entry_day)
+
+
 def default_strike_step(underlying: str, spot: float) -> float:
     step = STRIKE_STEPS.get(underlying.upper())
     if step:
@@ -141,6 +149,7 @@ class ExpiryCalendar:
     weekly: bool
     holidays: frozenset = field(default_factory=frozenset)
     dated_underlying: Optional[str] = None
+    force_weekly: bool = False          # an explicit weekly=True: weeklies on every date, listed or not
 
     @classmethod
     def for_underlying(cls, underlying: str, holidays: Iterable[date] = (), *, weekday: Optional[int] = None,
@@ -152,7 +161,8 @@ class ExpiryCalendar:
         if weekday is None:
             weekday = WEEKLY_EXPIRY_WEEKDAY.get(key) if is_weekly and key in WEEKLY_EXPIRY_WEEKDAY else \
                 MONTHLY_EXPIRY_WEEKDAY.get(key, DEFAULT_MONTHLY_WEEKDAY)
-        return cls(weekday=weekday, weekly=is_weekly, holidays=frozenset(holidays), dated_underlying=dated)
+        return cls(weekday=weekday, weekly=is_weekly, holidays=frozenset(holidays), dated_underlying=dated,
+                   force_weekly=bool(weekly))
 
     def _trading_day_on_or_before(self, day: date) -> date:
         for _ in range(15):
@@ -175,7 +185,7 @@ class ExpiryCalendar:
         for _ in range(400 * max(1, count)):
             if day.weekday() == expiry_calendar.expiry_weekday(day, self.dated_underlying):
                 last_of_month = (day + timedelta(days=7)).month != day.month
-                if last_of_month or (self.weekly and expiry_calendar.weekly_listed(day, self.dated_underlying)):
+                if last_of_month or (self.weekly and (self.force_weekly or expiry_calendar.weekly_listed(day, self.dated_underlying))):
                     actual = self._trading_day_on_or_before(day)
                     if actual >= on_or_after and actual not in out:
                         out.append(actual)

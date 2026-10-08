@@ -360,7 +360,7 @@ async def _place_live_legs(
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(), broker=broker)
     placed: List = []          # (leg, filled quantity) with a confirmed fill - what an unwind must reverse
 
-    async def _fail(leg, text: str, order_id: Optional[str]) -> Tuple[bool, str]:
+    async def _fail(leg, text: str, order_id: Optional[str], known_filled: float = 0.0) -> Tuple[bool, str]:
         if order_id:
             try:
                 await broker.cancel_order(order_id)      # the unfilled leg must not keep working
@@ -369,6 +369,7 @@ async def _place_live_legs(
             # The exchange may have filled it between the last look and the cancel: that fill is a real position
             # and must be unwound with the rest, never orphaned.
             late_price, late_qty, _ = await router._resolve_fill_with_status(order_id, fallback=0.0)
+            late_qty = max(late_qty, known_filled)      # an unreadable book must not hide a fill we already saw
             if late_qty > 0:
                 placed.append((leg, late_qty))
                 text += f"; {leg.contract.tradingsymbol} filled {late_qty:g} during the cancel"
@@ -394,7 +395,8 @@ async def _place_live_legs(
             if phase == "wing" and config.LIVE_STRICT_WING_FILL and not wing_fill_complete(quantity * leg.ratio, filled):
                 # Trade port (order_safety): a partly filled wing protects only part of the short - stop and unwind
                 # (`_fail` cancels the remainder and re-reads the book, which adds this wing's fill to the unwind).
-                return await _fail(leg, f"wing {leg.contract.tradingsymbol} filled {filled:g} of {quantity * leg.ratio:g} - shorts not sent", response.order_id)
+                return await _fail(leg, f"wing {leg.contract.tradingsymbol} filled {filled:g} of {quantity * leg.ratio:g} - shorts not sent", response.order_id,
+                                   known_filled=filled)
             placed.append((leg, filled))
             fills[leg.contract.tradingsymbol] = (round(price, 2), response.order_id)
             notes.append(f"Live {leg.side.value} {leg.contract.tradingsymbol} via {broker.name}: {response.order_id} filled @ {price:g}")

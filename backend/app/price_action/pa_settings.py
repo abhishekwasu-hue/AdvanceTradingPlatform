@@ -100,6 +100,14 @@ def _as_list(v: Any, cast) -> List:
     return [cast(x) for x in v]
 
 
+# Allowed ranges of the numeric settings (inclusive). Integers default to 1..500, floats to 0..1000.
+INT_RANGES: Dict[str, Tuple[int, int]] = {"followthrough_max_bars": (0, 10), "break_no_reclaim_bars": (0, 50), "degree_levels": (1, 6),
+                                          "touch_reclaim_window": (1, 50)}
+FLOAT_RANGES: Dict[str, Tuple[float, float]] = {"score_min": (0.0, 100.0), "similarity_balance_min": (0.0, 1.0),
+                                                "break_close_loc": (0.0, 1.0), "min_body_frac": (0.0, 1.0),
+                                                "displacement_body_frac": (0.0, 1.0)}
+
+
 def validate(overrides: Dict[str, Any] = None) -> Tuple[Dict[str, Any], List[str]]:
     """Defaults + overrides, checked. Unknown keys are an error; a bad value falls back to its default."""
     clean = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v) for k, v in DEFAULTS.items()}
@@ -128,6 +136,11 @@ def validate(overrides: Dict[str, Any] = None) -> Tuple[Dict[str, Any], List[str
         if k in CHOICES and clean[k] not in CHOICES[k]:
             errors.append(f"{k}: must be one of {CHOICES[k]} - default used")
             clean[k] = DEFAULTS[k]
+        if isinstance(d, (int, float)) and not isinstance(d, bool):
+            lo, hi = (INT_RANGES.get(k, (1, 500)) if isinstance(d, int) else FLOAT_RANGES.get(k, (0.0, 1000.0)))
+            if not (lo <= clean[k] <= hi):                  # also false for NaN
+                errors.append(f"{k}: must be between {lo} and {hi} - default used")
+                clean[k] = DEFAULTS[k]
     if clean["strength_min"] >= clean["strength_max"]:
         errors.append("strength_min must be below strength_max - defaults used")
         clean["strength_min"], clean["strength_max"] = DEFAULTS["strength_min"], DEFAULTS["strength_max"]

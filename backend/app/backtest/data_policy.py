@@ -18,18 +18,24 @@ class HoldoutError(RuntimeError):
 
 
 def holdout_start(override=None) -> Optional[pd.Timestamp]:
-    """The holdout boundary: the per-run override, else BACKTEST_HOLDOUT_START, else None (no sealed holdout). A boundary
-    without a timezone is read in the data's own clock (ATP candles carry the exchange time)."""
-    raw = override if override is not None else (os.environ.get("BACKTEST_HOLDOUT_START", "").strip() or None)
-    return None if raw is None else pd.Timestamp(raw)
+    """The holdout boundary: the EARLIER of the per-run override and BACKTEST_HOLDOUT_START (a run may seal more, never
+    open the operator's holdout), or None when neither is set. A boundary without a timezone is read in the data's own
+    clock (ATP candles carry the exchange time)."""
+    env = os.environ.get("BACKTEST_HOLDOUT_START", "").strip() or None
+    found = [_naive_ist(pd.Timestamp(x)) for x in (override, env) if x is not None]
+    return min(found) if found else None
+
+
+def _naive_ist(ts: pd.Timestamp) -> pd.Timestamp:
+    """An aware boundary -> exchange time (IST) without a zone, so boundaries compare with each other and with candles."""
+    return ts.tz_convert("Asia/Kolkata").tz_localize(None) if ts.tzinfo is not None else ts
 
 
 def _aligned(index, boundary: pd.Timestamp):
     idx = pd.DatetimeIndex(index)
-    if idx.tz is not None and boundary.tzinfo is None:
-        boundary = boundary.tz_localize(idx.tz)
-    elif idx.tz is None and boundary.tzinfo is not None:
-        boundary = boundary.tz_localize(None)
+    boundary = _naive_ist(boundary)
+    if idx.tz is not None:
+        boundary = boundary.tz_localize("Asia/Kolkata").tz_convert(idx.tz)
     return idx, boundary
 
 

@@ -446,15 +446,15 @@ def price_action_patterns(request: CandlesRequest, _: User = Depends(get_current
 class ReversalRequest(BaseModel):
     """Trade port: a logical-reversal check at a level on CLOSED candles (oldest first). `settings` = price_action
     pa_settings overrides (reversal_mode "composite" (default) or "score100", thresholds in median-range multiples)."""
-    candles: List[OHLCVBar] = Field(min_length=3)
+    candles: List[OHLCVBar] = Field(min_length=3, max_length=5000)
     level: Union[float, List[float]]
     direction: Literal["BULLISH", "BEARISH"]
     settings: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ReversalMarkersRequest(BaseModel):
-    candles: List[OHLCVBar] = Field(min_length=3)
-    levels: List[float] = Field(min_length=1, max_length=50)
+    candles: List[OHLCVBar] = Field(min_length=3, max_length=3000)
+    levels: List[float] = Field(min_length=1, max_length=20)
     settings: Dict[str, Any] = Field(default_factory=dict)
 
 

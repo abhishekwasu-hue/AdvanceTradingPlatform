@@ -481,6 +481,9 @@ def scan_markers(df: pd.DataFrame, levels: Sequence[float], settings: Optional[D
         return out
     df = df.reset_index(drop=True)
     mr = median_range(df, s["median_range_n"])
+    # Each evaluation only needs the recent bars (touch window, follow-through, the median range behind them): a bounded
+    # tail keeps the scan linear instead of re-reading the whole history at every bar. Results are identical.
+    window = 2 * (s["median_range_n"] + s["touch_reclaim_window"] + s["followthrough_max_bars"] + s["score_min_median_candles"]) + 10
     last_end = -1
     for i in range(s["median_range_n"] + 1, len(df)):
         close = float(df["close"].iloc[i])
@@ -491,7 +494,7 @@ def scan_markers(df: pd.DataFrame, levels: Sequence[float], settings: Optional[D
         for lv in levels:
             if abs(close - float(lv)) > max_distance_mr * m:
                 continue
-            r = evaluate_reversal(df.iloc[: i + 1], float(lv), 1 if close >= float(lv) else -1, s)
+            r = evaluate_reversal(df.iloc[max(0, i + 1 - window): i + 1], float(lv), 1 if close >= float(lv) else -1, s)
             if r["valid"] and (best is None or r["score_pct"] > best[1]["score_pct"]):
                 best = (float(lv), r)
         if best is not None and i - best[1]["n"] + 1 > last_end:

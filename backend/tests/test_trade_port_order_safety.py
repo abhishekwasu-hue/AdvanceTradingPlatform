@@ -115,7 +115,7 @@ def test_protective_stop_is_sized_to_the_filled_quantity():
     assert stops and stops[0].quantity == 200
 
 
-def _structure_run(monkeypatch, strict: bool):
+def _structure_run(monkeypatch, strict: bool, book_fails_after: int = 10 ** 6):
     from app.core.enums import OptionStrategy
     from app.execution.multileg import _place_live_legs
     from app.instruments.spreads import resolve_structure
@@ -126,7 +126,12 @@ def _structure_run(monkeypatch, strict: bool):
     _load_master()
 
     class _HalfWing(_OptionBroker):
+        reads = 0
+
         async def get_order_book(self):
+            self.reads += 1
+            if self.reads > book_fails_after:
+                raise RuntimeError("order book unavailable")
             book = await super().get_order_book()
             return [o.model_copy(update={"filled_quantity": o.quantity / 2}) if "24400 PE" in o.symbol and o.transaction_type == OrderSide.BUY
                     else o for o in book]
@@ -155,6 +160,9 @@ def test_partial_wing_fill_today_and_with_the_strict_flag(monkeypatch):
     assert not ok and "shorts not sent" in failure and "unwound 1" in failure
     assert [(o.transaction_type.value, o.quantity) for o in broker.placed] == [("BUY", lot), ("SELL", lot / 2)]
     assert OS.wing_fill_complete(65, 65) and not OS.wing_fill_complete(65, 64)
+    # The book becomes unreadable right after the partial fill was seen: the known fill is still unwound.
+    broker, ok, failure, lot = _structure_run(monkeypatch, strict=True, book_fails_after=1)
+    assert not ok and [(o.transaction_type.value, o.quantity) for o in broker.placed] == [("BUY", lot), ("SELL", lot / 2)]
 
 
 def test_risk_config_default_is_untouched():

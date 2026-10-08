@@ -515,6 +515,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - **Concept library**: candlestick patterns (psychology and evidence), the reversal candle score, false breakout / sweep /
   real break, opening gaps (types, fill statistics, limits), overfitting checks - written in English, with sources and
   limits, from the two research reports; each also has a Marathi body for users whose AI answer language is Marathi.
+- **Self-review fixes**: a per-run `holdout_start` can only seal more (the earlier of it and `BACKTEST_HOLDOUT_START`
+  wins); in strict wing mode a seen partial fill is unwound even if the book then becomes unreadable; numeric price-action
+  settings have ranges (bad values -> 400, not 500) and the reversal endpoints cap candles/levels, the marker scan reads a
+  bounded tail (identical results, tested); the option backtester's lot follows the contract's expiry (an entry on
+  31 Dec 2025 into the 6 Jan 2026 series uses 65), an explicit `weekly=True` is honoured for BANKNIFTY, and the report's
+  calendar label comes from the expiries actually traded; `build_frame` keeps a bar only when its own minutes reach its
+  end (as in Trade). Open (verify before relying on it): BANKNIFTY's monthly expiry weekday in 2024 (reported as Wednesday
+  for part of that year) is not in the dated table.
 - Tests: `test_trade_port_price_action.py` (49, incl. no-lookahead truncation tests for swings, breaks, reversal, markers
   and zone events), `test_trade_port_contracts_costs.py` (15), `test_trade_port_order_safety.py` (9),
   `test_trade_port_validation.py` (11); existing cost / lot tests moved to dated rates.

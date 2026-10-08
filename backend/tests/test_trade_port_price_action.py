@@ -462,3 +462,47 @@ def test_reversal_endpoints_validate_settings_and_return_plain_json():
     m = client.post("/api/price-action/reversal-markers", json={"candles": bars, "levels": [100.0]}, headers=headers)
     assert m.status_code == 200 and isinstance(m.json(), list)
     assert client.post("/api/price-action/reversal", json={"candles": bars, "level": 100.0, "direction": "UP"}, headers=headers).status_code == 422
+
+
+def test_settings_bounds_and_endpoint_rejects_them():
+    _, errs = PS.validate({"touch_reclaim_window": 0, "median_range_n": -1, "score_min": float("nan"), "degree_levels": 99})
+    assert len(errs) == 4 and all("between" in e for e in errs)
+    from tests.test_auth_api import _register, client
+    headers = {"Authorization": f"Bearer {_register('pa-bounds@example.com')}"}
+    bars = [{"timestamp": (pd.Timestamp("2026-10-05 09:15") + pd.Timedelta(minutes=15 * i)).isoformat(), "open": 100, "high": 101,
+             "low": 99, "close": 100, "volume": 1} for i in range(5)]
+    r = client.post("/api/price-action/reversal", json={"candles": bars, "level": 100.0, "direction": "BULLISH",
+                                                        "settings": {"touch_reclaim_window": 0}}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_build_frame_drops_a_bar_whose_own_minutes_are_missing():
+    ts = list(pd.date_range("2026-10-05 09:15", periods=60, freq="1min"))
+    ts = [t for t in ts if not (pd.Timestamp("2026-10-05 09:40") <= t < pd.Timestamp("2026-10-05 09:45"))]   # 09:30 bar loses its tail
+    df = pd.DataFrame({"timestamp": ts, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0})
+    fr = W.build_frame(df, "15m")
+    assert list(fr["timestamp"].dt.strftime("%H:%M")) == ["09:15", "09:45", "10:00"]
+
+
+def test_marker_scan_on_a_bounded_tail_matches_full_history():
+    df = generate(1200, 24000, 3).reset_index(drop=True)
+    g = df.groupby(df.index // 5).agg({"open": "first", "high": "max", "low": "min", "close": "last"}).reset_index(drop=True)
+    levels = list(np.quantile(g["close"], [0.2, 0.5, 0.8]))
+    s = PS.settings()
+    fast = RV.scan_markers(g, levels, s)
+    mr = B.median_range(g, s["median_range_n"])
+    full, last_end = [], -1
+    for i in range(s["median_range_n"] + 1, len(g)):
+        close, m = float(g["close"].iloc[i]), mr[i]
+        if not np.isfinite(m) or m <= 0:
+            continue
+        best = None
+        for lv in levels:
+            if abs(close - lv) <= 6.0 * m:
+                r = RV.evaluate_reversal(g.iloc[: i + 1], float(lv), 1 if close >= lv else -1, s)
+                if r["valid"] and (best is None or r["score_pct"] > best[1]["score_pct"]):
+                    best = (float(lv), r)
+        if best is not None and i - best[1]["n"] + 1 > last_end:
+            last_end = i
+            full.append(i)
+    assert [x["index"] for x in fast] == full

@@ -75,19 +75,23 @@ def build_frame(df1m: pd.DataFrame, tf: str) -> pd.DataFrame:
     if tf == "1d":
         g = d.groupby(day)
         out = pd.DataFrame({"timestamp": g["timestamp"].first(), "open": g["open"].first(), "high": g["high"].max(),
-                            "low": g["low"].min(), "close": g["close"].last()}).reset_index(drop=True)
+                            "low": g["low"].min(), "close": g["close"].last(),
+                            "src_end": g["timestamp"].max() + pd.Timedelta(minutes=1)}).reset_index(drop=True)
         out["bar_end"] = out["timestamp"].dt.normalize() + pd.Timedelta(minutes=SESSION_CLOSE_MIN)
     else:
         step = TF_MIN[tf]
         bucket = (d["timestamp"].dt.hour * 60 + d["timestamp"].dt.minute - SESSION_OPEN_MIN) // step
         start = day + pd.to_timedelta(SESSION_OPEN_MIN + bucket * step, unit="min")
         g = d.groupby(start)
-        out = pd.DataFrame({"open": g["open"].first(), "high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last()})
+        out = pd.DataFrame({"open": g["open"].first(), "high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last(),
+                            "src_end": g["timestamp"].max() + pd.Timedelta(minutes=1)})
         out.index.name = "timestamp"
         out = out.reset_index()
         close_of_day = out["timestamp"].dt.normalize() + pd.Timedelta(minutes=SESSION_CLOSE_MIN)
         out["bar_end"] = np.minimum(out["timestamp"] + pd.Timedelta(minutes=step), close_of_day)
-    out = out[out["bar_end"] <= last_end]
+    # Closed per bar, as in Trade: the bar's own 1-minute data must reach its end (a bar with missing trailing minutes -
+    # a data gap or a halt - is not treated as complete), and nothing past the newest minute is ever used.
+    out = out[(out["src_end"] >= out["bar_end"]) & (out["bar_end"] <= last_end)]
     return out[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
 
 

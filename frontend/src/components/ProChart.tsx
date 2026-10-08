@@ -4,13 +4,13 @@ import {
 } from "lightweight-charts";
 import { ExternalLink, Layers, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api/client";
 import type { LtpResponse, OHLCVBar, SRZone } from "../types";
 import {
   DEFAULT_SETTINGS, INDICATOR_LABELS, OVERLAYS, PANES, adx, applyLivePrice, bollinger, closes, ema, indicatorsForStrategy, rsi, sma,
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
 } from "../utils/indicators";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
+import { THEME_EVENT, chartColors } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
@@ -37,12 +37,22 @@ export { chartWindowUrl, useLiveLtp } from "./chartHelpers";
  */
 
 const IST = "Asia/Kolkata";
+// Indicator line colours are fixed hues; up/down, the grid, borders and text follow the theme (P1.2: refreshThemeColors).
 const COLORS = {
   up: "#22c55e", down: "#ef4444", emaFast: "#38bdf8", emaSlow: "#f59e0b", sma: "#a78bfa", bb: "#64748b", vwap: "#e879f9",
   stUp: "#22c55e", stDown: "#ef4444", rsi: "#38bdf8", adx: "#f59e0b", plusDi: "#22c55e", minusDi: "#ef4444", volUp: "rgba(34,197,94,0.45)", volDown: "rgba(239,68,68,0.45)",
   grid: "#1a2333", border: "#243044", text: "#c2cad8",
 };
-const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" } as const;
+const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" };
+
+function refreshThemeColors() {
+  const c = chartColors();
+  if (!c.text) return;                     // no tokens (tests without CSS)
+  Object.assign(COLORS, { up: c.up, down: c.down, stUp: c.up, stDown: c.down, plusDi: c.up, minusDi: c.down,
+                          volUp: c.upSoft, volDown: c.downSoft, grid: c.grid, border: c.border, text: c.text });
+  ZONE_COLOR.SUPPORT = c.up;
+  ZONE_COLOR.RESISTANCE = c.down;
+}
 
 const toTime = (iso: string): UTCTimestamp => Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
 const fmtIst = (t: number, withDate = true) => {
@@ -52,6 +62,7 @@ const fmtIst = (t: number, withDate = true) => {
 const fmt = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? "-" : v.toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 
 function baseOptions(height: number, showTime: boolean, attribution = true) {
+  refreshThemeColors();
   return {
     height,
     // The TradingView attribution logo stays on the main pane (the library's licence asks for it once); the stacked indicator panes do not repeat it.
@@ -191,6 +202,20 @@ export default function ProChart({
   const lastShape = useRef<{ len: number; lastTime: number }>({ len: 0, lastTime: 0 });
   const prevFirstTime = useRef<number>(0);
   const syncing = useRef(false);
+
+  // P1.2: a theme / colour-blind change repaints the existing charts (the next data update recolours volume bars).
+  useEffect(() => {
+    const repaint = () => {
+      refreshThemeColors();
+      for (const chart of Object.values(charts.current)) {
+        chart?.applyOptions({ layout: { textColor: COLORS.text }, grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
+                              rightPriceScale: { borderColor: COLORS.border }, timeScale: { borderColor: COLORS.border } });
+      }
+      series.current.candles?.applyOptions({ upColor: COLORS.up, downColor: COLORS.down, wickUpColor: COLORS.up, wickDownColor: COLORS.down });
+    };
+    window.addEventListener(THEME_EVENT, repaint);
+    return () => window.removeEventListener(THEME_EVENT, repaint);
+  }, []);
 
   // Build the charts once per pane layout.
   useEffect(() => {

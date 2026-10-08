@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
+import { Badge, Button, PageHeader } from "../components/primitives";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import MarketPulseCard from "../components/MarketPulseCard";
 import type { Page } from "../components/Sidebar";
@@ -23,17 +24,13 @@ import type {
 
 type Tone = "emerald" | "rose" | "sky" | "violet" | "amber" | "orange" | "fuchsia" | "teal" | "indigo" | "lime";
 
+// P1.2: colour carries meaning only - up (money made / healthy), down (money lost / stopped), warn (attention).
+// Every other family of facts uses the neutral surface with the brand accent; the tone names stay for the call sites.
+const NEUTRAL = { ring: "border-border", text: "text-fg", bg: "bg-surface-2 text-brand", bar: "bg-brand", glow: "", grad: "from-transparent to-transparent" };
 const TONE: Record<Tone, { ring: string; text: string; bg: string; bar: string; glow: string; grad: string }> = {
-  emerald: { ring: "border-emerald-500/40", text: "text-emerald-300", bg: "bg-emerald-500/15", bar: "bg-emerald-400", glow: "shadow-[0_0_28px_-8px_rgba(16,185,129,0.55)]", grad: "from-emerald-500/25 via-emerald-500/5 to-transparent" },
-  rose:    { ring: "border-rose-500/40",    text: "text-rose-300",    bg: "bg-rose-500/15",    bar: "bg-rose-400",    glow: "shadow-[0_0_28px_-8px_rgba(244,63,94,0.55)]",   grad: "from-rose-500/25 via-rose-500/5 to-transparent" },
-  sky:     { ring: "border-sky-500/40",     text: "text-sky-300",     bg: "bg-sky-500/15",     bar: "bg-sky-400",     glow: "shadow-[0_0_28px_-8px_rgba(14,165,233,0.55)]",  grad: "from-sky-500/25 via-sky-500/5 to-transparent" },
-  violet:  { ring: "border-violet-500/40",  text: "text-violet-300",  bg: "bg-violet-500/15",  bar: "bg-violet-400",  glow: "shadow-[0_0_28px_-8px_rgba(139,92,246,0.55)]",  grad: "from-violet-500/25 via-violet-500/5 to-transparent" },
-  amber:   { ring: "border-amber-500/40",   text: "text-amber-300",   bg: "bg-amber-500/15",   bar: "bg-amber-400",   glow: "shadow-[0_0_28px_-8px_rgba(245,158,11,0.55)]",  grad: "from-amber-500/25 via-amber-500/5 to-transparent" },
-  orange:  { ring: "border-orange-500/40",  text: "text-orange-300",  bg: "bg-orange-500/15",  bar: "bg-orange-400",  glow: "shadow-[0_0_28px_-8px_rgba(249,115,22,0.55)]",  grad: "from-orange-500/25 via-orange-500/5 to-transparent" },
-  fuchsia: { ring: "border-fuchsia-500/40", text: "text-fuchsia-300", bg: "bg-fuchsia-500/15", bar: "bg-fuchsia-400", glow: "shadow-[0_0_28px_-8px_rgba(217,70,239,0.55)]",  grad: "from-fuchsia-500/25 via-fuchsia-500/5 to-transparent" },
-  teal:    { ring: "border-teal-500/40",    text: "text-teal-300",    bg: "bg-teal-500/15",    bar: "bg-teal-400",    glow: "shadow-[0_0_28px_-8px_rgba(20,184,166,0.55)]",  grad: "from-teal-500/25 via-teal-500/5 to-transparent" },
-  indigo:  { ring: "border-indigo-500/40",  text: "text-indigo-300",  bg: "bg-indigo-500/15",  bar: "bg-indigo-400",  glow: "shadow-[0_0_28px_-8px_rgba(99,102,241,0.55)]",  grad: "from-indigo-500/25 via-indigo-500/5 to-transparent" },
-  lime:    { ring: "border-lime-500/40",    text: "text-lime-300",    bg: "bg-lime-500/15",    bar: "bg-lime-400",    glow: "shadow-[0_0_28px_-8px_rgba(132,204,22,0.55)]",  grad: "from-lime-500/25 via-lime-500/5 to-transparent" },
+  emerald: { ring: "border-up/40", text: "text-up", bg: "bg-up/10", bar: "bg-up", glow: "", grad: "from-transparent to-transparent" },
+  rose:    { ring: "border-down/40", text: "text-down", bg: "bg-down/10", bar: "bg-down", glow: "", grad: "from-transparent to-transparent" },
+  sky: NEUTRAL, violet: NEUTRAL, amber: NEUTRAL, orange: NEUTRAL, fuchsia: NEUTRAL, teal: NEUTRAL, indigo: NEUTRAL, lime: NEUTRAL,
 };
 const PALETTE: Tone[] = ["sky", "violet", "amber", "emerald", "fuchsia", "orange", "teal", "indigo", "lime", "rose"];
 
@@ -61,13 +58,13 @@ function KpiTile({ icon: Icon, tone, label, value, sub, onClick }: { icon: Lucid
   const t = TONE[tone];
   return (
     <button onClick={onClick} disabled={!onClick}
-      className={`group relative overflow-hidden rounded-2xl border ${t.ring} bg-panel text-left p-4 transition-all ${t.glow} ${onClick ? "hover:-translate-y-0.5 hover:border-opacity-80" : "cursor-default"}`}>
+      className={`group relative overflow-hidden rounded-xl border ${t.ring} bg-surface-1 text-left p-4 shadow-card transition-colors ${onClick ? "hover:bg-surface-2" : "cursor-default"}`}>
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${t.grad}`} />
       <div className="relative flex items-start justify-between gap-2">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300">{label}</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{label}</div>
           <div className={`font-tabular mt-1.5 text-2xl font-extrabold leading-none ${t.text}`}>{value}</div>
-          {sub && <div className="mt-1.5 text-[11px] text-slate-300">{sub}</div>}
+          {sub && <div className="mt-1.5 text-[11px] text-fg-muted">{sub}</div>}
         </div>
         <div className={`shrink-0 rounded-xl ${t.bg} ${t.text} p-2.5`}><Icon size={18} /></div>
       </div>
@@ -79,14 +76,16 @@ function Ring({ segments, size = 128, label, sub }: { segments: { value: number;
   const total = segments.reduce((a, s) => a + s.value, 0) || 1;
   const r = 46, c = 2 * Math.PI * r;
   let offset = 0;
+  // Up / down keep their meaning; categories are shades of the brand colour, not a rainbow.
   const COLORS: Record<Tone, string> = {
-    emerald: "#34d399", rose: "#fb7185", sky: "#38bdf8", violet: "#a78bfa", amber: "#fbbf24", orange: "#fb923c",
-    fuchsia: "#e879f9", teal: "#2dd4bf", indigo: "#818cf8", lime: "#a3e635",
+    emerald: "rgb(var(--up))", rose: "rgb(var(--down))", sky: "rgb(var(--brand))", violet: "rgb(var(--brand) / 0.6)",
+    fuchsia: "rgb(var(--brand) / 0.35)", amber: "rgb(var(--fg-muted))", orange: "rgb(var(--fg-muted) / 0.6)",
+    teal: "rgb(var(--brand) / 0.8)", indigo: "rgb(var(--brand) / 0.5)", lime: "rgb(var(--fg-muted) / 0.4)",
   };
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#1e2536" strokeWidth="12" />
+        <circle cx="60" cy="60" r={r} fill="none" stroke="rgb(var(--surface-3))" strokeWidth="12" />
         {segments.filter((s) => s.value > 0).map((s, i) => {
           const len = (s.value / total) * c;
           const el = <circle key={i} cx="60" cy="60" r={r} fill="none" stroke={COLORS[s.tone]} strokeWidth="12" strokeLinecap="butt"
@@ -181,53 +180,24 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
 
   return (
     <div className="space-y-5">
-      {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-border p-6 shadow-card"
-           style={{ background: "linear-gradient(120deg, rgba(56,189,248,0.18) 0%, rgba(139,92,246,0.18) 35%, rgba(236,72,153,0.14) 65%, rgba(251,191,36,0.14) 100%), #10141d" }}>
-        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-fuchsia-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -left-16 -bottom-24 h-64 w-64 rounded-full bg-sky-500/20 blur-3xl" />
-        <div className="relative flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-sky-300"><Sparkles size={13} /> AMW Algorithmic Trading</div>
-            <h1 className="mt-1 text-3xl font-black tracking-tight text-white">{greeting}, <span className="bg-gradient-to-r from-sky-300 via-violet-300 to-fuchsia-300 bg-clip-text text-transparent">{name}</span></h1>
-            <p className="mt-1 text-sm text-slate-300">
-              {user ? "Your book, your automation and your alerts on one screen. Numbers refresh every 30 seconds." : "Log in to see your book; the engines below are live either way."}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
-              <span className={`rounded-full border px-2.5 py-1 ${healthy ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : healthy === false ? "border-rose-400/50 bg-rose-500/15 text-rose-200" : "border-border text-slate-300"}`}>
-                <Server size={11} className="inline -mt-0.5 mr-1" />Backend {healthy === null ? "…" : healthy ? "online" : "offline"}
-              </span>
-              {user && (
-                <span className={`rounded-full border px-2.5 py-1 ${worker?.running ? "border-amber-400/50 bg-amber-500/15 text-amber-200" : "border-rose-400/50 bg-rose-500/15 text-rose-200"}`}>
-                  <Bot size={11} className="inline -mt-0.5 mr-1" />Autopilot {worker == null ? "…" : worker.running ? `${worker.market_open ? "trading" : "idle"} · beat ${worker.seconds_since_heartbeat ?? "?"}s ago` : "stopped"}
-                </span>
-              )}
-              {worker && (
-                <span className="rounded-full border border-sky-400/50 bg-sky-500/15 px-2.5 py-1 text-sky-200"><Zap size={11} className="inline -mt-0.5 mr-1" />{worker.market_status}</span>
-              )}
-              {exposure?.warnings?.slice(0, 1).map((w) => (
-                <span key={w} className="rounded-full border border-rose-400/50 bg-rose-500/15 px-2.5 py-1 text-rose-200"><AlertTriangle size={11} className="inline -mt-0.5 mr-1" />{w}</span>
-              ))}
-            </div>
-          </div>
-          {onNavigate && (
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => onNavigate("deployments")} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-violet-500/25 hover:brightness-110">
-                <Rocket size={15} /> Deploy a strategy
-              </button>
-              <button onClick={() => onNavigate("positions")} className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/10">
-                <Briefcase size={15} /> Positions
-              </button>
-              <button onClick={() => onNavigate("ai-copilot")} className="flex items-center gap-1.5 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/15 px-4 py-2 text-sm font-bold text-fuchsia-100 hover:bg-fuchsia-500/25">
-                <Sparkles size={15} /> AI Copilot
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title={`${greeting}, ${name}`}
+        description={user ? "Your book, your automation and your alerts on one screen. Numbers refresh every 30 seconds." : "Log in to see your book; the engines below are live either way."}
+        meta={<>
+          <Badge tone={healthy ? "neutral" : healthy === false ? "down" : "neutral"}><Server size={11} />Backend {healthy === null ? "…" : healthy ? "online" : "offline"}</Badge>
+          {user && <Badge tone={worker?.running ? "neutral" : "down"}><Bot size={11} />Autopilot {worker == null ? "…" : worker.running ? `${worker.market_open ? "trading" : "idle"} · beat ${worker.seconds_since_heartbeat ?? "?"}s ago` : "stopped"}</Badge>}
+          {worker && <Badge><Zap size={11} />{worker.market_status}</Badge>}
+          {exposure?.warnings?.slice(0, 1).map((w) => <Badge key={w} tone="warn"><AlertTriangle size={11} />{w}</Badge>)}
+        </>}
+        actions={onNavigate && <>
+          <Button variant="primary" icon={<Rocket size={15} />} onClick={() => onNavigate("deployments")}>Deploy a strategy</Button>
+          <Button icon={<Briefcase size={15} />} onClick={() => onNavigate("positions")}>Positions</Button>
+          <Button icon={<Sparkles size={15} />} onClick={() => onNavigate("ai-copilot")}>AI Copilot</Button>
+        </>}
+      />
 
       {error && (
-        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+        <div className="rounded-xl border border-down/40 bg-down/10 px-3 py-2 text-sm text-down">
           Some dashboard data could not be loaded: {error}
         </div>
       )}

@@ -19,7 +19,7 @@ export default function EquityCurveChart({ equity }: { equity: number[] }) {
 
   const path = points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const finalUp = equity[equity.length - 1] >= equity[0];
-  const lineColor = finalUp ? "#22c55e" : "#ef4444";
+  const lineColor = finalUp ? "rgb(var(--up))" : "rgb(var(--down))";
   const areaPath = `${path} L${points[points.length - 1][0]},${height - padding} L${points[0][0]},${height - padding} Z`;
 
   return (
@@ -32,7 +32,7 @@ export default function EquityCurveChart({ equity }: { equity: number[] }) {
       </defs>
       <path d={areaPath} fill="url(#equityFill)" stroke="none" />
       <path d={path} fill="none" stroke={lineColor} strokeWidth={2} />
-      <text x={padding} y={16} className="fill-slate-400" fontSize="11">
+      <text x={padding} y={16} className="fill-fg-muted" fontSize="11">
         {min.toFixed(0)} – {max.toFixed(0)}
       </text>
     </svg>

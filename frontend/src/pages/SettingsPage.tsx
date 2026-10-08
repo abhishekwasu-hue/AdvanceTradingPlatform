@@ -8,6 +8,8 @@ import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import { Card } from "../components/ui";
+import AppearanceCard from "../components/AppearanceCard";
+import { PageHeader } from "../components/primitives";
 import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
 
 const CRED_FIELDS: { key: keyof BrokerCredentialsInput; label: string }[] = [
@@ -135,7 +137,8 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
+        <PageHeader title="Settings" />
+        <AppearanceCard />
         <Card>
           <p className="text-sm text-muted">Log in from the Account tab to manage broker credentials.</p>
         </Card>
@@ -145,13 +148,9 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-yellow-400">Settings</h1>
-        <p className="text-sm font-semibold text-yellow-200">
-          Broker credentials are encrypted at rest (Fernet) and only ever decrypted in memory
-          when you authenticate - never logged, never returned in plaintext by any API response.
-        </p>
-      </div>
+      <PageHeader title="Settings"
+        description="Broker credentials are encrypted at rest and only ever decrypted in memory when you authenticate - never logged, never returned in plaintext by any API response." />
+      <AppearanceCard />
 
       {oauthOutcome && (
         <div className={`rounded-lg border px-3 py-2 text-sm ${oauthOutcome.ok ? "border-accent/40 bg-accent/10 text-accent" : "border-danger/40 bg-danger/10 text-danger"}`}>

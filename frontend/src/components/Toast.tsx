@@ -26,9 +26,10 @@ export const toast: ToastApi = {
 };
 
 const STYLE: Record<ToastKind, { cls: string; icon: typeof Info }> = {
-  success: { cls: "border-emerald-500/50 bg-emerald-950/95 text-emerald-100", icon: CheckCircle2 },
-  error: { cls: "border-rose-500/50 bg-rose-950/95 text-rose-100", icon: TriangleAlert },
-  info: { cls: "border-sky-500/50 bg-slate-900/95 text-slate-100", icon: Info },
+  // P1.2: one surface for every toast; the edge and icon carry the meaning.
+  success: { cls: "border-l-4 border-border border-l-up bg-surface-1 text-fg [&_svg:first-child]:text-up", icon: CheckCircle2 },
+  error: { cls: "border-l-4 border-border border-l-down bg-surface-1 text-fg [&_svg:first-child]:text-down", icon: TriangleAlert },
+  info: { cls: "border-l-4 border-border border-l-brand bg-surface-1 text-fg [&_svg:first-child]:text-brand", icon: Info },
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {

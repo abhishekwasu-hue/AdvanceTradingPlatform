@@ -9,6 +9,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
+import { THEME_EVENT, chartColors } from "../theme";
 import type { OHLCVBar, SRZone } from "../types";
 
 export interface PriceLineSpec {
@@ -62,20 +63,21 @@ export default function CandleChart({
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#c2cad8",
+        textColor: chartColors().text,
         fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       },
-      grid: { vertLines: { color: "#1a2333" }, horzLines: { color: "#1a2333" } },
+      grid: { vertLines: { color: chartColors().grid }, horzLines: { color: chartColors().grid } },
       crosshair: { mode: CrosshairMode.Normal },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#243044" },
-      rightPriceScale: { borderColor: "#243044" },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: chartColors().border },
+      rightPriceScale: { borderColor: chartColors().border },
     });
+    const c = chartColors();
     const series = chart.addCandlestickSeries({
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: c.up,
+      downColor: c.down,
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: c.up,
+      wickDownColor: c.down,
     });
     chartRef.current = chart;
     seriesRef.current = series;
@@ -94,6 +96,18 @@ export default function CandleChart({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height]);
+
+  // P1.2: repaint on a theme / colour-blind change.
+  useEffect(() => {
+    const repaint = () => {
+      const c = chartColors();
+      chartRef.current?.applyOptions({ layout: { textColor: c.text }, grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+                                      timeScale: { borderColor: c.border }, rightPriceScale: { borderColor: c.border } });
+      seriesRef.current?.applyOptions({ upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down });
+    };
+    window.addEventListener(THEME_EVENT, repaint);
+    return () => window.removeEventListener(THEME_EVENT, repaint);
+  }, []);
 
   useEffect(() => {
     const series = seriesRef.current;

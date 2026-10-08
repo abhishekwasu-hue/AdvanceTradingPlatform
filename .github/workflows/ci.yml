@@ -160,6 +160,9 @@ jobs:
       - name: English-only UI (Devanagari only in the interview allowlist)
         run: npm run check:devanagari
 
+      - name: Unit tests (Vitest)
+        run: npm test
+
       - name: Type-check + production build
         run: npm run build
 

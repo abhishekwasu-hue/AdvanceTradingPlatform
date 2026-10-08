@@ -29,7 +29,7 @@ export interface CandleSourceState {
   usable: boolean;
   loading: boolean;
   label: string;
-  fetch: (symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (symbol: string) => number; seedFor?: (symbol: string) => number }) => Promise<FetchedCandles>;
+  fetch: (symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (symbol: string) => number; seedFor?: (symbol: string) => number; daily?: boolean }) => Promise<FetchedCandles>;
   /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
   fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
@@ -64,14 +64,14 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
   const usable = sources.some((s) => s.usable);
   const label = mode === "broker" ? `broker:${broker || "auto"}` : "sample";
 
-  async function fetch(symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (s: string) => number; seedFor?: (s: string) => number }): Promise<FetchedCandles> {
+  async function fetch(symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (s: string) => number; seedFor?: (s: string) => number; daily?: boolean }): Promise<FetchedCandles> {
     const clean = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
     if (mode === "sample") {
       const candles: Record<string, OHLCVBar[]> = {};
       for (const s of clean) {
         const seed = sample?.seedFor ? sample.seedFor(s) : hashSymbol(s);
         const start = sample?.startPriceFor ? sample.startPriceFor(s) : 100 + (hashSymbol(s) % 900);
-        candles[s] = generateSampleCandles(sample?.count ?? 300, start, seed);
+        candles[s] = generateSampleCandles(sample?.count ?? 300, start, seed, { daily: sample?.daily });
       }
       return { candles, warnings: [], label: "sample" };
     }

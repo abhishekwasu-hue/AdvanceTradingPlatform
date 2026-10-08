@@ -82,7 +82,7 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
                 changes.append(tr(lang, "Option selling replaced by option buying (loss capped at the premium).", "Option selling ऐवजी option buying (तोटा premium इतकाच)."))
         elif code == "more_risk_ok":
             p.risk_bias = min(p.risk_bias + 1, 2)
-            changes.append(tr(lang, "A little more risk per trade - still inside your experience cap.", "एका trade चा risk थोडा वाढवला - तरीही अनुभवाच्या मर्यादेत."))
+            changes.append(tr(lang, "A little more risk per trade - at most a quarter above your own risk answer, inside the platform's maximum.", "एका trade चा risk थोडा वाढवला - तुमच्या risk उत्तरापेक्षा जास्तीत जास्त एक चतुर्थांश जास्त, platform च्या कमाल मर्यादेत."))
         elif code == "too_many_trades":
             p.trades_bias = max(p.trades_bias - 1, -3)
             changes.append(tr(lang, "Fewer trades a day; calmer strategies preferred.", "दिवसाला कमी trades; शांत strategies ला प्राधान्य."))
@@ -118,12 +118,11 @@ def apply_feedback(a: InterviewAnswers, prefs: Preferences, codes: List[str], st
 
 def desired(a: InterviewAnswers, p: Preferences) -> dict:
     base_risk = iv.RISK_PCT[a.risk]
-    risk = min(max(base_risk * (1 + 0.25 * p.risk_bias), 0.25), iv.RISK_CAP_BY_EXPERIENCE[a.experience])
+    # P0.10: "more risk is ok" moves within the trader's own risk answer (plus at most one quarter), never past it by experience.
+    risk = min(max(base_risk * (1 + 0.25 * p.risk_bias), 0.25), base_risk * 1.25)
     if a.style == "swing":
         risk = round(risk * iv.SWING_GAP_FACTOR, 2)   # the same gap buffer risk_plan applies
     trades = iv.TRADES_PER_DAY[a.style] - (1 if a.time == "few_checks" else 0) + p.trades_bias
-    if a.experience == "new":
-        trades = min(trades, 3)
     rr = (2.0 if a.vehicle == "option_buy" else 1.5) + 0.5 * p.reward_bias
     return {"risk_pct": round(risk, 2), "trades": max(int(trades), 1), "rr": round(rr, 2)}
 
@@ -146,11 +145,9 @@ def _tilted_config(a: InterviewAnswers, p: Preferences, tilt: str, ceilings: Opt
     base_risk = cfg.risk_per_trade_pct
     want = desired(a, p)
     t = TILTS[tilt]
-    cap = min(iv.RISK_CAP_BY_EXPERIENCE[a.experience], float((ceilings or {}).get("risk_per_trade_pct", 2.0)))
+    cap = float((ceilings or {}).get("risk_per_trade_pct", 2.0))
     risk = round(min(max(want["risk_pct"] * t["risk"], 0.2), cap), 2)
     trades = max(1, want["trades"] + t["trades"])
-    if a.experience == "new":
-        trades = min(trades, 4)
     rr = round(max(want["rr"] + t["rr"], 1.5), 2)
     daily = round(min(max(cfg.max_daily_loss_pct, risk * 2), risk * 3, float((ceilings or {}).get("max_daily_loss_pct", 5.0))), 2)
     cfg = cfg.model_copy(update={
@@ -190,7 +187,7 @@ def _assign(ranked: List[dict], p: Preferences) -> Dict[str, Optional[dict]]:
 
 
 def _contract_honoured(a: InterviewAnswers, contract: dict) -> bool:
-    """False when the beginner guard rails had to change what the trader asked to trade."""
+    """False when a fact (a cash stock has no options, no overnight option writing) changed what the trader asked to trade."""
     kind, position = contract.get("instrument_kind"), contract.get("option_position")
     if a.vehicle == "option_sell":
         return kind == "OPTION" and position != "BUY"
@@ -201,7 +198,7 @@ def _contract_honoured(a: InterviewAnswers, contract: dict) -> bool:
 
 def _style_fit(a: InterviewAnswers, p: Preferences, family: str) -> float:
     fit = 1.0
-    if family != "trend" and (p.simplicity > 0 or a.experience == "new"):
+    if family != "trend" and p.simplicity > 0:
         fit -= 0.25 + 0.1 * p.simplicity
     if a.goal == "big_trends" and family in ("reversion", "momentum"):
         fit -= 0.3
@@ -292,8 +289,8 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         pick = picks[oid]
         plan = iv.compose_plan(a, market, ranked, pick, cfg, notes, data_source, exit_rules=exit_rules)
         if background:
-            plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "lines": background})
-        if high_fear and a.experience != "experienced":
+            plan["sections"].insert(1, {"id": "background", "title": tr(lang, "Market background", "बाजाराची पार्श्वभूमी"), "title_mr": "बाजाराची पार्श्वभूमी", "lines": background})
+        if high_fear:
             plan["warnings"].append(tr(lang, "India VIX is 20 or higher - fear is high and gaps are more frequent at such readings.",
                                        "India VIX 20 किंवा जास्त आहे - भीती जास्त; अशा वेळी gap जास्त वेळा येतात."))
         (en_label, en_sub), (mr_label, mr_sub) = OPTION_TEXT[oid]
@@ -301,7 +298,8 @@ def build_options(a: InterviewAnswers, p: Preferences, df: pd.DataFrame, base_tf
         # market-fit %, no "closest to you", no best option. The one data fact is whether the template's own regime
         # filter is open on today's candles (the same yes/no the daily briefing shows).
         filter_open = None if pick is None else bool(pick["regime_fit"] >= 2)
-        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "regime_filter_open": filter_open,
+        plan["option"] = {"id": oid, "label": tr(lang, en_label, mr_label), "summary": tr(lang, en_sub, mr_sub), "label_mr": mr_label, "summary_mr": mr_sub,
+                          "regime_filter_open": filter_open,
                           "headline": None if pick is None else {"strategy": pick["name"], "risk_pct": cfg.risk_per_trade_pct,
                                                                  "trades_per_day": cfg.max_trades_per_day, "min_rr": cfg.min_risk_reward}}
         options.append(plan)

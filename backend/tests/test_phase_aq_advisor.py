@@ -28,7 +28,8 @@ def test_desired_targets_follow_the_feedback():
     assert base == {"risk_pct": 1.0, "trades": 3, "rr": 2.0}
     calmer = ad.desired(a, ad.Preferences(risk_bias=-2, trades_bias=-1, reward_bias=1))
     assert calmer["risk_pct"] == 0.5 and calmer["trades"] == 2 and calmer["rr"] == 2.5
-    assert ad.desired(InterviewAnswers(experience="new", risk="aggressive"), ad.Preferences(risk_bias=2))["risk_pct"] == 0.5   # the cap holds
+    # P0.10: "more risk is ok" stays within the trader's own answer plus a quarter - experience sets no cap.
+    assert ad.desired(InterviewAnswers(experience="new", risk="aggressive"), ad.Preferences(risk_bias=2))["risk_pct"] == 1.88
 
 
 def test_three_options_each_a_deployable_plan_without_a_match_score():

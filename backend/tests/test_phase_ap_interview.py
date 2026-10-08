@@ -50,27 +50,29 @@ def test_prefill_reads_what_the_trader_already_said():
     assert "symbol" not in iv.start("I have 2 lakh and want nifty scalping")["remaining"]
 
 
-def test_risk_plan_caps_a_beginner_and_keeps_two_losses_inside_the_day():
+def test_risk_plan_follows_the_answers_and_keeps_two_losses_inside_the_day():
+    # P0.10: experience changes nothing - the trader's own risk answer is used, inside the operator's ceilings.
     cfg, notes = iv.risk_plan(iv.InterviewAnswers(experience="new", risk="aggressive", daily_loss=3, capital=200_000))
-    assert cfg.risk_per_trade_pct == 0.5 and cfg.capital == 200_000         # P0.8-D: the entered capital - no allocation advice
-    assert cfg.max_daily_loss_pct == 1.5 and cfg.max_open_positions == 1 and cfg.max_consecutive_losses == 2
-    assert notes
+    assert cfg.risk_per_trade_pct == 1.5 and cfg.capital == 200_000         # P0.8-D: the entered capital - no allocation advice
+    assert cfg.max_daily_loss_pct == 3.0 and cfg.max_open_positions == iv.DEFAULT_OPEN_POSITIONS
+    assert cfg.max_consecutive_losses == iv.DEFAULT_CONSECUTIVE_LOSSES and not notes
     cfg, _ = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=1))
     assert cfg.max_daily_loss_pct == 1.0 and cfg.risk_per_trade_pct == 0.5  # two losses fit the 1% day
     cfg, _ = iv.risk_plan(iv.InterviewAnswers(experience="experienced", risk="aggressive", daily_loss=3), {"risk_per_trade_pct": 1.0})
     assert cfg.risk_per_trade_pct == 1.0                                       # the platform ceiling wins
 
 
-def test_contract_plan_protects_a_beginner():
+def test_contract_plan_keeps_the_traders_choice():
+    # P0.10: option selling stays option selling (always a hedged spread) whatever the experience; a note informs.
     contract, notes, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="option_sell"), "BULLISH")
-    assert contract["instrument_kind"] == "OPTION" and contract["option_position"] == "BUY" and contract["expiry_rule"] == "NEXT"
+    assert contract["instrument_kind"] == "OPTION" and contract["option_strategy"] == "BULL_PUT_SPREAD"
     assert any("selling" in n for n in notes)
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="option_sell"), "BEARISH")
     assert contract["option_strategy"] == "BEAR_CALL_SPREAD"
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="experienced", vehicle="underlying"), "NEUTRAL")
     assert contract["instrument_kind"] == "FUTURE"
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(experience="new", vehicle="underlying"), "NEUTRAL")
-    assert contract["instrument_kind"] == "OPTION"                            # no index futures lot for a first account
+    assert contract["instrument_kind"] == "FUTURE"                            # futures chosen -> futures, for everyone
     contract, _, _ = iv.contract_plan(iv.InterviewAnswers(instrument="stock", symbol="TATAMOTORS", vehicle="option_buy"), "NEUTRAL")
     assert contract == {"instrument_kind": "UNDERLYING"}
 

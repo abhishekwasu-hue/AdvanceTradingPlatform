@@ -87,7 +87,7 @@ export default function AiProviderCard() {
             </tbody>
           </table>
           <div className="mt-1 text-[11px] text-muted">
-            Estimate for one typical call ({config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}); real calls are metered below. The fast and strong models are set by the operator; a model typed here replaces the strong one for this organisation.
+            Estimate for one typical call ({config.typical_call_tokens ? Object.entries(config.typical_call_tokens).map(([tier, v]) => `${tier}: ${v.input.toLocaleString()} in / ${v.output.toLocaleString()} out tokens`).join("; ") : "typical size"}); real calls are metered below. The cheap, fast and strong models are set by the operator (cheap = the smallest model, for frequent classification and scanner reads); a model typed here replaces the strong one for this organisation.
           </div>
         </div>
       )}

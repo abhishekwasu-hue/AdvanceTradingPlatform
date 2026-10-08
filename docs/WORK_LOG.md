@@ -472,6 +472,15 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P1.3 batch 1: six pages on the design system (G-DESIGN approved)
+- Pages: Signals, Autopilot (Deployments), Orders, Portfolio, Option Chain, Risk Management, plus the components they
+  use (RiskLimitsCard, SignalCard, BrokerTokenBanner, BrokerUncertainBanner, StepUpDialog, DataSource).
+- Hue classes -> semantic tokens (surface / fg / border / brand / up / down / warn / info); colour only for meaning:
+  P&L and direction keep up/down, everything decorative is neutral, a zero is neutral (`signTone`), destructive
+  actions stay `down`. Page titles use `PageHeader`; Orders and the Portfolio exposure table use `Table` with
+  `Badge` / `EmptyState`; the Signals form uses `Select` / `Input` / `Button` (no more horizontal overflow).
+- Checked in dark and light at 1440 px and 390 px with real data on each page (signal + chart, an analysed chain,
+  paper orders, open positions). Initial JS 80.3 KB gzip.
 ### 2026-10-08 - NIFTY expiries from NSE data too (no weekday rule); refresh PR opens itself
 - `expiry_data.DATA_DRIVEN` = NIFTY and BANKNIFTY. NIFTY's Thursday/Tuesday rule is gone from
   `expiry_calendar`; backtests read the dates NSE printed in its F&O bhavcopies (same file, same causal rules).

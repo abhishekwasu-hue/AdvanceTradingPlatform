@@ -3,9 +3,9 @@ import { useState, type ReactNode } from "react";
 
 export function Card({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-border bg-panel shadow-card p-4 ${className}`}>
+    <div className={`rounded-xl border border-border bg-surface-1 shadow-card p-4 ${className}`}>
       {title && (
-        <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-3">{title}</div>
+        <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-3">{title}</div>
       )}
       {children}
     </div>
@@ -30,15 +30,22 @@ export function CollapsibleCard({ title, subtitle, children, storageKey, default
     try { localStorage.setItem(key, next ? "1" : "0"); } catch { /* storage unavailable: session only */ }
   };
   return (
-    <div className={`rounded-xl border border-border bg-panel shadow-card ${open ? "p-4" : "px-4 py-2.5"} ${className}`}>
+    <div className={`rounded-xl border border-border bg-surface-1 shadow-card ${open ? "p-4" : "px-4 py-2.5"} ${className}`}>
       <button onClick={toggle} aria-expanded={open} className="flex w-full items-center gap-2 text-left">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted">{title}</span>
-        {!open && subtitle && <span className="truncate text-xs text-muted/80">{subtitle}</span>}
-        <ChevronDown size={14} className={`ml-auto shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-fg-muted">{title}</span>
+        {!open && subtitle && <span className="truncate text-xs text-fg-muted/80">{subtitle}</span>}
+        <ChevronDown size={14} className={`ml-auto shrink-0 text-fg-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {mounted && <div className={open ? "mt-3" : "hidden"}>{children}</div>}
     </div>
   );
+}
+
+/** P1.3: a figure is coloured only when it has a sign - zero (and anything not a number) stays neutral. */
+export function signTone(value: number | null | undefined, decimals = 2): "default" | "up" | "down" {
+  if (value == null || !Number.isFinite(value)) return "default";
+  const shown = Number(value.toFixed(decimals));
+  return shown > 0 ? "up" : shown < 0 ? "down" : "default";
 }
 
 export function StatTile({
@@ -48,17 +55,16 @@ export function StatTile({
   value: ReactNode;
   tone?: "default" | "up" | "down";
   icon?: LucideIcon;
-  /** Overrides the tone-based color for both the icon and the value - lets a row of stat tiles
-   * carry distinct accent colors (e.g. one per category) instead of every "default"-tone tile
-   * looking identical. Ignored when tone is "up"/"down", since that semantic (bullish/bearish)
-   * coloring always wins. */
+  /** Deprecated (P1.3: colour only for meaning) - accepted for old call sites and ignored; a tile is neutral unless
+   * `tone` says up / down. */
   accentClass?: string;
 }) {
-  const toneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : accentClass ?? "text-slate-100";
-  const iconToneClass = tone === "up" ? "text-accent" : tone === "down" ? "text-danger" : accentClass ?? "text-brand";
+  void accentClass;
+  const toneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg";
+  const iconToneClass = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-fg-muted";
   return (
-    <div className="rounded-xl border border-border bg-panel shadow-card px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+    <div className="rounded-xl border border-border bg-surface-1 shadow-card px-4 py-3">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
         {Icon && <Icon size={12} className={iconToneClass} />}
         {label}
       </div>
@@ -70,10 +76,10 @@ export function StatTile({
 export function DirectionBadge({ direction }: { direction: "LONG" | "SHORT" | "NO_TRADE" }) {
   const styles =
     direction === "LONG"
-      ? "bg-accent/15 text-accent border-accent/40"
+      ? "bg-up/15 text-up border-up/40"
       : direction === "SHORT"
-        ? "bg-danger/15 text-danger border-danger/40"
-        : "bg-slate-700/30 text-muted border-border";
+        ? "bg-down/15 text-down border-down/40"
+        : "bg-surface-2 text-fg-muted border-border";
   return (
     <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-semibold tracking-wide ${styles}`}>
       {direction}
@@ -83,13 +89,8 @@ export function DirectionBadge({ direction }: { direction: "LONG" | "SHORT" | "N
 
 export function GradeBadge({ grade }: { grade: string }) {
   const tone =
-    grade === "A1"
-      ? "bg-accent/15 text-accent border-accent/40"
-      : grade === "High Quality"
-        ? "bg-sky-500/15 text-sky-400 border-sky-500/40"
-        : grade === "Valid"
-          ? "bg-warn/15 text-warn border-warn/40"
-          : "bg-slate-700/30 text-muted border-border";
+    // A grade is a quality label, not a direction: the top grade is marked, the rest stay neutral (P1.3).
+    grade === "A1" ? "bg-brand/10 text-brand border-brand/40" : "bg-surface-2 text-fg-muted border-border";
   return <span className={`inline-block rounded-md border px-2 py-0.5 text-xs font-semibold ${tone}`}>{grade}</span>;
 }
 
@@ -123,7 +124,7 @@ export function Disclaimer({ kind }: { kind: "backtest" | "signals" | "ai" | "sc
       "Scores and ratings summarise the inputs entered; they are analytical aids, not recommendations to buy, sell or hold any security.",
   }[kind];
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-panel2/60 px-3 py-2 text-[11px] text-muted">
+    <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-[11px] text-fg-muted">
       <Info size={13} className="shrink-0 mt-0.5" />
       <span>
         {lead} Trading in equities and derivatives involves substantial risk of loss and is not suitable for
@@ -135,9 +136,9 @@ export function Disclaimer({ kind }: { kind: "backtest" | "signals" | "ai" | "sc
 
 export function ProgressBar({ pct }: { pct: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 80 ? "bg-accent" : clamped >= 60 ? "bg-warn" : "bg-danger";
+  const color = clamped >= 80 ? "bg-up" : clamped >= 60 ? "bg-warn" : "bg-down";
   return (
-    <div className="h-1.5 w-full rounded-full bg-panel2 overflow-hidden">
+    <div className="h-1.5 w-full rounded-full bg-surface-2 overflow-hidden">
       <div className={`h-1.5 rounded-full transition-all ${color}`} style={{ width: `${clamped}%` }} />
     </div>
   );

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { fundamentalsApi } from "../api/fundamentalsClient";
 import { useAuth } from "../auth/AuthContext";
-import { Card, StatTile, Disclaimer } from "../components/ui";
+import { Card, StatTile, Disclaimer, signClass } from "../components/ui";
+import { PageHeader } from "../components/primitives";
 import {
   defaultCalendarEvent,
   defaultCompanyProfile,
@@ -385,22 +386,15 @@ export default function FundamentalsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-extrabold text-amber-400">Fundamental Analysis</h1>
-        <p className="text-sm font-semibold text-amber-200">
-          Institutional-grade company intelligence: business quality, earnings quality, valuation, DCF, red flags, SWOT,
-          and a composite Fundamental Score fused with the technical Signal Score. Every input is entered and cited -
-          nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet).
-        </p>
-      </div>
+      <PageHeader title="Fundamental Analysis" description="Institutional-grade company intelligence: business quality, earnings quality, valuation, DCF, red flags, SWOT, and a composite Fundamental Score fused with the technical Signal Score. Every input is entered and cited - nothing here is fetched from a live feed (no SEBI/NSE/BSE credentials are wired in yet)." />
       <Disclaimer kind="score" />
 
       <Card>
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="block text-xs text-muted mb-1">Company</label>
+            <label className="block text-xs text-fg-muted mb-1">Company</label>
             <select
-              className="w-56 rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+              className="w-56 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
             >
@@ -413,47 +407,47 @@ export default function FundamentalsPage() {
             onClick={() => setShowNewCompanyForm((v) => !v)}
             disabled={!user}
             title={user ? undefined : "Log in to add a company"}
-            className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-sm disabled:opacity-50"
+            className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-sm disabled:opacity-50"
           >
             {showNewCompanyForm ? "Cancel" : "+ Add Company"}
           </button>
           <div className="flex items-end gap-2">
             <div>
-              <label className="block text-xs text-muted mb-1">Add from NSE (symbols)</label>
-              <input placeholder="TCS, INFY, HDFCBANK" className="w-56 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={bulkSymbols} onChange={(e) => setBulkSymbols(e.target.value.toUpperCase())} disabled={!user} />
+              <label className="block text-xs text-fg-muted mb-1">Add from NSE (symbols)</label>
+              <input placeholder="TCS, INFY, HDFCBANK" className="w-56 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={bulkSymbols} onChange={(e) => setBulkSymbols(e.target.value.toUpperCase())} disabled={!user} />
             </div>
-            <button onClick={handleBulkRefresh} disabled={!user || refreshBusy || !bulkSymbols.trim()} title={user ? "Creates the profile from NSE and pulls shareholding + announcements" : "Log in to add companies"} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-sm disabled:opacity-50">{refreshBusy ? "Fetching…" : "Fetch"}</button>
+            <button onClick={handleBulkRefresh} disabled={!user || refreshBusy || !bulkSymbols.trim()} title={user ? "Creates the profile from NSE and pulls shareholding + announcements" : "Log in to add companies"} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-sm disabled:opacity-50">{refreshBusy ? "Fetching…" : "Fetch"}</button>
           </div>
         </div>
         {bulkResult && (
-          <div className="mt-2 text-xs text-muted">
+          <div className="mt-2 text-xs text-fg-muted">
             NSE: {bulkResult.created} created, {bulkResult.failed} failed.
-            {bulkResult.results.filter((r) => r.errors.length).map((r) => <div key={r.symbol} className="text-amber-300">{r.symbol}: {r.errors.join("; ")}</div>)}
+            {bulkResult.results.filter((r) => r.errors.length).map((r) => <div key={r.symbol} className="text-warn">{r.symbol}: {r.errors.join("; ")}</div>)}
           </div>
         )}
 
         {showNewCompanyForm && (
           <div className="mt-3 grid sm:grid-cols-3 gap-2">
-            <input placeholder="Symbol (e.g. TCS)" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+            <input placeholder="Symbol (e.g. TCS)" className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.symbol} onChange={(e) => setNewCompany({ ...newCompany, symbol: e.target.value.toUpperCase() })} />
-            <input placeholder="Company name" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+            <input placeholder="Company name" className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.name} onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })} />
-            <input placeholder="Sector" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+            <input placeholder="Sector" className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.sector} onChange={(e) => setNewCompany({ ...newCompany, sector: e.target.value })} />
-            <input placeholder="Industry" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+            <input placeholder="Industry" className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.industry} onChange={(e) => setNewCompany({ ...newCompany, industry: e.target.value })} />
-            <input type="number" placeholder="Promoter holding %" className="rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+            <input type="number" placeholder="Promoter holding %" className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
               value={newCompany.promoter_holding_pct ?? ""} onChange={(e) => setNewCompany({ ...newCompany, promoter_holding_pct: Number(e.target.value) })} />
-            <button onClick={handleCreateCompany} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+            <button onClick={handleCreateCompany} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
               Save Company
             </button>
           </div>
         )}
-        {error && <div className="mt-2 text-sm text-danger">{error}</div>}
+        {error && <div className="mt-2 text-sm text-down">{error}</div>}
       </Card>
 
       {!symbol ? (
-        <Card><div className="text-sm text-muted py-4 text-center">No companies yet — add one above to get started.</div></Card>
+        <Card><div className="text-sm text-fg-muted py-4 text-center">No companies yet — add one above to get started.</div></Card>
       ) : (
         <>
           <div className="flex flex-wrap gap-1 border-b border-border">
@@ -461,7 +455,7 @@ export default function FundamentalsPage() {
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-3 py-2 text-sm ${tab === t ? "text-brand border-b-2 border-brand" : "text-muted hover:text-slate-200"}`}
+                className={`px-3 py-2 text-sm ${tab === t ? "text-brand border-b-2 border-brand" : "text-fg-muted hover:text-fg"}`}
               >
                 {t}
               </button>
@@ -471,24 +465,24 @@ export default function FundamentalsPage() {
           {tab === "Profile" && selectedCompany && (
             <Card title={`${selectedCompany.symbol} — ${selectedCompany.name}`}>
               <div className="grid sm:grid-cols-3 gap-3 text-sm">
-                <div><span className="text-muted">Sector:</span> {selectedCompany.sector}</div>
-                <div><span className="text-muted">Industry:</span> {selectedCompany.industry}</div>
-                <div><span className="text-muted">Promoter Holding:</span> {selectedCompany.promoter_holding_pct ?? "-"}%</div>
-                <div><span className="text-muted">Face Value:</span> {selectedCompany.face_value ?? "-"}</div>
-                <div><span className="text-muted">ISIN:</span> {selectedCompany.isin ?? "-"}</div>
-                <div><span className="text-muted">Market Cap:</span> {selectedCompany.market_cap ?? "-"}</div>
+                <div><span className="text-fg-muted">Sector:</span> {selectedCompany.sector}</div>
+                <div><span className="text-fg-muted">Industry:</span> {selectedCompany.industry}</div>
+                <div><span className="text-fg-muted">Promoter Holding:</span> {selectedCompany.promoter_holding_pct ?? "-"}%</div>
+                <div><span className="text-fg-muted">Face Value:</span> {selectedCompany.face_value ?? "-"}</div>
+                <div><span className="text-fg-muted">ISIN:</span> {selectedCompany.isin ?? "-"}</div>
+                <div><span className="text-fg-muted">Market Cap:</span> {selectedCompany.market_cap ?? "-"}</div>
               </div>
               {selectedCompany.source && (
-                <div className="mt-3 text-xs text-muted">Source: {selectedCompany.source.source} (retrieved {selectedCompany.source.retrieved_date})</div>
+                <div className="mt-3 text-xs text-fg-muted">Source: {selectedCompany.source.source} (retrieved {selectedCompany.source.retrieved_date})</div>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button onClick={handleRefresh} disabled={!user || refreshBusy} title={user ? undefined : "Log in to refresh"} className="rounded border border-border hover:bg-panel2 text-slate-200 px-3 py-1.5 text-xs disabled:opacity-50">{refreshBusy ? "Refreshing…" : "Refresh from NSE"}</button>
-                <span className="text-[11px] text-muted">Pulls the profile, latest shareholding pattern and recent announcements; financial statements are not published as JSON by NSE, import them on the Financials tab.</span>
+                <button onClick={handleRefresh} disabled={!user || refreshBusy} title={user ? undefined : "Log in to refresh"} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs disabled:opacity-50">{refreshBusy ? "Refreshing…" : "Refresh from NSE"}</button>
+                <span className="text-[11px] text-fg-muted">Pulls the profile, latest shareholding pattern and recent announcements; financial statements are not published as JSON by NSE, import them on the Financials tab.</span>
               </div>
               {refreshResult && (
-                <div className="mt-2 text-xs text-muted">
+                <div className="mt-2 text-xs text-fg-muted">
                   Profile fields changed: {refreshResult.profile_changed.length ? refreshResult.profile_changed.join(", ") : "none"}; shareholding {refreshResult.shareholding_added ? "added" : "unchanged"}; {refreshResult.announcements_added} new announcement(s).
-                  {refreshResult.errors.map((e, i) => <div key={i} className="text-amber-300">{e}</div>)}
+                  {refreshResult.errors.map((e, i) => <div key={i} className="text-warn">{e}</div>)}
                 </div>
               )}
             </Card>
@@ -498,18 +492,18 @@ export default function FundamentalsPage() {
             <div className="space-y-4">
               <Card title={`Financial periods (${periods.length})`}>
                 {periods.length === 0 ? (
-                  <div className="text-sm text-muted py-2">No periods entered yet — add one below.</div>
+                  <div className="text-sm text-fg-muted py-2">No periods entered yet — add one below.</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
-                      <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                      <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                         <th className="py-1 pr-3">Period</th><th className="py-1 pr-3">Revenue</th><th className="py-1 pr-3">EBITDA</th>
                         <th className="py-1 pr-3">PAT</th><th className="py-1 pr-3">EPS</th><th className="py-1 pr-3">CFO</th>
                       </tr></thead>
                       <tbody>
                         {periods.map((p) => (
                           <tr key={p.period_label} className="border-t border-border">
-                            <td className="py-1 pr-3 font-medium text-slate-200">{p.period_label} ({p.period_type})</td>
+                            <td className="py-1 pr-3 font-medium text-fg">{p.period_label} ({p.period_type})</td>
                             <td className="py-1 pr-3">{p.revenue}</td><td className="py-1 pr-3">{p.ebitda}</td>
                             <td className="py-1 pr-3">{p.pat}</td><td className="py-1 pr-3">{p.eps ?? "-"}</td><td className="py-1 pr-3">{p.cfo ?? "-"}</td>
                           </tr>
@@ -521,59 +515,59 @@ export default function FundamentalsPage() {
               </Card>
 
               <Card title="Import financial periods (CSV)">
-                <p className="text-xs text-muted mb-2">Paste a header-led CSV or TSV, one period per row. Required columns: period_type (ANNUAL/QUARTER/TTM), period_label, period_end_date, revenue, ebitda, pat. Optional: eps, shares_outstanding, total_debt, cash_and_equivalents, shareholders_equity, total_assets, cfo, capex, current_assets, current_liabilities, interest_expense, ebit and the other FinancialPeriod fields. Existing periods with the same type and label are updated.</p>
-                <textarea className="w-full h-32 rounded bg-panel2 border border-border px-2 py-1.5 text-xs font-mono" placeholder={"period_type,period_label,period_end_date,revenue,ebitda,pat,eps,shares_outstanding,total_debt,shareholders_equity\nANNUAL,FY24,2024-03-31,1200,300,100,20,50,280,500"} value={importCsv} onChange={(e) => setImportCsv(e.target.value)} disabled={!user} />
+                <p className="text-xs text-fg-muted mb-2">Paste a header-led CSV or TSV, one period per row. Required columns: period_type (ANNUAL/QUARTER/TTM), period_label, period_end_date, revenue, ebitda, pat. Optional: eps, shares_outstanding, total_debt, cash_and_equivalents, shareholders_equity, total_assets, cfo, capex, current_assets, current_liabilities, interest_expense, ebit and the other FinancialPeriod fields. Existing periods with the same type and label are updated.</p>
+                <textarea className="w-full h-32 rounded bg-surface-2 border border-border px-2 py-1.5 text-xs font-mono" placeholder={"period_type,period_label,period_end_date,revenue,ebitda,pat,eps,shares_outstanding,total_debt,shareholders_equity\nANNUAL,FY24,2024-03-31,1200,300,100,20,50,280,500"} value={importCsv} onChange={(e) => setImportCsv(e.target.value)} disabled={!user} />
                 <div className="mt-2 flex items-center gap-3">
-                  <button onClick={handleImportCsv} disabled={!user || !importCsv.trim()} title={user ? undefined : "Log in to import"} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">Import</button>
-                  {importResult && <span className="text-xs text-muted">{importResult.created} created, {importResult.updated} updated{importResult.errors.length ? `, ${importResult.errors.length} row(s) rejected` : ""}.</span>}
+                  <button onClick={handleImportCsv} disabled={!user || !importCsv.trim()} title={user ? undefined : "Log in to import"} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">Import</button>
+                  {importResult && <span className="text-xs text-fg-muted">{importResult.created} created, {importResult.updated} updated{importResult.errors.length ? `, ${importResult.errors.length} row(s) rejected` : ""}.</span>}
                 </div>
                 {importResult && importResult.errors.length > 0 && (
-                  <ul className="mt-2 text-xs text-amber-300 space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                  <ul className="mt-2 text-xs text-warn space-y-0.5">{importResult.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
                 )}
               </Card>
 
               <Card title="Add a financial period">
                 <div className="grid sm:grid-cols-4 gap-2 text-sm">
-                  <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={newPeriod.period_type}
+                  <select className="rounded bg-surface-2 border border-border px-2 py-1.5" value={newPeriod.period_type}
                     onChange={(e) => setNewPeriod({ ...newPeriod, period_type: e.target.value as FinancialPeriod["period_type"] })}>
                     <option value="ANNUAL">Annual</option><option value="QUARTER">Quarter</option>
                   </select>
-                  <input placeholder="Label (e.g. FY24 / Q2FY25)" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input placeholder="Label (e.g. FY24 / Q2FY25)" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.period_label} onChange={(e) => setNewPeriod({ ...newPeriod, period_label: e.target.value })} />
-                  <input type="date" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="date" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.period_end_date} onChange={(e) => setNewPeriod({ ...newPeriod, period_end_date: e.target.value })} />
-                  <input type="number" placeholder="Revenue" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Revenue" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.revenue} onChange={(e) => setNewPeriod({ ...newPeriod, revenue: Number(e.target.value) })} />
-                  <input type="number" placeholder="EBITDA" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="EBITDA" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.ebitda} onChange={(e) => setNewPeriod({ ...newPeriod, ebitda: Number(e.target.value) })} />
-                  <input type="number" placeholder="EBIT" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="EBIT" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.ebit ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, ebit: Number(e.target.value) })} />
-                  <input type="number" placeholder="PAT" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="PAT" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.pat} onChange={(e) => setNewPeriod({ ...newPeriod, pat: Number(e.target.value) })} />
-                  <input type="number" placeholder="EPS" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="EPS" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.eps ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, eps: Number(e.target.value) })} />
-                  <input type="number" placeholder="Shares Outstanding" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Shares Outstanding" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.shares_outstanding ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, shares_outstanding: Number(e.target.value) })} />
-                  <input type="number" placeholder="CFO" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="CFO" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.cfo ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, cfo: Number(e.target.value) })} />
-                  <input type="number" placeholder="Capex" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Capex" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.capex ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, capex: Number(e.target.value) })} />
-                  <input type="number" placeholder="Total Debt" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Total Debt" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.total_debt ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, total_debt: Number(e.target.value) })} />
-                  <input type="number" placeholder="Cash & Equivalents" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Cash & Equivalents" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.cash_and_equivalents ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, cash_and_equivalents: Number(e.target.value) })} />
-                  <input type="number" placeholder="Current Assets" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Current Assets" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.current_assets ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, current_assets: Number(e.target.value) })} />
-                  <input type="number" placeholder="Current Liabilities" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Current Liabilities" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.current_liabilities ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, current_liabilities: Number(e.target.value) })} />
-                  <input type="number" placeholder="Shareholders Equity" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Shareholders Equity" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.shareholders_equity ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, shareholders_equity: Number(e.target.value) })} />
-                  <input type="number" placeholder="Total Assets" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Total Assets" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.total_assets ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, total_assets: Number(e.target.value) })} />
-                  <input type="number" placeholder="Interest Expense" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Interest Expense" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newPeriod.interest_expense ?? ""} onChange={(e) => setNewPeriod({ ...newPeriod, interest_expense: Number(e.target.value) })} />
                 </div>
-                <button onClick={handleAddPeriod} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                <button onClick={handleAddPeriod} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                   Save Period
                 </button>
               </Card>
@@ -582,10 +576,10 @@ export default function FundamentalsPage() {
 
           {tab === "Analysis" && (
             <div className="space-y-4">
-              <button onClick={loadAnalysis} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+              <button onClick={loadAnalysis} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                 Run Analysis
               </button>
-              {analysisError && <div className="text-sm text-danger">{analysisError}</div>}
+              {analysisError && <div className="text-sm text-down">{analysisError}</div>}
 
               {growth && (
                 <Card title="Growth">
@@ -594,7 +588,7 @@ export default function FundamentalsPage() {
                     <StatTile label="3Y CAGR" value={growth.cagr_3y_pct != null ? `${growth.cagr_3y_pct.toFixed(1)}%` : "-"} tone={toneForNumber(growth.cagr_3y_pct)} />
                     <StatTile label="5Y CAGR" value={growth.cagr_5y_pct != null ? `${growth.cagr_5y_pct.toFixed(1)}%` : "-"} tone={toneForNumber(growth.cagr_5y_pct)} />
                   </div>
-                  <div className="mt-2 text-xs text-muted">{growth.note}</div>
+                  <div className="mt-2 text-xs text-fg-muted">{growth.note}</div>
                 </Card>
               )}
 
@@ -606,14 +600,14 @@ export default function FundamentalsPage() {
                     <StatTile label="ROE" value={profitability.roe_pct != null ? `${profitability.roe_pct.toFixed(1)}%` : "-"} />
                     <StatTile label="ROCE" value={profitability.roce_pct != null ? `${profitability.roce_pct.toFixed(1)}%` : "-"} />
                   </div>
-                  <div className="mt-2 text-xs text-muted">Margin trend: <span className="text-slate-200">{profitability.margin_trend}</span> — {profitability.revenue_vs_margin_note}</div>
+                  <div className="mt-2 text-xs text-fg-muted">Margin trend: <span className="text-fg">{profitability.margin_trend}</span> — {profitability.revenue_vs_margin_note}</div>
                 </Card>
               )}
 
               {earningsQuality && (
                 <Card title="Earnings Quality">
-                  <div className="text-sm">Label: <span className="text-slate-200 font-medium">{earningsQuality.label}</span></div>
-                  {earningsQuality.cfo_to_pat_ratio != null && <div className="text-xs text-muted mt-1">CFO/PAT: {earningsQuality.cfo_to_pat_ratio.toFixed(2)}</div>}
+                  <div className="text-sm">Label: <span className="text-fg font-medium">{earningsQuality.label}</span></div>
+                  {earningsQuality.cfo_to_pat_ratio != null && <div className="text-xs text-fg-muted mt-1">CFO/PAT: {earningsQuality.cfo_to_pat_ratio.toFixed(2)}</div>}
                   {earningsQuality.warnings.map((w, i) => <div key={i} className="text-xs text-warn mt-1">⚠ {w}</div>)}
                 </Card>
               )}
@@ -621,7 +615,7 @@ export default function FundamentalsPage() {
               {quarterly && (
                 <Card title={`Quarterly Comparison — ${quarterly.period_label} (${quarterly.overall_quality})`}>
                   <table className="w-full text-xs">
-                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                       <th className="py-1 pr-3">Metric</th><th className="py-1 pr-3">Current</th><th className="py-1 pr-3">QoQ %</th><th className="py-1 pr-3">YoY %</th><th className="py-1 pr-3"></th>
                     </tr></thead>
                     <tbody>
@@ -646,7 +640,7 @@ export default function FundamentalsPage() {
                     <StatTile label="Net Debt/EBITDA" value={balanceSheet.net_debt_to_ebitda?.toFixed(2) ?? "-"} />
                     <StatTile label="Current Ratio" value={balanceSheet.current_ratio?.toFixed(2) ?? "-"} />
                   </div>
-                  {balanceSheet.notes.map((n, i) => <div key={i} className="text-xs text-muted mt-1">{n}</div>)}
+                  {balanceSheet.notes.map((n, i) => <div key={i} className="text-xs text-fg-muted mt-1">{n}</div>)}
                 </Card>
               )}
 
@@ -664,13 +658,13 @@ export default function FundamentalsPage() {
               {scenario && (
                 <Card title="Bull / Base / Bear (next period)">
                   <table className="w-full text-xs">
-                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                       <th className="py-1 pr-3">Scenario</th><th className="py-1 pr-3">Revenue</th><th className="py-1 pr-3">EBITDA</th><th className="py-1 pr-3">PAT</th><th className="py-1 pr-3">EPS</th>
                     </tr></thead>
                     <tbody>
                       {[scenario.bull, scenario.base, scenario.bear].map((s) => (
                         <tr key={s.scenario} className="border-t border-border">
-                          <td className="py-1 pr-3 font-medium text-slate-200">{s.scenario}</td>
+                          <td className="py-1 pr-3 font-medium text-fg">{s.scenario}</td>
                           <td className="py-1 pr-3">{s.revenue.toFixed(0)}</td><td className="py-1 pr-3">{s.ebitda.toFixed(0)}</td>
                           <td className="py-1 pr-3">{s.pat.toFixed(0)}</td><td className="py-1 pr-3">{s.eps ?? "-"}</td>
                         </tr>
@@ -687,11 +681,11 @@ export default function FundamentalsPage() {
               <Card title="Relative Valuation">
                 <div className="flex items-end gap-2 mb-3">
                   <div>
-                    <label className="block text-xs text-muted mb-1">Market Price</label>
-                    <input type="number" className="w-32 rounded bg-panel2 border border-border px-2 py-1.5 text-sm"
+                    <label className="block text-xs text-fg-muted mb-1">Market Price</label>
+                    <input type="number" className="w-32 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm"
                       value={marketPrice} onChange={(e) => setMarketPrice(Number(e.target.value))} />
                   </div>
-                  <button onClick={handleValuation} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                  <button onClick={handleValuation} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                     Compute Valuation
                   </button>
                 </div>
@@ -703,27 +697,27 @@ export default function FundamentalsPage() {
                       <StatTile label="P/B" value={valuation.pb?.toFixed(1) ?? "-"} />
                       <StatTile label="Classification" value={valuation.classification} />
                     </div>
-                    {valuation.notes.map((n, i) => <div key={i} className="text-xs text-muted mt-1">{n}</div>)}
+                    {valuation.notes.map((n, i) => <div key={i} className="text-xs text-fg-muted mt-1">{n}</div>)}
                   </>
                 )}
               </Card>
 
               <Card title="DCF Calculator">
                 <div className="grid sm:grid-cols-4 gap-2 text-sm mb-3">
-                  <input type="number" placeholder="Base Revenue" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Base Revenue" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.base_revenue} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, base_revenue: Number(e.target.value) })} />
-                  <input type="number" placeholder="EBITDA Margin %" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="EBITDA Margin %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.ebitda_margin_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, ebitda_margin_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="WACC %" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="WACC %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.wacc_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, wacc_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="Terminal Growth %" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Terminal Growth %" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.terminal_growth_pct} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, terminal_growth_pct: Number(e.target.value) })} />
-                  <input type="number" placeholder="Net Debt" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Net Debt" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.net_debt} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, net_debt: Number(e.target.value) })} />
-                  <input type="number" placeholder="Shares Outstanding" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Shares Outstanding" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={dcfAssumptions.shares_outstanding} onChange={(e) => setDcfAssumptions({ ...dcfAssumptions, shares_outstanding: Number(e.target.value) })} />
                 </div>
-                <button onClick={handleDcf} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleDcf} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Run DCF
                 </button>
                 {dcf && (
@@ -732,8 +726,8 @@ export default function FundamentalsPage() {
                     <StatTile label="Base" value={`₹${dcf.base.intrinsic_value_per_share}`} />
                     <StatTile label="Bull" value={`₹${dcf.bull.intrinsic_value_per_share}`} tone="up" />
                     {dcf.upside_pct != null && (
-                      <div className="col-span-3 text-xs text-muted mt-1">
-                        Upside vs current price: <span className={dcf.upside_pct >= 0 ? "text-accent" : "text-danger"}>{dcf.upside_pct.toFixed(1)}%</span>
+                      <div className="col-span-3 text-xs text-fg-muted mt-1">
+                        Upside vs current price: <span className={signClass(dcf.upside_pct)}>{dcf.upside_pct.toFixed(1)}%</span>
                         {dcf.margin_of_safety_pct != null && ` · Margin of safety: ${dcf.margin_of_safety_pct.toFixed(1)}%`}
                       </div>
                     )}
@@ -748,18 +742,18 @@ export default function FundamentalsPage() {
               <Card title="SWOT">
                 {swot ? (
                   <div className="grid sm:grid-cols-2 gap-4 text-sm">
-                    <div><div className="text-xs uppercase text-muted mb-1">Strengths</div>{swot.strengths.length ? swot.strengths.map((s, i) => <div key={i} className="text-accent">+ {s}</div>) : <div className="text-muted">None entered</div>}</div>
-                    <div><div className="text-xs uppercase text-muted mb-1">Weaknesses</div>{swot.weaknesses.length ? swot.weaknesses.map((s, i) => <div key={i} className="text-danger">− {s}</div>) : <div className="text-muted">None entered</div>}</div>
-                    <div><div className="text-xs uppercase text-muted mb-1">Opportunities</div>{swot.opportunities.length ? swot.opportunities.map((s, i) => <div key={i} className="text-sky-400">↑ {s}</div>) : <div className="text-muted">None entered</div>}</div>
-                    <div><div className="text-xs uppercase text-muted mb-1">Threats</div>{swot.threats.length ? swot.threats.map((s, i) => <div key={i} className="text-warn">⚠ {s}</div>) : <div className="text-muted">None entered</div>}</div>
+                    <div><div className="text-xs uppercase text-fg-muted mb-1">Strengths</div>{swot.strengths.length ? swot.strengths.map((s, i) => <div key={i} className="text-up">+ {s}</div>) : <div className="text-fg-muted">None entered</div>}</div>
+                    <div><div className="text-xs uppercase text-fg-muted mb-1">Weaknesses</div>{swot.weaknesses.length ? swot.weaknesses.map((s, i) => <div key={i} className="text-down">− {s}</div>) : <div className="text-fg-muted">None entered</div>}</div>
+                    <div><div className="text-xs uppercase text-fg-muted mb-1">Opportunities</div>{swot.opportunities.length ? swot.opportunities.map((s, i) => <div key={i} className="text-fg">↑ {s}</div>) : <div className="text-fg-muted">None entered</div>}</div>
+                    <div><div className="text-xs uppercase text-fg-muted mb-1">Threats</div>{swot.threats.length ? swot.threats.map((s, i) => <div key={i} className="text-warn">⚠ {s}</div>) : <div className="text-fg-muted">None entered</div>}</div>
                   </div>
-                ) : <div className="text-sm text-muted py-2">Run Analysis on the Analysis tab first, or add qualitative factors below.</div>}
+                ) : <div className="text-sm text-fg-muted py-2">Run Analysis on the Analysis tab first, or add qualitative factors below.</div>}
               </Card>
 
               <Card title="Red Flags">
-                {redFlags.length === 0 ? <div className="text-sm text-muted py-2">None detected from persisted data.</div> : (
+                {redFlags.length === 0 ? <div className="text-sm text-fg-muted py-2">None detected from persisted data.</div> : (
                   redFlags.map((f, i) => (
-                    <div key={i} className={`text-xs mb-1 ${f.severity === "High" || f.severity === "Extreme" ? "text-danger" : "text-warn"}`}>
+                    <div key={i} className={`text-xs mb-1 ${f.severity === "High" || f.severity === "Extreme" ? "text-down" : "text-warn"}`}>
                       [{f.severity}] {f.description}
                     </div>
                   ))
@@ -774,14 +768,14 @@ export default function FundamentalsPage() {
             <div className="space-y-4">
               <Card title="Fundamental Score inputs (analyst judgment - not computed automatically)">
                 <div className="grid sm:grid-cols-3 gap-3 text-sm">
-                  <div><label className="block text-xs text-muted mb-1">Sector Outlook (0-100)</label>
-                    <input type="number" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={sectorOutlook} onChange={(e) => setSectorOutlook(Number(e.target.value))} /></div>
-                  <div><label className="block text-xs text-muted mb-1">Macro/Event Risk (0-100)</label>
-                    <input type="number" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={macroRisk} onChange={(e) => setMacroRisk(Number(e.target.value))} /></div>
-                  <div><label className="block text-xs text-muted mb-1">Management Quality (0-100)</label>
-                    <input type="number" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={managementScore} onChange={(e) => setManagementScore(Number(e.target.value))} /></div>
+                  <div><label className="block text-xs text-fg-muted mb-1">Sector Outlook (0-100)</label>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={sectorOutlook} onChange={(e) => setSectorOutlook(Number(e.target.value))} /></div>
+                  <div><label className="block text-xs text-fg-muted mb-1">Macro/Event Risk (0-100)</label>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={macroRisk} onChange={(e) => setMacroRisk(Number(e.target.value))} /></div>
+                  <div><label className="block text-xs text-fg-muted mb-1">Management Quality (0-100)</label>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={managementScore} onChange={(e) => setManagementScore(Number(e.target.value))} /></div>
                 </div>
-                <button onClick={handleScore} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleScore} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Compute Fundamental Score
                 </button>
               </Card>
@@ -789,7 +783,7 @@ export default function FundamentalsPage() {
               {score && (
                 <Card title={`Fundamental Score: ${score.score} (${score.grade})`}>
                   <table className="w-full text-xs">
-                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                       <th className="py-1 pr-3">Component</th><th className="py-1 pr-3">Weight</th><th className="py-1 pr-3">Score</th><th className="py-1 pr-3">Contribution</th><th className="py-1 pr-3">Note</th>
                     </tr></thead>
                     <tbody>
@@ -797,7 +791,7 @@ export default function FundamentalsPage() {
                         <tr key={b.component} className="border-t border-border">
                           <td className="py-1 pr-3">{b.component}</td><td className="py-1 pr-3">{b.weight_pct}%</td>
                           <td className="py-1 pr-3">{b.score_0_100}</td><td className="py-1 pr-3">{b.contribution}</td>
-                          <td className="py-1 pr-3 text-muted">{b.note}</td>
+                          <td className="py-1 pr-3 text-fg-muted">{b.note}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -807,20 +801,20 @@ export default function FundamentalsPage() {
 
               <Card title="Fusion with Technical Signal">
                 <div className="grid sm:grid-cols-3 gap-3 text-sm items-end">
-                  <div><label className="block text-xs text-muted mb-1">Technical Score (0-100)</label>
-                    <input type="number" className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={technicalScore} onChange={(e) => setTechnicalScore(Number(e.target.value))} /></div>
-                  <div><label className="block text-xs text-muted mb-1">Technical Direction</label>
-                    <select className="w-full rounded bg-panel2 border border-border px-2 py-1.5" value={technicalDirection} onChange={(e) => setTechnicalDirection(e.target.value as typeof technicalDirection)}>
+                  <div><label className="block text-xs text-fg-muted mb-1">Technical Score (0-100)</label>
+                    <input type="number" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={technicalScore} onChange={(e) => setTechnicalScore(Number(e.target.value))} /></div>
+                  <div><label className="block text-xs text-fg-muted mb-1">Technical Direction</label>
+                    <select className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={technicalDirection} onChange={(e) => setTechnicalDirection(e.target.value as typeof technicalDirection)}>
                       <option value="LONG">LONG</option><option value="SHORT">SHORT</option><option value="NO_TRADE">NO_TRADE</option>
                     </select></div>
-                  <button onClick={handleFusion} disabled={!score} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  <button onClick={handleFusion} disabled={!score} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                     Compute Final Bias
                   </button>
                 </div>
                 {fusion && (
                   <div className="mt-3">
-                    <div className="text-lg font-semibold text-slate-100">{fusion.bias}</div>
-                    <div className="text-xs text-muted mt-1">Final composite score: {fusion.final_score} — {fusion.note}</div>
+                    <div className="text-lg font-semibold text-fg">{fusion.bias}</div>
+                    <div className="text-xs text-fg-muted mt-1">Final composite score: {fusion.final_score} — {fusion.note}</div>
                   </div>
                 )}
               </Card>
@@ -829,18 +823,18 @@ export default function FundamentalsPage() {
 
           {tab === "Intelligence Card" && (
             <Card title="One-Page Company Intelligence Card">
-              <button onClick={handleCard} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+              <button onClick={handleCard} className="mb-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                 Generate Card
               </button>
               {card && (
                 <div className="max-w-md rounded border border-border p-4 space-y-1 text-sm">
-                  <div className="text-lg font-semibold text-slate-100">{card.symbol}</div>
-                  <div className="text-2xl font-bold text-accent">{card.fundamental_score}/100 <span className="text-sm text-slate-300">({card.fundamental_grade})</span></div>
-                  <div>Business Quality: <span className="text-slate-200">{card.business_quality}</span></div>
-                  <div>Earnings Quality: <span className="text-slate-200">{card.earnings_quality}</span></div>
-                  <div>Balance Sheet Risk: <span className="text-slate-200">{card.balance_sheet_risk}</span></div>
-                  <div>Valuation: <span className="text-slate-200">{card.valuation}</span></div>
-                  <div>Earnings Outlook: <span className="text-slate-200">{card.earnings_outlook}</span></div>
+                  <div className="text-lg font-semibold text-fg">{card.symbol}</div>
+                  <div className="text-2xl font-bold text-up">{card.fundamental_score}/100 <span className="text-sm text-fg-muted">({card.fundamental_grade})</span></div>
+                  <div>Business Quality: <span className="text-fg">{card.business_quality}</span></div>
+                  <div>Earnings Quality: <span className="text-fg">{card.earnings_quality}</span></div>
+                  <div>Balance Sheet Risk: <span className="text-fg">{card.balance_sheet_risk}</span></div>
+                  <div>Valuation: <span className="text-fg">{card.valuation}</span></div>
+                  <div>Earnings Outlook: <span className="text-fg">{card.earnings_outlook}</span></div>
                 </div>
               )}
             </Card>
@@ -850,15 +844,15 @@ export default function FundamentalsPage() {
             <div className="space-y-4">
               <Card title="Fundamental Screener">
                 <div className="grid sm:grid-cols-4 gap-2 text-sm">
-                  <input placeholder="Min ROCE %" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.min_roce_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_roce_pct: e.target.value })} />
-                  <input placeholder="Max Debt/Equity" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.max_debt_to_equity} onChange={(e) => setScreenerFilters({ ...screenerFilters, max_debt_to_equity: e.target.value })} />
-                  <input placeholder="Min 3Y Revenue CAGR %" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.min_revenue_cagr_3y_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_revenue_cagr_3y_pct: e.target.value })} />
-                  <input placeholder="Min Promoter Holding %" className="rounded bg-panel2 border border-border px-2 py-1.5" value={screenerFilters.min_promoter_holding_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_promoter_holding_pct: e.target.value })} />
+                  <input placeholder="Min ROCE %" className="rounded bg-surface-2 border border-border px-2 py-1.5" value={screenerFilters.min_roce_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_roce_pct: e.target.value })} />
+                  <input placeholder="Max Debt/Equity" className="rounded bg-surface-2 border border-border px-2 py-1.5" value={screenerFilters.max_debt_to_equity} onChange={(e) => setScreenerFilters({ ...screenerFilters, max_debt_to_equity: e.target.value })} />
+                  <input placeholder="Min 3Y Revenue CAGR %" className="rounded bg-surface-2 border border-border px-2 py-1.5" value={screenerFilters.min_revenue_cagr_3y_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_revenue_cagr_3y_pct: e.target.value })} />
+                  <input placeholder="Min Promoter Holding %" className="rounded bg-surface-2 border border-border px-2 py-1.5" value={screenerFilters.min_promoter_holding_pct} onChange={(e) => setScreenerFilters({ ...screenerFilters, min_promoter_holding_pct: e.target.value })} />
                 </div>
-                <button onClick={handleScreener} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleScreener} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Run Screener
                 </button>
-                {screenerError && <div className="mt-2 text-sm text-danger">{screenerError}</div>}
+                {screenerError && <div className="mt-2 text-sm text-down">{screenerError}</div>}
                 {screenerResults.length > 0 && (
                   <div className="mt-3 text-sm space-y-1">
                     {screenerResults.map((r) => <div key={r.symbol}>{r.symbol} — {r.name} ({r.sector})</div>)}
@@ -868,13 +862,13 @@ export default function FundamentalsPage() {
 
               <Card title="Sector Rotation (from companies tracked in this platform)">
                 <table className="w-full text-xs">
-                  <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                  <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                     <th className="py-1 pr-3">Sector</th><th className="py-1 pr-3">Companies</th><th className="py-1 pr-3">Avg 3Y Revenue CAGR</th><th className="py-1 pr-3">Avg ROCE</th>
                   </tr></thead>
                   <tbody>
                     {sectors.map((s) => (
                       <tr key={s.sector} className="border-t border-border">
-                        <td className="py-1 pr-3 font-medium text-slate-200">{s.sector}</td>
+                        <td className="py-1 pr-3 font-medium text-fg">{s.sector}</td>
                         <td className="py-1 pr-3">{s.companies_tracked}</td>
                         <td className="py-1 pr-3">{s.avg_revenue_cagr_3y_pct != null ? `${s.avg_revenue_cagr_3y_pct}%` : "-"}</td>
                         <td className="py-1 pr-3">{s.avg_roce_pct != null ? `${s.avg_roce_pct}%` : "-"}</td>
@@ -890,18 +884,18 @@ export default function FundamentalsPage() {
             <div className="space-y-4">
               <Card title={`Earnings Calendar — ${symbol}`}>
                 {calendarEvents.length === 0 ? (
-                  <div className="text-sm text-muted py-2">No events entered yet — add one below.</div>
+                  <div className="text-sm text-fg-muted py-2">No events entered yet — add one below.</div>
                 ) : (
                   <table className="w-full text-xs">
-                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                       <th className="py-1 pr-3">Type</th><th className="py-1 pr-3">Date</th><th className="py-1 pr-3">Description</th>
                     </tr></thead>
                     <tbody>
                       {calendarEvents.map((e, i) => (
                         <tr key={i} className="border-t border-border">
-                          <td className="py-1 pr-3 font-medium text-slate-200">{e.event_type}</td>
+                          <td className="py-1 pr-3 font-medium text-fg">{e.event_type}</td>
                           <td className="py-1 pr-3">{e.event_date}</td>
-                          <td className="py-1 pr-3 text-muted">{e.description ?? "-"}</td>
+                          <td className="py-1 pr-3 text-fg-muted">{e.description ?? "-"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -909,7 +903,7 @@ export default function FundamentalsPage() {
                 )}
 
                 <div className="mt-3 grid sm:grid-cols-4 gap-2 text-sm">
-                  <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={newCalendarEvent.event_type}
+                  <select className="rounded bg-surface-2 border border-border px-2 py-1.5" value={newCalendarEvent.event_type}
                     onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, event_type: e.target.value })}>
                     <option value="RESULTS">Results</option>
                     <option value="AGM">AGM</option>
@@ -923,60 +917,60 @@ export default function FundamentalsPage() {
                     <option value="PRODUCT_LAUNCH">Product Launch</option>
                     <option value="REGULATORY_DECISION">Regulatory Decision</option>
                   </select>
-                  <input type="date" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="date" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newCalendarEvent.event_date} onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, event_date: e.target.value })} />
-                  <input placeholder="Description" className="rounded bg-panel2 border border-border px-2 py-1.5 sm:col-span-2"
+                  <input placeholder="Description" className="rounded bg-surface-2 border border-border px-2 py-1.5 sm:col-span-2"
                     value={newCalendarEvent.description ?? ""} onChange={(e) => setNewCalendarEvent({ ...newCalendarEvent, description: e.target.value })} />
                 </div>
-                <button onClick={handleAddCalendarEvent} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                <button onClick={handleAddCalendarEvent} disabled={!user} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                   Add Event
                 </button>
               </Card>
 
               <Card title="Upcoming Across All Companies">
-                {upcomingEvents.length === 0 ? <div className="text-sm text-muted py-2">Nothing scheduled.</div> : (
+                {upcomingEvents.length === 0 ? <div className="text-sm text-fg-muted py-2">Nothing scheduled.</div> : (
                   <div className="text-sm space-y-1">
                     {upcomingEvents.map((e, i) => (
-                      <div key={i}><span className="font-medium text-slate-200">{e.symbol}</span> — {e.event_type} on {e.event_date}{e.description ? ` (${e.description})` : ""}</div>
+                      <div key={i}><span className="font-medium text-fg">{e.symbol}</span> — {e.event_type} on {e.event_date}{e.description ? ` (${e.description})` : ""}</div>
                     ))}
                   </div>
                 )}
               </Card>
 
               <Card title="Pre-Earnings Analysis">
-                <button onClick={handlePreEarnings} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handlePreEarnings} className="mb-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Analyze Nearest Upcoming Results
                 </button>
-                {preEarningsError && <div className="text-sm text-danger">{preEarningsError}</div>}
+                {preEarningsError && <div className="text-sm text-down">{preEarningsError}</div>}
                 {preEarnings && (
                   <div className="space-y-2 text-sm">
-                    <div>Upcoming Results: <span className="text-slate-200">{preEarnings.upcoming_event_date}</span></div>
+                    <div>Upcoming Results: <span className="text-fg">{preEarnings.upcoming_event_date}</span></div>
                     <div className="grid grid-cols-2 gap-3">
                       <StatTile label="Earnings Bias" value={preEarnings.earnings_bias} tone={preEarnings.earnings_bias === "Bullish" ? "up" : preEarnings.earnings_bias === "Bearish" ? "down" : "default"} />
                       <StatTile label="Risk Level" value={preEarnings.risk_level} tone={toneForRisk(preEarnings.risk_level)} />
                     </div>
-                    <div className="text-xs text-muted">{preEarnings.note}</div>
+                    <div className="text-xs text-fg-muted">{preEarnings.note}</div>
                   </div>
                 )}
               </Card>
 
               <Card title="Post-Earnings Analysis">
-                <button onClick={handlePostEarnings} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handlePostEarnings} className="mb-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Analyze Most Recent Past Results
                 </button>
-                {postEarningsError && <div className="text-sm text-danger">{postEarningsError}</div>}
+                {postEarningsError && <div className="text-sm text-down">{postEarningsError}</div>}
                 {postEarnings && (
                   <div className="space-y-2 text-sm">
-                    <div>Results Date: <span className="text-slate-200">{postEarnings.results_event_date}</span></div>
+                    <div>Results Date: <span className="text-fg">{postEarnings.results_event_date}</span></div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <StatTile label="Verdict" value={postEarnings.verdict} tone={postEarnings.verdict === "Bullish" ? "up" : postEarnings.verdict === "Bearish" ? "down" : "default"} />
                       <StatTile label="Revenue Surprise" value={`${postEarnings.revenue_surprise_pct >= 0 ? "+" : ""}${postEarnings.revenue_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.revenue_surprise_pct)} />
                       <StatTile label="PAT Surprise" value={`${postEarnings.pat_surprise_pct >= 0 ? "+" : ""}${postEarnings.pat_surprise_pct.toFixed(1)}%`} tone={toneForNumber(postEarnings.pat_surprise_pct)} />
                     </div>
-                    <div className="text-xs text-muted">
+                    <div className="text-xs text-fg-muted">
                       Actual revenue {postEarnings.revenue_actual} vs. own-trend expected {postEarnings.revenue_expected_trend} · Actual PAT {postEarnings.pat_actual} vs. expected {postEarnings.pat_expected_trend}
                     </div>
-                    <div className="text-xs text-muted">{postEarnings.note}</div>
+                    <div className="text-xs text-fg-muted">{postEarnings.note}</div>
                   </div>
                 )}
               </Card>
@@ -986,17 +980,17 @@ export default function FundamentalsPage() {
           {tab === "Peer Comparison" && (
             <Card title={selectedCompany ? `Peers in ${selectedCompany.sector}` : "Peer Comparison"}>
               {peerMetrics.length === 0 ? (
-                <div className="text-sm text-muted py-2">No peer companies with financial data in this sector yet.</div>
+                <div className="text-sm text-fg-muted py-2">No peer companies with financial data in this sector yet.</div>
               ) : (
                 <table className="w-full text-xs">
-                  <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                  <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                     <th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Name</th><th className="py-1 pr-3">Revenue YoY</th>
                     <th className="py-1 pr-3">EBITDA Margin</th><th className="py-1 pr-3">ROE</th><th className="py-1 pr-3">ROCE</th><th className="py-1 pr-3">D/E</th>
                   </tr></thead>
                   <tbody>
                     {peerMetrics.map((p) => (
-                      <tr key={p.symbol} className={`border-t border-border ${p.symbol === symbol ? "bg-panel2" : ""}`}>
-                        <td className="py-1 pr-3 font-medium text-slate-200">{p.symbol}</td>
+                      <tr key={p.symbol} className={`border-t border-border ${p.symbol === symbol ? "bg-surface-2" : ""}`}>
+                        <td className="py-1 pr-3 font-medium text-fg">{p.symbol}</td>
                         <td className="py-1 pr-3">{p.name}</td>
                         <td className="py-1 pr-3">{p.revenue_yoy_growth_pct != null ? `${p.revenue_yoy_growth_pct.toFixed(1)}%` : "-"}</td>
                         <td className="py-1 pr-3">{p.ebitda_margin_pct != null ? `${p.ebitda_margin_pct.toFixed(1)}%` : "-"}</td>
@@ -1016,42 +1010,42 @@ export default function FundamentalsPage() {
               <Card title="Sector-Specific Fundamentals (banking / IT / auto / pharma / oil & gas / cement)">
                 <div className="flex flex-wrap items-end gap-3 mb-3">
                   <div>
-                    <label className="block text-xs text-muted mb-1">Sector</label>
-                    <select className="w-56 rounded bg-panel2 border border-border px-2 py-1.5 text-sm" value={sectorKey} onChange={(e) => setSectorKey(e.target.value)}>
+                    <label className="block text-xs text-fg-muted mb-1">Sector</label>
+                    <select className="w-56 rounded bg-surface-2 border border-border px-2 py-1.5 text-sm" value={sectorKey} onChange={(e) => setSectorKey(e.target.value)}>
                       {Object.keys(sectorMetricSpecs).map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
                     </select>
                   </div>
-                  <button onClick={handleSectorSpecificAnalysis} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                  <button onClick={handleSectorSpecificAnalysis} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                     Analyze
                   </button>
                 </div>
-                {sectorSpecificError && <div className="text-sm text-danger">{sectorSpecificError}</div>}
+                {sectorSpecificError && <div className="text-sm text-down">{sectorSpecificError}</div>}
                 {sectorSpecificResult && (
                   <div className="mb-3">
                     <table className="w-full text-xs">
-                      <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                      <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                         <th className="py-1 pr-3">Metric</th><th className="py-1 pr-3">Value</th><th className="py-1 pr-3">Classification</th>
                       </tr></thead>
                       <tbody>
                         {sectorSpecificResult.metrics.map((m) => (
                           <tr key={m.metric_code} className="border-t border-border">
-                            <td className="py-1 pr-3 font-medium text-slate-200">{m.label}</td>
+                            <td className="py-1 pr-3 font-medium text-fg">{m.label}</td>
                             <td className="py-1 pr-3">{m.value}{m.unit}</td>
-                            <td className={`py-1 pr-3 ${m.classification === "Strong" || m.classification === "Good" ? "text-accent" : m.classification === "Weak" ? "text-danger" : ""}`}>{m.classification}</td>
+                            <td className={`py-1 pr-3 ${m.classification === "Strong" || m.classification === "Good" ? "text-up" : m.classification === "Weak" ? "text-down" : ""}`}>{m.classification}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    <div className="mt-2 text-xs text-muted">{sectorSpecificResult.overall_note}</div>
+                    <div className="mt-2 text-xs text-fg-muted">{sectorSpecificResult.overall_note}</div>
                   </div>
                 )}
 
                 <div className="text-sm mb-2">Entered metrics for {symbol}:</div>
                 {sectorMetrics.length === 0 ? (
-                  <div className="text-sm text-muted py-2">None entered yet — add one below.</div>
+                  <div className="text-sm text-fg-muted py-2">None entered yet — add one below.</div>
                 ) : (
                   <table className="w-full text-xs mb-3">
-                    <thead className="text-muted uppercase text-[10px]"><tr className="text-left">
+                    <thead className="text-fg-muted uppercase text-[10px]"><tr className="text-left">
                       <th className="py-1 pr-3">Period</th><th className="py-1 pr-3">Metric Code</th><th className="py-1 pr-3">Value</th>
                     </tr></thead>
                     <tbody>
@@ -1065,18 +1059,18 @@ export default function FundamentalsPage() {
                 )}
 
                 <div className="grid sm:grid-cols-4 gap-2 text-sm">
-                  <input placeholder="Period (e.g. FY24)" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input placeholder="Period (e.g. FY24)" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newSectorMetric.period_label} onChange={(e) => setNewSectorMetric({ ...newSectorMetric, period_label: e.target.value })} />
-                  <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={newSectorMetric.metric_code}
+                  <select className="rounded bg-surface-2 border border-border px-2 py-1.5" value={newSectorMetric.metric_code}
                     onChange={(e) => setNewSectorMetric({ ...newSectorMetric, metric_code: e.target.value })}>
                     <option value="">Metric code…</option>
                     {Object.entries(sectorMetricSpecs[sectorKey] ?? {}).map(([code, spec]) => (
                       <option key={code} value={code}>{spec.label} ({code})</option>
                     ))}
                   </select>
-                  <input type="number" placeholder="Value" className="rounded bg-panel2 border border-border px-2 py-1.5"
+                  <input type="number" placeholder="Value" className="rounded bg-surface-2 border border-border px-2 py-1.5"
                     value={newSectorMetric.value} onChange={(e) => setNewSectorMetric({ ...newSectorMetric, value: Number(e.target.value) })} />
-                  <button onClick={handleAddSectorMetric} disabled={!user || !newSectorMetric.metric_code || !newSectorMetric.period_label} className="rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+                  <button onClick={handleAddSectorMetric} disabled={!user || !newSectorMetric.metric_code || !newSectorMetric.period_label} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
                     Add Metric
                   </button>
                 </div>
@@ -1087,14 +1081,14 @@ export default function FundamentalsPage() {
           {tab === "Alerts & Report" && (
             <div className="space-y-4">
               <Card title="Fundamental Alerts">
-                {alertsError && <div className="text-sm text-danger">{alertsError}</div>}
+                {alertsError && <div className="text-sm text-down">{alertsError}</div>}
                 {alerts == null ? (
-                  <div className="text-sm text-muted py-2">Loading…</div>
+                  <div className="text-sm text-fg-muted py-2">Loading…</div>
                 ) : alerts.length === 0 ? (
-                  <div className="text-sm text-muted py-2">No alerts — nothing crossing a threshold right now.</div>
+                  <div className="text-sm text-fg-muted py-2">No alerts — nothing crossing a threshold right now.</div>
                 ) : (
                   alerts.map((a, i) => (
-                    <div key={i} className={`text-xs mb-1 ${a.severity === "High" || a.severity === "Extreme" ? "text-danger" : a.severity === "Medium" ? "text-warn" : "text-muted"}`}>
+                    <div key={i} className={`text-xs mb-1 ${a.severity === "High" || a.severity === "Extreme" ? "text-down" : a.severity === "Medium" ? "text-warn" : "text-fg-muted"}`}>
                       [{a.severity}] {a.message}
                     </div>
                   ))
@@ -1109,35 +1103,35 @@ export default function FundamentalsPage() {
                     <StatTile label="Events Considered" value={String(eventImpact.events_considered)} />
                   </div>
                 ) : (
-                  <div className="text-sm text-muted py-2">No corporate actions with a recorded expected impact yet — add one on the Quality & Risk tab's corporate actions, or via the API.</div>
+                  <div className="text-sm text-fg-muted py-2">No corporate actions with a recorded expected impact yet — add one on the Quality & Risk tab's corporate actions, or via the API.</div>
                 )}
-                {eventImpact && <div className="mt-2 text-xs text-muted">{eventImpact.note}</div>}
+                {eventImpact && <div className="mt-2 text-xs text-fg-muted">{eventImpact.note}</div>}
               </Card>
 
               <Card title="Final Company Report">
-                <button onClick={handleGenerateReport} className="mb-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm">
+                <button onClick={handleGenerateReport} className="mb-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm">
                   Generate Final Report
                 </button>
                 {finalReport && (
                   <div className="max-w-2xl space-y-3 text-sm">
-                    <div className="text-lg font-semibold text-slate-100">{finalReport.name} ({finalReport.symbol}) — {finalReport.sector}</div>
-                    <div className="text-2xl font-bold text-accent">{finalReport.card.fundamental_score}/100 <span className="text-sm text-slate-300">({finalReport.card.fundamental_grade})</span></div>
+                    <div className="text-lg font-semibold text-fg">{finalReport.name} ({finalReport.symbol}) — {finalReport.sector}</div>
+                    <div className="text-2xl font-bold text-up">{finalReport.card.fundamental_score}/100 <span className="text-sm text-fg-muted">({finalReport.card.fundamental_grade})</span></div>
                     <div className="grid sm:grid-cols-2 gap-4">
-                      <div><div className="text-xs uppercase text-muted mb-1">Strengths</div>{finalReport.swot.strengths.length ? finalReport.swot.strengths.map((s, i) => <div key={i} className="text-accent text-xs">+ {s}</div>) : <div className="text-muted text-xs">None entered</div>}</div>
-                      <div><div className="text-xs uppercase text-muted mb-1">Weaknesses</div>{finalReport.swot.weaknesses.length ? finalReport.swot.weaknesses.map((s, i) => <div key={i} className="text-danger text-xs">− {s}</div>) : <div className="text-muted text-xs">None entered</div>}</div>
+                      <div><div className="text-xs uppercase text-fg-muted mb-1">Strengths</div>{finalReport.swot.strengths.length ? finalReport.swot.strengths.map((s, i) => <div key={i} className="text-up text-xs">+ {s}</div>) : <div className="text-fg-muted text-xs">None entered</div>}</div>
+                      <div><div className="text-xs uppercase text-fg-muted mb-1">Weaknesses</div>{finalReport.swot.weaknesses.length ? finalReport.swot.weaknesses.map((s, i) => <div key={i} className="text-down text-xs">− {s}</div>) : <div className="text-fg-muted text-xs">None entered</div>}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase text-muted mb-1">Red Flags ({finalReport.red_flags.length})</div>
-                      {finalReport.red_flags.length === 0 ? <div className="text-xs text-muted">None detected</div> : finalReport.red_flags.map((f, i) => <div key={i} className="text-xs text-warn">[{f.severity}] {f.description}</div>)}
+                      <div className="text-xs uppercase text-fg-muted mb-1">Red Flags ({finalReport.red_flags.length})</div>
+                      {finalReport.red_flags.length === 0 ? <div className="text-xs text-fg-muted">None detected</div> : finalReport.red_flags.map((f, i) => <div key={i} className="text-xs text-warn">[{f.severity}] {f.description}</div>)}
                     </div>
                     <div>
-                      <div className="text-xs uppercase text-muted mb-1">Alerts ({finalReport.alerts.length})</div>
-                      {finalReport.alerts.length === 0 ? <div className="text-xs text-muted">None</div> : finalReport.alerts.map((a, i) => <div key={i} className="text-xs text-warn">[{a.severity}] {a.message}</div>)}
+                      <div className="text-xs uppercase text-fg-muted mb-1">Alerts ({finalReport.alerts.length})</div>
+                      {finalReport.alerts.length === 0 ? <div className="text-xs text-fg-muted">None</div> : finalReport.alerts.map((a, i) => <div key={i} className="text-xs text-warn">[{a.severity}] {a.message}</div>)}
                     </div>
                     {finalReport.event_impact && (
-                      <div className="text-xs">Event Impact: <span className="text-slate-200">{finalReport.event_impact.score.toFixed(0)} ({finalReport.event_impact.bias})</span></div>
+                      <div className="text-xs">Event Impact: <span className="text-fg">{finalReport.event_impact.score.toFixed(0)} ({finalReport.event_impact.bias})</span></div>
                     )}
-                    <div className="text-xs text-muted italic">{finalReport.generated_note}</div>
+                    <div className="text-xs text-fg-muted italic">{finalReport.generated_note}</div>
                   </div>
                 )}
               </Card>
@@ -1172,7 +1166,7 @@ function QualitativeFactorForm({ symbol, disabled, onSaved }: { symbol: string; 
   return (
     <Card title="Add a qualitative judgment (business quality, SWOT, management) — cited by you, never invented">
       <div className="grid sm:grid-cols-4 gap-2 text-sm">
-        <select className="rounded bg-panel2 border border-border px-2 py-1.5" value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select className="rounded bg-surface-2 border border-border px-2 py-1.5" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="BUSINESS_QUALITY_MOAT">Business Quality Moat Factor (needs score)</option>
           <option value="MANAGEMENT_QUALITY">Management Quality (needs score)</option>
           <option value="SWOT_STRENGTH">SWOT: Strength</option>
@@ -1180,14 +1174,14 @@ function QualitativeFactorForm({ symbol, disabled, onSaved }: { symbol: string; 
           <option value="SWOT_OPPORTUNITY">SWOT: Opportunity</option>
           <option value="SWOT_THREAT">SWOT: Threat</option>
         </select>
-        <input placeholder="Label (e.g. Pricing Power)" className="rounded bg-panel2 border border-border px-2 py-1.5"
+        <input placeholder="Label (e.g. Pricing Power)" className="rounded bg-surface-2 border border-border px-2 py-1.5"
           value={label} onChange={(e) => setLabel(e.target.value)} />
-        <input type="number" placeholder="Score 0-100 (if applicable)" className="rounded bg-panel2 border border-border px-2 py-1.5"
+        <input type="number" placeholder="Score 0-100 (if applicable)" className="rounded bg-surface-2 border border-border px-2 py-1.5"
           value={score} onChange={(e) => setScore(e.target.value === "" ? "" : Number(e.target.value))} />
-        <input placeholder="Note / citation" className="rounded bg-panel2 border border-border px-2 py-1.5"
+        <input placeholder="Note / citation" className="rounded bg-surface-2 border border-border px-2 py-1.5"
           value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
-      <button onClick={handleSave} disabled={disabled || saving || !label} className="mt-3 rounded bg-brand hover:bg-brand-dim text-white font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
+      <button onClick={handleSave} disabled={disabled || saving || !label} className="mt-3 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 text-sm disabled:opacity-50">
         {saving ? "Saving…" : "Save Factor"}
       </button>
     </Card>

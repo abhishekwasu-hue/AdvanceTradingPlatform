@@ -472,6 +472,11 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P1.3 batch 3: Strategy Builder, Fundamentals, Instruments, News & Events, Factor Lab, Marketplace
+- Same rules as batches 1-2: semantic tokens, colour only for meaning, `PageHeader` on every page (Marketplace had only
+  a screen-reader title), signed figures through `signClass` / `signTone`. Factor Lab's run button no longer wraps.
+- Checked in dark and light at 1440 px and 390 px.
+
 ### 2026-10-08 - P1.3 batch 2: Dashboard, Positions, Backtesting, Strategy Library, Analytics, Scanner
 - Same rules as batch 1: hue classes -> semantic tokens, colour only for meaning, `PageHeader` on every page.
 - Signed figures use `signClass` / `signTone` (`components/ui.tsx`): up / down by sign, neutral when the figure shows as

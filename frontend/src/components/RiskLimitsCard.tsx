@@ -101,7 +101,7 @@ export default function RiskLimitsCard({ canEdit }: { canEdit: boolean }) {
               <label className="block text-[10px] text-fg-muted mb-0.5">Value <span className="text-fg-muted">({TYPES.find((t) => t.value === type)?.unit})</span></label>
               <input type="number" step="any" className="w-full rounded bg-surface-2 border border-border px-2 py-1.5" value={value} onChange={(e) => setValue(e.target.value)} />
             </div>
-            <button onClick={add} disabled={busy || !value} className="flex items-center justify-center gap-1 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1.5 disabled:opacity-50">
+            <button onClick={add} disabled={busy || !value} className="flex items-center justify-center gap-1 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5 disabled:opacity-50">
               <Plus size={12} /> Set limit
             </button>
           </div>

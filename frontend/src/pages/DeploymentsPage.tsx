@@ -297,10 +297,9 @@ export default function DeploymentsPage() {
           icon={CircleDot} label="Market"
           value={worker === null ? "…" : worker.market_open ? "Open" : "Closed"}
           tone={worker === null ? "default" : worker.market_open ? "up" : "default"}
-          accentClass="text-fg-muted"
         />
-        <StatTile icon={Play} label="Active deployments" value={active} accentClass="text-up" />
-        <StatTile icon={CircleDot} label="Open positions" value={openPositions} accentClass="text-fg" />
+        <StatTile icon={Play} label="Active deployments" value={active} />
+        <StatTile icon={CircleDot} label="Open positions" value={openPositions} />
       </div>
 
       {worker && !worker.running && (
@@ -548,7 +547,7 @@ export default function DeploymentsPage() {
           )}
           {kind === "OPTION" && structure !== "CUSTOM" && (
             <div className="mt-2 text-xs">
-              <button onClick={() => setShowFilters(!showFilters)} className="text-fg hover:underline">
+              <button onClick={() => setShowFilters(!showFilters)} className="text-brand hover:underline">
                 {showFilters ? "Hide" : "Show"} strike filters {strikeFilters() ? "(active)" : ""}
               </button>
               {showFilters && (
@@ -687,7 +686,7 @@ export default function DeploymentsPage() {
                 aria-pressed={mode === m}
                 className={`rounded-md border px-3 py-1 text-xs font-bold tracking-wide ${
                   mode === m
-                    ? m === "LIVE" ? "border-down/40 text-down bg-down/10" : "border-brand/50 text-brand bg-brand/10"
+                    ? m === "LIVE" ? "border-down text-down bg-down/15" : "border-brand/50 text-brand bg-brand/10"
                     : "border-border text-fg-muted hover:text-fg"
                 }`}
               >
@@ -698,8 +697,8 @@ export default function DeploymentsPage() {
           <button
             onClick={handleCreate}
             disabled={busy || !strategyId || !symbol}
-            className={`flex items-center gap-1.5 rounded text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50 ${
-              mode === "LIVE" ? "bg-down hover:bg-down/90" : "bg-brand hover:bg-brand-strong"
+            className={`flex items-center gap-1.5 rounded font-semibold px-4 py-1.5 text-sm disabled:opacity-50 ${
+              mode === "LIVE" ? "bg-down text-surface hover:brightness-110" : "bg-brand text-on-brand hover:bg-brand-strong"
             }`}
           >
             <Plus size={14} /> {mode === "LIVE" ? "Deploy LIVE" : "Deploy paper"}
@@ -730,7 +729,7 @@ export default function DeploymentsPage() {
               <button
                 onClick={() => void submit()}
                 disabled={busy || liveTyped !== "LIVE"}
-                className="rounded bg-down hover:bg-down/90 text-white font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
+                className="rounded bg-down text-surface hover:brightness-110 font-semibold px-4 py-1.5 text-sm disabled:opacity-50"
               >
                 {busy ? "Deploying…" : "Confirm LIVE deployment"}
               </button>

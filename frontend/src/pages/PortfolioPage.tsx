@@ -4,8 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import EquityCurveChart from "../components/EquityCurveChart";
 import { Card, StatTile, signTone } from "../components/ui";
 import type { PortfolioExposure, TradeRecord } from "../types";
-
 import { EmptyState, PageHeader, Signed, Table } from "../components/primitives";
+
 export default function PortfolioPage() {
   const { user, loading: authLoading } = useAuth();
   const [positions, setPositions] = useState<TradeRecord[]>([]);
@@ -116,7 +116,7 @@ function ExposureCard() {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
         <StatTile label="Gross notional" value={`${exposure.gross_notional.toFixed(0)} (${exposure.gross_pct_of_capital.toFixed(0)}%)`} />
         <StatTile label="Net notional" value={exposure.net_notional.toFixed(0)} />
-        <StatTile label="Unrealised P&L" value={exposure.unrealised_pnl.toFixed(0)} tone={signTone(exposure.unrealised_pnl)} />
+        <StatTile label="Unrealised P&L" value={exposure.unrealised_pnl.toFixed(0)} tone={signTone(exposure.unrealised_pnl, 0)} />
         <StatTile label="Risk at stops" value={`${exposure.risk_at_stops.toFixed(0)} (${exposure.risk_pct_of_capital.toFixed(1)}%)`} tone={exposure.risk_at_stops > 0 ? "down" : "default"} />
         <StatTile label="Largest symbol" value={`${exposure.largest_symbol_pct.toFixed(0)}% of capital`} />
       </div>
@@ -133,7 +133,7 @@ function ExposureCard() {
             { key: "notional", header: "Notional", numeric: true, cell: (r) => r.notional.toFixed(0) },
             { key: "pct", header: "% capital", numeric: true, cell: (r) => <span className={r.pct_of_capital > 40 ? "text-warn" : ""}>{r.pct_of_capital.toFixed(1)}%</span> },
             { key: "upnl", header: "Unrealised", numeric: true, cell: (r) => <Signed value={r.unrealised_pnl} format={(v) => v.toFixed(0)} /> },
-            { key: "risk", header: "Risk at stop", numeric: true, cell: (r) => r.risk_at_stop.toFixed(0) },
+            { key: "risk", header: "Risk at stop", numeric: true, cell: (r) => <span className={r.risk_at_stop > 0 ? "text-down" : ""}>{r.risk_at_stop.toFixed(0)}</span> },
             { key: "strategies", header: "Strategies", cell: (r) => <span className="text-fg-muted">{r.strategies.join(", ")}</span> },
           ]}
         />

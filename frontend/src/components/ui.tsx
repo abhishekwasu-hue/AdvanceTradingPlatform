@@ -42,9 +42,10 @@ export function CollapsibleCard({ title, subtitle, children, storageKey, default
 }
 
 /** P1.3: a figure is coloured only when it has a sign - zero (and anything not a number) stays neutral. */
-export function signTone(value: number | null | undefined): "default" | "up" | "down" {
-  if (value == null || !Number.isFinite(value) || value === 0) return "default";
-  return value > 0 ? "up" : "down";
+export function signTone(value: number | null | undefined, decimals = 2): "default" | "up" | "down" {
+  if (value == null || !Number.isFinite(value)) return "default";
+  const shown = Number(value.toFixed(decimals));
+  return shown > 0 ? "up" : shown < 0 ? "down" : "default";
 }
 
 export function StatTile({

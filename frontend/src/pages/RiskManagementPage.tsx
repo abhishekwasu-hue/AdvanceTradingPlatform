@@ -4,8 +4,8 @@ import { useAuth } from "../auth/AuthContext";
 import RiskLimitsCard from "../components/RiskLimitsCard";
 import { Card } from "../components/ui";
 import type { GuardianStatus, MarketEvent, RiskCeilings, RiskConfig } from "../types";
+import { Badge, PageHeader } from "../components/primitives";
 
-import { PageHeader } from "../components/primitives";
 const FIELDS: { key: keyof RiskConfig; label: string; step?: string; ceiling?: string }[] = [
   { key: "capital", label: "Capital (₹)" },
   { key: "risk_per_trade_pct", label: "Risk per trade (%)", step: "0.1", ceiling: "risk_per_trade_pct" },
@@ -229,7 +229,7 @@ export default function RiskManagementPage() {
               {events.map((ev) => (
                 <tr key={ev.id} className="border-t border-border">
                   <td className="py-1.5 pr-3 font-mono">{ev.event_date}</td>
-                  <td className="py-1.5 pr-3">{ev.underlying ?? "all"}{ev.global ? <span className="ml-1 text-[10px] text-fg">global</span> : null}</td>
+                  <td className="py-1.5 pr-3">{ev.underlying ?? "all"}{ev.global ? <Badge className="ml-1">global</Badge> : null}</td>
                   <td className="py-1.5 pr-3">{ev.kind.replace(/_/g, " ")}</td>
                   <td className={`py-1.5 pr-3 font-bold ${ev.action === "BLOCK" ? "text-down" : "text-warn"}`}>{ev.action === "BLOCK" ? "block" : `cut ${ev.size_cut_pct ?? config.event_size_cut_pct}%`}</td>
                   <td className="py-1.5 pr-3 text-fg-muted">{ev.start_time || ev.end_time ? `${ev.start_time ?? "00:00"}-${ev.end_time ?? "23:59"}` : "all day"}</td>

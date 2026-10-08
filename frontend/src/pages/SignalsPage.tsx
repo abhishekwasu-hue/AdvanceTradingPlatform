@@ -8,8 +8,8 @@ import { Card, Disclaimer } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { EnrichedSignal, OHLCVBar, SRZone, SignalHistoryEntry, StrategyInfo } from "../types";
 import { buildTimeframeData } from "../utils/sampleData";
-
 import { Button, Input, PageHeader, Select } from "../components/primitives";
+
 export default function SignalsPage() {
   const { user } = useAuth();
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);

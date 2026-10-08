@@ -68,7 +68,7 @@ export default function BrokerUncertainBanner() {
               onClick={() => reconcile(b.broker_name)}
               disabled={busy || b.needs_login}
               title={b.needs_login ? "Log in to the broker first" : "Fetch positions from the broker and compare"}
-              className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1 disabled:opacity-50 capitalize"
+              className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50 capitalize"
             >
               <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Reconcile {b.broker_name}
             </button>

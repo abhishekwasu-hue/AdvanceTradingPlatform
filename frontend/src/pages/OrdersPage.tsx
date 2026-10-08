@@ -3,8 +3,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, DirectionBadge } from "../components/ui";
 import type { TradeRecord } from "../types";
-
 import { Badge, EmptyState, PageHeader, Table } from "../components/primitives";
+
 interface OrderRow {
   key: string;
   time: string;

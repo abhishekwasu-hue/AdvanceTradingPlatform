@@ -86,7 +86,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
           <div
             key={keyOf(t)}
             className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
-              ok ? "border-up/30 bg-up/[0.06]" : "border-warn/40 bg-warn/[0.08]"
+              ok ? "border-info/30 bg-info/[0.06]" : "border-warn/40 bg-warn/[0.08]"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <button
                   onClick={loginToUpstox}
                   disabled={busy}
-                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
                 >
                   <LogIn size={12} /> {busy ? "Redirecting…" : ok ? "Re-login to Upstox" : "Login to Upstox"}
                 </button>
@@ -124,7 +124,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                 <button
                   onClick={() => void openLogin(t)}
                   disabled={busy}
-                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-dim text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
                   title={`Opens the ${t.broker_name} login page in a new tab; paste the ${t.code_param ?? "code"} it returns below`}
                 >
                   <ExternalLink size={12} /> {ok ? `Re-login to ${t.broker_name}` : `Open ${t.broker_name} login`}

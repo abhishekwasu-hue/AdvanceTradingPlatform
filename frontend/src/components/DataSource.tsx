@@ -118,7 +118,7 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
   const { user } = useAuth();
   const brokerMode = source.mode === "broker";
   return (
-    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-up/30 bg-up/[0.06] text-up" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>
+    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-info/30 bg-info/[0.06] text-info" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>
       {brokerMode ? <Database size={14} className="shrink-0" /> : <FlaskConical size={14} className="shrink-0" />}
       <span className="font-semibold">Data</span>
       <div className="flex rounded border border-border overflow-hidden">

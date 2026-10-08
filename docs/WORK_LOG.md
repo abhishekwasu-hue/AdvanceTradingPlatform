@@ -491,6 +491,13 @@ default and G-LIVE gate before any LIVE wiring.
   status badges; KPI and engine tiles neutral except P&L / health), AI Copilot, Positions, Backtesting, Settings
   (PageHeader; rainbow headings removed). The other pages keep their layout and follow the theme; they move to the
   primitives in P1.3 after approval.
+- **Review fixes**: chart overlays (entry / stop / target lines, S/R zones, trade markers, Supertrend, ±DI, volume)
+  name a meaning (`up` / `down` / `fg`, `theme.ts: resolveChartColor`) and redraw on a theme or colour-blind change;
+  the colour-blind profit blue (Okabe-Ito sky blue / blue) is kept apart from the brand blue and `info` turns neutral
+  there; `public/theme-init.js` applies the saved theme before the first paint (no dark flash; a same-origin script
+  because the CSP forbids inline ones); light-theme contrast fixes (chat bubbles, briefing chips, entry line); theme
+  buttons use `aria-pressed` in a labelled group; Select links its hint / error; toast close icon stays neutral;
+  Marketplace and the chart window get a page heading; other open tabs follow a theme change. Tests: `theme.test.ts`.
 
 ### 2026-10-08 - P1.1: router, lazy pages, error handling, bundle budget
 - **URLs**: every page has its own path (`react-router` 7; `/` = dashboard, `/<page>` otherwise, Copilot tabs at

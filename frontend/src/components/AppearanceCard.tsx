@@ -13,15 +13,15 @@ export default function AppearanceCard() {
   return (
     <Card title="Appearance">
       <div className="space-y-4">
-        <fieldset>
-          <legend className="mb-2 text-xs font-medium text-fg-muted">Theme</legend>
-          <div className="flex flex-wrap gap-2" role="radiogroup">
+        <div role="group" aria-labelledby="appearance-theme-label">
+          <div id="appearance-theme-label" className="mb-2 text-xs font-medium text-fg-muted">Theme</div>
+          <div className="flex flex-wrap gap-2">
             {THEMES.map((t) => (
-              <Button key={t.value} size="sm" variant={a.theme === t.value ? "primary" : "secondary"} role="radio" aria-checked={a.theme === t.value}
+              <Button key={t.value} size="sm" variant={a.theme === t.value ? "primary" : "secondary"} aria-pressed={a.theme === t.value}
                 onClick={() => save({ ...a, theme: t.value })}>{t.label}</Button>
             ))}
           </div>
-        </fieldset>
+        </div>
         <label className="flex items-start gap-3 text-sm text-fg">
           <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" checked={a.colorBlind}
             onChange={(e) => save({ ...a, colorBlind: e.target.checked })} />

@@ -117,7 +117,7 @@ function Bars({ rows, valueLabel, signed = false }: { rows: { key: string; value
             <div className="flex-1 h-2.5 rounded-full bg-panel3 overflow-hidden">
               <div className={`h-2.5 rounded-full ${TONE[tone].bar} transition-all`} style={{ width: `${Math.max(3, (Math.abs(r.value) / max) * 100)}%` }} />
             </div>
-            <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? (r.value >= 0 ? "text-emerald-300" : "text-rose-300") : TONE[tone].text}`}>{valueLabel(r.value)}</div>
+            <div className={`w-24 shrink-0 text-right font-tabular font-semibold ${signed ? (r.value >= 0 ? "text-up" : "text-down") : TONE[tone].text}`}>{valueLabel(r.value)}</div>
             {r.hint && <div className="w-14 shrink-0 text-right text-[10px] text-slate-300">{r.hint}</div>}
           </div>
         );
@@ -214,7 +214,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <KpiTile icon={Briefcase} tone="violet" label="Open positions" value={user ? positions.length : "…"}
                  sub={exposure ? `${money(exposure.gross_notional)} gross · ${pct(exposure.risk_pct_of_capital)} at stops` : "across every account"} onClick={onNavigate && (() => onNavigate("positions"))} />
         <KpiTile icon={Bot} tone="sky" label="Deployments" value={user ? `${live + paper}` : "…"}
-                 sub={user ? <><span className="text-emerald-300">{live} LIVE</span> · <span className="text-sky-300">{paper} PAPER</span>{paused ? <> · <span className="text-amber-300">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
+                 sub={user ? <><span className="font-semibold text-fg">{live} LIVE</span> · <span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
                  sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("settings"))} />
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
@@ -254,9 +254,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                 <div className="mb-3 flex items-center gap-4">
                   <Ring size={96} segments={[{ value: exposure.long_notional, tone: "emerald" }, { value: exposure.short_notional, tone: "rose" }]} label={pct(exposure.gross_pct_of_capital, 0)} sub="of capital" />
                   <div className="text-xs space-y-1">
-                    <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /><span className="text-slate-300">Long</span><span className="ml-auto font-tabular text-emerald-300">{money(exposure.long_notional)}</span></div>
-                    <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-400" /><span className="text-slate-300">Short</span><span className="ml-auto font-tabular text-rose-300">{money(exposure.short_notional)}</span></div>
-                    <div className="text-slate-300">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={exposure.unrealised_pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{money(exposure.unrealised_pnl)}</span></div>
+                    <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-up" /><span className="text-fg-muted">Long</span><span className="ml-auto font-tabular text-up">{money(exposure.long_notional)}</span></div>
+                    <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-down" /><span className="text-fg-muted">Short</span><span className="ml-auto font-tabular text-down">{money(exposure.short_notional)}</span></div>
+                    <div className="text-fg-muted">largest symbol {pct(exposure.largest_symbol_pct, 0)} · unrealised <span className={exposure.unrealised_pnl >= 0 ? "text-up" : "text-down"}>{money(exposure.unrealised_pnl)}</span></div>
                   </div>
                 </div>
                 <Bars rows={bySymbol.map((s, i) => ({ key: s.symbol, value: s.notional, tone: PALETTE[i % PALETTE.length], hint: `${s.positions} pos` }))} valueLabel={(v) => money(v)} />

@@ -32,6 +32,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   return (
     <div className="min-h-screen bg-bg p-4">
+      <h1 className="sr-only">{symbol} chart</h1>
       <div className="mb-2 flex items-center gap-3 text-xs text-muted">
         <span className="font-semibold text-slate-200">{exchange}</span>
         {broker && <span>candles via {broker}</span>}

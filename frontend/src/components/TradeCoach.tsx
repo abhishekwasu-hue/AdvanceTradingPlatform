@@ -37,11 +37,11 @@ function EquityLine({ points }: { points: number[] }) {
              setHover(Math.max(0, Math.min(series.length - 1, i)));
            }}>
         <line x1={P} x2={W - P} y1={y(0)} y2={y(0)} stroke="currentColor" className="text-slate-600" strokeDasharray="3 4" strokeWidth={1} />
-        <path d={d} fill="none" stroke={last >= 0 ? "#34d399" : "#fb7185"} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={d} fill="none" style={{ stroke: last >= 0 ? "rgb(var(--up))" : "rgb(var(--down))" }} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {hover != null && (
           <>
-            <line x1={x(hover)} x2={x(hover)} y1={P} y2={H - P} stroke="#94a3b8" strokeWidth={1} />
-            <circle cx={x(hover)} cy={y(series[hover])} r={4} fill={series[hover] >= 0 ? "#34d399" : "#fb7185"} stroke="#0f172a" strokeWidth={2} />
+            <line x1={x(hover)} x2={x(hover)} y1={P} y2={H - P} style={{ stroke: "rgb(var(--fg-muted))" }} strokeWidth={1} />
+            <circle cx={x(hover)} cy={y(series[hover])} r={4} style={{ fill: series[hover] >= 0 ? "rgb(var(--up))" : "rgb(var(--down))", stroke: "rgb(var(--surface))" }} strokeWidth={2} />
           </>
         )}
       </svg>

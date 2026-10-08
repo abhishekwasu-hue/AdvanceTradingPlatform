@@ -8,20 +8,20 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
-import { THEME_EVENT, chartColors } from "../theme";
+import { useEffect, useRef, useState } from "react";
+import { THEME_EVENT, chartColors, resolveChartColor, type ChartTone } from "../theme";
 import type { OHLCVBar, SRZone } from "../types";
 
 export interface PriceLineSpec {
   price: number;
-  color: string;
+  color: ChartTone | string; // a meaning ("up" / "down" / "fg") follows the theme; anything else is a literal colour
   title: string;
 }
 
 export interface ChartMarker {
   timestamp: string; // must match one candle's timestamp
   position: "aboveBar" | "belowBar";
-  color: string;
+  color: ChartTone | string;
   shape: "arrowUp" | "arrowDown" | "circle" | "square";
   text: string;
 }
@@ -31,13 +31,13 @@ export function directionMarker(timestamp: string, direction: "LONG" | "SHORT", 
   return {
     timestamp,
     position: direction === "LONG" ? "belowBar" : "aboveBar",
-    color: direction === "LONG" ? "#22c55e" : "#ef4444",
+    color: direction === "LONG" ? "up" : "down",
     shape: direction === "LONG" ? "arrowUp" : "arrowDown",
     text,
   };
 }
 
-const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" } as const;
+const ZONE_TONE = { SUPPORT: "up", RESISTANCE: "down" } as const;
 
 export default function CandleChart({
   candles,
@@ -56,22 +56,23 @@ export default function CandleChart({
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const activeLinesRef = useRef<IPriceLine[]>([]);
+  const [themeTick, setThemeTick] = useState(0); // bumps on a theme change so lines, zones and markers recolour
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const c = chartColors();
     const chart = createChart(containerRef.current, {
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: chartColors().text,
+        textColor: c.text,
         fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       },
-      grid: { vertLines: { color: chartColors().grid }, horzLines: { color: chartColors().grid } },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       crosshair: { mode: CrosshairMode.Normal },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: chartColors().border },
-      rightPriceScale: { borderColor: chartColors().border },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: c.border },
+      rightPriceScale: { borderColor: c.border },
     });
-    const c = chartColors();
     const series = chart.addCandlestickSeries({
       upColor: c.up,
       downColor: c.down,
@@ -104,6 +105,7 @@ export default function CandleChart({
       chartRef.current?.applyOptions({ layout: { textColor: c.text }, grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
                                       timeScale: { borderColor: c.border }, rightPriceScale: { borderColor: c.border } });
       seriesRef.current?.applyOptions({ upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down });
+      setThemeTick((t) => t + 1);
     };
     window.addEventListener(THEME_EVENT, repaint);
     return () => window.removeEventListener(THEME_EVENT, repaint);
@@ -131,7 +133,7 @@ export default function CandleChart({
       activeLinesRef.current.push(
         series.createPriceLine({
           price: spec.price,
-          color: spec.color,
+          color: resolveChartColor(spec.color),
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
@@ -141,7 +143,7 @@ export default function CandleChart({
     }
 
     for (const zone of zones) {
-      const color = ZONE_COLOR[zone.kind];
+      const color = resolveChartColor(ZONE_TONE[zone.kind]);
       for (const [price, edge] of [
         [zone.upper, "upper"],
         [zone.lower, "lower"],
@@ -166,12 +168,12 @@ export default function CandleChart({
       sortedMarkers.map((m) => ({
         time: Math.floor(new Date(m.timestamp).getTime() / 1000) as UTCTimestamp,
         position: m.position,
-        color: m.color,
+        color: resolveChartColor(m.color),
         shape: m.shape,
         text: m.text,
       })),
     );
-  }, [candles, priceLines, zones, markers]);
+  }, [candles, priceLines, zones, markers, themeTick]);
 
   return <div ref={containerRef} className="w-full" />;
 }

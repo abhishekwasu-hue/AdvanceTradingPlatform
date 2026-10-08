@@ -46,6 +46,8 @@ export function saveAppearance(a: Appearance): void {
 /** Applies the saved appearance now and follows the system theme when the trader chose "system". */
 export function initAppearance(): void {
   applyAppearance();
+  // Another tab changed the appearance: follow it here too.
+  window.addEventListener("storage", (e) => { if (e.key === KEY) applyAppearance(); });
   window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => {
     if (loadAppearance().theme === "system") applyAppearance();
   });
@@ -69,12 +71,25 @@ export function tokenColor(name: string, alpha = 1): string {
   return raw ? `rgb(${raw.split(/\s+/).join(", ")}${alpha < 1 ? `, ${alpha}` : ""})`.replace("rgb(", alpha < 1 ? "rgba(" : "rgb(") : "";
 }
 
+// The dark-theme values, used when the stylesheet has not loaded (tests, a detached window).
+const FALLBACK = { text: "rgb(194, 202, 216)", grid: "rgb(26, 35, 51)", border: "rgb(36, 44, 63)", fg: "rgb(241, 245, 249)",
+                   up: "rgb(34, 197, 94)", down: "rgb(239, 68, 68)", upSoft: "rgba(34, 197, 94, 0.45)", downSoft: "rgba(239, 68, 68, 0.45)" };
+
 /** The chart colours of the current theme. */
 export function chartColors() {
+  const t = (name: string, fallback: string, alpha = 1) => tokenColor(name, alpha) || fallback;
   return {
-    text: tokenColor("chart-text"), grid: tokenColor("chart-grid"), border: tokenColor("border"),
-    up: tokenColor("up"), down: tokenColor("down"), upSoft: tokenColor("up", 0.45), downSoft: tokenColor("down", 0.45),
+    text: t("chart-text", FALLBACK.text), grid: t("chart-grid", FALLBACK.grid), border: t("border", FALLBACK.border),
+    fg: t("fg", FALLBACK.fg), up: t("up", FALLBACK.up), down: t("down", FALLBACK.down),
+    upSoft: t("up", FALLBACK.upSoft, 0.45), downSoft: t("down", FALLBACK.downSoft, 0.45),
   };
+}
+
+/** Chart overlays (price lines, markers) name a meaning instead of a hex so a theme or colour-blind change recolours
+ * them: "up" (profit, target, bullish), "down" (loss, stop, bearish), "fg" (neutral, e.g. the entry line). */
+export type ChartTone = "up" | "down" | "fg";
+export function resolveChartColor(color: string): string {
+  return color === "up" || color === "down" || color === "fg" ? chartColors()[color] : color;
 }
 
 export const THEME_EVENT = EVENT;

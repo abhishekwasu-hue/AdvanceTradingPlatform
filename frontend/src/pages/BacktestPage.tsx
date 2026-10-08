@@ -220,7 +220,7 @@ export default function BacktestPage() {
         markers.push({
           timestamp: t.exit_time,
           position: t.direction === "LONG" ? "aboveBar" : "belowBar",
-          color: won ? "#22c55e" : "#ef4444",
+          color: won ? "up" : "down",
           shape: "circle",
           text: `Exit ${t.pnl?.toFixed(0) ?? ""}`,
         });

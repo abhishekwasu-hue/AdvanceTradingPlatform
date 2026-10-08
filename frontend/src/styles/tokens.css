@@ -45,6 +45,8 @@
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.03);
 }
 
-/* Red-green colour blindness: profit blue, loss orange (Okabe-Ito-like), in both themes. */
-:root[data-cvd="on"] { --up: 59 130 246; --down: 249 115 22; }
-:root[data-theme="light"][data-cvd="on"] { --up: 29 78 216; --down: 194 65 12; }
+/* Red-green colour blindness: profit blue, loss orange (Okabe-Ito sky blue / blue; an orange kept clear of the amber "warn"), in both
+   themes. Profit blue is lighter and greener than the brand blue so a profit never reads as a link or a button, and
+   "info" turns neutral so it cannot be mistaken for profit. */
+:root[data-cvd="on"] { --up: 86 180 233; --down: 249 115 22; --info: 148 163 184; }
+:root[data-theme="light"][data-cvd="on"] { --up: 0 114 178; --down: 194 65 12; --info: 71 85 105; }

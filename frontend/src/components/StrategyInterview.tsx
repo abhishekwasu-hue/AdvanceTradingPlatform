@@ -215,7 +215,7 @@ export default function StrategyInterview({ source, startPrompt, startKey, onDra
         {log.map((m, i) => (
           <div key={i} className={`flex gap-2 ${m.from === "me" ? "justify-end" : ""}`}>
             {m.from === "ai" && <Bot size={16} className="mt-0.5 shrink-0 text-purple-300" />}
-            <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${m.from === "ai" ? "bg-panel3 text-slate-100" : "bg-brand/30 text-white"}`}>{m.text}<Mr>{m.mr}</Mr></div>
+            <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${m.from === "ai" ? "bg-panel3 text-slate-100" : "bg-brand/30 text-fg"}`}>{m.text}<Mr>{m.mr}</Mr></div>
             {m.from === "me" && <User size={16} className="mt-0.5 shrink-0 text-sky-300" />}
           </div>
         ))}
@@ -384,7 +384,7 @@ function OptionsView({ plan, selected, busy, rejecting, reasons, onChoose, onRej
                   <div className="flex flex-wrap gap-1">
                     {feedback.map((f) => (
                       <button key={f.code} onClick={() => onToggleReason(f.code)}
-                              className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-rose-400 bg-rose-500/30 text-white" : "border-border text-slate-200"}`}>
+                              className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-rose-400 bg-rose-500/30 text-fg" : "border-border text-slate-200"}`}>
                         {f.en}{f.mr && f.mr !== f.en && <span lang="mr" className="ml-1 text-muted">/ {f.mr}</span>}
                       </button>
                     ))}

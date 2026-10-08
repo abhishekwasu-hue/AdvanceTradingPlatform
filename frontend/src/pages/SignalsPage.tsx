@@ -106,10 +106,10 @@ export default function SignalsPage() {
   const priceLines: PriceLineSpec[] = useMemo(() => {
     if (!signal || signal.direction === "NO_TRADE") return [];
     const lines: PriceLineSpec[] = [];
-    if (signal.entry !== null) lines.push({ price: signal.entry, color: "#e2e8f0", title: "Entry" });
-    if (signal.stop_loss !== null) lines.push({ price: signal.stop_loss, color: "#ef4444", title: "Stop Loss" });
-    if (signal.target1 !== null) lines.push({ price: signal.target1, color: "#22c55e", title: "Target 1" });
-    if (signal.target2 !== null) lines.push({ price: signal.target2, color: "#16a34a", title: "Target 2" });
+    if (signal.entry !== null) lines.push({ price: signal.entry, color: "fg", title: "Entry" });
+    if (signal.stop_loss !== null) lines.push({ price: signal.stop_loss, color: "down", title: "Stop Loss" });
+    if (signal.target1 !== null) lines.push({ price: signal.target1, color: "up", title: "Target 1" });
+    if (signal.target2 !== null) lines.push({ price: signal.target2, color: "up", title: "Target 2" });
     return lines;
   }, [signal]);
 

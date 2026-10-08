@@ -10,7 +10,7 @@ import {
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
 } from "../utils/indicators";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
-import { THEME_EVENT, chartColors } from "../theme";
+import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
@@ -47,7 +47,6 @@ const ZONE_COLOR = { SUPPORT: "#22c55e", RESISTANCE: "#ef4444" };
 
 function refreshThemeColors() {
   const c = chartColors();
-  if (!c.text) return;                     // no tokens (tests without CSS)
   Object.assign(COLORS, { up: c.up, down: c.down, stUp: c.up, stDown: c.down, plusDi: c.up, minusDi: c.down,
                           volUp: c.upSoft, volDown: c.downSoft, grid: c.grid, border: c.border, text: c.text });
   ZONE_COLOR.SUPPORT = c.up;
@@ -130,6 +129,7 @@ export default function ProChart({
   onLoadOlderRef.current = onLoadOlder;
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
+  const [themeTick, setThemeTick] = useState(0);
   const [winH, setWinH] = useState(() => window.innerHeight);
   useEffect(() => {
     const onResize = () => setWinH(window.innerHeight);
@@ -203,7 +203,7 @@ export default function ProChart({
   const prevFirstTime = useRef<number>(0);
   const syncing = useRef(false);
 
-  // P1.2: a theme / colour-blind change repaints the existing charts (the next data update recolours volume bars).
+  // P1.2: a theme / colour-blind change repaints the existing charts.
   useEffect(() => {
     const repaint = () => {
       refreshThemeColors();
@@ -212,6 +212,9 @@ export default function ProChart({
                               rightPriceScale: { borderColor: COLORS.border }, timeScale: { borderColor: COLORS.border } });
       }
       series.current.candles?.applyOptions({ upColor: COLORS.up, downColor: COLORS.down, wickUpColor: COLORS.up, wickDownColor: COLORS.down });
+      series.current.plusDi?.applyOptions({ color: COLORS.plusDi });
+      series.current.minusDi?.applyOptions({ color: COLORS.minusDi });
+      setThemeTick((t) => t + 1);           // redraws volume, Supertrend, price lines, zones and markers
     };
     window.addEventListener(THEME_EVENT, repaint);
     return () => window.removeEventListener(THEME_EVENT, repaint);
@@ -353,7 +356,7 @@ export default function ProChart({
     for (const l of priceLineRefs.current) s.candles.removePriceLine(l);
     priceLineRefs.current = [];
     for (const spec of priceLines) {
-      priceLineRefs.current.push(s.candles.createPriceLine({ price: spec.price, color: spec.color, lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: spec.title }));
+      priceLineRefs.current.push(s.candles.createPriceLine({ price: spec.price, color: resolveChartColor(spec.color), lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: spec.title }));
     }
     for (const zone of zones) {
       const color = ZONE_COLOR[zone.kind];
@@ -366,7 +369,7 @@ export default function ProChart({
       const t = toTime(m.timestamp);
       let lo = 0, hi = times.length - 1, best = -1;
       while (lo <= hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
-      return best < 0 ? null : { time: times[best], position: m.position, color: m.color, shape: m.shape, text: m.text };
+      return best < 0 ? null : { time: times[best], position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
     }).filter((m): m is NonNullable<typeof m> => m !== null).sort((a, b) => a.time - b.time);
     (s.candles as ISeriesApi<"Candlestick">).setMarkers(snapped);
     if (keepRange) {
@@ -374,7 +377,7 @@ export default function ProChart({
       const range = { from: keepRange.from + added, to: keepRange.to + added };
       for (const c of Object.values(charts.current)) c?.timeScale().setVisibleLogicalRange(range);
     } else if (!incremental) for (const c of Object.values(charts.current)) c?.timeScale().fitContent();
-  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe]);
+  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe, themeTick]);
 
   const idx = hover != null ? timeIndex.get(hover) ?? null : display.length - 1;
   const bar = idx != null ? display[idx] : undefined;

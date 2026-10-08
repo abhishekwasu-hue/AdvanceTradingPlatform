@@ -93,6 +93,7 @@ export default function MarketplacePage() {
 
   return (
     <div className="space-y-4">
+      <h1 className="sr-only">Strategy marketplace</h1>
       <Disclaimer kind="backtest" />
       {gate && <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-300">{gate}</div>}
 

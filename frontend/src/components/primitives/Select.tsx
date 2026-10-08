@@ -12,11 +12,12 @@ export function Select({ value, onChange, options, placeholder = "Select…", la
   disabled?: boolean; className?: string;
 } & FieldProps) {
   const id = useId();
+  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
     <div className="space-y-1">
       {label && <label htmlFor={id} className="block text-xs font-medium text-fg-muted">{label}</label>}
       <RS.Root value={value} onValueChange={onChange} disabled={disabled}>
-        <RS.Trigger id={id} aria-invalid={error ? true : undefined} className={cx(fieldClass, "flex items-center justify-between gap-2 text-left", className)}>
+        <RS.Trigger id={id} aria-invalid={error ? true : undefined} aria-describedby={describedBy} className={cx(fieldClass, "flex items-center justify-between gap-2 text-left", className)}>
           <RS.Value placeholder={<span className="text-fg-muted">{placeholder}</span>} />
           <RS.Icon><ChevronDown size={14} className="text-fg-muted" /></RS.Icon>
         </RS.Trigger>
@@ -35,7 +36,8 @@ export function Select({ value, onChange, options, placeholder = "Select…", la
           </RS.Content>
         </RS.Portal>
       </RS.Root>
-      {error ? <p role="alert" className="text-xs text-down">{error}</p> : hint ? <p className="text-xs text-fg-muted">{hint}</p> : null}
+      {error ? <p id={`${id}-error`} role="alert" className="text-xs text-down">{error}</p>
+        : hint ? <p id={`${id}-hint`} className="text-xs text-fg-muted">{hint}</p> : null}
     </div>
   );
 }

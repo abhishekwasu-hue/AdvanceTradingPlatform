@@ -472,6 +472,38 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - P0.10: last fixes from the P0.9 screenshot review
+1. **Interview fully bilingual, rest English**: the intro (`intro_mr` from `/ai/interview/start`), questions, options,
+   tips, every button (OK, Back, Start / Start over, Choose this, Not this, Show other templates, Apply risk settings,
+   Deploy in PAPER, Open the chart, Ask the AI...), the "Why not?" reasons and the template headings show an English line
+   with a small muted Marathi line under it. `scripts/check-devanagari.mjs` now allows Devanagari only as a value of an
+   `INTERVIEW_MR` key, and only the interview screens may import that namespace.
+2. **Today's market**: the briefing carries `market_data` (`fresh` / `stale` / `suspect` / `none`, age, figures shown).
+   The banner shows "Market open now · market data read 29 h ago", a bold `STALE (29 H AGO)` / `PLACEHOLDER DATA` /
+   `NO MARKET DATA YET` stamp, and hides prices and changes unless the read is current; every symbol with the same change
+   is treated as a placeholder. Market memory hides the same figures. The data-source switch is hidden on this tab - it
+   never reads sample candles.
+3. **Risk settings**: experience no longer changes any risk value (interview `risk_plan`, the three options, exits,
+   ranking). The briefing line is "Default risk settings (not set yet): ..." until the trader saves their own.
+4. **Experience tip**: "Smaller risk per trade and PAPER first is a common way to start; you set your own risk."
+5. **Instrument choice kept**: futures chosen on an index -> a futures plan with an information note (lot value =
+   price x lot size, margin about 10-15%, option buying as the alternative); option selling stays a hedged spread with a
+   note. Only facts still change a choice (a cash stock has no options; no overnight option writing).
+6. **Sample candles**: shaped like NSE sessions (375 one-minute bars 09:15-15:29 IST, weekdays only, day volatility
+   0.4-1.1%, U-shaped intraday volatility, small gaps; daily bars for swing reads). Root cause of "R2 +10.98%,
+   PDH +7.08%": P0.9's generator ran minute bars round the clock, so one IST "day" held 1,440 bars. Resampling is
+   aligned to the session. `backend/tests/sample_market.py` ports the generator for backend tests.
+7. **Breakout figures behind the SAMPLE blur** (seed 5, 12 sample sessions, test output):
+   `orb_breakout` 16 trades, 62.5% win, +0.793R expectancy (unseen: 6 trades, +0.851R); `pd_breakout` 8 trades, 50.0%
+   win, +0.361R (unseen: 3 trades, +0.856R) - different trades, different results, verdict "sample". The Templates tab
+   on the screenshot data (seed 7) showed `orb_breakout` 13 trades, 53.8%, +0.497R next to reversion and VWAP templates.
+8. **Cost**: a `cheap` tier (`AI_ANTHROPIC_CHEAP_MODEL`, default `claude-haiku-5-5`; `AI_OPENAI_CHEAP_MODEL`,
+   `gpt-4.1-nano`) runs news classification and scanner reads; the provider card lists it with its per-call estimate
+   (Haiku 5.5 priced like Haiku 4.5 - set `AI_MODEL_PRICES_JSON` if the list price differs).
+9. **Coach**: "shows patterns in your own trades (rules followed or broken); decisions are yours".
+- Tests: `tests/test_phase_p0_10_final_fixes.py` (13), `frontend/src/utils/sampleData.test.ts` (Vitest, 4); CI runs
+  `npm test`.
+
 ### 2026-10-08 - P0.9: English-only dashboard, compliance round 2, data fixes (after the P0.8 screenshot review)
 - A English UI: the Marathi toggle is gone; the Copilot (all tabs), the Coach & Guide page, the acknowledgement, the
   data consent and Settings are English. The only Devanagari in the frontend is `src/i18n/interviewSecondary.ts`

@@ -113,8 +113,15 @@ export default function MarketMemoryCard() {
 
   const vix = memory?.cues.find((c) => c.symbol === "INDIA VIX");
   // P0.9: a memory older than three worker intervals is labelled stale and dimmed - its prices are not today's.
-  const age = minutesAgo(memory?.updated_at ?? null);
+  // P0.10 review: the age of the SYMBOL reads - global cues (fetched without a broker) keep `updated_at` current.
+  const symbolReads = (memory?.symbols ?? []).map((s) => s.captured_at).filter((t): t is string => !!t).sort();
+  const age = minutesAgo(symbolReads.length ? symbolReads[symbolReads.length - 1] : null);
   const stale = age != null && age > 3 * (memory?.interval_minutes ?? 15);
+  // P0.10: prices and changes are only shown when they are a current read - not when stale, and not when every symbol
+  // carries the same change (placeholder figures, not a market).
+  const changes = (memory?.symbols ?? []).map((s) => s.change_pct).filter((c): c is number => c != null).map((c) => c.toFixed(2));
+  const placeholder = changes.length >= 2 && new Set(changes).size === 1;
+  const hide = stale || placeholder;
   const others = memory?.cues.filter((c) => c.symbol !== "INDIA VIX") ?? [];
   return (
     <Card title="Market memory">
@@ -128,8 +135,9 @@ export default function MarketMemoryCard() {
         </button>
       </div>
       {error && <div className="mb-2 text-xs text-danger">{error}</div>}
-      {stale && <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/5 px-2 py-1 text-xs text-amber-200">Stale read from {ago(memory?.updated_at ?? null)} - the prices below are not current. Log in to your broker and press "Read now".</div>}
-      {memory && memory.cues.length > 0 && (
+      {stale && <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/5 px-2 py-1 text-xs text-amber-200">Stale read from {ago(memory?.updated_at ?? null)} - its prices and changes are hidden. Log in to your broker and press "Read now".</div>}
+      {!stale && placeholder && <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/5 px-2 py-1 text-xs text-amber-200">Every symbol shows the same change - placeholder figures, hidden until the next real read.</div>}
+      {memory && memory.cues.length > 0 && !hide && (
         <div className="mb-2 flex flex-wrap gap-2 text-xs">
           {vix && vix.last_price != null && (
             <span className="rounded-lg border border-border bg-panel2/60 px-2 py-1">
@@ -162,8 +170,10 @@ export default function MarketMemoryCard() {
               return (
                 <tr key={s.symbol} className="border-t border-border/60">
                   <td className="py-1 font-semibold text-slate-100">{s.symbol}</td>
-                  <td>{s.last_price?.toLocaleString("en-IN") ?? "-"}</td>
-                  <td className={(s.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{(s.change_pct ?? 0) >= 0 ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%</td>
+                  <td>{hide ? <span className="text-muted" title="Hidden - not a current read">-</span> : s.last_price?.toLocaleString("en-IN") ?? "-"}</td>
+                  {hide ? <td className="text-muted">-</td> : (
+                    <td className={(s.change_pct ?? 0) >= 0 ? "text-emerald-300" : "text-rose-300"}>{(s.change_pct ?? 0) >= 0 ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%</td>
+                  )}
                   <td className={`font-bold ${b.cls}`}>{b.en}</td>
                   <td className="text-slate-200">{REGIME[s.regime ?? "UNKNOWN"] ?? s.regime} / {REGIME[s.higher_regime ?? "UNKNOWN"] ?? s.higher_regime}</td>
                   <td className="text-slate-300">{s.structure ?? "-"}</td>

@@ -95,8 +95,8 @@ def test_models_come_from_the_environment_per_tier_and_the_tenant_override_wins_
     monkeypatch.setenv("AI_ANTHROPIC_FAST_MODEL", "claude-fast-env")
     monkeypatch.setenv("AI_OPENAI_FAST_MODEL", "gpt-fast-env")
     models = prov.default_models()
-    assert models["anthropic"] == {"strong": "claude-strong-env", "fast": "claude-fast-env"} and models["openai"]["fast"] == "gpt-fast-env"
-    assert prov.TASK_TIERS["strategy_generation"] == "strong" and prov.TASK_TIERS["narration"] == "fast" and prov.TASK_TIERS["classification"] == "fast"
+    assert models["anthropic"] == {"strong": "claude-strong-env", "fast": "claude-fast-env", "cheap": "claude-haiku-5-5"} and models["openai"]["fast"] == "gpt-fast-env"
+    assert prov.TASK_TIERS["strategy_generation"] == "strong" and prov.TASK_TIERS["narration"] == "fast" and prov.TASK_TIERS["classification"] == "cheap"
     # No Settings override: both tiers from the environment. With one: it drives generation, cheap tasks keep the fast model.
     assert prov.model_for("anthropic", None, "strategy_generation") == "claude-strong-env"
     assert prov.model_for("anthropic", None, "narration") == "claude-fast-env"
@@ -169,7 +169,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     monkeypatch.setenv("AI_ANTHROPIC_STRONG_MODEL", "claude-strong-env")
     # Typing the operator's current default (or nothing) pins no model: the row keeps "" and follows the environment.
     saved = client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "api_key": "sk-ant-meter-key-1234", "model": "claude-strong-env"}).json()
-    assert saved["model"] == "" and saved["models"] == {"strong": "claude-strong-env", "fast": "claude-fast-env"}
+    assert saved["model"] == "" and saved["models"] == {"strong": "claude-strong-env", "fast": "claude-fast-env", "cheap": "claude-haiku-5-5"}
     saved = client.put("/api/ai/provider", headers=headers, json={"data_consent": True, "provider": "anthropic", "model": "claude-mine"}).json()
     assert saved["model"] == "claude-mine" and saved["models"]["strong"] == "claude-mine"
 
@@ -209,7 +209,7 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     usage = shown["usage"]
     assert usage["calls"] == 2 and usage["tokens_input"] == 10000 and usage["spent_usd"] > 0 and usage["spent_inr"] > usage["spent_usd"]
     assert usage["budget_inr"] > 0 and usage["exhausted"] is False and set(usage["by_feature"]) == {"narration", "strategy_generation"}
-    assert shown["models"] == {"strong": "claude-mine", "fast": "claude-fast-env"}
+    assert shown["models"] == {"strong": "claude-mine", "fast": "claude-fast-env", "cheap": "claude-haiku-5-5"}
 
     # Spend past the plan's monthly budget: the tenant gets the rule-based provider (with the reason) until the month turns.
     async def spend():

@@ -89,8 +89,8 @@ def review(trades: Iterable, lang: str = "mr", risk: Optional[RiskConfig] = None
     period = {"days": days, "mode": mode, "from": rows[0]["day"].isoformat() if rows else None, "to": rows[-1]["day"].isoformat() if rows else None}
     if not rows:
         return {"period": period, "stats": {"trades": 0}, "flags": [], "focus": [tr(lang,
-                "No closed trades yet. Paper-trade a strategy for two weeks - the coach reads your journal and tells you what to fix.",
-                "अजून एकही बंद trade नाही. एखादी strategy दोन आठवडे PAPER वर चालवा - coach तुमचे trades वाचून काय सुधारायचे ते सांगेल.")],
+                "No closed trades yet. Once a strategy has run in PAPER, the coach shows patterns in your own trades (rules followed or broken); decisions are yours.",
+                "अजून एकही बंद trade नाही. एखादी strategy PAPER वर चालल्यावर coach तुमच्याच trades मधले patterns दाखवेल (नियम पाळले की मोडले); निर्णय तुमचे.")],
                 "by_strategy": [], "by_hour": [], "by_weekday": [], "equity": [], "score": None, "grade": None}
 
     wins = [r for r in rows if r["pnl"] > 0]
@@ -265,7 +265,7 @@ def summary_lines(lang: str, result: dict) -> List[str]:
         if f["severity"] != "good":
             lines.append(f"{f['title']}: {f['text']}")
     if result.get("focus"):
-        lines.append(tr(lang, "Work on: ", "यावर काम करा: ") + result["focus"][0])
+        lines.append(tr(lang, "Pattern in your trades: ", "तुमच्या trades मधला pattern: ") + result["focus"][0])
     return lines
 
 

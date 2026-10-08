@@ -19,63 +19,124 @@ const TIMEFRAME_MINUTES: Record<string, number> = {
 /**
  * Client-side stand-in for real broker market data, clearly labelled "sample" wherever it is shown.
  *
- * P0.9: a seeded random walk with slowly changing drift and volatility clustering, pulled gently back to
- * the start price. The old series (a 40-bar sine wave of 1.5% plus a 25% drift) reversed every breakout
- * on schedule - every breakout strategy lost exactly 1R on it - and carried NIFTY from 24,500 to 30,700
- * in two weeks. Sample numbers are still not performance; they only have to look like a market.
+ * P0.10: shaped like an NSE session, so the numbers read like a market. Bars are one minute apart only inside the
+ * 09:15-15:29 IST session (375 a day), on weekdays, ending on the latest weekday; each day has its own volatility
+ * (a typical index day moves 0.5-1.5% open to close, clustered), a small opening gap, a U-shaped intraday
+ * volatility and volume profile, and a gentle pull back to the start price. The P0.9 series ran minute bars round
+ * the clock, so one "day" held 1,440 bars and the pivot / previous-day levels came out 7-11% away from the price.
+ * `daily: true` gives one bar per weekday (for swing reads) with the same day-level statistics.
+ * Sample numbers are still not performance; they only have to look like a market.
  */
-export function generateSampleCandles(count = 400, startPrice = 100, seed = 7): OHLCVBar[] {
+export const SESSION_BARS = 375;
+const SESSION_OPEN_UTC_MINUTES = 3 * 60 + 45;     // 09:15 IST
+
+export interface SampleOptions {
+  /** One bar per trading day instead of one per session minute. */
+  daily?: boolean;
+  /** The last trading day is the last weekday on or before this date (default: today). */
+  end?: Date;
+}
+
+/** The `n` weekdays ending on the last weekday on or before `end`, oldest first, as UTC midnights. Without `end` the
+ * series ends on the last COMPLETED session (today only after 15:30 IST), so no sample bar lies in the future. */
+export function tradingDays(n: number, end?: Date): number[] {
+  const out: number[] = [];
+  let last = end;
+  if (!last) {
+    const now = new Date();
+    const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + 330) % 1440;
+    const istDay = new Date(now.getTime() + 330 * 60_000);
+    last = new Date(Date.UTC(istDay.getUTCFullYear(), istDay.getUTCMonth(), istDay.getUTCDate()));
+    if (istMinutes < 15 * 60 + 30) last.setUTCDate(last.getUTCDate() - 1);
+  }
+  const d = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()));
+  while (out.length < n) {
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) out.unshift(d.getTime());
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return out;
+}
+
+export function generateSampleCandles(count = 400, startPrice = 100, seed = 7, opts: SampleOptions = {}): OHLCVBar[] {
   const rand = mulberry32(seed);
   const gauss = () => {
     const u = Math.max(rand(), 1e-12);
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand());
   };
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  const nDays = opts.daily ? count : Math.ceil(count / SESSION_BARS);
+  const days = tradingDays(nDays, opts.end);
   const bars: OHLCVBar[] = [];
   let close = startPrice;
-  let drift = 0;          // per-bar drift, re-drawn every ~150 bars (trend phases)
-  let vol = 0.0006;       // per-bar volatility (~0.06% a minute), clustered
-  const start = new Date("2024-01-02T09:15:00Z").getTime();
+  let dayVol = 0.0075;                                  // open-to-close sigma of a day, clustered between 0.4% and 1.1%
 
-  for (let i = 0; i < count; i++) {
-    if (i % 150 === 0) drift = (rand() - 0.5) * 0.00012;
-    vol = Math.min(0.0018, Math.max(0.0003, vol * 0.97 + 0.03 * 0.0006 + Math.abs(gauss()) * 0.00004));
-    const pull = ((startPrice - close) / startPrice) * 0.002;      // keeps the series near its start price
-    const open = close;
-    close = Math.max(startPrice * 0.2, open * Math.exp(drift + pull + vol * gauss()));
-    const wick = open * vol * (0.3 + rand() * 0.7);
-    const high = Math.max(open, close) + wick;
-    const low = Math.min(open, close) - wick;
-    const volume = 800 + Math.round(rand() * 400);
-
-    bars.push({
-      timestamp: new Date(start + i * 60_000).toISOString(),
-      open: round2(open), high: round2(high), low: round2(low), close: round2(close), volume,
-    });
+  for (const day of days) {
+    dayVol = clamp(0.6 * dayVol + 0.4 * (0.004 + rand() * 0.007), 0.004, 0.011);
+    const pull = ((startPrice - close) / startPrice) * 0.15;        // per day: drifts back toward the start price
+    const dayDrift = pull * 0.01 + gauss() * dayVol * 0.25;          // the day's own lean, as a return over the session
+    const gap = gauss() * dayVol * 0.25;
+    if (opts.daily) {
+      const open = close * Math.exp(gap);
+      close = open * Math.exp(dayDrift + gauss() * dayVol * 0.8);
+      const high = Math.max(open, close) * (1 + rand() * dayVol * 0.6);
+      const low = Math.min(open, close) * (1 - rand() * dayVol * 0.6);
+      bars.push({ timestamp: new Date(day + SESSION_OPEN_UTC_MINUTES * 60_000).toISOString(),
+                  open: round2(open), high: round2(high), low: round2(low), close: round2(close), volume: 150_000 + Math.round(rand() * 100_000) });
+      continue;
+    }
+    close = close * Math.exp(gap);
+    const perBar = dayVol / Math.sqrt(SESSION_BARS);
+    for (let m = 0; m < SESSION_BARS; m++) {
+      // U-shape: busier first and last half hour, quieter around midday.
+      const edge = m < 30 || m >= SESSION_BARS - 30 ? 1.45 : m > 150 && m < 270 ? 0.75 : 1.0;
+      const open = close;
+      close = open * Math.exp(dayDrift / SESSION_BARS + perBar * edge * gauss());
+      const wick = open * perBar * edge * (0.2 + rand() * 0.6);
+      bars.push({
+        timestamp: new Date(day + (SESSION_OPEN_UTC_MINUTES + m) * 60_000).toISOString(),
+        open: round2(open), high: round2(Math.max(open, close) + wick), low: round2(Math.min(open, close) - wick), close: round2(close),
+        volume: Math.round((700 + rand() * 500) * edge * edge),
+      });
+    }
   }
-  return bars;
+  return bars.slice(-count);
 }
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Groups every `factor` consecutive 1-minute bars into one bar - an exact resample since the
- * base series is evenly spaced, used to build the higher timeframe a multi-timeframe strategy needs.
- */
+/** Groups 1-minute bars into `factor`-minute bars aligned to the 09:15 IST session open, one group never spanning two
+ * days (P0.10: a 30- or 60-minute bar no longer straddles the close and the next open). A last group that is still
+ * forming (fewer minutes than its slot, and not the session's short closing stub) is dropped - only closed bars. */
 export function resampleByFactor(bars: OHLCVBar[], factor: number): OHLCVBar[] {
   if (factor <= 1) return bars;
   const out: OHLCVBar[] = [];
-  for (let i = 0; i + factor <= bars.length; i += factor) {
-    const chunk = bars.slice(i, i + factor);
-    out.push({
-      timestamp: chunk[0].timestamp,
-      open: chunk[0].open,
-      high: Math.max(...chunk.map((b) => b.high)),
-      low: Math.min(...chunk.map((b) => b.low)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, b) => sum + b.volume, 0),
-    });
+  let key = "";
+  let count = 0;
+  let slotStart = 0;
+  for (const b of bars) {
+    const t = new Date(b.timestamp);
+    const minuteOfDay = t.getUTCHours() * 60 + t.getUTCMinutes() - SESSION_OPEN_UTC_MINUTES;
+    const slot = Math.floor(minuteOfDay / factor);
+    const k = `${t.toISOString().slice(0, 10)}#${slot}`;
+    const last = out[out.length - 1];
+    if (k !== key || !last) {
+      out.push({ ...b });
+      key = k;
+      count = 1;
+      slotStart = slot * factor;
+    } else {
+      last.high = Math.max(last.high, b.high);
+      last.low = Math.min(last.low, b.low);
+      last.close = b.close;
+      last.volume += b.volume;
+      count += 1;
+    }
   }
+  const expected = Math.max(1, Math.min(factor, SESSION_BARS - slotStart));
+  if (out.length && count < expected) out.pop();
   return out;
 }
 

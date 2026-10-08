@@ -51,7 +51,7 @@ def test_day_type_and_game_plan():
     assert dt["kind"] == "RANGE" and dt["vix"] == 13.0
     plan = briefing.game_plan("mr", dt, MEMORY, "new", [{"action": "BLOCK", "description": "RBI policy"}])
     assert "Sideways" in plan["headline"] and "reversion" in plan["fit_families"] and "trend" in plan["avoid_families"]
-    assert any("RBI policy" in line and "बंद" in line for line in plan["lines"]) and any("नवशिक्या" in line for line in plan["lines"])
+    assert any("RBI policy" in line and "बंद" in line for line in plan["lines"]) and any("Default risk settings (अजून ठरवलेल्या नाहीत)" in line for line in plan["lines"])
     fear = dict(MEMORY, cues=[{"symbol": "INDIA VIX", "last_price": 24.0}])
     assert briefing.day_type(fear)["kind"] == "VOLATILE"
     assert briefing.day_type({"symbols": [], "cues": []})["kind"] == "UNKNOWN"

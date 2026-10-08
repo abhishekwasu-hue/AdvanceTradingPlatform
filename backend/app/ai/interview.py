@@ -87,8 +87,8 @@ QUESTIONS: List[Question] = [
              "यापुढचे सगळे प्रश्न आणि तुमचा plan याच भाषेत येईल.",
              [Option("mr", "मराठी", "मराठी"), Option("en", "English", "English")], "mr"),
     Question("experience", "choice", "How long have you been trading?", "तुम्ही किती दिवसांपासून trading करत आहात?",
-             "A beginner gets smaller risk, one position at a time and PAPER first - the way every professional started.",
-             "नवशिक्याला कमी risk, एका वेळी एकच position आणि आधी PAPER - प्रत्येक professional ने अशीच सुरुवात केली.",
+             "Smaller risk per trade and PAPER first is a common way to start; you set your own risk.",
+             "प्रत्येक trade मध्ये कमी risk आणि आधी PAPER ही सुरुवातीची एक सामान्य पद्धत आहे; तुमचा risk तुम्हीच ठरवता.",
              [Option("new", "New - under 6 months", "नवीन - 6 महिन्यांपेक्षा कमी"),
               Option("learning", "Learning - 6 months to 2 years", "शिकत आहे - 6 महिने ते 2 वर्षे"),
               Option("experienced", "Experienced - over 2 years", "अनुभवी - 2 वर्षांपेक्षा जास्त")], "new"),
@@ -124,8 +124,8 @@ QUESTIONS: List[Question] = [
              "Market चे विश्लेषण आणि backtest याच symbol च्या candles वर होईल.",
              [], "NIFTY 50"),
     Question("vehicle", "choice", "How do you want to take the trade?", "Trade कशा प्रकारे घ्यायचा?",
-             "Option buying caps the loss at the premium; option selling earns time decay but needs a hedge and experience.",
-             "Option buying मध्ये तोटा premium इतकाच मर्यादित; option selling मध्ये time decay मिळतो पण hedge आणि अनुभव लागतो.",
+             "Option buying caps the loss at the premium; option selling earns time decay but needs a hedge.",
+             "Option buying मध्ये तोटा premium इतकाच मर्यादित; option selling मध्ये time decay मिळतो पण hedge लागतो.",
              [Option("underlying", "The stock itself / futures", "Stock स्वतः / futures"),
               Option("option_buy", "Buy options (CE/PE)", "Option buy (CE/PE)"),
               Option("option_sell", "Sell options (hedged spreads)", "Option sell (hedge सोबत spread)")], "option_buy"),
@@ -249,6 +249,9 @@ def start(prompt: str) -> dict:
         # says what happens next - three templates the trader chooses from - not that a strategy will be suggested.
         "intro": "A few quick questions first (anything your message already said is skipped). Then the market data is read "
                  "and three templates are shown with their rules and backtest - you choose; nothing is recommended.",
+        # P0.10: the interview is the one bilingual screen - its intro carries the Marathi line too.
+        "intro_mr": "आधी काही छोटे प्रश्न (तुमच्या message मध्ये आधीच सांगितलेले विचारले जाणार नाही). मग market चा data वाचला जातो आणि "
+                    "तीन templates त्यांच्या नियम आणि backtest सह दाखवले जातात - निवड तुमची; कशाचीही शिफारस नाही.",
     }
 
 
@@ -419,11 +422,15 @@ def regime_fit(family: str, regime: str, confidence: float = 1.0) -> float:
 # --- risk, capital, contract ---------------------------------------------------------------------------
 
 RISK_PCT = {"conservative": 0.5, "moderate": 1.0, "aggressive": 1.5}
-RISK_CAP_BY_EXPERIENCE = {"new": 0.5, "learning": 1.0, "experienced": 2.0}
-ALLOCATION = {"new": 0.25, "learning": 0.5, "experienced": 0.8}
 TRADES_PER_DAY = {"scalping": 6, "intraday": 3, "positional": 2, "swing": 1}
 SWING_GAP_FACTOR = 0.75   # Phase AS: an overnight gap can jump the stop - swing risk is sized a quarter smaller
-OPEN_POSITIONS = {"new": 1, "learning": 2, "experienced": 3}
+# P0.10: the rest of the risk settings are the same defaults for everyone - experience never changes them. The trader's
+# own answers (risk, daily loss, style) and the operator's ceilings are the only inputs; every value can be edited.
+DEFAULT_OPEN_POSITIONS = 2
+DEFAULT_CONSECUTIVE_LOSSES = 3
+DEFAULT_COOLDOWN_MINUTES = 30
+DEFAULT_DD_LEVELS = (5.0, 10.0)
+DEFAULT_BREAK_EVEN_R = 1.0
 
 
 def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) -> Tuple[RiskConfig, List[str]]:
@@ -432,10 +439,10 @@ def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) 
     lang = a.language
     notes: List[str] = []
     wanted = RISK_PCT[a.risk]
-    risk_pct = min(wanted, RISK_CAP_BY_EXPERIENCE[a.experience], float(ceilings.get("risk_per_trade_pct", 2.0)))
+    risk_pct = min(wanted, float(ceilings.get("risk_per_trade_pct", 2.0)))
     if risk_pct < wanted:
-        notes.append(tr(lang, f"Risk per trade capped at {risk_pct:g}% (you chose {wanted:g}%) - a {a.experience} trader starts small; it can rise once the paper record earns it.",
-                        f"एका trade चा risk {risk_pct:g}% वर मर्यादित केला (तुम्ही {wanted:g}% निवडले होते) - सुरुवात छोट्या risk ने; PAPER चे निकाल चांगले आले की वाढवता येईल."))
+        notes.append(tr(lang, f"Risk per trade capped at {risk_pct:g}% (you chose {wanted:g}%) - the platform operator's maximum.",
+                        f"एका trade चा risk {risk_pct:g}% वर मर्यादित केला (तुम्ही {wanted:g}% निवडले होते) - platform operator ची कमाल मर्यादा."))
     if a.style == "swing":
         risk_pct = round(risk_pct * SWING_GAP_FACTOR, 2)
         notes.append(tr(lang, f"Swing risk per trade {risk_pct:g}% - a quarter smaller, because an overnight gap can open beyond the stop.",
@@ -448,43 +455,47 @@ def risk_plan(a: InterviewAnswers, ceilings: Optional[Dict[str, float]] = None) 
     elif daily < a.daily_loss:
         notes.append(tr(lang, f"Daily loss limit set to {daily:g}% (3 losing trades) rather than {a.daily_loss:g}% - three losses in a day is the professional's stop signal.",
                         f"दिवसाची तोटा मर्यादा {a.daily_loss:g}% ऐवजी {daily:g}% (3 चुकलेले trades) ठेवली - दिवसात 3 तोटे म्हणजे professional साठी थांबण्याचा संकेत."))
-    trades = TRADES_PER_DAY[a.style] if a.experience != "new" else min(TRADES_PER_DAY[a.style], 3)
+    trades = TRADES_PER_DAY[a.style]
     trading_capital = round(a.capital, 0)        # P0.8-D: the figure the trader entered; the platform does not allocate for them
     cfg = RiskConfig(
         capital=trading_capital, risk_per_trade_pct=risk_pct, max_daily_loss_pct=daily,
-        max_trades_per_day=trades, max_open_positions=OPEN_POSITIONS[a.experience],
-        max_consecutive_losses=2 if a.experience == "new" else 3,
+        max_trades_per_day=trades, max_open_positions=DEFAULT_OPEN_POSITIONS,
+        max_consecutive_losses=DEFAULT_CONSECUTIVE_LOSSES,
         min_risk_reward=2.0 if a.vehicle == "option_buy" else 1.5,
         max_portfolio_risk_pct=min(round(risk_pct * 3, 2), float(ceilings.get("max_portfolio_risk_pct", 10.0))),
-        stop_cooldown_minutes=45 if a.experience == "new" else 30,
-        dd_level_1_pct=3.0 if a.experience == "new" else 5.0, dd_level_2_pct=6.0 if a.experience == "new" else 10.0,
+        stop_cooldown_minutes=DEFAULT_COOLDOWN_MINUTES,
+        dd_level_1_pct=DEFAULT_DD_LEVELS[0], dd_level_2_pct=DEFAULT_DD_LEVELS[1],
     )
     return cfg, notes
 
 
-def contract_plan(a: InterviewAnswers, bias: str) -> Tuple[dict, List[str], str]:
-    """(contract fields for the deployment, notes, one-line description)."""
+def contract_plan(a: InterviewAnswers, bias: str, last_price: Optional[float] = None) -> Tuple[dict, List[str], str]:
+    """(contract fields for the deployment, notes, one-line description).
+
+    P0.10: the trader's choice of what to trade is kept. Experience never swaps it; the differences between the ways to
+    trade are given as information, and only a fact changes the choice (a cash-market stock has no options; options
+    are not written overnight here)."""
     lang = a.language
     notes: List[str] = []
     underlying = instrument_master.underlying_of(a.symbol)
     is_index = underlying in instrument_master.INDEX_SYMBOLS or a.instrument == "index"
     vehicle = a.vehicle
-    if vehicle == "option_sell" and a.experience == "new":
-        vehicle = "option_buy"
-        notes.append(tr(lang, "Option selling is not suggested for a new trader: one bad day can wipe out weeks of premium. You get option buying (loss capped at the premium) until your paper record shows consistency.",
-                        "नवशिक्यासाठी option selling सुचवत नाही: एका वाईट दिवसात अनेक आठवड्यांचा premium जाऊ शकतो. PAPER मध्ये सातत्य दिसेपर्यंत option buying (तोटा premium इतकाच) दिला आहे."))
     if a.instrument == "stock" and vehicle != "underlying":
         vehicle = "underlying"
         notes.append(tr(lang, "A cash-market stock has no options - the plan trades the stock itself.",
                         "Cash market stock ला options नसतात - plan मध्ये stock स्वतःच trade होईल."))
     if is_index and vehicle == "underlying":
-        if a.experience == "new":
-            vehicle = "option_buy"
-            notes.append(tr(lang, "An index cannot be bought directly and a futures lot moves too much money for a first account - the plan buys an in-the-money option instead.",
-                            "Index थेट विकत घेता येत नाही आणि futures चा एक lot नवशिक्याच्या खात्यासाठी खूप मोठा असतो - त्यामुळे plan मध्ये ITM option buy केला आहे."))
-        else:
-            return ({"instrument_kind": "FUTURE", "expiry_rule": "NEAREST"}, notes,
-                    tr(lang, f"{underlying} futures, nearest expiry", f"{underlying} futures, जवळची expiry"))
+        # An index itself cannot be bought, so "the underlying" of an index is its futures contract.
+        price = f" At about {last_price:,.0f}, one lot's value is that price times the lot size." if last_price else ""
+        price_mr = f" सुमारे {last_price:,.0f} भावाला एका lot चे मूल्य = हा भाव × lot size." if last_price else ""
+        notes.append(tr(lang, "For your information: a futures lot carries the full lot value (price × lot size) as exposure, and the broker blocks margin of "
+                              f"roughly 10-15% of it; gains and losses run on the whole lot value.{price} Buying an option is another way to trade the index - "
+                              "the loss is capped at the premium. The plan keeps futures, as you chose.",
+                        "माहितीसाठी: futures च्या एका lot मध्ये संपूर्ण lot चे मूल्य (भाव × lot size) गुंतलेले असते आणि broker त्याच्या साधारण 10-15% margin "
+                        f"ठेवतो; नफा-तोटा संपूर्ण मूल्यावर होतो.{price_mr} Option buy हा index trade करण्याचा दुसरा मार्ग आहे - तोटा premium इतकाच. "
+                        "तुमच्या निवडीप्रमाणे plan मध्ये futures ठेवले आहेत."))
+        return ({"instrument_kind": "FUTURE", "expiry_rule": "NEAREST"}, notes,
+                tr(lang, f"{underlying} futures, nearest expiry", f"{underlying} futures, जवळची expiry"))
     swing = a.style == "swing"
     if swing and vehicle == "option_sell":
         vehicle = "option_buy"
@@ -503,7 +514,7 @@ def contract_plan(a: InterviewAnswers, bias: str) -> Tuple[dict, List[str], str]
                 tr(lang, f"Buy one-step in-the-money {underlying} options, monthly expiry, held for days",
                    f"{underlying} चा एक step ITM option buy, monthly expiry, काही दिवस धरून"))
     if vehicle == "option_buy":
-        expiry = "NEXT" if is_index and a.experience != "experienced" else "NEAREST"
+        expiry = "NEXT" if is_index else "NEAREST"
         if expiry == "NEXT":
             notes.append(tr(lang, "The next weekly expiry is used, not the nearest: expiry-day options lose value very fast (theta) and swing wildly.",
                             "जवळची नव्हे तर पुढची weekly expiry वापरली आहे: expiry च्या दिवशी option चे मूल्य वेगाने घटते (theta) आणि भाव खूप उड्या मारतो."))
@@ -511,8 +522,13 @@ def contract_plan(a: InterviewAnswers, bias: str) -> Tuple[dict, List[str], str]
                 tr(lang, f"Buy one-step in-the-money {underlying} options (CE on a long signal, PE on a short), {expiry.lower()} expiry",
                    f"{underlying} चा एक step ITM option buy (long signal ला CE, short ला PE), {'पुढची' if expiry == 'NEXT' else 'जवळची'} expiry"))
     structure = {"BULLISH": "BULL_PUT_SPREAD", "BEARISH": "BEAR_CALL_SPREAD"}.get(bias, "IRON_CONDOR")
-    notes.append(tr(lang, f"Option selling only as a hedged {structure.replace('_', ' ').lower()} - the bought wing caps the worst case.",
-                    f"Option selling फक्त hedge सोबत ({structure.replace('_', ' ').lower()}) - विकत घेतलेला wing जास्तीत जास्त तोटा मर्यादित ठेवतो."))
+    # P0.10: the trader chose option selling - it stays selling (always hedged); the alternative is information only.
+    notes.append(tr(lang, f"You chose option selling. Here it is always a hedged {structure.replace('_', ' ').lower()} (the bought wing caps the worst case); "
+                          "one bad day can still cost several weeks of premium. Option buying caps the loss at the premium paid - change the answer to "
+                          "\"Buy options\" if you prefer that.",
+                    f"तुम्ही option selling निवडले. इथे ते नेहमी hedge असलेला {structure.replace('_', ' ').lower()} असतो (विकत घेतलेला wing जास्तीत जास्त "
+                    "तोटा मर्यादित ठेवतो); तरीही एका वाईट दिवसात काही आठवड्यांचा premium जाऊ शकतो. Option buying मध्ये तोटा भरलेल्या premium इतकाच असतो - "
+                    "तसे हवे असल्यास उत्तर \"Option buy\" करा."))
     return ({"instrument_kind": "OPTION", "option_strategy": structure, "expiry_rule": "NEAREST", "spread_width": 2,
              "target_credit_pct": 50.0, "stop_credit_pct": 150.0}, notes,
             tr(lang, f"{structure.replace('_', ' ').title()} on {underlying}, take profit at 50% of the credit, stop at 150%",
@@ -599,8 +615,6 @@ def _rank(a: InterviewAnswers, market: dict, df: pd.DataFrame, base_tf: str, cfg
         if not _compatible(strategy, base_tf):
             continue
         fit = regime_fit(p.family, regime, conf)
-        if market["volatile"] and a.experience == "new":
-            fit = max(fit - 0.5, 0.0)
         goal = 1.0 if (a.goal == "big_trends" and p.family in ("trend", "breakout")) or (a.goal == "steady" and p.family in ("reversion", "momentum")) else 0.0
         goal += (family_bonus or {}).get(p.family, 0.0)
         ranked.append({
@@ -632,7 +646,7 @@ def build_plan(a: InterviewAnswers, df: pd.DataFrame, base_tf: str, *, ceilings:
 
 
 def default_exit_rules(a: InterviewAnswers) -> dict:
-    return {"break_even_at_r": 1.0 if a.experience == "new" else 1.5,
+    return {"break_even_at_r": DEFAULT_BREAK_EVEN_R,
             "time_exit_at": "15:10" if a.style in ("scalping", "intraday") else None}
 
 
@@ -647,7 +661,7 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
         warnings.append(tr(lang, "No strategy could be tested on these candles - load more history (a longer lookback) and try again.",
                            "या candles वर एकही strategy तपासता आली नाही - जास्त history (मोठा lookback) घेऊन पुन्हा प्रयत्न करा."))
     alternatives = [r for r in ranked if pick is None or r["strategy_id"] != pick["strategy_id"]][:2] if alternatives is None else alternatives
-    contract, contract_notes, contract_text = contract_plan(a, market["bias"])
+    contract, contract_notes, contract_text = contract_plan(a, market["bias"], market.get("last_price"))
     contract_notes = contract_notes + (extra_contract_notes or [])
 
     # Market sentences.
@@ -758,14 +772,14 @@ def compose_plan(a: InterviewAnswers, market: dict, ranked: List[dict], pick: Op
            "LIVE फक्त Go-Live checklist मधूनच शक्य; LIVE जायचे की नाही हा निर्णय तुमचा."),
     ]
     sections = [
-        {"id": "market", "title": tr(lang, "Market view", "Market चे विश्लेषण"), "lines": m_lines},
-        {"id": "strategy", "title": tr(lang, "Template (you choose)", "Template (तुम्ही निवडा)"), "lines": s_lines},
-        {"id": "risk", "title": tr(lang, "Risk management", "Risk management"), "lines": r_lines},
-        {"id": "capital", "title": tr(lang, "Capital in these settings", "या settings मधले भांडवल"), "lines": c_lines},
-        {"id": "rr", "title": tr(lang, "Risk : reward and exits", "Risk : reward आणि exit"), "lines": rr_lines},
-        {"id": "contract", "title": tr(lang, "What will be traded", "काय trade होईल"), "lines": k_lines},
-        {"id": "checklist", "title": tr(lang, "Checked before every trade", "प्रत्येक trade आधी तपासले जाते"), "lines": checklist},
-        {"id": "steps", "title": tr(lang, "How it works if you choose", "निवडल्यास पुढे काय होते"), "lines": steps},
+        {"id": "market", "title": tr(lang, "Market view", "Market चे विश्लेषण"), "title_mr": "Market चे विश्लेषण", "lines": m_lines},
+        {"id": "strategy", "title": tr(lang, "Template (you choose)", "Template (तुम्ही निवडा)"), "title_mr": "Template (तुम्ही निवडा)", "lines": s_lines},
+        {"id": "risk", "title": tr(lang, "Risk management", "Risk management"), "title_mr": "Risk management", "lines": r_lines},
+        {"id": "capital", "title": tr(lang, "Capital in these settings", "या settings मधले भांडवल"), "title_mr": "या settings मधले भांडवल", "lines": c_lines},
+        {"id": "rr", "title": tr(lang, "Risk : reward and exits", "Risk : reward आणि exit"), "title_mr": "Risk : reward आणि exit", "lines": rr_lines},
+        {"id": "contract", "title": tr(lang, "What will be traded", "काय trade होईल"), "title_mr": "काय trade होईल", "lines": k_lines},
+        {"id": "checklist", "title": tr(lang, "Checked before every trade", "प्रत्येक trade आधी तपासले जाते"), "title_mr": "प्रत्येक trade आधी तपासले जाते", "lines": checklist},
+        {"id": "steps", "title": tr(lang, "How it works if you choose", "निवडल्यास पुढे काय होते"), "title_mr": "निवडल्यास पुढे काय होते", "lines": steps},
     ]
     deployment = None
     if pick:

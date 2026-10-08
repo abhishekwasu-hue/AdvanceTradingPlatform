@@ -43,23 +43,25 @@ TIMEOUT_PER_1K_TOKENS = float(os.environ.get("AI_TIMEOUT_PER_1K_SECONDS", "8"))
 RULE_BASED_MODEL = "nlu-parser-v1"
 
 # C2: which tier each AI task runs on. The strong tier writes rules (strategy drafts, strategist proposals, scanner
-# plans); the fast tier narrates, classifies and answers questions - a cheaper model at low effort.
-TIERS = ("fast", "strong")
+# plans); the fast tier narrates and answers questions - a cheaper model at low effort. P0.10: the cheap tier runs the
+# frequent, short jobs (news classification, scanner reads) on the smallest model (Haiku-class / nano).
+TIERS = ("cheap", "fast", "strong")
 TASK_TIERS: Dict[str, str] = {
     "strategy_generation": "strong", "strategist": "strong", "scanner_plan": "strong", "general": "strong",
-    "narration": "fast", "copilot": "fast", "knowledge": "fast", "thesis": "fast", "classification": "fast", "scanner_read": "fast",
+    "narration": "fast", "copilot": "fast", "knowledge": "fast", "thesis": "fast",
+    "classification": "cheap", "scanner_read": "cheap",
 }
-EFFORT_FOR_TIER = {"strong": "medium", "fast": "low"}
+EFFORT_FOR_TIER = {"strong": "medium", "fast": "low", "cheap": "low"}
 # C1: thinking headroom per effort level (tokens the model may spend reasoning before the text starts).
 THINKING_HEADROOM = {"low": 2000, "medium": 6000, "high": 12000, "xhigh": 24000, "max": 32000}
-_FALLBACK_MODELS = {"anthropic": {"strong": "claude-opus-5-5", "fast": "claude-sonnet-5-5"},
-                    "openai": {"strong": "gpt-4.1", "fast": "gpt-4.1-mini"},
-                    "rule_based": {"strong": RULE_BASED_MODEL, "fast": RULE_BASED_MODEL}}
+_FALLBACK_MODELS = {"anthropic": {"strong": "claude-opus-5-5", "fast": "claude-sonnet-5-5", "cheap": "claude-haiku-5-5"},
+                    "openai": {"strong": "gpt-4.1", "fast": "gpt-4.1-mini", "cheap": "gpt-4.1-nano"},
+                    "rule_based": {"strong": RULE_BASED_MODEL, "fast": RULE_BASED_MODEL, "cheap": RULE_BASED_MODEL}}
 
 
 def default_models() -> Dict[str, Dict[str, str]]:
     """Per provider and tier, from the environment (`AI_ANTHROPIC_STRONG_MODEL`, `AI_ANTHROPIC_FAST_MODEL`,
-    `AI_OPENAI_STRONG_MODEL`, `AI_OPENAI_FAST_MODEL`); the built-in names only fill gaps."""
+    `AI_ANTHROPIC_CHEAP_MODEL`, and the same three for OpenAI); the built-in names only fill gaps."""
     out: Dict[str, Dict[str, str]] = {}
     for provider, tiers in _FALLBACK_MODELS.items():
         out[provider] = {tier: (os.environ.get(f"AI_{provider.upper()}_{tier.upper()}_MODEL") or name).strip() for tier, name in tiers.items()}
@@ -221,8 +223,8 @@ class AnthropicProvider:
     tier: str = "strong"
 
     def __post_init__(self) -> None:
-        if self.tier == "fast" and self.effort == "medium":
-            self.effort = EFFORT_FOR_TIER["fast"]
+        if self.tier in ("fast", "cheap") and self.effort == "medium":
+            self.effort = EFFORT_FOR_TIER[self.tier]
 
     def _client(self) -> Any:
         import anthropic

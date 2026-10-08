@@ -87,7 +87,7 @@ def test_stop_guard_rearms_missing_and_cancelled_stops_and_leaves_standing_ones(
             tenant = await session.get(Tenant, t["tenant_id"])
             return await verify_protective_stops(session, tenant, broker, user_id=t["user_id"])
     counts = _run(go())
-    assert counts == {"checked": 4, "standing": 1, "rearmed": 2, "filled_pending": 1, "failed": 0, "closed": 0}
+    assert counts == {"checked": 4, "standing": 1, "rearmed": 2, "filled_pending": 1, "failed": 0}
     assert sorted(s[0] for s in broker.stops) == ["INFY", "RELIANCE"]
     assert all(s[1] == OrderSide.SELL and s[3] == 98.0 for s in broker.stops)
     assert _get(TradeRecord, cancelled).sl_order_id.startswith("SL-") and _get(TradeRecord, cancelled).sl_order_id != "SL-CANCELLED"

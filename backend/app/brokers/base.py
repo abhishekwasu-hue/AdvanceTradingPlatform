@@ -1,3 +1,4 @@
+import math
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -51,14 +52,27 @@ def looks_like_option(symbol: str) -> bool:
 
 
 def stop_order_params(capabilities: BrokerCapabilities, symbol: str, transaction_type: OrderSide, trigger_price: float, *,
-                      is_option: Optional[bool] = None, limit_band_pct: float = 1.0) -> Tuple[str, Optional[float]]:
+                      is_option: Optional[bool] = None, limit_band_pct: Optional[float] = None) -> Tuple[str, Optional[float]]:
     """(order_type, limit price) for a protective stop. SL-M wherever the broker takes it; otherwise SL with the
     limit a band past the trigger (sell stops below, buy stops above) so a fast move still fills - a stop that
-    never fills is the failure mode this guards against."""
+    never fills is the failure mode this guards against.
+
+    `limit_band_pct` None = the 1% band rounded to the nearest tick (unchanged since P0.5). A set band (G-LIVE,
+    STOP_LIMIT_BAND_PCT) rounds outward - down for a sell, up for a buy - and keeps the limit at least one tick
+    past the trigger, so rounding can never shrink the room the stop has to fill."""
     option = looks_like_option(symbol) if is_option is None else is_option
     if capabilities.stop_market and (capabilities.stop_market_on_options or not option):
         return "SL-M", None
-    band = max(0.0, float(limit_band_pct)) / 100.0
+    if limit_band_pct is not None:
+        tick = _STOP_LIMIT_TICK
+        trigger = round(round(trigger_price / tick) * tick, 2)
+        band_set = max(0.0, float(limit_band_pct)) / 100.0
+        if transaction_type == OrderSide.SELL:
+            steps = math.floor(round(trigger * (1 - band_set) / tick, 6))
+            return "SL", round(max(tick, min(steps * tick, trigger - tick)), 2)
+        steps = math.ceil(round(trigger * (1 + band_set) / tick, 6))
+        return "SL", round(max(steps * tick, trigger + tick), 2)
+    band = 0.01
     raw = trigger_price * (1 - band) if transaction_type == OrderSide.SELL else trigger_price * (1 + band)
     limit = round(round(raw / _STOP_LIMIT_TICK) * _STOP_LIMIT_TICK, 2)
     if transaction_type == OrderSide.SELL:

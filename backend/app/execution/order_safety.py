@@ -10,7 +10,10 @@ Shapes (broker-neutral):
   leg result  {"symbol", "status", "filled_quantity", "order_id"?}       (status: COMPLETE / REJECTED / CANCELLED / OPEN ...)
   position    {"symbol", "quantity" (net, signed), "product"?}
 """
+import logging
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 TERMINAL_NOFILL = ("REJECTED", "CANCELLED", "CANCELED")
 TERMINAL_ALL = ("COMPLETE", "FILLED", "TRADED") + TERMINAL_NOFILL
@@ -40,6 +43,8 @@ def apply_market_protection(payload: Dict[str, Any], value: Any, auto: bool = Fa
     if pct is None:
         if not auto:
             return payload
+        if value not in (None, ""):
+            logger.warning("ORDER_MARKET_PROTECTION_PCT=%r is not 1-25 - sending -1 (the broker's automatic band)", value)
         pct = AUTO_PROTECTION
     return {**payload, "market_protection": pct}
 

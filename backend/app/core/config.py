@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Optional
 
@@ -230,8 +231,22 @@ LIVE_UPSTOX_OPTION_STOP_LIMIT = os.environ.get("LIVE_UPSTOX_OPTION_STOP_LIMIT", 
 # - a LIVE position whose broker-side stop cannot be placed (at entry) or re-armed (stop guard) is closed at once.
 LIVE_EXIT_IF_NO_STOP = os.environ.get("LIVE_EXIT_IF_NO_STOP", "false").lower() in ("1", "true", "yes")
 # How far past the trigger a stop-limit's limit sits (% of the trigger; Zerodha options today, Upstox options with
-# the flag above). 1.0 = today's value.
-STOP_LIMIT_BAND_PCT = float(os.environ.get("STOP_LIMIT_BAND_PCT", "1.0"))
+# the flag above). Unset = today's stop-limit (1%, nearest tick). Set = that band, rounded outward to the 0.05 tick
+# and always at least one tick past the trigger. An unreadable value is ignored (today's behaviour) with a warning.
+def _band_pct(raw: str) -> Optional[float]:
+    if not raw.strip():
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if 0 <= value <= 20:
+        return value
+    logging.getLogger(__name__).warning("STOP_LIMIT_BAND_PCT=%r is not a percentage between 0 and 20 - ignored", raw)
+    return None
+
+
+STOP_LIMIT_BAND_PCT: Optional[float] = _band_pct(os.environ.get("STOP_LIMIT_BAND_PCT", ""))
 # Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")

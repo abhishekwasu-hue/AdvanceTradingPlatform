@@ -147,14 +147,32 @@ def _stop_already_filled(trade: TradeRecord, sl_order: BrokerOrderStatus, reason
     return float(sl_order.average_price) if sl_order.average_price else trade.stop_loss
 
 
+# A stop the broker no longer works: nothing to cancel, nothing more will fill.
+_DEAD_STOP_STATUSES = ("REJECTED", "CANCELLED", "CANCELED", "EXPIRED", "LAPSED")
+
+
+def _stop_is_dead(status: str) -> bool:
+    text = (status or "").upper()
+    return text in _DEAD_STOP_STATUSES or text.startswith("CANCEL")
+
+
+def _partial_aware() -> bool:
+    """G-LIVE: with either stop switch on, an exit sends only what a stop-limit did not already fill."""
+    return bool(config.LIVE_UPSTOX_OPTION_STOP_LIMIT or config.LIVE_EXIT_IF_NO_STOP)
+
+
 async def _square_off_live(
     trade: TradeRecord, broker: BrokerInterface, reason: str, reference_price: float, outcome: CloseOutcome,
-    algo_id: Optional[str] = None,
+    algo_id: Optional[str] = None, stop_dead: bool = False,
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
-    price, or None when the position could not be flattened (the trade must then stay open)."""
+    price, or None when the position could not be flattened (the trade must then stay open).
+
+    `stop_dead` (G-LIVE, LIVE_EXIT_IF_NO_STOP): the caller has just seen the stop missing / rejected and the broker
+    clearly refuse a new one - there is no stop to cancel, so the exit must not wait on a cancel."""
     exchange = exchange_for_trade(trade)
     exit_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
+    stop_after: Optional[BrokerOrderStatus] = None
 
     if trade.sl_order_id:
         sl_order = await _find_order(broker, trade.sl_order_id)
@@ -162,10 +180,12 @@ async def _square_off_live(
             # The exchange already closed us at the stop. Nothing to place - a second exit order
             # here would open a fresh position in the opposite direction.
             return _stop_already_filled(trade, sl_order, reason, outcome)
-        dead = sl_order is not None and sl_order.status.upper() in ("REJECTED", "CANCELLED", "CANCELED")
+        dead = sl_order is not None and _stop_is_dead(sl_order.status)
         # G-LIVE (LIVE_EXIT_IF_NO_STOP): a stop the broker rejected or cancelled has nothing to cancel - asking would
         # fail and block the exit (ADR-0004: exits are never blocked). Default off = today's cancel attempt.
-        if not (dead and config.LIVE_EXIT_IF_NO_STOP):
+        if stop_dead or (dead and config.LIVE_EXIT_IF_NO_STOP):
+            stop_after = sl_order
+        else:
             try:
                 await broker.cancel_order(trade.sl_order_id)
             except Exception as exc:  # noqa: BLE001
@@ -176,10 +196,21 @@ async def _square_off_live(
                 outcome.warnings.append(f"Could not cancel protective stop {trade.sl_order_id}: {exc}")
                 logger.error("Cancel of SL %s failed for trade %s: %s", trade.sl_order_id, trade.id, exc)
                 return None
+            if _partial_aware():
+                stop_after = await _find_order(broker, trade.sl_order_id)
+
+    # G-LIVE: a stop-limit can fill in part before it is cancelled (or before it lapsed); exiting the full quantity
+    # would then open a fresh position the other way. Only the rest goes out, and the booking blends both fills.
+    stop_filled = 0.0
+    if _partial_aware() and stop_after is not None:
+        stop_filled = min(float(stop_after.filled_quantity or 0), float(trade.quantity))
+        if stop_filled >= float(trade.quantity):
+            return _stop_already_filled(trade, stop_after, reason, outcome)
+    exit_quantity = trade.quantity if stop_filled == 0 else type(trade.quantity)(float(trade.quantity) - stop_filled)
 
     try:
         response = await broker.place_order(BrokerOrderRequest(
-            symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=trade.quantity,
+            symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=exit_quantity,
             order_type="MARKET", product=product_for_trade(trade),   # Phase AS: the entry's own product
             tag=build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
                                 max_length=getattr(broker, "max_tag_length", None) or 20),
@@ -192,12 +223,19 @@ async def _square_off_live(
         outcome.warnings.append(f"Exit order rejected by {broker.name}: {response.message or response.status}")
         return None
     outcome.broker_exit_order_id = response.order_id
-    return await _fill_price(broker, response.order_id, fallback=reference_price)
+    price = await _fill_price(broker, response.order_id, fallback=reference_price)
+    if stop_filled > 0 and stop_after is not None:
+        stop_price = float(stop_after.average_price) if stop_after.average_price else float(trade.stop_loss)
+        outcome.warnings.append(f"Stop {trade.sl_order_id} had filled {stop_filled:g} of {float(trade.quantity):g}; "
+                                f"the exit sent the remaining {exit_quantity:g}")
+        return (stop_filled * stop_price + exit_quantity * price) / float(trade.quantity)
+    return price
 
 
 async def close_position(
     session: AsyncSession, trade: TradeRecord, exit_price: float, reason: str, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, now: Optional[datetime] = None,
+    stop_dead: bool = False,
 ) -> CloseOutcome:
     """Closes one open position. PAPER: books the exit at `exit_price`. LIVE: squares off at the
     broker first (see module docstring) and books the realised fill; if the broker leg fails the
@@ -216,6 +254,7 @@ async def close_position(
         tenant = await session.get(Tenant, trade.tenant_id)
         realised = await _square_off_live(
             trade, broker, reason, exit_price, outcome, algo_id=tenant.algo_id if tenant is not None else None,
+            stop_dead=stop_dead,
         )
         if realised is None:
             return outcome
@@ -384,6 +423,11 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
                 stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, update.stop_loss,
                                                                       is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")
+                if stop_type == "SL" and config.LIVE_UPSTOX_OPTION_STOP_LIMIT:
+                    # G-LIVE: a stop placed as SL-M before the switch went on stays SL-M - a modify keeps its type.
+                    standing = await _find_order(live_broker, trade.sl_order_id)
+                    if standing is not None and (standing.order_type or "").upper() == "SL-M":
+                        stop_type, stop_limit = "SL-M", None
                 await live_broker.modify_order(trade.sl_order_id, trigger_price=update.stop_loss,
                                                price=stop_limit if stop_type == "SL" else None)
             except Exception as exc:  # noqa: BLE001 - the software stop still applies

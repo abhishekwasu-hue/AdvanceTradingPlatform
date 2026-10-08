@@ -1,0 +1,80 @@
+[
+ {
+  "id": 4,
+  "deployment_id": null,
+  "trade_id": null,
+  "action": "REVIEW_STRATEGY",
+  "rule": "L5",
+  "reason": "Position held 2 sessions in a ranging regime.",
+  "evidence": {
+   "sessions": 2
+  },
+  "status": "REJECTED",
+  "decided_by": null,
+  "decided_at": "2026-10-06T12:28:46",
+  "decision_note": "Holding is planned for this swing.",
+  "executed_at": null,
+  "result": null,
+  "expires_at": "2026-10-06T18:28:46",
+  "created_at": "2026-10-06T12:28:46"
+ },
+ {
+  "id": 3,
+  "deployment_id": null,
+  "trade_id": null,
+  "action": "PAUSE_DEPLOYMENT",
+  "rule": "L2",
+  "reason": "5 broker errors in 10 minutes.",
+  "evidence": {
+   "errors": 5
+  },
+  "status": "EXECUTED",
+  "decided_by": null,
+  "decided_at": "2026-10-07T12:28:46",
+  "decision_note": null,
+  "executed_at": null,
+  "result": "Deployment paused.",
+  "expires_at": "2026-10-07T18:28:46",
+  "created_at": "2026-10-07T12:28:46"
+ },
+ {
+  "id": 2,
+  "deployment_id": null,
+  "trade_id": null,
+  "action": "REDUCE_RISK",
+  "rule": "L4",
+  "reason": "Win rate over the last 20 trades fell to 30% against 52% in the backtest (drift).",
+  "evidence": {
+   "win_rate_20": 0.3,
+   "backtest_win_rate": 0.52
+  },
+  "status": "PROPOSED",
+  "decided_by": null,
+  "decided_at": null,
+  "decision_note": null,
+  "executed_at": null,
+  "result": null,
+  "expires_at": "2026-10-08T19:22:46",
+  "created_at": "2026-10-08T13:22:46"
+ },
+ {
+  "id": 1,
+  "deployment_id": null,
+  "trade_id": null,
+  "action": "PAUSE_DEPLOYMENT",
+  "rule": "L1",
+  "reason": "3 losing trades in a row on ema_rsi_scalper_1m (NIFTY 50, PAPER) and the day's loss reached 70% of the loss budget.",
+  "evidence": {
+   "losing_streak": 3,
+   "loss_budget_used_pct": 70
+  },
+  "status": "PROPOSED",
+  "decided_by": null,
+  "decided_at": null,
+  "decision_note": null,
+  "executed_at": null,
+  "result": null,
+  "expires_at": "2026-10-08T20:10:46",
+  "created_at": "2026-10-08T14:10:46"
+ }
+]

@@ -13,6 +13,7 @@ const semantic = {
   fg: v("fg"), "fg-muted": v("fg-muted"), border: v("border"),
   brand: v("brand"), "brand-strong": v("brand-strong"), "on-brand": v("on-brand"),
   up: v("up"), down: v("down"), warn: v("warn"), info: v("info"),
+  ai: v("ai"), "ai-2": v("ai-2"), glass: v("glass"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),

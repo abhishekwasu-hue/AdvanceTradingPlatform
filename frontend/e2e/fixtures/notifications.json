@@ -1,0 +1,46 @@
+[
+ {
+  "id": 19,
+  "event_type": "SECURITY",
+  "severity": "WARNING",
+  "title": "New device login: demo@example.com",
+  "message": "Logged in from 127.0.0.1 (Python-urllib/3.11). If this was not you, log out everywhere and change your password from the Account tab.",
+  "related_trade_id": null,
+  "related_order_id": null,
+  "read": false,
+  "created_at": "2026-10-08T14:30:51.431200"
+ },
+ {
+  "id": 18,
+  "event_type": "RISK_REJECTION",
+  "severity": "WARNING",
+  "title": "Order rejected: NIFTY",
+  "message": "Signal is NO_TRADE",
+  "related_trade_id": null,
+  "related_order_id": 1,
+  "read": false,
+  "created_at": "2026-10-08T12:42:16.352757"
+ },
+ {
+  "id": 2,
+  "event_type": "SECURITY",
+  "severity": "WARNING",
+  "title": "New device login: demo@example.com",
+  "message": "Logged in from 127.0.0.1 (curl/8.5.0). If this was not you, log out everywhere and change your password from the Account tab.",
+  "related_trade_id": null,
+  "related_order_id": null,
+  "read": false,
+  "created_at": "2026-10-07T02:35:24.832898"
+ },
+ {
+  "id": 1,
+  "event_type": "SECURITY",
+  "severity": "WARNING",
+  "title": "New device login: demo@example.com",
+  "message": "Logged in from 127.0.0.1 (Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36). If this was not you, log out everywhere and change your password from the Account tab.",
+  "related_trade_id": null,
+  "related_order_id": null,
+  "read": false,
+  "created_at": "2026-10-07T02:26:56.682087"
+ }
+]

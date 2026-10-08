@@ -472,6 +472,36 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-08 - Copilot UI redesign (7 tabs, i18n, 3D AI Core, compliance lint) -> G-UI
+- Seven tabs at `/copilot/<tab>` (Market Pulse, Strategy Lab, Idea Builder, Ask Copilot, Watchtower, News Radar,
+  Coach & Scorecard); the old `/ai-copilot/<slug>` addresses and `?page=ai-copilot` forward to the tab that now
+  holds that content. The manual regime classifier of the old "Drafts & agent" tab is dropped - the regime dial
+  (briefing) and the per-timeframe study cover it.
+- 3D "AI Core": **plain three.js, not react-three-fiber + drei**. Measured: r3f + three = ~235 KB gzip (r3f imports
+  the whole three namespace), over the 180 KB budget for the 3D chunk; three.js with named imports = ~129 KB. Lazy
+  chunk, loaded on browser idle; SVG core when motion is reduced (system or the new "Reduce motion" setting) or
+  WebGL is missing; 30 fps and fewer particles on phones; the loop stops off screen / in a hidden tab. Two designs
+  (orb, particle sphere) - `localStorage.atp_copilot_core = "particles"` switches until the operator picks one.
+- Budget: the brief's "Copilot route initial JS <= 120 KB gzip" is measured as the Copilot's own JS (page chunk,
+  its static imports and the default Market Pulse tab) = 72 KB; with the shared app shell (81.6 KB, already under
+  its own 300 KB budget) a first visit downloads 154 KB. Both numbers are printed by `check:bundle` in CI.
+- i18n: react-i18next on a Copilot-only i18next instance (no cost outside the Copilot chunk); `copilot` namespace
+  (English) and `interview` namespace (Marathi second lines, Hindi = one more bundle). Server-sent text (interview
+  questions, AI answers, the acknowledgement's Marathi translation) is data, not interface strings.
+- "Streaming" in Ask Copilot is a progressive reveal of the server's whole answer (the router answers in one
+  response); Cancel aborts the request (AbortController), timeouts stop it with a friendly message. Token streaming
+  from the provider would need an SSE endpoint - not in this PR.
+- Cost chips: Ask Copilot shows the **metered** tokens and rupees of each AI answer (new `usage` field on
+  `/api/ai/copilot`, from the metered provider of that request); Strategy Lab / Idea Builder / drafts show the
+  per-task **estimate** from the provider card (marked "est."). Nothing is shown when the rules answer (no cost).
+- `<main>` no longer scrolls on its own (`overflow-x-clip` instead of `overflow-y-auto`; the window was always the
+  scroller) so the Copilot tab bar can be sticky.
+- Compliance lint: a Vitest test parses every Copilot source with the TypeScript compiler and fails on
+  "recommended / best / for you / match % / guaranteed / risk-free ..." in any string or JSX text; a negated
+  disclaimer ("not a recommendation") is allowed. TradeCoach's "best day" became "top day".
+- Stop point G-UI: no merge until the operator approves the screenshots (all 7 tabs, desktop + mobile, dark +
+  light) and the 3D hero recording.
+
 ### 2026-10-08 - P1.3 batch 4: Settings, Account, Team, System Logs, Notifications, Admin, Coach & Guide + their cards
 - Pages and the components they render (alert channels, AI provider, billing, MFA, broker accounts, API keys,
   holidays, export, contract notes, go-live checklist, market pulse, position chart, chart strategies, ProChart

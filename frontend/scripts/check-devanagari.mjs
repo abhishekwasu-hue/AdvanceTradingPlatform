@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // P0.9 / P0.10 (ATP_COPILOT_UI_REDESIGN_PROMPT section 5): the dashboard is English only. Devanagari may appear in the
 // frontend source only in the interview namespace - the values of INTERVIEW_MR in i18n/interviewSecondary.ts, the
-// muted Marathi lines of the strategy interview - and that namespace may be used only by the interview screens.
+// muted Marathi lines of the strategy interview - and that file is loaded only by the Copilot's i18n instance (the
+// Idea Builder reads it through i18n keys).
 // Text the server sends (interview questions, the "Read in Marathi" translation of the acknowledgement and of the data
 // consent, AI answers in the user's chosen language) is data, not UI strings, and is not checked here.
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -10,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..", "src");
 const NAMESPACE_FILE = "i18n/interviewSecondary.ts";
-const NAMESPACE_USERS = new Set(["components/StrategyInterview.tsx", "pages/AiCopilotPage.tsx"]);   // the interview and its Start card
+const NAMESPACE_USERS = new Set(["copilot/i18n.ts", "stories/Copilot.stories.tsx"]);   // the Copilot i18n instance (the `interview` namespace) and its catalogue story
 const DEVANAGARI = /[ऀ-ॿ]/;
 const KEY_VALUE = /^\s*[A-Za-z][A-Za-z0-9]*:\s*"[^"]*",?\s*(\/\/.*)?$/;
 

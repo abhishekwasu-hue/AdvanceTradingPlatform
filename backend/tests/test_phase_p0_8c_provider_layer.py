@@ -188,6 +188,10 @@ def test_every_call_is_metered_and_the_plan_budget_switches_the_tenant_to_rules(
     provider, text = _run(call("narration"))
     assert text == "Grounded words." and isinstance(provider, metering.MeteredProvider)
     assert provider.model == "claude-fast-env" and provider.name == "anthropic" and provider.feature == "narration"
+    # The redesigned Copilot's cost chip: what this provider object spent on its call(s); none for the rules.
+    spent = metering.spent_by(provider)
+    assert spent is not None and spent["calls"] == 1 and spent["tokens_input"] == 5000 and spent["tokens_output"] == 500 and spent["cost_inr"] > 0
+    assert metering.spent_by(RuleBasedProvider()) is None
     provider, _ = _run(call("strategy_generation"))
     assert provider.model == "claude-mine"
 

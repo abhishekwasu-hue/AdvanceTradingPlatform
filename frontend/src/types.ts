@@ -2101,6 +2101,10 @@ export interface CopilotReply {
   prefill?: Record<string, unknown>; prompt?: string;
   concepts?: GuideConcept[]; related?: { id: string; title: string }[];
   coach?: { stats: CoachReview["stats"]; grade: string | null; score: number | null; flags: CoachFlag[] };
+  used_market_memory?: boolean;
+  /** The metered cost of this answer when an external AI wrote it (tokens in/out, rupees; an estimate when the
+   * model's price is not in the price list). Absent for answers from the rules. */
+  usage?: { tokens_input: number; tokens_output: number; cost_inr: number; calls: number } | null;
   brief?: { day_type: DailyBrief["day_type"]; plan: DailyBrief["plan"]; checklist: DailyBrief["checklist"]; deployments: BriefDeployment[] };
 }
 

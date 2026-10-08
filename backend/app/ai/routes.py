@@ -750,6 +750,8 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
             out.update(answer=text, source="ai")
         else:
             out["note"] = f"AI answer not used ({why}); answered from the rules"
+        from app.ai import metering
+        out["usage"] = metering.spent_by(provider)
     elif getattr(provider, "reason", "") and name != "interview":
         out["note"] = f"AI not used ({provider.reason}); answered from the rules"
     return out

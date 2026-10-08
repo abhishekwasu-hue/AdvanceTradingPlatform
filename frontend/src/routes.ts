@@ -17,7 +17,7 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   quant: () => import("./pages/QuantPage"),
   backtest: () => import("./pages/BacktestPage"),
   marketplace: () => import("./pages/MarketplacePage"),
-  "ai-copilot": () => import("./pages/AiCopilotPage"),
+  copilot: () => import("./pages/AiCopilotPage"),
   coach: () => import("./pages/CoachGuidePage"),
   "option-chain": () => import("./pages/OptionChainPage"),
   instruments: () => import("./pages/InstrumentsPage"),
@@ -50,14 +50,15 @@ export function pathFor(page: Page): string {
   return page === "dashboard" ? "/" : `/${page}`;
 }
 
-/** The page a URL shows - the same rule as the router (case-sensitive, one segment, `/ai-copilot/<tab>` the only
- * two-segment path): `/` -> dashboard, `/ai-copilot/today` -> ai-copilot, anything else (`/Settings`,
- * `/settings/foo`) -> null, which renders the not-found card. */
+/** The page a URL shows - the same rule as the router (case-sensitive, one segment, `/copilot/<tab>` the only
+ * two-segment path): `/` -> dashboard, `/copilot/ask` -> copilot, anything else (`/Settings`, `/settings/foo`) -> null,
+ * which renders the not-found card. The old Copilot address `/ai-copilot[/<tab>]` still names the Copilot (the router
+ * forwards it to `/copilot/<tab>`). */
 export function pageFromPath(pathname: string): Page | null {
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
   if (parts.length === 0) return "dashboard";
-  const first = parts[0];
+  const first = parts[0] === "ai-copilot" ? "copilot" : parts[0];
   if (!(PAGES as string[]).includes(first)) return null;
-  if (parts.length > (first === "ai-copilot" ? 2 : 1)) return null;
+  if (parts.length > (first === "copilot" ? 2 : 1)) return null;
   return first as Page;
 }

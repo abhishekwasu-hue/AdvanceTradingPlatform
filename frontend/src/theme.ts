@@ -4,18 +4,20 @@ import { useEffect, useState } from "react";
  * blue, loss orange). Stored per browser; applied as `data-theme` / `data-cvd` on <html>, which tokens.css reads.
  * A change fires `atp-theme` so canvases that cannot read CSS (the charts) repaint. */
 export type ThemeChoice = "dark" | "light" | "system";
-export interface Appearance { theme: ThemeChoice; colorBlind: boolean }
+/** `reduceMotion`: the trader's "Reduce motion" setting - with the system's prefers-reduced-motion it turns off every
+ * animation and the Copilot's 3D scene (`data-motion="reduce"` on <html>). */
+export interface Appearance { theme: ThemeChoice; colorBlind: boolean; reduceMotion: boolean }
 
 const KEY = "atp_appearance";
 const EVENT = "atp-theme";
-const DEFAULTS: Appearance = { theme: "dark", colorBlind: false };
+const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false };
 
 export function loadAppearance(): Appearance {
   try {
     const raw = localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as Partial<Appearance>) : {};
     const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : DEFAULTS.theme;
-    return { theme, colorBlind: v.colorBlind === true };
+    return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true };
   } catch {
     return DEFAULTS;
   }
@@ -34,6 +36,7 @@ export function applyAppearance(a: Appearance = loadAppearance()): void {
   const theme = resolvedTheme(a);
   root.dataset.theme = theme;
   root.dataset.cvd = a.colorBlind ? "on" : "off";
+  root.dataset.motion = a.reduceMotion ? "reduce" : "full";
   root.classList.toggle("dark", theme === "dark");
   window.dispatchEvent(new CustomEvent(EVENT));
 }
@@ -93,3 +96,26 @@ export function resolveChartColor(color: string): string {
 }
 
 export const THEME_EVENT = EVENT;
+
+function systemReducesMotion(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** True when motion is off - the system asks for reduced motion or the trader turned on "Reduce motion". */
+export function motionReduced(a: Appearance = loadAppearance()): boolean {
+  return a.reduceMotion || systemReducesMotion();
+}
+
+/** `motionReduced`, re-rendering when either the setting or the system preference changes. */
+export function useReducedMotion(): boolean {
+  const [a] = useAppearance();
+  const [system, setSystem] = useState(systemReducesMotion);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    const on = () => setSystem(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return a.reduceMotion || system;
+}

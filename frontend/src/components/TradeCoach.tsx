@@ -99,7 +99,7 @@ export default function TradeCoach() {
   const tiles = useMemo(() => s && s.trades ? [
     { label: "Trades", value: String(s.trades), sub: `${s.trading_days} days` },
     { label: "Win rate", value: `${s.win_rate}%`, sub: `${s.wins} / ${s.losses}` },
-    { label: "Net P&L", value: money(s.net_pnl), tone: signClass(s.net_pnl, 0), sub: `best ${money(s.best_day)} · worst ${money(s.worst_day)}` },
+    { label: "Net P&L", value: money(s.net_pnl), tone: signClass(s.net_pnl, 0), sub: `top day ${money(s.best_day)} · lowest day ${money(s.worst_day)}` },
     { label: "Expectancy per trade", value: money(s.expectancy), tone: signClass(s.expectancy, 0), sub: s.expectancy_r != null ? `${s.expectancy_r}R` : "R: no stop" },
     { label: "Profit factor", value: s.profit_factor != null ? String(s.profit_factor) : "-", sub: `avg ${money(s.avg_win)} / ${money(s.avg_loss)}` },
     { label: "Max drawdown", value: money(-(s.max_drawdown ?? 0)), tone: "text-down", sub: `losing streak ${s.longest_losing_streak}` },

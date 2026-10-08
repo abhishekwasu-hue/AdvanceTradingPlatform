@@ -14,11 +14,13 @@ describe("routes", () => {
   it("maps the root to the dashboard, sub-paths to their page and unknown paths to none", () => {
     expect(pathFor("dashboard")).toBe("/");
     expect(pageFromPath("/")).toBe("dashboard");
-    expect(pageFromPath("/ai-copilot/today")).toBe("ai-copilot");
+    expect(pageFromPath("/copilot/market-pulse")).toBe("copilot");
+    expect(pageFromPath("/ai-copilot/today")).toBe("copilot");       // the old address, forwarded by the router
     expect(pageFromPath("/settings/")).toBe("settings");
     expect(pageFromPath("/no-such-page")).toBeNull();
     expect(pageFromPath("/Settings")).toBeNull();                    // case-sensitive, like the router
     expect(pageFromPath("/settings/foo")).toBeNull();
     expect(pageFromPath("/ai-copilot/today/x")).toBeNull();
+    expect(pageFromPath("/copilot/ask/x")).toBeNull();
   });
 });

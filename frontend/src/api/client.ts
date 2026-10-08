@@ -682,8 +682,8 @@ export const api = {
   aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" | "mr" }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
-  aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}) =>
-    request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }) }),
+  aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
+    request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
   aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {
     const params = new URLSearchParams();
     if (language) params.set("language", language);
@@ -694,9 +694,9 @@ export const api = {
   },
   aiDrafts: () => request<AiStrategyDraft[]>("/ai/drafts"),
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
-  aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample") =>
+  aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample", signal?: AbortSignal) =>
     request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
-      method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }),
+      method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }), signal,
     }),
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
     request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name, accept_risk: acceptRisk }) }),
@@ -704,12 +704,12 @@ export const api = {
   // Phase AP: the strategy interview.
   aiInterviewStart: (prompt: string) =>
     request<InterviewStart>("/ai/interview/start", { method: "POST", body: JSON.stringify({ prompt }) }),
-  aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string) =>
-    request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({ answers, base_timeframe: baseTimeframe, candles, data_source: dataSource }) }),
+  aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string, signal?: AbortSignal) =>
+    request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({ answers, base_timeframe: baseTimeframe, candles, data_source: dataSource }), signal }),
   aiInterviewRefine: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string,
-                      feedback: string[], optionId: string, strategyId: string | null) =>
+                      feedback: string[], optionId: string, strategyId: string | null, signal?: AbortSignal) =>
     request<InterviewPlan>("/ai/interview/refine", { method: "POST", body: JSON.stringify({
-      answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }) }),
+      answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }), signal }),
   aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null) =>
     request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
@@ -724,8 +724,8 @@ export const api = {
   // Phase AW: the strategist.
   aiStrategistStudy: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; language: "en" | "mr" }) =>
     request<MarketStudy>("/ai/strategist/study", { method: "POST", body: JSON.stringify(body) }),
-  aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr"; request?: string }) =>
-    request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body) }),
+  aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr"; request?: string }, signal?: AbortSignal) =>
+    request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body), signal }),
   // Phase BF: what a plain-words request (Marathi or English) means to the strategist.
   aiStrategistParse: (text: string, symbol: string, language: "en" | "mr" = "mr") =>
     request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol, language }) }),
@@ -739,8 +739,8 @@ export const api = {
   aiBrief: (language: "en" | "mr") => request<DailyBrief>(`/ai/brief?language=${language}`),
   aiCoach: (language: "en" | "mr", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>
     request<CoachReview>(`/ai/coach?language=${language}&days=${days}&mode=${mode}`),
-  aiCopilot: (message: string, language?: "en" | "mr") =>
-    request<CopilotReply>("/ai/copilot", { method: "POST", body: JSON.stringify({ message, language: language ?? null }) }),
+  aiCopilot: (message: string, language?: "en" | "mr", signal?: AbortSignal) =>
+    request<CopilotReply>("/ai/copilot", { method: "POST", body: JSON.stringify({ message, language: language ?? null }), signal }),
   aiAsk: (question: string, language?: "en" | "mr") =>
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),

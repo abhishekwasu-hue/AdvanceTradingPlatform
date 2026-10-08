@@ -1,0 +1,302 @@
+{
+ "provider": "rule_based",
+ "model": "nlu-parser-v1",
+ "api_key_set": false,
+ "enabled": true,
+ "configured": false,
+ "models": {
+  "strong": "nlu-parser-v1",
+  "fast": "nlu-parser-v1",
+  "cheap": "nlu-parser-v1"
+ },
+ "ai_features_allowed": true,
+ "providers": [
+  "anthropic",
+  "openai",
+  "rule_based"
+ ],
+ "default_models": {
+  "anthropic": "claude-opus-5-5",
+  "openai": "gpt-4.1",
+  "rule_based": "nlu-parser-v1"
+ },
+ "default_provider": "anthropic",
+ "tier_models": {
+  "anthropic": {
+   "strong": "claude-opus-5-5",
+   "fast": "claude-sonnet-5-5",
+   "cheap": "claude-haiku-5-5"
+  },
+  "openai": {
+   "strong": "gpt-4.1",
+   "fast": "gpt-4.1-mini",
+   "cheap": "gpt-4.1-nano"
+  },
+  "rule_based": {
+   "strong": "nlu-parser-v1",
+   "fast": "nlu-parser-v1",
+   "cheap": "nlu-parser-v1"
+  }
+ },
+ "usage": {
+  "month": "2026-10",
+  "calls": 0,
+  "tokens_input": 0,
+  "tokens_output": 0,
+  "spent_usd": 0.0,
+  "spent_inr": 0.0,
+  "by_feature": {},
+  "by_model": {},
+  "usd_inr_rate": 84.0,
+  "budget_inr": 1500.0,
+  "exhausted": false,
+  "note": "0.00 of 1,500 INR used this month."
+ },
+ "task_models": {
+  "anthropic": [
+   {
+    "task": "strategy_generation",
+    "label": "Strategy drafts",
+    "tier": "strong",
+    "model": "claude-opus-5-5",
+    "price_per_mtok_usd": {
+     "input": 4.0,
+     "output": 20.0
+    },
+    "est_inr_per_call": 8.74,
+    "estimated_price": false
+   },
+   {
+    "task": "strategist",
+    "label": "Strategist rule proposals",
+    "tier": "strong",
+    "model": "claude-opus-5-5",
+    "price_per_mtok_usd": {
+     "input": 4.0,
+     "output": 20.0
+    },
+    "est_inr_per_call": 8.74,
+    "estimated_price": false
+   },
+   {
+    "task": "scanner_plan",
+    "label": "Scanner plans",
+    "tier": "strong",
+    "model": "claude-opus-5-5",
+    "price_per_mtok_usd": {
+     "input": 4.0,
+     "output": 20.0
+    },
+    "est_inr_per_call": 8.74,
+    "estimated_price": false
+   },
+   {
+    "task": "narration",
+    "label": "Narration",
+    "tier": "fast",
+    "model": "claude-sonnet-5-5",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 10.0
+    },
+    "est_inr_per_call": 1.51,
+    "estimated_price": false
+   },
+   {
+    "task": "copilot",
+    "label": "Copilot chat",
+    "tier": "fast",
+    "model": "claude-sonnet-5-5",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 10.0
+    },
+    "est_inr_per_call": 1.51,
+    "estimated_price": false
+   },
+   {
+    "task": "knowledge",
+    "label": "Guide answers",
+    "tier": "fast",
+    "model": "claude-sonnet-5-5",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 10.0
+    },
+    "est_inr_per_call": 1.51,
+    "estimated_price": false
+   },
+   {
+    "task": "thesis",
+    "label": "Thesis wording",
+    "tier": "fast",
+    "model": "claude-sonnet-5-5",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 10.0
+    },
+    "est_inr_per_call": 1.51,
+    "estimated_price": false
+   },
+   {
+    "task": "classification",
+    "label": "News classification",
+    "tier": "cheap",
+    "model": "claude-haiku-5-5",
+    "price_per_mtok_usd": {
+     "input": 1.0,
+     "output": 5.0
+    },
+    "est_inr_per_call": 0.25,
+    "estimated_price": false
+   },
+   {
+    "task": "scanner_read",
+    "label": "Scanner reads",
+    "tier": "cheap",
+    "model": "claude-haiku-5-5",
+    "price_per_mtok_usd": {
+     "input": 1.0,
+     "output": 5.0
+    },
+    "est_inr_per_call": 0.25,
+    "estimated_price": false
+   }
+  ],
+  "openai": [
+   {
+    "task": "strategy_generation",
+    "label": "Strategy drafts",
+    "tier": "strong",
+    "model": "gpt-4.1",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 8.0
+    },
+    "est_inr_per_call": 3.7,
+    "estimated_price": false
+   },
+   {
+    "task": "strategist",
+    "label": "Strategist rule proposals",
+    "tier": "strong",
+    "model": "gpt-4.1",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 8.0
+    },
+    "est_inr_per_call": 3.7,
+    "estimated_price": false
+   },
+   {
+    "task": "scanner_plan",
+    "label": "Scanner plans",
+    "tier": "strong",
+    "model": "gpt-4.1",
+    "price_per_mtok_usd": {
+     "input": 2.0,
+     "output": 8.0
+    },
+    "est_inr_per_call": 3.7,
+    "estimated_price": false
+   },
+   {
+    "task": "narration",
+    "label": "Narration",
+    "tier": "fast",
+    "model": "gpt-4.1-mini",
+    "price_per_mtok_usd": {
+     "input": 0.4,
+     "output": 1.6
+    },
+    "est_inr_per_call": 0.26,
+    "estimated_price": false
+   },
+   {
+    "task": "copilot",
+    "label": "Copilot chat",
+    "tier": "fast",
+    "model": "gpt-4.1-mini",
+    "price_per_mtok_usd": {
+     "input": 0.4,
+     "output": 1.6
+    },
+    "est_inr_per_call": 0.26,
+    "estimated_price": false
+   },
+   {
+    "task": "knowledge",
+    "label": "Guide answers",
+    "tier": "fast",
+    "model": "gpt-4.1-mini",
+    "price_per_mtok_usd": {
+     "input": 0.4,
+     "output": 1.6
+    },
+    "est_inr_per_call": 0.26,
+    "estimated_price": false
+   },
+   {
+    "task": "thesis",
+    "label": "Thesis wording",
+    "tier": "fast",
+    "model": "gpt-4.1-mini",
+    "price_per_mtok_usd": {
+     "input": 0.4,
+     "output": 1.6
+    },
+    "est_inr_per_call": 0.26,
+    "estimated_price": false
+   },
+   {
+    "task": "classification",
+    "label": "News classification",
+    "tier": "cheap",
+    "model": "gpt-4.1-nano",
+    "price_per_mtok_usd": {
+     "input": 0.1,
+     "output": 0.4
+    },
+    "est_inr_per_call": 0.02,
+    "estimated_price": false
+   },
+   {
+    "task": "scanner_read",
+    "label": "Scanner reads",
+    "tier": "cheap",
+    "model": "gpt-4.1-nano",
+    "price_per_mtok_usd": {
+     "input": 0.1,
+     "output": 0.4
+    },
+    "est_inr_per_call": 0.02,
+    "estimated_price": false
+   }
+  ]
+ },
+ "typical_call_tokens": {
+  "cheap": {
+   "input": 1500,
+   "output": 300
+  },
+  "fast": {
+   "input": 3000,
+   "output": 1200
+  },
+  "strong": {
+   "input": 6000,
+   "output": 4000
+  }
+ },
+ "data_consent": {
+  "kind": "data_consent",
+  "version": "2026-10-07",
+  "text": {
+   "en": "When an external AI provider (Anthropic or OpenAI) is configured, the platform sends it the text needed to answer: your questions and messages, your interview answers (including capital, experience, risk appetite and goals), facts about your deployments and trades (symbols, P&L, risk settings), market data and news headlines. It never sends broker credentials, API keys, passwords or bank details. The provider processes this data on its own servers, which may be outside India, under its terms. Purpose: explaining rules and data to you. You can opt out at any time by switching to the rule-based provider or removing the provider; the platform then shares nothing externally.",
+   "mr": "\u092c\u093e\u0939\u0947\u0930\u091a\u093e AI provider (Anthropic \u0915\u093f\u0902\u0935\u093e OpenAI) \u0932\u093e\u0935\u0932\u093e \u0905\u0938\u0947\u0932 \u0924\u0930 \u0909\u0924\u094d\u0924\u0930\u093e\u0938\u093e\u0920\u0940 \u0932\u093e\u0917\u0923\u093e\u0930\u093e \u092e\u091c\u0915\u0942\u0930 platform \u0924\u094d\u092f\u093e\u0932\u093e \u092a\u093e\u0920\u0935\u0924\u094b: \u0924\u0941\u092e\u091a\u0947 \u092a\u094d\u0930\u0936\u094d\u0928 \u0906\u0923\u093f \u0938\u0902\u0926\u0947\u0936, interview \u091a\u0940 \u0909\u0924\u094d\u0924\u0930\u0947 (\u092d\u093e\u0902\u0921\u0935\u0932, \u0905\u0928\u0941\u092d\u0935, risk \u091a\u0940 \u0924\u092f\u093e\u0930\u0940, \u0909\u0926\u094d\u0926\u093f\u0937\u094d\u091f\u0947 \u092f\u093e\u0938\u0939), \u0924\u0941\u092e\u091a\u094d\u092f\u093e deployments \u0906\u0923\u093f trades \u091a\u0940 \u092e\u093e\u0939\u093f\u0924\u0940 (symbol, P&L, risk settings), market data \u0906\u0923\u093f \u092c\u093e\u0924\u092e\u094d\u092f\u093e\u0902\u091a\u0940 \u0936\u0940\u0930\u094d\u0937\u0915\u0947. Broker credentials, API keys, passwords \u0915\u093f\u0902\u0935\u093e bank \u0924\u092a\u0936\u0940\u0932 \u0915\u0927\u0940\u091a \u092a\u093e\u0920\u0935\u0932\u0947 \u091c\u093e\u0924 \u0928\u093e\u0939\u0940\u0924. Provider \u0939\u093e data \u0924\u094d\u092f\u093e\u091a\u094d\u092f\u093e servers \u0935\u0930 (\u092d\u093e\u0930\u0924\u093e\u092c\u093e\u0939\u0947\u0930 \u0905\u0938\u0942 \u0936\u0915\u0924\u093e\u0924) \u0924\u094d\u092f\u093e\u091a\u094d\u092f\u093e \u0905\u091f\u0940\u0902\u0928\u0941\u0938\u093e\u0930 process \u0915\u0930\u0924\u094b. \u0909\u0926\u094d\u0926\u0947\u0936: \u0928\u093f\u092f\u092e \u0906\u0923\u093f data \u0924\u0941\u092e\u094d\u0939\u093e\u0932\u093e \u0938\u094d\u092a\u0937\u094d\u091f \u0915\u0930\u0923\u0947. \u0915\u0927\u0940\u0939\u0940 rule-based provider \u0928\u093f\u0935\u0921\u0942\u0928 \u0915\u093f\u0902\u0935\u093e provider \u0915\u093e\u0922\u0942\u0928 \u0924\u0941\u092e\u094d\u0939\u0940 opt out \u0915\u0930\u0942 \u0936\u0915\u0924\u093e; \u092e\u0917 platform \u092c\u093e\u0939\u0947\u0930 \u0915\u093e\u0939\u0940\u0939\u0940 \u092a\u093e\u0920\u0935\u0924 \u0928\u093e\u0939\u0940."
+  },
+  "accepted": false,
+  "accepted_at": null,
+  "accepted_by": null
+ }
+}

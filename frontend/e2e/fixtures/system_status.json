@@ -1,0 +1,22 @@
+{
+ "maintenance_mode": false,
+ "maintenance_message": null,
+ "disabled_brokers": [],
+ "sessions": {
+  "NSE": {
+   "is_open": false,
+   "reason": "NSE closed for the day (closed 15:30 IST)",
+   "next_open": "2026-10-09T09:15:00+05:30"
+  },
+  "MCX": {
+   "is_open": true,
+   "reason": "MCX regular session open",
+   "next_open": null
+  },
+  "CRYPTO": {
+   "is_open": true,
+   "reason": "CRYPTO trades around the clock",
+   "next_open": null
+  }
+ }
+}

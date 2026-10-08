@@ -1,0 +1,138 @@
+{
+ "symbol": "NIFTY 50",
+ "as_of": "2026-10-08T14:27:00.514883+00:00",
+ "lang": "en",
+ "direction": "BULLISH",
+ "confidence": 74,
+ "agreement": {
+  "net": 0.925,
+  "direction": "BULLISH",
+  "confidence": 74,
+  "agreeing": 3,
+  "with_opinion": 3,
+  "share": 1.0,
+  "coverage": 0.59,
+  "conflict": false,
+  "matrix": [
+   {
+    "factor": "structure",
+    "weight": 1.5,
+    "available": true,
+    "direction": 1,
+    "strength": 1.0,
+    "value": "UPTREND"
+   },
+   {
+    "factor": "trend",
+    "weight": 1.5,
+    "available": true,
+    "direction": 1,
+    "strength": 0.8,
+    "value": "BULLISH"
+   },
+   {
+    "factor": "higher_regime",
+    "weight": 1.0,
+    "available": true,
+    "direction": 1,
+    "strength": 1.0,
+    "value": "TRENDING_UP"
+   },
+   {
+    "factor": "sentiment",
+    "weight": 1.0,
+    "available": false,
+    "direction": 0,
+    "strength": 0.0,
+    "value": null
+   },
+   {
+    "factor": "news",
+    "weight": 1.0,
+    "available": false,
+    "direction": 0,
+    "strength": 0.0,
+    "value": null
+   },
+   {
+    "factor": "global",
+    "weight": 0.75,
+    "available": false,
+    "direction": 0,
+    "strength": 0.0,
+    "value": null
+   }
+  ]
+ },
+ "scenarios": {
+  "bull": {
+   "trigger": 25200.0,
+   "invalidation": 24850.0,
+   "target": 25550.0,
+   "text": "Bull case: a hold above resistance 25,200.00 keeps the bullish read; the next reference level is 25,550.00; below 24,850.00 this read is invalid."
+  },
+  "base": {
+   "low": 24850.0,
+   "high": 25200.0,
+   "text": "Base case: between 24,850.00 and 25,200.00 the data reads as a range."
+  },
+  "bear": {
+   "trigger": 24850.0,
+   "invalidation": 25200.0,
+   "target": 24500.0,
+   "text": "Bear case: a break below support 24,850.00 keeps the bearish read; the next reference level is 24,500.00; above 25,200.00 this read is invalid."
+  }
+ },
+ "shadow": {
+  "size_multiplier": 1.0,
+  "reasons": [],
+  "mode": "shadow",
+  "applied": false,
+  "note": "Shadow only: computed and recorded, never applied to any order or risk check."
+ },
+ "inputs": {
+  "last_price": 25000.0,
+  "change_pct": 0.4,
+  "bias": "BULLISH",
+  "regime": "TRENDING_UP",
+  "higher_regime": "TRENDING_UP",
+  "structure": "UPTREND",
+  "support": {
+   "low": 24850.0,
+   "high": 24900.0,
+   "source": "zone"
+  },
+  "resistance": {
+   "low": 25150.0,
+   "high": 25200.0,
+   "source": "zone"
+  },
+  "atr_pct": 0.5,
+  "vix": null,
+  "sentiment": null,
+  "news": [],
+  "global": null,
+  "events": [],
+  "read_at": "2026-10-07T02:23:35.477458+00:00"
+ },
+ "events": [],
+ "detail_shown": true,
+ "lines": [
+  "NIFTY 50 data read: bullish (model score 74/100 - factor agreement, not a forecast), 3 of 3 factors agree.",
+  "structure \u2191, trend bias \u2191, higher timeframe \u2191, market sentiment ?, news ?, global cues ?.",
+  "Bull case: a hold above resistance 25,200.00 keeps the bullish read; the next reference level is 25,550.00; below 24,850.00 this read is invalid.",
+  "Base case: between 24,850.00 and 25,200.00 the data reads as a range.",
+  "Bear case: a break below support 24,850.00 keeps the bearish read; the next reference level is 24,500.00; above 25,200.00 this read is invalid.",
+  "Shadow overlay would size at 1.00x - recorded, not applied.",
+  "A thesis is a reading of the market, never a signal; the strategy's own rules decide every entry and exit."
+ ],
+ "narrative": "NIFTY 50 data read: bullish (model score 74/100 - factor agreement, not a forecast), 3 of 3 factors agree.\nstructure \u2191, trend bias \u2191, higher timeframe \u2191, market sentiment ?, news ?, global cues ?.\nBull case: a hold above resistance 25,200.00 keeps the bullish read; the next reference level is 25,550.00; below 24,850.00 this read is invalid.\nBase case: between 24,850.00 and 25,200.00 the data reads as a range.\nBear case: a break below support 24,850.00 keeps the bearish read; the next reference level is 24,500.00; above 25,200.00 this read is invalid.\nShadow overlay would size at 1.00x - recorded, not applied.\nA thesis is a reading of the market, never a signal; the strategy's own rules decide every entry and exit.",
+ "narrative_source": "rules",
+ "id": 16,
+ "day": "2026-10-08",
+ "created_at": "2026-10-08T14:27:00.514883",
+ "scored_at": null,
+ "outcome": null,
+ "score": null,
+ "score_detail": null
+}

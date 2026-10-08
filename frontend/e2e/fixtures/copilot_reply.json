@@ -1,0 +1,37 @@
+{
+ "intent": "guide",
+ "language": "en",
+ "action": {
+  "tab": "guide",
+  "label": "Browse the concept library"
+ },
+ "source": "rules",
+ "answer": "Market regime: The market's mood: trending up/down, ranging (sideways), volatile or quiet. Trend strategies lose in ranges and reversion strategies lose in trends, so each deployment here can enter only in the regimes it suits - a day with no trade is often the right outcome.",
+ "concepts": [
+  {
+   "id": "regime",
+   "title": "Market regime",
+   "body": "The market's mood: trending up/down, ranging (sideways), volatile or quiet. Trend strategies lose in ranges and reversion strategies lose in trends, so each deployment here can enter only in the regimes it suits - a day with no trade is often the right outcome.",
+   "related": [
+    "trend",
+    "adx",
+    "bollinger"
+   ]
+  }
+ ],
+ "related": [
+  {
+   "id": "trend",
+   "title": "Trend"
+  },
+  {
+   "id": "adx",
+   "title": "ADX"
+  },
+  {
+   "id": "bollinger",
+   "title": "Bollinger bands"
+  }
+ ],
+ "used_market_memory": false
+}

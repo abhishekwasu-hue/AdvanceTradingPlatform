@@ -101,14 +101,14 @@ def test_conventions_calendar_and_ladder():
     assert strike_ladder(24512, 50, span=2) == [24400.0, 24450.0, 24500.0, 24550.0, 24600.0]
     assert bars_per_year("1min") == 250 * 375 and bars_per_year("5min") == 250 * 75 and bars_per_year("1d") == 250
 
-    # NIFTY: weekly Tuesdays; 2026-10-05 is a Monday.
+    # NIFTY: NSE's listed dates - weekly Tuesdays, and Monday 19 Oct 2026 where the Tuesday is a holiday.
     nifty = ExpiryCalendar.for_underlying("NIFTY")
-    assert (nifty.weekday, nifty.weekly) == (1, True)
-    assert nifty.expiries(date(2026, 10, 5), count=3) == [date(2026, 10, 6), date(2026, 10, 13), date(2026, 10, 20)]
+    assert nifty.data_symbol == "NIFTY" and nifty.weekly
+    assert nifty.expiries(date(2026, 10, 5), count=3) == [date(2026, 10, 6), date(2026, 10, 13), date(2026, 10, 19)]
     assert nifty.select(ExpiryRule.NEXT, date(2026, 10, 5)) == date(2026, 10, 13)
     assert nifty.select(ExpiryRule.MONTHLY, date(2026, 10, 5)) == date(2026, 10, 27)
-    # A holiday on the Tuesday moves the expiry to Monday - the exchange's rule.
-    shifted = ExpiryCalendar.for_underlying("NIFTY", holidays=[date(2026, 10, 13)])
+    # A pinned weekday is a what-if rule calendar: a holiday on the Tuesday moves the expiry to Monday.
+    shifted = ExpiryCalendar.for_underlying("NIFTY", weekday=1, holidays=[date(2026, 10, 13)])
     assert shifted.expiries(date(2026, 10, 7), count=1) == [date(2026, 10, 12)]
     # BANKNIFTY: the dates NSE listed (monthly only since Nov 2024; Nov 2026 moved to Monday 23rd by the exchange);
     # SENSEX: weekly Thursday; overrides win.
@@ -176,7 +176,8 @@ def test_bull_put_spread_reaches_its_target_in_a_rally():
     legs_pnl = sum((l["entry_price"] - l["exit_price"]) * l["quantity"] * (1 if l["role"] == "SHORT" else -1) for l in st["legs"])
     assert trade.pnl == round(legs_pnl - st["charges"], 2)
     assert result.options["lot_size"] == 65 and result.options["strike_step"] == 50.0 and result.options["pricing_model"] == "synthetic"
-    assert result.options["expiry_calendar"] == "weekly, Tue" and result.analytics is not None
+    assert result.options["expiry_calendar"].startswith("NSE listed expiries (all listed; data through ")
+    assert result.options["expiry_calendar"].endswith(", Tue") and result.analytics is not None
     assert result.equity_curve[-1] == RISK.capital + trade.pnl
 
 
@@ -299,7 +300,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "5-options"
+    assert run["engine_version"] == ENGINE_VERSION == "6-options"
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}

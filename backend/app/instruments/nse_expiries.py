@@ -9,14 +9,15 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
    seen;
 2. confirms each expiry with the bhavcopy OF that day: an expiry counts only if contracts expiring that day are in
    that day's file. A date that fails (a late holiday or a change of weekday moved the contract) is dropped and
-   reported, and the files of the six days either side (nearest first, earlier on a tie) are read for the date it
-   actually expired on - so a contract moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is
+   reported, and the files of the six days either side are read for the date it actually expired on (the day a future
+   of the underlying expired when there is one - NIFTY Thu 25 -> Tue 30 Sep 2025, not the weekly of the 23rd; else
+   the nearest day, earlier on a tie) - so a contract moved too late to show in a weekly sample (BANKNIFTY 29 -> 28 Jun 2023) is
    still found, and a re-dated contract (BANKNIFTY Jan 2025: Wed 29 -> Thu 30) keeps its first listing date;
 3. an expiry with a futures contract is "monthly", the rest "weekly" - read from the data, not inferred. A contract
    listed too far ahead to have a future yet is "monthly" when it is the last listed expiry of its month.
 
 Guards (the build fails, nothing is written): a calendar week with no file at all (NSE never closes a whole week -
-the archive refused or was cut), an expiry of a STRICT underlying (BANKNIFTY) with no file on its day that no move
+the archive refused or was cut), an expiry of a STRICT underlying (NIFTY, BANKNIFTY) with no file on its day that no move
 explains, and - against the files already in `--out` - an earlier coverage end or fewer expired rows for any
 underlying. A 403 is retried, then counted as "no file" (the guards catch a block).
 
@@ -46,7 +47,8 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 INDEX_SYMBOLS = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50")
-STRICT = ("BANKNIFTY",)          # underlyings whose backtests read this file: every expiry must be explained
+STRICT = ("NIFTY", "BANKNIFTY")  # underlyings whose backtests read this file (expiry_data.DATA_DRIVEN): every
+                                 # expiry must be explained
 UDIFF_FROM = dt.date(2024, 7, 8)
 ARCHIVE = "https://nsearchives.nseindia.com"
 HEADERS = {
@@ -187,6 +189,7 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
 
     seen: Dict[Tuple[str, dt.date], Dict] = {}
     sampled: List[dt.date] = []
+    latest: Tuple[Optional[dt.date], Set[Tuple[str, dt.date]]] = (None, set())   # the newest file read and its contracts
     holes: List[str] = []
     with ThreadPoolExecutor(workers) as pool:
         results = list(pool.map(first_day_of_week, weeks))
@@ -198,6 +201,8 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
                 holes.append(monday.isoformat())
             continue
         sampled.append(d)
+        if latest[0] is None or d > latest[0]:
+            latest = (d, {(sym, exp) for sym, exp, _ in contracts})
         for sym, exp, fut in contracts:
             s = seen.setdefault((sym, exp), {"first_seen": d, "future": False})
             s["first_seen"] = min(s["first_seen"], d)
@@ -233,7 +238,10 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         if exp > last or (sym, exp) in kept:
             continue
-        # where did it go? the nearest trading day (either side, earlier first) on which this underlying had an expiry
+        # where did it go? To the day a future of this underlying expired when there is one within six days (a
+        # re-dated monthly or long-dated contract is that month's monthly - merging its early first_seen into a weekly
+        # would list the weekly years early); else to the nearest day (earlier first) with an expiry of the underlying.
+        candidates = []
         for off in (o for k in range(1, 7) for o in (-k, k)):
             d = exp + dt.timedelta(days=off)
             text = fetch(d) if start <= d <= end else None
@@ -241,17 +249,28 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
                 continue
             here = {(x, f) for x, e, f in parse_bhavcopy(text) if e == d and x == sym}
             if here:
-                moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})
-                # the same contract under its new date: it was listed since the old one was first seen
-                t = seen.setdefault((sym, d), {"first_seen": s["first_seen"], "future": False})
-                t["first_seen"] = min(t["first_seen"], s["first_seen"])
-                t["future"] = t["future"] or s["future"]
-                if (sym, d) not in kept:
-                    kept.add((sym, d))
-                    confirmed[d] = (confirmed.get(d) or set()) | here
-                break
+                candidates.append((d, here))
+        # A future's day wins only for a contract that was a monthly (it had a future) or was listed far ahead (the
+        # quarterly / half-yearly listings); a re-dated weekly goes to the nearest day, never into a nearby monthly.
+        if s["future"] or (exp - s["first_seen"]).days > 92:
+            candidates = [c for c in candidates if (sym, True) in c[1]] or candidates
+        if candidates:
+            d, here = candidates[0]
+            moved.append({"symbol": sym, "from": exp.isoformat(), "to": d.isoformat()})
+            # the same contract under its new date: listed since the old one was first seen; its kind comes from the
+            # new day's own file (a future expiring that day), never carried over
+            t = seen.setdefault((sym, d), {"first_seen": s["first_seen"], "future": False})
+            t["first_seen"] = min(t["first_seen"], s["first_seen"])
+            if (sym, d) not in kept:
+                kept.add((sym, d))
+                confirmed[d] = (confirmed.get(d) or set()) | here
+    delisted: List[Dict[str, str]] = []
     for (sym, exp), s in sorted(seen.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         future = s["future"]
+        if exp > last and (sym, exp) not in latest[1]:
+            # listed once, gone from the newest file (re-dated to another day): not a contract any more
+            delisted.append({"symbol": sym, "expiry": exp.isoformat(), "first_seen": s["first_seen"].isoformat()})
+            continue
         if exp <= last:
             got = confirmed.get(exp)
             on_day = got is not None and any(x == sym for x, _ in got)
@@ -283,6 +302,7 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
         "coverage_start": min(sampled).isoformat(), "coverage_end": last.isoformat(),
         "weeks_sampled": len(sampled), "expiry_days_checked": len(days),
         "symbols": list(INDEX_SYMBOLS), "rows": len(rows), "dropped": dropped, "moved": moved,
+        "delisted": delisted,
     }
     return rows, meta
 

@@ -11,7 +11,7 @@
   "MIDCPNIFTY",
   "NIFTYNXT50"
  ],
- "rows": 1371,
+ "rows": 1364,
  "dropped": [
   {
    "symbol": "BANKNIFTY",
@@ -513,7 +513,7 @@
   {
    "symbol": "MIDCPNIFTY",
    "from": "2023-10-25",
-   "to": "2023-10-23"
+   "to": "2023-10-30"
   },
   {
    "symbol": "MIDCPNIFTY",
@@ -543,17 +543,17 @@
   {
    "symbol": "NIFTY",
    "from": "2025-09-25",
-   "to": "2025-09-23"
+   "to": "2025-09-30"
   },
   {
    "symbol": "NIFTY",
    "from": "2025-12-24",
-   "to": "2025-12-23"
+   "to": "2025-12-30"
   },
   {
    "symbol": "NIFTY",
    "from": "2026-03-26",
-   "to": "2026-03-24"
+   "to": "2026-03-30"
   },
   {
    "symbol": "NIFTY",
@@ -563,7 +563,7 @@
   {
    "symbol": "NIFTY",
    "from": "2026-06-25",
-   "to": "2026-06-23"
+   "to": "2026-06-30"
   },
   {
    "symbol": "NIFTYNXT50",
@@ -581,6 +581,43 @@
    "to": "2025-03-27"
   }
  ],
- "files_read": 1378,
+ "delisted": [
+  {
+   "symbol": "NIFTY",
+   "expiry": "2026-12-31",
+   "first_seen": "2022-01-03"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2027-06-24",
+   "first_seen": "2022-07-04"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2027-12-30",
+   "first_seen": "2023-01-02"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2028-06-29",
+   "first_seen": "2023-07-03"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2028-12-28",
+   "first_seen": "2024-01-01"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2029-06-28",
+   "first_seen": "2024-07-01"
+  },
+  {
+   "symbol": "NIFTY",
+   "expiry": "2029-12-27",
+   "first_seen": "2024-12-30"
+  }
+ ],
+ "files_read": 1434,
  "forbidden": 0
 }

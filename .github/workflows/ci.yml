@@ -5,6 +5,7 @@ on:
     branches: ["main", "claude/**"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:   # the 'NSE expiry data' workflow starts CI on its data branch (its own pushes start none)
 
 # One CI run per commit: a push to an in-repo branch already runs every job on that sha, so the
 # pull_request event only has to cover forks (its jobs are skipped otherwise). A newer push to the

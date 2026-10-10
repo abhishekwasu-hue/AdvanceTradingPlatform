@@ -886,3 +886,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - **U1-c (#110)** is pushed after a green suite (1390 passed) and a Postgres migration check.
 - **Ported date-bomb fix:** #104, #107 and #109 now carry the thesis date-bomb test fix (the same change as
   e167b2a). Their red CI came from `main`, not from those PRs.
+
+### 2026-10-11 01:20 IST - OI Banner O3: banner API and frontend
+- `GET /api/option-chain/banners` (the tenant's followed underlyings) for the dashboard.
+- **Components:** `OiBanner`, `OiHistoryTable` (5/10/15), `StrikeOiChart`, `OiSettingsCard` and `OiBannersCard`,
+  placed on the Dashboard and the Option Chain page. The chart options layer is deferred to CH4.
+- **Tests:** `src/oi/format.test.ts` (6 vitest tests) and one backend test for `/banners` (tenant-scoped).

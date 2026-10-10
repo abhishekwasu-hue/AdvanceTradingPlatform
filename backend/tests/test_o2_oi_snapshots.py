@@ -239,3 +239,14 @@ def test_worker_tries_the_next_tenant_when_a_read_fails(monkeypatch):
         async with _session_factory() as session:
             return await worker._oi_banner(session, T0)
     assert _run(cycle()) == 1 and good.calls == [UND]
+
+
+def test_dashboard_banners_list_only_this_tenants_enabled_underlyings():
+    headers, _ = _owner("o3-banners@example.com")
+    other_headers, _ = _owner("o3-banners-other@example.com")
+    assert client.put(f"/api/option-chain/{UND}/settings", json={"enabled": True}, headers=headers).status_code == 200
+    assert client.put("/api/option-chain/OTHERIDX/settings", json={"enabled": True}, headers=other_headers).status_code == 200
+    _run(_collect(_chain(), datetime.now(timezone.utc)))
+    mine = client.get("/api/option-chain/banners", headers=headers).json()["banners"]
+    assert [b["underlying"] for b in mine] == [UND] and mine[0]["banner"]["first_of_day"] is True
+    assert [b["underlying"] for b in client.get("/api/option-chain/banners", headers=other_headers).json()["banners"]] == ["OTHERIDX"]

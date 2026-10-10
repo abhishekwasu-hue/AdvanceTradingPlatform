@@ -962,3 +962,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - One evaluation per bar. Matches are recorded with trigger values; S3 delivers them.
 - Screen rules carry their own symbols (≤ 50). Daily rules build today's bar from 15-minute bars after the close.
 - Migration `a3c5e7b9d1f3`, Postgres OK. Tests: 7, plus 3 mutation checks. Open question SC-10 (weekly/monthly).
+
+### 2026-10-11 03:32 IST - S4b-1: cycle cache; PRs for S3a/S3b/S3b-2/CH1b; S1d closed-bar fix
+- Within a worker cycle, rules on the same symbol, timeframe and bar fetch once, and the same screen over the same
+  symbols and bar is evaluated once. Tests: 2, plus 3 mutation checks.
+- S3b-2 full suite: 1369 passed. S3a #127, S3b-1 #128, S3b-2 #129 and CH1b #130 are pushed as draft PRs; CH1b build
+  and bundle budget OK.
+- S1d (#125) fix: a screener run no longer decides on the broker's forming intraday bar (`closed_only`), with a test
+  and a mutation check. Merged forward through the stack.
+- ROADMAP_STATUS updated (#86).

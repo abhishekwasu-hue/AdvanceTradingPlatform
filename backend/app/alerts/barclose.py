@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
-from app.screener import compile_screen
+from app.screener import compile_screen, nodes
 from app.screener.runtime import SymbolData, run_screen
 
 logger = logging.getLogger(__name__)
@@ -106,12 +106,25 @@ def closed_frame(df: pd.DataFrame, tf: str, expected: datetime) -> Optional[pd.D
 
 
 @dataclass
+class CycleCache:
+    """S4b-1: one worker cycle's shared work. Rules that need the same symbol, timeframe and bar fetch it once (a
+    longer lookback than the cached one fetches again); the same screen over the same current symbols, bar and
+    params is evaluated once. Lives for one cycle only, so nothing stale survives into the next bar."""
+    frames: Dict[Tuple[int, str, str, datetime, str], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
+    results: Dict[Tuple[Any, ...], List[Any]] = field(default_factory=dict)
+    fetched_symbols: int = 0
+    reused_symbols: int = 0
+    reused_results: int = 0
+
+
+@dataclass
 class Outcome:
     rules: int = 0
     evaluated: int = 0
     fired: int = 0
     waiting: int = 0
     deferred: int = 0
+    cache: CycleCache = field(default_factory=CycleCache)
     problems: List[str] = field(default_factory=list)
 
 
@@ -142,8 +155,29 @@ def _values(frame: pd.DataFrame) -> Dict[str, Any]:
     return out
 
 
+async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbols: List[str], bar: datetime, lookback: Dict[str, int],
+                            fetch: Fetch, cache: CycleCache) -> Tuple[List[SymbolData], Dict[str, str]]:
+    """The symbols whose closed bars reach `bar`, fetching only what the cycle cache does not already hold."""
+    exchange, tf = rule.exchange or "NSE", rule.base_tf
+    need = max([*lookback.values(), 1])
+    key = lambda sym: (rule.tenant_id, exchange, tf, bar, sym)  # noqa: E731
+    missing = [s for s in symbols if key(s) not in cache.frames or cache.frames[key(s)][0] < need]
+    problems: Dict[str, str] = {}
+    if missing:
+        universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback)
+        cache.fetched_symbols += len(missing)
+        got = {d.symbol: d for d in universe}
+        for sym in missing:
+            data = got.get(sym)
+            frame = closed_frame(data.frames.get(tf, pd.DataFrame()), tf, bar) if data is not None else None
+            closed = SymbolData(sym, {tf: frame}, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            cache.frames[key(sym)] = (need, closed)
+    cache.reused_symbols += len(symbols) - len(missing)
+    return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
+
+
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
-                        holidays: Iterable[date] = ()) -> Tuple[str, int]:
+                        holidays: Iterable[date] = (), cache: Optional[CycleCache] = None) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
     from app.alerts.engine import record_event
     now = _utc(now)
@@ -156,23 +190,25 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     if rule.last_checked_at is not None and now - _utc(rule.last_checked_at) < timedelta(seconds=RETRY_SECONDS):
         return "waiting", 0
     rule.last_checked_at = now
+    cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        universe, problems, _source = await fetch(session, rule.tenant_id, symbols, rule.exchange or "NSE", rule.base_tf, validated.lookback)
+        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
-    current: List[SymbolData] = []
-    for data in universe:
-        frame = closed_frame(data.frames.get(rule.base_tf, pd.DataFrame()), rule.base_tf, bar)
-        if frame is not None:
-            current.append(SymbolData(data.symbol, {rule.base_tf: frame}, data.sector, data.industry, data.mcap_bucket, data.is_fno))
     if not current:
         rule.last_problem = "waiting for the closed bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
         return "waiting", 0
     fired = 0
     frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    for match in run_screen(ast, validated, current, base_tf=rule.base_tf, params=params):
+    result_key = (rule.tenant_id, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
+                  json.dumps(params, sort_keys=True, default=str))
+    if result_key in cache.results:
+        cache.reused_results += 1
+    else:
+        cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params)
+    for match in cache.results[result_key]:
         if match.matched and await record_event(session, rule, match.symbol, bar, _values(frames[match.symbol]), now=now) is not None:
             fired += 1
     rule.last_bar_at, rule.last_problem = bar, None
@@ -204,7 +240,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         if time_module.monotonic() - started > budget_seconds:
             out.deferred += 1
             continue
-        state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays)
+        state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache)
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired
@@ -249,4 +285,4 @@ def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: dat
     return pd.concat([daily, pd.DataFrame([row], index=pd.DatetimeIndex([label]))])
 
 
-__all__ = ["expected_bar", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]
+__all__ = ["CycleCache", "expected_bar", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]

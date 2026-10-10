@@ -4,7 +4,7 @@ Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Merge on
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-10 23:13 IST.
+Last update: 2026-10-10 23:27 IST.
 
 | Part | What | Status | PR | % |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Last update: 2026-10-10 23:13 IST.
 | C1 | HTF lookahead: closed bars only | done | #83 | 100 |
 | C3 | Speed (indicator prefix cache), benchmark, CI guard | done; portfolio backtest still to come | #83 | 75 |
 | C4 | Reproducibility fingerprint | done | #83 | 100 |
-| C2 | Pluggable fill / slippage / latency / margin / pricing / settlement models | next (design note first) | - | 0 |
+| C2 | Pluggable fill / slippage / latency / margin / pricing / settlement models | design note done; PR 1 next | #100 | 10 |
 | C5 | Trial ledger, deflated Sharpe | after C2 | - | 0 |
 | C6 | Distributed runs | after C5 | - | 0 |
 | D | SEBI retail-algo: design + rule-set as data + COMPLIANCE_IN.md | done (design PR) | #87 | 100 |
@@ -22,11 +22,15 @@ Last update: 2026-10-10 23:13 IST.
 | D3 | Per-broker order-type policy for algo entries | done | #90 | 100 |
 | D4 | Registered static egress IPs (model, weekly-change rule, LIVE gate off, readiness) + Settings card | done | #91, #92 | 100 |
 | D5 | Daily broker login method per adapter + pre-open reminder | done | #93 | 100 |
-| D1 | Per-broker algo tag format, generic vs registered algo id, algo_order audit rows | done, PR next | - | 100 |
-| D6 | Go-live checklist evidence (vendor, strategy class, AI, DPDP) | done, PR next | - | 100 |
-| D7 | FutEq / MWPL limits, expiry-day margin, lot as-of | needs part B data (OI, MWPL) | - | 0 |
+| D1 | Per-broker algo tag format, generic vs registered algo id, algo_order audit rows | done (full suite 1339 passed) | #94 | 100 |
+| D6 | Go-live checklist evidence (vendor, strategy class, AI, DPDP) | done | #95 | 100 |
+| D7 | F&O ban period from lake MWPL/OI (flag off); FutEq client limit, expiry-day margin, lot as-of next | first slice done | #98 | 40 |
 | B0 | ADR-0013 data lake, ADR-0016 provider seams, ADR-0017 global-first (provisional) | done (design PR) | #88 | 100 |
-| B1-B7 | schema, ingest, quality, adjustment, API, retention | next after D | - | 0 |
+| B1 | Lake schema + as-of reads (hypertables only if Timescale is installable) | done; CI guard fix pushed after full suite | #96 | 100 |
+| B2 | Ingest: candle builder (bar END), idempotent writer, broker backfill, vendor seam, tick writer (flag off) | done | #97 | 100 |
+| B3 | Quality detectors (gap, spike, invalid, late, duplicate, mismatch) | done | #99 | 100 |
+| B4 | Corporate-action adjusted view | done, PR next | - | 100 |
+| B5-B7 | history API with as_of/adjusted, backtests read the lake, retention/compression/metrics | next | - | 0 |
 | E | Execution core and scale (ADR-0014) | not started | - | 0 |
 | F | Portfolio risk | not started | - | 0 |
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
@@ -36,5 +40,5 @@ Last update: 2026-10-10 23:13 IST.
 | K | Community / enterprise | not started | - | 0 |
 | v1.3 | Crypto paper: CoinDCX spot -> Binance/Kraken -> IBKR | after the Hostinger PAPER go-live | - | 0 |
 
-Owner decisions pending (provisional decisions taken, work continues): D-1..D-4 (#87, D1, D6), B-1, B-2 (#88). On the owner: R2 bucket +
+Owner decisions pending (provisional decisions taken, work continues): D-1..D-4 (#87, #94, #95), C2-1/C2-2 (#100), B-1, B-2 (#88). On the owner: R2 bucket +
 token in the server .env; the server IP for the Hostinger blocks.

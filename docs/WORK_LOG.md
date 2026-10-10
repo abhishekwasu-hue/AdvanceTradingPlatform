@@ -977,3 +977,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The backtest returns statistics only, with an "insufficient" flag below 30 trades.
 - Tests: `tests/test_hc2b3_market_tools.py` (6). The agent suites pass together (28).
 - Next: H-C10 evals (ADR-0020) - golden sets with fake providers in CI, including the injection set.
+
+### 2026-10-11 02:25 IST - H-C10a: agent golden sets + CI gate
+- `backend/evals`: qa (16), tool_args (18) and injection (11: 7 attacks expect 0 proposals, 4 controls expect 1).
+  All are deterministic with scripted models, so there is no spend.
+- `evals/baselines.json` holds the prompt version plus the score per set. The gate fails on an unbaselined prompt
+  change or a regression.
+- Mutation check: removing the guard's untrusted check drops injection to 0.9091 and CI fails.
+- CI's ruff step now covers `evals/` too.
+- Tests: `tests/test_hc10_evals.py` (3).

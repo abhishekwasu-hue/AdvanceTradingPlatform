@@ -589,7 +589,37 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - the next bar's level (look-ahead);
     - direction ignored;
     - no price check.
-- **Next (S5-A3).** Real break versus false break of a level (`breaks`), and zone strength (`level_strength`).
+- **Next (S5-A3).** Real break versus false break of a level (`breaks`).
+
+## S5-A3 (built): `RealBreak(level, side, n=20)`
+- **What it is.** The trade-port break rule (`app/price_action/breaks.py`, `first_real_break`, default settings), on
+  every bar: was a **real** break of this bar's `level` confirmed within the last `n` bars?
+  - A real break is a close beyond the level by the buffer, then displacement, acceptance (no reclaim within the
+    acceptance bars), or a failed retest from the broken side. A wick through, or a close that is reclaimed, is a
+    false break and is not counted.
+  - `above` breaks resistance upwards; `below` breaks support downwards. The level is any price expression.
+- **Crossing required.** The scan starts on the bar after the last close on the near side of the level inside the
+  window (`break_scan_start`). Price that sat beyond the level for the whole window is not a break of it: nothing
+  crossed. With no near-side close in the window the bar is false.
+- **Causal.** The scan ends on the bar (`end=j`) and a break whose confirmation bar is after the bar is not counted.
+  The level is the level known at the bar. The series is checked against `first_real_break` on the candles up to each
+  bar, and truncation invariance is tested.
+- **Cost.** A vector prefilter (the rolling min / max of close beyond the level by the buffer, over the window)
+  skips bars where no close in the window got beyond the level. Cost weight 4; `min_bars` 25 (median-range warm-up).
+- **Validation.** The level must be a price (`Spec.price_args`); the side is `above` or `below`.
+- **Tests.**
+  - `tests/test_s5a3_breaks.py` (7):
+    - a wick is not a break and a strong close is;
+    - acceptance versus a reclaim;
+    - the window forgets an old break;
+    - parity with the rule and truncation invariance;
+    - validation;
+    - price already beyond the level is not a break (the crossing);
+    - the failed-retest confirmation (a session-shaped sample found by search, where turning it off changes a bar).
+  - Mutation checks: 4 killed (no crossing; the `above` prefilter; the near side flipped; no failed-retest
+    confirmation). One survivor is equivalent and is documented: `end=None` instead of `end=j`, because the
+    `confirmation <= j` guard drops any break confirmed after the bar.
+- **Next (S5-A4).** Zone strength (`level_strength`).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no

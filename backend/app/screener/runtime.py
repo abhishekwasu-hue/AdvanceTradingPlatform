@@ -211,6 +211,7 @@ class _Eval:
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
@@ -320,6 +321,50 @@ def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Se
     for j in np.flatnonzero(reached & np.isfinite(lv)):
         out[j] = bool(rv.evaluate(bars, int(j), dirn, [float(lv[j])], float(tol[j]), s)["ok"])
     return pd.Series(out, index=f.index)
+
+
+def _real_break_series(f: pd.DataFrame, level: pd.Series, side: str, n_: int) -> pd.Series:
+    """S5-A3: on each bar j, was a REAL break of the level (its value at j) confirmed within bars j-n+1..j
+    (app/price_action/breaks.first_real_break, default settings, with the failed-retest confirmation)? It reads only bars
+    up to j (`end=j`): a break still waiting for its acceptance bars is not counted yet."""
+    from app.price_action import pa_settings
+    from app.price_action.breaks import first_real_break, median_range
+    from app.price_action.reversal import retest_fn
+    if side not in ("above", "below"):
+        raise ScreenRuntimeError(f"unknown break side {side!r}")
+    s = pa_settings.settings()
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    mr = median_range(frame, s["median_range_n"])
+    retest = retest_fn(frame, s, mr) if s.get("break_retest_confirm") else None
+    lv = level.to_numpy(float) if isinstance(level, pd.Series) else np.full(len(f), float(level))
+    close = frame["close"]
+    buffer = s["break_buffer_mr"] * pd.Series(mr)
+    n_ = max(1, n_)
+    out = np.zeros(len(f), dtype=bool)
+    # A real break starts with a close beyond THIS bar's level by the buffer somewhere in the window, so a window whose
+    # most extreme (close -/+ buffer) never got there cannot hold one; only the others are scanned (same result).
+    if side == "below":
+        reach = (close + buffer).rolling(n_, min_periods=1).min().to_numpy() < lv
+    else:
+        reach = (close - buffer).rolling(n_, min_periods=1).max().to_numpy() > lv
+    closes = close.to_numpy(float)
+    for j in np.flatnonzero(reach & np.isfinite(lv)):
+        start = break_scan_start(closes, int(j), float(lv[j]), side, n_)
+        if start is None:
+            continue
+        c = first_real_break(frame, start, float(lv[j]), side, s, mr=mr, end=int(j), retest_fn=retest)
+        out[j] = c is not None and c <= j
+    return pd.Series(out, index=f.index)
+
+
+def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: int) -> Optional[int]:
+    """A break is a CROSSING: price comes from the near side of the level. The scan starts after the first bar of
+    j-n..j that closed on the near side (so the candidate break is inside the window); None when price stayed beyond
+    the level all window (an older break, still held, is not a new one)."""
+    lo = max(0, j - n_)
+    near = closes[lo:j + 1] >= level if side == "below" else closes[lo:j + 1] <= level
+    hit = np.flatnonzero(near)
+    return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

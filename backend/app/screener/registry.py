@@ -128,6 +128,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          min_bars=REVERSAL_MIN_BARS, price_args=(0,),
          doc="price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close"
              " location; hammer / engulfing / star are one rule) - bullish at support, bearish at resistance"),
+    Spec("RealBreak", "filter", BOOL, None, (Arg("level", NUM), Arg("side", STR, choices=("above", "below")),
+                                             Arg("n", "window", 20, False)), cost=4.0, min_bars=REVERSAL_MIN_BARS, price_args=(0,),
+         doc="a REAL break of `level` (this bar's value) was confirmed within the last n bars: a close beyond it by a buffer,"
+             " then displacement, acceptance (no reclaim) or a failed retest - a wick or a reclaimed close is a false break"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),

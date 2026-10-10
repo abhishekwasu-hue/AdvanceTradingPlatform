@@ -957,3 +957,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   by ratio_old/ratio_new and divide volume by it (factors compound); dividends only with LAKE_ADJUST_DIVIDENDS, from
   the cum-dividend close, volume untouched; only actions known at as_of apply; derivatives never adjusted; incomplete
   ratios ignored. Stored data never changes. Tests: 5. Next: B5 history API + backtests reading the lake.
+
+### 2026-10-10 23:33 IST - part B5 (API): GET /api/market-data/history
+- app/market_lake/routes.py: authenticated point-in-time history (as_of hides later rows and corrections), adjusted
+  for splits/bonuses known at as_of (equity only), bar_label "end", count of data-quality events in the window,
+  LAKE_HISTORY_MAX_BARS cap (422 beyond). Test: 1 end-to-end (401, as_of, adjusted/raw, FUT, bad window, cap).
+  Next: backtests read the lake (data_source=lake), B6 retention/compression/metrics.

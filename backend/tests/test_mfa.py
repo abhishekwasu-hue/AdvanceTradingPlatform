@@ -51,7 +51,8 @@ def test_enrol_confirm_and_two_step_login():
     assert enrolled["otpauth_uri"].startswith("otpauth://totp/Advance%20Trading%20Platform:mfa-basic%40example.com")
     assert client.get("/api/auth/mfa/status", headers=headers).json()["pending_enrolment"] is True
     assert client.post("/api/auth/mfa/confirm", headers=headers, json={"code": "000000"}).status_code == 400
-    confirmed = client.post("/api/auth/mfa/confirm", headers=headers, json={"code": _code(enrolled["secret"])})
+    enrol_code = _code(enrolled["secret"])
+    confirmed = client.post("/api/auth/mfa/confirm", headers=headers, json={"code": enrol_code})
     assert confirmed.status_code == 200
     codes = confirmed.json()["backup_codes"]
     assert len(codes) == 8 and all(len(c) == 11 and c[5] == "-" for c in codes)
@@ -65,7 +66,8 @@ def test_enrol_confirm_and_two_step_login():
     assert challenge["mfa_required"] and challenge["mfa_token"] and not challenge["access_token"]
     bad = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": "123456"})
     assert bad.status_code == 401
-    replay = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": _code(enrolled["secret"])})
+    # The very code that confirmed enrolment (not a fresh one: across a 30 s boundary a fresh code is a new, valid code).
+    replay = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": enrol_code})
     assert replay.status_code == 401                               # the code that confirmed enrolment is spent (P0.2 / S8)
     good = client.post("/api/auth/mfa/verify", json={"mfa_token": challenge["mfa_token"], "code": _code(enrolled["secret"], step=1)})
     assert good.status_code == 200 and good.json()["refresh_token"]

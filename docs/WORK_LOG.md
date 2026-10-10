@@ -895,3 +895,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - StaticIpCard on Settings (after broker accounts): this server's egress IP, a table per broker (primary / backup /
   server IP registered), warnings from the API, a form to register an IP (owner; server enforces). Helper staticIpRows
   with vitest (2). tsc, vitest 54, build, devanagari and bundle checks green.
+
+### 2026-10-10 23:02 IST - part D5: daily broker login + pre-open reminder
+- app/brokers/login_reminder.py: login method per broker (oauth / login_code / api_key / manual) from token_lifecycle's
+  sets; on NSE trading days from `reminder_minutes_before_open` (rule-set data) before the open until the close, one
+  WARNING per organisation whose ACTIVE deployment's broker session will not last to the close (once per IST day, also
+  across restarts). Worker housekeeping hook + CycleReport.login_reminders. Rule IN-SEBI.login.daily -> enforced;
+  COMPLIANCE_IN.md regenerated; OPERATIONS step 1 updated. Tests: 7 (crafted past-weekday clock). Next: D1 format/threshold.

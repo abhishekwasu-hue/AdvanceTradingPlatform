@@ -80,7 +80,7 @@ with any MASTER part.
 |---|---|---|---|
 | S0 | This note, ADR-0021, ADR-0022, spec stored, OPEN_QUESTIONS | - | 1 PR |
 | S1 | ScreenQL parser/AST/validator; Factor/Filter/Classifier runtime; field registry; scanner filters migrated; `/api/scanner/run` on the new executor (parity) | - | S1a grammar+AST+validator, S1b runtime+registry, S1c scanner migration+API, S1d builder <-> text parity (frontend) |
-| S2 | Instrument-master history, NSE EOD ingest jobs, quality gates, freshness, DuckDB/Parquet columnar store | B1-B5 (#96-#102) | one PR per source family |
+| S2 | Instrument-master history (addendum U1, below), NSE EOD ingest jobs, quality gates, freshness, DuckDB/Parquet columnar store | B1-B5 (#96-#102) | U1-a..U1-e, then one PR per source family |
 | S3 | Notification Service on the existing outbox; management UI; delivery log | - | S3a model+rules+dedupe, S3b channels, S3c UI |
 | S4 | Screen and instrument alerts, bar-close engine, live stream, result cache | S1, S3, B2 | 2 PRs |
 | S5 | Categories A, C, F, G; F&O dashboard, RRG, breadth, heatmap | S1, S2 | A first (price action), then C, F, G |
@@ -96,6 +96,84 @@ with any MASTER part.
   extends existing tables.
 - S2 and later follow part B's merge, because they build on the lake.
 - The Copilot order (H-C2 ...) continues in parallel. Only one heavy job (a full suite) runs at a time.
+
+## Addendum U1 - full NSE universe, sectors and indices (the concrete version of spec §1.2, inside S2)
+Source: `docs/specs/ATP_NSE_UNIVERSE_ADDENDUM.md`.
+
+**Today.** `app/instruments/master.py` stores only the broker's tradable-instrument dump (`instruments`, replaced
+wholesale each day). Part B1 (#96) adds `instrument_master_versions`: contract terms such as lot and tick per contract
+over time.
+
+**What U1 adds.** As-of reference data. The broker master stays the "tradability" layer, joined by ISIN or symbol.
+
+| Table | Key | Notes |
+|---|---|---|
+| `securities` | isin | current symbol, name, series, listing/delisting date, face value, exchange, status, SME / ETF flags |
+| `symbol_history` | isin, valid_from | renames and symbol changes; continuity by ISIN |
+| `classifications` | isin, scheme, valid_from | NSE 4 levels (macro sector -> sector -> industry -> basic industry); a GICS-style mapping seam |
+| `indices` | index_code | name, family, base date, method, broker symbol mapping, derivatives flag |
+| `index_membership` | index_code, isin, valid_from | weight where published; rebalances close the old range and open a new one, never overwrite |
+| `mcap_buckets` | isin, valid_from | AMFI large / mid / small, half-yearly |
+| `fo_membership` | isin, valid_from | underlying-level market lot (`fo_mktlots.csv`). Contract-level terms stay in `instrument_master_versions`; a reconciliation test checks the two agree |
+| `fo_ban_history`, `surveillance_flags` (ASM/GSM), `price_band_history` | isin/underlying, date or range | the official lists; D7's computed ban status stays and is checked against `fo_secban.csv` |
+| `index_eod` | index_code, date | OHLC plus PE/PB/dividend yield where published |
+
+Every row carries `source`, `fetched_at` and `checksum`. Ranges are half-open `[valid_from, valid_to)`; an open range
+has `valid_to = NULL`.
+
+**Sources.** Published NSE / NSE Indices / AMFI download files, behind a `ReferenceSource` seam:
+- fetching is polite (headers, caching, retry, checksum);
+- a manual upload in the admin UI is the fallback when a site blocks;
+- each file is listed in `docs/DATA_SOURCES.md` before its job is switched on;
+- BSE's scrip master is a later adapter on the same tables.
+
+**Jobs.**
+- They run after the close, from the worker. They are idempotent: a re-run adds no duplicate ranges. They are
+  schema-versioned and pass the quality gates.
+- Cadence:
+  - daily: equity list, symbol changes, constituents (the diff appends ranges and raises a rebalance alert), index
+    bhavcopy, lots and ban list;
+  - when AMFI publishes: the market-cap buckets;
+  - nightly: reconciliation against the broker master, with a mismatch report.
+- Backfill uses only the historical files that exist. Gaps are documented and history is never fabricated.
+
+**Universe picker and classifiers.**
+- The picker selects by index, sector, industry, market-cap bucket, F&O membership, series and the SME/ETF toggles.
+  It supports custom lists, set algebra (NIFTY 500 ∩ F&O − banks), saved universes, and an as-of universe for
+  historical runs.
+- ScreenQL classifiers: `Sector()`, `Industry()`, `IndexMember("NIFTY 200")`, `McapBucket()`, `IsFnO()`.
+
+**UI.**
+- Markets -> "NSE Universe" page: counts, freshness, the last rebalance diff, the reconciliation report and manual
+  upload.
+- The symbol page shows memberships and classification history.
+- The index page shows constituents with weights and a sector heatmap.
+
+**Tests** (fixture CSVs for every source; no network):
+- As-of membership: a stock that left an index is out after its exit date and in before it.
+- Rename continuity by ISIN.
+- A delisted stock is kept in historical universes.
+- The reconciliation report.
+- Job idempotency.
+
+**Order.**
+
+| Step | Content |
+|---|---|
+| U1-a | tables + migrations + equity list + symbol history |
+| U1-b | index master + constituents + classification + as-of membership |
+| U1-c | index bhavcopy + `index_eod` + lots / ban / AMFI |
+| U1-d | universe picker + ScreenQL classifiers + UI page |
+| U1-e | backfill + reconciliation report |
+
+U1-a to U1-c need no ScreenQL, so they start now. They are stacked on the part B chain (#102), so the Alembic history
+stays linear. U1-d waits for S1.
+
+**Open questions (provisional).**
+- **U1-Q1. ISIN as the identity.** Instruments without an ISIN (indices) use `index_code`. A security whose ISIN
+  changes (a rare corporate event) is linked through `symbol_history` plus a manual mapping, never guessed.
+- **U1-Q2. Industry levels the constituent files lack.** Use the NSE quote API `industryInfo` seam only if its terms
+  allow; otherwise a manual CSV. Until then the level stays empty, never inferred.
 
 ## Performance targets (CI perf job, synthetic universe, no hardcoded prices)
 - EOD screen, 50 factors over 2,500 symbols: under 3 s; under 200 ms when cached.

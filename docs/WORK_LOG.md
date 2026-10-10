@@ -869,3 +869,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - ADR-0021 (ScreenQL typed AST, hand-written parser, validator owns look-ahead and cost) and ADR-0022 (grow the existing
   outbox) are provisional. Open questions SC-1..SC-6 with provisional answers (S1 and S3 after H-C1; S2 after part B).
 - Test: tests/test_s0_screener_docs.py (spec, note, ADRs present and indexed; every ADR file indexed).
+
+### 2026-10-11 00:17 IST - Screener addendum U1 (NSE universe): stored, planned inside S2
+- docs/specs/ATP_NSE_UNIVERSE_ADDENDUM.md stored; SCREENER.md section U1: as-of reference tables (securities, symbol
+  history, classifications, indices, membership ranges, AMFI buckets, F&O membership, ban/ASM/band history, index EOD),
+  joined to the broker master by ISIN; contract terms stay in part B's instrument_master_versions (reconciled by test).
+- Order U1-a..U1-e; U1-a..c start now, stacked on the part B chain so Alembic stays linear. U1-Q1 (ISIN identity),
+  U1-Q2 (missing industry levels stay empty, never inferred).

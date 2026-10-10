@@ -38,6 +38,7 @@ from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPositio
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
 from app.backtest.windows import WindowCursor, decision_time
+from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.contract_execution import DEFAULT_WRITE_MAX_LOTS
 from app.execution.paper_broker import PaperBroker
 from app.instruments.contracts import (
@@ -178,6 +179,7 @@ def _resolved_structure(strategy: OptionStrategy, planned: Sequence[PlannedLeg],
                              width_points=round(width, 2), notes=[])
 
 
+@with_prefix_cache
 def run_option_backtest(
     strategy: BaseStrategy,
     base_df: pd.DataFrame,
@@ -194,6 +196,7 @@ def run_option_backtest(
     primary_tf = strategy.timeframes[0]
     primary_df = frames[primary_tf]
     cursor = WindowCursor(frames, strategy.timeframes)
+    register_frames(frames.values())   # causal indicators on the windows: computed once per run (realism 3)
     min_hist = strategy.min_history()[primary_tf]
     closes = primary_df["close"].astype(float).tolist()
     is_daily = bars_per_year(primary_tf) == 250.0

@@ -6,6 +6,7 @@ from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
 from app.backtest.windows import WindowCursor, decision_time
+from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
@@ -21,6 +22,7 @@ __all__ = ["resample_ohlc", "run_backtest"]
 ENGINE_VERSION = "4"   # realism 1: a higher-timeframe bar is seen only once it has closed (3: P0.6 daily counters, gap fills)
 
 
+@with_prefix_cache
 def run_backtest(
     strategy: BaseStrategy,
     base_df: pd.DataFrame,
@@ -42,6 +44,7 @@ def run_backtest(
     primary_tf = strategy.timeframes[0]
     primary_df = frames[primary_tf]
     cursor = WindowCursor(frames, strategy.timeframes)
+    register_frames(frames.values())   # causal indicators on the windows: computed once per run (realism 3)
     min_hist = strategy.min_history()[primary_tf]
 
     broker = PaperBroker()

@@ -149,23 +149,29 @@ async def apply_constituents(session: AsyncSession, index_code: str, members: Li
 
 async def _classify(session: AsyncSession, members: List[Constituent], today: date, source: str, checksum: str, now) -> int:
     changed = 0
+    isins = [m.isin for m in members if m.industry]
+    # One query for the open ranges and one for "seen before", not one per member (an index can have 750 names).
+    open_rows = {r.isin: r for r in await session.scalars(select(ClassificationRecord).where(
+        ClassificationRecord.isin.in_(isins), ClassificationRecord.scheme == "NSE", ClassificationRecord.valid_to.is_(None)))}
+    seen = set(await session.scalars(select(ClassificationRecord.isin).where(ClassificationRecord.isin.in_(isins)).distinct()))
     for m in members:
         if not m.industry:
             continue
-        current = await session.scalar(select(ClassificationRecord).where(ClassificationRecord.isin == m.isin, ClassificationRecord.scheme == "NSE",
-                                                                         ClassificationRecord.valid_to.is_(None)))
+        current = open_rows.get(m.isin)
         if current is not None and current.sector == m.industry:
             continue
-        first = current is None and not await session.scalar(select(ClassificationRecord.id).where(ClassificationRecord.isin == m.isin).limit(1))
+        first = current is None and m.isin not in seen
         if current is not None:
             if current.valid_from == today:                     # two files the same day disagree: the later one wins
                 current.sector, current.checksum, current.fetched_at = m.industry, checksum, now
                 changed += 1
                 continue
             current.valid_to = today
-        session.add(ClassificationRecord(isin=m.isin, scheme="NSE", sector=m.industry, valid_from=today, valid_to=None,
-                                         start_observed=first, source=source, fetched_at=now, checksum=checksum))
-        changed += 1
+        row = ClassificationRecord(isin=m.isin, scheme="NSE", sector=m.industry, valid_from=today, valid_to=None,
+                                   start_observed=first, source=source, fetched_at=now, checksum=checksum)
+        session.add(row)
+        open_rows[m.isin], changed = row, changed + 1          # the same ISIN later in this file sees the new range
+        seen.add(m.isin)
     return changed
 
 

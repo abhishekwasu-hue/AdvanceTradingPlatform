@@ -37,7 +37,7 @@ Last update: 2026-10-11 00:31 IST.
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
 | H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a-c done (#103); d-f done (full suite 1364 passed) | #103, #108 | 100 |
-| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019 / ADR-0020 design PR done (provisional); H-C2 build next | #115 | 10 |
+| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 done (provisional); H-C2a agent core done (read tools, bounded loop, audit; flag off; suite 1375 passed); H-C2b-1 proposal tools + injection guard in progress | #115, #117 | 25 |
 | S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
 | U1-a/b/c | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification; index EOD, F&O lots, ban list | a-c done (suite 1390 passed, Postgres migration checked); d/e after S1 | #105, #106, #110 | 75 |
 | S1, S3 | ScreenQL engine + scanner migration; Notification Service on the existing outbox | after H-C1 | - | 0 |

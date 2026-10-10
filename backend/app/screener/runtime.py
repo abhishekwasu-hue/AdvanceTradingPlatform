@@ -13,7 +13,7 @@ registry entry.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -59,6 +59,14 @@ class Match:
 
 def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
     return index + _DURATION[tf]
+
+
+def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
+    """Bars whose close time is not after `now` - a broker's intraday feed ends with the bar still forming, and a
+    screen decides on closed bars only."""
+    if df.empty:
+        return df
+    return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
 
 
 def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
@@ -378,4 +386,4 @@ def evaluate(ast: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[
     return _Eval(data, base_tf, dict(params or {}), {}).ev(ast, base_tf)
 
 
-__all__ = ["SymbolData", "Match", "run_screen", "evaluate", "resample", "ScreenRuntimeError"]
+__all__ = ["SymbolData", "Match", "run_screen", "evaluate", "resample", "closed_only", "ScreenRuntimeError"]

@@ -33,7 +33,15 @@ Listed = Tuple[dt.date, str, dt.date]
 
 
 # Days after `coverage_end` the file is still trusted (it is rebuilt weekly; a refresh pull request waits for review).
-STALE_GRACE_DAYS = int(os.environ.get("EXPIRY_DATA_STALE_GRACE_DAYS", "10") or 10)
+def _grace_days(raw: str, default: int = 10) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return default             # an unreadable value never stops the options engine from importing
+    return value if value >= 0 else default
+
+
+STALE_GRACE_DAYS = _grace_days(os.environ.get("EXPIRY_DATA_STALE_GRACE_DAYS", "10"))
 
 
 class ExpiryDataMissing(ValueError):

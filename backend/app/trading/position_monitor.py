@@ -202,7 +202,10 @@ async def _square_off_live(
         # fail and block the exit (ADR-0004: exits are never blocked). Default off = today's cancel attempt. A caller's
         # `stop_dead` is trusted only when this fresh read agrees (missing or dead): a stop the book still shows
         # working is cancelled first, whatever its status string.
-        if (stop_dead and (sl_order is None or dead)) or (dead and config.LIVE_EXIT_IF_NO_STOP):
+        # A REJECTED stop never worked, whatever the switches: a broker refuses to cancel it, and asking blocked the exit
+        # on every cycle (with the stop guard no longer re-arming it, for good) - ADR-0004, exits are never blocked.
+        rejected = sl_order is not None and (sl_order.status or "").upper() == "REJECTED"
+        if (stop_dead and (sl_order is None or dead)) or (dead and (config.LIVE_EXIT_IF_NO_STOP or rejected)):
             stop_after = sl_order
         else:
             try:
@@ -215,10 +218,14 @@ async def _square_off_live(
                 outcome.warnings.append(f"Could not cancel protective stop {trade.sl_order_id}: {exc}")
                 logger.error("Cancel of SL %s failed for trade %s: %s", trade.sl_order_id, trade.id, exc)
                 return None
-            # The exit goes out at once (ADR-0004: no waiting on the cancel to settle); it nets what the stop had
-            # filled when it was last read, and anything the stop filled after that read is netted in the booking
-            # below - and handed to reconciliation, since the exit then sent more than was left.
+            # The exit goes out at once (ADR-0004: no polling for the cancel to settle). One immediate read of the
+            # stop (no wait) sizes it from what the stop had filled by then; anything filled after that read is
+            # netted in the booking below and handed to reconciliation, since the exit then sent more than was left.
             stop_after = sl_order
+            if _partial_aware():
+                fresh = await _find_order(broker, trade.sl_order_id)
+                if fresh is not None and float(fresh.filled_quantity or 0) >= float((sl_order.filled_quantity if sl_order else 0) or 0):
+                    stop_after = fresh
             cancelled_stop = True
 
     # G-LIVE: a stop-limit can fill in part before it is cancelled (or before it lapsed); exiting the full quantity
@@ -264,7 +271,12 @@ async def _square_off_live(
                 outcome.warnings.append(outcome.broker_uncertain)
                 stop_filled, stop_after = settled_filled, settled
                 if stop_filled >= float(trade.quantity):
+                    # The stop closed all of it; the market exit sent after the read is the excess. Its id stays on
+                    # the outcome (and the trade) so reconciliation can find the order that opened it.
                     _stop_already_filled(trade, settled, reason, outcome)
+                    outcome.broker_exit_order_id = response.order_id
+                    outcome.warnings.append(f"Exit order {response.order_id} went out after stop {trade.sl_order_id} had "
+                                            f"filled in full - its {float(exit_quantity):g} are an opposite position")
                     return float(settled.average_price) if settled.average_price else float(trade.stop_loss)
     if stop_filled > 0 and stop_after is not None:
         stop_price = float(stop_after.average_price) if stop_after.average_price else float(trade.stop_loss)
@@ -443,6 +455,10 @@ async def close_group(
     return outcomes
 
 
+class _SameTrigger(Exception):
+    """The trailed stop rounds to the trigger already standing - nothing to send."""
+
+
 async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, price: float, *, broker: Optional[BrokerInterface]) -> Optional[str]:
     """Run the trade's ExitRules against the current price. Persists a tightened stop and the
     best price; LIVE, moves the broker-side SL-M trigger too (a failed modify keeps the software
@@ -470,7 +486,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 # P0.5 / T2: a stop placed as SL (limit) moves its limit with the trigger; SL-M has no limit. The exchange
                 # takes only whole ticks: the trigger moves to the tick farther from the market.
                 stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
-                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol)
+                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade))
+                if trigger == round_stop_trigger(old_stop, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade)):
+                    raise _SameTrigger()           # on the tick it has not moved: a no-op modify some brokers reject
                 stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, trigger,
                                                                       is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")
                 if stop_type == "SL" and config.LIVE_UPSTOX_OPTION_STOP_LIMIT and live_broker.name == "upstox":
@@ -480,6 +498,8 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                         stop_type, stop_limit = "SL-M", None
                 await live_broker.modify_order(trade.sl_order_id, trigger_price=trigger,
                                                price=stop_limit if stop_type == "SL" else None)
+            except _SameTrigger:
+                pass
             except Exception as exc:  # noqa: BLE001 - the software stop still applies
                 logger.warning("Could not move broker stop %s for trade %s: %s", trade.sl_order_id, trade.id, exc)
     if changed:

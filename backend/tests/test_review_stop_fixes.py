@@ -15,6 +15,7 @@ import time
 import pytest
 
 from app.brokers.base import round_stop_trigger
+from app.brokers.exceptions import BrokerOrderRejected
 from app.brokers.models import BrokerOrderResponse, BrokerOrderStatus
 from app.core import config
 from app.core.enums import OrderSide
@@ -155,6 +156,13 @@ def test_stop_trigger_rounds_to_the_tick_away_from_the_market(side, trigger, exp
     assert round_stop_trigger(trigger, side) == expected
 
 
+def test_no_known_tick_leaves_the_trigger_alone():
+    assert round_stop_trigger(0.0015, OrderSide.SELL, symbol="SHIBINR", exchange="COINDCX") == 0.0015   # never 0.05
+    assert round_stop_trigger(0.4876, OrderSide.SELL, symbol="ADAINR", exchange="COINDCX") == 0.4876
+    assert round_stop_trigger(98.03, OrderSide.SELL, symbol="RELIANCE", exchange="NSE") == 98.0
+    assert round_stop_trigger(98.03, OrderSide.BUY, symbol="NIFTY26OCT24500PE", exchange="NFO") == 98.05
+
+
 def test_mcx_uses_its_own_tick():
     assert round_stop_trigger(6500.4, OrderSide.SELL, symbol="CRUDEOIL") == 6500.0
     assert round_stop_trigger(6500.4, OrderSide.BUY, symbol="CRUDEOIL") == 6501.0
@@ -212,16 +220,22 @@ def test_close_position_clears_the_guards_per_trade_memory():
 
 # --- 9. the exit does not wait on the cancelled stop -----------------------------------------------------------
 class _LateFill(_BookBroker):
-    """A standing stop-limit (nothing filled when read) that fills 3 more between our read and the cancel."""
+    """A standing stop-limit that has filled `before` when the exit is sized (the immediate read after the cancel) and
+    `after` more once the exit is out - the race the exit can no longer wait out."""
 
-    def __init__(self):
+    def __init__(self, before=0, after=3, quantity=10):
         super().__init__([_stop("SL-P", "OPEN", order_type="SL")])
+        self.before, self.after, self.quantity = before, after, quantity
         self.events = []
         self.cancelled = False
 
     async def get_order_book(self):
         self.events.append("book")
-        stop = _stop("SL-P", "CANCELLED", filled=3, avg=98.0, order_type="SL") if self.cancelled else self.book[0]
+        if not self.cancelled:
+            stop = self.book[0]
+        else:
+            filled = self.before + (self.after if self.placed else 0)
+            stop = _stop("SL-P", "CANCELLED" if filled < self.quantity else "COMPLETE", filled=filled, avg=98.0, order_type="SL")
         exits = [BrokerOrderStatus(order_id=f"ORD-{i + 1}", symbol=o.symbol, transaction_type=o.transaction_type, quantity=o.quantity,
                                    filled_quantity=o.quantity, order_type=o.order_type, status="COMPLETE", average_price=97.0)
                  for i, o in enumerate(self.placed)]
@@ -237,20 +251,84 @@ class _LateFill(_BookBroker):
         return await super().place_order(order)
 
 
-def test_the_exit_goes_out_at_once_and_a_late_stop_fill_is_netted(monkeypatch):
+def _close_with(monkeypatch, email, broker):
     monkeypatch.setattr(config, "LIVE_UPSTOX_OPTION_STOP_LIMIT", True)
-    t = _tenant("review-late-fill@example.com")
+    t = _tenant(email)
     trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-P")
-    broker = _LateFill()
 
     async def go():
         async with _session_factory() as session:
             return await close_position(session, await session.get(TradeRecord, trade_id), 97.0, "Target", broker=broker)
-    outcome = _run(go())
-    assert broker.events[:3] == ["book", "cancel", "exit"]         # no read of the stop between the cancel and the exit
+    return t, trade_id, _run(go())
+
+
+def test_the_exit_is_sized_from_one_immediate_read_after_the_cancel(monkeypatch):
+    broker = _LateFill(before=3, after=0)
+    t, trade_id, outcome = _close_with(monkeypatch, "review-immediate-read@example.com", broker)
+    assert broker.events[:4] == ["book", "cancel", "book", "exit"]         # one read, no polling, then the exit
+    assert outcome.closed and [o.quantity for o in broker.placed] == [7] and not outcome.broker_uncertain
+    assert _get(TradeRecord, trade_id).exit_price == pytest.approx((3 * 98.0 + 7 * 97.0) / 10, abs=0.01)
+
+
+def test_a_stop_fill_after_the_exit_is_netted_and_handed_to_reconciliation(monkeypatch):
+    broker = _LateFill(before=0, after=3)
+    t, trade_id, outcome = _close_with(monkeypatch, "review-late-fill@example.com", broker)
     assert outcome.closed and [o.quantity for o in broker.placed] == [10]
     assert outcome.broker_uncertain and "filled 3 more" in outcome.broker_uncertain
+    assert _get(TradeRecord, trade_id).exit_price == pytest.approx((3 * 98.0 + 7 * 97.0) / 10, abs=0.01)
+    assert _get(Tenant, t["tenant_id"]).broker_uncertain_reason       # reconciliation decides the extra 3 the exit sent
+
+
+def test_a_stop_that_filled_in_full_after_the_exit_keeps_the_exit_order_on_record(monkeypatch):
+    broker = _LateFill(before=0, after=10)
+    t, trade_id, outcome = _close_with(monkeypatch, "review-full-late-fill@example.com", broker)
+    assert outcome.closed and outcome.exit_reason == "Stop Loss" and outcome.broker_uncertain
+    assert outcome.broker_exit_order_id == "ORD-1"                      # the market order that opened the opposite 10
+    assert any("opposite position" in w for w in outcome.warnings)
     booked = _get(TradeRecord, trade_id)
-    assert booked.exit_price == pytest.approx((3 * 98.0 + 7 * 97.0) / 10, abs=0.01)
-    tenant = _get(Tenant, t["tenant_id"])
-    assert tenant.broker_uncertain_reason       # reconciliation decides the extra 3 the exit sent
+    assert booked.exit_price == pytest.approx(98.0) and booked.exit_order_id == "ORD-1"
+
+
+class _RejectedCannotCancel(_AcceptThenReject):
+    async def cancel_order(self, order_id):
+        raise BrokerOrderRejected(f"order {order_id} is rejected and cannot be cancelled")
+
+    async def place_order(self, order):
+        self.placed.append(order)
+        return BrokerOrderResponse(order_id=f"ORD-{len(self.placed)}", status="COMPLETE")
+
+
+def test_flags_off_after_giving_up_the_software_exit_still_closes():
+    """Self-review: with every switch off the guard stops re-arming and the stop id stays on a REJECTED order; the
+    software stop's exit must not try to cancel it (that blocked every exit)."""
+    t = _tenant("review-giveup-exit@example.com")
+    trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-ENTRY")
+    broker = _RejectedCannotCancel([_stop("SL-ENTRY", "REJECTED")])
+    for _ in range(5):
+        _guard(t, broker)
+    assert len(broker.stops) == config.STOP_REARM_MAX_REJECTS
+
+    async def go():
+        async with _session_factory() as session:
+            return await close_position(session, await session.get(TradeRecord, trade_id), 97.0, "Stop Loss", broker=broker)
+    outcome = _run(go())
+    assert outcome.closed and [(o.order_type, o.quantity) for o in broker.placed] == [("MARKET", 10)]
+
+
+def test_a_rearmed_stop_that_stands_a_cycle_ends_the_streak_and_give_up_alerts_once():
+    t = _tenant("review-streak-stand@example.com")
+    trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-ENTRY")
+    broker = _AcceptThenReject([_stop("SL-ENTRY", "REJECTED")])
+    _guard(t, broker)
+    assert stop_state.rearm_rejects[trade_id] == 1
+    broker.later = True
+    _guard(t, broker)                      # SL-2 placed and standing
+    _guard(t, broker)                      # seen standing at the start of a cycle: accepted, streak over
+    assert trade_id not in stop_state.rearm_rejects
+    broker.later = False
+    for _ in range(8):
+        _guard(t, broker)
+    assert _critical(t).count("Stop keeps being rejected on RELIANCE") == 1
+    stop_state.gave_up_alert[trade_id] -= 10_000                       # long past any cooldown: still once
+    _guard(t, broker)
+    assert _critical(t).count("Stop keeps being rejected on RELIANCE") == 1

@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import gzip
 import io
 import json
 import sys
@@ -125,9 +126,7 @@ class Archive:
                 if e.code == 404:
                     return None
                 if e.code == 403 and attempt == self.retries - 1:
-                    with self._lock:
-                        self.forbidden += 1
-                    return _FORBIDDEN    # type: ignore[return-value]
+                    return _FORBIDDEN    # type: ignore[return-value]   - counted by day() only if no name answered
                 time.sleep(2 ** attempt)
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(2 ** attempt)
@@ -136,10 +135,10 @@ class Archive:
     def day(self, day: dt.date) -> Optional[str]:
         if day.weekday() >= 5:
             return None
-        hit = self.cache / f"{day:%Y%m%d}.csv" if self.cache else None
+        hit = self.cache / f"{day:%Y%m%d}.csv.gz" if self.cache else None   # gzip: the Actions cache stays small
         miss = self.cache / f"{day:%Y%m%d}.none" if self.cache else None
         if hit and hit.exists():
-            return hit.read_text()
+            return gzip.decompress(hit.read_bytes()).decode("utf-8")
         if miss and miss.exists():
             return None
         urls = [udiff_url(day), legacy_url(day)] if day >= UDIFF_FROM else [legacy_url(day), udiff_url(day)]
@@ -154,6 +153,9 @@ class Archive:
             if blob:
                 text = _unzip(blob)
                 break
+        if text is None and refused:
+            with self._lock:
+                self.forbidden += 1
         if text is None:
             # Only a real "no file" (404 on both names) is remembered: never a 403, never a day that may be unpublished.
             if miss and not refused and day < dt.date.today() - dt.timedelta(days=UNSETTLED_DAYS):
@@ -162,7 +164,7 @@ class Archive:
         with self._lock:
             self.files_read += 1
         if hit:
-            hit.write_text(text)
+            hit.write_bytes(gzip.compress(text.encode("utf-8"), mtime=0))
         return text
 
 
@@ -352,6 +354,9 @@ def merge_previous(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict, s
     prev = json.loads(old_meta.read_text())
     if prev["coverage_start"] >= meta["coverage_start"]:
         return rows
+    if start > dt.date.fromisoformat(prev["coverage_end"]) + dt.timedelta(days=7):
+        raise BuildRefused(f"--start {start} leaves a gap after the committed coverage end {prev['coverage_end']} - "
+                           "start on or before it so the kept rows stay continuous")
     with open(old_csv, newline="") as f:
         old = list(csv.DictReader(f))
     first_seen = {(r["symbol"], r["expiry"]): r["first_seen"] for r in old}
@@ -361,6 +366,8 @@ def merge_previous(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict, s
     meta["coverage_start"] = prev["coverage_start"]
     meta["rows"] = len(merged)
     meta["kept_before"] = start.isoformat()
+    meta["note"] = (f"rows before {start.isoformat()} kept from the committed file; dropped / moved / delisted and the "
+                    "sampling counts describe this run's range only")
     return merged
 
 

@@ -166,8 +166,34 @@ def test_a_403_refuses_the_build_and_is_never_cached_as_no_file(monkeypatch, tmp
         recent -= dt.timedelta(days=1)
     archive = ne.Archive(tmp_path / "cache", pause=0, retries=1)
     monkeypatch.setattr(ne.urllib.request, "urlopen", answer(403))
-    assert archive.day(old) is None and archive.forbidden == 2
+    assert archive.day(old) is None and archive.forbidden == 1           # one refused day (both file names 403)
     assert not list((tmp_path / "cache").iterdir())                       # nothing remembered for a refused day
+    # a 403 on one file name while the other answers is not a refusal
+    import gzip as _gz
+    import zipfile as _zf
+    buf = io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        z.writestr("x.csv", legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")))
+    blob = buf.getvalue()
+
+    def mixed(req, timeout=60):
+        if "BhavCopy_NSE_FO" in req.full_url:
+            raise urllib.error.HTTPError(req.full_url, 403, "x", {}, io.BytesIO(b""))
+
+        class R:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return blob
+        return R()
+    monkeypatch.setattr(ne.urllib.request, "urlopen", mixed)
+    fresh = ne.Archive(tmp_path / "cache2", pause=0, retries=1)
+    assert fresh.day(D("2024-01-03")) and fresh.forbidden == 0
+    assert _gz.decompress((tmp_path / "cache2" / "20240103.csv.gz").read_bytes()).decode().startswith("INSTRUMENT")  # cached gzipped
     monkeypatch.setattr(ne.urllib.request, "urlopen", answer(404))
     assert archive.day(old) is None and (tmp_path / "cache" / "20240102.none").exists()
     assert archive.day(recent) is None and not (tmp_path / "cache" / f"{recent:%Y%m%d}.none").exists()
@@ -212,6 +238,10 @@ def test_check_against_compares_from_the_new_start_and_older_rows_are_kept(tmp_p
     assert [(r["expiry"], r["first_seen"]) for r in merged if r["symbol"] == "BANKNIFTY"][:2] == \
         [("2024-01-03", "2024-01-02"), ("2024-01-25", "2024-01-02")]     # kept, and the earlier first-seen day
     assert later_meta["coverage_start"] == meta["coverage_start"] and later_meta["rows"] == len(merged)
+    assert "this run's range only" in later_meta["note"]
+    # a start that leaves a gap after the committed coverage end would claim coverage never read: refused
+    with pytest.raises(ne.BuildRefused, match="gap"):
+        ne.merge_previous(tmp_path, later, dict(later_meta, coverage_start="2024-03-04"), D("2024-03-01"))
 
 
 # --- part 2: the committed data and the backtest calendar ----------------------------------------------------------------
@@ -335,6 +365,10 @@ def test_no_weekday_rule_is_left_for_banknifty_and_outside_the_data_is_an_error(
     assert ExpiryCalendar.for_underlying("BANKNIFTY", weekday=3).data_symbol is None
 
 
+def test_an_unreadable_grace_setting_never_breaks_the_import():
+    assert expiry_data._grace_days("abc") == 10 and expiry_data._grace_days("-3") == 10 and expiry_data._grace_days("4") == 4
+
+
 def test_refresh_workflow_starts_ci_first_never_fails_on_the_pr_and_caches_bhavcopies():
     """ATP review 3 + 7: CI is dispatched on the data branch before the pull request is opened; a pull request Actions
     may not open is a warning (and run summary), not a failed run; the bhavcopy download directory is cached."""
@@ -347,6 +381,7 @@ def test_refresh_workflow_starts_ci_first_never_fails_on_the_pr_and_caches_bhavc
     ci, pr = names.index("Start CI on the data branch"), names.index("Open the refresh pull request")
     assert ci < pr and "gh workflow run ci.yml --ref data/nse-expiries" in steps[ci]["run"]
     assert "gh workflow run" not in steps[pr]["run"] and "exit 1" not in steps[pr]["run"]
+    assert "if ! gh workflow run" in steps[ci]["run"]                    # a refused dispatch never skips the PR step
     assert "::warning" in steps[pr]["run"] and "GITHUB_STEP_SUMMARY" in steps[pr]["run"]
     cache = next(s for s in steps if s.get("uses", "").startswith("actions/cache@"))
     assert len(cache["uses"].split("@")[1]) == 40                         # pinned to a commit (P0.7)

@@ -112,7 +112,8 @@ async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeR
                             counts: Dict[str, int]) -> bool:
     """STOP_REARM_MAX_REJECTS re-armed stops in a row were accepted and then rejected: re-arming again would only repeat
     it forever. With LIVE_EXIT_IF_NO_STOP the position is closed (a clear rejection); otherwise - or when that exit is
-    not tried - the guard stops re-arming, the software stop keeps watching and the user gets a CRITICAL (cooled down).
+    not tried - the guard stops re-arming, the software stop keeps watching (its exit skips the rejected stop) and the
+    user gets ONE CRITICAL for the position.
     True = the exit path handled it (closed, or tried and alerted)."""
     why = f"the broker rejected {streak} re-armed stops in a row (last {trade.sl_order_id})"
     if config.LIVE_EXIT_IF_NO_STOP:
@@ -125,7 +126,8 @@ async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeR
             counts["closed"] += 1
         if done is not None:
             return True
-    if _failure_alert_due(trade.id, stop_state.gave_up_alert):
+    if trade.id not in stop_state.gave_up_alert:         # once per position: the guard will not try again
+        stop_state.gave_up_alert[trade.id] = time.monotonic()
         await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"Stop keeps being rejected on {trade.symbol}",
                      message=f"Position #{trade.id}: {why}. The guard has stopped re-arming it; the software stop still monitors "
                              "it every cycle. Close it at the broker by hand or fix the rejection reason (margin, price band).",
@@ -170,6 +172,10 @@ async def verify_protective_stops(
         status = (order.status or "").upper() if order is not None else ""
         if status in _STANDING:
             counts["standing"] += 1
+            if stop_state.rearmed_order.get(trade.id) == trade.sl_order_id:
+                # The guard's own stop survived a whole cycle: it was accepted, the streak is over.
+                stop_state.rearm_rejects.pop(trade.id, None)
+                stop_state.rearmed_order.pop(trade.id, None)
             continue
         if status in _FILLED:
             counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
@@ -190,7 +196,7 @@ async def verify_protective_stops(
         side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
         tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=tenant.algo_id)
         previous = trade.sl_order_id
-        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol)   # on the tick, away from the market
+        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=exchange_for_trade(trade))   # on the tick, away from the market
         try:
             response = await broker.place_stop_loss_order(trade.symbol, exchange_for_trade(trade), side, trade.quantity,
                                                           trigger_price=trigger,

@@ -69,7 +69,8 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
     const request = route.request();
     const method = request.method();
     const url = request.url().replace(/^https?:\/\/[^/]+\/api(?:\/v1)?/, "");   // the client calls /api/v1/...
-    if (method !== "GET") calls.posts.push({ url, method, body: request.postDataJSON?.() ?? null });
+    const json = (): unknown => { try { return request.postDataJSON(); } catch { return request.postData(); } };   // not every body is JSON
+    if (method !== "GET") calls.posts.push({ url, method, body: json() ?? null });
     if (method === "POST" && /\/ai\/acknowledgement$/.test(url)) {
       return route.fulfill({ json: { ...(ack as object), accepted: true } });
     }
@@ -85,7 +86,7 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
       if (decide[2] === "approve" && !stepUpVerified) {
         return route.fulfill({ status: 403, json: { detail: "Approving an action on a LIVE deployment requires a fresh two-factor check on this session - enter your authenticator code" } });
       }
-      const note = (request.postDataJSON?.() as { note?: string } | null)?.note ?? null;
+      const note = (json() as { note?: string } | null)?.note ?? null;
       const decided = { ...action, status: decide[2] === "approve" ? "APPROVED" : "REJECTED", decision_note: note, decided_at: "2026-10-08T14:00:00", decided_by: 1 };
       actionsState.set(action.id, decided);
       return route.fulfill({ json: decided });
@@ -95,10 +96,10 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
       const all = [...actionsState.values()].sort((a, b) => b.id - a.id);
       return route.fulfill({ json: status ? all.filter((a) => a.status === status) : all });
     }
-    if (method === "PUT" && /\/risk-settings$/.test(url)) return route.fulfill({ json: request.postDataJSON() });
+    if (method === "PUT" && /\/risk-settings$/.test(url)) return route.fulfill({ json: json() });
     if (method === "POST" && /\/ai\/interview\/plan$/.test(url)) return route.fulfill({ json: interviewPlan });
     if (method === "POST" && /\/ai\/interview\/deploy$/.test(url)) {
-      return route.fulfill({ json: { candidate_id: (request.postDataJSON() as { candidate_id: number }).candidate_id, mode: "PAPER",
+      return route.fulfill({ json: { candidate_id: (json() as { candidate_id: number }).candidate_id, mode: "PAPER",
                                      deployment: { id: 77, name: "Interview template", mode: "PAPER", status: "ACTIVE" } } });
     }
     const hit = table.find(([re]) => re.test(url));

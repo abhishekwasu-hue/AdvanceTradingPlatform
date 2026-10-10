@@ -37,6 +37,12 @@ class _Provider:
     ("हमखास नफा देणारा setup.", ["हमखास"]),
     ("यातून नक्की नफा मिळेल.", ["निश्चित / नक्की नफा"]),
     ("मी ही strategy शिफारस करतो.", ["शिफारस करतो"]),
+    # self-review: a disclaimer or "no doubt" in another clause must not cancel the claim that follows
+    ("Not financial advice. Guaranteed returns of 20% here.", ["guarantee", "profit claim"]),
+    ("No doubt, guaranteed profit on this trade.", ["guarantee", "profit claim"]),
+    ("Without doubt the best trade", ["best"]),
+    ("Isn't it the best breakout?", ["best"]),
+    ("हमखास नफा, शंका नाही", ["हमखास"]),
 ])
 def test_claims_are_caught_in_english_and_marathi(text, expected):
     assert wording.banned_terms(text) == expected
@@ -48,6 +54,11 @@ def test_claims_are_caught_in_english_and_marathi(text, expected):
     "Nothing here is guaranteed.",
     "ही शिफारस नाही; भूतकाळातले निकाल भविष्याची खात्री देत नाहीत.",          # the Copilot's own Marathi disclaimer
     "कोणताही setup खात्रीशीर नाही आणि हमखास नसतो.",
+    # ordinary phrases, not claims
+    "The best bid is 100 and the best ask 100.05.",
+    "Best practice is to size positions small.",
+    "At best a coin flip.",
+    "A stop-loss guarantees nothing in a gap.",
     "",
 ])
 def test_disclaimers_and_negations_pass(text):

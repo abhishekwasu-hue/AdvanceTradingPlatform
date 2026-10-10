@@ -262,7 +262,7 @@ class OrderRouter:
             # closes it at the stop. Placed as SL-M on the opposite side at the signal's stop.
             try:
                 stop_side = OrderSide.SELL if signal.direction == SignalDirection.LONG else OrderSide.BUY
-                stop_trigger = round_stop_trigger(signal.stop_loss, stop_side, symbol=signal.symbol)   # on the tick, away from the market
+                stop_trigger = round_stop_trigger(signal.stop_loss, stop_side, symbol=signal.symbol, exchange=self.exchange)   # on the tick, away from the market
                 stop_type, stop_limit = self.broker.stop_order_params(signal.symbol, stop_side, stop_trigger, is_option=self.is_option)
                 sl_response = await self.broker.place_stop_loss_order(
                     signal.symbol, self.exchange, stop_side,

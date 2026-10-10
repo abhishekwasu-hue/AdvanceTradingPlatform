@@ -142,22 +142,23 @@ class _RejectingStopBroker(_BookBroker):
         return 97.0
 
 
-def test_exit_is_blocked_by_a_rejected_stop_today_and_goes_through_with_the_flag(monkeypatch):
+def test_an_exit_never_tries_to_cancel_a_rejected_stop(monkeypatch):
     t = _tenant("glive-dead-stop@example.com")
-    trade_id = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-X")
     rejected = BrokerOrderStatus(order_id="SL-X", symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=10, order_type="SL-M",
                                  status="REJECTED")
 
     def close():
         broker = _RejectingStopBroker([rejected])
+        tid = _seed(t["tenant_id"], t["user_id"], sl_order_id="SL-X")      # a fresh open position each time
 
         async def go():
             async with _session_factory() as session:
-                trade = await session.get(TradeRecord, trade_id)
+                trade = await session.get(TradeRecord, tid)
                 return await close_position(session, trade, 97.0, "Stop Loss", broker=broker), broker
         return _run(go())
     outcome, broker = close()
-    assert not outcome.closed and "Could not cancel" in outcome.warnings[0] and broker.placed == []      # today: blocked
+    # ATP review: a REJECTED stop is never cancelled, switches or not (the cancel can only fail and blocked the exit)
+    assert outcome.closed and [(o.order_type, o.transaction_type) for o in broker.placed] == [("MARKET", OrderSide.SELL)]
     monkeypatch.setattr(config, "LIVE_EXIT_IF_NO_STOP", True)
     outcome, broker = close()
     assert outcome.closed and [(o.order_type, o.transaction_type) for o in broker.placed] == [("MARKET", OrderSide.SELL)]

@@ -83,15 +83,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Before the pull request: a pull request opened with this token starts no workflow of its own.
-          gh workflow run ci.yml --ref data/nse-expiries
+          # Before the pull request: a pull request opened with this token starts no workflow of its own. A refused
+          # dispatch (policy, permissions) never stops the pull request step - it is said instead.
+          if ! gh workflow run ci.yml --ref data/nse-expiries; then
+            echo "::warning title=CI not started on data/nse-expiries::Start the CI workflow on data/nse-expiries by hand (Actions > CI > Run workflow)."
+            { echo "### NSE expiry data: CI not started"; echo; echo "Run CI on data/nse-expiries by hand."; } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Open the refresh pull request
         if: steps.commit.outputs.pr == 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(gh pr list --head data/nse-expiries --base main --state open --json number --jq length)" != "0" ]; then
+          if ! open_prs=$(gh pr list --head data/nse-expiries --base main --state open --json number --jq length); then
+            echo "::warning title=Could not list pull requests::trying to open the refresh pull request anyway"
+            open_prs=0
+          fi
+          if [ "$open_prs" != "0" ]; then
             echo "the open refresh pull request now carries this rebuild"; exit 0
           fi
           meta=backend/app/instruments/data/nse_index_expiries.meta.json

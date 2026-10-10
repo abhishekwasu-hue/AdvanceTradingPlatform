@@ -86,12 +86,16 @@ test.describe("3D and motion", () => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.route("**/assets/AICore3D-*.js", (route) => route.abort());
+    const failed = page.waitForEvent("requestfailed", { predicate: (r) => /AICore3D-.*\.js/.test(r.url()), timeout: 15_000 });
     await page.goto("/copilot/market-pulse");
-    await page.waitForTimeout(2500);
+    await failed;                                                                    // the 3D chunk was asked for and refused
+    await page.waitForTimeout(500);
     await expect(page.getByTestId("ai-core-fallback").first()).toBeVisible();
     await expect(page.getByTestId("ai-core-3d")).toHaveCount(0);
-    await expect(page.getByText(/could not be shown/)).toHaveCount(0);              // the app-level boundary never saw it
+    // the app-level boundary never saw it (its chunk-error and page-error messages are both absent)
+    await expect(page.getByText(/could not be shown|A newer version of the console/)).toHaveCount(0);
     await expect(page.getByTestId("tab-panel-market-pulse")).toBeVisible();
+    expect(errors).toEqual([]);
   });
 
   test("reduced motion: no 3D scene, the still core instead", async ({ browser }) => {

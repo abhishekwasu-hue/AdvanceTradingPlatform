@@ -235,7 +235,6 @@ export default function IdeaBuilderTab() {
           <div className="rounded-xl border border-ai/30 bg-ai/5 p-3 text-sm text-fg">
             <History size={15} className="mr-1 inline text-ai" />
             {t("idea.welcomeBack", { capital: Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN"), style: String(start.profile.answers.style ?? ""), symbol: String(start.profile.answers.symbol ?? "") })}
-            
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="primary" onClick={applyProfile}><span className="text-left leading-tight">{t("idea.yesUse")}</span></Button>
               <Button size="sm" onClick={() => setOfferProfile(false)}><span className="text-left leading-tight">{t("idea.noAsk")}</span></Button>
@@ -301,7 +300,7 @@ export default function IdeaBuilderTab() {
       </TiltCard>
 
       {plan?.options && (
-        <TemplateGrid plan={plan} sample={sample} selected={selected} busy={task.busy} rejecting={rejecting} reasons={reasons} 
+        <TemplateGrid plan={plan} sample={sample} selected={selected} busy={task.busy} rejecting={rejecting} reasons={reasons}
                       onChoose={(o) => void choose(o)} onReject={(id) => { setRejecting(rejecting === id ? null : id); setReasons([]); }}
                       onToggleReason={(code) => setReasons((r) => (r.includes(code) ? r.filter((c) => c !== code) : [...r, code]))} onRefine={(o) => void refine(o)} />
       )}
@@ -309,7 +308,7 @@ export default function IdeaBuilderTab() {
         const shown = plan.options ? plan.options.find((o) => o.option?.id === selected) : plan;
         if (!shown) return <p className="text-sm text-fg-muted">{t("idea.openTemplate")}</p>;
         // keyed by the template: the risk acceptance of one template never carries over to another
-        return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined} 
+        return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined}
                                onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onDraft={(draftId) => navigate(copilotPath("strategy-lab"), { state: { draftId } })} />;
       })()}
     </div>

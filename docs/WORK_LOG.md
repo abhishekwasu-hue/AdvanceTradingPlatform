@@ -867,3 +867,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   drawings in our own schema so an engine switch loses nothing; numbers from data, never pixels; actions = proposals.
 - Order CH0..CH7; open questions CH-1..CH-5 (TradingView access is Abhi's application; the v5 drawing plugin is not
   vendored until its licence is confirmed).
+
+### 2026-10-11 02:49 IST - CH1a: chart drawings storage
+- `drawing/1` schema with time/price anchors and per-kind rules.
+- `chart_drawings` table: per user and symbol, versioned (409 on a stale edit), lock (423), soft delete, cap 500.
+  Migration `d7f9b1c3e5a7`, checked on Postgres.
+- Export/import `atp-drawings/1`: all or nothing, lossless.
+- Tests: `tests/test_ch1_chart_drawings.py` (3), plus a mutation check.

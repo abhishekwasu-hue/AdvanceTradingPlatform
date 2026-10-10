@@ -940,3 +940,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `POST /api/ai/agent/ask` behind the `ai_agent` flag, off by default.
 - **Decision:** tools run sequentially on one DB session (not in parallel as in ADR-0019 §2), because an AsyncSession
   is not safe for concurrent use.
+
+### 2026-10-11 02:16 IST - H-C2b-1: agent proposal tools + injection guard
+- `app/ai/tools/proposals.py` adds three proposal tools: `propose_pause_deployment`, `propose_risk_reduction` (tighter
+  values only) and `propose_strategy_review`.
+  - Each files one PROPOSED `ai_actions` row through `monitor.raise_proposals`, so the same notification, dedupe,
+    expiry and approve/reject flow apply.
+  - Nothing places, modifies or cancels an order, and nothing changes a setting on approval.
+- The guard has three checks:
+  - (a) Intent allow-list: a proposal tool is offered only when the trader's message asks for that action.
+  - (b) The quote must be the trader's own words, containing the asking words, and must not appear in untrusted data
+    read in this request.
+  - (c) At most one proposal per request.
+- A refused call is audited on `agent_steps` ("guard: ...") and in the audit log.
+- `run_tool` will not run a proposal tool the loop has not cleared.
+- Tests: `tests/test_hc2b_proposals.py` (7). An injected headline produces zero proposals in three variants. The H-C2a
+  registry test is updated.
+- Open: H-7 (draft/deployment proposals; late-news gap), in H_COPILOT.
+- Next: the JSON answer contract, the OpenAI tools adapter, and the candles/quote/chain/backtest tools (H-C2b-2/3).

@@ -1,8 +1,9 @@
-"""H-C2 (ADR-0019): the Copilot agent's tool registry - typed, validated, tenant-scoped, read-only in this slice.
+"""H-C2 (ADR-0019): the Copilot agent's tool registry - typed, validated, tenant-scoped.
 
 * Every tool declares a name, a description, a pydantic input model (its JSON schema is what the model sees), a kind
-  (`read` now; `proposal` tools arrive with H-C2b and only ever create PROPOSED actions - ADR-0006), cost units and a
-  timeout.
+  (`read`, or `proposal` - H-C2b, which only ever creates PROPOSED actions, ADR-0006), cost units and a timeout.
+* A proposal tool must take the trader's own words (`quote`) and a `reason`, and `run_tool` runs it only when the
+  agent loop's injection guard has cleared the call (`proposals.guard`).
 * The tenant and the user come from the request's session (`ToolContext`), never from the model's arguments.
 * Every result is `{data, as_of, source, data_timestamps}`; third-party text (news headlines) is marked untrusted so
   the loop wraps it in `<untrusted_data>` and it can never trigger a tool.
@@ -84,14 +85,14 @@ _REGISTRY: Dict[str, Tool] = {}
 def register(tool: Tool) -> Tool:
     if tool.name in _REGISTRY:
         raise ValueError(f"tool {tool.name!r} registered twice")
-    if tool.kind != "read":
-        raise ValueError("H-C2a registers read tools only; proposal tools arrive with their guard (H-C2b)")
+    if tool.kind == "proposal" and not {"quote", "reason"} <= set(tool.input_model.model_fields):
+        raise ValueError(f"proposal tool {tool.name!r} must take the trader's own words (quote) and a reason - the guard checks them")
     _REGISTRY[tool.name] = tool
     return tool
 
 
 def registry() -> Dict[str, Tool]:
-    from app.ai.tools import read  # noqa: F401 - registers the read tools on first use
+    from app.ai.tools import proposals, read  # noqa: F401 - registers the tools on first use
     return dict(_REGISTRY)
 
 
@@ -101,12 +102,19 @@ def specs(names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     return [{"name": t.name, "description": t.description, "input_schema": t.schema()} for n, t in sorted(tools.items()) if names is None or n in names]
 
 
-async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Validates the model's arguments against the tool's input model, runs it under its timeout, never raises."""
+def names(kind: str) -> List[str]:
+    return sorted(n for n, t in registry().items() if t.kind == kind)
+
+
+async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext, *, guard_cleared: bool = False) -> ToolResult:
+    """Validates the model's arguments against the tool's input model, runs it under its timeout, never raises. A
+    proposal tool runs only with `guard_cleared` - set by the agent loop after `proposals.guard` passed the call."""
     started = time.monotonic()
     tool = registry().get(name)
     if tool is None:
         return ToolResult(False, None, None, name, error=f"unknown tool {name!r}")
+    if tool.kind == "proposal" and not guard_cleared:
+        return ToolResult(False, None, None, name, error="a proposal tool runs only after the agent's guard has cleared the call")
     try:
         args = tool.input_model.model_validate(arguments or {})
     except ValidationError as exc:
@@ -121,4 +129,4 @@ async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext) -> To
     return result
 
 
-__all__ = ["Tool", "ToolContext", "ToolResult", "register", "registry", "specs", "run_tool"]
+__all__ = ["Tool", "ToolContext", "ToolResult", "register", "registry", "specs", "names", "run_tool"]

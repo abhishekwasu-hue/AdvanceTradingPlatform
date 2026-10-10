@@ -1,6 +1,6 @@
 # Roadmap status (MASTER SPEC v1 + v1.1 / v1.2 / v1.3)
 
-Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Merge only on the owner's "Merge".
+Working rules: docs/WORKING_RULES.md (multitasking and self-review are required). Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Merge only on the owner's "Merge".
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
@@ -44,7 +44,8 @@ Last update: 2026-10-11 00:31 IST.
 | I | Options analytics | not started | - | 0 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |
-| v1.3 | Crypto paper: CoinDCX spot -> Binance/Kraken -> IBKR | after the Hostinger PAPER go-live | - | 0 |
+| v1.3 | Crypto adapters: CoinDCX (exists) -> Binance spot -> Bybit/KuCoin/OKX (perps/options only where allowed) -> CoinSwitch PRO/ZebPay; Kraken later; registry `fiu_registered` (India resident: FIU-registered + spot only); 30 % + 1 % TDS report seam | after the Hostinger PAPER go-live | - | 0 |
+| v1.2 §2 | IBKR adapter: TWS (ib_async + Gateway, paper default) and Web API (stub) transports, jurisdiction engine, global master, venue costs | design PR (ADR-0018) first; build after go-live and crypto Phase 1 | - | 0 |
 
 Owner decisions pending (provisional decisions taken, work continues): D-1..D-4 (#87, #94, #95), C2-1/C2-2 (#100), B-1, B-2 (#88), H-3..H-5 (#103), SC-1..SC-6 and U1-Q1/Q2 (#104). On the owner: R2 bucket +
 token in the server .env; the server IP for the Hostinger blocks.

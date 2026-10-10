@@ -262,3 +262,37 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Plus 4 mutation checks: no deflation, one trial only, no holdout check, out-of-window exits.
 - **Note for merging.** This stack and the screener stack both branch from migration `a1c3e5f7b9d2`. Whichever lands
   second needs an empty Alembic merge revision joining the two heads.
+
+## H-C3b (built): the research loop driver and its API
+- **Code.** `app/ai/research_loop.run_study`:
+  - each round: idea, draft (proposer), validate (`CustomStrategyConfig` plus a `DeclarativeStrategy`), backtest on the
+    in-sample part of server bars;
+  - at most `MAX_DRAFTS` (8) rounds; the proposer may stop early with `null`;
+  - then ONE out-of-sample run of the chosen draft, stored as an `oos` row: the study's check, not a trial.
+- **Ledger.** Every draft is a trial in the ledger, including invalid and failed ones. The ledger is committed after
+  each trial, so an interrupted study keeps what it tried.
+- **Proposer.** `llm_proposer` uses the tenant's metered provider (task `generation`) and sends the idea, the rule
+  schema and earlier trials' metrics, never raw prices. The reply is untrusted: only a JSON object is a draft,
+  anything else is an invalid draft, and `null` ends the study.
+- **API.**
+  - `POST /api/ai/research` needs the AI acknowledgement and the flags `ai_copilot` + `ai_research`. `ai_research` is
+    new and off by default.
+  - The rule-based provider gets 409, because it cannot draft.
+  - Bars come from the market tools (server data only).
+  - A window reaching the holdout gets 422.
+  - `GET /api/ai/research/{id}` returns the trials and the report, scoped to the organisation.
+- **Not here.** Adopting a draft still goes through the existing human approval gate; nothing is saved as a strategy
+  or deployed.
+  - The request runs the whole study synchronously, at most 8 drafts.
+  - A background job with progress is part of H-C3c, together with the UI.
+- **Tests.**
+  - `tests/test_hc3b_research_loop.py` (4):
+    - validate / record / OOS once;
+    - in-sample never sees OOS bars;
+    - the draft cap;
+    - the holdout refused before any work;
+    - a failing proposer;
+    - the prompt carries metrics, not data.
+  - `tests/test_hc3b_research_api.py` (3): flag off -> 503, rules -> 409, the full study through the API, cross-tenant
+    404, JSON-only proposer.
+  - Mutation checks: in-sample leak, no draft cap.

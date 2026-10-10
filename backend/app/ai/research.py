@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.backtest.data_policy import HoldoutError, check_range, holdout_start
-from app.backtest.validation import deflated_sharpe, pbo_cscv, sharpe
+from app.backtest.validation import deflated_sharpe, pbo_cscv, sharpe  # noqa: F401 - sharpe is re-exported for the loop
 from app.db.models import ResearchTrialRecord
 from app.market_data.calendar import IST
 
@@ -84,8 +84,8 @@ async def record_trial(session: AsyncSession, *, tenant_id: int, user_id: Option
                        data_from: Optional[datetime] = None, data_to: Optional[datetime] = None,
                        metrics: Optional[Dict[str, Any]] = None, returns: Optional[Sequence[float]] = None) -> ResearchTrialRecord:
     """Appends one trial (sequence number = next in the study). Never updates or deletes an earlier trial."""
-    if status not in ("ok", "invalid", "error"):
-        raise ValueError("status must be ok, invalid or error")
+    if status not in ("ok", "invalid", "error", "oos"):
+        raise ValueError("status must be ok, invalid, error or oos")
     if status == "ok" and not returns:
         raise ValueError("an ok trial needs its daily returns")
     seq = int(await session.scalar(select(func.count()).select_from(ResearchTrialRecord).where(
@@ -112,7 +112,12 @@ def _pbo_blocks(t: int) -> int:
 
 
 def study_report(trials: Sequence[ResearchTrialRecord], oos: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """The honest summary of a study. `oos` = the chosen draft's out-of-sample metrics when that check was run."""
+    """The honest summary of a study. `oos` = the chosen draft's out-of-sample metrics when that check was run; when not
+    given, a stored out-of-sample row (status "oos" - the check, not a trial) is used."""
+    stored_oos = [t for t in trials if t.status == "oos"]
+    if oos is None and stored_oos:
+        oos = {"run": True, **json.loads(stored_oos[-1].metrics_json or "{}")}
+    trials = [t for t in trials if t.status != "oos"]
     ok = [t for t in trials if t.status == "ok"]
     out: Dict[str, Any] = {"trials": len(trials), "backtested": len(ok), "invalid": sum(1 for t in trials if t.status == "invalid"),
                            "errors": sum(1 for t in trials if t.status == "error"), "not_simulated": list(NOT_SIMULATED),

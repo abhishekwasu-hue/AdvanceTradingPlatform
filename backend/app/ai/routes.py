@@ -819,6 +819,55 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
             "usage": metering.spent_by(provider)}
 
 
+class ResearchBody(BaseModel):
+    idea: str = Field(min_length=3, max_length=1000)
+    symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
+    exchange: str = Field(default="NSE", max_length=10)
+    timeframe: str = Field(default="15min", pattern=r"^(5min|15min|30min|60min)$")
+    days: int = Field(default=60, ge=20, le=60)
+    max_drafts: int = Field(default=6, ge=1, le=8)
+
+
+@router.post("/research")
+async def research_study(body: ResearchBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+    """H-C3 (behind `ai_research`, off by default): the research loop on server bars. Every draft is a trial in the
+    ledger; the report is deflated by the whole search. Nothing is saved as a strategy or deployed here."""
+    from app.ai import research_loop
+    from app.ai.tools import ToolContext
+    from app.ai.tools.market import _frame
+    from app.core.models import RiskConfig
+    from app.risk_engine.routes import get_tenant_risk_config
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    await require_flag(session, "ai_research", user.tenant_id)
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="generation", user_id=user.id)
+    if getattr(provider, "name", "") == "rule_based":
+        raise HTTPException(status_code=409, detail="The research loop needs an AI provider (Settings > AI provider).")
+    frame, source = await _frame(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, body.timeframe, body.days)
+    risk = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
+    try:
+        out = await research_loop.run_study(session, tenant_id=user.tenant_id, user_id=user.id,
+                                            spec=research_loop.StudyInput(body.idea, body.symbol.upper(), body.exchange, body.timeframe,
+                                                                          body.max_drafts),
+                                            frame=frame, risk=risk, propose=research_loop.llm_proposer(provider))
+    except research_loop.HoldoutError as exc:
+        raise HTTPException(status_code=422, detail=f"The window reaches the sealed holdout: {exc}") from exc
+    from app.ai import metering
+    return {**out, "data_source": source, "usage": metering.spent_by(provider)}
+
+
+@router.get("/research/{study_id}")
+async def research_study_get(study_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The study's trials (every draft tried) and its deflated report."""
+    from app.ai import research
+    await require_flag(session, "ai_research", user.tenant_id)
+    trials = await research.study_trials(session, user.tenant_id, study_id)
+    if not trials:
+        raise HTTPException(status_code=404, detail="Study not found")
+    return {"study_id": study_id, "report": research.study_report(trials),
+            "trials": [{"seq": t.seq, "status": t.status, "reason": t.reason, "dsl": json.loads(t.dsl_json), "metrics": json.loads(t.metrics_json),
+                        "created_at": t.created_at.isoformat()} for t in trials if t.status != "oos"]}   # the OOS check is in the report
+
+
 @router.post("/copilot")
 async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """One box for everything - see `copilot_answer`."""

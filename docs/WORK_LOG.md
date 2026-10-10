@@ -996,3 +996,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - S4a full suite: 1377 passed. S3c #131 and S4a #132 are draft PRs. S4b-1 cycle-cache suite is running.
 - Merge note: the screener and copilot stacks both branch from migration `a1c3e5f7b9d2`, so an empty merge revision is
   needed when the second stack lands.
+
+### 2026-10-11 03:53 IST - H-C3b research loop driver + API; S4b-1 PR
+- Loop: draft -> validate -> in-sample backtest (server bars), at most 8 drafts, every draft in the ledger, then ONE
+  out-of-sample run of the chosen draft (stored as its check). The LLM proposer accepts only JSON objects.
+- `POST`/`GET /api/ai/research` behind the new `ai_research` flag (off by default); the rule-based provider gets 409;
+  a holdout window gets 422. Tests: 7 new, plus 2 mutation checks.
+- S4b-1 full suite: 1379 passed; draft PR #134.

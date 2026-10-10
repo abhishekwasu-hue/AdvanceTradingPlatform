@@ -944,3 +944,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   refuse); exits untouched. No lake row -> no refusal, a note on the order instead. Flag FO_BAN_CHECK_ENABLED (off).
   Rule IN-SEBI.risk.futeq_mwpl stays partial: client-level FutEq limit, expiry-day margin multiplier and lot-size as-of
   are next. Tests: 3 (incl. a PAPER option entry refused, then filled on a non-banned day); contract/multileg suites green.
+
+### 2026-10-10 23:23 IST - part B3: lake data-quality detectors
+- app/market_lake/quality.py: gap (missing bar ends inside the session, one event per run), spike (close move above
+  LAKE_SPIKE_PCT), invalid OHLC, late (ingested more than LAKE_LATE_SECONDS after close), duplicate (same bar twice in a
+  batch), cross-source mismatch (above LAKE_MISMATCH_PCT); scan_day reads the latest version per source and records new
+  events once. Thresholds are config. Tests: 3 (a clean session raises none; each crafted problem exactly one; re-scan
+  writes nothing new). Next: B4 corporate-action adjustment; worker scan job with B6 metrics/alerts.

@@ -344,9 +344,9 @@ job, never tuned against results.
 - Next (S3b-2): Telegram per-user linking, email unsubscribe link.
 
 ## Open questions (provisional answers taken, work continues)
-- **SC-5. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
+- **SC-8. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
   list reproducible. Whether and when to delete old runs is the owner's decision (§14).
-- **SC-4. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
+- **SC-7. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
   375-minute buckets from the first session's open. Across overnight gaps these buckets do not line up with sessions.
   ScreenQL's `@1d` is the session.
   - Provisional: keep exact parity. Such a scan stays on the legacy engine (`NotTranslatable`).

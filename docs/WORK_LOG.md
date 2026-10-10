@@ -902,3 +902,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   WARNING per organisation whose ACTIVE deployment's broker session will not last to the close (once per IST day, also
   across restarts). Worker housekeeping hook + CycleReport.login_reminders. Rule IN-SEBI.login.daily -> enforced;
   COMPLIANCE_IN.md regenerated; OPERATIONS step 1 updated. Tests: 7 (crafted past-weekday clock). Next: D1 format/threshold.
+
+### 2026-10-10 23:07 IST - part D1: algo id format, generic vs registered, audit rows
+- app/compliance/algo_id.py: per-broker tag format from the rule-set (`brokers`: length + `alnum`/`alnum_dash`; brokers
+  without an entry keep today's tag byte for byte); the registered id always wins, the broker's generic id
+  (`generic_ids`, empty until brokers publish theirs - OPEN_QUESTIONS D-2 provisional) only while the D2 OPS throttle is on
+  and capped at or below `ops_threshold`. ALGO_ID_REQUIRED_FOR_LIVE (off) refuses a LIVE entry without a usable id.
+  Every LIVE entry and exit writes an `algo_order` audit row with the tag; the stop re-arm row carries it too.
+  Router, multi-leg, position monitor and stop guard all go through the same resolution. Rule
+  IN-SEBI.algo_id.registered_above_ops -> enforced. Tests: 5 new; tagging/worker/monitor/multileg suites green.

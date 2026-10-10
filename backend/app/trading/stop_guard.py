@@ -23,6 +23,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import is_clear_rejection
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import Tenant, TradeRecord
+from app.compliance.algo_id import order_algo_id
 from app.execution.tagging import LEG_STOP, build_order_tag
 from app.market_data.calendar import market_session_status
 from app.notifications.service import notify
@@ -147,7 +148,8 @@ async def verify_protective_stops(
                 continue
         # Missing, cancelled or rejected: re-arm.
         side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
-        tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=tenant.algo_id)
+        tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=order_algo_id(tenant.algo_id, broker.name),
+                              max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
         previous = trade.sl_order_id
         try:
             response = await broker.place_stop_loss_order(trade.symbol, exchange_for_trade(trade), side, trade.quantity,
@@ -158,7 +160,7 @@ async def verify_protective_stops(
             counts["rearmed"] += 1
             reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"
             await write_audit_log(session, tenant.id, user_id, "protective_stop_rearmed",
-                                  f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trade.stop_loss} ({source})")
+                                  f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trade.stop_loss} ({source}) tag={tag}")
             await notify(session, tenant.id, NotificationType.RISK_REJECTION, title=f"Protective stop re-armed on {trade.symbol}",
                          message=f"Position #{trade.id}: {reason}. A new SL-M at {trade.stop_loss:g} was placed ({response.order_id}).",
                          severity=NotificationSeverity.WARNING, related_trade_id=trade.id)

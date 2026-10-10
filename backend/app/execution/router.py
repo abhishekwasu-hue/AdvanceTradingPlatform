@@ -143,7 +143,8 @@ class OrderRouter:
         started = time.perf_counter()
 
         max_tag = getattr(self.broker, "max_tag_length", None) or 20
-        entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag)
+        entry_tag = build_order_tag(strategy_id=signal.strategy_id, leg=LEG_ENTRY, algo_id=self.algo_id, max_length=max_tag,
+                                    broker=getattr(self.broker, "name", None))
 
         if self.mode == ExecutionMode.PAPER:
             trade = self.paper_broker.open_trade(signal, decision.quantity, datetime.now(timezone.utc))
@@ -276,7 +277,8 @@ class OrderRouter:
                 sl_response = await self.broker.place_stop_loss_order(
                     signal.symbol, self.exchange, stop_side,
                     decision.quantity, trigger_price=signal.stop_loss, product=self.product,
-                    tag=build_order_tag(strategy_id=signal.strategy_id, leg=LEG_STOP, algo_id=self.algo_id, max_length=max_tag),
+                    tag=build_order_tag(strategy_id=signal.strategy_id, leg=LEG_STOP, algo_id=self.algo_id, max_length=max_tag,
+                                        broker=getattr(self.broker, "name", None)),
                     **({"is_option": self.is_option} if self.is_option is not None else {}),
                 )
                 sl_order_id = sl_response.order_id

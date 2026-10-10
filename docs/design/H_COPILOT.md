@@ -51,10 +51,10 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Sample mode stays available for demos. Its runs are stamped `data_source=sample` and can never satisfy the approval
     gate.
   - Test: client candles change nothing, and a sample-data run cannot approve.
-- **b. Rate limit.** `/api/ai/*` gets a limit per user and per tenant, with plan-wise limits in config. It uses Redis
+- **b. Rate limit.** Status: **built**. `/api/ai/*` gets a limit per user and per tenant, with plan-wise limits in config. It uses Redis
   where Redis is reachable and falls back to an in-process window (the same pattern as Telegram inbound). Heavy jobs
   (strategist, market study) count as N units. Test: the limit is enforced, it resets, and the per-plan values apply.
-- **c. Output filter.** `app/ai/output_filter.py` checks every LLM text output on the server.
+- **c. Output filter.** Status: **built** (copilot, guide, thesis; generator and scanner text with d). `app/ai/output_filter.py` checks every LLM text output on the server.
   - The advice and guarantee word list is config (en + mr: recommend, guaranteed, sure-shot, खात्रीशीर, हमखास, …).
   - A hit gets a neutral rewrite, or falls back to the rule text, and is flagged in the audit.
   - A specific buy/sell/strike call gets educational framing plus a disclaimer.

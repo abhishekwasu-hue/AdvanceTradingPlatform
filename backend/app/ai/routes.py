@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import evidence
+from app.ai.rate_limit import ai_rate_limit
 from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai import compliance_terms as terms
 from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
@@ -28,7 +29,7 @@ from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
 from app.platform.controls import flag_enabled, require_flag
 
-router = APIRouter(prefix="/api/ai", tags=["ai"])
+router = APIRouter(prefix="/api/ai", tags=["ai"], dependencies=[Depends(ai_rate_limit)])      # H-C1 b
 
 
 class ProviderBody(BaseModel):

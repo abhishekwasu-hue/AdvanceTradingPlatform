@@ -880,3 +880,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_hc1_server_evidence.py` (5: default on, labels not trusted, sample cannot approve, server path
   approves, 409 without a broker, sample interview option cannot deploy) + `src/api/evidence.test.ts` (3). Existing AI
   tests moved to the server path (`tests/server_evidence.py`). Lake (B5) as the first source lands once part B merges.
+
+### 2026-10-11 00:24 IST - H-C1 b: AI rate limit (G5); H-C1 c: server-side advice/guarantee filter (G3)
+- b: `app/ai/rate_limit.py` on the /api/ai and /api/scanner/ai routers: units per call (heavy jobs weigh more,
+  AI_RATE_WEIGHTS), per user and per organisation, plan-wise limits (AI_RATE_LIMITS), 60 s window, Redis when
+  configured else in-process; the organisation is checked first; 429 + Retry-After; atp_ai_rate_limited_total.
+  `app.core.rate_limit.allow` takes units (INCRBY). The suite disables the limit like the auth limiters; its own tests
+  re-enable it (8 tests). First run: 3 suite tests hit 429 (several heavy jobs per minute) - fixed by the override and
+  by raising the free default from 30 to 60 units.
+- c: `app/ai/output_filter.py` + `app/ai/data/advice_terms.json` (en + mr; negations allowed; AI_ADVICE_TERMS_FILE):
+  guarantee/advice words block the text (one retry naming them, then the rule text), a specific buy/sell call next to a
+  level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
+  thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
+- Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.

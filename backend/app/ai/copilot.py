@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from app.ai import grounding
+from app.ai import grounding, output_filter
 from app.ai.interview import tr
 
 INTENT_WORDS = {
@@ -102,7 +102,11 @@ async def narrate(provider, lang: str, intent_name: str, question: str, facts: L
             return None, why
         ok, why = grounded(text, facts, question)
         if ok:
-            return text, "ok"
+            ok, shown, why = output_filter.check(text, lang, where="copilot")       # H-C1 c
+            if ok:
+                return shown, why
+            user = f"QUESTION:\n{question.strip()}\n\n{output_filter.retry_hint(output_filter.blocked_terms(text))}"
+            continue
         user = f"QUESTION:\n{question.strip()}\n\nYour previous answer used {why}. Answer again using only the FACTS and the question."
     return None, why
 

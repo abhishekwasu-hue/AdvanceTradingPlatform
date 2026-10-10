@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues, market_memory
 from app.ai.interview import tr
-from app.ai import grounding
+from app.ai import grounding, output_filter
 from app.db.models import MarketEventRecord, MarketSnapshotRecord, ThesisRecord
 from app.instruments.master import underlying_of
 from app.market_data.calendar import IST
@@ -360,8 +360,14 @@ async def narrate(provider, thesis: dict, lang: str) -> Tuple[Optional[str], str
             kind = "symbols"
             ok, bad = grounding.check_tickers(text, facts + " " + news)
             if ok:
-                return text, "ok"
-            user = f"Rewrite the thesis. These symbols are NOT in the JSON and must not appear: {', '.join(bad[:10])}. Name only {thesis['symbol']}."
+                kind = "advice/guarantee"
+                screened = output_filter.screen(text, lang, where="thesis")          # H-C1 c
+                if screened.ok:
+                    return screened.text, "ok"
+                bad = screened.blocked
+                user = f"Rewrite the thesis. {output_filter.retry_hint(bad)}"
+            else:
+                user = f"Rewrite the thesis. These symbols are NOT in the JSON and must not appear: {', '.join(bad[:10])}. Name only {thesis['symbol']}."
         else:
             kind = "numbers"
             user = f"Rewrite the thesis. These numbers are NOT in the JSON and must not appear: {', '.join(bad[:10])}. Use only numbers from THESIS_JSON (same sign)."

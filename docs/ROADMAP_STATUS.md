@@ -40,10 +40,10 @@ Last update: 2026-10-11 00:31 IST.
 | H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate (each full suite green, flag off) | #115, #117-#121 | 55 |
 | S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
 | U1-a/b/c | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification; index EOD, F&O lots, ban list | a-c done (suite 1390 passed, Postgres migration checked); d/e after S1 | #105, #106, #110 | 75 |
-| S1, S3 | ScreenQL engine + scanner migration; Notification Service on the existing outbox | S1a parser/AST/validator, S1b runtime, S1c scanner on ScreenQL (parity fuzz; SCANNER_ENGINE default legacy) done; S1d API + saved screens + runs in progress; S3 next | #122-#124 | 45 |
+| S1, S3, S4 | ScreenQL engine + scanner migration; Notification Service on the existing outbox; bar-close alert engine | S1a-S1d done (S1d API: closed bars only); S3a rules/events/throttle, S3b-1 webhook schema + dead letters, S3b-2 Telegram link + email unsubscribe done (suite 1369 passed); S3c UI and S4a bar-close engine built, PRs after the suite; S4b live alerts + result cache next | #122-#125, #127-#129 | 70 |
 | I | Options analytics | not started | - | 0 |
 | CH0 | Advanced charting: spec, design note, ADR-0023 ChartEngine | done (design) | #107 | 100 |
-| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage (drawing/1, versioned API, export/import) and CH1b ChartEngine + B-lite adapter built, PRs next; CH2 v5 upgrade after | - | 20 |
+| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage (suite 1307 passed) and CH1b ChartEngine + B-lite adapter (build + bundle OK) done; CH2 v5 upgrade next | #126, #130 | 30 |
 | OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built; each suite green; waiting for the owner's merge | #109, #111-#114, #116 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |

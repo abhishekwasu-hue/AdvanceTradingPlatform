@@ -7,6 +7,7 @@ import { generateSampleOptionChain } from "../utils/sampleData";
 import { PageHeader } from "../components/primitives";
 import OiBanner from "../components/OiBanner";
 import OiHistoryTable from "../components/OiHistoryTable";
+import OiAlertsCard from "../components/OiAlertsCard";
 import OiSettingsCard from "../components/OiSettingsCard";
 import StrikeOiChart from "../components/StrikeOiChart";
 import { getToken } from "../api/client";
@@ -19,7 +20,8 @@ const BIAS_COLOR: Record<string, string> = {
 };
 
 export default function OptionChainPage() {
-  const [underlying, setUnderlying] = useState("NIFTY");
+  // A deep link (?underlying=, e.g. from an OI alert) opens that underlying; otherwise the page default.
+  const [underlying, setUnderlying] = useState(() => new URLSearchParams(window.location.search).get("underlying")?.trim() || "NIFTY");
   const [ltp, setLtp] = useState(22000);
   const [tilt, setTilt] = useState<"bullish" | "bearish" | "mixed">("bullish");
   const [loading, setLoading] = useState(false);
@@ -106,6 +108,7 @@ export default function OptionChainPage() {
             <Card title={`${oiUnderlying} OI by strike`}><StrikeOiChart underlying={oiUnderlying} /></Card>
           </div>
           <Card title="OI banner settings"><OiSettingsCard underlying={oiUnderlying} /></Card>
+          <Card title="OI banner alerts"><OiAlertsCard underlying={oiUnderlying} /></Card>
         </>
       )}
 

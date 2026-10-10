@@ -136,6 +136,25 @@ Kept as in the source, and flagged for review:
   digest, and the alert settings UI.
 - **Rollover-bias flip alerts** wait for next-expiry chain collection, which is not collected yet.
 
+## O4b: Telegram buttons, digest, alert settings UI
+
+- **Telegram buttons.** OI alerts to Telegram carry read-only buttons:
+  - **Open option chain** and **Open chart** are links, shown only when `FRONTEND_URL` is absolute, because Telegram
+    refuses relative URLs.
+  - **Snooze 1h** and **Mute today** are `oi:s:` / `oi:m:` callbacks, shown only when Telegram inbound is on. A press
+    is accepted only from a whitelisted chat and an authorised sender, as for proposals.
+  - No button places, changes or approves an order.
+- **Daily digest:** sent once per IST day after `alerts.digest_time`. It gives the day's direction changes from
+  `oi_banner_states` and the last banner, and is deduped through `oi_alert_log` ("DIGEST", the date).
+- **Test alert:** `POST …/alerts/test` sends a WARNING through the organisation's channels with the normal floors.
+- **UI (`OiAlertsCard` on the Option Chain page):**
+  - alerts on/off and the alert types;
+  - cooldown, max-pain strikes, quiet hours and digest time;
+  - snooze, mute today and resume;
+  - test alert;
+  - today's alert log with the status of each alert.
+- **Deep link:** `/option-chain?underlying=` opens that underlying, which is the target of the Telegram button.
+
 ## Golden fixtures
 
 `backend/tests/fixtures/oi_regime/golden.json` holds 1,300+ cases produced by running Trade's own functions on

@@ -296,6 +296,13 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - reference data; never blocks trading
                     logger.exception("OI banner collection failed")
                     report.errors.append(f"oi banner: {exc}")
+                # OI Banner O4b: the day's banner digest after each tenant's digest time (any time, market open or not).
+                try:
+                    from app.option_chain import oi_alerts
+                    async with self.session_factory() as own:
+                        await oi_alerts.send_digests(own, now)
+                except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
+                    logger.warning("OI banner digest failed: %s", exc)
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)

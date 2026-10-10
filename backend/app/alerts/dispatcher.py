@@ -286,6 +286,37 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         return False
 
 
+async def _telegram_oi_buttons(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord,
+                               client: Optional[httpx.AsyncClient]) -> bool:
+    """OI Banner O4b: an OI alert to Telegram carries read-only buttons (open chain / chart links, snooze / mute
+    callbacks). False -> the plain send. A failure to build the buttons never stops the alert itself."""
+    if channel.channel_type != AlertChannelType.TELEGRAM.value or notification.event_type not in (NotificationType.OI_BANNER.value, NotificationType.OI_COLLECTOR.value):
+        return False
+    from app.core import config as app_config
+    from app.option_chain import oi_alerts
+    from app.telegram_inbound import service as telegram_inbound
+    try:
+        cfg = decrypt_config(channel)
+        meta = json.loads(notification.metadata_json) if notification.metadata_json else {}
+        underlying = str(meta.get("underlying") or "")
+        if not underlying:
+            return False
+        from app.option_chain import snapshots
+        _, own = await snapshots.settings_rows(session, channel.tenant_id, underlying)
+        exchange = own.exchange if own is not None else "NSE"
+        keyboard = oi_alerts.telegram_keyboard(underlying, exchange, app_config.FRONTEND_URL, bool(getattr(cfg, "inbound_enabled", False)))
+        if keyboard is None:
+            return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Telegram OI buttons not built (%s); sending the plain alert", exc)
+        return False
+    _, html_body = render_text(notification)
+    answer = await telegram_inbound.reply(cfg, cfg.chat_id, html_body, client, reply_markup=keyboard)  # type: ignore[union-attr, arg-type]
+    if not answer.get("ok", False):
+        raise RuntimeError(f"Telegram API: {answer.get('description') or 'send failed'}")
+    return True
+
+
 # --- the drain -----------------------------------------------------------------------------------
 
 async def dispatch_pending(
@@ -317,7 +348,8 @@ async def dispatch_pending(
             failed += 1
             continue
         try:
-            if not await _telegram_proposal_buttons(session, channel, notification, client):
+            if not await _telegram_proposal_buttons(session, channel, notification, client) \
+                    and not await _telegram_oi_buttons(session, channel, notification, client):
                 await send_via_channel(channel, notification, client)
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
             delivery.attempts += 1

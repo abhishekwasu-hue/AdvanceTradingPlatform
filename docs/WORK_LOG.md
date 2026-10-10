@@ -901,3 +901,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   stale. They go through the existing `notify()` and dispatcher, and webhooks get versioned JSON. Snooze, mute-today
   and resume are available through the API.
 - Deferred to O4b: Telegram buttons, the digest and the settings UI. Rollover-flip alerts need next-expiry collection.
+
+### 2026-10-11 01:36 IST - OI Banner O4b: Telegram buttons, digest, alert settings UI
+- **Telegram buttons:** OI alerts carry read-only buttons — chain and chart links, and snooze/mute callbacks. A
+  callback is accepted only from a whitelisted chat and an authorised sender.
+- **Digest and test alert:** the daily digest is sent after each tenant's digest time. The test alert has its own
+  endpoint.
+- **UI:** `OiAlertsCard` (types, cooldown, quiet hours, digest, snooze/mute/resume, log), and the
+  `/option-chain?underlying=` deep link.

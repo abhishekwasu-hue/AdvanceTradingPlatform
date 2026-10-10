@@ -252,4 +252,103 @@ async def followers(session: AsyncSession, underlying: str) -> Sequence[int]:
     return sorted({t for t, u, _ in await snapshots.enabled_underlyings(session) if u == underlying})
 
 
-__all__ = ["detect", "render", "in_quiet_hours", "wall_state", "evaluate_tenant", "followers", "StateView", "AlertEvent", "SCHEMA"]
+TELEGRAM_PREFIX = "oi:"
+
+
+def _absolute_base(frontend_url: str) -> Optional[str]:
+    base = (frontend_url or "").rstrip("/")
+    return base if base.startswith(("https://", "http://")) else None
+
+
+def telegram_keyboard(underlying: str, exchange: str, frontend_url: str, inbound: bool) -> Optional[dict]:
+    """Read-only buttons under an OI alert: open the option chain / the chart (links, only when the app has an absolute
+    URL - Telegram refuses relative ones) and snooze 1h / mute today (callbacks, only with Telegram inbound on). Never
+    an order action (ADR-0006)."""
+    rows = []
+    base = _absolute_base(frontend_url)
+    if base:
+        from urllib.parse import quote
+        u = quote(underlying)
+        rows.append([{"text": "Open option chain", "url": f"{base}/option-chain?underlying={u}"},
+                     {"text": "Open chart", "url": f"{base}/?chart={u}&tf=5min&exchange={quote(exchange or 'NSE')}"}])
+    if inbound:
+        rows.append([{"text": "Snooze 1h", "callback_data": f"{TELEGRAM_PREFIX}s:{underlying}"[:64]},
+                     {"text": "Mute today", "callback_data": f"{TELEGRAM_PREFIX}m:{underlying}"[:64]}])
+    return {"inline_keyboard": rows} if rows else None
+
+
+async def snooze_from_telegram(session: AsyncSession, tenant_id: int, data: str, actor_id: int, now: Optional[datetime] = None) -> str:
+    """A Snooze 1h / Mute today button. The caller has checked the chat and that the sender is an authorised user."""
+    from app.db.models import OIBannerSettingRecord
+    now = now or datetime.now(timezone.utc)
+    kind, _, underlying = data[len(TELEGRAM_PREFIX):].partition(":")
+    try:
+        underlying = snapshots.normalise_underlying(underlying)
+    except ValueError:
+        return "This button is not valid."
+    if kind == "s":
+        until, text = now + timedelta(hours=1), f"{underlying} OI alerts snoozed for 1 hour."
+    elif kind == "m":
+        until = datetime.combine(now.astimezone(IST).date() + timedelta(days=1), time(), IST).astimezone(timezone.utc)
+        text = f"{underlying} OI alerts muted for the rest of today."
+    else:
+        return "This button is not valid."
+    _, own = await snapshots.settings_rows(session, tenant_id, underlying)
+    if own is None:
+        own = OIBannerSettingRecord(tenant_id=tenant_id, underlying=underlying, overrides="{}")
+        session.add(own)
+    own.snoozed_until, own.updated_by, own.updated_at = until, actor_id, now
+    await session.commit()
+    return text
+
+
+async def send_test(session: AsyncSession, tenant_id: int, underlying: str) -> NotificationRecord:
+    """A test alert through the tenant's channels (same pipeline, marked as a test)."""
+    payload = {"schema": SCHEMA, "underlying": underlying, "alert_type": "TEST", "old_state": None, "new_state": "TEST", "snapshot": None,
+               "data_timestamps": {"sent_at": datetime.now(timezone.utc).isoformat()}}
+    return await notify(session, tenant_id, NotificationType.OI_BANNER, f"{underlying} OI alerts: test",
+                        f"Test of the {underlying} OI banner alerts. Real alerts state the banner change, the put/call activity, "
+                        "PCR band, max pain and DTE, with the data time.", severity=NotificationSeverity.WARNING,
+                        metadata_json=json.dumps(payload))
+
+
+async def send_digests(session: AsyncSession, now: datetime) -> int:
+    """Once per IST day after each tenant's `alerts.digest_time`: the day's banner timeline (direction changes) per
+    followed underlying, as one INFO notification. Dedupe through oi_alert_log ("DIGEST", the date)."""
+    sent = 0
+    ist = now.astimezone(IST)
+    day = ist.date()
+    since = datetime.combine(day, time(), IST).astimezone(timezone.utc)
+    for tenant_id, underlying, _ in await snapshots.enabled_underlyings(session):
+        settings = await snapshots.settings_for(session, tenant_id, underlying)
+        a = settings.alerts
+        if not a.enabled or not a.digest_time or ist.time() < time.fromisoformat(a.digest_time):
+            continue
+        key = f"{tenant_id}:{underlying}:DIGEST:{day.isoformat()}"
+        if await session.scalar(select(OIAlertLogRecord.id).where(OIAlertLogRecord.dedupe_key == key)):
+            continue
+        rows = list(await session.scalars(select(OIBannerStateRecord).where(
+            OIBannerStateRecord.tenant_id == tenant_id, OIBannerStateRecord.underlying == underlying, OIBannerStateRecord.slot_start >= since)
+            .order_by(OIBannerStateRecord.slot_start)))
+        if not rows:
+            continue
+        changes, last = [], None
+        for r in rows:
+            if r.direction != last:
+                slot = r.slot_start if r.slot_start.tzinfo else r.slot_start.replace(tzinfo=timezone.utc)
+                changes.append(f"{slot.astimezone(IST).strftime('%H:%M')} {r.direction}")
+                last = r.direction
+        if not await _log(session, tenant_id=tenant_id, underlying=underlying, alert_type="DIGEST", old_state=None, new_state=day.isoformat(),
+                          slot_start=since, dedupe_key=key, status="SENT", created_at=now):
+            continue
+        final = rows[-1]
+        message = (f"{underlying} OI banner, {day.strftime('%d %b')}: " + " → ".join(changes[-20:]) +
+                   f". Last: {final.message} PCR band {final.pcr_band or '—'}, max pain {_fmt(final.max_pain)}.")
+        await notify(session, tenant_id, NotificationType.OI_BANNER, f"{underlying} OI banner: day digest", message,
+                     metadata_json=json.dumps({"schema": SCHEMA, "underlying": underlying, "alert_type": "DIGEST", "date": day.isoformat(),
+                                               "timeline": changes}))
+        sent += 1
+    return sent
+
+
+__all__ = ["telegram_keyboard", "snooze_from_telegram", "send_test", "send_digests", "TELEGRAM_PREFIX", "detect", "render", "in_quiet_hours", "wall_state", "evaluate_tenant", "followers", "StateView", "AlertEvent", "SCHEMA"]

@@ -932,3 +932,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The receiver check `verify_webhook` enforces a 300 s replay window.
 - Dead-letter reason codes, plus a dead-letter list and a retry API.
 - Tests: 5, plus 2 mutation checks. The existing alert tests still pass (27 in the three files).
+
+### 2026-10-11 03:12 IST - S3b-2: per-user Telegram linking + email unsubscribe; SC renumbering; S1d PR
+- Telegram: a one-time `/start <code>` from a private chat links the user's own chat. Codes are stored as hashes,
+  expire after 15 minutes and work once. The linked chat gets the screen alerts of that user's rules as its own
+  outbox row, with no command rights.
+- Email: one mail per recipient with a signed unsubscribe page (POST to unsubscribe) and the RFC 8058 headers. Opting
+  out covers screen alerts only; risk mails always go. Traders can re-subscribe an address.
+- Migration `f1b3d5e7a9c1`, Postgres round-trip OK. Tests: 4, plus 4 mutation checks; 42 passed across the
+  alerts and Telegram files.
+- New setting `PUBLIC_BASE_URL` (empty = no unsubscribe link). It goes in the host `.env` by Abhi; `.env.example`
+  only documents it.
+- S1d full suite: 1351 passed. Pushed; draft PR #125.
+- Postgres had stopped with the container restart; I started it again.
+- Docs fix: S1c's open question SC-4 → SC-7 and S1d's SC-5 → SC-8 (both numbers were already in use). Fixed on each
+  branch and merged forward.
+- New open question SC-9 (unsubscribe scope, bounces).

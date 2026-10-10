@@ -37,6 +37,7 @@ from app.backtest.options import (
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
+from app.backtest.windows import WindowCursor, decision_time
 from app.execution.contract_execution import DEFAULT_WRITE_MAX_LOTS
 from app.execution.paper_broker import PaperBroker
 from app.instruments.contracts import (
@@ -55,7 +56,7 @@ from app.trading.position_monitor import structure_exit_reason, underlying_exit_
 
 logger = logging.getLogger(__name__)
 
-ENGINE_VERSION = "6-options"   # NIFTY expiries from NSE data too (5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
+ENGINE_VERSION = "7-options"   # realism 1: closed HTF bars only (6: NIFTY expiries from NSE data too; 5: BANKNIFTY from NSE data; 4: P0.6 dated lots)
 NO_NEW_ENTRIES_AFTER = time(15, 0)    # the worker's cut-off for intraday deployments
 SQUARE_OFF_AT = time(15, 15)
 SETTLEMENT_FROM = time(15, 15)        # a bar at/after this on expiry day settles the structure
@@ -192,6 +193,7 @@ def run_option_backtest(
         frames[tf] = base_df if tf == base_tf else resample_ohlc(base_df, tf)
     primary_tf = strategy.timeframes[0]
     primary_df = frames[primary_tf]
+    cursor = WindowCursor(frames, strategy.timeframes)
     min_hist = strategy.min_history()[primary_tf]
     closes = primary_df["close"].astype(float).tolist()
     is_daily = bars_per_year(primary_tf) == 250.0
@@ -363,7 +365,7 @@ def run_option_backtest(
         if open_pos is None:
             if config.intraday and not is_daily and at_ist.time() >= NO_NEW_ENTRIES_AFTER:
                 continue
-            window = {tf: frames[tf][frames[tf].index <= ts] for tf in strategy.timeframes}
+            window = cursor.at(decision_time(ts, primary_tf))   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)
             if not signal.is_tradeable:
                 continue

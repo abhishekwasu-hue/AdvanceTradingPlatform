@@ -472,6 +472,14 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-10 21:40 IST - Part B (backtest realism) started - branch claude/backtest-realism
+- Status table given (HTF lookahead: no; models: partial; speed: no; reproducibility: partial; trial ledger: partial;
+  report: partial). Part A (PR #82) waits on CI + self-review.
+- B1 done: `app/backtest/windows.py` WindowCursor - a timeframe shows only bars whose end <= the decision time (the
+  primary bar's close), one binary search per timeframe instead of a boolean mask per bar. Both engines use it;
+  ENGINE_VERSION 4 / 7-options. Truncation test over every multi-TF strategy (fails on the old slicing: 4 of 4).
+- Next: B3 speed benchmark + guard, then B4 reproducibility, B2 models, B5 trial ledger, B6 report.
+
 ### 2026-10-08 - Copilot UI redesign (7 tabs, i18n, 3D AI Core, compliance lint) -> G-UI
 - Seven tabs at `/copilot/<tab>` (Market Pulse, Strategy Lab, Idea Builder, Ask Copilot, Watchtower, News Radar,
   Coach & Scorecard); the old `/ai-copilot/<slug>` addresses and `?page=ai-copilot` forward to the tab that now

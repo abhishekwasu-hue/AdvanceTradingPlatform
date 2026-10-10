@@ -985,3 +985,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The files' Industry column fills the NSE sector level (U1-Q3, provisional); other levels stay empty.
 - Reads: members_on, indices_of, classification_on, coverage_from. Worker runs it after the equity lists (flag off).
 - Tests: tests/test_u1b_universe_indices.py (6).
+
+### 2026-10-11 00:46 IST - Screener U1-c: index EOD, F&O membership with lots, F&O ban-list history
+- Tables index_eod / fo_membership / fo_ban_history (migration c7a1d2e3f4b7, reversible). app/universe/fo_eod.py:
+  all-indices close file (a non-catalogue index is added as family OTHER - discovery; a changed close is a counted
+  correction), lots (first month with a lot = current lot; new/changed/missing underlyings append ranges; empty, short or
+  high-churn files refused with an FO_LOTS event), ban list (the file's own trade date; idempotent per day).
+- Worker runs it after the constituents (flag off). Tests: tests/test_u1c_universe_fo_eod.py (5).

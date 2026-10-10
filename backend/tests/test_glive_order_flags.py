@@ -27,7 +27,7 @@ from app.core.enums import OrderSide
 from app.db.models import Tenant, TradeRecord
 from app.trading.position_monitor import close_position
 from app.market_data.calendar import SessionStatus
-from app.trading import stop_guard
+from app.trading import stop_guard, stop_state
 from app.trading.stop_guard import verify_protective_stops
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_p_closure import _BookBroker, _seed
@@ -44,8 +44,8 @@ def _flags_off(monkeypatch):
         monkeypatch.setattr(config, name, False)
     monkeypatch.setattr(config, "ORDER_MARKET_PROTECTION_PCT", None)
     monkeypatch.setattr(config, "STOP_LIMIT_BAND_PCT", None)
-    monkeypatch.setattr(stop_guard, "_exit_attempts", {})
-    monkeypatch.setattr(stop_guard, "_last_failure_alert", {})
+    for table in ("exit_attempts", "last_failure_alert", "gave_up_alert", "rearm_rejects", "rearmed_order"):
+        monkeypatch.setattr(stop_state, table, {})
     _market(monkeypatch, True)
 
 
@@ -240,7 +240,7 @@ def test_failed_immediate_exits_stop_after_the_limit_and_alert_once(monkeypatch)
     broker = _StopRefusedBroker([], BrokerOrderRejected("no"), exit_fails=True)
     for _ in range(stop_guard.MAX_EXIT_ATTEMPTS + 2):
         assert _guard(t, broker)["closed"] == 0
-    assert stop_guard._exit_attempts[trade_id] == stop_guard.MAX_EXIT_ATTEMPTS
+    assert stop_state.exit_attempts[trade_id] == stop_guard.MAX_EXIT_ATTEMPTS
     assert _critical(t) == ["Could NOT close RELIANCE: no broker-side stop"]       # cooldown: one alert, not five
     assert _get(TradeRecord, trade_id).exit_time is None
 

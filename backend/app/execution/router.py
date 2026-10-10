@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
-from app.brokers.base import BrokerInterface
+from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.circuit_breaker import breaker_for, observe_call
 from app.brokers.exceptions import is_clear_rejection
 from app.brokers.models import BrokerOrderRequest
@@ -262,15 +262,16 @@ class OrderRouter:
             # closes it at the stop. Placed as SL-M on the opposite side at the signal's stop.
             try:
                 stop_side = OrderSide.SELL if signal.direction == SignalDirection.LONG else OrderSide.BUY
-                stop_type, stop_limit = self.broker.stop_order_params(signal.symbol, stop_side, signal.stop_loss, is_option=self.is_option)
+                stop_trigger = round_stop_trigger(signal.stop_loss, stop_side, symbol=signal.symbol)   # on the tick, away from the market
+                stop_type, stop_limit = self.broker.stop_order_params(signal.symbol, stop_side, stop_trigger, is_option=self.is_option)
                 sl_response = await self.broker.place_stop_loss_order(
                     signal.symbol, self.exchange, stop_side,
-                    decision.quantity, trigger_price=signal.stop_loss, product=self.product,
+                    decision.quantity, trigger_price=stop_trigger, product=self.product,
                     tag=build_order_tag(strategy_id=signal.strategy_id, leg=LEG_STOP, algo_id=self.algo_id, max_length=max_tag),
                     **({"is_option": self.is_option} if self.is_option is not None else {}),
                 )
                 sl_order_id = sl_response.order_id
-                reasons.append(f"Protective stop-loss placed: {sl_order_id} @ {signal.stop_loss}" + (f" ({stop_type}, limit {stop_limit})" if stop_type != "SL-M" else ""))
+                reasons.append(f"Protective stop-loss placed: {sl_order_id} @ {stop_trigger:g}" + (f" ({stop_type}, limit {stop_limit})" if stop_type != "SL-M" else ""))
             except Exception as exc:  # noqa: BLE001 - a failed stop must never undo a real fill
                 sl_failed = True
                 sl_rejected = is_clear_rejection(exc)

@@ -515,6 +515,41 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - `min_bars` ignored;
     - direction swapped;
     - pattern direction ignored.
+- **Review follow-up (fresh-eyes pass).**
+  - **`Pattern` is vectorised.**
+    - `candlestick_patterns.pattern_masks` applies the same rules as the detectors to whole columns.
+    - Bar by bar it cost about 0.2 s per name per symbol, enough to block a request for minutes. Now all 14 names on
+      3000 bars take well under a second (there is a test).
+    - It is parity-tested against the detectors on every bar. The mapping from name to detector is written out in the
+      test, not read from the code under test.
+    - Hand-built pin bars, rejection candles, outside bars and a shooting star are included.
+  - **A missing `SwingDirection` (before the first pivot) is missing, not `""`.**
+    - `!=` and `IN` no longer match there.
+    - `StructureEvent` keeps `""` for "no event", as before.
+  - **Classifier values are checked.** Trend, StructureEvent, ChainBias and SwingDirection list their values, and a
+    literal outside them is refused ("… never matches"). `describe()` lists them.
+  - **History on higher timeframes.**
+    - A higher timeframe built from the base bars is now checked against its lookback. For example, `SwingLow(0)@1d`
+      on a 1m screen with two weeks of bars says "not enough history on 1d". Before, it was silently false.
+    - `fetch_days` counts each timeframe's bars in its own minutes, turns sessions into calendar days (weekends), adds
+      4 days for holidays, and is capped at 60.
+  - **The end-to-end screen test checks `matched`** against the series, and its negation.
+  - **Mutation checks: 7 of 7 killed.**
+    - pin directions swapped;
+    - rejection direction;
+    - shooting star read as hammer;
+    - missing direction as empty;
+    - resampled history unchecked;
+    - no values check;
+    - fetch days without weekends.
+  - **Noted, not changed.**
+    - Degree 3 swings depend on where the fetched history starts (ZigZag is path-dependent), so they can move when an
+      unrelated part of the screen changes the fetch window. Degrees 0 to 2 agreed in the review's probes. (SC-14)
+    - Older items, not new here:
+      - lookback is not summed through nested calls (`Lag(SwingHigh(0), 50)`);
+      - parametrised screens cannot become alert rules;
+      - `NOT` of a comparison on a missing value is true;
+      - the manual run route evaluates on the event loop.
 - **Next (S5-A2).**
   - Logical reversal at a level (`reversal.evaluate_reversal`).
   - Real break against false break of a level (`breaks.first_real_break`).
@@ -527,6 +562,10 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
   session-shaped generator (`tests/sample_market.py`), the same one the trade-port tests use. The NIFTY holdout stays
   sealed.
   - Owner question: should a BANKNIFTY bar sample (from your own data, outside the holdout) be added as a fixture?
+- **SC-14. Degree-3 swings and the fetch window.** Provisional: documented, not fixed. A D3 pivot can differ when
+  the screen's total lookback (and so the fetch start) changes.
+  - Owner question: should D3 be computed from a fixed warm-up anchor (for example, always 400 bars before now)?
+    That costs one longer fetch per symbol.
 - **SC-13. Swing settings per tenant.** Provisional: `SwingHigh`/`SwingLow`/`SwingDirection` use the default
   `pa_settings` (ATR mode, multipliers 1.5 / 3 / 6 / 12). Per-tenant price-action settings are not applied in screens.
   - Owner question: should a screen use the organisation's saved price-action settings? That would make the same

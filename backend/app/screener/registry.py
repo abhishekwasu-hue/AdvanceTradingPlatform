@@ -41,6 +41,7 @@ class Spec:
     same_unit_args: Tuple[int, ...] = field(default=())     # positions whose units must agree (CrossAbove(a, b))
     extra_bars: int = 0             # bars needed beyond the window (CrossAbove compares with the bar before)
     min_bars: int = 0               # S5-A: a floor on the bars needed (swings need history before the first pivot)
+    values: Tuple[str, ...] = ()    # S5-A: a classifier's only values (a literal outside them is refused); empty = open
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -101,8 +102,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("ORLow", "factor", NUM, "price", (Arg("minutes", "window"),), doc="opening-range low, visible once the range is complete"),
     # S1c: the scanner's structure and option filters - evaluated on the last closed bar only
     Spec("Trend", "classifier", CAT, None, (Arg("swing", "window", 3, False),), cost=3.0, timeframed=False,
+         values=("UPTREND", "DOWNTREND", "RANGE"),
          doc="market-structure trend: UPTREND / DOWNTREND / RANGE"),
     Spec("StructureEvent", "classifier", CAT, None, (Arg("swing", "window", 3, False),), cost=3.0, timeframed=False,
+         values=("BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""),
          doc="latest structure event: BOS_BULLISH / BOS_BEARISH / CHOCH_BULLISH / CHOCH_BEARISH (empty when none)"),
     Spec("PatternBullish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bullish candlestick pattern on the last bar"),
     Spec("PatternBearish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bearish candlestick pattern on the last bar"),
@@ -117,12 +120,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the last CONFIRMED swing high: known only once price has come back from it by the degree's threshold"),
     Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
          doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
-    Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
-         doc="UP after a confirmed swing low, DOWN after a confirmed swing high (empty before the first)"),
+    Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, values=("UP", "DOWN"),
+         doc="UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),
-    Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False, doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"),
+    Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False,
+         values=("BULLISH", "BEARISH", "NEUTRAL", "CONFLICTING"), doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"),
     Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying"),
     Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)"),
     Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)"),
@@ -137,7 +141,7 @@ def describe() -> Dict[str, Dict[str, object]]:
     out: Dict[str, Dict[str, object]] = {}
     for spec in (*FIELDS.values(), *FUNCTIONS.values()):
         out[spec.name] = {"kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "args": [a.name for a in spec.args],
-                          "choices": {a.name: list(a.choices) for a in spec.args if a.choices},
+                          "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
                           "field": spec.name in FIELDS, "doc": spec.doc}
     return out

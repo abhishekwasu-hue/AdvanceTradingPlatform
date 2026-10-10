@@ -15,7 +15,6 @@ from app.price_action import pa_settings
 from app.screener import compile_screen, parse
 from app.screener.registry import FUNCTIONS, PATTERN_NAMES, SWING_DEGREES, describe
 from app.screener.runtime import SymbolData, evaluate, run_screen
-from app.screener.runtime import _PATTERNS
 from tests.sample_market import generate
 
 
@@ -62,22 +61,65 @@ def test_describe_lists_the_choices_and_every_pattern_has_a_detector():
     d = describe()
     assert d["Pattern"]["choices"] == {"name": list(PATTERN_NAMES)}
     assert d["SwingHigh"]["choices"] == {"degree": list(SWING_DEGREES)}
-    assert set(_PATTERNS) == set(PATTERN_NAMES)
-    assert all(hasattr(cp, fn) for fn, _ in _PATTERNS.values())
+    assert set(cp.pattern_masks(_frame([(1, 2, 0, 1)] * 3))) == set(PATTERN_NAMES)
     assert len(SWING_DEGREES) == len(pa_settings.settings()["swing_atr_mult"])
     assert {"Pattern", "SwingHigh", "SwingLow", "SwingDirection", "MedianRange"} <= set(FUNCTIONS)
 
 
 # ------------------------------------------------------------------------------------------------------------ patterns
+# Written out here, not read from the code under test: which detector (and direction) each screen name means.
+EXPECTED = {
+    "doji": ("detect_doji", None), "hammer": ("detect_hammer", None), "shooting_star": ("detect_shooting_star", None),
+    "bullish_engulfing": ("detect_bullish_engulfing", None), "bearish_engulfing": ("detect_bearish_engulfing", None),
+    "morning_star": ("detect_morning_star", None), "evening_star": ("detect_evening_star", None),
+    "bullish_pin_bar": ("detect_pin_bar", "BULLISH"), "bearish_pin_bar": ("detect_pin_bar", "BEARISH"),
+    "inside_bar": ("detect_inside_bar", None),
+    "bullish_outside_bar": ("detect_outside_bar", "BULLISH"), "bearish_outside_bar": ("detect_outside_bar", "BEARISH"),
+    "bullish_rejection": ("detect_strong_rejection", "BULLISH"), "bearish_rejection": ("detect_strong_rejection", "BEARISH"),
+}
+
+
 def test_pattern_series_matches_the_detectors_bar_by_bar():
-    f = _sample(400)
+    # the sample market plus hand-built shapes, so every pattern occurs (a parity check on all-False would prove nothing)
+    flat = [(100, 101, 99, 100)] * 2
+    shapes = [(100, 100.3, 95, 100.3), (100, 105, 99.9, 100.1), (100, 100.2, 98, 98.2), (98, 101.5, 97.8, 101.4),
+              (101, 101.2, 99, 99.1), (99, 99.2, 96.6, 96.8), (96.6, 96.9, 96.4, 96.7), (96.8, 99, 96.7, 98.9),
+              (100, 101, 99, 100.05), (99.5, 100.5, 99.2, 100.4), (100.2, 102, 98, 99.9), (100, 100.1, 96, 99.8),
+              (100, 104, 99.95, 100.3), (99, 100.5, 98.8, 100.4), (100.6, 100.8, 98.5, 98.7)]
+    hand = _frame(flat + shapes * 3)
+    for f in (_sample(400), hand):
+        for name, (fn, direction) in EXPECTED.items():
+            got = _ev(f'Pattern("{name}")', f, "5m" if f is hand else "1m")
+            want = [False, False] + [(m := getattr(cp, fn)(f, i)) is not None and (direction is None or m.direction == direction)
+                                     for i in range(2, len(f))]
+            assert got.tolist() == want, name
+    shown = {name for name in EXPECTED if _ev(f'Pattern("{name}")', hand, "5m").any() or _ev(f'Pattern("{name}")', _sample(400)).any()}
+    assert shown == set(EXPECTED), set(EXPECTED) - shown                              # every name was really compared
+
+
+def test_pin_bar_rejection_outside_and_shooting_star_by_hand():
+    flat = [(100, 101, 99, 100)] * 3
+    rows = lambda bar: _frame(flat + [bar])                                        # noqa: E731
+    last = lambda name, bar: bool(_ev(f'Pattern("{name}")', rows(bar), "5m").iloc[-1])   # noqa: E731
+    long_lower = (100, 100.2, 96, 99.9)                                            # long lower wick, small body
+    long_upper = (100, 104, 99.8, 100.1)                                           # long upper wick, small body
+    assert last("bullish_pin_bar", long_lower) and not last("bearish_pin_bar", long_lower)
+    assert last("bearish_pin_bar", long_upper) and not last("bullish_pin_bar", long_upper)
+    assert last("bullish_rejection", long_lower) and not last("bearish_rejection", long_lower)
+    assert last("bearish_rejection", long_upper) and not last("bullish_rejection", long_upper)
+    assert last("shooting_star", (100, 104, 99.95, 100.3)) and not last("hammer", (100, 104, 99.95, 100.3))
+    assert last("bullish_outside_bar", (99.5, 102, 98, 101.5)) and not last("bearish_outside_bar", (99.5, 102, 98, 101.5))
+    assert last("bearish_outside_bar", (100.5, 102, 98, 98.5)) and not last("bullish_outside_bar", (100.5, 102, 98, 98.5))
+    assert last("inside_bar", (100, 100.5, 99.5, 100.2))
+
+
+def test_patterns_cost_little_on_a_long_frame():
+    import time
+    f = _sample(3000)
+    t = time.perf_counter()
     for name in PATTERN_NAMES:
-        fn, direction = _PATTERNS[name]
-        got = _ev(f'Pattern("{name}")', f)
-        want = [False, False] + [(m := getattr(cp, fn)(f, i)) is not None and (direction is None or m.direction == direction)
-                                 for i in range(2, len(f))]
-        assert got.tolist() == want, name
-    assert _ev('Pattern("doji")', f).any()                                       # the comparison was not vacuous
+        _ev(f'Pattern("{name}")', f)
+    assert time.perf_counter() - t < 2.0                                           # bar-by-bar this was ~0.2 s per name
 
 
 def test_a_hand_built_hammer_and_engulfing_show_on_their_own_bar_only():
@@ -114,10 +156,13 @@ def test_a_swing_counts_from_the_bar_that_confirmed_it_not_from_the_extreme():
     assert any(p.price != prev.price for prev, p in zip(highs, highs[1:]))
     lo, d = _ev("SwingLow()", f), _ev("SwingDirection()", f)
     first = pivots[0].confirmed_idx
-    assert np.isnan(hi.iloc[: min(p.confirmed_idx for p in highs)]).all() and (d.iloc[:first] == "").all()
+    assert np.isnan(hi.iloc[: min(p.confirmed_idx for p in highs)]).all() and d.iloc[:first].isna().all()
     last = pivots[-1]
     assert d.iloc[-1] == ("DOWN" if last.kind == "H" else "UP")
-    assert set(d.unique()) == {"", "UP", "DOWN"}
+    assert set(d.dropna().unique()) == {"UP", "DOWN"}
+    # missing never matches, whichever way it is written
+    assert not _ev('SwingDirection() != "DOWN"', f).iloc[:first].any()
+    assert not _ev('SwingDirection() IN ("UP", "DOWN")', f).iloc[:first].any()
     assert (lo.dropna() > 0).all()
 
 
@@ -153,3 +198,31 @@ def test_a_screen_with_price_action_runs_end_to_end():
     assert v.ok, v.problems
     out = run_screen(ast, v, [SymbolData("S", {"1m": f})], base_tf="1m")
     assert len(out) == 1 and out[0].reason is None
+    expected = bool(_ev(text, f).iloc[-1])
+    assert out[0].matched == expected
+    flipped = run_screen(*compile_screen(f"NOT ({text})", base_tf="1m"), [SymbolData("S", {"1m": f})], base_tf="1m")
+    assert flipped[0].matched == (not expected)                                       # one of the two runs matches
+
+
+def test_a_daily_swing_on_an_intraday_screen_says_it_lacks_history():
+    f = _sample(900)                                                                  # under two weeks of 1m bars
+    ast, v = compile_screen("close > SwingLow(0)@1d", base_tf="1m")
+    assert v.ok and v.lookback["1d"] >= 100
+    out = run_screen(ast, v, [SymbolData("S", {"1m": f})], base_tf="1m")
+    assert out[0].matched is False and out[0].reason == "not enough history on 1d"
+
+
+def test_fetch_days_count_each_timeframe_in_its_own_minutes():
+    from app.screener.routes import MAX_INTRADAY_FETCH_DAYS, fetch_days
+    assert fetch_days({"5m": 21}, "5m") == 6                                          # 1 session -> 2 days + holiday room
+    assert fetch_days({"1h": 100}, "1h") == 27                                        # 16 sessions -> 23 days + holiday room
+    assert fetch_days({"5m": 21, "1d": 100}, "5m") == MAX_INTRADAY_FETCH_DAYS          # 100 sessions: capped, then reported
+
+
+def test_classifier_values_are_checked():
+    ok = lambda text: compile_screen(text, base_tf="5m")[1]                          # noqa: E731
+    assert "never matches" in ok('SwingDirection() == "up"').problems[0].message
+    assert "never matches" in ok('Trend() IN ("UPTREND", "SIDEWAYS")').problems[0].message
+    assert "never matches" in ok('"bullish" == ChainBias()').problems[0].message
+    assert ok('SwingDirection() == "UP"').ok and ok('Trend() IN ("UPTREND", "RANGE")').ok and ok('StructureEvent() == ""').ok
+    assert describe()["SwingDirection"]["values"] == ["UP", "DOWN"]

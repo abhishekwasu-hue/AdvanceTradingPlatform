@@ -254,30 +254,14 @@ def _pattern(f: pd.DataFrame, direction: str) -> bool:
     return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
 
 
-_PATTERNS: Dict[str, Tuple[str, Optional[str]]] = {
-    "doji": ("detect_doji", None), "hammer": ("detect_hammer", None), "shooting_star": ("detect_shooting_star", None),
-    "bullish_engulfing": ("detect_bullish_engulfing", None), "bearish_engulfing": ("detect_bearish_engulfing", None),
-    "morning_star": ("detect_morning_star", None), "evening_star": ("detect_evening_star", None),
-    "bullish_pin_bar": ("detect_pin_bar", "BULLISH"), "bearish_pin_bar": ("detect_pin_bar", "BEARISH"),
-    "inside_bar": ("detect_inside_bar", None),
-    "bullish_outside_bar": ("detect_outside_bar", "BULLISH"), "bearish_outside_bar": ("detect_outside_bar", "BEARISH"),
-    "bullish_rejection": ("detect_strong_rejection", "BULLISH"), "bearish_rejection": ("detect_strong_rejection", "BEARISH"),
-}
-
-
 def _pattern_series(f: pd.DataFrame, name: str) -> pd.Series:
-    """S5-A: True on each bar where the named pattern shows. A detector reads bar i and at most the two before it, so
-    the first two bars are False (never a wrap-around to the end of the frame)."""
-    from app.price_action import candlestick_patterns as cp
-    if name not in _PATTERNS:
+    """S5-A: True on each bar where the named pattern shows (`candlestick_patterns.pattern_masks`, vectorised: a whole
+    frame costs about as much as one bar did). The first two bars are False."""
+    from app.price_action.candlestick_patterns import pattern_masks
+    masks = pattern_masks(f)
+    if name not in masks:
         raise ScreenRuntimeError(f"unknown pattern {name!r}")
-    fn_name, direction = _PATTERNS[name]
-    detect = getattr(cp, fn_name)
-    out = np.zeros(len(f), dtype=bool)
-    for i in range(2, len(f)):
-        m = detect(f, i)
-        out[i] = m is not None and (direction is None or m.direction == direction)
-    return pd.Series(out, index=f.index)
+    return pd.Series(masks[name], index=f.index)
 
 
 def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -299,7 +283,7 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
         direction[c] = "DOWN" if p.kind == "H" else "UP"
     hi = pd.Series(high, index=f.index).ffill()
     lo = pd.Series(low, index=f.index).ffill()
-    d = pd.Series(direction, index=f.index).ffill().fillna("")
+    d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
 
 
@@ -425,15 +409,19 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
     out: List[Match] = []
     for d in universe:
-        short = [tf for tf, bars in validated.lookback.items() if tf in d.frames and len(d.frames[tf]) < bars] if check_history else []
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
             out.append(Match(d.symbol, False, f"no {base_tf} bars"))
             continue
+        ev = _Eval(d, base_tf, params, constants[d.symbol])
+        # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
+        # daily bars; a few days of 5m bars would otherwise give NaN with no reason)
+        short = [tf for tf, bars in validated.lookback.items()
+                 if (tf in d.frames or n.TF_MINUTES.get(tf, 0) > n.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars] if check_history else []
         if short:
             out.append(Match(d.symbol, False, f"not enough history on {', '.join(sorted(short))}"))
             continue
         try:
-            value = _last(_Eval(d, base_tf, params, constants[d.symbol]).ev(ast, base_tf))
+            value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
             out.append(Match(d.symbol, False, str(exc)))
             continue

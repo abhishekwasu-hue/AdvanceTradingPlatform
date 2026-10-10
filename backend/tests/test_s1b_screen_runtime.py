@@ -178,7 +178,7 @@ def test_price_action_series_s5a():
     assert _ev('Pattern("doji")', data).dtype == bool
     hi, lo = _ev("SwingHigh()", data), _ev("SwingLow(0)", data)
     assert hi.notna().any() and lo.notna().any() and (hi.dropna() > lo.dropna().min()).all()
-    assert set(_ev("SwingDirection()", data).unique()) <= {"", "UP", "DOWN"}
+    assert set(_ev("SwingDirection()", data).dropna().unique()) <= {"UP", "DOWN"}
     assert _ev("MedianRange(5)", data).iloc[-1] == pytest.approx(2.0)          # high - low is 2 on every bar
 
 

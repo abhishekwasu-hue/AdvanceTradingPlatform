@@ -165,6 +165,8 @@ class _Checker:
         if isinstance(node, n.Compare):
             (lt, lu), (rt, ru) = self.check(node.left, tf), self.check(node.right, tf)
             self.comparable(node, (lt, lu), (rt, ru), node.op)
+            self.domain(node.left, [node.right])
+            self.domain(node.right, [node.left])
             return BOOL, None
         if isinstance(node, n.Between):
             v, lo, hi = self.check(node.value, tf), self.check(node.low, tf), self.check(node.high, tf)
@@ -182,6 +184,7 @@ class _Checker:
                     self.err("IN takes literals only", item)
                     continue
                 self.comparable(node, v, self.check(item, tf), "IN")
+            self.domain(node.value, list(node.items))
             return BOOL, None
         if isinstance(node, n.Logic):
             if node.op not in ("ALL", "ANY"):
@@ -198,6 +201,17 @@ class _Checker:
             return BOOL, None
         self.err(f"not a ScreenQL node: {type(node).__name__}", node)
         return BOOL, None
+
+    def domain(self, cat: Any, others: List[Any]) -> None:
+        """S5-A review: a classifier with a fixed set of values refuses a literal outside it (`SwingDirection() == "up"`
+        would otherwise validate and never match)."""
+        spec = FUNCTIONS.get(cat.name) if isinstance(cat, n.Call) else None
+        if spec is None or not spec.values:
+            return
+        for other in others:
+            value = other.value if isinstance(other, n.Str) else self.params.get(other.name) if isinstance(other, n.Param) else None
+            if isinstance(value, str) and value not in spec.values:
+                self.err(f"{spec.name} is one of {', '.join(v for v in spec.values if v)}; {value!r} never matches", other)
 
     def comparable(self, node: Any, left: T, right: T, op: str) -> None:
         (lt, lu), (rt, ru) = left, right

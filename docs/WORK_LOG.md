@@ -923,3 +923,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instead of NULL; a test scans app/ so a new caller without a version fails CI.
 - monitor.py: the docstring said an optional LLM phrased the reason - no model is called there; corrected.
 - Tests: tests/test_hc1_prompt_versions.py (5). H-C1 complete: a-f built; ADR-0019 (agent tools and loop) next.
+
+### 2026-10-11 01:47 IST - ADR-0019 / ADR-0020 (before H-C2 / H-C10)
+- ADR-0019, the Copilot agent: typed read-only tools in a registry; a bounded loop run by our code (steps, tokens,
+  time); an answer contract (numbers only from tool output, `as_of`); proposals only (ADR-0006); every step
+  audited. Option B, provider-native tool use behind our own loop, provisional per spec 0.6.
+- ADR-0020, evals and governance: golden sets per prompt version in CI with fake providers; a nightly live eval
+  capped by the operator and off until set; a model registry with shadow mode; a kill switch per tenant and
+  globally; disclosure.
+- Next: H-C2 build (tool registry and loop), with H-C10 evals alongside.

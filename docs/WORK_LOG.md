@@ -860,3 +860,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
+
+### 2026-10-11 00:56 IST - OI Banner O1: oi_regime.py (port from Trade)
+- Spec stored at `docs/specs/ATP_OI_BANNER_SPEC.md`; design note at `docs/design/OI_BANNER.md`.
+- `app/option_chain/oi_regime.py` holds the pure functions and `OIRegimeSettings` (every threshold, the PCR band
+  edges and the hysteresis counts are settings). Strike step: from settings, or inferred from the chain. Max pain
+  reuses ATP's `compute_max_pain`.
+- Golden fixtures were captured from Trade's own functions, and Trade's named tests were ported in English. 30 tests.
+- Deliberate differences: gates fail closed on missing data; strict confirmation mode works (Trade's could never
+  pass); untimed data counts as stale. Open questions OI-1..OI-4 are in the design note.

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -1817,3 +1817,122 @@ class LlmCallRecord(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+# --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a
+# source can correct itself, a `version`: a query "as of T" sees only rows ingested at or before T and, per key, the
+# highest such version. Times are bar END / event time in UTC. On TimescaleDB the four time-series tables become
+# hypertables (migration b1c2d3e4f5a6, only when the extension is available); on plain Postgres/SQLite they are tables.
+
+class MdCandleRecord(Base):
+    __tablename__ = "md_candles"
+
+    instrument_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    timeframe: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)          # bar END (realism C1)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    open: Mapped[float] = mapped_column(Price, nullable=False)
+    high: Mapped[float] = mapped_column(Price, nullable=False)
+    low: Mapped[float] = mapped_column(Price, nullable=False)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdTickRecord(Base):
+    __tablename__ = "md_ticks"
+
+    instrument_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)
+    seq: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=0)       # order within the same timestamp
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    ltp: Mapped[float] = mapped_column(Price, nullable=False)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdOptionChainRecord(Base):
+    __tablename__ = "md_option_chain_snapshots"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    expiry: Mapped[date] = mapped_column(Date, primary_key=True)
+    strike: Mapped[float] = mapped_column(Price, primary_key=True)
+    option_type: Mapped[str] = mapped_column(String(2), primary_key=True)          # CE / PE
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    ltp: Mapped[float | None] = mapped_column(Price, nullable=True)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdPositionLimitRecord(Base):
+    """Market-wide position limit and open interest per underlying per day (NSE F&O) - the data D7 (FutEq / MWPL) needs."""
+
+    __tablename__ = "md_position_limits"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    mwpl: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    open_interest: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class InstrumentMasterVersionRecord(Base):
+    """An instrument's contract terms over time (lot size, tick size, ...): valid from `valid_from` until the next version."""
+
+    __tablename__ = "instrument_master_versions"
+    __table_args__ = (UniqueConstraint("instrument_key", "valid_from", "source", name="uq_instrument_master_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)                  # EQ / FUT / CE / PE / INDEX ...
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tick_size: Mapped[float] = mapped_column(Price, nullable=False)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    strike: Mapped[float | None] = mapped_column(Price, nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdCorporateActionRecord(Base):
+    """Market-data lake (not the fundamentals `corporate_actions` announcements table): splits, bonuses and dividends with their ex-date; `ratio_new / ratio_old` is the share multiplier (1:2 split -> 2/1)."""
+
+    __tablename__ = "md_corporate_actions"
+    __table_args__ = (UniqueConstraint("symbol", "exchange", "ex_date", "action", "version", name="uq_md_corporate_action_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    ex_date: Mapped[date] = mapped_column(Date, nullable=False)
+    action: Mapped[str] = mapped_column(String(12), nullable=False)                # SPLIT / BONUS / DIVIDEND
+    ratio_new: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ratio_old: Mapped[float | None] = mapped_column(Float, nullable=True)
+    amount: Mapped[float | None] = mapped_column(Money, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class DataQualityEventRecord(Base):
+    """One detected problem in the lake (gap / spike / duplicate / late / mismatch) - B3 writes these, nothing deletes them."""
+
+    __tablename__ = "data_quality_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    timeframe: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

@@ -920,3 +920,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   SUPER_ADMIN API GET /api/compliance/golive, PUT /api/compliance/golive/evidence (audited). Platform readiness shows them
   as LIVE-scope items, `warn` at most (PAPER never blocked). Strategy class kept as evidence (OPEN_QUESTIONS D-4,
   provisional). Rule IN-SEBI.golive.checklist -> enforced. Tests: 8. Next: D7 waits for part B data -> part B build.
+
+### 2026-10-10 23:16 IST - part B1: market data lake schema + as-of reads
+- Tables md_candles (bar END, source, version), md_ticks, md_option_chain_snapshots, md_position_limits (MWPL / OI for
+  D7), instrument_master_versions (valid_from), md_corporate_actions (the fundamentals `corporate_actions` table is a
+  different thing and stays), data_quality_events; every row carries ingested_at. Migration b1c2d3e4f5a6: hypertables
+  only when the timescaledb extension is installable (plain Postgres go-live unaffected, B-1 provisional); verified on
+  local plain Postgres 16: upgrade, alembic check, downgrade, upgrade. The Timescale branch is not exercised here (no
+  extension in this sandbox). app/market_lake/asof.py: candles / instrument terms / position limits as of T (late rows
+  and corrections invisible before ingestion). Tests: 4 (crafted instants). Next: B2 ingest (candle builder from ticks,
+  vendor seam with a mocked adapter, broker backfill).

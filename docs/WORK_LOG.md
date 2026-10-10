@@ -974,3 +974,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   as-of reads `symbol_on`, `isin_for`, `listed_on` (delisted names kept for historical days).
 - Worker: once a day after UNIVERSE_SYNC_HOUR_IST when UNIVERSE_SYNC_ENABLED (off; NSE terms to be checked first).
 - Tests: tests/test_u1a_universe_securities.py (7) with fixture CSVs.
+
+### 2026-10-11 00:30 IST - Screener U1-b: index catalogue, membership as-of, NSE classification
+- Tables indices / index_membership / classifications (migration c7a1d2e3f4b6, down-migration drops them).
+- Catalogue as data (app/universe/data/indices.json: 25 broad and sectoral indices, provider file URL, broker symbol,
+  derivatives flag; no index sizes stored). Constituent files are diffed against open ranges: entries open a range
+  from the run's day, exits close it; a first file marks start_observed (inclusion date unknown; reads before it
+  return nothing and coverage_from says from when). Gates: empty file, short file (UNIVERSE_MIN_ROWS_RATIO),
+  churn above UNIVERSE_MAX_CHURN_RATIO (0.2) - refused with a CONSTITUENTS event. Unknown ISINs reported.
+- The files' Industry column fills the NSE sector level (U1-Q3, provisional); other levels stay empty.
+- Reads: members_on, indices_of, classification_on, coverage_from. Worker runs it after the equity lists (flag off).
+- Tests: tests/test_u1b_universe_indices.py (6).

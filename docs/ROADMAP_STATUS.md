@@ -37,13 +37,13 @@ Last update: 2026-10-11 00:31 IST.
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
 | H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a-c done (#103); d-f done (full suite 1364 passed) | #103, #108 | 100 |
-| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 done (provisional); H-C2a agent core done (read tools, bounded loop, audit; flag off; suite 1375 passed); H-C2b-1 proposal tools + injection guard in progress | #115, #117 | 25 |
+| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate (each full suite green, flag off) | #115, #117-#121 | 55 |
 | S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
 | U1-a/b/c | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification; index EOD, F&O lots, ban list | a-c done (suite 1390 passed, Postgres migration checked); d/e after S1 | #105, #106, #110 | 75 |
-| S1, S3 | ScreenQL engine + scanner migration; Notification Service on the existing outbox | after H-C1 | - | 0 |
+| S1, S3 | ScreenQL engine + scanner migration; Notification Service on the existing outbox | S1a parser/AST/validator, S1b runtime, S1c scanner on ScreenQL (parity fuzz; SCANNER_ENGINE default legacy) done; S1d API + saved screens + runs in progress; S3 next | #122-#124 | 45 |
 | I | Options analytics | not started | - | 0 |
 | CH0 | Advanced charting: spec, design note, ADR-0023 ChartEngine | done (design) | #107 | 100 |
-| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | next after the OI banner | - | 0 |
+| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage (drawing/1, versioned API, export/import) and CH1b ChartEngine + B-lite adapter built, PRs next; CH2 v5 upgrade after | - | 20 |
 | OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built; each suite green; waiting for the owner's merge | #109, #111-#114, #116 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |

@@ -951,3 +951,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   batch), cross-source mismatch (above LAKE_MISMATCH_PCT); scan_day reads the latest version per source and records new
   events once. Thresholds are config. Tests: 3 (a clean session raises none; each crafted problem exactly one; re-scan
   writes nothing new). Next: B4 corporate-action adjustment; worker scan job with B6 metrics/alerts.
+
+### 2026-10-10 23:27 IST - part B4: corporate-action adjusted view
+- app/market_lake/adjust.py: adjusted candles as a read-time view - splits/bonuses multiply prices before the ex-date
+  by ratio_old/ratio_new and divide volume by it (factors compound); dividends only with LAKE_ADJUST_DIVIDENDS, from
+  the cum-dividend close, volume untouched; only actions known at as_of apply; derivatives never adjusted; incomplete
+  ratios ignored. Stored data never changes. Tests: 5. Next: B5 history API + backtests reading the lake.

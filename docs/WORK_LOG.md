@@ -937,3 +937,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   END), HistoryVendor seam + MockVendor (no paid vendor until the owner picks one, B-2). app/market_lake/recorder.py:
   stream ticks -> 1-minute bars (source stream:<broker>), bounded backlog, never raises into the stream; worker drains
   it each cycle. Flag LAKE_TICK_WRITER_ENABLED (off). Tests: 9; stream + worker suites green. Next: B3 quality detectors.
+
+### 2026-10-10 23:21 IST - part D7 (first slice): F&O ban period from lake MWPL / OI
+- app/compliance/fo_limits.py: open interest at or above ban_threshold_pct (rule-set, 95) of MWPL on the signal's IST
+  day -> new F&O entry refused (single contract and multi-leg; PAPER too, so paper never takes trades the market would
+  refuse); exits untouched. No lake row -> no refusal, a note on the order instead. Flag FO_BAN_CHECK_ENABLED (off).
+  Rule IN-SEBI.risk.futeq_mwpl stays partial: client-level FutEq limit, expiry-day margin multiplier and lot-size as-of
+  are next. Tests: 3 (incl. a PAPER option entry refused, then filled on a non-banned day); contract/multileg suites green.

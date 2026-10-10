@@ -218,7 +218,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     bar = forming_bar(now, rule.base_tf, holidays) if intrabar else expected_bar(now, rule.base_tf, holidays)
     if bar is None:
         if intrabar:
-            return "skipped", 0                                    # outside the session: nothing is forming
+            rule.last_problem = None                               # outside the session nothing is forming: not a problem
+            return "skipped", 0
         rule.last_problem = f"no closed {rule.base_tf} bar found"
         return "unsupported", 0
     if not intrabar and rule.last_bar_at is not None and _utc(rule.last_bar_at) >= bar:

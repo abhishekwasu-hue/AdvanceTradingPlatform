@@ -134,3 +134,77 @@ def test_the_api_refuses_intrabar_rules_while_the_flag_is_off_and_run_due_uses_t
         assert (out.rules, out.evaluated, out.fired) == (1, 1, 1) and fetch.calls == [True]
     finally:
         _flags(screener_v2=False, screener_intrabar=False)
+
+
+def test_fetch_frames_keeps_the_forming_bar_and_skips_the_cache_only_for_intrabar(monkeypatch):
+    """The real fetch path (review follow-up): bar-close fetches drop the forming bar and may use the candle cache; an
+    intrabar fetch keeps the forming 1m bar, keeps the forming 3m bucket, and never reads a cached copy."""
+    from types import SimpleNamespace
+
+    from app.brokers import token_lifecycle
+    from app.core.models import OHLCVBar
+    from app.market_data import candles_routes
+    from app.market_data.service import MarketDataService
+    from app.screener.routes import fetch_frames
+    base = _bars(ist(TUE, 9, 15), [1, 2, 3, 4], minutes=1)                                     # 09:15..09:18, 09:18 forming
+    seen = []
+
+    async def get_candles(self, symbol, exchange="NSE", interval="1min", now=None, fresh=False):
+        seen.append((interval, fresh))
+        return [OHLCVBar(timestamp=ts.to_pydatetime(), open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume)
+                for ts, r in base.iterrows()]
+
+    async def pick(*a, **k):
+        return SimpleNamespace(broker_name="fake")
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(MarketDataService, "get_candles", get_candles)
+    now = ist(TUE, 9, 18) + timedelta(seconds=30)
+    closed, problems, _ = _run(fetch_frames(None, 1, ["TCS"], "NSE", "1m", {"1m": 5}, now=now))
+    assert problems == {}
+    forming, _, _ = _run(fetch_frames(None, 1, ["TCS"], "NSE", "1m", {"1m": 5}, now=now, include_forming=True))
+    assert seen == [("1min", False), ("1min", True)]
+    assert len(closed[0].frames["1m"]) == 3 and len(forming[0].frames["1m"]) == 4
+    three, _, _ = _run(fetch_frames(None, 1, ["TCS"], "NSE", "3m", {"3m": 5}, now=now, include_forming=True))
+    assert three[0].frames["3m"].iloc[-1]["close"] == 4
+    three_closed, _, _ = _run(fetch_frames(None, 1, ["TCS"], "NSE", "3m", {"3m": 5}, now=now))
+    assert len(three_closed[0].frames["3m"]) == 1
+
+
+def test_fresh_skips_the_cache_read_but_still_writes(monkeypatch):
+    from app.market_data import service as svc
+
+    store = {"md:candles:fake:NSE:TCS:1min": "[]"}
+    fetched = []
+
+    async def get(key):
+        return store.get(key)
+
+    async def put(key, value, ttl):
+        store[key] = value
+
+    async def fetch(self, symbol, exchange, interval, now):
+        fetched.append(symbol)
+        return []
+    monkeypatch.setattr(svc, "cache_get", get)
+    monkeypatch.setattr(svc, "cache_set", put)
+    monkeypatch.setattr(svc.MarketDataService, "_fetch", fetch)
+    s = svc.MarketDataService(type("B", (), {"name": "fake"})())
+    store["md:candles:fake:NSE:TCS:1min"] = '[{"timestamp": "2026-03-10T03:45:00Z", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}]'
+    assert len(_run(s.get_candles("TCS"))) == 1 and fetched == []                              # cached copy served
+    assert _run(s.get_candles("TCS", fresh=True)) == [] and fetched == ["TCS"]                 # broker asked
+
+
+def test_the_message_says_intrabar_and_outside_the_session_clears_the_old_problem():
+    from types import SimpleNamespace
+
+    from app.alerts.engine import _message
+    rule = SimpleNamespace(name="r")
+    ev = lambda values: SimpleNamespace(symbol="TCS", bar_time=utc(ist(TUE, 9, 25)), values_json=json.dumps(values))  # noqa: E731
+    assert "still forming" in _message(rule, [ev({"close": 1, "intrabar": True})], None)[1]
+    assert "bar closing" in _message(rule, [ev({"close": 1})], None)[1]
+    _, me = _owner("s4b2-quiet@example.com")
+    rid = _rule(me["tenant_id"], fire_on="intrabar")
+    fetch = FormingFetch({"TCS": _bars(ist(TUE, 9, 15), [99])})
+    _evaluate(rid, ist(TUE, 9, 16), fetch)                                                     # leaves "waiting..." on the rule
+    assert _evaluate(rid, ist(TUE, 16, 0), fetch)[1] is None

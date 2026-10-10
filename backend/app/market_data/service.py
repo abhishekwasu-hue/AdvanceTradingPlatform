@@ -81,16 +81,17 @@ class MarketDataService:
         self.lookback_days = lookback_days
 
     async def get_candles(
-        self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None,
+        self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
     ) -> List[OHLCVBar]:
-        """Recent history plus today's bars so far, ascending, from cache when fresh."""
+        """Recent history plus today's bars so far, ascending, from cache when fresh. `fresh` skips the cache read (the
+        result is still cached for others): S4b-2 intrabar alerts need the bar forming now, not a copy up to a TTL old."""
         key = _cache_key(self.broker.name, exchange, symbol, interval)
         lookback = self._lookback(interval)
         if lookback != DEFAULT_LOOKBACK_DAYS:
             # Phase AA: the research pages ask for longer windows than the worker; a 5-day
             # worker fetch must not be served back as a 30-day one (or the reverse).
             key = f"{key}:{lookback}d"
-        cached = await cache_get(key)
+        cached = None if fresh else await cache_get(key)
         if cached:
             try:
                 return [OHLCVBar.model_validate(item) for item in json.loads(cached)]

@@ -454,6 +454,24 @@ job, never tuned against results.
 - **Tests.** `tests/test_s4b2_intrabar.py` (5), plus 6 mutation checks: `last_bar_at` set, session end inclusive, no
   flag gate, no intrabar mark, forming bucket dropped, no API gate.
 
+### S4b-2 review follow-up
+- **No cached copy for intrabar.** The candle cache keeps a copy for up to 60 s, so an intrabar fetch could miss the
+  bar forming now. `get_candles(fresh=True)` skips the cache read for intrabar fetches only. The result is still
+  written to the cache; bar-close fetches are unchanged.
+- **The message says intrabar.** When a batch holds an intrabar event, the notification says "the bar still forming
+  at … (intrabar: it may not hold at the close)" instead of "the bar closing …".
+- **Out of session clears the old problem.** Outside the session an intrabar rule is skipped with `last_problem`
+  cleared, so a "waiting" note from the day does not stay up overnight.
+- **Tests (+3).**
+  - The real `fetch_frames` path, with and without the forming bar, at 1m and resampled 3m.
+  - `fresh` skips the cache read.
+  - The message text, and the cleared problem.
+- **Not changed (noted).**
+  - Intrabar rules are due every 60 s in session, and broker fetches are per symbol. The 10 s cycle budget is
+    checked between rules, so bar-close rules can move to the next cycle; ordering by oldest `last_checked_at` limits
+    this.
+  - `condition_hash` does not include `fire_on`. No route edits `fire_on` today.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-11. Intrabar alerts that stop holding by the close.** An intrabar event can fire on a condition that is false
   when the bar closes. Provisional: the event says `intrabar: true` and nothing more is sent.

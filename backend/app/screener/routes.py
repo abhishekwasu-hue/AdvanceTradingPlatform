@@ -170,7 +170,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     problems: Dict[str, str] = {}
     for symbol in symbols:
         try:
-            bars = await service.get_candles(symbol, exchange, interval)
+            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                          else service.get_candles(symbol, exchange, interval))
         except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
             problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
             continue

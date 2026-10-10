@@ -101,6 +101,10 @@ ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false")
 # rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.
 OPS_THROTTLE_ENABLED = os.environ.get("OPS_THROTTLE_ENABLED", "false").lower() in ("1", "true", "yes")
 OPS_PER_SECOND = float(os.environ.get("OPS_PER_SECOND", "0") or 0) or None
+# Part D4 (rule IN-SEBI.static_ip.registered): the public IP this server's API orders leave from (deploy/hostinger/status.sh
+# prints it as "egress IP"), and whether a LIVE entry is refused unless that IP is registered for the deployment's broker.
+SERVER_EGRESS_IP = os.environ.get("SERVER_EGRESS_IP", "").strip() or None
+STATIC_IP_REQUIRED_FOR_LIVE = os.environ.get("STATIC_IP_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
 
 # Phase E1: observability. METRICS_TOKEN protects GET /metrics on the API (empty = open, fine
 # behind a private network); WORKER_METRICS_PORT serves the worker's own metrics (0 = off).

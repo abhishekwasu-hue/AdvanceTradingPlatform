@@ -882,3 +882,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   price) / refuse; allowed validities. Router applies it to entries only (exits and stops untouched, ADR-0004); a refusal
   is a clean refusal before the broker. Default policy = today's behaviour. Rule IN-SEBI.order_type.policy enforced.
 - Tests: tests/test_d3_order_policy.py (6); router/tagging/order-safety/G-LIVE suites green (63).
+
+### 2026-10-10 22:53 IST - part D4 (backend): registered static egress IPs
+- Tables egress_ips (PRIMARY/BACKUP per broker) + egress_ip_changes (append-only); migration d4e1f2a3b4c5 verified on a
+  local Postgres: upgrade, alembic check (no drift), downgrade, upgrade. Service app/compliance/static_ip.py: public IPs only,
+  max_changes_per_week from the rule-set (the first registration is not a change), shared-IP + server-IP warnings.
+  API GET/PUT /api/compliance/static-ips (owner writes, audited). Worker: LIVE entries refused when
+  STATIC_IP_REQUIRED_FOR_LIVE (off) and SERVER_EGRESS_IP is not registered for the broker; PAPER/exits untouched.
+  Readiness item static_ip (LIVE). Rule IN-SEBI.static_ip.registered enforced. Tests: 6. Frontend card next.

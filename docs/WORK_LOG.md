@@ -869,7 +869,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-10 23:30 IST - part C3 + C4 on PR #83 (backtest realism)
+### 2026-10-10 22:30 IST - part C3 + C4 on PR #83 (backtest realism)
 - C3: `backend/scripts/bench_backtest.py` (timings, growth, bars/s, indicator-cache counters); CI guard
   `tests/test_realism_benchmark.py` - per run the indicator cache's whole computations and unserved calls must not grow
   with the bars (deterministic; checked to fail on a simulated regression: 12/13 strategies). Table in docs/BENCHMARKS.md.

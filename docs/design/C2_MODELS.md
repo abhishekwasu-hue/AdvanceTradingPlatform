@@ -1,6 +1,6 @@
 # Part C2 - Pluggable execution models for backtests: design note
 
-Spec: MASTER SPEC v1 §2 (C2). Status: **design**. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
+Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired). It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
 cache, C4 reproducibility fingerprint). The models below are added in small PRs. The default model of each kind
 reproduces today's numbers exactly, so no existing backtest result changes until someone picks a different model.
 

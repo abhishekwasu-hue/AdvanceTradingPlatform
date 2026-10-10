@@ -885,3 +885,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   parameters in the reproducibility fingerprint, no-look-ahead guard per model, costs stay in india_costs.py.
   Open questions C2-1 / C2-2 provisional. Check-in: #83, #85, #86 green; #96 (B1) red on the numeric-migration guard -
   fixed (guard now also accepts create_table), full suite running before the push.
+
+### 2026-10-10 23:31 IST - part C2 PR 1: models package, defaults, golden test
+- app/backtest/models: SlippageModel / FillModel protocols, FixedPctSlippage + TouchFill defaults, ModelSet (unknown or
+  not-yet-available models refused). run_backtest(models=...) uses the fill model for exits and the slippage model for
+  entries/exits; the default set is the pre-C2 engine (golden result_hash for all 13 strategies recorded from the pre-C2
+  engine before wiring: tests/golden/c2_default_models.json). API field execution_models (422 on bad input, 422 on an
+  option backtest for now); non-default sets enter the fingerprint's config_hash, default runs keep their hash.
+  Tests: 18 (13 golden). The test caught /api/backtest dropping the field (main.py's request model) - fixed.

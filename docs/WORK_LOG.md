@@ -914,3 +914,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `screens` and `screen_runs` tables; migration `c5e7a9b1d3f5`, checked on Postgres.
 - Tests: `tests/test_s1d_screener_api.py` (5).
 - Open question SC-5 (run retention).
+
+### 2026-10-11 03:00 IST - S3a: Notification Service rules/events/throttle (+ container restart)
+- `alert_rules`, `alert_events` (idempotency key), `notification_policies`; `alert_deliveries` gains priority, group,
+  bucket and reason. Migration `e9a1c3d5f7b9`, checked on Postgres.
+- Engine: dedupe, cooldown, burst grouping, quiet hours (timezone-aware, across midnight, critical exempt), hourly
+  cap, digests. The worker flush runs separately from the outbox drain.
+- Rules and policy API behind `screener_v2`. Tests: 6, plus 2 mutation checks.
+- The container restarted during a test run (exit 137: two pytest processes at once). Nothing was lost: the worktrees
+  survived; only the S1d full suite was re-run.
+- Abhi re-sent the Charting and OI Banner specs. Both are byte-identical to the stored copies: OI O1-O5 are built and
+  Charting CH1 is in progress.

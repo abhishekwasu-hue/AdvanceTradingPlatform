@@ -293,6 +293,35 @@ job, never tuned against results.
   - S1e: the builder ⇄ text parity in the frontend (S1d in the spec's numbering).
   - U1-d: the universe picker and the classifiers fed from U1 tables.
 
+## S3a (built): Notification Service - rules, events, dedupe, throttle, grouping, digest
+- **Model** (ADR-0022 option 2: the existing outbox grows).
+  - `alert_rules`: a screen rule (a saved screen) or an instrument rule (a ScreenQL condition on one symbol, validated;
+    cross-sectional conditions refused). Each rule has a priority (critical/normal/low), a cooldown, instant or digest
+    mode (hourly or EOD), an expiry, and pause/resume.
+  - `alert_events`: unique on `idem_key` (rule, symbol, condition hash, bar time). Every event carries a status
+    (pending / sent / suppressed / held) and a reason code.
+  - `notification_policies`: per organisation - timezone, quiet hours, hourly cap, grouping window, EOD digest time.
+  - `alert_deliveries` gains priority, group_id, digest_bucket and reason_code.
+  - Migration `e9a1c3d5f7b9`, checked on Postgres.
+- **Engine** (`app/alerts/engine.py`).
+  - `record_event`: dedupe on the key, then cooldown (stored as suppressed / "cooldown").
+  - `flush` runs in the worker before the outbox drain, isolated from it.
+    - Burst grouping: one notification per rule and bar, listing every symbol.
+    - Quiet hours in the organisation's timezone, including windows that cross midnight: normal and low events are held
+      ("quiet_hours") and critical ones go through.
+    - The hourly cap holds the overflow ("rate_cap"); critical events are exempt.
+    - Digest rules send once per hourly or EOD bucket.
+  - Messages say "matches ... not recommendations". Nothing places an order.
+- **API.** `/api/alerts/rules` (CRUD, pause/resume, events log) and `/api/alerts/policy`, behind the `screener_v2`
+  flag.
+- **Tests.** `tests/test_s3a_notification_service.py` (6). Mutation checks confirmed it: removing quiet hours or
+  cooldown fails the tests.
+- **Next.**
+  - S3b: channel work - Telegram per-user linking, email unsubscribe, a versioned webhook body with a replay window and
+    dead letter.
+  - S3c: the management UI.
+  - S4: rule evaluation at bar close, feeding `record_event`.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-5. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
   list reproducible. Whether and when to delete old runs is the owner's decision (§14).

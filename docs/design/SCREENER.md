@@ -556,6 +556,39 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
   - Zone strength and distance (`level_strength`).
   - These cost more per bar, so the design first needs a bounded tail or an incremental cache.
 
+## S5-A2 (built): `ReversalAt(level, direction)`
+- **What it is.** The trade-port logical reversal rule (`app/price_action/reversal.py`, composite mode, default
+  settings), on every bar: did price reverse at **that bar's** `level`?
+  - The rule: touch, reclaim, strength and close location. Hammer, engulfing and star candles are one rule.
+  - `bullish` reads support; `bearish` reads resistance.
+  - The level is any price expression: `SwingLow()`, `PDL()`, `ORLow(15)`, a parameter or a number.
+- **Causal.** The window always ends on the bar, and the level is the level known at the bar.
+  - The series is checked to equal `evaluate_reversal` on the candles up to each bar, which also proves the prefilter
+    below changes nothing.
+  - Truncation invariance is tested.
+- **Cost.** `Bars` are built once per frame. Only bars whose last few candles reached the level are evaluated: a vector
+  prefilter, widened by the touch tolerance on the correct side. A universe stays well under 0.5 s per symbol (there
+  is a test). Cost weight 4.
+- **Validation.**
+  - The level must be a price, so `ReversalAt(RSI(14), "bullish")` is refused (`Spec.price_args`).
+  - The direction is `bullish` or `bearish`.
+  - The lookback includes the median-range warm-up (`min_bars` 25).
+- **Tests.**
+  - `tests/test_s5a2_reversal.py` (6):
+    - parity with the rule for bullish/SwingLow and bearish/SwingHigh;
+    - a hand-built hammer at support passes, and the wrong side never does;
+    - truncation;
+    - validation;
+    - a timing budget;
+    - parity with a touch tolerance > 0.
+  - 5 mutation checks, all killed:
+    - the prefilter too narrow;
+    - the bearish touch sign (killed only by the tolerance test, because the default tolerance is 0);
+    - the next bar's level (look-ahead);
+    - direction ignored;
+    - no price check.
+- **Next (S5-A3).** Real break versus false break of a level (`breaks`), and zone strength (`level_strength`).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no
   BANKNIFTY bar fixtures are in this repository. Only the expiry calendars are. Provisional: the S5-A tests use the

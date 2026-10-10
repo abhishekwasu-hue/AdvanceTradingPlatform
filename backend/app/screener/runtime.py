@@ -211,6 +211,7 @@ class _Eval:
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -285,6 +286,34 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     lo = pd.Series(low, index=f.index).ffill()
     d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
+
+
+def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:
+    """S5-A2: on each bar, did price logically reverse at that bar's `level` (app/price_action/reversal.py, composite
+    mode, default settings)? The same answer `evaluate_reversal` gives on the candles up to that bar - the window always
+    ends on the bar, so it is causal. A bar whose last few candles never reached the level cannot pass the touch test,
+    so only bars that did are evaluated (a cheap filter; the result is the same)."""
+    from app.price_action import pa_settings
+    from app.price_action import reversal as rv
+    from app.price_action.breaks import median_range
+    if direction not in ("bullish", "bearish"):
+        raise ScreenRuntimeError(f"unknown reversal direction {direction!r}")
+    s = pa_settings.settings()
+    dirn = 1 if direction == "bullish" else -1
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    mr = median_range(frame, s["median_range_n"])
+    bars = rv.Bars(frame, mr)
+    lv = level.to_numpy(float) if isinstance(level, pd.Series) else np.full(len(f), float(level))
+    tol = s["touch_tol_mr"] * np.where(np.isfinite(mr), mr, 0.0)
+    reach_n = s["touch_reclaim_window"] + 1                      # the longest window, with a follow-through candle
+    if dirn > 0:
+        reached = frame["low"].rolling(reach_n, min_periods=1).min().to_numpy() <= lv + tol
+    else:
+        reached = frame["high"].rolling(reach_n, min_periods=1).max().to_numpy() >= lv - tol
+    out = np.zeros(len(f), dtype=bool)
+    for j in np.flatnonzero(reached & np.isfinite(lv)):
+        out[j] = bool(rv.evaluate(bars, int(j), dirn, [float(lv[j])], float(tol[j]), s)["ok"])
+    return pd.Series(out, index=f.index)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

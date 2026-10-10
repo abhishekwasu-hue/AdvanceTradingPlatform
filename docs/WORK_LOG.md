@@ -876,3 +876,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   joined to the broker master by ISIN; contract terms stay in part B's instrument_master_versions (reconciled by test).
 - Order U1-a..U1-e; U1-a..c start now, stacked on the part B chain so Alembic stays linear. U1-Q1 (ISIN identity),
   U1-Q2 (missing industry levels stay empty, never inferred).
+
+### 2026-10-11 02:31 IST - S1a: ScreenQL grammar/AST/validator
+- `app/screener`:
+  - parser: recursive descent; positions on every error;
+  - AST: a JSON wire form for the builder and a canonical text;
+  - registry: 6 fields and 24 functions with units;
+  - validator: types/units, arity, windows, parameters, timeframes finer than the base, look-ahead, offsets ≤ 500,
+    cost cap.
+- Tests: `tests/test_s1a_screenql.py` (16), including a seeded fuzz (600 trees, 3,000 garbage strings).
+- mypy gate now includes `app/screener` (clean).
+- Next: S1b runtime.

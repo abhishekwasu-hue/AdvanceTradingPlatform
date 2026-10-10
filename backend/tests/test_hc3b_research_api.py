@@ -36,6 +36,7 @@ class FakeProvider:
     def __init__(self, replies):
         self.replies = list(replies)
         self.prompts = []
+        self.prompt_version = None
 
     async def complete(self, system, user, *, max_tokens=2000):
         self.prompts.append(user)
@@ -86,6 +87,7 @@ def test_the_llm_proposer_accepts_only_a_json_object():
     assert _run(propose("idea", [{"seq": 1, "status": "invalid"}])) == {"raw": "[1, 2]"}        # not an object: an invalid draft
     assert _run(propose("idea", [])) is None                                                    # the model says it is done
     assert '"earlier_trials"' in provider.prompts[1] and "invalid" in provider.prompts[1]
+    assert provider.prompt_version == research_loop.PROMPT_VERSION and provider.prompt_version.startswith("research-")
 
 
 def test_a_study_through_the_api_stores_trials_and_the_oos_check(monkeypatch, research_on, no_ack_gate):

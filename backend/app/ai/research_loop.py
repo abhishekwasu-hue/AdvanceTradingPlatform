@@ -21,7 +21,7 @@ import pandas as pd
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import research
+from app.ai import prompt_versions, research
 from app.backtest.data_policy import HoldoutError
 
 MAX_DRAFTS = 8                       # H-9 provisional
@@ -123,6 +123,7 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
 
 SYSTEM = ("You draft rule-based intraday strategies for backtesting only. Reply with ONE JSON object in the rule schema, "
           "or null. No prose. You never place orders and your drafts are not recommendations.")
+PROMPT_VERSION = prompt_versions.version_of("research", SYSTEM)        # H-C1 f: the llm_calls row names this prompt
 
 
 def _first_json(text: str) -> Any:
@@ -145,6 +146,7 @@ def llm_proposer(provider: Any) -> Propose:
     The reply is untrusted - a non-object becomes an invalid draft (`{"raw": ...}`), `null` ends the study."""
     from app.strategy_engine.declarative import CustomStrategyConfig
     schema = CustomStrategyConfig.model_json_schema()
+    prompt_versions.stamp(provider, PROMPT_VERSION)
 
     async def propose(idea: str, history: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         reply = await provider.complete(SYSTEM, draft_prompt(idea, history, schema), max_tokens=2000)
@@ -163,4 +165,4 @@ def draft_prompt(idea: str, history: List[Dict[str, Any]], schema: Dict[str, Any
                                        "Return null when nothing worth trying is left."}, default=str)
 
 
-__all__ = ["run_study", "StudyInput", "Propose", "MAX_DRAFTS", "OOS_FRACTION", "draft_prompt", "llm_proposer", "HoldoutError"]
+__all__ = ["run_study", "StudyInput", "Propose", "MAX_DRAFTS", "OOS_FRACTION", "PROMPT_VERSION", "draft_prompt", "llm_proposer", "HoldoutError"]

@@ -598,6 +598,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   switch the toggle to LIVE and clear MFA, email verification and the algo id before the first LIVE
   deployment.
 - **API**: `GET /api/readiness?target=LIVE`, `GET /api/admin/readiness` (SUPER_ADMIN, MFA session).
+- **Go-live evidence (D6, rule IN-SEBI.golive.checklist)**: the platform checklist also lists `golive.*` items (LIVE
+  scope; `warn` at most, so PAPER is never blocked): ISO 27001 / SOC 2, CERT-In VAPT, incident register review, strategy
+  white-box / black-box filing, AI disclosure review, DPO contact, breach runbook (notify within 72 h) - each `ok` while
+  its latest evidence is valid. Record where the evidence lives (a document id or URL, never the document or a secret)
+  with `PUT /api/compliance/golive/evidence {item_id, reference, valid_until?}` (SUPER_ADMIN, audited); `GET
+  /api/compliance/golive` lists them. Two are checked automatically: login history kept at least 365 days, and AI trade
+  ideas unpublished (`marketplace_ai_listings` off) unless an RA registration is on record for `ai.ra_gate`.
 
 ### 1.6t Angel One (SmartAPI) setup (Phase AC)
 

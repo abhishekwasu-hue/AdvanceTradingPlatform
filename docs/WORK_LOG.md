@@ -911,3 +911,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   Every LIVE entry and exit writes an `algo_order` audit row with the tag; the stop re-arm row carries it too.
   Router, multi-leg, position monitor and stop guard all go through the same resolution. Rule
   IN-SEBI.algo_id.registered_above_ops -> enforced. Tests: 5 new; tagging/worker/monitor/multileg suites green.
+
+### 2026-10-10 23:11 IST - part D6: go-live checklist evidence
+- Table compliance_evidence (append-only; migration e6a1b2c3d4f5 verified on local Postgres: upgrade, check, downgrade,
+  upgrade). app/compliance/golive.py: the item list is rule-set data (vendor ISO 27001/SOC 2, CERT-In VAPT, incident
+  register; strategy white-box/black-box filing; AI disclosure; DPO, breach runbook) with validity periods, plus two
+  automatic checks (login history >= log_retention_days; AI trade ideas unpublished unless RA registration on record).
+  SUPER_ADMIN API GET /api/compliance/golive, PUT /api/compliance/golive/evidence (audited). Platform readiness shows them
+  as LIVE-scope items, `warn` at most (PAPER never blocked). Strategy class kept as evidence (OPEN_QUESTIONS D-4,
+  provisional). Rule IN-SEBI.golive.checklist -> enforced. Tests: 8. Next: D7 waits for part B data -> part B build.

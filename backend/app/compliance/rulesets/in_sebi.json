@@ -214,15 +214,87 @@
       "id": "IN-SEBI.golive.checklist",
       "title": "Go-live checklist: vendor empanelment, strategy white-box/black-box class, AI disclosure / RA flag, DPDP",
       "source": "SEBI retail-algo circular; SEBI RA regulations; DPDP Act 2023",
-      "status": "partial",
+      "status": "enforced",
       "params": {
         "dpdp_breach_notify_hours": 72,
-        "log_retention_days": 365
+        "log_retention_days": 365,
+        "items": [
+          {
+            "id": "vendor.iso27001",
+            "group": "vendor",
+            "title": "ISO 27001 / SOC 2 certificate (or the broker's vendor-empanelment acceptance)",
+            "evidence": true,
+            "validity_days": 365
+          },
+          {
+            "id": "vendor.cert_in_vapt",
+            "group": "vendor",
+            "title": "VAPT by a CERT-In empanelled auditor",
+            "evidence": true,
+            "validity_days": 365
+          },
+          {
+            "id": "vendor.incident_register",
+            "group": "vendor",
+            "title": "Incident register kept and reviewed (Admin > Incidents)",
+            "evidence": true,
+            "validity_days": 90
+          },
+          {
+            "id": "strategy.classification",
+            "group": "strategy",
+            "title": "Each LIVE strategy classified white-box / black-box and filed with the broker",
+            "evidence": true,
+            "validity_days": null
+          },
+          {
+            "id": "ai.ra_gate",
+            "group": "ai",
+            "title": "AI trade ideas unpublished unless SEBI Research Analyst registration is on record",
+            "auto": "ra_gate",
+            "validity_days": null
+          },
+          {
+            "id": "ai.disclosure",
+            "group": "ai",
+            "title": "AI-usage disclosure and fee-cap note reviewed (consent text, provider card)",
+            "evidence": true,
+            "validity_days": 365
+          },
+          {
+            "id": "dpdp.dpo",
+            "group": "dpdp",
+            "title": "Data protection officer / grievance contact published",
+            "evidence": true,
+            "validity_days": null
+          },
+          {
+            "id": "dpdp.breach_runbook",
+            "group": "dpdp",
+            "title": "Breach notification runbook (notify within dpdp_breach_notify_hours)",
+            "evidence": true,
+            "validity_days": 365
+          },
+          {
+            "id": "dpdp.log_retention",
+            "group": "dpdp",
+            "title": "Logs kept at least log_retention_days",
+            "auto": "log_retention"
+          }
+        ]
       },
       "code": [
+        "app/compliance/golive.py",
+        "app/compliance/routes.py",
         "app/platform/readiness.py"
       ],
-      "tests": [],
+      "tests": [
+        "tests/test_d6_golive.py::test_malformed_items_fail_loudly",
+        "tests/test_d6_golive.py::test_super_admin_records_evidence_and_the_platform_checklist_shows_it",
+        "tests/test_d6_golive.py::test_evidence_expires_by_validity_days_or_its_own_date",
+        "tests/test_d6_golive.py::test_log_retention_is_checked_against_the_rule",
+        "tests/test_d6_golive.py::test_ra_gate_needs_registration_only_when_ai_listings_are_on"
+      ],
       "flag": null
     },
     {

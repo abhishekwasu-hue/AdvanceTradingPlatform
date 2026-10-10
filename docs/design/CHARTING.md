@@ -120,6 +120,24 @@ frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1
   - events carry data values.
 - The frontend has 59 tests in total, and `tsc` is clean.
 
+## CH2a (built): lightweight-charts 4 -> 5
+
+- `lightweight-charts` goes from ^4.2.3 to ^5.2.1 (lockfile updated by npm, not by hand).
+- **API moves.**
+  - `addCandlestickSeries` / `addLineSeries` / `addHistogramSeries` become `addSeries(CandlestickSeries | LineSeries |
+    HistogramSeries, ...)`.
+  - Markers are now a series plugin: `createSeriesMarkers(series)`, created once per series and dropped on teardown.
+  - The `ChartLike` slice in `charting/lightweight.ts` follows (`addSeries(LineSeries, ...)`).
+- **Behaviour.** No intended visual change: same series, options, price lines, markers, sync and resize.
+  - Checked with tsc, vitest, build and the bundle budget.
+  - A headless render of ProChart (candles, EMA lines, volume pane, markers, a price line, an `hline` and a
+    `trendline` drawing through the engine) on v4 and on v5 differs in 11 of 1,152,000 pixels, at the price-axis
+    label edge.
+- **Size.** The lazily loaded `charts` chunk grows from 51.8 to 58.8 KB gzip (v5 ships the plugin and primitive
+  APIs that CH2b uses). Initial JS is unchanged at 81.6 KB of the 300 KB budget.
+- **Next (CH2b).** The primitives drawing core on v5 (`ISeriesPrimitive`): parallel channel, rectangle/zone, Fibonacci,
+  text, long/short position, vertical line. Then the kinds `supports()` reports false today are drawn.
+
 ## Open questions (provisional answers, work continues)
 - **CH-1. Order against parts H, S, B.** As above.
 - **CH-2. TradingView Advanced Charts access** is a business application by Abhi (company and product details; the

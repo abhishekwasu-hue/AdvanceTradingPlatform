@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import settings as ai_settings
+from app.ai.prompt_versions import stamp
 from app.ai.providers import LLMProvider, ProviderError, RuleBasedProvider
 from app.ai.regime import REGIMES, classify_regime
 from app.audit.log import write_audit_log
@@ -299,6 +300,7 @@ async def plan_scan(session: AsyncSession, tenant: Tenant, user: User, text: str
         plan = rule_based_plan(text)
     else:
         try:
+            stamp(provider, PROMPT_VERSION)                                  # H-C1 f
             raw = await provider.complete(plan_system_prompt(language), f"REQUEST:\n{text.strip()}", max_tokens=1500)
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
             plan = parse_plan(_extract_json(raw))
@@ -406,6 +408,22 @@ def parse_read(raw: dict, matches: List[ScannerMatch], regimes: Dict[str, dict],
     return ScanRead(summary=str(raw.get("summary") or "")[:1500], ranked=ranked, warnings=warnings)
 
 
+def read_problem(read: "ScanRead", payload: dict) -> Optional[str]:
+    """H-C1 d: every number in the read's free text must be in the scan payload; no advice/guarantee words."""
+    from app.ai import grounding, output_filter
+    # The payload is ours (filter labels, symbols, closes, regimes): numbers inside its strings count too.
+    allowed = grounding.numbers_in_values(payload) | grounding.allowed_from_text(json.dumps(payload))
+    texts = [read.summary, *[t for r in read.ranked for t in (r.thesis, r.risks, r.next_step)]]
+    for text in texts:
+        ok, bad = grounding.check_numbers(text or "", allowed)
+        if not ok:
+            return f"numbers not in the scan: {', '.join(bad[:5])}"
+        blocked = output_filter.blocked_terms(text or "")
+        if blocked:
+            return f"advice/guarantee words: {', '.join(blocked[:5])}"
+    return None
+
+
 async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: ScannerRequest, result: ScannerResult, *,
                     language: str = "en", provider: Optional[LLMProvider] = None) -> ScanRead:
     matches = result.matches[:MAX_MATCHES_TO_READ]
@@ -422,9 +440,13 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
                                 "regime": regimes.get(m.symbol)} for m in matches],
                    "regimes_possible": list(REGIMES) + ["UNKNOWN"]}
         try:
+            stamp(provider, PROMPT_VERSION)                                  # H-C1 f
             raw = await provider.complete(read_system_prompt(language, scores), "SCAN RESULT:\n" + json.dumps(payload), max_tokens=3000)
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
             read = parse_read(_extract_json(raw), matches, regimes, scores)
+            why = read_problem(read, payload)                                    # H-C1 d/c: grounded, no advice words
+            if why:
+                raise ValueError(f"the read failed the grounding check ({why})")
             read.provider, read.model = provider.name, provider.model
             await ai_settings.mark_used(session, tenant.id)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:

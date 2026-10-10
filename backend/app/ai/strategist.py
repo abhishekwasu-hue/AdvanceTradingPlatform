@@ -569,7 +569,17 @@ def parse_ai(text: str) -> List[Tuple[str, CustomStrategyConfig]]:
     return out
 
 
+
+def _version() -> str:
+    from app.ai.prompt_versions import version_of
+    return version_of("strategist", AI_PROMPT)
+
+
+PROMPT_VERSION = _version()      # H-C1 f
+
 async def ai_proposals(provider, study: dict, style: str = "intraday") -> List[Tuple[str, CustomStrategyConfig]]:
+    from app.ai import prompt_versions
+    prompt_versions.stamp(provider, PROMPT_VERSION)                      # H-C1 f
     base, htf = STYLES.get(style, STYLES["intraday"])
     try:
         text = await provider.complete(AI_PROMPT.format(symbol=study["symbol"], base=base, htf=htf, study=study_text(study)),

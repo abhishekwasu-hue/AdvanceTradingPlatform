@@ -777,7 +777,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
         await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()
         if text:
-            out.update(answer=text, source="ai")
+            out.update(answer=text, source="ai", numbers=copilot.number_sources(text, facts, message))      # H-C1 d
         else:
             out["note"] = f"AI answer not used ({why}); answered from the rules"
         from app.ai import metering

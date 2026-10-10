@@ -893,3 +893,33 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
   thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
 - Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.
+
+### 2026-10-11 00:33 IST - H-C1 d: grounding (G8)
+- grounding.directions_in / check_direction (en + mr; "bull case", "bearish divergence" and negations are not claims):
+  a direction the answer asserts must be in the facts. Wired into copilot.grounded (the question cannot supply a
+  direction) and thesis.narrate (the thesis's own direction; one retry naming it). The knowledge guide is left out:
+  its answers explain vocabulary, not the market.
+- grounding.provenance: numbers in an answer are verified (facts), user_provided (only in the trader's question) or
+  unsupported. The Copilot API returns `numbers` with the split; the UI tag comes with H-C8 citations.
+- generator.text_problem: the draft's explanation and warnings may only carry numbers from the config, the deployment
+  suggestion, the risk context or the request, and no advice words - one retry, then the explanation is withheld.
+- scanner read_problem: the read's free text is checked against the scan payload; a failed read falls back to the
+  deterministic read with a warning.
+- Tests: tests/test_hc1_grounding.py (16).
+
+### 2026-10-11 00:36 IST - H-C1 e: llm_calls hygiene (G11)
+- app/ai/pii.py masks e-mails, PAN, spaced Aadhaar and labelled account/client ids everywhere, and mobile numbers and
+  bare 12-digit runs in the trader's text and the answer (the system prompt keeps its market figures). metering.log_call
+  stores the masked copy; hashes stay of the original.
+- retention.scrub_llm_text: erase_user and the Copilot "forget me" clear that person's call text ([erased]); the daily
+  retention scrubs text older than RETENTION_LLM_TEXT_DAYS ([expired]) - off by default (H-6: deleting data is the
+  owner's call). Rows, hashes, model, cost are never deleted (llm_calls stays in NEVER_DELETED).
+- Tests: tests/test_hc1_llm_hygiene.py (4). OPERATIONS DPDP note, .env.example.
+
+### 2026-10-11 00:37 IST - H-C1 f: prompt_version on every LLM call; monitor.py docstring (G4, G12)
+- app/ai/prompt_versions.py: version = prompt name + 8 hex of the template's SHA-256 (an edit changes it without a
+  manual bump); `stamp(provider, version)` before each call in copilot, guide, thesis, strategist, scanner plan/read,
+  news classification (the generator already stamped the guardian prompt). The meter logs `unversioned:<feature>`
+  instead of NULL; a test scans app/ so a new caller without a version fails CI.
+- monitor.py: the docstring said an optional LLM phrased the reason - no model is called there; corrected.
+- Tests: tests/test_hc1_prompt_versions.py (5). H-C1 complete: a-f built; ADR-0019 (agent tools and loop) next.

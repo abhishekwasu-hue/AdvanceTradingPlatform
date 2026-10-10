@@ -905,5 +905,5 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - the legacy scanner tests re-run on the new engine;
   - a seeded fuzz of 120 requests gives identical matches;
   - the fuzz found the CHoCH/CHOCH difference, now normalised.
-- Open question SC-4 ("day" operand semantics) is in SCREENER.md.
+- Open question SC-7 ("day" operand semantics) is in SCREENER.md.
 - H-C10a: full suite 1398 passed; pushed; draft PR #121.

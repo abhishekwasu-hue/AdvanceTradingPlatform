@@ -273,7 +273,7 @@ job, never tuned against results.
     enum. It is normalised.
 
 ## Open questions (provisional answers taken, work continues)
-- **SC-4. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
+- **SC-7. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
   375-minute buckets from the first session's open. Across overnight gaps these buckets do not line up with sessions.
   ScreenQL's `@1d` is the session.
   - Provisional: keep exact parity. Such a scan stays on the legacy engine (`NotTranslatable`).

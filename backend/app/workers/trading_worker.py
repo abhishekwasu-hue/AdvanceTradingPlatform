@@ -777,6 +777,18 @@ class TradingWorker:
             dep.last_error = None
             await session.commit()
             return False
+        # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
+        if getattr(dep, "oi_gates", None):
+            from app.option_chain import oi_gates
+            oi_direction = oi_gates.direction_of(signal.direction.value if hasattr(signal.direction, "value") else signal.direction)
+            if oi_direction is not None:
+                verdict = await oi_gates.check_entry(session, dep.tenant_id, master.underlying_of(dep.symbol), oi_direction,
+                                                     oi_gates.parse_gates(dep.oi_gates), now)
+                if not verdict.allowed:
+                    dep.last_signal_at = signal_ts                     # this signal is done; the next one is checked afresh
+                    dep.last_error = f"Signal at {signal_ts.isoformat()} skipped by OI gates: " + "; ".join(verdict.reasons)[:400]
+                    await session.commit()
+                    return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)

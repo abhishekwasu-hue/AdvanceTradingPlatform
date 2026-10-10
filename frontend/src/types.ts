@@ -943,6 +943,7 @@ export type ExecutionMode = "PAPER" | "LIVE";
 export interface Deployment {
   id: number;
   regime_filter?: string[] | null;
+  oi_gates?: string[] | null;
   holding?: string;
   order_style?: string;
   market_protection_pct?: number | null;
@@ -1092,6 +1093,8 @@ export interface PositionGreeks {
 
 export interface DeploymentCreateRequest extends ContractRules {
   regime_filter?: string[] | null;
+  /** OI Banner O5: opt-in OI entry gates (fail-closed; exits never gated). */
+  oi_gates?: string[] | null;
   /** Phase AS: SWING = daily candles, held overnight. */
   holding?: "INTRADAY" | "SWING";
   /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */

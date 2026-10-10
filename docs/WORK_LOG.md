@@ -909,3 +909,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   endpoint.
 - **UI:** `OiAlertsCard` (types, cooldown, quiet hours, digest, snooze/mute/resume, log), and the
   `/option-chain?underlying=` deep link.
+
+### 2026-10-11 01:46 IST - OI Banner O5: OI gates on deployments
+- `strategy_deployments.oi_gates` (migration `e2b4d6f8a0c3`) is set through the API (validated) and the Autopilot
+  form.
+- `app/option_chain/oi_gates.check_entry`: the worker checks the gates before new entries only, never exits, and
+  fails closed on missing or stale data and on unset limits.
+- O4b is pushed as #114 after a green suite (1359 passed).

@@ -122,8 +122,15 @@ export default function DeploymentsPage() {
   const [exitMinutes, setExitMinutes] = useState("");
   const [exitAt, setExitAt] = useState("");
   const [regimes, setRegimes] = useState<string[]>([]);
+  const OI_GATE_OPTIONS: [string, string][] = [
+    ["OI_DIFF", "OI diff signal"], ["OI_CONFIRM", "OI confirmation"], ["PCR", "PCR limits"], ["IV_CHANGE", "IV jump"],
+    ["SWING_OI", "Swing OI (matrix, PCR, max pain)"], ["OI_WALL", "OI wall at round level"],
+  ];
   const REGIME_OPTIONS = ["TRENDING_UP", "TRENDING_DOWN", "RANGING", "VOLATILE", "QUIET"];
   const toggleRegime = (r: string) => setRegimes((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
+  // OI Banner O5: opt-in OI entry gates (checked before new entries only; fail-closed on missing or stale OI data).
+  const [oiGates, setOiGates] = useState<string[]>([]);
+  const toggleOiGate = (g: string) => setOiGates((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
 
   function exitRules(): ExitRules | null {
     const r: ExitRules = {};
@@ -223,7 +230,7 @@ export default function DeploymentsPage() {
       const created = await api.createDeployment({
         strategy_id: strategyId, symbol, exchange, timeframe: swing ? "day" : timeframe, mode, broker_name: brokerName || null,
         holding: swing ? "SWING" : "INTRADAY",
-        broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, ...contractRules(),
+        broker_account_id: accountId ? Number(accountId) : null, exit_rules: exitRules(), regime_filter: regimes.length ? regimes : null, oi_gates: oiGates.length ? oiGates : null, ...contractRules(),
         routing_policy: mode === "LIVE" && routingPolicy ? routingPolicy : null, route_across_brokers: mode === "LIVE" && acrossBrokers,
         order_style: orderStyle, market_protection_pct: orderStyle === "PROTECTED_LIMIT" && protectionPct ? Number(protectionPct) : null,
       });
@@ -671,6 +678,18 @@ export default function DeploymentsPage() {
             {REGIME_OPTIONS.map((r) => (
               <button key={r} type="button" onClick={() => toggleRegime(r)} className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${regimes.includes(r) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
                 {r.replace("_", " ").toLowerCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-2">OI gates <span className="normal-case font-normal">(optional; checked before each new entry from the option chain's OI - missing or stale OI data blocks the entry; exits are never gated. Limits come from the Option Chain page's OI settings)</span></div>
+          <div className="flex flex-wrap gap-2">
+            {OI_GATE_OPTIONS.map(([g, label]) => (
+              <button key={g} type="button" onClick={() => toggleOiGate(g)} title={g}
+                      className={`rounded-md border px-2.5 py-1 text-[11px] font-bold ${oiGates.includes(g) ? "border-brand/60 text-brand bg-brand/10" : "border-border text-fg-muted hover:text-fg"}`}>
+                {label}
               </button>
             ))}
           </div>

@@ -874,3 +874,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   Migration `d7f9b1c3e5a7`, checked on Postgres.
 - Export/import `atp-drawings/1`: all or nothing, lossless.
 - Tests: `tests/test_ch1_chart_drawings.py` (3), plus a mutation check.
+
+### 2026-10-11 02:53 IST - CH1b: ChartEngine interface + ProChart behind it
+- `src/charting`: `engine.ts` (the interface), `drawings.ts` (`drawing/1`, rules, API client with `DrawingConflict`),
+  `lightweight.ts` (the B-lite adapter: hline, trendline, ray, measure; the rest kept; layers; events; dispose).
+- ProChart: `onEngine` prop, no visible change.
+- Tests: 7 new, 59 frontend tests in total; `tsc` clean.

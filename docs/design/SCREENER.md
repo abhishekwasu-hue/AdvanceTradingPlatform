@@ -172,6 +172,11 @@ stays linear. U1-d waits for S1.
 **Open questions (provisional).**
 - **U1-Q1. ISIN as the identity.** Instruments without an ISIN (indices) use `index_code`. A security whose ISIN
   changes (a rare corporate event) is linked through `symbol_history` plus a manual mapping, never guessed.
+- **U1-Q3. The constituent files' `Industry` column.** It is NSE's sector level; provisional mapping.
+- **U1-Q4. Effective date of a rebalance.** A membership change gets the day the job saw the new file. NSE announces
+  rebalances with an effective date. A file published the evening before that date therefore lands a day early or
+  late. Provisional: accept the observation day and flag it in the rebalance report. U1-e reads the announcement's
+  effective date where a published file carries it.
 - **U1-Q2. Industry levels the constituent files lack.** Use the NSE quote API `industryInfo` seam only if its terms
   allow; otherwise a manual CSV. Until then the level stays empty, never inferred.
 

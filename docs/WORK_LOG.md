@@ -887,3 +887,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_s1a_screenql.py` (16), including a seeded fuzz (600 trees, 3,000 garbage strings).
 - mypy gate now includes `app/screener` (clean).
 - Next: S1b runtime.
+
+### 2026-10-11 02:35 IST - S1b: ScreenQL runtime
+- `app/screener/runtime.py`:
+  - every registry entry is implemented, using `app/indicators`;
+  - higher-timeframe values are aligned by close time (look-ahead guard, tested);
+  - incomplete resampled buckets are dropped;
+  - Rank/PercentileRank are cross-sectional;
+  - NaN never matches.
+- The parser accepts `@tf[n]` as well as `[n]@tf`.
+- Tests: `tests/test_s1b_screen_runtime.py` (10), with a coverage guard per registry entry.

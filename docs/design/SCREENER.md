@@ -249,7 +249,36 @@ job, never tuned against results.
   fails if a registry entry has no runtime test.
 - **Next.** S1c: `/api/scanner/run` translated onto ScreenQL with a parity test, saved screens and runs, and the API.
 
+## S1c (built): the Market Scanner on ScreenQL
+- **Registry.** 21 entries are added, so the scanner's filters are the first registry entries.
+  - The Strategy Builder indicators: PlusDI, MinusDI, Supertrend, BBUpper/Mid/Lower, DayOpen, PDH/PDL/PDC, ORHigh/ORLow.
+    They run on the Strategy Builder's own `Operand` code.
+  - The structure filters: Trend, StructureEvent, PatternBullish/Bearish, NearSupport/Resistance.
+  - The option filters: PCR, ChainBias, MaxPainDistancePct.
+  - VWAP now uses the Strategy Builder's IST-session VWAP. Intraday buckets start at the exchange open.
+- **Translator.** `app/scanner/screenql.py`: `to_screen(request)` turns the indicator conditions, structure filters and
+  option filters into one AND screen. `run_scanner_screenql` returns the same `ScannerResult`. The match decision is
+  the screen's; the labels use the legacy wording.
+- **Switch.** `SCANNER_ENGINE=legacy|screenql` selects the engine, with legacy as the default; the response is
+  identical.
+- **Lenient units for translated scans only.** `strict_units=False` applies only to translated legacy scans: the old
+  filters never checked units, and parity comes first. User-written screens are always strict.
+- **Tests.** `tests/test_s1c_scanner_screenql.py`:
+  - every legacy scanner test is re-run on the new engine;
+  - a seeded parity fuzz runs 120 random requests over 6 symbols and 3 sessions, using all 24 indicators, 4
+    timeframes, the structure and option filters, and chains on half the symbols, and requires identical matches;
+  - the translation text;
+  - the API switch.
+  - The fuzz found one real difference: the structure event is "CHoCH" in the engine and "CHOCH" in the filter
+    enum. It is normalised.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-4. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
+  375-minute buckets from the first session's open. Across overnight gaps these buckets do not line up with sessions.
+  ScreenQL's `@1d` is the session.
+  - Provisional: keep exact parity. Such a scan stays on the legacy engine (`NotTranslatable`).
+  - Owner question: should the Strategy Builder's "day" also mean the session? That would change existing strategies'
+    signals, so it waits for an explicit decision.
 - **SC-1. Where does part S sit in the MASTER order?** Provisional: S0 now; S1 and S3 after H-C1; S2 onwards after part
   B merges.
 - **SC-2. Columnar store vs the lake.** The lake's Postgres/Timescale `md_*` tables stay the source of truth. DuckDB over

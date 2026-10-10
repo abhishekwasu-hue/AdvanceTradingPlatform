@@ -251,3 +251,7 @@ STOP_LIMIT_BAND_PCT: Optional[float] = _band_pct(os.environ.get("STOP_LIMIT_BAND
 # Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")
+
+# S1c (ADR-0021): which engine runs POST /api/scanner/run - "legacy" (app/scanner/engine.py) or "screenql" (the same
+# filters as one ScreenQL screen, parity-tested). Default legacy until the owner switches it; the response is identical.
+SCANNER_ENGINE = os.environ.get("SCANNER_ENGINE", "legacy").strip().lower()

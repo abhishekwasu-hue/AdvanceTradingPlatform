@@ -897,3 +897,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - NaN never matches.
 - The parser accepts `@tf[n]` as well as `[n]@tf`.
 - Tests: `tests/test_s1b_screen_runtime.py` (10), with a coverage guard per registry entry.
+
+### 2026-10-11 02:43 IST - S1c: scanner on ScreenQL (parity) + H-C10a PR
+- 21 registry entries are added: Strategy Builder indicators (via `Operand`), structure filters and option filters.
+  The translator turns a `ScannerRequest` into one screen; `SCANNER_ENGINE` selects the engine (default legacy).
+- Parity:
+  - the legacy scanner tests re-run on the new engine;
+  - a seeded fuzz of 120 requests gives identical matches;
+  - the fuzz found the CHoCH/CHOCH difference, now normalised.
+- Open question SC-4 ("day" operand semantics) is in SCREENER.md.
+- H-C10a: full suite 1398 passed; pushed; draft PR #121.

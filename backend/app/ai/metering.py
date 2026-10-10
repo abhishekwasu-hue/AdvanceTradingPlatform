@@ -187,6 +187,23 @@ class MeteredProvider:
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
 
+    @property
+    def supports_tools(self) -> bool:
+        return hasattr(self.inner, "complete_tools")
+
+    async def complete_tools(self, system: str, messages, tools, *, max_tokens: int = 4000):
+        """H-C2: one agent step, metered and logged like every other call (the logged "user" text is the newest message)."""
+        import json as _json
+        last = _json.dumps(messages[-1].get("content") if messages else "", default=str)[:20000]
+        try:
+            turn = await self.inner.complete_tools(system, messages, tools, max_tokens=max_tokens)
+        except ProviderError as exc:
+            await self._record(exc.usage, system, last, None, f"error: {str(exc)[:280]}")
+            raise
+        calls = ", ".join(c.name for c in turn.calls)
+        await self._record(turn.usage, system, last, turn.text + (f"\n[tool calls: {calls}]" if calls else ""), "ok")
+        return turn
+
 
 def spent_by(provider: Any) -> Optional[Dict[str, Any]]:
     """The tokens and rupees one metered provider spent (its calls in this request), or None for the rule-based

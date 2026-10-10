@@ -932,3 +932,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   capped by the operator and off until set; a model registry with shadow mode; a kill switch per tenant and
   globally; disclosure.
 - Next: H-C2 build (tool registry and loop), with H-C10 evals alongside.
+
+### 2026-10-11 02:00 IST - H-C2a: Copilot agent core (read tools, bounded loop, audit)
+- `app/ai/tools`: 5 read tools; `app/ai/agent.py`: bounded loop, grounded answer, one rewrite, then the summary.
+- `AnthropicProvider.complete_tools`; `agent_runs` and `agent_steps` (migration `f1a2b3c4d5e6`, checked on
+  Postgres).
+- `POST /api/ai/agent/ask` behind the `ai_agent` flag, off by default.
+- **Decision:** tools run sequentially on one DB session (not in parallel as in ADR-0019 §2), because an AsyncSession
+  is not safe for concurrent use.

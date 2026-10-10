@@ -955,3 +955,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   opt-outs.
 - Helpers are unit-tested (5). tsc clean; vitest 57 passed; build and bundle budget OK.
 - CH1a full suite: 1307 passed. Pushed; draft PR #126.
+
+### 2026-10-11 03:24 IST - S4a: bar-close engine for alert rules
+- The worker evaluates active rules on the latest CLOSED bar of the NSE clock (short last bucket, 15:30 daily close,
+  holidays). It trims the forming bar, skips stale symbols, retries after 60 s and shows why on the rule.
+- One evaluation per bar. Matches are recorded with trigger values; S3 delivers them.
+- Screen rules carry their own symbols (≤ 50). Daily rules build today's bar from 15-minute bars after the close.
+- Migration `a3c5e7b9d1f3`, Postgres OK. Tests: 7, plus 3 mutation checks. Open question SC-10 (weekly/monthly).

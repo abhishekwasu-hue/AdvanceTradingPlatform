@@ -1846,6 +1846,14 @@ class AlertRuleRecord(Base):
     expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    # S4a: the bar-close engine - a screen rule's own symbols (JSON list, at most 50), the exchange, the last closed bar
+    # this rule was evaluated on, when the engine last looked (data not in yet -> retried after a pause), and why it
+    # last could not evaluate.
+    universe_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE", server_default="NSE")
+    last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_problem: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class AlertEventRecord(Base):

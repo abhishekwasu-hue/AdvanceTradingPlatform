@@ -255,3 +255,5 @@ LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower()
 # S1c (ADR-0021): which engine runs POST /api/scanner/run - "legacy" (app/scanner/engine.py) or "screenql" (the same
 # filters as one ScreenQL screen, parity-tested). Default legacy until the owner switches it; the response is identical.
 SCANNER_ENGINE = os.environ.get("SCANNER_ENGINE", "legacy").strip().lower()
+# S1d: the per-tenant ScreenQL cost cap (validator units; a screen over it is refused with the reason).
+SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))

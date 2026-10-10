@@ -272,7 +272,30 @@ job, never tuned against results.
   - The fuzz found one real difference: the structure event is "CHoCH" in the engine and "CHOCH" in the filter
     enum. It is normalised.
 
+## S1d (built): screener API, saved screens and runs
+- **Flag.** `/api/screener/*` sits behind `screener_v2`, which is off by default.
+- **Endpoints.**
+  - `registry`: the builder palette.
+  - `validate`: text or builder tree in; `ok`, problems with positions, canonical text, AST and plan out. Nothing runs.
+  - `screens`: CRUD. A screen is validated before it is saved, it is tenant-scoped, and it is archived rather than
+    deleted.
+  - `run`: a saved screen or ad-hoc source over up to 50 symbols.
+  - `runs/{id}`.
+- **Data.** A run reads bars through the organisation's broker session (the lake after part B). Without a session the
+  answer is 409. Weekly and monthly bars are resampled from server daily bars. One symbol's fetch error is reported
+  and the rest of the run continues.
+- **Storage.** `screens` and `screen_runs` (migration `c5e7a9b1d3f5`, checked on Postgres: upgrade, check, downgrade,
+  upgrade). A run stores the AST hash and version, the universe, the data source and the per-symbol results.
+- **Wording and limits.** Results are "matches" and every run carries a disclaimer. `SCREENER_COST_CAP` (default 200)
+  is the per-screen cost cap.
+- **Tests.** `tests/test_s1d_screener_api.py` (5).
+- **Next.**
+  - S1e: the builder ⇄ text parity in the frontend (S1d in the spec's numbering).
+  - U1-d: the universe picker and the classifiers fed from U1 tables.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-5. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
+  list reproducible. Whether and when to delete old runs is the owner's decision (§14).
 - **SC-4. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to
   375-minute buckets from the first session's open. Across overnight gaps these buckets do not line up with sessions.
   ScreenQL's `@1d` is the session.

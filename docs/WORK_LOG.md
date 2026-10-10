@@ -907,3 +907,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - the fuzz found the CHoCH/CHOCH difference, now normalised.
 - Open question SC-4 ("day" operand semantics) is in SCREENER.md.
 - H-C10a: full suite 1398 passed; pushed; draft PR #121.
+
+### 2026-10-11 02:46 IST - S1d: screener API + saved screens + runs
+- `/api/screener` (flag `screener_v2`, off): registry, validate, screens CRUD (validated, tenant-scoped, archived), and
+  run (server bars via the broker session; 409 without one; ≤ 50 symbols).
+- `screens` and `screen_runs` tables; migration `c5e7a9b1d3f5`, checked on Postgres.
+- Tests: `tests/test_s1d_screener_api.py` (5).
+- Open question SC-5 (run retention).

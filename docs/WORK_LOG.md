@@ -892,3 +892,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - **Components:** `OiBanner`, `OiHistoryTable` (5/10/15), `StrikeOiChart`, `OiSettingsCard` and `OiBannersCard`,
   placed on the Dashboard and the Option Chain page. The chart options layer is deferred to CH4.
 - **Tests:** `src/oi/format.test.ts` (6 vitest tests) and one backend test for `/banners` (tenant-scoped).
+
+### 2026-10-11 01:25 IST - OI Banner O4a: alerts on banner state changes
+- New tables: `oi_banner_states` (per tenant and slot) and `oi_alert_log` (unique dedupe key; status SENT, COOLDOWN,
+  QUIET or SNOOZED). Also `oi_banner_settings.snoozed_until` and `notifications.metadata_json`. Migration
+  `e2b4d6f8a0c2` is reversible and passed upgrade, check, downgrade and upgrade on Postgres 16.
+- Alert types: direction change, confirmed flip, strength change, PCR band, max pain move, OI wall, DTE, collector
+  stale. They go through the existing `notify()` and dispatcher, and webhooks get versioned JSON. Snooze, mute-today
+  and resume are available through the API.
+- Deferred to O4b: Telegram buttons, the digest and the settings UI. Rollover-flip alerts need next-expiry collection.

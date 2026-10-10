@@ -42,6 +42,10 @@ class NotificationType(str, Enum):
     NEWS_ALERT = "NEWS_ALERT"
     # Phase BD-2: the weekly market-thesis scoreboard (shadow overlay evaluation, read-only).
     THESIS_REPORT = "THESIS_REPORT"
+    # OI Banner O4: a banner state change (direction, confirmed flip, strength, PCR band, max pain, OI wall, DTE) and
+    # the collector's own health (stale or failing). Read-only information - never an order (ADR-0006).
+    OI_BANNER = "OI_BANNER"
+    OI_COLLECTOR = "OI_COLLECTOR"
 
 
 class NotificationSeverity(str, Enum):

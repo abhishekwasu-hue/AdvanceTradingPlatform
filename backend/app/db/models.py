@@ -1321,6 +1321,8 @@ class NotificationRecord(Base):
     read_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase BE: the monitoring-agent proposal this notification announces (approve/reject buttons on Telegram).
     ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
+    # OI Banner O4: a structured payload for webhook receivers (versioned JSON); None for every older event type.
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -1752,6 +1754,47 @@ class OIBannerSettingRecord(Base):
     overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    snoozed_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)     # O4: alerts paused until
+
+
+class OIBannerStateRecord(Base):
+    """OI Banner O4: a tenant's banner state per slot (its own settings), kept so changes are detectable and auditable."""
+
+    __tablename__ = "oi_banner_states"
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", "slot_start", name="uq_oi_banner_state"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    stable_direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    stable_strength: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    pcr_band: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    max_pain: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_pain_ref: Mapped[float | None] = mapped_column(Float, nullable=True)       # max pain at the last move alert
+    dte: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wall: Mapped[str | None] = mapped_column(String(40), nullable=True)            # e.g. "CE@25000" or None
+    message: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class OIAlertLogRecord(Base):
+    """OI Banner O4: every alert decision - sent, or held back (cooldown, quiet hours, snoozed) - with its dedupe key."""
+
+    __tablename__ = "oi_alert_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    alert_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    old_state: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)               # SENT / COOLDOWN / QUIET / SNOOZED
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class ThesisRecord(Base):

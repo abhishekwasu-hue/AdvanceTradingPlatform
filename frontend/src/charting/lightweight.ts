@@ -77,6 +77,8 @@ export class LightweightEngine implements ChartEngine {
                      () => chart.timeScale().unsubscribeVisibleTimeRangeChange(range));
   }
 
+  // Assumes the candles carry every time point of the main chart's time scale (true in ProChart: all main-chart series
+  // share the candle times, gaps as whitespace), so an index into the candle data is the chart's logical index.
   private times(): number[] {
     if (!this.barTimes) this.barTimes = this.candles.data().map((b) => timeSec(b.time)).filter(Number.isFinite);
     return this.barTimes;
@@ -114,6 +116,12 @@ export class LightweightEngine implements ChartEngine {
   supports(kind: DrawingKind) { return SUPPORTED.has(kind); }
 
   addDrawing(id: string, drawing: DrawingV1) {
+    const current = this.rendered.get(id);
+    if (current?.kind === "primitive" && drawing.kind !== "hline") {     // same primitive, new anchors: no re-attach
+      this.drawings.set(id, drawing);
+      current.primitive.setDrawing(drawing);
+      return;
+    }
     this.removeDrawing(id);
     this.drawings.set(id, drawing);
     this.rendered.set(id, this.draw(drawing));

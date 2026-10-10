@@ -140,9 +140,12 @@ describe("LightweightEngine (B-lite)", () => {
     engine.addDrawing("a", sample("trendline"));
     const first = f.primitives[0];
     engine.updateDrawing("a", { ...sample("trendline"), anchors: [{ t: T1, p: 90 }, { t: T3, p: 95 }] });
-    expect(f.primitives).toHaveLength(1);
-    expect(f.primitives[0]).not.toBe(first);                                              // the old primitive is detached
-    expect(f.primitives[0].drawing.anchors.map((a) => a.p)).toEqual([90, 95]);
+    expect(f.primitives).toEqual([first]);                                                // edited in place, not re-attached
+    expect(first.drawing.anchors.map((a) => a.p)).toEqual([90, 95]);
+    engine.updateDrawing("a", sample("hline"));                                           // kind change: primitive -> price line
+    expect(f.primitives).toEqual([]);
+    expect(f.priceLines.map((l) => l.price)).toEqual([101.5]);
+    engine.removeDrawing("a");
     expect(events[events.length - 1]).toMatchObject({ type: "drawingChanged", id: "a" });
     engine.setLayer("pa", { asOf: T1, lines: [{ price: 100, title: "swing high" }, { price: Number.NaN }] });
     expect(f.priceLines.map((l) => l.title)).toEqual(["swing high"]);

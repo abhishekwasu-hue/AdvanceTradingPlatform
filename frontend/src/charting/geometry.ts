@@ -133,7 +133,11 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
     case "measure": {
       if (!placed(0, "tp") || !placed(1, "tp")) return [];
       const [x1, x2, y1, y2] = [xs[0], xs[1], ys[0], ys[1]] as number[];
-      const mode = d.kind === "ray" ? "right" : d.kind === "measure" ? "none" : style.extend ?? "none";
+      if (d.kind === "ray" && x1 === x2) {                    // a vertical ray runs from its first anchor past the second
+        return [seg(x1, y1, x2, y2 === y1 ? y1 : y2 < y1 ? 0 : c.height)];
+      }
+      // A ray starts at its first anchor and runs through the second, whichever side that is on.
+      const mode = d.kind === "ray" ? (x2 > x1 ? "right" : "left") : d.kind === "measure" ? "none" : style.extend ?? "none";
       const s = extendSegment(x1, y1, x2, y2, c.width, mode);
       const out: Shape[] = [seg(s.x1, s.y1, s.x2, s.y2)];
       if (d.kind === "measure") {

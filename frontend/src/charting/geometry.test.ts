@@ -76,6 +76,9 @@ describe("drawing geometry", () => {
     const two = [{ t: iso(0), p: 100 }, { t: iso(10), p: 101 }];
     expect(of(shapes({ kind: "trendline", anchors: two }, conv), "segment")[0]).toMatchObject({ x1: 0, y1: 500, x2: 100, y2: 490 });
     expect(of(shapes({ kind: "ray", anchors: two }, conv), "segment")[0]).toMatchObject({ x2: 400, y2: 460 });
+    // drawn right-to-left: starts at bar 10 and runs left through bar 0 to the left edge, never to the right
+    expect(of(shapes({ kind: "ray", anchors: [two[1], two[0]] }, conv), "segment")[0]).toMatchObject({ x1: 0, y1: 500, x2: 100, y2: 490 });
+    expect(of(shapes({ kind: "ray", anchors: [{ t: iso(5), p: 100 }, { t: iso(5), p: 102 }] }, conv), "segment")[0]).toMatchObject({ x1: 50, y1: 500, x2: 50, y2: 0 });
     expect(extendSegment(10, 0, 20, 10, 100, "both")).toEqual({ x1: 0, y1: -10, x2: 100, y2: 90 });
     const measure = of(shapes({ kind: "measure", anchors: [{ t: iso(0), p: 200 }, { t: iso(4), p: 190 }] }, conv), "text");
     expect(measure[0].text).toBe("-10.00 (-5.00%)");

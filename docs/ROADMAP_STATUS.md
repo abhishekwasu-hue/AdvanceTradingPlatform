@@ -4,7 +4,7 @@ Working rules: docs/WORKING_RULES.md (multitasking and self-review are required)
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-11 04:25 IST.
+Last update: 2026-10-11 05:28 IST.
 
 | Part | What | Status | PR | % |
 |---|---|---|---|---|
@@ -37,13 +37,13 @@ Last update: 2026-10-11 04:25 IST.
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
 | H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a-c done (#103); d-f done (full suite 1364 passed) | #103, #108 | 100 |
-| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate; H-C3a+b research loop (ledger, deflated report, loop + API behind `ai_research`, off; second-pass fixes: OOS warm-up, flat-draft verdict, PBO window, holdout trim) (each full suite green, flags off); H-C3c UI + background job next | #115, #117-#121, #135 | 65 |
+| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate; H-C3a+b research loop (ledger, deflated report, loop + API behind `ai_research`, off; second-pass fixes: OOS warm-up, flat-draft verdict, PBO window, holdout trim) (each full suite green, flags off); H-C3c-1 studies as jobs (queue table, research worker under compose profile `research`, heartbeat, interrupted state) + H-C3c-2 Strategy Lab research panel (draft PR); H-C4 next | #115, #117-#121, #135, H-C3c PR | 70 |
 | S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
 | U1-a/b/c | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification; index EOD, F&O lots, ban list | a-c done (suite 1390 passed, Postgres migration checked); d/e after S1 | #105, #106, #110 | 75 |
-| S1, S3, S4 | ScreenQL engine + scanner migration; Notification Service on the existing outbox; bar-close alert engine | S1a-S1d done (S1d API: closed bars only); S3a rules/events/throttle, S3b-1 webhook schema + dead letters, S3b-2 Telegram link + email unsubscribe done (suite 1369 passed); S3c UI, S4a bar-close engine, S4b-1 cycle cache, S4b-2 intrabar alerts (flag `screener_intrabar`, off; suite 1384 passed) done; S5 next | #122-#125, #127-#129, #131, #132, #134, #138 | 85 |
+| S1, S3, S4 | ScreenQL engine + scanner migration; Notification Service on the existing outbox; bar-close alert engine | S1a-S1d done (S1d API: closed bars only); S3a rules/events/throttle, S3b-1 webhook schema + dead letters, S3b-2 Telegram link + email unsubscribe done (suite 1369 passed); S3c UI, S4a bar-close engine, S4b-1 cycle cache, S4b-2 intrabar alerts (flag `screener_intrabar`, off; suite 1384 passed) done; S5-A1 price action series (Pattern, swings, MedianRange), S5-A2 `ReversalAt`, S5-A3 `RealBreak` (draft PRs, causal + truncation tests); S5-A4 level strength next | #122-#125, #127-#129, #131, #132, #134, #138, #140, S5-A2/A3 PRs | 88 |
 | I | Options analytics | not started | - | 0 |
 | CH0 | Advanced charting: spec, design note, ADR-0023 ChartEngine | done (design) | #107 | 100 |
-| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage, CH1b ChartEngine + B-lite adapter, CH2a lightweight-charts v5 (render parity), CH2b primitives drawing core (all 12 drawing/1 kinds; second-pass ray fix) done; CH2c interactive tools next | #126, #130, #133, #136 | 50 |
+| CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage, CH1b ChartEngine + B-lite adapter, CH2a lightweight-charts v5 (render parity), CH2b primitives drawing core (all 12 drawing/1 kinds; second-pass ray fix) done; CH2c-1 tool controller (place, drag, undo/redo, conflicts) + CH2c-2 wiring and toolbar on ProChart (draft PRs); CH3 layers next | #126, #130, #133, #136, #139, #141 | 60 |
 | OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built; each suite green; waiting for the owner's merge | #109, #111-#114, #116 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |

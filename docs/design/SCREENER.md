@@ -284,6 +284,8 @@ job, never tuned against results.
 - **Data.** A run reads bars through the organisation's broker session (the lake after part B). Without a session the
   answer is 409. Weekly and monthly bars are resampled from server daily bars. One symbol's fetch error is reported
   and the rest of the run continues.
+  The broker's intraday feed ends with the bar still forming; `closed_only` drops it, so a run decides on closed
+  bars only.
 - **Storage.** `screens` and `screen_runs` (migration `c5e7a9b1d3f5`, checked on Postgres: upgrade, check, downgrade,
   upgrade). A run stores the AST hash and version, the universe, the data source and the per-symbol results.
 - **Wording and limits.** Results are "matches" and every run carries a disclaimer. `SCREENER_COST_CAP` (default 200)

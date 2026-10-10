@@ -223,6 +223,22 @@ chart's pointer events and a toolbar to it.
     - a no-op drag saves;
     - handles ignored;
     - history uncapped.
+- **Review follow-up (fresh-eyes pass).**
+  - **A drag released before its save returns stays where it was dropped.** It is shown at once, and a second drag
+    builds on it. Before, the second drag started from the old shape and undid the first on the server.
+  - **Delete and lock read the drawing when their queued turn comes,** not when the key is pressed. A delete right
+    after a move removes the moved drawing, and undo brings that one back. Two quick lock toggles unlock.
+  - **404 (deleted elsewhere) now counts as a conflict.** Before, it was a generic error, which left a ghost drawing
+    and an undo that failed forever. The client maps 404 to `DrawingConflict(null)` for update, delete and lock.
+  - **After a conflict, a drag queued behind the failed one is not saved.** It was built on a version that another
+    tab replaced.
+  - **"Nothing changed" compares by meaning.** Times are compared as instants, because the server writes `…:00Z`.
+    A drag that wanders back to its start saves nothing.
+  - **Reload goes through the edit queue.**
+  - **The test fake now answers like the server:** normalised times, and a missing drawing as a 404 conflict.
+    5 new tests, and 5 mutations of the fixes are all killed.
+  - **Known, not changed.** A lock set in another tab is not refreshed until reload. A local edit then gets the
+    server's 423 message.
 - **Next (CH2c-2).**
   - Pointer events on `LightweightEngine`: down, move and up converted with `coordinateToTime` and
     `coordinateToPrice`, and chart scrolling paused while dragging.

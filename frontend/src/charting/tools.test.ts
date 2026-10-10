@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DrawingConflict, type DrawingV1, type StoredDrawing } from "./drawings";
 import { timeToLogical, type Converters } from "./geometry";
 import {
-  DrawingController, HISTORY_LIMIT, anchorFor, distanceToShape, handles, hitTest, logicalToTime, moveAnchor, placementPreview,
+  DrawingController, HISTORY_LIMIT, anchorFor, sameDrawing, distanceToShape, handles, hitTest, logicalToTime, moveAnchor, placementPreview,
   translate, type DrawingsStore, type ToolView,
 } from "./tools";
 
@@ -19,6 +19,12 @@ const conv: Converters = {
 };
 
 /** An in-memory drawings API with the backend's version, lock and conflict rules. */
+/** Like the server's JSON: times as "…:00Z" (no milliseconds) and the schema filled in. */
+const normalize = (d: DrawingV1): DrawingV1 => ({
+  schema: "drawing/1", ...d,
+  anchors: d.anchors.map((a) => ({ ...a, ...(a.t ? { t: new Date(a.t).toISOString().replace(".000Z", "Z") } : {}) })),
+});
+
 class FakeStore implements DrawingsStore {
   rows = new Map<number, StoredDrawing>();
   next = 1;
@@ -36,7 +42,7 @@ class FakeStore implements DrawingsStore {
   async create(symbol: string, drawing: DrawingV1, exchange = "NSE") {
     this.calls.push("create");
     if (this.fail) throw this.fail;
-    const r: StoredDrawing = { id: this.next++, symbol, exchange, kind: drawing.kind, drawing, version: 1, locked: false, updated_at: null };
+    const r: StoredDrawing = { id: this.next++, symbol, exchange, kind: drawing.kind, drawing: normalize(drawing), version: 1, locked: false, updated_at: null };
     this.rows.set(r.id, r);
     return r;
   }
@@ -46,7 +52,7 @@ class FakeStore implements DrawingsStore {
     const r = this.row(stored.id);
     if (r.locked) throw new Error("locked");
     if (r.version !== stored.version) throw new DrawingConflict(r);
-    const next = { ...r, drawing, version: r.version + 1 };
+    const next = { ...r, drawing: normalize(drawing), version: r.version + 1 };
     this.rows.set(r.id, next);
     return next;
   }
@@ -98,7 +104,7 @@ describe("placing anchors", () => {
     await ctl.click(pt(5, 99.5));
     expect(store.calls).toEqual(["create"]);
     expect(view()).toMatchObject({ tool: null, preview: null, selected: "1", canUndo: true });
-    expect(view().drawings[0].drawing.anchors).toEqual([{ t: iso(0), p: 100 }, { t: iso(10), p: 105 }, { t: iso(5), p: 99.5 }]);
+    expect(sameDrawing(view().drawings[0].drawing, { kind: "channel", anchors: [{ t: iso(0), p: 100 }, { t: iso(10), p: 105 }, { t: iso(5), p: 99.5 }] })).toBe(true);
   });
 
   it("a drawing the backend would refuse is not sent; escape drops a half-placed drawing", async () => {
@@ -257,5 +263,110 @@ describe("undo / redo", () => {
     await ctl.load();
     expect(view().drawings.map((d) => d.key)).toEqual(["1"]);
     expect(view().canUndo).toBe(false);
+  });
+});
+
+
+describe("review follow-up: queued edits read the state they run on", () => {
+  /** A store whose answers wait until released, so edits pile up in the queue as on a slow network. */
+  function slow() {
+    const { store, ctl, view } = setup();
+    const gates: (() => void)[] = [];
+    const wrap = <K extends "update" | "remove" | "lock">(k: K) => {
+      const real = store[k].bind(store) as (...a: unknown[]) => Promise<unknown>;
+      (store as unknown as Record<string, unknown>)[k] = (...a: unknown[]) => new Promise((res, rej) => gates.push(() => { real(...a).then(res, rej); }));
+    };
+    return { store, ctl, view, gates, hold: () => { wrap("update"); wrap("remove"); wrap("lock"); },
+             // the queue sends the next request only after the previous answer: release over several turns
+             release: async () => { for (let i = 0; i < 20; i++) { while (gates.length) gates.shift()!(); await new Promise((r) => setTimeout(r, 0)); } } };
+  }
+
+  it("a second drag before the first save returns builds on the first", async () => {
+    const t = slow();
+    t.ctl.setTool("trendline");
+    await t.ctl.click(pt(0, 100));
+    await t.ctl.click(pt(10, 101));
+    t.hold();
+    t.ctl.beginDrag("1", 0, pt(0, 100));
+    t.ctl.dragTo(pt(0, 90), times);
+    const a = t.ctl.endDrag();
+    expect(t.view().drawings[0].drawing.anchors[0].p).toBe(90);                      // shown at once, not jumping back
+    t.ctl.beginDrag("1", 1, pt(10, 101));
+    t.ctl.dragTo(pt(10, 110), times);
+    const b = t.ctl.endDrag();
+    await t.release();
+    await Promise.all([a, b]);
+    expect(t.store.rows.get(1)?.drawing.anchors.map((x) => x.p)).toEqual([90, 110]);
+    const u = t.ctl.undo();
+    await t.release();
+    await u;
+    expect(t.store.rows.get(1)?.drawing.anchors.map((x) => x.p)).toEqual([90, 101]);
+  });
+
+  it("delete right after a move deletes (and undo restores) the moved drawing; two lock toggles unlock", async () => {
+    const t = slow();
+    t.ctl.setTool("hline");
+    await t.ctl.click(pt(3, 100));
+    t.hold();
+    t.ctl.beginDrag("1", 0, pt(3, 100));
+    t.ctl.dragTo(pt(3, 120), times);
+    const a = t.ctl.endDrag();
+    const b = t.ctl.deleteSelected();
+    await t.release();
+    await Promise.all([a, b]);
+    expect(t.store.rows.size).toBe(0);
+    await t.ctl.undo();
+    await t.release();
+    expect([...t.store.rows.values()][0].drawing.anchors[0].p).toBe(120);
+    t.ctl.select(String([...t.store.rows.keys()][0]));
+    const c = t.ctl.toggleLock();
+    const d = t.ctl.toggleLock();
+    await t.release();
+    await Promise.all([c, d]);
+    expect([...t.store.rows.values()][0].locked).toBe(false);
+  });
+
+  it("a drawing deleted elsewhere leaves the chart and does not jam undo", async () => {
+    const { store, ctl, view } = setup();
+    ctl.setTool("hline");
+    await ctl.click(pt(3, 101));
+    ctl.beginDrag("1", 0, pt(3, 101));
+    ctl.dragTo(pt(3, 105), times);
+    await ctl.endDrag();
+    store.rows.delete(1);                                                         // deleted in another tab (404)
+    await ctl.undo();
+    expect(view()).toMatchObject({ canUndo: false, selected: null });
+    expect(view().drawings).toHaveLength(0);
+  });
+
+  it("a drag that wanders back to where it started saves nothing, even after the server reformatted the times", async () => {
+    const { store, ctl } = setup();
+    ctl.setTool("trendline");
+    await ctl.click(pt(0, 100));
+    await ctl.click(pt(10, 101));
+    ctl.beginDrag("1", null, pt(5, 100));
+    ctl.dragTo(pt(8, 102), times);
+    ctl.dragTo(pt(5, 100), times);
+    await ctl.endDrag();
+    expect(store.calls).toEqual(["create"]);
+    expect(ctl.view().canUndo).toBe(true);                                      // only the create
+  });
+
+  it("after a conflict, a drag queued behind the failed one is not saved over the other tab's version", async () => {
+    const t = slow();
+    t.ctl.setTool("hline");
+    await t.ctl.click(pt(3, 100));
+    t.store.rows.set(1, { ...t.store.rows.get(1)!, version: 5, drawing: { kind: "hline", anchors: [{ p: 130 }] } });
+    t.hold();
+    t.ctl.beginDrag("1", 0, pt(3, 100));
+    t.ctl.dragTo(pt(3, 90), times);
+    const a = t.ctl.endDrag();
+    t.ctl.beginDrag("1", 0, pt(3, 90));
+    t.ctl.dragTo(pt(3, 80), times);
+    const b = t.ctl.endDrag();
+    await t.release();
+    await Promise.all([a, b]);
+    expect(t.store.rows.get(1)?.drawing.anchors[0].p).toBe(130);
+    expect(t.view().drawings[0].drawing.anchors[0].p).toBe(130);
   });
 });

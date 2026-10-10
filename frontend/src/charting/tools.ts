@@ -17,6 +17,19 @@ export interface DataPoint { t: number; p: number }
 const iso = (sec: number) => new Date(Math.round(sec) * 1000).toISOString();
 const toSec = (value: string | undefined) => (value ? Date.parse(value) / 1000 : NaN);
 
+/** The same drawing by meaning: kind, text, levels, style and anchors (times compared as instants, so
+ * "…:00Z" from the server equals "…:00.000Z" from here). */
+export function sameDrawing(a: DrawingV1, b: DrawingV1): boolean {
+  if (a.kind !== b.kind || a.anchors.length !== b.anchors.length || (a.text ?? "") !== (b.text ?? "")) return false;
+  if (JSON.stringify(a.levels ?? null) !== JSON.stringify(b.levels ?? null)) return false;
+  return a.anchors.every((x, i) => {
+    const y = b.anchors[i];
+    const tx = x.t === undefined ? null : toSec(x.t);
+    const ty = y.t === undefined ? null : toSec(y.t);
+    return tx === ty && (x.p ?? null) === (y.p ?? null);
+  });
+}
+
 /** The anchor a point makes for one anchor rule: time and price, price only, or time only. */
 export function anchorFor(rule: "tp" | "p" | "t", pt: DataPoint): Anchor {
   if (rule === "p") return { p: pt.p };
@@ -166,11 +179,13 @@ export interface ToolView {
   message: string | null;
 }
 
-interface Drag { key: string; handle: number | null; from: DataPoint; start: DrawingV1; current: DrawingV1 }
+interface Drag { key: string; handle: number | null; from: DataPoint; start: DrawingV1; current: DrawingV1; epoch: number }
 
 /** The drawing tools for one symbol: place, select, drag, delete, lock, undo/redo; every finished edit is saved. */
 export class DrawingController {
   private items = new Map<string, StoredDrawing>();
+  private pending = new Map<string, DrawingV1>();        // a finished drag whose save has not come back yet
+  private epochs = new Map<string, number>();            // bumped on a conflict: edits begun before it are stale
   private undoStack: Edit[] = [];
   private redoStack: Edit[] = [];
   private tool: DrawingKind | null = null;
@@ -193,7 +208,7 @@ export class DrawingController {
 
   view(): ToolView {
     const drawings = [...this.items.entries()].map(([key, s]) => ({
-      key, locked: s.locked, drawing: this.drag?.key === key ? this.drag.current : s.drawing,
+      key, locked: s.locked, drawing: this.drag?.key === key ? this.drag.current : this.current(key) ?? s.drawing,
     }));
     return {
       drawings,
@@ -204,6 +219,11 @@ export class DrawingController {
       canRedo: this.redoStack.length > 0,
       message: this.message,
     };
+  }
+
+  /** The drawing as the user last left it: a drag not yet saved, else the stored one. */
+  private current(key: string): DrawingV1 | null {
+    return this.pending.get(key) ?? this.items.get(key)?.drawing ?? null;
   }
 
   private emit() {
@@ -218,12 +238,16 @@ export class DrawingController {
     return next;
   }
 
-  async load(): Promise<void> {
-    const rows = await this.api.list(this.symbol, this.exchange);
-    this.items = new Map(rows.map((r) => [String(r.id), r]));
-    this.undoStack = [];
-    this.redoStack = [];
-    this.emit();
+  /** Through the edit queue, so an edit still in flight never writes into the reloaded state. */
+  load(): Promise<void> {
+    return this.run(async () => {
+      const rows = await this.api.list(this.symbol, this.exchange);
+      this.items = new Map(rows.map((r) => [String(r.id), r]));
+      this.pending.clear();
+      this.undoStack = [];
+      this.redoStack = [];
+      this.emit();
+    });
   }
 
   /** Pick a tool (null = the pointer). A text drawing takes its text up front. */
@@ -295,7 +319,8 @@ export class DrawingController {
       this.emit();
       return false;
     }
-    this.drag = { key, handle, from, start: stored.drawing, current: stored.drawing };
+    const start = this.current(key) ?? stored.drawing;      // includes a previous drag still being saved
+    this.drag = { key, handle, from, start, current: start, epoch: this.epochs.get(key) ?? 0 };
     this.emit();
     return true;
   }
@@ -311,29 +336,42 @@ export class DrawingController {
   endDrag(): Promise<void> {
     const d = this.drag;
     this.drag = null;
-    if (!d || JSON.stringify(d.current) === JSON.stringify(d.start)) {
+    if (!d || sameDrawing(d.current, d.start)) {
       this.emit();
       return Promise.resolve();
     }
+    this.pending.set(d.key, d.current);                    // shown (and dragged again) at once, saved in order
+    this.emit();
     return this.run(async () => {
-      if (await this.save(d.key, d.current)) this.record({ key: d.key, before: d.start, after: d.current });
+      if ((this.epochs.get(d.key) ?? 0) !== d.epoch) {        // built on a version another tab replaced: not saved
+        if (this.pending.get(d.key) === d.current) this.pending.delete(d.key);
+        this.emit();
+        return;
+      }
+      const ok = await this.save(d.key, d.current);
+      if (this.pending.get(d.key) === d.current) this.pending.delete(d.key);   // a later drag keeps its own
+      if (ok) this.record({ key: d.key, before: d.start, after: d.current });
       this.emit();
     });
   }
 
+  /** The state is read when the queued work runs, not when the key is pressed, so an edit still being saved is
+   * what gets deleted (and what undo brings back). */
   deleteSelected(): Promise<void> {
     const key = this.selected;
-    const stored = key ? this.items.get(key) : undefined;
-    if (!key || !stored) return Promise.resolve();
-    if (stored.locked) {
-      this.message = "This drawing is locked. Unlock it to delete it.";
-      this.emit();
-      return Promise.resolve();
-    }
+    if (!key || !this.items.has(key)) return Promise.resolve();
     return this.run(async () => {
+      const stored = this.items.get(key);
+      if (!stored) return;
+      if (stored.locked) {
+        this.message = "This drawing is locked. Unlock it to delete it.";
+        this.emit();
+        return;
+      }
+      const before = stored.drawing;
       if (await this.erase(key)) {
-        this.selected = null;
-        this.record({ key, before: stored.drawing, after: null });
+        if (this.selected === key) this.selected = null;
+        this.record({ key, before, after: null });
       }
       this.emit();
     });
@@ -341,10 +379,11 @@ export class DrawingController {
 
   toggleLock(): Promise<void> {
     const key = this.selected;
-    const stored = key ? this.items.get(key) : undefined;
-    if (!key || !stored) return Promise.resolve();
+    if (!key || !this.items.has(key)) return Promise.resolve();
     return this.run(async () => {
-      const next = await this.guard(() => this.api.lock(stored, !stored.locked));
+      const stored = this.items.get(key);
+      if (!stored) return;
+      const next = await this.guard(() => this.api.lock(stored, !stored.locked), key);
       if (next) this.items.set(key, next);
       this.emit();
     });
@@ -432,6 +471,9 @@ export class DrawingController {
     } catch (error) {
       if (error instanceof DrawingConflict && key) {
         if (error.current) this.items.set(key, error.current); else this.items.delete(key);
+        this.pending.delete(key);
+        this.epochs.set(key, (this.epochs.get(key) ?? 0) + 1);
+        if (!error.current && this.selected === key) this.selected = null;
         this.forget(key);
         this.message = error.message;
       } else {

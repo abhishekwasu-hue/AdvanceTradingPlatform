@@ -257,3 +257,6 @@ LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower()
 SCANNER_ENGINE = os.environ.get("SCANNER_ENGINE", "legacy").strip().lower()
 # S1d: the per-tenant ScreenQL cost cap (validator units; a screen over it is refused with the reason).
 SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
+# S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
+# screen-alert emails. Empty = no link is added (the mails still go).
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")

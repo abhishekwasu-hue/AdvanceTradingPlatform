@@ -101,6 +101,7 @@ from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
 from app.alerts.rules_routes import router as alert_rules_router
+from app.alerts.links_routes import router as alert_links_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -202,6 +203,7 @@ app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
 app.include_router(alert_rules_router)
+app.include_router(alert_links_router)
 
 _default_risk_config = RiskConfig()
 

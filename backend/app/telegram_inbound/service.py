@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import briefing, market_memory, monitor, sentiment
 from app.ai.interview import tr
 from app.alerts.channels import TelegramConfig, decrypt_config, decrypt_raw, encrypt_config, parse_config
+from app.alerts.links import START_CODE, consume_start
 from app.cache.client import cache_incr_window
 from app.audit.log import write_audit_log
 from app.billing.service import meter
@@ -480,6 +481,28 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
 
 
 # --- the update --------------------------------------------------------------------------------------
+async def _link_from_start(session: AsyncSession, tenant: Tenant, cfg: TelegramConfig, code: str, chat_id: str, from_id: str, *,
+                           client: Optional[httpx.AsyncClient], now: datetime) -> dict:
+    """S3b-2: `/start <code>` links this private chat to the user who asked for the code. Open to chats outside the
+    whitelist (that is the point), so it is rate limited and gives nothing away: the chat only learns linked / not."""
+    if await rate_limited(tenant.id, chat_id):
+        return {"handled": "rate_limited"}
+    row, why = await consume_start(session, tenant.id, code, chat_id, from_id, now=now)
+    if row is not None:
+        await write_audit_log(session, tenant.id, row.user_id, "telegram_linked", f"chat {chat_id} linked for screen alerts")
+    elif audit_stranger(tenant.id, f"link:{chat_id}"):
+        await write_audit_log(session, tenant.id, None, "telegram_link_refused", f"chat {chat_id}: {why}")
+    await session.commit()
+    if row is not None:
+        text = "Linked. Screen alerts from the rules you created will come to this chat. Unlink any time in Settings."
+    elif why == "not_private":
+        text = "Send the code to the bot in a private chat, not in a group."
+    else:
+        text = "That code did not work (wrong, used or expired). Make a new one in Settings."
+    await reply(cfg, chat_id, text, client, parse_mode=None)
+    return {"handled": "link", "result": why}
+
+
 async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConfig, update: dict, *, client: Optional[httpx.AsyncClient] = None,
                         now: Optional[datetime] = None) -> dict:
     """One Telegram update (message or callback_query). Always returns a small dict; never raises to Telegram."""
@@ -512,6 +535,8 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
         chat_id = str((message.get("chat") or {}).get("id") or "")
         from_id = str((message.get("from") or {}).get("id") or "")
         text = str(message.get("text") or "")
+        if text.startswith("/start ") and START_CODE.fullmatch(text[len("/start "):].strip()):
+            return await _link_from_start(session, tenant, cfg, text[len("/start "):].strip(), chat_id, from_id, client=client, now=now)
         if not chat_allowed(cfg, chat_id):
             if not await rate_limited(tenant.id, chat_id) and audit_stranger(tenant.id, chat_id):
                 await write_audit_log(session, tenant.id, None, "telegram_inbound_ignored", f"message from non-whitelisted chat {chat_id}: {text[:60]!r}")

@@ -195,8 +195,11 @@ class MeteredProvider:
         """H-C2: one agent step, metered and logged like every other call (the logged "user" text is the newest message)."""
         import json as _json
         last = _json.dumps(messages[-1].get("content") if messages else "", default=str)[:20000]
+        step = getattr(self.inner, "complete_tools", None)
+        if step is None:
+            raise ProviderError(f"{self.inner.name} has no tool use")
         try:
-            turn = await self.inner.complete_tools(system, messages, tools, max_tokens=max_tokens)
+            turn = await step(system, messages, tools, max_tokens=max_tokens)
         except ProviderError as exc:
             await self._record(exc.usage, system, last, None, f"error: {str(exc)[:280]}")
             raise

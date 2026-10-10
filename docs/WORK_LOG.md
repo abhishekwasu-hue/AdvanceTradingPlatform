@@ -860,3 +860,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
+
+### 2026-10-11 00:15 IST - part S (Screener v2): spec received, design note, ADR-0021 / ADR-0022 drafts
+- Abhi's ATP_SCREENER_SPEC.md (v2) stored at docs/specs/. docs/design/SCREENER.md maps what exists to what each piece
+  becomes: scanner filters -> the first registry Filters (/api/scanner/run kept, parity test); the existing alert
+  outbox -> the Notification Service; the lake (part B) -> screen data, DuckDB/Parquet as a rebuildable cache.
+- Found: the scanner runs on browser-posted candles (the same G2 issue as the Copilot); screens run on server data only.
+- ADR-0021 (ScreenQL typed AST, hand-written parser, validator owns look-ahead and cost) and ADR-0022 (grow the existing
+  outbox) are provisional. Open questions SC-1..SC-6 with provisional answers (S1 and S3 after H-C1; S2 after part B).
+- Test: tests/test_s0_screener_docs.py (spec, note, ADRs present and indexed; every ADR file indexed).

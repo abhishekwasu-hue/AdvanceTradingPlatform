@@ -128,3 +128,32 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     weekly = client.post("/api/screener/run", json={"source": "close > close[1]", "base_tf": "1w", "symbols": ["UP"]}, headers=headers).json()
     assert weekly["matched"] == ["UP"]                                                            # weekly bars resampled from server daily bars
     assert parse(body["text"]) == parse(made["text"]) and n.VERSION == stored["version"]
+
+
+def test_a_run_never_decides_on_the_bar_still_forming(flag_on, monkeypatch):
+    headers, _ = _owner("s1d-forming@example.com")
+    from datetime import datetime, timedelta, timezone
+
+    from app.brokers import token_lifecycle
+    from app.market_data import candles_routes, service
+    from app.screener.runtime import closed_only
+
+    t_now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    start = t_now - timedelta(minutes=5 * 30)                                   # 30 closed 5-minute bars, then one forming
+
+    async def pick(session, tenant_id, broker, label):
+        return types.SimpleNamespace(broker_name="fake")
+
+    async def candles(self, symbol, exchange="NSE", interval="1min", now=None):
+        bars = [OHLCVBar(timestamp=start + timedelta(minutes=5 * i), open=100.0, high=101.0, low=99.0, close=100.0, volume=1000.0) for i in range(30)]
+        return bars + [OHLCVBar(timestamp=t_now, open=100.0, high=5000.0, low=99.0, close=5000.0, volume=10.0)]   # the forming bar
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+    out = client.post("/api/screener/run", json={"source": "close > 1000", "base_tf": "5m", "symbols": ["TCS"]}, headers=headers).json()
+    assert out["matched"] == [] and out["results"] == [{"symbol": "TCS", "matched": False, "reason": None}]
+
+    idx = pd.DatetimeIndex([pd.Timestamp(start), pd.Timestamp(t_now)])
+    frame = pd.DataFrame({"close": [1.0, 2.0]}, index=idx)
+    assert list(closed_only(frame, "5m", t_now).index) == [pd.Timestamp(start)]
+    assert len(closed_only(frame, "5m", t_now + timedelta(minutes=5))) == 2

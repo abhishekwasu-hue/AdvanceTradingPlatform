@@ -4,7 +4,7 @@ Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Merge on
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-10 23:27 IST.
+Last update: 2026-10-11 00:31 IST.
 
 | Part | What | Status | PR | % |
 |---|---|---|---|---|
@@ -14,7 +14,7 @@ Last update: 2026-10-10 23:27 IST.
 | C1 | HTF lookahead: closed bars only | done | #83 | 100 |
 | C3 | Speed (indicator prefix cache), benchmark, CI guard | done; portfolio backtest still to come | #83 | 75 |
 | C4 | Reproducibility fingerprint | done | #83 | 100 |
-| C2 | Pluggable fill / slippage / latency / margin / pricing / settlement models | design note done; PR 1 next | #100 | 10 |
+| C2 | Pluggable fill / slippage / latency / margin / pricing / settlement models | PR 1 done (ModelSet, fixed-pct slippage, touch fill, golden hashes); PR 2 next | #100 | 25 |
 | C5 | Trial ledger, deflated Sharpe | after C2 | - | 0 |
 | C6 | Distributed runs | after C5 | - | 0 |
 | D | SEBI retail-algo: design + rule-set as data + COMPLIANCE_IN.md | done (design PR) | #87 | 100 |
@@ -29,16 +29,22 @@ Last update: 2026-10-10 23:27 IST.
 | B1 | Lake schema + as-of reads (hypertables only if Timescale is installable) | done; CI guard fix pushed after full suite | #96 | 100 |
 | B2 | Ingest: candle builder (bar END), idempotent writer, broker backfill, vendor seam, tick writer (flag off) | done | #97 | 100 |
 | B3 | Quality detectors (gap, spike, invalid, late, duplicate, mismatch) | done | #99 | 100 |
-| B4 | Corporate-action adjusted view | done, PR next | - | 100 |
-| B5-B7 | history API with as_of/adjusted, backtests read the lake, retention/compression/metrics | next | - | 0 |
+| B4 | Corporate-action adjusted view | done | #101 | 100 |
+| B5 | history API with as_of / adjusted / quality | done | #102 | 100 |
+| B6-B7 | backtests read the lake, retention/compression/metrics | next | - | 0 |
 | E | Execution core and scale (ADR-0014) | not started | - | 0 |
 | F | Portfolio risk | not started | - | 0 |
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
-| H | AI research loop / MCP | not started | - | 0 |
+| H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
+| H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a done; b, c built (suite run); d in progress | #103 | 50 |
+| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... (ADR-0019/0020 first) | after H-C1 | - | 0 |
+| S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
+| U1-a/b | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification | built, full suite next | - | 60 |
+| S1, S3 | ScreenQL engine + scanner migration; Notification Service on the existing outbox | after H-C1 | - | 0 |
 | I | Options analytics | not started | - | 0 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |
 | v1.3 | Crypto paper: CoinDCX spot -> Binance/Kraken -> IBKR | after the Hostinger PAPER go-live | - | 0 |
 
-Owner decisions pending (provisional decisions taken, work continues): D-1..D-4 (#87, #94, #95), C2-1/C2-2 (#100), B-1, B-2 (#88). On the owner: R2 bucket +
+Owner decisions pending (provisional decisions taken, work continues): D-1..D-4 (#87, #94, #95), C2-1/C2-2 (#100), B-1, B-2 (#88), H-3..H-5 (#103), SC-1..SC-6 and U1-Q1/Q2 (#104). On the owner: R2 bucket +
 token in the server .env; the server IP for the Hostinger blocks.

@@ -969,3 +969,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   The agent now runs on OpenAI as well as Anthropic.
 - Tests: `tests/test_hc2b2_contract_openai.py` (7). A mutation check confirmed the claim-source test fails when the
   check is removed.
+
+### 2026-10-11 02:22 IST - H-C2b-3: market/research tools for the agent
+- `get_candles`, `get_quote`, `get_option_chain`, `get_market_regime` and `run_backtest` read server data through the
+  broker session (the H-C1 a path). They fail closed without a session, never use sample data, and keep their outputs
+  small.
+- The backtest returns statistics only, with an "insufficient" flag below 30 trades.
+- Tests: `tests/test_hc2b3_market_tools.py` (6). The agent suites pass together (28).
+- Next: H-C10 evals (ADR-0020) - golden sets with fake providers in CI, including the injection set.

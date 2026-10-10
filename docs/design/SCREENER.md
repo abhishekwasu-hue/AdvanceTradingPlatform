@@ -433,7 +433,32 @@ job, never tuned against results.
 - **Tests.** `tests/test_s4b_cycle_cache.py` (2), plus 3 mutation checks (no fetch cache, ignored lookback, no result
   cache).
 
+## S4b-2 (built): intrabar alerts, opt-in, default off
+
+- **Opt-in per rule.** `fire_on`: `bar_close` (the default, unchanged) or `intrabar`. Intrabar needs the
+  `screener_intrabar` flag, which is **off by default**.
+  - The API refuses an intrabar rule while the flag is off (409).
+  - If the flag is turned off later, the engine skips the rule and says why (`last_problem`).
+- **Which bar.** `forming_bar` gives the start of the bar forming now, inside the session of a trading day only.
+  Outside the session nothing is evaluated or fetched.
+- **Data.** Server bars with the forming bar kept (`fetch_frames(include_forming=True)`). A base timeframe built by
+  resampling keeps its forming bucket (`resample(keep_forming=True)`).
+  - Higher timeframes referenced inside a screen still use closed buckets only.
+  - Bar-close rules and manual screen runs never see a forming bar.
+- **How often.** At most every `RETRY_SECONDS` (60) per rule, by the same pause as bar-close retries.
+- **Once per bar and symbol.** This uses S3a's idempotency key, which is per bar. `last_bar_at` is not set, so another
+  symbol, or the same one later in the bar, can still fire within that bar. Cooldown applies as before.
+- **Events are marked `intrabar: true`.** The bar had not closed, so the condition may no longer hold at the close
+  (SC-11).
+- **Storage.** `alert_rules.fire_on` (migration `c5e7b9d1f3a5`; Postgres upgrade, check, downgrade and upgrade all OK).
+- **Tests.** `tests/test_s4b2_intrabar.py` (5), plus 6 mutation checks: `last_bar_at` set, session end inclusive, no
+  flag gate, no intrabar mark, forming bucket dropped, no API gate.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-11. Intrabar alerts that stop holding by the close.** An intrabar event can fire on a condition that is false
+  when the bar closes. Provisional: the event says `intrabar: true` and nothing more is sent.
+  - Owner question: should a short follow-up go out ("no longer true at the 09:30 close")? Or should intrabar rules
+    be limited to critical priority?
 - **SC-10. Weekly / monthly alert rules.** Provisional: they can be saved but are not evaluated yet. A weekly bar
   would close at the week's last trading session, and the same holds for monthly bars.
   - Owner question: should these fire at that close (like daily), or only on the next session's pre-open?

@@ -43,7 +43,7 @@ Each part goes: design note or ADR, then build, tests, self-review, and a draft 
 before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 
 ## H-C1 plan (one PR per item where they grow)
-- **a. Server-side evidence only.**
+- **a. Server-side evidence only.** Status: **built** (broker session; lake source once part B merges).
   - The draft backtest, the interview plan and the strategist fetch candles on the server: from the market-data lake
     (B5 `history`) when it has the window, otherwise through the tenant's broker session.
   - A request's `candles` field is ignored, and the response says so (`candles_source`). After one release the field

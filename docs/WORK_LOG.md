@@ -867,3 +867,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   (+H-C10) -> ..., H-C1 plan (server-side evidence, rate limit, output filter, grounding, llm_calls hygiene,
   prompt_version). Provisional: H-C1 jumps the queue as safety work (H-3); parts named H-C1..H-C12 (H-4); no client
   fallback when the server has no data (H-5). Next: H-C1 a (server-side evidence).
+
+### 2026-10-11 00:02 IST - H-C1 a: approval evidence from server data only (G2)
+- `app/ai/evidence.py`: posted candles are recorded as `sample` whatever `data_source` the request claims;
+  `require_server` refuses approval/deploy unless the run's source is `broker:<name>` or `lake`
+  (`AI_EVIDENCE_SERVER_ONLY`, on by default). `server_frame` fetches through the tenant's broker session; no session or
+  no bars = 409, never a fallback to client data (H-5).
+- Draft backtest: `candles` optional - omitted means the server fetches (`symbol`, `exchange`, `lookback_days`,
+  `broker`). Approve checks the run's source. Interview plan/refine: same, and the source is stored on each candidate;
+  interview deploy refuses a sample candidate. The strategist already treated client candles as sample.
+- Frontend: `evidenceBody` - broker mode posts no candles (the server fetches); sample mode is unchanged.
+- Tests: `tests/test_hc1_server_evidence.py` (5: default on, labels not trusted, sample cannot approve, server path
+  approves, 409 without a broker, sample interview option cannot deploy) + `src/api/evidence.test.ts` (3). Existing AI
+  tests moved to the server path (`tests/server_evidence.py`). Lake (B5) as the first source lands once part B merges.

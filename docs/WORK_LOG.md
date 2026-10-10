@@ -890,3 +890,8 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   API GET/PUT /api/compliance/static-ips (owner writes, audited). Worker: LIVE entries refused when
   STATIC_IP_REQUIRED_FOR_LIVE (off) and SERVER_EGRESS_IP is not registered for the broker; PAPER/exits untouched.
   Readiness item static_ip (LIVE). Rule IN-SEBI.static_ip.registered enforced. Tests: 6. Frontend card next.
+
+### 2026-10-10 22:55 IST - part D4 (UI): Settings > Static IP card
+- StaticIpCard on Settings (after broker accounts): this server's egress IP, a table per broker (primary / backup /
+  server IP registered), warnings from the API, a form to register an IP (owner; server enforces). Helper staticIpRows
+  with vitest (2). tsc, vitest 54, build, devanagari and bundle checks green.

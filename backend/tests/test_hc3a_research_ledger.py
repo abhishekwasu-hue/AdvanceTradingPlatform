@@ -72,6 +72,20 @@ def test_more_trials_raise_the_bar():
     assert many["deflated"]["sr0"] > few["deflated"]["sr0"]                                     # the expected best of N grows with N
 
 
+def test_a_draft_that_never_trades_is_weak_evidence_not_moderate():
+    _, me = _owner("hc3a-flat@example.com")
+    report = research.study_report(_record_all(me["tenant_id"], me["id"], str(uuid.uuid4()), [("ok", [0.0] * DAYS), ("ok", [0.0] * DAYS)]))
+    assert report["deflated"]["dsr"] is None and "no evidence" in report["deflated"]["note"] and "evidence weak" in report["summary"]
+
+
+def test_the_cut_falls_on_a_session_start():
+    idx = pd.DatetimeIndex([pd.Timestamp(f"2026-03-0{d} 03:45", tz="UTC") + pd.Timedelta(minutes=15 * i) for d in (2, 3, 4, 5, 6) for i in range(25)])
+    _, cut, _ = research.split_window(idx, 0.3)
+    assert cut == pd.Timestamp("2026-03-06 03:45", tz="UTC")                                       # 09:15 IST, not mid-session
+    is_days = research.trading_days(idx[idx < cut])
+    assert set(is_days).isdisjoint(research.trading_days(idx[idx >= cut]))
+
+
 def test_the_ledger_is_tenant_scoped_and_needs_returns_for_ok_trials():
     _, me = _owner("hc3a-scope@example.com")
     _, other = _owner("hc3a-scope-other@example.com")

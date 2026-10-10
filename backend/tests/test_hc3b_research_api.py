@@ -4,6 +4,8 @@ shows it, and the LLM proposer parses only a JSON object (anything else is an in
 import asyncio
 import json
 
+import pandas as pd
+
 import pytest
 
 from app.ai import research_loop
@@ -114,3 +116,32 @@ def test_a_study_through_the_api_stores_trials_and_the_oos_check(monkeypatch, re
     assert later["report"]["out_of_sample"]["run"] is True and later["report"]["trials"] == 3          # the OOS row is not a trial
     other, _ = _owner("hc3b-api-other@example.com")
     assert client.get(f"/api/ai/research/{body['study_id']}", headers=other).status_code == 404
+
+
+def test_the_default_window_is_long_enough_for_pbo_and_the_holdout_is_cut_off(monkeypatch, research_on, no_ack_gate):
+    from app.ai import research
+    from app.ai.routes import ResearchBody
+    sessions = ResearchBody(idea="xyz").days * 5 / 7 - 10                                        # weekends, a few holidays
+    assert sessions * (1 - research_loop.OOS_FRACTION) >= research.MIN_DAYS_FOR_PBO
+    headers, _ = _owner("hc3b-api-holdout@example.com")
+    from app.ai import settings as ai_settings
+    from app.ai.tools import market
+    provider = FakeProvider([json.dumps(_draft("a", 9, 21)), "null"])
+
+    async def provider_for(*args, **kwargs):
+        return provider
+    monkeypatch.setattr(ai_settings, "provider_for", provider_for)
+    frame_ = _frame()
+
+    async def frame(ctx, symbol, exchange, timeframe, days):
+        return frame_, "broker:fake"
+    monkeypatch.setattr(market, "_frame", frame)
+    boundary = frame_.index[len(frame_) // 2]
+    monkeypatch.setenv("BACKTEST_HOLDOUT_START", boundary.tz_convert("Asia/Kolkata").strftime("%Y-%m-%d"))
+    out = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
+    assert out.status_code == 200, out.text                                                     # runs on the bars before the holdout
+    assert pd.Timestamp(out.json()["report"]["out_of_sample"]["to"]) < boundary
+    monkeypatch.setenv("BACKTEST_HOLDOUT_START", "2025-01-01")
+    refused = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
+    assert refused.status_code == 422 and "Only 0 bars" in refused.json()["detail"]
+

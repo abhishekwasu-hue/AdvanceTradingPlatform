@@ -75,7 +75,12 @@ def split_window(index: pd.DatetimeIndex, oos_fraction: float = 0.3, boundary: A
         raise ValueError("too few bars to split")
     start, end = index[0], index[-1]
     check_range(start, end, holdout_start(boundary))
-    cut = index[int(len(index) * (1 - oos_fraction))]
+    pos = int(len(index) * (1 - oos_fraction))
+    days = [ts.tz_convert(IST).date() if ts.tzinfo else ts.date() for ts in index]
+    snapped = pos
+    while 0 < snapped < len(index) and days[snapped] == days[snapped - 1]:
+        snapped += 1                                               # cut at a session start: no day is in both windows
+    cut = index[snapped] if snapped < len(index) else index[pos]
     return start, cut, end
 
 
@@ -106,17 +111,29 @@ async def study_trials(session: AsyncSession, tenant_id: int, study_id: str) -> 
                                       .order_by(ResearchTrialRecord.seq)))
 
 
+async def earlier_studies(session: AsyncSession, tenant_id: int, symbol: str, timeframe: str, study_id: str, since: datetime) -> int:
+    """How many other studies this organisation ran on the same symbol and timeframe since `since` - a search spread
+    over several studies is still one search, so the report says so."""
+    return int(await session.scalar(select(func.count(func.distinct(ResearchTrialRecord.study_id))).where(
+        ResearchTrialRecord.tenant_id == tenant_id, ResearchTrialRecord.symbol == symbol.upper(),
+        ResearchTrialRecord.timeframe == timeframe, ResearchTrialRecord.study_id != study_id,
+        ResearchTrialRecord.created_at >= since)) or 0)
+
+
 def _pbo_blocks(t: int) -> int:
     s = min(16, t // 4)
     return s - (s % 2)
 
 
-def study_report(trials: Sequence[ResearchTrialRecord], oos: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def study_report(trials: Sequence[ResearchTrialRecord], oos: Optional[Dict[str, Any]] = None,
+                 earlier: Optional[int] = None) -> Dict[str, Any]:
     """The honest summary of a study. `oos` = the chosen draft's out-of-sample metrics when that check was run; when not
-    given, a stored out-of-sample row (status "oos" - the check, not a trial) is used."""
+    given, a stored out-of-sample row (status "oos" - the check, not a trial) is used. `earlier` = other studies on the
+    same symbol and timeframe recently (`earlier_studies`)."""
     stored_oos = [t for t in trials if t.status == "oos"]
     if oos is None and stored_oos:
-        oos = {"run": True, **json.loads(stored_oos[-1].metrics_json or "{}")}
+        check = json.loads(stored_oos[-1].metrics_json or "{}")
+        oos = ({"run": False, "note": f"Out-of-sample check failed: {check['error']}"} if "error" in check else {"run": True, **check})
     trials = [t for t in trials if t.status != "oos"]
     ok = [t for t in trials if t.status == "ok"]
     out: Dict[str, Any] = {"trials": len(trials), "backtested": len(ok), "invalid": sum(1 for t in trials if t.status == "invalid"),
@@ -130,6 +147,8 @@ def study_report(trials: Sequence[ResearchTrialRecord], oos: Optional[Dict[str, 
     sharpes = {seq: sharpe(r) for seq, r in rets.items()}
     best = max(ok, key=lambda t: (sharpes[t.seq], -t.seq))
     dsr = deflated_sharpe(rets[best.seq], list(sharpes.values()))
+    if float(np.std(rets[best.seq])) == 0.0:                      # no trades / no variation: nothing to deflate, no evidence
+        dsr = {**dsr, "dsr": None, "note": "The chosen draft's daily returns do not vary (no trades), so there is no evidence."}
     out["chosen"] = {"seq": best.seq, "dsl_hash": best.dsl_hash, "in_sample_sharpe_daily": round(sharpes[best.seq], 4),
                      "metrics": json.loads(best.metrics_json or "{}")}
     out["deflated"] = dsr
@@ -141,11 +160,15 @@ def study_report(trials: Sequence[ResearchTrialRecord], oos: Optional[Dict[str, 
         out["pbo"] = {"pbo": None, "note": "Needs at least 2 backtested trials on the same window of at least "
                                            f"{MIN_DAYS_FOR_PBO} trading days."}
     dsr_value = dsr.get("dsr")
-    verdict = ("weak" if dsr_value is None or dsr_value < 0.5 else "moderate" if dsr_value < 0.95 else "strong")
+    verdict = ("weak" if dsr_value is None or dsr_value <= 0.5 else "moderate" if dsr_value < 0.95 else "strong")
     out["summary"] = (f"Chosen from {len(ok)} backtested trials ({len(trials)} drafts). Deflated Sharpe probability "
                       f"{'n/a' if dsr_value is None else f'{dsr_value:.2f}'} - evidence {verdict} after the search.")
+    if earlier:
+        out["earlier_studies"] = earlier
+        out["summary"] += (f" {earlier} other stud{'y' if earlier == 1 else 'ies'} on this symbol and timeframe ran recently; "
+                           "this report deflates only this study's trials, so the real search was larger.")
     return out
 
 
-__all__ = ["record_trial", "study_trials", "study_report", "daily_returns", "trading_days", "split_window", "dsl_hash",
+__all__ = ["record_trial", "study_trials", "study_report", "earlier_studies", "daily_returns", "trading_days", "split_window", "dsl_hash",
            "NOT_SIMULATED", "DISCLAIMER", "HoldoutError"]

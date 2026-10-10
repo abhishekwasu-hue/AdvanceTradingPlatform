@@ -824,7 +824,8 @@ class ResearchBody(BaseModel):
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)
     exchange: str = Field(default="NSE", max_length=10)
     timeframe: str = Field(default="15min", pattern=r"^(5min|15min|30min|60min)$")
-    days: int = Field(default=60, ge=20, le=60)
+    # Calendar days of server bars. 120 gives ~80 sessions, so the 70 % in-sample part (~56) clears MIN_DAYS_FOR_PBO.
+    days: int = Field(default=120, ge=20, le=180)
     max_drafts: int = Field(default=6, ge=1, le=8)
 
 
@@ -842,7 +843,11 @@ async def research_study(body: ResearchBody, user: User = Depends(require_ai_ack
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="generation", user_id=user.id)
     if getattr(provider, "name", "") == "rule_based":
         raise HTTPException(status_code=409, detail="The research loop needs an AI provider (Settings > AI provider).")
+    from app.backtest.data_policy import filter_allowed, holdout_start
     frame, source = await _frame(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, body.timeframe, body.days)
+    frame = filter_allowed(frame, holdout_start())                # the sealed holdout is cut off, never searched
+    if len(frame) < 50:
+        raise HTTPException(status_code=422, detail=f"Only {len(frame)} bars before the sealed holdout; a study needs at least 50.")
     risk = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     try:
         out = await research_loop.run_study(session, tenant_id=user.tenant_id, user_id=user.id,
@@ -856,14 +861,18 @@ async def research_study(body: ResearchBody, user: User = Depends(require_ai_ack
 
 
 @router.get("/research/{study_id}")
-async def research_study_get(study_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def research_study_get(study_id: str, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """The study's trials (every draft tried) and its deflated report."""
-    from app.ai import research
+    from app.ai import research, research_loop
+    await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, "ai_research", user.tenant_id)
     trials = await research.study_trials(session, user.tenant_id, study_id)
     if not trials:
         raise HTTPException(status_code=404, detail="Study not found")
-    return {"study_id": study_id, "report": research.study_report(trials),
+    first = trials[0].created_at if trials[0].created_at.tzinfo else trials[0].created_at.replace(tzinfo=timezone.utc)
+    earlier = await research.earlier_studies(session, user.tenant_id, trials[0].symbol, trials[0].timeframe, study_id,
+                                             since=first - timedelta(days=research_loop.EARLIER_STUDIES_DAYS))
+    return {"study_id": study_id, "report": research.study_report(trials, earlier=earlier),
             "trials": [{"seq": t.seq, "status": t.status, "reason": t.reason, "dsl": json.loads(t.dsl_json), "metrics": json.loads(t.metrics_json),
                         "created_at": t.created_at.isoformat()} for t in trials if t.status != "oos"]}   # the OOS check is in the report
 

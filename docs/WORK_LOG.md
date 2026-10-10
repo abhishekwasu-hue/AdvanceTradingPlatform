@@ -1003,3 +1003,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `POST`/`GET /api/ai/research` behind the new `ai_research` flag (off by default); the rule-based provider gets 409;
   a holdout window gets 422. Tests: 7 new, plus 2 mutation checks.
 - S4b-1 full suite: 1379 passed; draft PR #134.
+
+### 2026-10-11 04:35 IST - H-C3 review follow-up; S4b-2 review follow-up; S5-A started
+- H-C3 (PR #135), from the fresh-eyes review:
+  - The out-of-sample cut snaps to a session start.
+  - The OOS run warms up on `min_history` bars before the cut and counts only trades entered from the cut.
+  - A failed OOS run is stored as an error check, and the report says the check failed.
+  - Flat returns give "no evidence" rather than a deflated Sharpe.
+  - The report counts studies of the same symbol and timeframe in the last 30 days.
+  - The default window is 120 days, the holdout is trimmed, and fewer than 50 bars left gives 422.
+  - GET needs the AI acknowledgement and the `ai_copilot` flag.
+  - Full suite: 1416 passed, 1 skipped.
+- S4b-2 (PR #138), from the fresh-eyes review:
+  - Intrabar fetches skip the cached candle copy (`fresh=True`).
+  - The notification says "still forming".
+  - Outside the session, the old problem is cleared.
+  - 3 tests added; 95 targeted tests pass.
+- S5-A (price action in ScreenQL), next PR: `Pattern(name)`, `SwingHigh` / `SwingLow` / `SwingDirection(degree)` and
+  `MedianRange(n)`, all series and causal.

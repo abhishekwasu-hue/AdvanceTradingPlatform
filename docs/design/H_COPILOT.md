@@ -107,8 +107,12 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **H-9. Research loop limits.** Provisional:
   - at most 8 drafts per study and a 30% out-of-sample tail of the window;
   - the study stops early when the cost cap is reached;
-  - the report calls evidence "strong" only when the Deflated Sharpe probability is at least 0.95.
-  - Owner question: other limits, or a stricter bar?
+  - the report calls evidence "strong" only when the Deflated Sharpe probability is at least 0.95;
+  - the report counts other studies on the same symbol and timeframe in the last 30 days, but deflates only this
+    study's trials. There is no hard limit on how many studies may run.
+  - Owner questions:
+    - other limits, or a stricter bar?
+    - should repeated studies on one symbol be capped per week, or deflated together?
 
 ## H-C2a (built): tool registry, bounded loop, audit - read tools only
 - **Tools.** `app/ai/tools/` is a typed registry:
@@ -296,3 +300,30 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - `tests/test_hc3b_research_api.py` (3): flag off -> 503, rules -> 409, the full study through the API, cross-tenant
     404, JSON-only proposer.
   - Mutation checks: in-sample leak, no draft cap.
+
+## H-C3b review follow-up (second pass, fresh eyes)
+- **Out-of-sample warm-up.** The OOS run now starts a warm-up of `min_history` bars before the cut, so indicators have
+  their history. Only trades **entered** at or after the cut count, and the report shows `warmup_bars`. Before this, an
+  EMA(200) draft on 60-minute bars made no OOS trades and was reported as run.
+- **No evidence is weak evidence.** A chosen draft whose daily returns do not vary (no trades) gets `dsr: None` with a
+  note, and the verdict is "weak". The weak threshold is now `<= 0.5`; before, a flat draft read "moderate".
+- **The cut is a session start.** No IST day is in both the in-sample and out-of-sample windows.
+- **PBO through the API.** The default window is now 120 calendar days (limit 180), about 80 sessions, so the
+  in-sample part clears `MIN_DAYS_FOR_PBO`. At 60 days, PBO was never computed.
+- **Holdout.** The route cuts the sealed holdout off the bars (`filter_allowed`) instead of refusing every request
+  once `BACKTEST_HOLDOUT_START` is set. It refuses (422) only when fewer than 50 bars remain.
+- **Failed OOS run.** A failed OOS run is stored as an `oos` row with the error, and the report says "Out-of-sample
+  check failed". It is no longer a 500 after the trials were committed.
+- **Search spread over studies.** The report now counts other studies on the same symbol and timeframe in the last 30
+  days (`earlier_studies`) and says the real search was larger (H-9).
+- **GET consistency.** `GET /api/ai/research/{id}` needs the AI acknowledgement and the `ai_copilot` flag, like POST.
+- **Tests added.**
+  - Flat draft rated weak.
+  - Cut at a session start.
+  - OOS counts trades from the cut only; a failed check is reported.
+  - Earlier studies named.
+  - Default window long enough for PBO; holdout cut off; 422 when nothing is left.
+- **Noted, not changed.**
+  - `seq` is count + 1 without a lock. That is safe while `study_id` is server-made and trials run one at a time.
+  - "Append-only" is a convention in code; the database does not enforce it.
+  - The study runs inside one request (up to 8 model calls and 9 backtests). The background job is H-C3c.

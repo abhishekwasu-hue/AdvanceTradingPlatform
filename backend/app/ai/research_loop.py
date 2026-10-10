@@ -15,6 +15,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import pandas as pd
@@ -26,6 +27,7 @@ from app.backtest.data_policy import HoldoutError
 
 MAX_DRAFTS = 8                       # H-9 provisional
 OOS_FRACTION = 0.3                   # H-9 provisional
+EARLIER_STUDIES_DAYS = 30            # H-9 provisional: studies on the same symbol and timeframe counted in the report
 
 # propose(idea, history) -> a draft (dict) or None to stop early; history = earlier trials as plain dicts.
 Propose = Callable[[str, List[Dict[str, Any]]], Awaitable[Optional[Dict[str, Any]]]]
@@ -50,6 +52,37 @@ def _metrics(result: Any) -> Dict[str, Any]:
     return {"trades": result.total_trades, "win_rate": round(float(result.win_rate), 2), "net_pnl": round(float(result.net_pnl), 2),
             "profit_factor": None if result.profit_factor is None else round(float(result.profit_factor), 3),
             "max_drawdown": round(float(result.max_drawdown), 2), "expectancy": round(float(result.expectancy), 2)}
+
+
+def _trade_metrics(trades: List[Any]) -> Dict[str, Any]:
+    """The `_metrics` keys from a trade list (the out-of-sample trades only, without the warm-up's)."""
+    pnls = [float(t.pnl) for t in trades if t.pnl is not None]
+    wins, losses = [p for p in pnls if p > 0], [p for p in pnls if p < 0]
+    equity, peak, drawdown = 0.0, 0.0, 0.0
+    for p in pnls:
+        equity += p
+        peak = max(peak, equity)
+        drawdown = max(drawdown, peak - equity)
+    return {"trades": len(pnls), "win_rate": round(100.0 * len(wins) / len(pnls), 2) if pnls else 0.0, "net_pnl": round(sum(pnls), 2),
+            "profit_factor": round(sum(wins) / -sum(losses), 3) if losses else None, "max_drawdown": round(drawdown, 2),
+            "expectancy": round(sum(pnls) / len(pnls), 2) if pnls else 0.0}
+
+
+def _aware(ts: Any) -> pd.Timestamp:
+    stamp = pd.Timestamp(ts)
+    return stamp.tz_localize("UTC") if stamp.tzinfo is None else stamp
+
+
+def oos_trades_only(trades: List[Any], cut: pd.Timestamp) -> List[Any]:
+    """The out-of-sample trades: entered at or after `cut` (the warm-up before it computes indicators, never trades)."""
+    return [t for t in trades if _aware(t.entry_time) >= cut]
+
+
+def _warmup_bars(strategy: Any) -> int:
+    try:
+        return max([int(v) for v in strategy.min_history().values()] or [0])
+    except Exception:  # noqa: BLE001 - a strategy without min_history gets no warm-up
+        return 0
 
 
 async def _backtest(strategy: Any, df: pd.DataFrame, symbol: str, timeframe: str, risk: Any) -> Any:
@@ -109,15 +142,25 @@ async def run_study(session: AsyncSession, *, tenant_id: int, user_id: Optional[
     trials = await research.study_trials(session, tenant_id, study_id)
     report = research.study_report(trials)
     chosen = report.get("chosen")
+    earlier = await research.earlier_studies(session, tenant_id, spec.symbol, spec.timeframe, study_id,
+                                             since=pd.Timestamp.now(tz="UTC").to_pydatetime() - timedelta(days=EARLIER_STUDIES_DAYS))
     if chosen and chosen["seq"] in drafts:
         strategy = _validate(drafts[chosen["seq"]], spec.timeframe)
-        oos = await _backtest(strategy, oos_df, spec.symbol, spec.timeframe, risk)
-        oos_returns = research.daily_returns(oos.trades, float(risk.capital), oos_days)
-        check = {"chosen_seq": chosen["seq"], "from": cut.isoformat(), "to": end.isoformat(), "metrics": _metrics(oos),
-                 "sharpe_daily": round(research.sharpe(oos_returns), 4) if oos_returns else None}
+        # Indicators need history: the run starts `warm-up` bars before the cut, and only trades ENTERED at or after the
+        # cut count. Reading earlier bars to compute indicators is not leakage; trading on them would be.
+        warm = is_df.iloc[-_warmup_bars(strategy):] if _warmup_bars(strategy) else is_df.iloc[:0]
+        try:
+            oos = await _backtest(strategy, pd.concat([warm, oos_df]), spec.symbol, spec.timeframe, risk)
+            oos_trades = oos_trades_only(oos.trades, cut)
+            oos_returns = research.daily_returns(oos_trades, float(risk.capital), oos_days)
+            check: Dict[str, Any] = {"chosen_seq": chosen["seq"], "from": cut.isoformat(), "to": end.isoformat(), "warmup_bars": len(warm),
+                                     "metrics": _trade_metrics(oos_trades),
+                                     "sharpe_daily": round(research.sharpe(oos_returns), 4) if oos_returns else None}
+        except Exception as exc:  # noqa: BLE001 - the trials stay recorded; the report says the check failed
+            check = {"chosen_seq": chosen["seq"], "error": f"{type(exc).__name__}: {exc}"[:300]}
         await trial(dsl=drafts[chosen["seq"]], status="oos", metrics=check, data_from=cut.to_pydatetime(), data_to=end.to_pydatetime())
         await session.commit()                                       # stored as the study's check, not as another trial
-        report = research.study_report(await research.study_trials(session, tenant_id, study_id))
+    report = research.study_report(await research.study_trials(session, tenant_id, study_id), earlier=earlier)
     return {"study_id": study_id, "report": report}
 
 

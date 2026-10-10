@@ -1805,7 +1805,7 @@ class ResearchTrialRecord(Base):
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
     data_from: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     data_to: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
-    status: Mapped[str] = mapped_column(String(12), nullable=False)                 # ok / invalid / error
+    status: Mapped[str] = mapped_column(String(12), nullable=False)                 # ok / invalid / error; oos = the study's check
     reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     returns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")   # daily returns over the window

@@ -1,7 +1,7 @@
 {
  "source": "NSE F&O bhavcopy (legacy EXPIRY_DT until 2024-07-05, UDiFF XpryDt from 2024-07-08)",
  "coverage_start": "2016-01-01",
- "coverage_end": "2026-10-07",
+ "coverage_end": "2026-10-09",
  "weeks_sampled": 564,
  "expiry_days_checked": 875,
  "symbols": [

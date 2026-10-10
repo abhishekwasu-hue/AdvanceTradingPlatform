@@ -878,3 +878,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   with what it names; API + record). No schema change (stored in the run's metrics JSON). Engine version unchanged
   (results are identical).
 - Next: C2 (pluggable models) design note, then C5/C6 per the spec order; ROADMAP_STATUS board.
+
+### 2026-10-10 23:25 IST - part C2: design note (pluggable fill / slippage / latency / margin / pricing / settlement)
+- docs/design/C2_MODELS.md on a new branch stacked on the realism PR (#83): six protocols with a registry each, a
+  ModelSet whose defaults reproduce today's results byte for byte (golden test on the C4 result_hash), model names and
+  parameters in the reproducibility fingerprint, no-look-ahead guard per model, costs stay in india_costs.py.
+  Open questions C2-1 / C2-2 provisional. Check-in: #83, #85, #86 green; #96 (B1) red on the numeric-migration guard -
+  fixed (guard now also accepts create_table), full suite running before the push.

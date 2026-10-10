@@ -206,6 +206,11 @@ class _Eval:
             "PatternBearish": lambda: _pattern(f, "BEARISH"),
             "NearSupport": lambda: _near_zone(f, "NEAR_SUPPORT", num(0, 0.5), win(1, 3)),
             "NearResistance": lambda: _near_zone(f, "NEAR_RESISTANCE", num(0, 0.5), win(1, 3)),
+            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf))),
+            "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
+            "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
+            "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
+            "MedianRange": lambda: _median_range(f, win(0, 20)),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -247,6 +252,60 @@ def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:
 def _pattern(f: pd.DataFrame, direction: str) -> bool:
     from app.price_action.candlestick_patterns import detect_patterns_at
     return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+
+
+_PATTERNS: Dict[str, Tuple[str, Optional[str]]] = {
+    "doji": ("detect_doji", None), "hammer": ("detect_hammer", None), "shooting_star": ("detect_shooting_star", None),
+    "bullish_engulfing": ("detect_bullish_engulfing", None), "bearish_engulfing": ("detect_bearish_engulfing", None),
+    "morning_star": ("detect_morning_star", None), "evening_star": ("detect_evening_star", None),
+    "bullish_pin_bar": ("detect_pin_bar", "BULLISH"), "bearish_pin_bar": ("detect_pin_bar", "BEARISH"),
+    "inside_bar": ("detect_inside_bar", None),
+    "bullish_outside_bar": ("detect_outside_bar", "BULLISH"), "bearish_outside_bar": ("detect_outside_bar", "BEARISH"),
+    "bullish_rejection": ("detect_strong_rejection", "BULLISH"), "bearish_rejection": ("detect_strong_rejection", "BEARISH"),
+}
+
+
+def _pattern_series(f: pd.DataFrame, name: str) -> pd.Series:
+    """S5-A: True on each bar where the named pattern shows. A detector reads bar i and at most the two before it, so
+    the first two bars are False (never a wrap-around to the end of the frame)."""
+    from app.price_action import candlestick_patterns as cp
+    if name not in _PATTERNS:
+        raise ScreenRuntimeError(f"unknown pattern {name!r}")
+    fn_name, direction = _PATTERNS[name]
+    detect = getattr(cp, fn_name)
+    out = np.zeros(len(f), dtype=bool)
+    for i in range(2, len(f)):
+        m = detect(f, i)
+        out[i] = m is not None and (direction is None or m.direction == direction)
+    return pd.Series(out, index=f.index)
+
+
+def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """S5-A: (last confirmed swing high, last confirmed swing low, UP/DOWN) on every bar, from the causal swing engine
+    (app/price_action/causal_swings.py, default settings). A pivot counts from the bar that CONFIRMED it - when price
+    had come back from the extreme by the degree's threshold - never from the extreme bar itself (no look-ahead)."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = f.index
+    high, low = np.full(len(f), np.nan), np.full(len(f), np.nan)
+    direction = np.full(len(f), None, dtype=object)
+    for p in cs.degree_pivots(frame, degree, s):                         # confirmation order
+        c = int(p.confirmed_idx)                                          # type: ignore[arg-type]
+        (high if p.kind == "H" else low)[c] = p.price
+        direction[c] = "DOWN" if p.kind == "H" else "UP"
+    hi = pd.Series(high, index=f.index).ffill()
+    lo = pd.Series(low, index=f.index).ffill()
+    d = pd.Series(direction, index=f.index).ffill().fillna("")
+    return hi, lo, d
+
+
+def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
+    from app.price_action.breaks import median_range
+    return pd.Series(median_range(f, max(1, n_)), index=f.index)
 
 
 def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) -> bool:

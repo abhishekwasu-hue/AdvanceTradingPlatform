@@ -22,6 +22,7 @@ class Arg:
     type: str                       # num / bool / str / window (a whole number of bars, literal or parameter)
     default: Optional[object] = None
     required: bool = True
+    choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,8 @@ class Spec:
     cross_sectional: bool = False   # needs the whole universe at once (Rank, PercentileRank)
     doc: str = ""
     same_unit_args: Tuple[int, ...] = field(default=())     # positions whose units must agree (CrossAbove(a, b))
+    extra_bars: int = 0             # bars needed beyond the window (CrossAbove compares with the bar before)
+    min_bars: int = 0               # S5-A: a floor on the bars needed (swings need history before the first pivot)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -49,6 +52,16 @@ FIELDS: Dict[str, Spec] = {s.name: s for s in (
     Spec("oi", "factor", NUM, "contracts", doc="open interest (derivatives)"),
 )}
 
+# S5-A: names map to app/price_action/candlestick_patterns.py detectors (with a direction where the detector has two)
+PATTERN_NAMES: Tuple[str, ...] = (
+    "doji", "hammer", "shooting_star", "bullish_engulfing", "bearish_engulfing", "morning_star", "evening_star",
+    "bullish_pin_bar", "bearish_pin_bar", "inside_bar", "bullish_outside_bar", "bearish_outside_bar",
+    "bullish_rejection", "bearish_rejection",
+)
+SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
+SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
+
+_DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 
@@ -65,8 +78,8 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("Least", "factor", NUM, "same", (_X,), varargs=True, timeframed=False, doc="smallest of the arguments"),
     Spec("Count", "factor", NUM, "count", (_N, Arg("cond", BOOL)), doc="bars in the last n where cond held"),
     Spec("CountStreak", "factor", NUM, "count", (Arg("cond", BOOL),), cost=2.0, doc="consecutive bars, up to now, where cond held"),
-    Spec("CrossAbove", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), doc="a crossed above b on this bar"),
-    Spec("CrossBelow", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), doc="a crossed below b on this bar"),
+    Spec("CrossAbove", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), extra_bars=1, doc="a crossed above b on this bar"),
+    Spec("CrossBelow", "filter", BOOL, None, (Arg("a", NUM), Arg("b", NUM)), same_unit_args=(0, 1), extra_bars=1, doc="a crossed below b on this bar"),
     Spec("PctChange", "factor", NUM, "pct", (_X, _N), doc="% change of x over n bars"),
     Spec("ZScore", "factor", NUM, "ratio", (_X, _N), doc="(x - mean) / stdev over n bars"),
     Spec("Lag", "factor", NUM, "same", (_X, _N), doc="x, n bars ago"),
@@ -97,6 +110,17 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the close is within tolerance_pct of a support zone edge"),
     Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a resistance zone edge"),
+    # S5-A: price action as series (bar by bar, causal), so they work with offsets, @timeframe, Count and alerts
+    Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES),), cost=2.0, min_bars=3,
+         doc="the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it)"),
+    Spec("SwingHigh", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
+         doc="the last CONFIRMED swing high: known only once price has come back from it by the degree's threshold"),
+    Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
+         doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
+    Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
+         doc="UP after a confirmed swing low, DOWN after a confirmed swing high (empty before the first)"),
+    Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
+         doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),
     Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False, doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"),
     Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying"),
@@ -113,9 +137,10 @@ def describe() -> Dict[str, Dict[str, object]]:
     out: Dict[str, Dict[str, object]] = {}
     for spec in (*FIELDS.values(), *FUNCTIONS.values()):
         out[spec.name] = {"kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "args": [a.name for a in spec.args],
+                          "choices": {a.name: list(a.choices) for a in spec.args if a.choices},
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
                           "field": spec.name in FIELDS, "doc": spec.doc}
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

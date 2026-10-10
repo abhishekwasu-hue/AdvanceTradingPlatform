@@ -171,6 +171,17 @@ def test_strategy_builder_and_scanner_entries_match_their_source():
     assert np.isnan(_ev("PCR()", bare)) and _ev('ChainBias() == "BULLISH"', bare) is False         # no chain: never a match
 
 
+def test_price_action_series_s5a():
+    # deeper checks (detector parity, confirmation bar, truncation invariance) are in tests/test_s5a_price_action.py
+    closes = [100 + 3 * np.sin(i / 6) for i in range(160)]
+    data = _sym(closes)
+    assert _ev('Pattern("doji")', data).dtype == bool
+    hi, lo = _ev("SwingHigh()", data), _ev("SwingLow(0)", data)
+    assert hi.notna().any() and lo.notna().any() and (hi.dropna() > lo.dropna().min()).all()
+    assert set(_ev("SwingDirection()", data).unique()) <= {"", "UP", "DOWN"}
+    assert _ev("MedianRange(5)", data).iloc[-1] == pytest.approx(2.0)          # high - low is 2 on every bar
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

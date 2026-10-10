@@ -472,7 +472,65 @@ job, never tuned against results.
     this.
   - `condition_hash` does not include `fire_on`. No route edits `fire_on` today.
 
+## S5-A1 (built): price action as ScreenQL series
+
+Category A starts with the parts of `app/price_action` that can be computed bar by bar from closed bars only. Because
+each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it works with offsets, `@timeframe`, `Count`,
+`CountStreak` and alerts.
+
+| Entry | Kind | What it is |
+|---|---|---|
+| `Pattern(name)` | filter | The named candlestick pattern on this bar. It reads this bar and at most the two before it. There are 14 names, from the detectors in `candlestick_patterns.py`, with the direction split where a detector has two: `doji`, `hammer`, `shooting_star`, `bullish_engulfing`, `bearish_engulfing`, `morning_star`, `evening_star`, `bullish_pin_bar`, `bearish_pin_bar`, `inside_bar`, `bullish_outside_bar`, `bearish_outside_bar`, `bullish_rejection`, `bearish_rejection`. |
+| `SwingHigh(degree)` / `SwingLow(degree)` | factor, price | The last **confirmed** swing high / low from the causal swing engine (`causal_swings.py`: ZigZag on ATR by default; degree 0 to 3 = the smallest to the largest threshold). |
+| `SwingDirection(degree)` | classifier | `UP` after a confirmed swing low, `DOWN` after a confirmed swing high, empty before the first. |
+| `MedianRange(n)` | factor, price | The median (high − low) of the n bars **before** this one: the market's own noise, as used by the break and reversal logic. |
+
+- **No look-ahead.**
+  - A swing counts from the bar that confirmed it, when price had come back from the extreme by the threshold. It never
+    counts from the extreme bar.
+  - A pattern never reads past the frame's start (bars 0 and 1 are false).
+  - The tests check truncation invariance: the value at bar j is the same with or without later bars.
+- **Validation.**
+  - `name` and `degree` take only the listed values, as a literal or a parameter; anything else is refused before a run.
+  - `describe()` lists the choices for the builder palette.
+  - Lookback includes the swing warm-up (`min_bars` 100) and the bar before a median range (`extra_bars` 1).
+    CrossAbove/Below now use the same `extra_bars` field, so their lookback is unchanged.
+- **Settings.** The swings use the default `pa_settings`, the same for every tenant (SC-13).
+- **Tests.**
+  - `tests/test_s5a_price_action.py` (12):
+    - pattern parity with the detectors on every bar, and hand-built hammer and engulfing bars;
+    - no wrap-around;
+    - the confirmation bar;
+    - truncation invariance at degrees 0 and 1;
+    - degree ordering;
+    - the median range excludes the current bar;
+    - validation;
+    - an end-to-end screen.
+  - Plus an S1b registry-coverage test.
+  - 7 mutation checks, all killed:
+    - a swing counted at its extreme bar;
+    - a pattern that wraps around;
+    - a median range that includes the current bar;
+    - no choices check;
+    - `min_bars` ignored;
+    - direction swapped;
+    - pattern direction ignored.
+- **Next (S5-A2).**
+  - Logical reversal at a level (`reversal.evaluate_reversal`).
+  - Real break against false break of a level (`breaks.first_real_break`).
+  - Zone strength and distance (`level_strength`).
+  - These cost more per bar, so the design first needs a bounded tail or an incremental cache.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no
+  BANKNIFTY bar fixtures are in this repository. Only the expiry calendars are. Provisional: the S5-A tests use the
+  session-shaped generator (`tests/sample_market.py`), the same one the trade-port tests use. The NIFTY holdout stays
+  sealed.
+  - Owner question: should a BANKNIFTY bar sample (from your own data, outside the holdout) be added as a fixture?
+- **SC-13. Swing settings per tenant.** Provisional: `SwingHigh`/`SwingLow`/`SwingDirection` use the default
+  `pa_settings` (ATR mode, multipliers 1.5 / 3 / 6 / 12). Per-tenant price-action settings are not applied in screens.
+  - Owner question: should a screen use the organisation's saved price-action settings? That would make the same
+    screen give different results in different organisations.
 - **SC-11. Intrabar alerts that stop holding by the close.** An intrabar event can fire on a condition that is false
   when the bar closes. Provisional: the event says `intrabar: true` and nothing more is sent.
   - Owner question: should a short follow-up go out ("no longer true at the 09:30 close")? Or should intrabar rules

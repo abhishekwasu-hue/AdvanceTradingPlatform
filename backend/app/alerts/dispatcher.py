@@ -126,12 +126,45 @@ async def send_email(config: EmailConfig, subject: str, plain_text: str) -> None
     await asyncio.to_thread(_smtp_send, config, message)
 
 
-def webhook_payload(notification: NotificationRecord) -> dict:
-    return {
+WEBHOOK_SCHEMA = "atp.notification/1"
+ALERT_SCHEMA = "atp.alert/1"
+REPLAY_WINDOW_SECONDS = 300          # receivers should refuse an X-ATP-Timestamp older (or newer) than this
+
+
+def webhook_payload(notification: NotificationRecord, alert: Optional[dict] = None) -> dict:
+    """The versioned body (S3b): every notification, plus an `alert` block - rule, symbols, trigger values with their
+    data timestamps, bar time - when the notification is a screen/instrument alert."""
+    body = {
+        "schema": WEBHOOK_SCHEMA,
         "id": notification.id, "event_type": notification.event_type, "severity": notification.severity, "title": notification.title,
         "message": notification.message, "created_at": _as_utc(notification.created_at).isoformat(), "tenant_id": notification.tenant_id,
         "metadata": json.loads(notification.metadata_json) if getattr(notification, "metadata_json", None) else None,
     }
+    if alert:
+        body["alert"] = {"schema": ALERT_SCHEMA, **alert}
+    return body
+
+
+def chartink_payload(alert: dict) -> dict:
+    """The Chartink-shaped body some existing tools read (`stocks`, `trigger_prices` as comma lists)."""
+    symbols = alert.get("symbols") or []
+    values = alert.get("trigger_values") or {}
+    prices = [str(values.get(s, {}).get("close", "")) for s in symbols]
+    return {"stocks": ",".join(symbols), "trigger_prices": ",".join(prices), "triggered_at": alert.get("bar_time"),
+            "scan_name": alert.get("rule_name"), "alert_name": alert.get("rule_name"), "scan_url": ""}
+
+
+def verify_webhook(secret: str, body: bytes, timestamp: str, signature: str, *, now: Optional[datetime] = None,
+                   window_seconds: int = REPLAY_WINDOW_SECONDS) -> bool:
+    """What a receiver does: the signature matches AND the timestamp is inside the replay window."""
+    try:
+        sent = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    current = int((now or _utcnow()).timestamp())
+    if abs(current - sent) > window_seconds:
+        return False
+    return hmac.compare_digest(sign_webhook(secret, body, timestamp), signature)
 
 
 def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
@@ -140,14 +173,19 @@ def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
     return f"sha256={digest}"
 
 
-async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
-    """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success."""
+async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+                       alert: Optional[dict] = None) -> None:
+    """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success. S3b: versioned body, optional
+    Chartink shape for screen alerts, schema header."""
     if config.event_types and notification.event_type not in config.event_types:
         return
-    body = json.dumps(webhook_payload(notification), separators=(",", ":"), sort_keys=True).encode()
+    chartink = getattr(config, "payload_format", "atp") == "chartink" and alert is not None
+    payload = chartink_payload(alert) if chartink and alert is not None else webhook_payload(notification, alert)
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     timestamp = str(int(_utcnow().timestamp()))
     headers = {"Content-Type": "application/json", "X-ATP-Timestamp": timestamp, "X-ATP-Signature": sign_webhook(config.secret, body, timestamp),
-               "X-ATP-Event": notification.event_type, "User-Agent": "ATP-Webhooks/1.0"}
+               "X-ATP-Event": notification.event_type, "X-ATP-Schema": "chartink/1" if chartink else WEBHOOK_SCHEMA,
+               "User-Agent": "ATP-Webhooks/1.0"}
     await check_url_resolved(str(config.url))                       # P0.2 / S5: resolved right before the request
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
@@ -238,7 +276,7 @@ async def send_push(config: PushConfig, notification: NotificationRecord, client
 
 
 async def send_via_channel(
-    channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+    channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None, alert: Optional[dict] = None,
 ) -> None:
     """Sends one notification through one channel. Raises on failure with a message safe to store.
     A PUSH channel whose devices have gone gets its config rewritten in place (caller commits)."""
@@ -250,7 +288,7 @@ async def send_via_channel(
         subject = f"[{notification.severity}] {notification.title}"
         await send_email(config, subject, plain)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
-        await send_webhook(config, notification, client)  # type: ignore[arg-type]
+        await send_webhook(config, notification, client, alert)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.PUSH.value:
         gone = await send_push(config, notification, client)  # type: ignore[arg-type]
         if gone:
@@ -286,6 +324,24 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         return False
 
 
+async def alert_context(session: AsyncSession, notification: NotificationRecord) -> Optional[dict]:
+    """S3b: the alert block for a screen/instrument alert notification - rule, symbols, trigger values with their data
+    timestamps, bar time - read from the alert events the notification grouped."""
+    if notification.event_type != "SCREEN_ALERT":
+        return None
+    from app.db.models import AlertEventRecord, AlertRuleRecord
+    events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.notification_id == notification.id)
+                                        .order_by(AlertEventRecord.symbol)))
+    if not events:
+        return None
+    rule = await session.get(AlertRuleRecord, events[0].rule_id)
+    values = {e.symbol: json.loads(e.values_json or "{}") for e in events}
+    bar_time = max(_as_utc(e.bar_time) for e in events).isoformat()
+    return {"rule_id": events[0].rule_id, "rule_name": rule.name if rule else None, "screen_id": rule.screen_id if rule else None,
+            "symbols": [e.symbol for e in events], "trigger_values": values, "bar_time": bar_time,
+            "data_timestamps": {s: v.get("as_of") for s, v in values.items()}, "group_id": events[0].group_id}
+
+
 # --- the drain -----------------------------------------------------------------------------------
 
 async def dispatch_pending(
@@ -313,18 +369,20 @@ async def dispatch_pending(
         if channel is None or notification is None or not channel.enabled:
             delivery.status = AlertDeliveryStatus.FAILED.value
             delivery.last_error = "Channel disabled or removed before delivery"
+            delivery.reason_code = "channel_disabled"
             await session.commit()
             failed += 1
             continue
         try:
             if not await _telegram_proposal_buttons(session, channel, notification, client):
-                await send_via_channel(channel, notification, client)
+                await send_via_channel(channel, notification, client, await alert_context(session, notification))
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
             delivery.attempts += 1
             delivery.last_error = str(exc)[:500]
             channel.last_error = delivery.last_error
             if delivery.attempts >= MAX_ATTEMPTS:
                 delivery.status = AlertDeliveryStatus.FAILED.value
+                delivery.reason_code = "dead_letter"               # S3b: kept for the operator; retry from the dead-letter list
                 ALERT_DELIVERIES.labels(channel=channel.channel_type, status="FAILED").inc()
                 logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, delivery.attempts, exc)
             else:

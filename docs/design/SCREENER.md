@@ -322,6 +322,27 @@ job, never tuned against results.
   - S3c: the management UI.
   - S4: rule evaluation at bar close, feeding `record_event`.
 
+## S3b-1 (built): webhook channel - versioned body, Chartink shape, replay window, dead letters
+
+- Body `atp.notification/1` (header `X-ATP-Schema`):
+  - the existing fields plus `schema`;
+  - a screen alert adds an `alert` block (`atp.alert/1`) with rule id/name, screen id, symbols, the trigger values,
+    the bar time, the data timestamp per symbol and the group id. The values are read from `alert_events`, so the
+    receiver sees exactly what fired.
+- `payload_format: "chartink"` on the channel config sends the Chartink-style body instead (`stocks`,
+  `trigger_prices`, `triggered_at`, `scan_name`, `alert_name`, `scan_url`). This lets an existing Chartink receiver
+  switch without changes. Header `X-ATP-Schema: chartink/1`.
+- Signing is unchanged (`sha256=` HMAC over `<timestamp>.<body>`). `verify_webhook` is the receiver's check:
+  signature AND timestamp within `REPLAY_WINDOW_SECONDS` (300 s); a stale, altered or unparseable request is refused.
+- Dead letters:
+  - after `MAX_ATTEMPTS` a delivery is FAILED with `reason_code = "dead_letter"`; a disabled or removed channel
+    gives `channel_disabled`;
+  - `GET /api/alerts/dead-letters` lists them (tenant-scoped, with the channel);
+  - `POST /api/alerts/deliveries/{id}/retry` requeues a FAILED row (409 otherwise; 404 for another tenant's row).
+- Tests: `tests/test_s3b_webhook_channels.py` (5), plus mutation checks on the replay window and the dead-letter
+  reason.
+- Next (S3b-2): Telegram per-user linking, email unsubscribe link.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-5. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
   list reproducible. Whether and when to delete old runs is the owner's decision (§14).

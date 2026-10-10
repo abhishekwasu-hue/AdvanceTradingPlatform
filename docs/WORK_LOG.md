@@ -925,3 +925,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   survived; only the S1d full suite was re-run.
 - Abhi re-sent the Charting and OI Banner specs. Both are byte-identical to the stored copies: OI O1-O5 are built and
   Charting CH1 is in progress.
+
+### 2026-10-11 03:05 IST - S3b-1: webhook channel schema, Chartink shape, replay window, dead letters
+- The webhook body is versioned (`atp.notification/1`); screen alerts carry an `atp.alert/1` block (symbols, trigger
+  values, data timestamps). Optional Chartink-compatible body.
+- The receiver check `verify_webhook` enforces a 300 s replay window.
+- Dead-letter reason codes, plus a dead-letter list and a retry API.
+- Tests: 5, plus 2 mutation checks. The existing alert tests still pass (27 in the three files).

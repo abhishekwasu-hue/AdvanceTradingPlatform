@@ -958,3 +958,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   registry test is updated.
 - Open: H-7 (draft/deployment proposals; late-news gap), in H_COPILOT.
 - Next: the JSON answer contract, the OpenAI tools adapter, and the candles/quote/chain/backtest tools (H-C2b-2/3).
+
+### 2026-10-11 02:19 IST - H-C2b-2: JSON answer contract + OpenAI tools adapter
+- Agent answers are JSON: `{text, claims[{statement, source}], disclaimers[]}`.
+  - Each claim must cite a successful tool call of the request, and its numbers must come from that call's result.
+  - The filter runs on the claims and the disclaimers too.
+  - One rewrite, then the summary.
+  - A plain-text answer is accepted without claims (H-8).
+- `OpenAIProvider.complete_tools` uses Chat Completions function tools, translating the loop's messages both ways.
+  The agent now runs on OpenAI as well as Anthropic.
+- Tests: `tests/test_hc2b2_contract_openai.py` (7). A mutation check confirmed the claim-source test fails when the
+  check is removed.

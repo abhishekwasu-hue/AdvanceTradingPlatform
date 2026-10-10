@@ -876,3 +876,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   resets. Wired through RateLimitedBroker when OPS_THROTTLE_ENABLED (default off). Metrics + 2 alert rules.
 - Rule IN-SEBI.ops.throttle -> enforced; docs/COMPLIANCE_IN.md now generated (scripts/compliance_doc.py, CI checks it).
 - Tests: tests/test_d2_ops_throttle.py (6); worker/rate-budget/tagging/G-LIVE suites 64 passed.
+
+### 2026-10-10 22:48 IST - part D3: per-broker order-type policy for algo entries
+- `app/compliance/order_policy.py`: rule-set default + per-broker overrides; MARKET allow / map_to_limit (PROTECTED_LIMIT
+  price) / refuse; allowed validities. Router applies it to entries only (exits and stops untouched, ADR-0004); a refusal
+  is a clean refusal before the broker. Default policy = today's behaviour. Rule IN-SEBI.order_type.policy enforced.
+- Tests: tests/test_d3_order_policy.py (6); router/tagging/order-safety/G-LIVE suites green (63).

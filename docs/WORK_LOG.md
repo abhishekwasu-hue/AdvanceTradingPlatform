@@ -860,3 +860,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   variant escaped; the Telegram reply carries the "AI answer not used" note; the thesis reason names numbers or
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
+
+### 2026-10-10 23:50 IST - part H (Copilot v2): spec received, design note
+- Abhi's ATP_COPILOT_SPEC.md stored at docs/specs/. docs/design/H_COPILOT.md: the 13 review findings checked against
+  main (G2 confirmed: /api/ai/drafts/{id}/backtest runs client candles; G5: no /api/ai rate limit), order H-C1 -> H-C2
+  (+H-C10) -> ..., H-C1 plan (server-side evidence, rate limit, output filter, grounding, llm_calls hygiene,
+  prompt_version). Provisional: H-C1 jumps the queue as safety work (H-3); parts named H-C1..H-C12 (H-4); no client
+  fallback when the server has no data (H-5). Next: H-C1 a (server-side evidence).

@@ -963,3 +963,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   for splits/bonuses known at as_of (equity only), bar_label "end", count of data-quality events in the window,
   LAKE_HISTORY_MAX_BARS cap (422 beyond). Test: 1 end-to-end (401, as_of, adjusted/raw, FUT, bad window, cap).
   Next: backtests read the lake (data_source=lake), B6 retention/compression/metrics.
+
+### 2026-10-11 00:24 IST - Screener U1-a: securities and symbol history (NSE universe)
+- Tables `securities` (ISIN key, series, listing/delisting, SME/ETF flags, last_seen_on, source/fetched_at/checksum) and
+  `symbol_history` (half-open ranges), migration c7a1d2e3f4b5 (stacked on the part B chain, down-migration drops both).
+- app/universe: `ReferenceSource` seam (NSE archive files from config URLs, polite; static/manual upload), tolerant
+  parsers that refuse an unknown layout, idempotent `sync_equity_lists` (row checksums; a short equity list is refused
+  with a quality event; a name missing from a file is not delisted; symbol history derived from the cumulative
+  symbol-change file and never shrunk; a rename without a record is dated at the run with a RENAME_NOREC event),
+  as-of reads `symbol_on`, `isin_for`, `listed_on` (delisted names kept for historical days).
+- Worker: once a day after UNIVERSE_SYNC_HOUR_IST when UNIVERSE_SYNC_ENABLED (off; NSE terms to be checked first).
+- Tests: tests/test_u1a_universe_securities.py (7) with fixture CSVs.

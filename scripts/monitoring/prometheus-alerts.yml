@@ -34,6 +34,19 @@ groups:
 
   - name: atp-broker-and-orders
     rules:
+      - alert: OpsThrottle429Burst
+        expr: increase(atp_ops_broker_429_total{severity="critical"}[10m]) > 0
+        labels: {severity: critical, slo: "SLO-5 broker health"}
+        annotations:
+          summary: "Broker answered 429 to orders repeatedly - orders paused by the OPS throttle back-off (part D2)"
+          runbook: "docs/COMPLIANCE_IN.md"
+
+      - alert: OpsThrottleRefusingEntries
+        expr: increase(atp_ops_throttled_total{lane="entry",outcome="refused"}[15m]) > 20
+        labels: {severity: warning, slo: "SLO-5 broker health"}
+        annotations:
+          summary: "The orders-per-second throttle refused {{ $value }} entries in 15 minutes - strategies fire faster than the OPS limit"
+
       - alert: BrokerCircuitOpen
         expr: atp_broker_circuit_state == 2
         for: 1m

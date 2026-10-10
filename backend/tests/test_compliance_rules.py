@@ -47,6 +47,13 @@ def test_every_named_test_code_path_and_flag_exists():
             assert hasattr(config, rule.flag), (rule.id, rule.flag)       # planned flags arrive with their code
 
 
+def test_the_compliance_doc_is_generated_from_the_rule_set():
+    import sys
+    sys.path.insert(0, str(BACKEND / "scripts"))
+    from compliance_doc import render
+    assert DOC.read_text(encoding="utf-8") == render(), "run: python backend/scripts/compliance_doc.py"
+
+
 def test_the_compliance_doc_has_one_row_per_rule_with_its_status():
     doc = DOC.read_text(encoding="utf-8")
     for rule in rules.load().rules.values():

@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.execution.ops_throttle import OpsThrottle
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_release_lock, cache_renew_lock, cache_try_lock
 from app.core import config as app_config
@@ -195,6 +196,7 @@ class TradingWorker:
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
+        self._ops: Dict[Tuple[int, str], OpsThrottle] = {}
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
@@ -906,7 +908,12 @@ class TradingWorker:
         budget = self._budgets.get(key)
         if budget is None:
             budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
-        return RateLimitedBroker(adapter, budget)
+        ops = None
+        if app_config.OPS_THROTTLE_ENABLED:      # Part D2: one OPS throttle per (tenant, broker account), kept across cycles
+            ops = self._ops.get(key)
+            if ops is None:
+                ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
+        return RateLimitedBroker(adapter, budget, ops=ops)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

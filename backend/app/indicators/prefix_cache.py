@@ -17,6 +17,7 @@ decision time, with no cache). Returned prefixes are views of the cached result 
 from __future__ import annotations
 
 import functools
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional, Tuple
@@ -30,6 +31,9 @@ class _Registry:
         self.frames: Dict[int, pd.DataFrame] = {}
         self.columns: Dict[int, Tuple[int, str]] = {}      # data pointer of a column -> (frame id, column)
         self.results: Dict[Tuple[Any, ...], Any] = {}
+        # Realism C3: what the cache did in this run - whole-frame computations, prefix answers served, and calls it
+        # could not serve (a derived series: computed on the spot, the O(n)-per-bar path). See run_stats().
+        self.stats = {"computed": 0, "served": 0, "uncached": 0}
         self.add(frames)
 
     def add(self, frames: Iterable[pd.DataFrame]) -> None:
@@ -86,6 +90,7 @@ def prefix_cached(fn: Callable) -> Callable:
             return fn(data, *args, **kwargs)
         hit = _prefix_of(reg, data)
         if hit is None:
+            reg.stats["uncached"] += 1
             return fn(data, *args, **kwargs)
         frame, column, n = hit
         key = (fn.__module__, fn.__qualname__, id(frame), column, args, tuple(sorted(kwargs.items())))
@@ -93,6 +98,8 @@ def prefix_cached(fn: Callable) -> Callable:
         if full is None:
             whole = frame[column] if column is not None else frame[list(data.columns)]
             full = reg.results[key] = fn(whole, *args, **kwargs)
+            reg.stats["computed"] += 1
+        reg.stats["served"] += 1
         return full.iloc[:n]
     return wrapper
 
@@ -104,12 +111,24 @@ def register_frames(frames: Iterable[pd.DataFrame]) -> None:
         reg.add(frames)
 
 
+_last_stats = threading.local()
+
+
+def run_stats() -> Dict[str, int]:
+    """The cache counters of the last backtest run on this thread (realism C3's benchmark and its CI guard)."""
+    return dict(getattr(_last_stats, "value", {}))
+
+
 def with_prefix_cache(run: Callable) -> Callable:
     """Decorator for a backtest entry point: a fresh cache for the duration of one run."""
     @functools.wraps(run)
     def wrapper(*args, **kwargs):
         with prefix_cache(()):
-            return run(*args, **kwargs)
+            try:
+                return run(*args, **kwargs)
+            finally:
+                reg = _active.get()
+                _last_stats.value = dict(reg.stats) if reg is not None else {}
     return wrapper
 
 
@@ -123,4 +142,4 @@ def prefix_cache(frames: Iterable[pd.DataFrame]) -> Iterator[None]:
         _active.reset(token)
 
 
-__all__ = ["prefix_cache", "prefix_cached", "register_frames", "with_prefix_cache"]
+__all__ = ["prefix_cache", "prefix_cached", "register_frames", "run_stats", "with_prefix_cache"]

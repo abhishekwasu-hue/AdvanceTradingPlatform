@@ -13,6 +13,7 @@ import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
 import { timeToLogical, type Converters } from "./geometry";
 import { DrawingPrimitive } from "./primitives";
+import { logicalToTime, type DataPoint } from "./tools";
 
 // The slice of the lightweight-charts API this adapter uses (structural, so tests can pass a fake).
 type PriceLineLike = object;
@@ -23,6 +24,7 @@ export interface CandleSeriesLike {
   createPriceLine(options: PriceLineOptionsLike): PriceLineLike;
   removePriceLine(line: PriceLineLike): void;
   priceToCoordinate(price: number): number | null;
+  coordinateToPrice(coordinate: number): number | null;
   data(): readonly { time: unknown }[];
   subscribeDataChanged(handler: () => void): void;
   unsubscribeDataChanged(handler: () => void): void;
@@ -31,6 +33,9 @@ export interface CandleSeriesLike {
 }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
 export interface ChartLike {
+  applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
+  paneSize(): { width: number; height: number };
+  priceScale(id: string): { width(): number };
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   unsubscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   subscribeClick(handler: (p: MouseParamsLike) => void): void;
@@ -39,6 +44,7 @@ export interface ChartLike {
     subscribeVisibleTimeRangeChange(handler: (r: { from: unknown; to: unknown } | null) => void): void;
     unsubscribeVisibleTimeRangeChange(handler: (r: { from: unknown; to: unknown } | null) => void): void;
     logicalToCoordinate(logical: number): number | null;
+    coordinateToLogical(x: number): number | null;
   };
 }
 
@@ -98,6 +104,32 @@ export class LightweightEngine implements ChartEngine {
       width, height,
     };
   }
+
+  // CH2c-2: what the drawing tools need from the chart (pointer -> data, hit-test geometry, pan on/off).
+
+  /** The candle times (epoch seconds) the anchors are placed on. */
+  candleTimes(): readonly number[] { return this.times(); }
+
+  /** Converters for the current pane, for hit-testing (the same mapping the primitives paint with). */
+  paneConverters(): Converters | null {
+    const size = this.chart.paneSize();
+    return this.converters(size.width, size.height);
+  }
+
+  /** Pixels from the chart element's left edge to the pane's (the left price scale, when shown). */
+  paneOffsetX(): number { return this.chart.priceScale("left").width(); }
+
+  /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
+   * (interpolated between bars, extrapolated past the last one), so an anchor is exact on any timeframe. */
+  toData(x: number, y: number): DataPoint | null {
+    const logical = this.chart.timeScale().coordinateToLogical(x);
+    const p = this.candles.coordinateToPrice(y);
+    const t = logical == null ? null : logicalToTime(this.times(), logical);
+    return t == null || p == null || !Number.isFinite(p) ? null : { t, p };
+  }
+
+  /** Scrolling and zooming off while a drawing is dragged, so the chart does not pan under the pointer. */
+  setPanning(enabled: boolean) { this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled }); }
 
   private price(p: MouseParamsLike): number | null {
     return p.point && this.priceOf ? this.priceOf(p.point.y) : null;

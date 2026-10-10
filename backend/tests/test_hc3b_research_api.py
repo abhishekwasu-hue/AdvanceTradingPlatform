@@ -18,6 +18,16 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _work():
+    """H-C3c: one research-worker step (the API only queues)."""
+    from app.ai import research_jobs
+
+    async def go():
+        async with _session_factory() as session:
+            return await research_jobs.run_next(session)
+    return _run(go())
+
+
 def _flags(**on):
     async def go():
         from app.platform import controls
@@ -107,11 +117,15 @@ def test_a_study_through_the_api_stores_trials_and_the_oos_check(monkeypatch, re
         return _frame(), "broker:fake"
     monkeypatch.setattr(market, "_frame", frame)
     out = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
-    assert out.status_code == 200, out.text
-    body = out.json()
-    assert body["data_source"] == "broker:fake" and body["report"]["backtested"] == 2 and body["report"]["invalid"] == 1
+    assert out.status_code == 202, out.text
+    queued = out.json()
+    assert queued["status"] == "queued" and queued["progress"] == {"drafts_tried": 0, "max_drafts": 6}
+    assert _work() == queued["study_id"]
+    body = client.get(f"/api/ai/research/{queued['study_id']}", headers=headers).json()
+    assert body["status"] == "done" and body["data_source"] == "broker:fake" and body["progress"]["drafts_tried"] == 3
+    assert body["report"]["backtested"] == 2 and body["report"]["invalid"] == 1
     assert body["report"]["out_of_sample"]["run"] is True
-    later = client.get(f"/api/ai/research/{body['study_id']}", headers=headers).json()
+    later = body
     assert [t["status"] for t in later["trials"]] == ["ok", "invalid", "ok"]
     assert later["report"]["out_of_sample"]["run"] is True and later["report"]["trials"] == 3          # the OOS row is not a trial
     other, _ = _owner("hc3b-api-other@example.com")
@@ -139,9 +153,14 @@ def test_the_default_window_is_long_enough_for_pbo_and_the_holdout_is_cut_off(mo
     boundary = frame_.index[len(frame_) // 2]
     monkeypatch.setenv("BACKTEST_HOLDOUT_START", boundary.tz_convert("Asia/Kolkata").strftime("%Y-%m-%d"))
     out = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
-    assert out.status_code == 200, out.text                                                     # runs on the bars before the holdout
-    assert pd.Timestamp(out.json()["report"]["out_of_sample"]["to"]) < boundary
+    assert out.status_code == 202, out.text
+    _work()                                                                                     # runs on the bars before the holdout
+    done = client.get(f"/api/ai/research/{out.json()['study_id']}", headers=headers).json()
+    assert done["status"] == "done" and pd.Timestamp(done["report"]["out_of_sample"]["to"]) < boundary
     monkeypatch.setenv("BACKTEST_HOLDOUT_START", "2025-01-01")
-    refused = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
-    assert refused.status_code == 422 and "Only 0 bars" in refused.json()["detail"]
+    second = client.post("/api/ai/research", headers=headers, json={"idea": "EMA trend", "symbol": "NIFTY 50", "timeframe": "15min"})
+    assert second.status_code == 202
+    _work()
+    failed = client.get(f"/api/ai/research/{second.json()['study_id']}", headers=headers).json()
+    assert failed["status"] == "failed" and "Only 0 bars" in failed["error"] and failed["report"] is None
 

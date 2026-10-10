@@ -1785,6 +1785,33 @@ class AiAcknowledgementRecord(Base):
     accepted_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class ResearchStudyRecord(Base):
+    """H-C3c: one strategy research study as a job - queued by the API, run by the research worker (a separate process,
+    so a study's model calls and backtests never share a loop with trading or the API). Its trials live in
+    `research_trials`; this row carries the request and the job state."""
+
+    __tablename__ = "research_studies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    idea: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_drafts: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)   # queued / running / done / failed / interrupted
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    data_source: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    usage_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
 class ResearchTrialRecord(Base):
     """H-C3 (ADR-0019/0020): one trial of a strategy research study - the DSL tried, the in-sample window, its metrics and
     its daily returns. Append-only and never deleted: the study report deflates the chosen result by EVERY trial tried,

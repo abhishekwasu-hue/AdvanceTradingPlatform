@@ -1021,3 +1021,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - 3 tests added; 95 targeted tests pass.
 - S5-A (price action in ScreenQL), next PR: `Pattern(name)`, `SwingHigh` / `SwingLow` / `SwingDirection(degree)` and
   `MedianRange(n)`, all series and causal.
+
+### 2026-10-11 05:15 IST - CH2c-1/2 (#139, #141), S5-A1 (#140) and its review follow-up, H-C3c-1 (research jobs)
+- **CH2c-1 (#139).**
+  - The drawing-tools controller: place, hit-test, drag, lock, undo/redo.
+  - Review follow-up 8056314:
+    - queued edits read the current state;
+    - 404 counts as a conflict;
+    - a conflict "epoch" stops a stale queued drag;
+    - "nothing changed" compares by meaning.
+- **CH2c-2 (#141).** Pointer binding and the ProChart toolbar. Headless Chromium check: 2 POSTs, a drag gives a PUT,
+  Ctrl+Z gives a PUT back, and there are no page errors.
+- **S5-A1 (#140).** `Pattern`, `SwingHigh`/`SwingLow`/`SwingDirection` and `MedianRange` in ScreenQL.
+  - Review follow-up cf91615:
+    - vectorised patterns (about 0.2 s per name per symbol before);
+    - a missing swing direction never matches;
+    - classifier values are checked;
+    - history is checked on higher timeframes;
+    - fetch days are counted per timeframe.
+  - A stale `.pyc` from a same-size mutation caused 2 false failures in the full suite. The mutation scripts now keep
+    mtimes and run without bytecode, and every mutation set was re-run cleanly.
+- **H-C3c-1 (this branch).**
+  - `POST /api/ai/research` queues the study (202).
+  - A separate `research-worker` process (compose profile `research`, off by default) runs one study at a time.
+  - Progress and a heartbeat per draft; a study with no heartbeat becomes `interrupted`.
+  - The flags are re-checked when the study runs.
+  - Migration `c6e8a0b2d4f6` (Postgres round-trip OK). New open question H-10.

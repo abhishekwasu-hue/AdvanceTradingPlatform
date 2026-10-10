@@ -986,3 +986,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Mutation check: removing the guard's untrusted check drops injection to 0.9091 and CI fails.
 - CI's ruff step now covers `evals/` too.
 - Tests: `tests/test_hc10_evals.py` (3).
+
+### 2026-10-11 03:42 IST - H-C3a research ledger; CH2a v5; S3c/S4a PRs
+- H-C3a: append-only `research_trials` plus a study report with Deflated Sharpe (by every trial), PBO by CSCV, the
+  out-of-sample check (or "not run"), the holdout refused, and "chosen from N trials" wording. Tests: 6, plus 4 mutation
+  checks. Migration `b4d6f8a0c2e4`, Postgres OK. Open question H-9 (limits).
+- CH2a: lightweight-charts 5.2.1. A headless render of v4 vs v5 differs in 11 pixels; tsc, vitest, build and bundle
+  pass; the chart chunk is +7 KB gzip (lazy). Draft PR #133.
+- S4a full suite: 1377 passed. S3c #131 and S4a #132 are draft PRs. S4b-1 cycle-cache suite is running.
+- Merge note: the screener and copilot stacks both branch from migration `a1c3e5f7b9d2`, so an empty merge revision is
+  needed when the second stack lands.

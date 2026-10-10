@@ -104,6 +104,12 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **H-8. Plain-text agent answers.** Provisional: they are accepted without claims (grounding and the filter still
   apply), and the evals measure the rate. Strict JSON-only can follow once the rate is known.
 
+- **H-9. Research loop limits.** Provisional:
+  - at most 8 drafts per study and a 30% out-of-sample tail of the window;
+  - the study stops early when the cost cap is reached;
+  - the report calls evidence "strong" only when the Deflated Sharpe probability is at least 0.95.
+  - Owner question: other limits, or a stricter bar?
+
 ## H-C2a (built): tool registry, bounded loop, audit - read tools only
 - **Tools.** `app/ai/tools/` is a typed registry:
   - each tool has a pydantic input model whose JSON schema has `additionalProperties: false`, a kind, cost units and a
@@ -219,3 +225,40 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Mutation check: disabling the guard's untrusted-text check drops injection to 0.9091 and fails CI.
 - **Later slices.** The nightly real-provider runner (flag plus operator budget cap, off until set), the DSL set (c),
   the leakage/as-of set (e), and the registry and kill switch (H-C11).
+
+## H-C3 plan: the strategy research loop (spec C3)
+- **H-C3a: ledger and honest report.** No LLM in this step.
+  - `research_trials` is append-only, and every draft is recorded, including ones that failed validation.
+  - The report:
+    - picks the best trial by in-sample Sharpe of daily returns;
+    - deflates it by every trial tried (Deflated Sharpe);
+    - estimates PBO by CSCV across the trials' aligned daily returns;
+    - carries the out-of-sample check, or says it was not run;
+    - lists what is not simulated.
+  - `split_window` gives in-sample / out-of-sample bounds and refuses any window that reaches the sealed holdout.
+- **H-C3b: the loop driver.** Behind a flag, default off.
+  - Each round: idea, DSL draft (the model), `validate_dsl`, `run_backtest` on server bars in-sample, diagnose (the
+    model reads the metrics), revise.
+  - At most N drafts within the cost cap. Then one out-of-sample run of the chosen draft only.
+  - The final report goes to the existing human approval gate; nothing deploys on its own (ADR-0006).
+- **H-C3c: UI.** The study page shows the trials table, the deflated summary, and "chosen from N trials" wording.
+
+## H-C3a (built): the trial ledger and the deflated study report
+- **Storage.** `research_trials` (migration `b4d6f8a0c2e4`, Postgres round-trip OK). The table is never updated or
+  deleted by the app.
+- **Code.** `app/ai/research.py`: `record_trial`, `study_trials`, `study_report`, `daily_returns`, `split_window`.
+  Each study numbers its trials 1..N.
+- **The report says, in words**, "Chosen from N backtested trials (M drafts)", gives the Deflated Sharpe probability,
+  and calls the evidence weak (< 0.5), moderate or strong (>= 0.95). The disclaimer says it is a simulation and not a
+  recommendation.
+- **Tests.** `tests/test_hc3a_research_ledger.py` (6):
+  - noise trials are deflated (DSR < 0.5, PBO reported);
+  - a real edge survives;
+  - more trials raise the bar (SR0 grows with N);
+  - tenant scope;
+  - daily returns by IST day, ignoring exits outside the window;
+  - the holdout refusal;
+  - append-only order.
+  - Plus 4 mutation checks: no deflation, one trial only, no holdout check, out-of-window exits.
+- **Note for merging.** This stack and the screener stack both branch from migration `a1c3e5f7b9d2`. Whichever lands
+  second needs an empty Alembic merge revision joining the two heads.

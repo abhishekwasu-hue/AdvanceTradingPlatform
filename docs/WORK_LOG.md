@@ -948,3 +948,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Docs fix: S1c's open question SC-4 → SC-7 and S1d's SC-5 → SC-8 (both numbers were already in use). Fixed on each
   branch and merged forward.
 - New open question SC-9 (unsubscribe scope, bounces).
+
+### 2026-10-11 03:19 IST - S3c: alert-management UI; CH1a PR
+- Notifications page gains a "Rules & delivery" tab: rules (pause/resume, delivery log), new instrument rule with the
+  server's validator problems, delivery policy, failed deliveries with retry, personal Telegram link code and email
+  opt-outs.
+- Helpers are unit-tested (5). tsc clean; vitest 57 passed; build and bundle budget OK.
+- CH1a full suite: 1307 passed. Pushed; draft PR #126.

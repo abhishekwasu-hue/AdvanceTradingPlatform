@@ -76,6 +76,28 @@ assumption.
   tenant keys are in Postgres under the same guarantees, plus the master key in your secret
   store (loss of the master key is unrecoverable by design).
 
+### 1.2b Resource budget - 8 GB host (Hostinger KVM 2)
+
+The production host is 2 vCPU / 8 GB RAM / 100 GB NVMe (`docker-compose.hostinger.yml`, runbook
+`docs/DEPLOY_HOSTINGER_MR.md`). Every container has a memory limit so a runaway process is OOM-killed and restarted
+instead of pushing the host into swap. All values are `.env` overrides (`MEM_*`, `PG_*`, `REDIS_MAXMEMORY`).
+
+| Container | Limit | Sized for |
+|---|---|---|
+| postgres | 2 GB | `shared_buffers` 512 MB, `effective_cache_size` 1.5 GB, `work_mem` 8 MB (x `max_connections` 60 worst case 480 MB, real use far lower), `maintenance_work_mem` 128 MB, WAL archiving on |
+| backend (API) | 1.5 GB | one uvicorn process (2 vCPU: the event loop + the threadpool for backtests); a 2-year 1-min backtest peaks near 600 MB |
+| worker | 1.5 GB | one replica (the Redis lock forbids two); per-cycle candles + indicator caches per deployment |
+| redis | 512 MB | `maxmemory` 384 MB, `volatile-lru`: only keys with a TTL (caches, rate windows) are evicted - never the worker lock or a key without expiry (H-1) |
+| backup | 512 MB | `pg_dump` custom format + encryption |
+| caddy, offsite | 256 MB each | TLS edge; rclone copy |
+| frontend | 128 MB | nginx serving static files |
+| **sum of limits** | **≈ 6.6 GB** | leaves ≈ 1.4 GB for the OS, Docker and page cache; 2 GB swap (swappiness 10) is a safety net, not working memory |
+
+Concurrency: one API process and one worker on 2 vCPU. `WORKER_CYCLE_SECONDS` stays 60. Heavy research (long
+backtests, optimisation) shares the API's threadpool - more than two at once slows the API; the job queue (spec part
+E) moves them off it. When `deploy/hostinger/status.sh` shows a container near its limit, raise its `MEM_*` and keep
+the sum under ≈ 7 GB.
+
 ### 1.3 Crash-recovery runbook: open positions
 
 The scenario Section 52 is most concerned with: the application crashes (or the DB connection is

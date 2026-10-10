@@ -71,6 +71,7 @@ from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
+from app.market_lake.recorder import LakeRecorder
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
 from app.secrets_store.envelope import ensure_tenant_key
@@ -125,6 +126,7 @@ class CycleReport:
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
@@ -206,6 +208,12 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
+        self.lake = None
+        if app_config.LAKE_TICK_WRITER_ENABLED:
+            from app.market_data import stream as stream_module
+            self.lake = LakeRecorder()
+            stream_module.tick_listeners.append(self.lake.on_tick)
         # Phase T: last balance refresh attempt per broker account (failures throttled too).
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
@@ -278,6 +286,13 @@ class TradingWorker:
                         logger.warning("Replica lock could not be renewed - another replica may now hold it")
                 else:
                     logger.debug("Market closed: %s", reason)
+                if self.lake is not None:
+                    try:
+                        report.lake_bars = (await self.lake.drain(session, now)).inserted
+                    except Exception as exc:  # noqa: BLE001 - the lake must never break trading
+                        logger.exception("Lake bar write failed")
+                        report.errors.append(f"lake: {exc}")
+                        await session.rollback()
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:

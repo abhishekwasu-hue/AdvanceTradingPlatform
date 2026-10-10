@@ -930,3 +930,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   extension in this sandbox). app/market_lake/asof.py: candles / instrument terms / position limits as of T (late rows
   and corrections invisible before ingestion). Tests: 4 (crafted instants). Next: B2 ingest (candle builder from ticks,
   vendor seam with a mocked adapter, broker backfill).
+
+### 2026-10-10 23:19 IST - part B2: lake ingest (candle builder, writer, broker backfill, vendor seam, tick writer)
+- app/market_lake/ingest.py: CandleBuilder (bars labelled by END, published only after close; late ticks dropped and
+  counted), write_candles (idempotent; a changed bar becomes the next version), backfill_from_broker (START labels ->
+  END), HistoryVendor seam + MockVendor (no paid vendor until the owner picks one, B-2). app/market_lake/recorder.py:
+  stream ticks -> 1-minute bars (source stream:<broker>), bounded backlog, never raises into the stream; worker drains
+  it each cycle. Flag LAKE_TICK_WRITER_ENABLED (off). Tests: 9; stream + worker suites green. Next: B3 quality detectors.

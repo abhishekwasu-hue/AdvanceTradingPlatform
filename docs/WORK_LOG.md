@@ -869,3 +869,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Golden fixtures were captured from Trade's own functions, and Trade's named tests were ported in English. 30 tests.
 - Deliberate differences: gates fail closed on missing data; strict confirmation mode works (Trade's could never
   pass); untimed data counts as stale. Open questions OI-1..OI-4 are in the design note.
+
+### 2026-10-11 01:10 IST - OI Banner O2: collector, tables, history API
+- Four tables (migration `e2b4d6f8a0c1`, reversible; checked on Postgres 16 with upgrade, check, downgrade and
+  upgrade): `oi_snapshots`, `strike_oi_snapshots`, `oi_day_baselines`, `oi_banner_settings`.
+- **Collector:** idempotent per slot, keeps a wide strike window, and writes day baselines once. The worker runs it
+  only for underlyings a tenant enabled, only while the venue is open, and through the first usable session.
+  A failed read is rolled back in its own session and the next tenant is tried.
+- **Reading:** stored strikes are replayed through `oi_regime` with each tenant's own settings, so no verdict is
+  stored.
+- **API:** banner, history (5/10/15), strikes, and settings (PUT is owner only and validated). Responses carry
+  `data_as_of`, `market_open` and `stale`.
+- **Retention:** `RETENTION_OI_SNAPSHOTS_DAYS` (default 400).
+- **Decisions:** persisted per-tenant banner states move to O4 (alerts need change detection). Open question OI-5
+  covers the read path.
+- **U1-c (#110)** is pushed after a green suite (1390 passed) and a Postgres migration check.
+- **Ported date-bomb fix:** #104, #107 and #109 now carry the thesis date-bomb test fix (the same change as
+  e167b2a). Their red CI came from `main`, not from those PRs.

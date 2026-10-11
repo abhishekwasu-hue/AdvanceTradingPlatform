@@ -1,7 +1,7 @@
 """S1d: screens (saved ScreenQL screens) and screen_runs (append-only run records)
 
 Revision ID: c5e7a9b1d3f5
-Revises: d7f9b1c3e5a7
+Revises: d4e1f2a3b4c5
 Create Date: 2026-10-11 04:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c5e7a9b1d3f5'
-down_revision: Union[str, Sequence[str], None] = 'd7f9b1c3e5a7'
+down_revision: Union[str, Sequence[str], None] = 'd4e1f2a3b4c5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

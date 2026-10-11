@@ -76,6 +76,7 @@ async def execute_signal_for_user(
     contract: Optional[ResolvedContract] = None, rules: Optional[ContractRules] = None,
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
     holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
+    journal_source: Optional[str] = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
@@ -388,7 +389,7 @@ async def execute_signal_for_user(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
                 contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules, account_id=account_id,
-                holding=holding,
+                holding=holding, journal_source=journal_source,
             )
             order.trade_id = trade_record.id
             update_log_context(trade_id=trade_record.id)

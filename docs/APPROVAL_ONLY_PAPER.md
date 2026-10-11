@@ -66,15 +66,19 @@ proposal is refused with 409. Snooze never extends the expiry (PW5).
   EXIT_POSITION proposal with rule `TARGET_1_REACHED` / `TARGET_2_REACHED`, asked once per level per position, and it
   expires after `APPROVAL_EXIT_TTL_MINUTES` (default 30). Approve exits at the price at that moment. If the position
   closes another way (stop, time, Exit now), the open question becomes EXPIRED ("Position closed: …").
-- **Which positions ask (review L2)**: only open PAPER positions entered by an approved entry proposal. Every other
-  position keeps its automatic target exit.
+- **Which positions ask (review L2/V6)**: with the flag on, only open PAPER positions entered by an approved entry
+  proposal. Every other position - and every position with the flag off - keeps its automatic target exit.
 - **"Exit now"** exists with the flag on (review M4; with it off, exits run automatically and there is no new route):
   - `POST /api/positions/{id}/exit-now`, the **Exit now** button on Positions (PAPER rows), Telegram `/exit <trade id>`
     then `/exit <trade id> confirm` (review L4), and the Approve button on an "Exit now?" proposal.
   - **PAPER only.** LIVE is refused: "LIVE positions are closed in the broker app" - Phase 0 has no broker order path.
-  - **Price (review M2):** the live price of the person's own entitlement, else the last price the monitor saw for the
-    position. A typed price is never used; with neither, it is refused with the reason (the stop and time exits keep
-    running). The reason says which: "Exit now (web, live price)" / "(web, last seen price)".
+  - **Price (review M2/V2):** the live price of the person's own entitlement, else the last price the monitor saw for
+    the position - only if at most `EXIT_NOW_MAX_MARK_AGE_MINUTES` (5) old and from today's session. A typed price is
+    never used; otherwise it is refused with the reason (the stop and target keep running on their own). The reason
+    says which: "Exit now (web, live price)" / "(web, last seen price)".
+  - **Typed prices (review V3):** with the flag on, `POST /api/positions/{id}/mark-price` (close on a typed price) answers
+    409 and the Positions page hides it; with it off, a PAPER close there is tagged `price_source = "client"` and left
+    out of the PAPER account and ladder.
   - The position's holder or the organisation OWNER only (review L8); a trader role.
 - **One close per position (review M3)**: `close_position` claims the close with a conditional UPDATE (`exit_time IS
   NULL`) before booking; a concurrent second close (worker sweep, "Exit now", an approved exit) books nothing and sends

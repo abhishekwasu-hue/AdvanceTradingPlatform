@@ -5,7 +5,7 @@ monitoring agent's own proposals). `ai_actions.owner_user_id` - the person a pro
 `trades.price_source` - "client" for a console entry priced from browser candles (review M1/H2).
 
 Revision ID: f3a9c1e7b2d4
-Revises: 5e356061be72
+Revises: 039888cda9b1
 Create Date: 2026-10-11 21:00:00
 """
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f3a9c1e7b2d4'
-down_revision: Union[str, Sequence[str], None] = '5e356061be72'
+down_revision: Union[str, Sequence[str], None] = '039888cda9b1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

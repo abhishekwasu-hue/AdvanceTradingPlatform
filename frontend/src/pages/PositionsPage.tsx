@@ -189,6 +189,8 @@ export default function PositionsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Z3 (review V3): with Exit now on, a typed price never closes a position - the platform's quotes do. */}
+                  {!exitNowOn && <>
                   <span className="text-xs text-fg-muted">Live price and P&amp;L are on the chart above when a broker is logged in; or check a price by hand:</span>
                   <input
                     type="number"
@@ -203,6 +205,7 @@ export default function PositionsPage() {
                   >
                     Check price
                   </button>
+                  </>}
                   {exitNowOn && user.role !== "VIEWER" && p.mode === "PAPER" && (
                     <button
                       onClick={() => handleExitNow(p)}

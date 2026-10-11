@@ -15,6 +15,7 @@ import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
 import { LightweightEngine } from "../charting/lightweight";
+import { DrawingToolbar, useDrawingTools } from "../charting/DrawingToolbar";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
@@ -123,12 +124,14 @@ export interface ProChartProps {
   olderExhausted?: boolean;
   /** CH1 (ADR-0023): the chart behind the engine-neutral `ChartEngine` interface (drawings, layers, events); null on teardown. */
   onEngine?: (engine: ChartEngine | null) => void;
+  /** CH2c: the drawing toolbar (saved per user and symbol). On for full charts of a symbol; off in mini mode. */
+  drawingTools?: boolean;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
-  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false, onEngine,
+  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false, onEngine, drawingTools = true,
 }: ProChartProps) {
   const onLoadOlderRef = useRef(onLoadOlder);
   onLoadOlderRef.current = onLoadOlder;
@@ -199,6 +202,8 @@ export default function ProChart({
   const chartHeight = big ? Math.max(height, winH - paneCount * 90 - (fullWindow ? 170 : 130)) : height;
 
   const mainRef = useRef<HTMLDivElement>(null);
+  const [toolEngine, setToolEngine] = useState<LightweightEngine | null>(null);
+  const tools = useDrawingTools(toolEngine, mainRef.current, symbol, exchange, drawingTools && !compact);
   const volRef = useRef<HTMLDivElement>(null);
   const rsiRef = useRef<HTMLDivElement>(null);
   const adxRef = useRef<HTMLDivElement>(null);
@@ -271,6 +276,7 @@ export default function ProChart({
     const engine = new LightweightEngine(mainChart, s.candles as ISeriesApi<"Candlestick">,
       (y) => (s.candles as ISeriesApi<"Candlestick">).coordinateToPrice(y));
     onEngineRef.current?.(engine);
+    setToolEngine(engine);
 
     // Scroll/zoom together.
     const all = made;
@@ -313,6 +319,7 @@ export default function ProChart({
     return () => {
       window.removeEventListener("resize", onResize);
       for (const u of unsubs) u();
+      setToolEngine(null);
       engine.dispose();
       onEngineRef.current?.(null);
       for (const c of all) c.remove();
@@ -468,6 +475,8 @@ export default function ProChart({
       </div>
 
       {strat.panel}
+
+      {tools.view && tools.controller && <DrawingToolbar view={tools.view} controller={tools.controller} />}
 
       {/* Legend */}
       {bar && !compact && (

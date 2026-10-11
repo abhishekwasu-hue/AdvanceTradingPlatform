@@ -197,6 +197,15 @@ async def ensure_entries(session: AsyncSession, trades: Iterable[TradeRecord]) -
 
 # --- the hooks (own session, flag-gated, never raise) -----------------------------------------------------------------
 
+def _ids(trade: TradeRecord) -> Optional[tuple]:
+    """(trade id, tenant id), or None when the caller's row cannot be read (the hook then does nothing)."""
+    try:
+        return int(trade.id), int(trade.tenant_id)
+    except Exception as exc:  # noqa: BLE001 - never raise into the trade path
+        log.warning("Journal capture skipped: trade row unreadable (%s)", exc)
+        return None
+
+
 async def _run(session: AsyncSession, tenant_id: int, what: str, work: Callable[[AsyncSession], Awaitable[None]]) -> None:
     try:
         from app.platform.controls import flag_enabled
@@ -211,7 +220,10 @@ async def _run(session: AsyncSession, tenant_id: int, what: str, work: Callable[
 
 async def on_entry(session: AsyncSession, trade: TradeRecord, *, source: Optional[str] = None,
                    underlying_price: Optional[float] = None) -> None:
-    trade_id, tenant_id = trade.id, trade.tenant_id
+    ids = _ids(trade)
+    if ids is None:
+        return
+    trade_id, tenant_id = ids
 
     async def work(own: AsyncSession) -> None:
         row = await own.get(TradeRecord, trade_id)
@@ -226,7 +238,10 @@ async def on_entry(session: AsyncSession, trade: TradeRecord, *, source: Optiona
 
 
 async def on_exit(session: AsyncSession, trade: TradeRecord) -> None:
-    trade_id, tenant_id = trade.id, trade.tenant_id
+    ids = _ids(trade)
+    if ids is None:
+        return
+    trade_id, tenant_id = ids
 
     async def work(own: AsyncSession) -> None:
         row = await own.get(TradeRecord, trade_id)
@@ -250,7 +265,10 @@ async def on_marks(session: AsyncSession, tenant_id: int, prices: Dict[int, floa
 
 async def on_stop_change(session: AsyncSession, trade: TradeRecord, old: float, new: float, *, source: str = "rule",
                          at: Optional[datetime] = None) -> None:
-    trade_id, tenant_id = trade.id, trade.tenant_id
+    ids = _ids(trade)
+    if ids is None:
+        return
+    trade_id, tenant_id = ids
     when = _utc(at) or datetime.now(timezone.utc)
 
     async def work(own: AsyncSession) -> None:

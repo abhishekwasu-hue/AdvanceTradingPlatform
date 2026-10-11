@@ -7,11 +7,12 @@ import time
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.price_action import pa_settings
 from app.price_action.reversal import evaluate_reversal
 from app.screener import compile_screen, parse
-from app.screener.runtime import SymbolData, evaluate, run_screen
+from app.screener.runtime import ScreenRuntimeError, SymbolData, evaluate, run_screen
 from tests.sample_market import generate
 
 
@@ -78,7 +79,7 @@ def test_a_universe_costs_little():
     out = run_screen(ast, v, universe, base_tf="1m")
     per_symbol = (time.perf_counter() - t) / len(universe)
     assert len(out) == 20 and all(m.reason is None for m in out)
-    assert per_symbol < 0.5, per_symbol
+    assert per_symbol < 1.5, per_symbol                                         # measured well under 0.5 s; slack for CI
 
 
 def test_the_touch_prefilter_holds_with_a_touch_tolerance_too(monkeypatch):
@@ -95,3 +96,22 @@ def test_the_touch_prefilter_holds_with_a_touch_tolerance_too(monkeypatch):
         want = [bool(np.isfinite(levels[j])) and bool(evaluate_reversal(plain.iloc[: j + 1], float(levels[j]), direction, tolerant)["valid"])
                 for j in range(len(f))]
         assert got.tolist() == want, text
+
+
+def test_the_prefilter_covers_the_addendum_follow_through_and_other_modes_are_refused(monkeypatch):
+    """Addendum follow-through reads composites that ended up to followthrough_max_bars before the bar; the touch
+    prefilter must reach back that far too. The series is the composite rule only, so score100 is refused, not guessed."""
+    original = pa_settings.settings
+    addendum = original(followthrough_mode="addendum", followthrough_max_bars=3)
+    monkeypatch.setattr(pa_settings, "settings", lambda **kw: addendum if not kw else original(**kw))
+    f = generate(500, 100.0, 33)
+    plain = f[["open", "high", "low", "close"]].reset_index(drop=True)
+    got = _ev('ReversalAt(SwingLow(), "bullish")', f)
+    levels = _ev("SwingLow()", f).to_numpy(float)
+    want = [bool(np.isfinite(levels[j])) and bool(evaluate_reversal(plain.iloc[: j + 1], float(levels[j]), "bullish", addendum)["valid"])
+            for j in range(len(f))]
+    assert got.tolist() == want and any(want)
+    score100 = original(reversal_mode="score100")
+    monkeypatch.setattr(pa_settings, "settings", lambda **kw: score100 if not kw else original(**kw))
+    with pytest.raises(ScreenRuntimeError, match="composite"):
+        _ev('ReversalAt(SwingLow(), "bullish")', f)

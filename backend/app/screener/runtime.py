@@ -290,7 +290,7 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
 
 def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:
     """S5-A2: on each bar, did price logically reverse at that bar's `level` (app/price_action/reversal.py, composite
-    mode, default settings)? The same answer `evaluate_reversal` gives on the candles up to that bar - the window always
+    mode, default settings; another reversal_mode is refused)? The same answer `evaluate_reversal` gives on the candles up to that bar - the window always
     ends on the bar, so it is causal. A bar whose last few candles never reached the level cannot pass the touch test,
     so only bars that did are evaluated (a cheap filter; the result is the same)."""
     from app.price_action import pa_settings
@@ -299,13 +299,19 @@ def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Se
     if direction not in ("bullish", "bearish"):
         raise ScreenRuntimeError(f"unknown reversal direction {direction!r}")
     s = pa_settings.settings()
+    if s["reversal_mode"] != "composite":                    # this series is the composite rule only (rv.evaluate)
+        raise ScreenRuntimeError(f"ReversalAt supports the composite reversal rule, not {s['reversal_mode']!r}")
     dirn = 1 if direction == "bullish" else -1
     frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
     mr = median_range(frame, s["median_range_n"])
     bars = rv.Bars(frame, mr)
     lv = level.to_numpy(float) if isinstance(level, pd.Series) else np.full(len(f), float(level))
     tol = s["touch_tol_mr"] * np.where(np.isfinite(mr), mr, 0.0)
-    reach_n = s["touch_reclaim_window"] + 1                      # the longest window, with a follow-through candle
+    # the longest window evaluate() reads: the composite (1..N) plus the legacy follow-through candle; the addendum mode
+    # also reads composites ending up to followthrough_max_bars before the bar
+    reach_n = s["touch_reclaim_window"] + 1
+    if s.get("followthrough_mode", "legacy") != "legacy":
+        reach_n += int(s.get("followthrough_max_bars", 1))
     if dirn > 0:
         reached = frame["low"].rolling(reach_n, min_periods=1).min().to_numpy() <= lv + tol
     else:

@@ -567,20 +567,22 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     below changes nothing.
   - Truncation invariance is tested.
 - **Cost.** `Bars` are built once per frame. Only bars whose last few candles reached the level are evaluated: a vector
-  prefilter, widened by the touch tolerance on the correct side. A universe stays well under 0.5 s per symbol (there
-  is a test). Cost weight 4.
+  prefilter, widened by the touch tolerance on the correct side. A universe stays well under 0.5 s per symbol (the
+  test allows 1.5 s for slow CI runners). Cost weight 4.
 - **Validation.**
   - The level must be a price, so `ReversalAt(RSI(14), "bullish")` is refused (`Spec.price_args`).
   - The direction is `bullish` or `bearish`.
   - The lookback includes the median-range warm-up (`min_bars` 25).
 - **Tests.**
-  - `tests/test_s5a2_reversal.py` (6):
+  - `tests/test_s5a2_reversal.py` (7):
     - parity with the rule for bullish/SwingLow and bearish/SwingHigh;
     - a hand-built hammer at support passes, and the wrong side never does;
     - truncation;
     - validation;
     - a timing budget;
-    - parity with a touch tolerance > 0.
+    - parity with a touch tolerance > 0;
+    - parity under the addendum follow-through (the prefilter reaches back `followthrough_max_bars` more bars), and
+      `reversal_mode` other than composite is refused rather than silently evaluated as composite (review follow-up).
   - 5 mutation checks, all killed:
     - the prefilter too narrow;
     - the bearish touch sign (killed only by the tolerance test, because the default tolerance is 0);

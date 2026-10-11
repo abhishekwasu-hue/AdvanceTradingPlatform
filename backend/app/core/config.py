@@ -514,6 +514,11 @@ PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 100
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)
 
+# Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
+# price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep
+# working on their own).
+EXIT_NOW_MAX_MARK_AGE_MINUTES = _bounded_int("EXIT_NOW_MAX_MARK_AGE_MINUTES", 5, 1, 60)
+
 # Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): risk by default and the plan-before-trade PAPER ticket (flag
 # `risk_by_default`, off by default). Every user starts with these defaults and may change their own within the bounds
 # (the platform's risk ceilings still clamp them, strictest wins - ADR-0003):

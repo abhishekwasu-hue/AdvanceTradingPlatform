@@ -27,6 +27,7 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   portfolio: () => import("./pages/PortfolioPage"),
   orders: () => import("./pages/OrdersPage"),
   analytics: () => import("./pages/AnalyticsPage"),
+  journal: () => import("./pages/JournalPage"),
   "risk-management": () => import("./pages/RiskManagementPage"),
   settings: () => import("./pages/SettingsPage"),
   team: () => import("./pages/TeamPage"),

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.ai import monitor, worker_bridge
 from app.core import config as app_config
@@ -374,13 +374,14 @@ def test_no_price_means_no_order_and_expired_proposals_cannot_be_approved(monkey
 
 # --- exits policy ------------------------------------------------------------------------------------------------------
 
-def _open_trade(t, *, dep_id=None, entry=100.0, stop=98.0, target=104.0, mode="PAPER", approved=False, mark=None):
+def _open_trade(t, *, dep_id=None, entry=100.0, stop=98.0, target=104.0, mode="PAPER", approved=False, mark=None, mark_age_minutes=1.0):
     """An open position; `approved` links it to an EXECUTED entry proposal (it was entered by approval)."""
     async def go():
         async with _session_factory() as session:
             trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode=mode, symbol="RELIANCE", strategy_id="ema_rsi_scalper_1m",
                                 direction="LONG", entry_time=datetime.now(UTC) - timedelta(minutes=20), entry_price=entry, quantity=10.0,
-                                stop_loss=stop, target1=target, exchange="NSE", deployment_id=dep_id, mark_price=mark)
+                                stop_loss=stop, target1=target, exchange="NSE", deployment_id=dep_id, mark_price=mark,
+                                mark_time=(datetime.now(UTC) - timedelta(minutes=mark_age_minutes)) if mark is not None else None)
             session.add(trade)
             await session.flush()
             if approved:
@@ -426,8 +427,10 @@ def test_flag_off_keeps_target_exits_automatic_and_hides_exit_now(monkeypatch):
     trade_id = _open_trade(t, dep_id=_deploy(t))
     worker = _worker(monkeypatch, _FakeBroker(ltp=104.5))
     _force_signal(monkeypatch, lambda: _signal(direction=SignalDirection.NO_TRADE))
+    approved_id = _open_trade(t, dep_id=None, approved=True)          # review V6: entered by approval, flag now off
     _run(worker.run_cycle(now=OPEN_NOW))
     assert _get(TradeRecord, trade_id).exit_reason == "Target 1" and _actions(t["tenant_id"], "EXIT_POSITION") == []
+    assert _get(TradeRecord, approved_id).exit_reason == "Target 1"
     # Review M4: "Exit now" does not exist with the flag off (exits run automatically).
     assert client.post(f"/api/positions/{_open_trade(t)}/exit-now", headers=t["headers"]).status_code == 404
 
@@ -452,7 +455,13 @@ def test_exit_now_never_takes_a_typed_price_refuses_live_and_is_the_holders(monk
     assert client.post(f"/api/positions/{trade_id}/exit-now", headers=mate["headers"]).status_code == 403       # L8
     # No quote and never priced by the monitor: refused, whatever price is sent along (review M2).
     no_price = client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 100000})
-    assert no_price.status_code == 409 and "No price" in no_price.text and _get(TradeRecord, trade_id).exit_time is None
+    assert no_price.status_code == 409 and "No recent price" in no_price.text and _get(TradeRecord, trade_id).exit_time is None
+    # Review V2: a last price older than the limit (or from an earlier session) is not a price to close at.
+    stale = _open_trade(t, mark=130.0, mark_age_minutes=3 * 24 * 60)
+    old = client.post(f"/api/positions/{stale}/exit-now", headers=t["headers"])
+    assert old.status_code == 409 and "No recent price" in old.text and _get(TradeRecord, stale).exit_time is None
+    aged = _open_trade(t, mark=130.0, mark_age_minutes=app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES + 1)
+    assert client.post(f"/api/positions/{aged}/exit-now", headers=t["headers"]).status_code == 409
     # With the monitor's last price it closes there.
     marked = _open_trade(t, mark=101.0)
     out = client.post(f"/api/positions/{marked}/exit-now", headers=t["headers"], json={"price": 100000})
@@ -611,6 +620,81 @@ def test_requote_with_byob_on_uses_only_the_approvers_own_entitlement():
         assert body["status"] == "FAILED" and "own broker session" in body["result"] and _orders(t["tenant_id"]) == []
     finally:
         _run(byob(False))
+
+
+def test_typed_price_never_closes_a_counted_paper_position():
+    """Review V3: with approval-only on the typed-price route is closed; with it off a PAPER close there is tagged
+    price_source="client" (left out of the PAPER account and ladder)."""
+    t = _tenant(_email("markprice"))
+    first = _open_trade(t)
+    out = client.post(f"/api/positions/{first}/mark-price", headers=t["headers"], json={"current_price": 105.0})
+    assert out.json()["closed"] is True and _get(TradeRecord, first).price_source == "client"
+    untouched = _open_trade(t)
+    assert client.post(f"/api/positions/{untouched}/mark-price", headers=t["headers"], json={"current_price": 101.0}).json()["closed"] is False
+    assert _get(TradeRecord, untouched).price_source is None
+    _flag_for(t["tenant_id"])
+    second = _open_trade(t)
+    refused = client.post(f"/api/positions/{second}/mark-price", headers=t["headers"], json={"current_price": 105.0})
+    assert refused.status_code == 409 and "Exit now" in refused.text and _get(TradeRecord, second).exit_time is None
+
+
+def test_an_approval_settled_by_the_sweep_meanwhile_places_nothing(monkeypatch):
+    """Review V5: the gate re-reads the proposal from the database and the final write is conditional - an approval the
+    orphan sweep already settled (FAILED) cannot place an order through a stale in-memory copy."""
+    t = _tenant(_email("orphanrace"))
+    _flag_for(t["tenant_id"])
+    _price(monkeypatch, 100.1)
+    pid = _propose(t)
+    user = _user(t["user_id"])
+
+    async def go():
+        async with _session_factory() as session, _session_factory() as sweeper:
+            action = await session.get(AiActionRecord, pid)
+            action = await monitor.decide(session, action, user, approve=True, note=None)
+            # Meanwhile, elsewhere: the sweep settles it.
+            await sweeper.execute(update(AiActionRecord).where(AiActionRecord.id == pid)
+                                  .values(status="FAILED", result="Approved but not carried out (interrupted) - no order was placed"))
+            await sweeper.commit()
+            lookup = await worker_bridge.price_lookup_for_user(session, user)
+            return await approval.execute_entry(session, action, user, price_lookup=lookup)
+    row = _run(go())
+    assert row.status == "FAILED" and "interrupted" in row.result
+    assert all(o.status == "REJECTED" for o in _orders(t["tenant_id"]))
+    assert not any(tr.mode == "PAPER" and tr.exit_time is None for tr in _trades_of(t))
+
+
+def test_an_interrupted_exit_approval_says_what_happened_to_the_position():
+    """Review V5: the orphan result of an exit tells the truth about the position."""
+    t = _tenant(_email("orphanexit"))
+    closed_id = _open_trade(t)
+    open_id = _open_trade(t)
+
+    async def go():
+        async with _session_factory() as session:
+            closed = await session.get(TradeRecord, closed_id)
+            closed.exit_time, closed.exit_price, closed.exit_reason, closed.pnl = datetime.now(UTC), 101.0, "Stop Loss", -20.0
+            ids = []
+            for trade_id in (closed_id, open_id):
+                row = AiActionRecord(tenant_id=t["tenant_id"], trade_id=trade_id, action="EXIT_POSITION", rule="TARGET_1_REACHED", reason="x",
+                                     status="APPROVED", decided_by=t["user_id"], expires_at=datetime.now(UTC) + timedelta(minutes=5),
+                                     decided_at=datetime.now(UTC) - timedelta(minutes=monitor.ORPHAN_MINUTES + 1))
+                session.add(row)
+                await session.flush()
+                ids.append(row.id)
+            await session.commit()
+            await monitor.expire_stale(session, datetime.now(UTC), tenant_id=t["tenant_id"])
+            return ids
+    closed_action, open_action = _run(go())
+    rows = {a.id: a for a in _actions(t["tenant_id"], "EXIT_POSITION")}
+    assert rows[closed_action].status == "FAILED" and "is closed (Stop Loss)" in rows[closed_action].result
+    assert rows[open_action].status == "FAILED" and "still open" in rows[open_action].result
+
+
+def _trades_of(t):
+    async def go():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == t["tenant_id"])))
+    return _run(go())
 
 
 # --- Telegram ----------------------------------------------------------------------------------------------------------

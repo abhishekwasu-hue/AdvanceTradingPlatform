@@ -324,3 +324,61 @@ def _paper_commands(t, monkeypatch):
     assert len(rows) == 1 and json.loads(rows[0].evidence_json)["source"] == "manual" and rows[0].status == "PROPOSED"
     low = _post(t, _message("987654", "/paper TCS short SL 2410 T 2390")).json()["reply"]
     assert "Reward:risk 1 is below 3" in low
+
+
+# --- verification fixes -------------------------------------------------------------------------------------------------
+
+def test_console_paper_execute_while_paused_answers_with_the_reason(monkeypatch):
+    """Review V4: a paused user's console signal is refused with the reason (not a 500), and nothing is proposed."""
+    from app.strategy_engine.registry import registry
+    from tests.test_trading_api import _fake_long_signal, _sample_candles_payload
+    monkeypatch.setattr(registry.get("ema_rsi_scalper_1m"), "analyze", lambda data, symbol: _fake_long_signal())
+    t = _tenant(_email("pausedconsole"))
+    _paper_flag(t["tenant_id"])
+    _flag_for(t["tenant_id"])
+    assert client.post("/api/paper/pause", headers=t["headers"], json={}).status_code == 200
+    out = client.post("/api/strategies/ema_rsi_scalper_1m/paper-execute", headers=t["headers"],
+                      json={"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}})
+    assert out.status_code == 200 and out.json()["executed"] is False and "paused" in out.json()["reasons"][0]
+
+    async def entries():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AiActionRecord).where(AiActionRecord.tenant_id == t["tenant_id"], AiActionRecord.action == "ENTRY")))
+    assert _run(entries()) == []
+
+
+def test_paper_account_on_closes_the_typed_price_route():
+    """Review V3: with the PAPER account on, closing on a typed price is refused (Exit now prices from the platform)."""
+    t = _tenant(_email("markpaper"))
+    _paper_flag(t["tenant_id"])
+    trade_id = _trade(t, entry_days_ago=0)
+    out = client.post(f"/api/positions/{trade_id}/mark-price", headers=t["headers"], json={"current_price": 111.0})
+    assert out.status_code == 409 and "Exit now" in out.text
+
+
+def test_telegram_paper_prices_through_the_senders_own_entitlement(monkeypatch):
+    """Review V1/M8: /paper asks the sender's own live price; below Tier A (NoLivePrice) nothing is proposed."""
+    from app.ai import worker_bridge
+    from app.telegram_inbound import service as tg
+    from tests.test_phase_be_telegram_inbound import _message, _post, _setup, _Telegram
+
+    async def never(*_a, **_k):
+        return False
+    monkeypatch.setattr(tg, "rate_limited", never)
+    t = _setup(_email("tgown"), monkeypatch, _Telegram())
+    try:
+        _paper_flag(t["tenant_id"])
+        asked: list = []
+
+        async def factory(session, who):
+            async def lookup(symbol, exchange="NSE"):
+                asked.append((who.id, symbol, exchange))
+                raise worker_bridge.NoLivePrice("no confirmed broker session of your own")
+            return lookup
+        monkeypatch.setattr(worker_bridge, "price_lookup_for_user", factory)
+        monkeypatch.setattr(worker_bridge, "price_lookup_for_tenant", lambda *a, **k: (_ for _ in ()).throw(AssertionError("tenant lookup used")))
+        reply = _post(t, _message("987654", "/paper RELIANCE long SL 2380 T 2460")).json()["reply"]
+        assert "on your own broker session" in reply and "nothing was proposed" in reply
+        assert asked == [(t["user_id"], "RELIANCE", "NSE")]
+    finally:
+        quiet_alerts(t["tenant_id"])

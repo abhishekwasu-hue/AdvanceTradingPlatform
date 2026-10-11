@@ -215,7 +215,16 @@ async def _orphan_outcome(session: AsyncSession, row: AiActionRecord, now: datet
         if order is not None and order.trade_id is not None:
             return {"status": "EXECUTED", "executed_at": now, "trade_id": order.trade_id,
                     "result": f"PAPER order #{order.id} was placed (recorded after an interrupted approval); position #{order.trade_id}"}
-    return {"status": "FAILED", "executed_at": now, "result": "Approved but not carried out (interrupted) - nothing was placed; it may be proposed again"}
+    if row.action == "EXIT_POSITION" and row.trade_id is not None:
+        # Review V5: say what is true of the position - its close may have committed before the interruption.
+        trade = await session.get(TradeRecord, row.trade_id)
+        if trade is not None and trade.exit_time is not None:
+            return {"status": "FAILED", "executed_at": now,
+                    "result": f"Approved; its execution was interrupted - position #{trade.id} is closed ({trade.exit_reason or 'see the journal'})"[:300]}
+        return {"status": "FAILED", "executed_at": now, "result": "Approved but not carried out (interrupted) - the position is still open; it may be proposed again"}
+    if row.action == "ENTRY":
+        return {"status": "FAILED", "executed_at": now, "result": "Approved but not carried out (interrupted) - no order was placed; it may be proposed again"}
+    return {"status": "FAILED", "executed_at": now, "result": "Approved but not carried out (interrupted) - it may be proposed again"}
 
 
 async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, approve: bool, note: Optional[str], now: Optional[datetime] = None) -> AiActionRecord:

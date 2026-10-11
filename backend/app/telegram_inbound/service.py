@@ -531,7 +531,7 @@ async def _status_text(session: AsyncSession, tenant: Tenant, user: User) -> str
 async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text: str) -> str:
     """Trade `paper/manual.py::handle`, ATP flow: validate against the live price, then raise an ENTRY proposal (source
     "manual"); its Approve / Reject / Snooze buttons follow as a separate message. Nothing is placed here."""
-    from app.ai.worker_bridge import price_lookup_for_tenant
+    from app.ai.worker_bridge import NoLivePrice, price_lookup_for_user
     from app.core.enums import SignalDirection, SignalGrade
     from app.core.models import Signal
     from app.execution import approval
@@ -539,11 +539,17 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
     setup, error = manual.parse(text)
     if error or setup is None:
         return error or manual.USAGE
-    lookup = await price_lookup_for_tenant(session, tenant.id)
+    # Review V1/M8: the sender's own live price (with byob_data_tier on: their own Tier A entitlement only), on the
+    # symbol's own exchange.
+    from app.trading.position_monitor import exchange_for_symbol
+    exchange = exchange_for_symbol(setup["symbol"])
+    lookup = await price_lookup_for_user(session, user)
     if lookup is None:
         return "No broker session to price the setup - log in to a broker in Settings first."
     try:
-        price = float(await lookup(setup["symbol"]))
+        price = float(await lookup(setup["symbol"], exchange))
+    except NoLivePrice as exc:
+        return f"No live price for {setup['symbol']} on your own broker session ({exc}) - nothing was proposed."
     except Exception as exc:  # noqa: BLE001 - no price, no proposal
         return f"No live price for {setup['symbol']} ({type(exc).__name__})."
     problems = manual.side_errors(setup["direction"], price, setup["stop_loss"], setup["target"])
@@ -555,7 +561,7 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
                     score=0, grade=SignalGrade.VALID, reasons=[f"Manual /paper by user {user.id}"], timeframe_combo="manual")
     try:
         row = await approval.propose_entry(session, tenant.id, signal=signal, strategy_id="manual", source="manual",
-                                           idempotency_key=f"manual:{user.id}:{secrets.token_hex(8)}", user_id=user.id)
+                                           idempotency_key=f"manual:{user.id}:{secrets.token_hex(8)}", user_id=user.id, exchange=exchange)
     except approval.EntriesPaused as exc:
         return f"Not proposed: {exc}"
     warn = "" if rr is None or rr >= manual.RR_WARN else f" Reward:risk {rr:g} is below {manual.RR_WARN:g} - Approve still places it."

@@ -116,6 +116,7 @@ from app.alerts.links_routes import router as alert_links_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
+from app.journal.routes import router as journal_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -171,6 +172,7 @@ app.include_router(auth_router)
 app.include_router(broker_router)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
+app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
 app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)
@@ -424,8 +426,11 @@ async def paper_execute(
             if not signal.is_tradeable or signal.entry is None:
                 return PaperExecuteResponse(signal=signal, executed=False, reasons=list(signal.reasons) or ["No trade signal"])
             key = f"console:{user.id}:{request.idempotency_key}" if request.idempotency_key else f"console:{user.id}:{uuid.uuid4().hex}"
-            row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
-                                               idempotency_key=key, user_id=user.id)
+            try:
+                row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
+                                                   idempotency_key=key, user_id=user.id)
+            except approval.EntriesPaused as exc:          # Z3-b (review V4): the user's PAPER pause - an answer, not a 500
+                return PaperExecuteResponse(signal=signal, executed=False, reasons=[str(exc)])
             return PaperExecuteResponse(signal=signal, executed=False, reasons=[
                 f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order at the live price"
                 if row is not None else "Approval-only mode: this signal was already proposed"])

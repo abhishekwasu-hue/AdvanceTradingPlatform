@@ -246,6 +246,65 @@ chart's pointer events and a toolbar to it.
   - A text prompt for text drawings.
   - A headless check.
 
+## CH2c-2 (built): the drawing tools on the chart
+- **Engine** (`lightweight.ts`).
+  - `toData(x, y)`: a pane point becomes a time and price, through `coordinateToLogical` and `logicalToTime`, plus
+    `coordinateToPrice`.
+  - `paneConverters()` gives the same mapping the primitives paint with, so a hit-test matches the picture.
+  - `paneOffsetX()` is the width of the left price scale.
+  - `candleTimes()`.
+  - `setPanning(on)` sets `handleScroll` / `handleScale`.
+- **Binding** (`toolsBinding.ts`, `bindTools(engine, controller, element, window)`).
+  - With a tool active, each press places the next anchor. The press is stopped in the capture phase, so the chart does
+    not pan, and the preview follows the pointer.
+  - With no tool:
+    - a press on a drawing selects it and starts a drag (a handle moves its anchor, the body moves the whole drawing);
+    - panning is off and the pointer is captured until release;
+    - a press on empty chart clears the selection and pans as usual;
+    - a right press is ignored.
+  - Keys:
+    - Escape cancels;
+    - Delete or Backspace deletes the selection;
+    - Ctrl/Cmd+Z undoes;
+    - Ctrl/Cmd+Shift+Z or Ctrl+Y redoes;
+    - nothing fires while typing in a text box.
+  - The selected drawing is shown 1 px bolder. That look is never saved.
+  - `unbind` removes every listener and every drawing it drew, and turns panning back on.
+- **ProChart.**
+  - `DrawingToolbar` offers the 12 kinds, plus undo, redo, lock and delete.
+  - A text label asks for its text with a prompt.
+  - It shows the hint "Click on the chart to place it · Esc to cancel" and the controller's message.
+  - The tools are on for full charts of a symbol (`drawingTools`, default true) and off in mini mode.
+  - Drawings load per user and symbol through the CH1 API. A load error is shown on the toolbar.
+- **Tests.**
+  - `toolsBinding.test.ts` (6):
+    - placing through the element and left-scale offset;
+    - the press is stopped;
+    - the preview;
+    - the drag with panning off and back on, and pointer capture;
+    - an empty press and a right press;
+    - keys, including typing;
+    - unbind;
+    - the selected look is not saved.
+  - Engine fakes extended.
+  - 95 frontend tests pass, `tsc` is clean, and the build and bundle budget pass (the shell is unchanged at 81.6 KB).
+  - 8 mutation checks, all killed:
+    - offset ignored;
+    - panning never restored;
+    - the press reaches the chart;
+    - typing triggers shortcuts;
+    - stale drawings kept;
+    - no selected look;
+    - a right press acts;
+    - unbind leaves drawings.
+- **Headless check.** ProChart over synthetic bars, with the API answered in memory, in Chromium:
+  - "Line" + 2 clicks gives one POST;
+  - "Box" + 2 clicks gives one POST;
+  - dragging the line's handle gives one PUT;
+  - Ctrl+Z gives one PUT back to the original anchor;
+  - there are no page errors;
+  - both drawings render where they were clicked.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

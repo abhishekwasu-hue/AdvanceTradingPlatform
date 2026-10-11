@@ -1,0 +1,6 @@
+{
+  "_note": "H-C10 (ADR-0020 s3): measured scores per set for the agent prompt version below. A PR that changes the agent prompt must re-run the evals and update this file in the same PR. Never tune a baseline to one run.",
+  "agent_prompt_version": "agent-7d2553f7",
+  "tolerance": 0.0,
+  "sets": {"qa": 1.0, "tool_args": 1.0, "injection": 1.0}
+}

@@ -115,6 +115,8 @@ SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMA
 # Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
 # (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
 # keeps working; turn on once live trading is offered to customers.
+# Part D7: refuse new F&O entries on an underlying in the exchange's ban period (lake MWPL / OI data). Off by default.
+FO_BAN_CHECK_ENABLED = os.environ.get("FO_BAN_CHECK_ENABLED", "false").lower() in ("1", "true", "yes")
 # H-C1 a: AI approval evidence (draft backtests, interview options) must run on server-fetched candles; client-posted
 # candles are recorded as "sample" and cannot approve or deploy. On by default (a safety rule, not a feature).
 AI_EVIDENCE_SERVER_ONLY = os.environ.get("AI_EVIDENCE_SERVER_ONLY", "true").lower() in ("1", "true", "yes")

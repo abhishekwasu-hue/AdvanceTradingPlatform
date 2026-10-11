@@ -41,6 +41,7 @@ from app.execution.order_safety import wing_fill_complete
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
+from app.compliance import fo_limits
 from app.compliance.algo_id import order_algo_id
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag
 from app.instruments.contracts import ContractResolutionError, ContractRules
@@ -111,6 +112,9 @@ async def execute_structure(
 
     refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                     broker_name=getattr(broker, "name", None) if broker is not None else None)
+    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
+    if ban:
+        refusals.append(ban)
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",

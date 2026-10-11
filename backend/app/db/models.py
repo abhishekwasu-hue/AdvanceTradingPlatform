@@ -2579,6 +2579,24 @@ class ChartDrawingRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class OptionStrategyRecord(Base):
+    """Z5 / P1-c (ADR-0025): a strategy saved from the Options Builder - the instrument inputs and the legs as the page
+    held them (`strategy_json`), shared within the tenant. Research data only: it places nothing. Archived, never
+    hard-deleted. Behind the `options_builder_saved` flag (off by default)."""
+
+    __tablename__ = "option_strategies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    strategy_json: Mapped[str] = mapped_column(Text, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class BetaInviteCodeRecord(Base):
     """PW6 (beta spec 4a): a closed-beta invite code, issued by a SUPER_ADMIN. Only the SHA-256 of the normalised code is
     stored - the plain code is shown once, at creation. With the `beta_cohort_gate` flag on, each registration spends one

@@ -8,7 +8,8 @@
 Each virtual user behaves like a person with the app open: it logs in once, then loops - a dashboard poll (the five
 read paths the shell polls: `/api/auth/me`, `/api/deployments`, `/api/notifications`, `/api/system/status`,
 `/api/portfolio/exposure`, sent together as a browser does), and with some probability per loop the proposal list
-(`/api/ai/actions?status=PROPOSED`), the PAPER positions (`/api/positions`), a chart (`POST /api/market-data/candles`,
+(`/api/ai/actions?status=PROPOSED`), the PAPER positions (`/api/positions` with the PAPER account card,
+`/api/paper/account`), a chart (`POST /api/market-data/candles`,
 5-minute bars) and a screener run (`POST /api/screener/run`, `preview: true` - evaluated, never stored) - then waits
 a think time. Users start spread over `--ramp` seconds, so the logins do not all land in the same second.
 
@@ -49,6 +50,7 @@ import httpx
 DASHBOARD = ["/api/auth/me", "/api/deployments", "/api/notifications", "/api/system/status", "/api/portfolio/exposure"]
 # (scenario, probability per loop) - the dashboard poll runs every loop
 EXTRA = [("proposals", 0.5), ("positions", 0.5), ("chart", 0.25), ("screener_run", 0.1)]
+POSITIONS_PAGE = ["positions", "paper_account"]
 P95_LIMIT_MS: Dict[str, float] = {"login": 1000.0, "chart": 1000.0, "screener_run": 2000.0}
 DEFAULT_P95_MS = 500.0
 ERROR_LIMIT = 0.005
@@ -70,7 +72,7 @@ def classify(status: Optional[int], headers: Optional[httpx.Headers] = None) -> 
     """ok, disabled (feature flag off), unavailable (no broker session), throttled, client_error, server_error, transport."""
     if status is None:
         return "transport"
-    if status == 503 and headers is not None and headers.get("X-Feature-Disabled"):
+    if status >= 400 and headers is not None and headers.get("X-Feature-Disabled"):     # 503 (most flags) or 404 (PAPER account)
         return "disabled"
     if status < 400:
         return "ok"
@@ -149,6 +151,7 @@ async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account
         actions: Dict[str, Callable[[], Any]] = {
             "proposals": lambda: client.get("/api/ai/actions", params={"status": "PROPOSED"}),
             "positions": lambda: client.get("/api/positions"),
+            "paper_account": lambda: client.get("/api/paper/account"),
             "chart": lambda: client.post("/api/market-data/candles", json={"symbols": [symbol], "timeframe": "5min", "lookback_days": 5}),
             "screener_run": lambda: client.post("/api/screener/run", json={"source": SCREEN, "base_tf": "1d", "preview": True,
                                                                            "symbols": rng.sample(SYMBOLS, 5)}),
@@ -157,7 +160,8 @@ async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account
             await asyncio.gather(*(_timed(stats, f"dashboard {route}", lambda route=route: client.get(route)) for route in DASHBOARD))
             for scenario, probability in EXTRA:
                 if rng.random() < probability and time.monotonic() < deadline:
-                    await _timed(stats, scenario, actions[scenario])
+                    together = POSITIONS_PAGE if scenario == "positions" else [scenario]       # the Positions page loads both
+                    await asyncio.gather(*(_timed(stats, name, actions[name]) for name in together))
             if think:
                 await asyncio.sleep(think * rng.uniform(0.5, 1.5))
 

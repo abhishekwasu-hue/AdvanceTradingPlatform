@@ -38,6 +38,7 @@ def test_a_named_staging_host_can_be_allowed(monkeypatch):
 def test_outcomes_keep_refusals_apart_from_errors():
     assert loadtest.classify(200) == "ok" and loadtest.classify(204) == "ok"
     assert loadtest.classify(503, httpx.Headers({"X-Feature-Disabled": "screener_v2"})) == "disabled"
+    assert loadtest.classify(404, httpx.Headers({"X-Feature-Disabled": "paper_account"})) == "disabled"
     assert loadtest.classify(503, httpx.Headers({})) == "server_error" and loadtest.classify(500) == "server_error"
     assert loadtest.classify(409) == "unavailable" and loadtest.classify(429) == "throttled" and loadtest.classify(422) == "client_error"
     assert loadtest.classify(None) == "transport"

@@ -5,7 +5,7 @@ The real FastAPI app with:
 * the per-IP auth rate limits and the AI rate limit off, as in the test suite (every in-process user shares one fake
   IP; the limiter itself is tested in tests/test_rate_limiting.py) - the run measures the app, not the limiter;
 * a synthetic broker session for charts and screener runs: seeded random-walk bars, no network, no broker;
-* `screener_v2` on, so the screener scenario runs; every other flag at its default.
+* `screener_v2` and `paper_account` on, so the screener and PAPER account scenarios run; every other flag at its default.
 
 It writes nothing outside its temporary directory and holds no secret.
 """
@@ -81,7 +81,7 @@ def _synthetic_broker() -> None:
 
 
 async def prepare(emails: List[str]) -> None:
-    """The screener on for everyone; the registered organisations on the plan the screener needs."""
+    """The screener and the PAPER account on for everyone; the registered organisations on the plan the screener needs."""
     from sqlalchemy import select
 
     from app.db.models import Tenant, User
@@ -92,6 +92,7 @@ async def prepare(emails: List[str]) -> None:
         current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
         flags = dict(current.get("flags") or {})
         flags["screener_v2"] = {"on": True, "tenants": []}
+        flags["paper_account"] = {"on": True, "tenants": []}
         await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
         tenant_ids = [u.tenant_id for u in await session.scalars(select(User).where(User.email.in_(emails)))]
         for tenant in await session.scalars(select(Tenant).where(Tenant.id.in_(tenant_ids))):

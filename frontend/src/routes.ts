@@ -21,6 +21,7 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   copilot: () => import("./pages/AiCopilotPage"),
   coach: () => import("./pages/CoachGuidePage"),
   "option-chain": () => import("./pages/OptionChainPage"),
+  "options-builder": () => import("./pages/OptionsBuilderPage"),
   instruments: () => import("./pages/InstrumentsPage"),
   positions: () => import("./pages/PositionsPage"),
   portfolio: () => import("./pages/PortfolioPage"),

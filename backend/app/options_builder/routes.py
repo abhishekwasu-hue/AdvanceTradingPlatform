@@ -1,0 +1,286 @@
+"""P1-c: the Options Strategy Builder API - what the builder page draws from (ADR-0025). Research only: every endpoint
+computes; none places, stages or sizes an order (a built strategy reaches the order ticket as a basket in P1-d, through
+the platform's execution and risk layers).
+
+- `GET  /api/options-builder/catalog`   the template gallery (families, legs as offsets, descriptions).
+- `POST /api/options-builder/template`  a template's legs at a given ATM / width / expiries / lots.
+- `POST /api/options-builder/evaluate`  curves (expiry and any date, IV shift), exact extremes and intervals,
+                                        breakevens, PoP, expected move, probability-weighted P&L, net and per-leg Greeks.
+- `POST /api/options-builder/suggest`   a selector rule (P1-a, ported) on a broker chain through the adapter.
+
+Instrument numbers (strike step, lot size, width) always come from the caller (the instrument master on the page);
+nothing here defaults them.
+"""
+from __future__ import annotations
+
+import math
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional, Union
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.dependencies import get_current_user
+from app.brokers.models import OptionChain
+from app.core.config import RISK_FREE_RATE
+from app.core.rate_limit import user_rate_limit
+from app.db.models import User
+from app.db.session import get_session
+from app.options_builder import catalog, chain, model, selectors
+from app.options_builder.greeks import leg_with_model_greeks
+from app.options_builder.payoff import build_default_price_range, compute_strategy_payoff_curve
+from app.platform.controls import require_flag
+
+FLAG = "options_builder"
+MAX_LEGS = 12
+MAX_POINTS = 401
+MAX_CHAIN_ROWS = 1000           # strikes in one chain; real index chains are a few hundred
+MAX_PRICE = 1e7                 # above any listed price or strike; keeps the model's arithmetic finite
+
+
+async def _flag_on(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    """Runs before the body is read, so a switched-off builder answers 503 whatever was sent."""
+    await require_flag(session, FLAG, user.tenant_id)
+
+
+# The model work is CPU only and runs in the thread pool; the limit keeps one user from filling that pool. The page
+# evaluates after each pause in editing (200 ms debounce, so at most about 5 a second while a trader works quickly)
+# and once more when a model-priced leg moves to another contract; 300 a minute leaves that rhythm alone while a
+# script calling in a loop is still cut off within a minute.
+compute_rate_limit = user_rate_limit("options_builder", limit=300, window_seconds=60)
+router = APIRouter(prefix="/api/options-builder", tags=["options-builder"], dependencies=[Depends(_flag_on)])
+DISCLAIMER = "Model estimates (Black-Scholes, one volatility) for research; not a forecast or a recommendation."
+
+
+class LegIn(BaseModel):
+    direction: Literal["BUY", "SELL"]
+    option_type: Literal["CE", "PE", "FUT"]
+    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    premium: float = Field(ge=0, lt=MAX_PRICE, allow_inf_nan=False, description="entry price per unit (the futures price for FUT)")
+    lots: int = Field(ge=1, le=1000)
+    lot_size: int = Field(ge=1, le=100_000)
+    expiry: date
+    iv: Optional[float] = Field(default=None, gt=0, lt=5, description="annualised, as a fraction; solved from the premium when absent")
+
+
+class EvaluateBody(BaseModel):
+    legs: List[LegIn] = Field(min_length=1, max_length=MAX_LEGS)
+    spot: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    as_of: Optional[Union[datetime, date]] = Field(default=None, description="an aware datetime (exact, intraday) or a date; default now")
+    days_forward: float = Field(default=0, ge=0, le=400)
+    iv_shift: float = Field(default=0.0, ge=-0.5, le=1.0)
+    range_pct: float = Field(default=10.0, gt=0, le=60)
+    points: int = Field(default=201, ge=21, le=MAX_POINTS)
+    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+
+    @field_validator("as_of", mode="before")
+    @classmethod
+    def _when(cls, v: Any) -> Any:
+        return _parse_when(v)
+
+
+class TemplateBody(BaseModel):
+    name: str
+    atm_strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    width: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    near_expiry: date
+    next_expiry: Optional[date] = None
+    lots: int = Field(default=1, ge=1, le=1000)
+    lot_size: Optional[int] = Field(default=None, ge=1, le=100_000)
+    # Optional model pricing (a starting point before real prices from the chain): every leg gets the model's price
+    # at `iv`, marked premium_source "model". All three are needed together.
+    spot: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    iv: Optional[float] = Field(default=None, gt=0, lt=5)
+    as_of: Optional[Union[datetime, date]] = None
+    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+
+    @field_validator("as_of", mode="before")
+    @classmethod
+    def _when(cls, v: Any) -> Any:
+        return _parse_when(v)
+
+
+def _parse_when(v: Any) -> Any:
+    """A plain YYYY-MM-DD stays a date (that day's close); a datetime must carry its time zone (no guessing)."""
+    if isinstance(v, str):
+        if len(v) == 10:
+            return date.fromisoformat(v)
+        parsed = datetime.fromisoformat(v)
+        if parsed.tzinfo is None:
+            raise ValueError("give as_of with a time zone (e.g. +05:30), or a plain date")
+        return parsed
+    if isinstance(v, datetime) and v.tzinfo is None:
+        raise ValueError("give as_of with a time zone (e.g. +05:30), or a plain date")
+    return v
+
+
+class SuggestBody(BaseModel):
+    chain: OptionChain
+    rule: Literal["iron_condor", "iron_butterfly", "credit_spread", "credit_spread_fixed", "credit_spread_itm", "naked_itm"]
+    step: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False, description="the strike step, from the instrument master")
+    hedge_width_points: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    direction: Optional[Literal["BULLISH", "BEARISH"]] = None
+    pop_threshold_pct: float = Field(default=70.0, ge=0, le=100)
+    strikes_otm: int = Field(default=2, ge=0, le=50)
+    itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
+    hedge_enabled: bool = False
+    as_of: Optional[Union[datetime, date]] = None
+
+    @field_validator("as_of", mode="before")
+    @classmethod
+    def _when(cls, v: Any) -> Any:
+        return _parse_when(v)
+
+
+def _finite(x: float) -> Optional[float]:
+    """JSON has no infinity: an unbounded value is null with its flag beside it."""
+    return None if x is None or math.isinf(x) or math.isnan(x) else float(x)
+
+
+def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for leg in body.legs:
+        d = leg.model_dump()
+        d["expiry"] = leg.expiry.isoformat()
+        if leg.option_type != "FUT" and d["iv"] is None:
+            if leg.premium <= 0:
+                raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: give an IV or a premium to solve it from")
+            try:
+                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=body.rate)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: {exc}") from exc
+            d["iv_source"] = "solved from the premium"
+        elif leg.option_type != "FUT":
+            d["iv_source"] = "given"
+        out.append(d)
+    return out
+
+
+@router.get("/catalog")
+async def get_catalog() -> Dict[str, Any]:
+    return {"families": catalog.families(),
+            "templates": {name: {"family": t["family"], "what": t["what"], "two_expiries": any(leg[4] == 1 for leg in t["legs"]),
+                                 "legs": [{"direction": d, "option_type": k, "offset": o, "lots": m, "expiry_slot": e} for d, k, o, m, e in t["legs"]]}
+                          for name, t in catalog.CATALOG.items()}}
+
+
+@router.post("/template", dependencies=[Depends(compute_rate_limit)])
+async def build_template(body: TemplateBody) -> Dict[str, Any]:
+    if body.name not in catalog.CATALOG:
+        raise HTTPException(status_code=404, detail=f"no template named {body.name!r}")
+    legs = catalog.build_template(body.name, body.atm_strike, body.width, body.near_expiry.isoformat(),
+                                  body.next_expiry.isoformat() if body.next_expiry else None, lots=body.lots)
+    if legs is None:
+        raise HTTPException(status_code=422, detail=f"{body.name} needs the next expiry as well")
+    if not all(math.isfinite(leg["strike"]) and 0 < leg["strike"] < MAX_PRICE for leg in legs):
+        raise HTTPException(status_code=422, detail=f"a width of {body.width:g} around {body.atm_strike:g} puts a {body.name} strike at or below zero "
+                                                    "(or past any listed price); use a smaller width")
+    priced = body.spot is not None and body.iv is not None
+    if (body.spot is None) != (body.iv is None):
+        raise HTTPException(status_code=422, detail="model pricing needs both spot and iv")
+    for leg in legs:
+        if body.lot_size is not None:
+            leg["lot_size"] = body.lot_size
+        if priced and body.spot is not None:
+            leg["iv"] = None if leg["option_type"] == "FUT" else body.iv
+            when: Union[date, datetime] = body.as_of or datetime.now().astimezone()
+            try:
+                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"{leg['option_type']} {leg['strike']:g}: {exc}") from exc
+            leg["premium_source"] = "model"
+    return {"name": body.name, "legs": legs, "priced_by_model": priced}
+
+
+@router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
+async def evaluate(body: EvaluateBody) -> Dict[str, Any]:
+    return await run_in_threadpool(_evaluate, body)
+
+
+def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
+    as_of: Union[date, datetime] = body.as_of or datetime.now().astimezone()
+    legs = _legs(body, as_of)
+    prices = build_default_price_range(body.spot, num_points=body.points, range_pct=body.range_pct)
+    single = len(model.expiries(legs)) == 1
+    try:
+        summary = model.summary(legs, body.spot, as_of=as_of, r=body.rate)
+        curve_on = model.value_curve(legs, prices, as_of=as_of, days_forward=body.days_forward, iv_shift=body.iv_shift, r=body.rate)
+        today = model.value_curve(legs, prices, as_of=as_of, iv_shift=body.iv_shift, r=body.rate)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    out: Dict[str, Any] = {
+        "prices": prices, "today": today, "on_date": curve_on, "days_forward": body.days_forward, "iv_shift": body.iv_shift,
+        "summary": summary,
+        "legs": [{**{k: leg.get(k) for k in ("direction", "option_type", "strike", "premium", "lots", "lot_size", "expiry", "iv", "iv_source")},
+                  "greeks": model.net_greeks([leg], body.spot, as_of, iv_shift=body.iv_shift, r=body.rate),
+                  # the model's price now at the leg's own IV: what a leg priced by the model is worth after an edit
+                  "theoretical": round(model.leg_theoretical(leg, body.spot, as_of, r=body.rate), 2)} for leg in legs],
+        "single_expiry": single, "disclaimer": DISCLAIMER,
+    }
+    if single:
+        ext = model.payoff_extremes(legs)
+        intervals = model.profitable_intervals(legs)
+        out["at_expiry"] = compute_strategy_payoff_curve(legs, prices)
+        out["extremes"] = {"max_profit": _finite(ext["max_profit"]), "max_loss": _finite(ext["max_loss"]),
+                           "unbounded_profit": ext["unbounded_profit"], "unbounded_loss": ext["unbounded_loss"],
+                           "max_profit_at": ext["max_profit_at"], "max_loss_at": ext["max_loss_at"]}
+        out["profitable"] = [[_finite(a), _finite(b)] for a, b in intervals]
+        out["breakevens"] = sorted({round(x, 6) for a, b in intervals for x in (a, b) if 0 < x < math.inf})
+    else:
+        out["at_expiry"] = None                     # a calendar has no single expiry payoff; `on_date` at the near expiry draws it
+        out["extremes"] = None
+        out["profitable"] = None
+        out["breakevens"] = None
+    return out
+
+
+@router.post("/suggest", dependencies=[Depends(compute_rate_limit)])
+async def suggest(body: SuggestBody) -> Dict[str, Any]:
+    """A ported selector rule on the chain; the rule and its numbers come back with the result so the page can show
+    them. None when the chain cannot give a complete structure - never a partial one."""
+    spot = body.chain.underlying_ltp
+    if len(body.chain.rows) > MAX_CHAIN_ROWS:
+        raise HTTPException(status_code=422, detail=f"the chain has {len(body.chain.rows)} strikes; at most {MAX_CHAIN_ROWS} are read")
+    if spot is not None and not (math.isfinite(spot) and 0 < spot < MAX_PRICE):
+        raise HTTPException(status_code=422, detail="the chain's underlying price must be a positive number")
+    if not all(math.isfinite(r.strike) and 0 < r.strike < MAX_PRICE for r in body.chain.rows):
+        raise HTTPException(status_code=422, detail="every strike in the chain must be a positive number")
+    return await run_in_threadpool(_suggest, body)
+
+
+def _suggest(body: SuggestBody) -> Dict[str, Any]:
+    try:
+        raw = chain.raw_chain(body.chain, as_of=body.as_of or datetime.now().astimezone())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    spot = body.chain.underlying_ltp
+    atm = body.atm_strike or (min((r.strike for r in body.chain.rows), key=lambda k: abs(k - spot)) if spot and body.chain.rows else None)
+    needs_direction = body.rule in ("credit_spread", "credit_spread_fixed", "credit_spread_itm", "naked_itm")
+    if needs_direction and body.direction is None:
+        raise HTTPException(status_code=422, detail=f"{body.rule} needs a direction (BULLISH or BEARISH)")
+    direction = body.direction or ""
+    result: Optional[Dict[str, Any]]
+    if body.rule == "credit_spread":
+        result = selectors.select_credit_spread(raw, direction, body.hedge_width_points, body.pop_threshold_pct)
+    else:
+        if atm is None:
+            raise HTTPException(status_code=422, detail="give atm_strike, or a chain with its underlying price")
+        at: float = atm
+        if body.rule == "iron_condor":
+            result = selectors.select_iron_condor(raw, at, body.step, body.hedge_width_points, body.pop_threshold_pct)
+        elif body.rule == "iron_butterfly":
+            result = selectors.select_iron_butterfly(raw, at, body.hedge_width_points, body.pop_threshold_pct)
+        elif body.rule == "credit_spread_fixed":
+            result = selectors.select_credit_spread_fixed_strikes(raw, direction, at, hedge_width_points=body.hedge_width_points,
+                                                                  step=body.step, strikes_otm=body.strikes_otm)
+        elif body.rule == "credit_spread_itm":
+            result = selectors.select_credit_spread_itm(raw, direction, at, itm_depth_points=body.itm_depth_points,
+                                                        hedge_width_points=body.hedge_width_points, step=body.step)
+        else:
+            result = selectors.select_naked_option_itm(raw, direction, at, body.itm_depth_points, hedge_width_points=body.hedge_width_points,
+                                                       step=body.step, hedge_enabled=body.hedge_enabled)
+    return {"rule": body.rule, "atm_strike": atm, "pop_source": chain.POP_SOURCE, "result": result,
+            "found": result is not None, "disclaimer": DISCLAIMER}

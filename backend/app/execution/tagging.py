@@ -42,20 +42,30 @@ def valid_algo_id(value: str) -> bool:
 
 def build_order_tag(
     *, strategy_id: str, leg: str, algo_id: Optional[str] = None, max_length: int = DEFAULT_MAX_TAG_LENGTH,
+    broker: Optional[str] = None,
 ) -> str:
     """`<algo_id>-<strategy>-<leg>` shortened to `max_length`, dropping strategy characters first
     (the algo id is the compliance value and the leg is what reconciliation keys on), then, if
-    the algo id and leg alone still do not fit, the leg is truncated last."""
-    algo = sanitize_tag_part(algo_id or "")
-    leg_part = sanitize_tag_part(leg).upper() or LEG_ENTRY
-    strategy = sanitize_tag_part(strategy_id)
+    the algo id and leg alone still do not fit, the leg is truncated last.
+
+    D1: with `broker`, that broker's tag format from the rule-set applies (IN-SEBI.algo_id.tag `brokers`): a stricter
+    length and/or charset (`alnum` drops the separators). Without an entry nothing changes."""
+    from app.compliance.algo_id import CHARSETS, tag_format   # local: compliance loads rule-set data lazily
+    fmt = tag_format(broker) if broker else {"max_length": None, "charset": "alnum_dash"}
+    if fmt["max_length"]:
+        max_length = min(max_length, int(fmt["max_length"]))
+    strip = CHARSETS[fmt["charset"]]
+    algo = strip.sub("", sanitize_tag_part(algo_id or ""))
+    leg_part = strip.sub("", sanitize_tag_part(leg).upper()) or LEG_ENTRY
+    strategy = strip.sub("", sanitize_tag_part(strategy_id))
+    sep = "-" if strip.sub("", "-") else ""
 
     fixed = [p for p in (algo, leg_part) if p]
-    fixed_len = sum(len(p) for p in fixed) + (len(fixed) - 1)  # separators between fixed parts
-    room_for_strategy = max_length - fixed_len - 1  # one more separator for the strategy part
+    fixed_len = sum(len(p) for p in fixed) + len(sep) * (len(fixed) - 1)  # separators between fixed parts
+    room_for_strategy = max_length - fixed_len - len(sep)  # one more separator for the strategy part
     if room_for_strategy >= 1 and strategy:
         parts = [algo, strategy[:room_for_strategy], leg_part] if algo else [strategy[:room_for_strategy], leg_part]
     else:
         parts = fixed
-    tag = "-".join(p for p in parts if p)
+    tag = sep.join(p for p in parts if p)
     return tag[:max_length]

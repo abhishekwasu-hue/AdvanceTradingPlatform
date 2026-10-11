@@ -11,17 +11,25 @@
       "source": "SEBI retail-algo circular; NSE implementation standards",
       "status": "enforced",
       "params": {
-        "max_tag_length_default": 20
+        "max_tag_length_default": 20,
+        "brokers": {}
       },
       "code": [
-        "app/execution/tagging.py",
+        "app/compliance/algo_id.py",
+        "app/execution/multileg.py",
         "app/execution/router.py",
-        "app/execution/multileg.py"
+        "app/execution/signal_execution.py",
+        "app/execution/tagging.py",
+        "app/trading/position_monitor.py",
+        "app/trading/stop_guard.py"
       ],
       "tests": [
         "tests/test_algo_tagging.py::test_live_router_tags_entry_and_stop_with_algo_id",
         "tests/test_algo_tagging.py::test_exit_order_carries_algo_id",
-        "tests/test_algo_tagging.py::test_router_respects_broker_tag_limit"
+        "tests/test_algo_tagging.py::test_router_respects_broker_tag_limit",
+        "tests/test_d1_algo_id.py::test_broker_format_from_the_rule_set_and_unknown_brokers_unchanged",
+        "tests/test_d1_algo_id.py::test_live_entry_writes_an_audit_row_with_the_tag",
+        "tests/test_d1_algo_id.py::test_live_exit_writes_an_audit_row_with_the_tag"
       ],
       "flag": null
     },
@@ -32,7 +40,9 @@
       "status": "enforced",
       "params": {},
       "code": [
-        "app/execution/router.py"
+        "app/compliance/algo_id.py",
+        "app/execution/router.py",
+        "app/execution/signal_execution.py"
       ],
       "tests": [
         "tests/test_algo_tagging.py::test_live_refused_without_algo_id_when_required"
@@ -43,14 +53,20 @@
       "id": "IN-SEBI.algo_id.registered_above_ops",
       "title": "Above the OPS threshold the registered algo id is required (below it the broker's generic id)",
       "source": "SEBI retail-algo circular (OPS threshold set by the exchange)",
-      "status": "planned",
+      "status": "enforced",
       "params": {
         "ops_threshold": 10,
-        "generic_id_source": "broker"
+        "generic_ids": {}
       },
-      "code": [],
-      "tests": [],
-      "flag": null
+      "code": [
+        "app/compliance/algo_id.py",
+        "app/execution/signal_execution.py"
+      ],
+      "tests": [
+        "tests/test_d1_algo_id.py::test_registered_id_wins_generic_only_under_an_enforced_threshold",
+        "tests/test_d1_algo_id.py::test_live_refused_without_a_usable_id_and_generic_id_goes_through"
+      ],
+      "flag": "ALGO_ID_REQUIRED_FOR_LIVE"
     },
     {
       "id": "IN-SEBI.ops.throttle",

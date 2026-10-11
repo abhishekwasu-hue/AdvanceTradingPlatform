@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
+from app.compliance import algo_id as algo_ids
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
@@ -46,8 +47,11 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
         reasons.append("Plan does not include live trading - order refused")
-    if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE and not (tenant and tenant.algo_id):
-        reasons.append("Exchange algo id not set for this organisation - LIVE orders refused (SEBI algo tagging)")
+    if mode == ExecutionMode.LIVE.value and config.ALGO_ID_REQUIRED_FOR_LIVE:
+        # D1: the registered id, or the broker's generic one while the OPS throttle keeps us under the threshold.
+        problem = algo_ids.live_problem(tenant.algo_id if tenant else None, broker_name)
+        if problem:
+            reasons.append(problem)
     if mode == ExecutionMode.LIVE.value:
         # Phase G1 (safety rule 8): a FAILED live order leaves the broker's book unknown; no
         # new LIVE entry until reconciliation says the books agree. Exits are unaffected.
@@ -251,7 +255,7 @@ async def execute_signal_for_user(
         order_router = OrderRouter(
             mode=execution_mode, risk_config=effective_risk_config, broker=broker,
             exchange=order_exchange,
-            algo_id=tenant.algo_id if tenant is not None else None,
+            algo_id=algo_ids.order_algo_id(tenant.algo_id if tenant is not None else None, broker.name if broker is not None else None),
             # Phase AS: a swing position is a delivery / carry-forward one, entry and stop alike.
             product=product_for(holding, contract.kind.value if contract is not None else "UNDERLYING", order_exchange),
             # P0.5 / T5 + T2: the deployment's entry style; the stop's order type follows what the broker accepts
@@ -328,6 +332,11 @@ async def execute_signal_for_user(
             await mark_broker_uncertain(session, tenant, f"order {order.id} ({signal.symbol}): " + "; ".join(
                 r for r in result.reasons if "reconciliation" in r)[:400], user_id=user.id)
         venue = broker.name if (execution_mode == ExecutionMode.LIVE and broker is not None) else "paper broker"
+        if execution_mode == ExecutionMode.LIVE and broker is not None:
+            # D1: the tag the broker received, in the hash-chained audit log next to its order id (committed below).
+            await algo_ids.audit_order(session, user.tenant_id, user.id, leg="ENTRY", broker_name=broker.name, symbol=signal.symbol,
+                                       tag=result.algo_tag, broker_order_id=result.broker_order_id,
+                                       ref=f"order {order.id}" + (f", stop {result.sl_order_id}" if result.sl_order_id else ""))
         order = await transition_order(session, order, OrderStatus.SUBMITTED, detail=f"Submitted to {venue}")
         order = await transition_order(session, order, OrderStatus.PENDING, detail="Awaiting fill")
         if result.partial_fill:

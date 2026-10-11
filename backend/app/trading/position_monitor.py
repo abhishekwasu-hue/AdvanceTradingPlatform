@@ -35,6 +35,7 @@ from app.brokers.token_lifecycle import build_adapter, get_credential_record, to
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.compliance.algo_id import audit_order, order_algo_id
 from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
@@ -63,6 +64,7 @@ class CloseOutcome:
     exit_price: Optional[float] = None
     pnl: Optional[float] = None
     broker_exit_order_id: Optional[str] = None
+    exit_tag: Optional[str] = None       # D1: the algo tag the exit order carried (audited)
     warnings: List[str] = field(default_factory=list)
     # G-LIVE: what the broker holds is unknown (an exit order errored without a clear answer, or a stop's fill could
     # not be read before netting) - close_position flags the tenant broker-uncertain so reconciliation decides.
@@ -237,12 +239,14 @@ async def _square_off_live(
             return _stop_already_filled(trade, stop_after, reason, outcome)
     exit_quantity = trade.quantity if stop_filled == 0 else type(trade.quantity)(float(trade.quantity) - stop_filled)
 
+    exit_tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
+                               max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
+    outcome.exit_tag = exit_tag
     try:
         response = await broker.place_order(BrokerOrderRequest(
             symbol=trade.symbol, exchange=exchange, transaction_type=exit_side, quantity=exit_quantity,
             order_type="MARKET", product=product_for_trade(trade),   # Phase AS: the entry's own product
-            tag=build_order_tag(strategy_id=trade.strategy_id, leg=LEG_EXIT, algo_id=algo_id,
-                                max_length=getattr(broker, "max_tag_length", None) or 20),
+            tag=exit_tag,
         ))
     except Exception as exc:  # noqa: BLE001
         outcome.warnings.append(f"Exit order failed at {broker.name}: {exc}")
@@ -308,9 +312,12 @@ async def close_position(
             return outcome
         tenant = await session.get(Tenant, trade.tenant_id)
         realised = await _square_off_live(
-            trade, broker, reason, exit_price, outcome, algo_id=tenant.algo_id if tenant is not None else None,
-            stop_dead=stop_dead,
+            trade, broker, reason, exit_price, outcome,
+            algo_id=order_algo_id(tenant.algo_id if tenant is not None else None, broker.name), stop_dead=stop_dead,
         )
+        if outcome.broker_exit_order_id:
+            await audit_order(session, trade.tenant_id, user_id, leg="EXIT", broker_name=broker.name, symbol=trade.symbol,
+                              tag=outcome.exit_tag, broker_order_id=outcome.broker_exit_order_id, ref=f"trade {trade.id}: {reason}")
         if outcome.broker_uncertain and tenant is not None:
             from app.reconciliation.service import mark_broker_uncertain   # local: reconciliation imports this module
             await mark_broker_uncertain(session, tenant, outcome.broker_uncertain)

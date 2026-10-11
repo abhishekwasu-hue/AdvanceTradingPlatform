@@ -45,13 +45,18 @@ async def persist_trade(
     session: AsyncSession, user: User, trade: Trade, *, mode: str = "PAPER",
     broker_order_id: Optional[str] = None, sl_order_id: Optional[str] = None, deployment_id: Optional[int] = None,
     contract_meta: Optional[dict] = None, exit_rules: Optional[str] = None, account_id: Optional[int] = None,
-    holding: str = "INTRADAY",
+    holding: str = "INTRADAY", journal_source: Optional[str] = None,
 ) -> TradeRecord:
     """Writes a filled trade (paper or live) to this tenant's history, attributed to the user who
     executed it. Only called for a real logged-in user or a deployment acting on the tenant's
     behalf - anonymous /paper-execute calls stay in-memory only, per the console's "try it
     without an account" demo flow. LIVE fills carry the broker's entry and stop-loss order ids so
     the position monitor can cancel the stop on a target exit and reconciliation can match fills.
+
+    Z6: the journal captures the fill right after the commit - the flag is read on this session's own connection
+    (cached), the capture itself is queued and runs off the trade path, and it never raises or waits.
+    `journal_source` says where the trade came from when the caller knows (webhook: "WEBHOOK"; public API: "API";
+    Z3 approvals will pass "PROPOSAL", scans "SCAN").
     """
     record = TradeRecord(
         tenant_id=user.tenant_id,
@@ -87,6 +92,9 @@ async def persist_trade(
     session.add(record)
     await session.commit()
     await session.refresh(record)
+    from app.journal import capture as journal_capture   # local: the journal imports the trade models only
+    await journal_capture.on_entry(session, record, source=journal_source,
+                                   underlying_price=(contract_meta or {}).get("underlying_entry"))
     return record
 
 

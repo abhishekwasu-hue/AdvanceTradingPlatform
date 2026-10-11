@@ -71,6 +71,27 @@ engine maps it in and out.
 **Place in the MASTER order** (CH-1, provisional): CH0 now. CH1 and CH2 can run beside H-C2/S1 because they are
 frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1-c.
 
+## CH1a (built): drawings storage
+- **Schema `drawing/1`** (`app/charts/drawings.py`), our own and engine-neutral.
+  - Kinds: trendline, ray, measure, rectangle, fib retracement and extension, channel, hline, vline, text,
+    long/short position.
+  - Anchors are time/price only. Each kind has its rule: hline is price-only, vline is time-only, a position is an
+    entry plus price-only stop and target.
+  - Style: colour hex, width 1-6, line style, extend.
+  - Times are stored in UTC. Text may not contain `<` or `>`.
+- **Storage.** `chart_drawings` is per user and symbol, so every timeframe shows the same drawings.
+  - Versioned: an edit names its version, and a stale edit gets 409 with the current drawing. Undo/redo stay
+    client-side.
+  - Lockable (423 while locked) and soft-deleted. At most 500 drawings per symbol.
+  - Migration `d7f9b1c3e5a7`, checked on Postgres.
+- **Export / import.** `atp-drawings/1` JSON. An import is all or nothing, and the round trip is lossless.
+- **Nothing here touches an order.**
+- **Tests.** `tests/test_ch1_chart_drawings.py` (3). A mutation check confirmed it: removing the version check fails
+  the tests.
+- `app/charts` is added to the mypy gate.
+- **Next.** CH1b: `frontend/src/charting/engine.ts` (`ChartEngine`), ProChart behind it with no visible change, and the
+  drawings API client.
+
 ## Open questions (provisional answers, work continues)
 - **CH-1. Order against parts H, S, B.** As above.
 - **CH-2. TradingView Advanced Charts access** is a business application by Abhi (company and product details; the

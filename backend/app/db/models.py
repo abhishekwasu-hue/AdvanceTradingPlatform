@@ -1926,3 +1926,25 @@ class ScreenRunRecord(Base):
     result_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # [{symbol, matched, reason}]
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+class ChartDrawingRecord(Base):
+    """CH1 (ADR-0023): one user drawing on a symbol's chart, in our own engine-neutral JSON (`drawing/1`: time/price
+    anchors, so every timeframe and every chart engine shows the same drawing). Versioned for optimistic concurrency
+    (undo/redo is client-side over versions), lockable, soft-deleted."""
+
+    __tablename__ = "chart_drawings"
+    __table_args__ = (Index("ix_chart_drawings_user_symbol", "user_id", "symbol", "exchange"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    drawing_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

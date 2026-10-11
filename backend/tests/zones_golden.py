@@ -8,7 +8,8 @@ through ATP, both normalised to one JSON shape.
 
 Normalisation only absorbs the deliberate, documented differences: ATP timeframe labels ("15m" for Trade's "15M" /
 "15minute", "1h" for "60M" / "1hour" / "1H" frames), ASCII tags in sr_v3, zone status FILLED/ACTIVE -> state
-tested/fresh, and a dynamic S/R row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
+tested/fresh (compared on ATP's `first_touch` event - its `state` is the ATP lifecycle since Z7a-2), and a dynamic S/R
+row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
 re-sync) from backend/ with:  python -m tests.zones_golden --write
 """
 import importlib
@@ -133,7 +134,8 @@ def _atp_row(r: Dict[str, Any]) -> Dict[str, Any]:
     dyn = r["zone_type"].startswith("DYNAMIC_SR_")
     return {"zone_type": r["zone_type"], "timeframe": r["timeframe"], "zone_low": _num(r["zone_low"]), "zone_high": _num(r["zone_high"]),
             "strength": None if r["strength"] is None else int(r["strength"]), "formed": None if dyn else _iso(r["formed_at"]),
-            "state": r["state"]}
+            # Trade's ACTIVE / FILLED is ATP's first-touch event (Z7a-2: `state` is the ATP lifecycle, tracked from confirmation)
+            "state": "tested" if r["first_touch"] is not None else "fresh"}
 
 
 def _tag(t: str) -> str:

@@ -6,8 +6,9 @@ field here, so a tenant can edit it. Layer platform defaults -> tenant -> symbol
 pattern as the OI banner settings); unknown keys are refused, values are range-checked by pydantic.
 
 Timeframe labels are ATP's ("1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"). Trade's "60M" dynamic S/R is ATP's "1h".
-The memory fields (zone tolerance, retire days, max distance, max count) are used by the level-memory job (Z7a-2); they
-live here already so the settings model does not change shape between the two PRs.
+The memory fields (zone tolerance, retire days, max distance, max count) feed `memory.py` (Trade level_memory.py); the
+lifecycle fields (flip closes / buffer, structural swing order / buffer) feed `lifecycle.track_zone`; the history fields
+tell the storage job (`job.py`) how many days of bars to read per timeframe.
 """
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -126,6 +127,16 @@ class ZoneSettings(BaseModel):
     memory_retire_days_by_tf: Dict[str, int] = Field(default_factory=lambda: {"1m": 2, "5m": 5, "15m": 15, "30m": 30, "1h": 30})
     memory_max_distance_pct: float = Field(default=15.0, ge=0)
     memory_max_levels: int = Field(default=12, ge=1, le=500)
+    memory_enabled: bool = True                              # Trade level_memory_enabled (default on)
+    # --- zone lifecycle (ATP rule, Z7a-2; Trade has no lifecycle - defaults borrow sr_levels_v3's break rule) -------------
+    flip_confirm_closes: int = Field(default=2, ge=1, le=50)       # closes beyond the far edge in a row = closed through and held
+    flip_buffer_pct: float = Field(default=0.10, ge=0, le=10)      # a close counts as beyond when this % past the edge
+    structure_swing_order: int = Field(default=3, ge=1, le=100)    # fractal swing order of the structural swing beyond a zone
+    structure_buffer_pct: float = Field(default=0.10, ge=0, le=10) # a close must be this % past the structural swing to break it
+    max_events_kept: int = Field(default=50, ge=0, le=1000)        # lifecycle events stored per zone (the most recent ones)
+    # --- storage job (Z7a-2): history read from the lake per run --------------------------------------------------------
+    history_days: int = Field(default=365, ge=5, le=3650)    # S/R, order blocks, demand / supply, gaps (Trade: one year)
+    recent_days_by_tf: Dict[str, int] = Field(default_factory=lambda: {"1m": 5, "5m": 20, "15m": 180, "30m": 180, "1h": 180})
     # --- scored multi-timeframe levels (sr_levels_v3) ---------------------------------------------------------------------
     sr_v3: SRV3Settings = Field(default_factory=SRV3Settings)
 
@@ -151,6 +162,9 @@ class ZoneSettings(BaseModel):
             raise ValueError("avg_min_periods must not exceed avg_window")
         if self.memory_tol_min_pct > self.memory_tol_max_pct or self.sr_v3.tol_min_pct > self.sr_v3.tol_max_pct:
             raise ValueError("a tolerance minimum must not exceed its maximum")
+        bad_recent = [tf for tf, d in self.recent_days_by_tf.items() if tf not in ATP_TIMEFRAMES or not 1 <= int(d) <= 3650]
+        if bad_recent:
+            raise ValueError(f"recent_days_by_tf: unknown timeframe or days outside 1..3650 for {bad_recent}")
         if self.sr_v3.grade_b > self.sr_v3.grade_a:
             raise ValueError("sr_v3.grade_b must not exceed sr_v3.grade_a")
         return self

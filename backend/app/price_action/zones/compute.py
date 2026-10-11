@@ -6,9 +6,16 @@ _table). Which frame feeds which family is a setting (Trade's fixed choice is th
 passes), order blocks + demand/supply on `zone_timeframe` (1h), unfilled overnight gaps on `gap_timeframe` (15m).
 
 Row: {"zone_type", "timeframe", "zone_low", "zone_high", "strength", "formed_at", "confirmed_at", "state", "first_touch",
-"role"}. Differences from Trade, all deliberate:
-  * `state` replaces Trade's status: where Trade says FILLED (first contact after formation) the zone is `tested` and
-    `first_touch` says how (TOUCH / GAP_THROUGH) and when; where Trade says ACTIVE the zone is `fresh`. Nothing is dropped.
+"role", "origin_role", "touches", "flips", "last_event", "structure_level", "invalidated_at", "tracker"}. Differences from
+Trade, all deliberate:
+  * `state` is the ATP lifecycle (lifecycle.track_zone): fresh / tested / flipped / invalidated, tracked from the bar
+    AFTER the zone is confirmed (an order block / base on its impulse bar, a gap on its first bar) - never earlier.
+  * `first_touch` keeps Trade's FILLED moment exactly (scanned from the second bar after formation, as Trade does - so a
+    touch before confirmation can appear here although the lifecycle ignores it): {"event": TOUCH / GAP_THROUGH, "bar",
+    "time"} or None. Parity with Trade's ACTIVE / FILLED is checked on this field.
+  * S/R and dynamic S/R rows are line levels: they start `fresh` as of the computation, with a tracker whose band is the
+    level +/- the memory tolerance; the storage job (snapshot.build_snapshot) remembers them across days and advances
+    their tracker over the following bars.
   * a dynamic S/R row's `formed_at` is the last bar of its own frame (Trade stamped every row with the 1H frame's last bar).
   * `role` (RESISTANCE_SUPPLY / SUPPORT_DEMAND) comes from the price for every row (Trade computed it in the callers).
 `as_of`: every frame is cut to bars stamped <= as_of first, so a zone as of T never uses a later bar.
@@ -21,7 +28,8 @@ import pandas as pd
 from app.price_action.zones.detect import (DEMAND_ZONE, SUPPLY_ZONE, detect_demand_supply_zones, detect_order_blocks, find_overnight_gaps,
                                            first_touch_event, role_by_price)
 from app.price_action.zones.levels import compute_dynamic_sr, find_support_resistance_levels
-from app.price_action.zones.lifecycle import ZoneState
+from app.price_action.zones.lifecycle import ZoneTracker, frame_swings, new_tracker, origin_side, track_zone
+from app.price_action.zones.memory import zone_tolerance
 from app.price_action.zones.settings import ZoneSettings
 
 Frames = Mapping[str, Optional[pd.DataFrame]]
@@ -38,23 +46,42 @@ def cut_as_of(df: Optional[pd.DataFrame], as_of: Any) -> Optional[pd.DataFrame]:
     return df[pd.to_datetime(df["timestamp"]) <= pd.Timestamp(as_of)]
 
 
-def _state_row(zone: Dict[str, Any], timeframe: str, after: pd.DataFrame) -> Dict[str, Any]:
-    """`after` is a slice of the timeframe's frame (reset index), so the event's bar becomes a bar index of that frame."""
-    ev = first_touch_event(zone["zone_low"], zone["zone_high"], after)
+def tracker_fields(tracker: ZoneTracker) -> Dict[str, Any]:
+    """The lifecycle columns of a zone row from its tracker."""
+    return {"state": tracker.state, "origin_role": tracker.origin_side, "touches": tracker.touches, "flips": tracker.flips,
+            "last_event": tracker.last_event, "structure_level": tracker.structure, "invalidated_at": tracker.invalidated_at,
+            "tracker": tracker.to_dict()}
+
+
+def _state_row(zone: Dict[str, Any], timeframe: str, df: pd.DataFrame, trade_after: pd.DataFrame, settings: ZoneSettings,
+               swings: Any) -> Dict[str, Any]:
+    """`df` is the timeframe's frame (reset index); `trade_after` the slice Trade scans for its first touch."""
+    ev = first_touch_event(zone["zone_low"], zone["zone_high"], trade_after)
     if ev is not None:
-        ev = {**ev, "bar": int(after.index[ev["bar"]])}
+        ev = {**ev, "bar": int(trade_after.index[ev["bar"]])}
+    tracker = new_tracker(zone["zone_low"], zone["zone_high"], origin_side(zone["zone_type"], zone["zone_low"], zone["zone_high"], None))
+    track_zone(tracker, df, settings, start_after=zone.get("confirmed_at", zone["formed_at"]), swings=swings)
     return {"zone_type": zone["zone_type"], "timeframe": timeframe, "zone_low": zone["zone_low"], "zone_high": zone["zone_high"],
-            "strength": None, "formed_at": zone["formed_at"], "confirmed_at": zone.get("confirmed_at"),
-            "state": (ZoneState.TESTED if ev is not None else ZoneState.FRESH).value, "first_touch": ev}
+            "strength": None, "formed_at": zone["formed_at"], "confirmed_at": zone.get("confirmed_at"), "first_touch": ev,
+            **tracker_fields(tracker)}
 
 
-def _level_rows(levels: Dict[str, Any], prefix: str, timeframe: str, formed_at: Any) -> List[Dict[str, Any]]:
+def line_tracker(level: float, df: pd.DataFrame, formed_at: Any, settings: ZoneSettings) -> ZoneTracker:
+    """A fresh tracker for a line level known on `formed_at`: band = level +/- the memory tolerance of its frame, side by
+    the frame's last close."""
+    price = float(df["close"].iloc[-1])
+    return new_tracker(level, level, origin_side("LEVEL", level, level, price), tol=zone_tolerance(df, price, settings), start_at=formed_at)
+
+
+def _level_rows(levels: Dict[str, Any], prefix: str, timeframe: str, df: pd.DataFrame, settings: ZoneSettings) -> List[Dict[str, Any]]:
     rows = []
+    formed_at = df["timestamp"].iloc[-1]
     for side, name in (("support", "SUPPORT"), ("resistance", "RESISTANCE")):
         for lv in levels.get(side, []):
+            tracker = line_tracker(lv["level"], df, formed_at, settings)
             rows.append({"zone_type": f"{prefix}{name}", "timeframe": timeframe, "zone_low": lv["level"], "zone_high": lv["level"],
-                         "strength": lv["touches"], "formed_at": formed_at, "confirmed_at": formed_at,
-                         "state": ZoneState.FRESH.value, "first_touch": None})
+                         "strength": lv["touches"], "formed_at": formed_at, "confirmed_at": formed_at, "first_touch": None,
+                         **tracker_fields(tracker)})
     return rows
 
 
@@ -74,7 +101,7 @@ def dynamic_sr_rows(dynamic_frames: Frames, timeframes: List[str], settings: Opt
         df = dynamic_frames.get(tf)
         if df is None or len(df) < s.dyn_min_bars:
             continue
-        rows += _level_rows(compute_dynamic_sr(df, s), "DYNAMIC_SR_", tf, df["timestamp"].iloc[-1])
+        rows += _level_rows(compute_dynamic_sr(df, s), "DYNAMIC_SR_", tf, df.reset_index(drop=True), s)
     return rows
 
 
@@ -90,7 +117,7 @@ def compute_all_zones(frames: Frames, dynamic_frames: Optional[Frames] = None, s
 
     df_sr = frames.get(s.sr_timeframe)
     if df_sr is not None and len(df_sr) >= s.sr_min_bars:
-        rows += _level_rows(find_support_resistance_levels(df_sr, settings=s), "", s.sr_timeframe, df_sr["timestamp"].iloc[-1])
+        rows += _level_rows(find_support_resistance_levels(df_sr, settings=s), "", s.sr_timeframe, df_sr.reset_index(drop=True), s)
 
     rows += dynamic_sr_rows(dyn, s.dynamic_sr_timeframes, s)
 
@@ -98,16 +125,18 @@ def compute_all_zones(frames: Frames, dynamic_frames: Optional[Frames] = None, s
     if df_z is not None and len(df_z):
         df_z = df_z.reset_index(drop=True)
         ts = pd.to_datetime(df_z["timestamp"])
+        sw = frame_swings(df_z, s)
         for zone in detect_order_blocks(df_z, s) + detect_demand_supply_zones(df_z, s):
             after = df_z[ts > pd.Timestamp(zone["formed_at"])].iloc[1:]           # Trade skips the first bar after formation
-            rows.append(_state_row(zone, s.zone_timeframe, after))
+            rows.append(_state_row(zone, s.zone_timeframe, df_z, after, s, sw))
 
     df_g = frames.get(s.gap_timeframe)
     if df_g is not None and len(df_g) >= 2:
         df_g = df_g.reset_index(drop=True)
         ts = pd.to_datetime(df_g["timestamp"])
+        sw = frame_swings(df_g, s)
         for gap in find_overnight_gaps(df_g, s):
-            rows.append(_state_row(gap, s.gap_timeframe, df_g[ts > pd.Timestamp(gap["formed_at"])]))
+            rows.append(_state_row(gap, s.gap_timeframe, df_g, df_g[ts > pd.Timestamp(gap["formed_at"])], s, sw))
 
     price = current_price if current_price is not None else _latest_close([df_z, df_sr, df_g, *dyn.values()])
     for row in rows:

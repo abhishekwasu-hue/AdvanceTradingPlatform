@@ -1,7 +1,7 @@
 """Z6: the discipline engine's settings - every threshold and weight in one place, editable per trader.
 
 The defaults are starting points, not fitted values: each one and the reasoning behind it is in
-docs/DISCIPLINE_ENGINE.md ("Defaults and research note"). Nothing here was tuned on anyone's results. A trader can
+docs/design/DISCIPLINE_ENGINE.md ("Defaults and research note"). Nothing here was tuned on anyone's results. A trader can
 change any of them (PUT /api/journal/settings); a stored value outside its documented range is ignored and the
 default used instead, so a bad row can never make a detector misbehave.
 """
@@ -39,7 +39,7 @@ def _default_event_kinds() -> List[str]:
 
 @dataclass
 class DisciplineSettings:
-    """Thresholds (see docs/DISCIPLINE_ENGINE.md for each default's reasoning)."""
+    """Thresholds (see docs/design/DISCIPLINE_ENGINE.md for each default's reasoning)."""
 
     # Revenge trade: an entry within this many minutes of a losing exit, sized larger than the losing trade.
     revenge_window_minutes: float = 15.0

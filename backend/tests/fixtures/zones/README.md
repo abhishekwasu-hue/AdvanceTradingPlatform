@@ -20,3 +20,8 @@ when the Trade checkout is on disk, checks the file against Trade run live.
 
 Rebuild (from `backend/`): `python tests/fixtures/zones/build_fixtures.py` (CSV) and
 `TRADE_REPO_PATH=/path/to/trade python -m tests.zones_golden --write` (golden JSON - only on a deliberate Trade re-sync).
+
+`golden_level_memory_eafc872.json` (Z7a-2) is Trade's `level_memory.py` on the same fixtures
+(`tests/zones_memory_golden.py::trade_outputs`: tolerance, last touch, night-by-night merge walks, remember / nightly
+apply); `tests/test_zones_memory_parity.py` checks ATP's `memory.py` against it. Rebuild only on a deliberate Trade
+re-sync: `TRADE_REPO_PATH=/path/to/trade python -m tests.zones_memory_golden --write`.

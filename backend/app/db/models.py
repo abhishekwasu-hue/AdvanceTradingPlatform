@@ -2269,8 +2269,7 @@ class MarketZoneRunRecord(Base):
     zones as of T are the run with the latest as_of <= T."""
 
     __tablename__ = "market_zone_runs"
-    __table_args__ = (UniqueConstraint("scope", "instrument_key", "as_of", name="uq_market_zone_run"),
-                      Index("ix_market_zone_runs_lookup", "scope", "instrument_key", "as_of"))
+    __table_args__ = (UniqueConstraint("scope", "instrument_key", "as_of", name="uq_market_zone_run"),)   # also the as-of lookup index
 
     id: Mapped[int] = mapped_column(primary_key=True)
     scope: Mapped[str] = mapped_column(String(24), nullable=False)

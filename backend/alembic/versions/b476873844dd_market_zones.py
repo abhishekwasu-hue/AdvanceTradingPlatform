@@ -45,7 +45,6 @@ def upgrade() -> None:
         sa.UniqueConstraint('scope', 'instrument_key', 'as_of', name='uq_market_zone_run'),
     )
     op.create_index('ix_market_zone_runs_tenant_id', 'market_zone_runs', ['tenant_id'])
-    op.create_index('ix_market_zone_runs_lookup', 'market_zone_runs', ['scope', 'instrument_key', 'as_of'])
     op.create_table(
         'market_zones',
         sa.Column('id', sa.Integer(), primary_key=True),
@@ -78,7 +77,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index('ix_market_zones_run_id', table_name='market_zones')
     op.drop_table('market_zones')
-    op.drop_index('ix_market_zone_runs_lookup', table_name='market_zone_runs')
     op.drop_index('ix_market_zone_runs_tenant_id', table_name='market_zone_runs')
     op.drop_table('market_zone_runs')
     op.drop_index('ix_market_zone_settings_tenant_id', table_name='market_zone_settings')

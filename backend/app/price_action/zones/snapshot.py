@@ -11,7 +11,7 @@
   4. role by the price and a stable `zone_key` per row (the identity across snapshots).
 Nothing here reads the database or the clock: the previous snapshot comes in as rows, "now" is each frame's last bar.
 """
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -64,7 +64,7 @@ def _line_families(frames: Frames, dynamic_frames: Frames, s: ZoneSettings) -> L
 
 
 def build_snapshot(frames: Frames, dynamic_frames: Optional[Frames] = None, settings: Optional[ZoneSettings] = None,
-                   previous: Optional[List[Mapping[str, Any]]] = None, current_price: Optional[float] = None) -> List[Dict[str, Any]]:
+                   previous: Optional[Sequence[Mapping[str, Any]]] = None, current_price: Optional[float] = None) -> List[Dict[str, Any]]:
     """All zone rows of one snapshot (see the module doc). `frames` / `dynamic_frames` as compute_all_zones takes them,
     already holding only bars that closed by the snapshot time; `previous`: the previous snapshot's rows (with their
     "tracker"), or None for a first run. Each row gains "zone_key" and "remembered"."""

@@ -13,7 +13,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 from sqlalchemy import select
@@ -201,7 +201,7 @@ def row_to_record(run_id: int, r: Mapping[str, Any]) -> MarketZoneRecord:
 
 
 async def write_run(session: AsyncSession, *, scope: str, tenant_id: Optional[int], key: str, as_of: datetime, settings: ZoneSettings,
-                    rows: List[Mapping[str, Any]], price: Optional[float], bars: Mapping[str, int],
+                    rows: Sequence[Mapping[str, Any]], price: Optional[float], bars: Mapping[str, int],
                     previous_run_id: Optional[int] = None, now: Optional[datetime] = None) -> MarketZoneRunRecord:
     """Store one snapshot (the caller commits). Duplicate (scope, key, as_of) raise from the unique constraint."""
     run = MarketZoneRunRecord(scope=scope, tenant_id=tenant_id, instrument_key=key, as_of=_dt(as_of), computed_at=now or datetime.now(timezone.utc),

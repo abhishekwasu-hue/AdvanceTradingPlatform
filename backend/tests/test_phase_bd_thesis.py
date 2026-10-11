@@ -208,6 +208,7 @@ def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_n
     again = _run(build())
     assert again["id"] == first["id"]                                                                 # fresh enough: served from the store
 
+    _seed(tenant_id, when=datetime.now(UTC))     # the API reads with the wall clock: a read as fresh as today's (not a date bomb)
     out = client.get("/api/ai/thesis/NIFTY%2050?language=mr", headers=headers).json()               # another language -> a new build, in Marathi
     assert out["direction"] == "BULLISH" and "तेजी" in out["lines"][0] and out["id"] != first["id"]
 
@@ -276,7 +277,9 @@ def test_capture_daily_builds_one_thesis_per_symbol_per_day_and_telegram_thesis_
     built, rows = _run(capture(NOW + timedelta(days=1)))
     assert built == 0 and len(rows) == 2                                                             # yesterday's reads never become today's thesis
 
-    # Telegram /thesis renders the same lines (flag on), plain text.
+    # Telegram /thesis renders the same lines (flag on), plain text. It reads with the wall clock (last 3 days of reads):
+    # a read as fresh as today's, so the test does not expire with the calendar.
+    _seed(tenant_id, symbol="RELIANCE", last=2900.0, sup=(2860.0, 2870.0), res=(2930.0, 2940.0), when=datetime.now(UTC))
     from app.db.models import Tenant
     from app.telegram_inbound import service as tg
 

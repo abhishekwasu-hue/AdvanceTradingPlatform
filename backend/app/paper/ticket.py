@@ -38,7 +38,7 @@ from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
-from app.db.models import Tenant, TradePlanRecord, User
+from app.db.models import Tenant, TradePlanRecord, TradeRecord, User
 from app.execution import approval
 from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
@@ -176,7 +176,8 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
                    "suggested_quantity": suggested["quantity"], "suggested_lots": suggested["lots"], "quantity": quantity,
                    "lots": round(quantity / lot, 4) if lot else None, "risk_amount": risk_amount,
                    "risk_pct_of_capital": round(risk_amount / basis * 100.0, 3) if basis > 0 else None,
-                   "gauge": round(risk_amount / cap, 4) if cap > 0 else None, "within_cap": within, "override": bool(plan.override)},
+                   "gauge": round(risk_amount / cap, 4) if cap > 0 else None, "within_cap": within, "override": bool(plan.override),
+                   "gauge_zone": "ok" if within else ("override" if risk_amount <= override_cap + 0.005 and base_cap >= user_cap else "over")},
         "checklist": [{"key": k, "label": v, "checked": ticks[k], "auto": False} for k, v in CHECKLIST.items()]
                      + [{"key": k, "label": v, "checked": auto[k], "auto": True} for k, v in AUTO_CHECKS.items()],
         "checklist_complete": complete, "costs": costs, "errors": errors, "refusals": refusals, "warnings": warnings, "can_place": can_place,
@@ -257,6 +258,15 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
 
 
 async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, Any]:
+    """The stored plan and what became of it: the fill (the live price, and the quantity the pipeline placed - smaller
+    than planned when the price moved away from the stop, so the risk stays within the cap)."""
+    filled = None
+    if row.trade_id is not None:
+        trade = await session.get(TradeRecord, row.trade_id)
+        if trade is not None and trade.tenant_id == row.tenant_id:
+            filled = {"quantity": float(trade.quantity), "price": float(trade.entry_price),
+                      "risk_amount": round(abs(float(trade.entry_price) - float(trade.stop_loss)) * float(trade.quantity), 2)}
+
     def loads(text: Optional[str], default: Any) -> Any:
         try:
             return json.loads(text) if text else default
@@ -267,7 +277,7 @@ async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, An
             "reward_risk": row.reward_risk, "time_stop": row.time_stop, "invalidation": row.invalidation, "checklist": loads(row.checklist_json, {}),
             "checklist_complete": row.checklist_complete, "quantity": row.quantity, "risk_amount": row.risk_amount, "risk_cap": row.risk_cap,
             "override": row.override, "override_reason": row.override_reason, "costs": loads(row.costs_json, {}),
-            "reasons": loads(row.reasons_json, []), "order_id": row.order_id, "trade_id": row.trade_id,
+            "reasons": loads(row.reasons_json, []), "order_id": row.order_id, "trade_id": row.trade_id, "filled": filled,
             "created_at": (row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)).isoformat()}
 
 

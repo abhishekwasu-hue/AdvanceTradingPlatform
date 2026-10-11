@@ -9,6 +9,8 @@ import pytest
 
 from app import options_builder as ob
 from app.options_builder import model as m
+from app.option_chain.greeks import BSInputs, black_scholes
+from app.option_chain.models import OptionType
 from app.options_builder.greeks import leg_with_model_greeks
 
 AS_OF = date(2026, 3, 2)
@@ -123,13 +125,13 @@ def test_net_greeks_match_finite_differences_and_rho_has_the_right_sign():
         assert rho * sign > 0 and rho == pytest.approx(fd, rel=1e-3)
 
 
-def test_summary_uses_the_nearest_expiry_and_says_it_is_a_model():
+def test_summary_is_exact_for_one_expiry_and_refuses_no_expiry():
     legs = _priced("Short Strangle")
-    far = [{**leg, "expiry": (EXP + timedelta(days=28)).isoformat()} for leg in legs]
-    s = m.summary(legs + far, SPOT, as_of=AS_OF)
-    assert s["expiry"] == EXP.isoformat() and 0 < s["pop"] < 1 and s["expected_move"] > 0
+    s = m.summary(legs, SPOT, as_of=AS_OF)
+    assert s["expiry"] == EXP.isoformat() and s["method"].startswith("exact") and s["expected_move"] > 0
+    assert s["pop"] == pytest.approx(m.pop_at_expiry(legs, SPOT, 0.15, 14 / 365)) and 0 < s["pop"] < 1
     assert "estimate" in s["model"] and set(s["greeks"]) == {"delta", "gamma", "theta", "vega", "rho"}
-    with pytest.raises(ValueError, match="no expiry"):
+    with pytest.raises(ValueError, match="no leg has an expiry"):
         m.summary([{**legs[0], "expiry": None}], SPOT, as_of=AS_OF)
 
 
@@ -144,7 +146,7 @@ def _catalog_priced(name, iv=0.15):
     out = []
     for leg in legs:
         leg = {**leg, "lot_size": 50, "iv": iv}
-        leg["premium"] = SPOT if leg["option_type"] == "FUT" else m.leg_theoretical({**leg, "premium": 0}, SPOT, AS_OF)
+        leg["premium"] = m.leg_theoretical({**leg, "premium": 0}, SPOT, AS_OF)          # FUT: the fair forward
         out.append(leg)
     return out
 
@@ -160,15 +162,29 @@ def test_the_gallery_has_more_than_thirty_templates_in_named_families_and_every_
     assert catalog.build_template("No Such", SPOT, 200.0, EXP.isoformat()) is None
 
 
+def _monte_carlo(legs, sigma=0.15, t=14 / 365, r=0.07, seed=7, n=400_000):
+    """Expiry P&L paths for legs expiring together (FUT worth the price at expiry) - independent of the model code."""
+    z = np.random.default_rng(seed).standard_normal(n)
+    st = SPOT * np.exp((r - 0.5 * sigma ** 2) * t + sigma * math.sqrt(t) * z)
+    pay = np.zeros_like(st)
+    for leg in legs:
+        k = leg["strike"]
+        value = st if leg["option_type"] == "FUT" else (np.maximum(st - k, 0) if leg["option_type"] == "CE" else np.maximum(k - st, 0))
+        pay += (1 if leg["direction"] == "BUY" else -1) * (value - leg["premium"]) * leg["lots"] * leg["lot_size"]
+    return pay
+
+
 @pytest.mark.parametrize("name", [n for n, t in catalog.CATALOG.items() if all(leg[4] == 0 for leg in t["legs"])])
 def test_every_single_expiry_template_has_a_consistent_model(name):
-    """Expiry curve = expiry payoff; flat at spot today; PoP agrees with the exact intervals' sign."""
+    """Expiry curve = expiry payoff; flat at spot today; PoP and expected P&L agree with a Monte Carlo of the payoff."""
     legs = _catalog_priced(name)
     rng = ob.build_default_price_range(SPOT, num_points=81, range_pct=8.0)
     assert m.value_curve(legs, rng, as_of=AS_OF, days_forward=14) == pytest.approx(ob.compute_strategy_payoff_curve(legs, rng), abs=1e-6)
     assert m.value_curve(legs, [SPOT], as_of=AS_OF)[0] == pytest.approx(0.0, abs=1e-6)
-    pop = m.pop_at_expiry(legs, SPOT, 0.15, 14 / 365)
-    assert 0.0 <= pop <= 1.0
+    pay = _monte_carlo(legs)
+    assert m.pop_at_expiry(legs, SPOT, 0.15, 14 / 365) == pytest.approx(float((pay > 0).mean()), abs=0.004), name
+    se = float(pay.std()) / math.sqrt(len(pay))
+    assert m.expected_pnl_at_expiry(legs, SPOT, 0.15, 14 / 365) == pytest.approx(float(pay.mean()), abs=5 * se + 1e-6), name
 
 
 def test_shapes_of_known_templates():
@@ -186,10 +202,96 @@ def test_shapes_of_known_templates():
 
 def test_a_calendar_is_drawn_on_the_near_expiry_with_the_far_leg_still_alive():
     legs = _catalog_priced("Call Calendar")
+    far, near = legs[0], legs[1]                                                     # hedge first: the long far call
     at_near = m.value_curve(legs, [SPOT, SPOT + 1500], as_of=AS_OF, days_forward=14)
-    naive = ob.compute_strategy_payoff_curve(legs, [SPOT, SPOT + 1500])
-    assert at_near[0] > 0 and at_near[0] > naive[0]                               # the far call keeps its time value at the strike
-    assert at_near[0] > at_near[1]                                                # and the tent falls away from the strike
+    t_left = (date.fromisoformat(NEXT) - EXP).days / 365.0
+    far_value = black_scholes(BSInputs(SPOT, SPOT, t_left, 0.07, 0.15, OptionType.CALL)).theoretical_price
+    want = ((far_value - far["premium"]) - (0.0 - near["premium"])) * 50             # the near call expires at the money
+    assert at_near[0] == pytest.approx(want, rel=1e-9) and at_near[0] > 0
+    assert at_near[0] > at_near[1]                                                    # the tent falls away from the strike
+
+
+def test_a_calendars_pop_and_expected_pnl_come_from_the_far_legs_value_not_its_intrinsic():
+    """P1-b review: the closed forms value the far leg at intrinsic on the near expiry; the summary must not."""
+    legs = _catalog_priced("Call Calendar")
+    with pytest.raises(ValueError, match="expire together"):
+        m.pop_at_expiry(legs, SPOT, 0.15, 14 / 365)
+    with pytest.raises(ValueError, match="expire together"):
+        m.payoff_extremes(legs)
+    s = m.summary(legs, SPOT, as_of=AS_OF)
+    assert s["method"].startswith("numerical")
+    t, r, sigma = 14 / 365, 0.07, 0.15
+    z = np.random.default_rng(5).standard_normal(200_000)
+    st = SPOT * np.exp((r - 0.5 * sigma ** 2) * t + sigma * math.sqrt(t) * z)
+    t_left = (date.fromisoformat(NEXT) - EXP).days / 365.0
+    far = np.array([black_scholes(BSInputs(float(x), SPOT, t_left, r, sigma, OptionType.CALL)).theoretical_price for x in st[:20_000]])
+    pay = ((far - legs[0]["premium"]) - (np.maximum(st[:20_000] - SPOT, 0) - legs[1]["premium"])) * 50
+    se = float(pay.std()) / math.sqrt(len(pay))
+    assert s["pop"] == pytest.approx(float((pay > 0).mean()), abs=0.012)
+    assert s["expected_pnl"] == pytest.approx(float(pay.mean()), abs=5 * se)
+    assert s["pop"] > 0.3                                                             # the old nonsense said 0
+
+
+# --- expiry day (0DTE) ------------------------------------------------------------------------------------------------
+def test_on_expiry_day_an_option_still_has_its_hours_until_1530_ist():
+    from datetime import datetime, time, timezone
+    from app.option_chain.greeks import IST
+    call = {**_priced("Buy Call")[0], "expiry": EXP.isoformat()}
+    ten = datetime.combine(EXP, time(10, 0), tzinfo=IST)
+    t = 5.5 / 24 / 365
+    want = black_scholes(BSInputs(SPOT, call["strike"], t, 0.07, 0.15, OptionType.CALL)).theoretical_price
+    assert m.leg_theoretical(call, SPOT, ten) == pytest.approx(want) and want > 0
+    assert m.net_greeks([call], SPOT, ten)["gamma"] > 0
+    assert m.leg_theoretical(call, SPOT + 50, datetime.combine(EXP, time(15, 30), tzinfo=IST)) == pytest.approx(50.0)
+    assert m.leg_theoretical(call, SPOT + 50, ten.astimezone(timezone.utc)) > 50.0
+    raw = ch.raw_chain(_broker_chain(), as_of=ten)
+    assert all(item["call_options"]["option_greeks"]["pop"] is not None for item in raw[10:20])
+    assert ob.select_iron_condor(raw, SPOT, 100.0, 200.0, pop_threshold_pct=50) is not None
+
+
+# --- review fixes: no volatility, rho at a shifted IV, zero tolerance, keys, catalog FUT -------------------------------
+def test_with_no_volatility_the_expected_pnl_is_the_payoff_at_the_forward():
+    legs = _priced("Bull Call Spread")
+    fwd = SPOT * math.exp(0.07 * 14 / 365)
+    assert m.expected_pnl_at_expiry(legs, SPOT, 0.0, 14 / 365, r=0.07) == pytest.approx(ob.compute_strategy_payoff_curve(legs, [fwd])[0])
+    assert m.summary(legs, SPOT, as_of=AS_OF, sigma=0.0)["pop"] in (0.0, 1.0)
+
+
+def test_rho_follows_the_shifted_iv():
+    legs = _priced("Buy Call")
+    g = m.net_greeks(legs, SPOT, AS_OF, iv_shift=0.30)
+    shifted = [{**leg, "iv": leg["iv"] + 0.30} for leg in legs]
+    fd = (m.value_curve(shifted, [SPOT], as_of=AS_OF, r=0.075)[0] - m.value_curve(shifted, [SPOT], as_of=AS_OF, r=0.065)[0])
+    assert g["rho"] == pytest.approx(fd, rel=1e-3)
+
+
+def test_a_payoff_that_is_zero_up_to_rounding_is_not_profitable():
+    flat = [{"direction": "BUY", "option_type": "CE", "strike": 100.0, "premium": 0.3, "lots": 1, "lot_size": 50},
+            {"direction": "SELL", "option_type": "CE", "strike": 100.0, "premium": 0.1 + 0.2, "lots": 1, "lot_size": 50}]
+    assert ob.compute_strategy_payoff_curve(flat, [100.0])[0] != 0.0                  # floating point leaves a crumb
+    assert m.profitable_intervals(flat) == [] and m.pop_at_expiry(flat, 100.0, 0.2, 0.1) == 0.0
+    ext = m.payoff_extremes(flat)
+    assert not ext["unbounded_loss"] and not ext["unbounded_profit"]
+
+
+def test_builder_keys_keep_every_strike_digit_and_catalog_fut_legs_carry_a_reference_entry():
+    assert ch.builder_key("X", "2026-03-16", 12345.25, "CE") != ch.builder_key("X", "2026-03-16", 12345.2, "CE")
+    assert ch.builder_key("NIFTY", "2026-03-16", 22000.0, "PE") == "NIFTY|2026-03-16|22000|PE"
+    fut = next(leg for leg in catalog.build_template("Covered Call", SPOT, 200.0, EXP.isoformat()) if leg["option_type"] == "FUT")
+    assert fut["premium"] == SPOT
+
+
+def test_a_quoted_iv_is_read_as_a_fraction_or_a_percentage_by_whichever_reprices_the_ltp():
+    t = 14 / 365
+    deep_itm = black_scholes(BSInputs(SPOT, SPOT - 2000, t, 0.07, 0.025, OptionType.CALL)).theoretical_price
+    assert ch.option_iv(2.5, deep_itm, SPOT, SPOT - 2000, t, 0.07, OptionType.CALL) == pytest.approx(0.025)   # 2.5 % not 250 %
+    atm = black_scholes(BSInputs(SPOT, SPOT, t, 0.07, 0.15, OptionType.CALL)).theoretical_price
+    assert ch.option_iv(0.15, atm, SPOT, SPOT, t, 0.07, OptionType.CALL) == pytest.approx(0.15)
+    assert ch.option_iv(15.0, atm, SPOT, SPOT, t, 0.07, OptionType.CALL) == pytest.approx(0.15)
+    assert ch.option_iv(0.40, atm, SPOT, SPOT, t, 0.07, OptionType.CALL) == pytest.approx(0.15, abs=1e-4)   # a wrong quote: solved
+    assert ch.option_iv(14.2, None, SPOT, SPOT, t, 0.07, OptionType.CALL) == pytest.approx(0.142)
+    assert ch.option_iv(0.142, None, SPOT, SPOT, t, 0.07, OptionType.CALL) == pytest.approx(0.142)
+    assert ch.option_iv(None, None, SPOT, SPOT, t, 0.07, OptionType.CALL) is None
 
 
 # --- exact extremes (OB-4: a grid max loss depends on the grid) ---------------------------------------------------
@@ -306,3 +408,12 @@ def test_an_underlying_leg_is_expected_to_earn_the_carry_and_its_curve_matches_m
         pay += sign * (value - leg["premium"]) * leg["lots"] * leg["lot_size"]
     se = float(pay.std()) / math.sqrt(len(pay))
     assert m.expected_pnl_at_expiry(covered, SPOT, 0.15, t, r=r) == pytest.approx(float(pay.mean()), abs=5 * se)
+
+
+def test_a_future_entered_at_its_fair_price_shows_no_loss_today_and_converges_to_spot():
+    """P1-b review: without carry, a future bought at the fair forward showed a phantom loss at an unchanged spot."""
+    fair = SPOT * math.exp(0.07 * 14 / 365)                                            # by hand, not by the model
+    fut = {"direction": "BUY", "option_type": "FUT", "strike": SPOT, "premium": fair, "lots": 1, "lot_size": 75, "expiry": EXP.isoformat()}
+    assert m.value_curve([fut], [SPOT], as_of=AS_OF, r=0.07)[0] == pytest.approx(0.0, abs=1e-6)
+    assert m.value_curve([fut], [SPOT], as_of=AS_OF, days_forward=14, r=0.07)[0] == pytest.approx((SPOT - fair) * 75)
+    assert m.net_greeks([fut], SPOT, AS_OF, r=0.07)["delta"] == pytest.approx(75 * math.exp(0.07 * 14 / 365))

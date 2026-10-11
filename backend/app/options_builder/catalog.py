@@ -35,7 +35,7 @@ _t("Bull Put Spread", "Bullish", [("BUY", "PE", -1, 1, 0), ("SELL", "PE", 0, 1, 
 _t("Call Ratio Back Spread", "Bullish", [("BUY", "CE", 1, 2, 0), ("SELL", "CE", 0, 1, 0)], "Sell 1 ATM call, buy 2 OTM calls")
 _t("Long Synthetic Future", "Bullish", [("BUY", "CE", 0, 1, 0), ("SELL", "PE", 0, 1, 0)], "Long call + short put at the same strike")
 _t("Bullish Risk Reversal", "Bullish", [("BUY", "CE", 1, 1, 0), ("SELL", "PE", -1, 1, 0)], "Buy an OTM call, sell an OTM put")
-_t("Bull Call Ladder", "Bullish", [("BUY", "CE", 0, 1, 0), ("SELL", "CE", 1, 1, 0), ("SELL", "CE", 2, 1, 0)], "Bull call spread with one more call sold above")
+_t("Bull Call Ladder", "Bullish", [("BUY", "CE", 0, 1, 0), ("SELL", "CE", 1, 1, 0), ("SELL", "CE", 2, 1, 0)], "Bull call spread with one more call sold above (undefined risk above)")
 # Bearish
 _t("Buy Put", "Bearish", [("BUY", "PE", 0, 1, 0)], "Long put at the money")
 _t("Sell Call", "Bearish", [("SELL", "CE", 0, 1, 0)], "Short call at the money (undefined risk above)")
@@ -44,7 +44,7 @@ _t("Bear Call Spread", "Bearish", [("BUY", "CE", 1, 1, 0), ("SELL", "CE", 0, 1, 
 _t("Put Ratio Back Spread", "Bearish", [("BUY", "PE", -1, 2, 0), ("SELL", "PE", 0, 1, 0)], "Sell 1 ATM put, buy 2 OTM puts")
 _t("Short Synthetic Future", "Bearish", [("BUY", "PE", 0, 1, 0), ("SELL", "CE", 0, 1, 0)], "Long put + short call at the same strike")
 _t("Bearish Risk Reversal", "Bearish", [("BUY", "PE", -1, 1, 0), ("SELL", "CE", 1, 1, 0)], "Buy an OTM put, sell an OTM call")
-_t("Bear Put Ladder", "Bearish", [("BUY", "PE", 0, 1, 0), ("SELL", "PE", -1, 1, 0), ("SELL", "PE", -2, 1, 0)], "Bear put spread with one more put sold below")
+_t("Bear Put Ladder", "Bearish", [("BUY", "PE", 0, 1, 0), ("SELL", "PE", -1, 1, 0), ("SELL", "PE", -2, 1, 0)], "Bear put spread with one more put sold below (large risk below)")
 # Neutral
 _t("Short Straddle", "Neutral", [("SELL", "CE", 0, 1, 0), ("SELL", "PE", 0, 1, 0)], "Sell call and put at the money (undefined risk)")
 _t("Short Strangle", "Neutral", [("SELL", "CE", 1, 1, 0), ("SELL", "PE", -1, 1, 0)], "Sell OTM call and put (undefined risk)")
@@ -90,6 +90,9 @@ def build_template(name: str, atm_strike: float, width: float, near_expiry: str,
     for direction, kind, offset, mult, slot in t["legs"]:
         if slot == 1 and not next_expiry:
             return None
-        legs.append({"direction": direction, "option_type": kind, "strike": float(atm_strike + offset * width),
-                     "lots": lots * mult, "expiry": next_expiry if slot == 1 else near_expiry})
+        leg: Dict[str, Any] = {"direction": direction, "option_type": kind, "strike": float(atm_strike + offset * width),
+                               "lots": lots * mult, "expiry": next_expiry if slot == 1 else near_expiry}
+        if kind == "FUT":
+            leg["premium"] = float(atm_strike)       # a reference entry until the caller fills the real futures price
+        legs.append(leg)
     return [dict(leg) for leg in hedge_first(legs)]

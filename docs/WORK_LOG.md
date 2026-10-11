@@ -879,6 +879,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   closed-form expected P&L, exact payoff extremes with unbounded-risk flags (OB-4), net Greeks with rho, summary.
 - `catalog.py` (38 templates, five families, hedge first) and `chain.py` (any broker's `OptionChain` -> the selectors'
   chain, model seller PoP, builder keys; OB-1). FUT legs in `compute_leg_payoff`.
-- 107 tests (textbook, Monte Carlo, finite differences, dense-grid extremes, adapter), 13 / 13 mutations killed.
+- 115 tests (textbook, Monte Carlo, finite differences, dense-grid extremes, adapter, expiry day), 20 / 20 mutations
+  killed after the independent review (0DTE, calendars, FUT carry, IV units, zero tolerance).
 - Also today: `test_phase_bd_thesis` turned red on every branch (fixed 2026-10-06 in the test, wall clock in the API);
   fixed test-only in #147 and carried in the open PRs.

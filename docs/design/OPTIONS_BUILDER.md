@@ -57,38 +57,65 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
 
 ## P1-b (built): the model before expiry, the gallery, any broker's chain
 - **`model.py`** (the platform's Black-Scholes, `app/option_chain/greeks.py`; no new pricing code).
+  - **Time.** A leg is expired from 15:30 IST on its expiry day. `as_of` may be an aware datetime (exact: an
+    expiry-day option at 10:00 still has 5.5 hours, so 0DTE works), today's date (now), or another plain date (that
+    day's close).
   - `value_curve`: the strategy's P&L at every price on any date (`days_forward`), with every leg's IV shifted
-    (`iv_shift`). On or after a leg's expiry the leg is worth its intrinsic value, so the curve on the last expiry is
-    the expiry payoff and today's curve is flat at zero at spot for model-priced legs (both tested for every
-    template). A FUT leg is worth the spot.
+    (`iv_shift`). The curve on the last expiry is the expiry payoff, and today's curve is flat at zero at spot for
+    model-priced legs (both tested for every template). A FUT leg is worth spot x e^(r t) to its expiry (the carry),
+    so a future bought at its fair price shows no loss today.
   - IV is required per leg - from the chain or solved from the premium (`leg_with_model_greeks`); never invented.
-  - `profitable_intervals`: where the expiry payoff is above zero, solved exactly between strikes (no grid).
-  - `pop_at_expiry`: the lognormal probability of those intervals. `expected_pnl_at_expiry`: the probability-weighted
-    expiry P&L in closed form (a FUT leg earns the carry to the forward). Both agree with a 400,000-path Monte Carlo
-    for every template.
-  - `payoff_extremes`: the true best and worst expiry P&L over every price from 0 up, with `unbounded_loss` /
-    `unbounded_profit` (OB-4: the grid number moves with the chart's range; this one does not). Sizing must refuse a
-    structure with unbounded loss rather than use a grid stand-in.
-  - `net_greeks` (delta, gamma, theta per day, vega per IV point, rho per rate point; checked against finite
-    differences), `expected_move` (spot x IV x sqrt(t)), and `summary` for the metrics card on the nearest expiry,
+  - When every leg expires together:
+    - `profitable_intervals`: where the expiry payoff is above zero, solved exactly between strikes (no grid);
+    - `pop_at_expiry`: the lognormal probability of those intervals;
+    - `expected_pnl_at_expiry`: the probability-weighted expiry P&L in closed form (a FUT leg earns the carry; with
+      no volatility, the payoff at the forward);
+    - `payoff_extremes`: the true best and worst expiry P&L over every price from 0 up, with `unbounded_loss` /
+      `unbounded_profit` (OB-4: the grid number moves with the chart's range; this one does not). Sizing must refuse
+      a structure with unbounded loss rather than use a grid stand-in.
+
+    Values within a small tolerance of zero count as zero (a mathematically flat payoff does not flip PoP). These
+    functions refuse legs that expire on different dates.
+  - **Calendars and diagonals.** `summary` (and `horizon_stats`) integrate numerically over the lognormal price at
+    the near expiry, with the later legs valued by Black-Scholes. The closed forms would value the far leg at its
+    intrinsic value there, which is nonsense. `method` says which way a number was computed.
+  - `net_greeks` (delta, gamma, theta per day, vega per IV point, rho per rate point at the shifted IV; FUT delta and
+    rho with carry), `expected_move` (spot x IV x sqrt(t)), and `summary` for the metrics card on the nearest expiry,
     labelled "an estimate, not a forecast".
 - **`catalog.py`: the gallery.** 38 templates in five families (Bullish, Bearish, Neutral, Volatility, Stock):
-  verticals, straddles, strangles, butterflies, condors, ratios and back spreads, jade lizards, calendars and
-  diagonals (two expiries), covered call, protective put, collar, synthetics. Every template lists the hedge first.
-  Strikes are offsets of a width the caller takes from the instrument master; no instrument numbers in the catalog.
+  - verticals, straddles, strangles, butterflies, condors;
+  - ratios and back spreads, ladders, jade lizards;
+  - calendars and diagonals (two expiries);
+  - covered call, protective put, collar, synthetics.
+
+  Every template lists the hedge first, and undefined-risk ones say so. Strikes are offsets of a width the caller
+  takes from the instrument master; no instrument numbers are in the catalog. A FUT leg carries the ATM strike as a
+  reference entry until the caller fills the real futures price.
 - **`chain.py`: any broker's chain.** `raw_chain(OptionChain)` turns `BrokerInterface.get_option_chain` output into
   the selectors' input, so the P1-a selectors work with every broker, not only Upstox:
-  - the contract is named by a builder key (`NIFTY|<expiry>|<strike>|CE`), resolved to the broker's instrument by the
-    instrument master when an order is prepared; it is never sent to a broker;
-  - PoP is the model's seller PoP (OB-1), from the option's quoted IV when it is a fraction in (0, 5), else solved
-    from its LTP, else None.
-- **Tests** (`tests/test_p1b_options_model.py`, 107): Hull's textbook values; expiry curve = payoff and flat at spot
-  for every template; IV and time scenarios move the right way; PoP and expected P&L against Monte Carlo; the long
-  call's PoP in closed form; intervals against the payoff's sign on a fine grid; Greeks and rho against finite
-  differences; the gallery (families, hedge first, shapes of known structures, a calendar keeping its far leg's time
-  value); exact extremes against a dense grid, including ratios; the adapter's PoP equals the model's PoP for that
-  short leg, IV solved when missing or in percent, no PoP without a spot or after expiry; the selectors run on an
-  adapted chain. Mutation checks: 13 / 13 killed.
+  - the contract is named by a builder key (`NIFTY|<expiry>|<strike>|CE`, every strike digit kept); resolving it to
+    the broker's instrument through the instrument master is P1-d's job (not built yet), and it is never sent to a
+    broker;
+  - PoP is the model's seller PoP (OB-1) at the option's own volatility (`option_iv`). A quoted IV is read as a
+    fraction or as a percentage, whichever reprices the LTP (2.5 on a deep-ITM strike is 2.5 %, not 250 %); otherwise
+    the IV is solved from the LTP. Without an LTP, the same cutoff as `strike_selection` is used. None when nothing
+    usable exists;
+  - an expiry-day chain with a datetime `as_of` has PoPs; a plain past date on the expiry date has none.
+- **Tests** (`tests/test_p1b_options_model.py`, 115):
+  - Hull's textbook values.
+  - Expiry curve = payoff and flat at spot, for every template in both sets.
+  - IV and time scenarios move the right way.
+  - **PoP and expected P&L against a 400,000-path Monte Carlo:** the 13 P1-a templates and every single-expiry
+    catalog template (FUT legs included).
+  - A calendar's PoP and P&L against a Monte Carlo with the far leg priced by Black-Scholes.
+  - Greeks and rho against finite differences (rho also at a shifted IV).
+  - The gallery: families, hedge first, shapes, and the calendar's value at the near expiry against a direct
+    Black-Scholes price.
+  - Exact extremes against a dense grid, ratios included.
+  - Expiry day: the hours until 15:30, intrinsic at 15:30, PoPs and a condor from an expiry-day chain.
+  - FUT carry by hand; no volatility; the zero tolerance; key precision; IV read both ways against the LTP.
+  - The adapter's PoP for a short leg, and the selectors on an adapted chain.
+  - Mutation checks: 20 / 20 killed.
 
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not

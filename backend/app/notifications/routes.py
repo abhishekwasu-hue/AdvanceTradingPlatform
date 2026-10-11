@@ -3,7 +3,7 @@ from typing import List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -34,12 +34,22 @@ class NotificationResponse(BaseModel):
         )
 
 
+def private_to_addressee():
+    """BT1b: the notification kinds that carry one member's own broker data (a screen alert's live values) or concern
+    only their own data session (the "Live data: log in to ..." reminder). Everything else - exits, emergency exits,
+    system failures, risk rejections, loss limits - stays organisation-wide even when addressed to the acting user."""
+    from app.brokers.login_reminder import DATA_TITLE_PREFIX
+    from app.core.enums import NotificationType
+    return or_(NotificationRecord.event_type == NotificationType.SCREEN_ALERT.value,
+               and_(NotificationRecord.event_type == NotificationType.TOKEN_EXPIRED.value, NotificationRecord.title.startswith(DATA_TITLE_PREFIX)))
+
+
 async def _visible(session: AsyncSession, user: User, query):
-    """BT1b: with `byob_data_tier` on, a notification addressed to one member (`user_id`) is theirs only - it may carry
-    values from their own broker feed. Flag off: the organisation-wide feed, as before."""
+    """BT1b: with `byob_data_tier` on, a data-bearing notification addressed to one member is theirs only. Flag off: the
+    organisation-wide feed, as before."""
     from app.platform.controls import flag_enabled
     if await flag_enabled(session, "byob_data_tier", user.tenant_id):
-        return query.where(or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id))
+        return query.where(or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id, not_(private_to_addressee())))
     return query
 
 

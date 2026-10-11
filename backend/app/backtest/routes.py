@@ -298,6 +298,10 @@ async def backtest_walk_forward(
 async def option_chain_coverage(underlying: Optional[str] = None, user: User = Depends(get_current_user),
                                 session: AsyncSession = Depends(get_session)) -> List[dict]:
     """What the recorder has captured so far, per underlying (platform-wide reference data)."""
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        raise live_access.LiveDataRefused("Recorded option chains came through other sessions' broker feeds, so they are not shown while "
+                                          "the bring-your-own-broker data tier is on.")
     return await chain_recorder.coverage(session, underlying_name(underlying)[0] if underlying else None)
 
 

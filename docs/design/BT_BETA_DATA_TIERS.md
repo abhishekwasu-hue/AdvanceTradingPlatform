@@ -136,8 +136,8 @@ user behind it gets no live data).
 | Market-memory refresh, worker market memory and sentiment | Organisation-wide stores: not fed from a per-user session; global cues only. |
 | Portfolio exposure, open-position Greeks, deployment preview (spot, chain, leg quotes), PAPER exit price on an approved proposal | The user's own session; without one: entry prices / 409 / no quotes / no lookup, as when no broker session existed. |
 | Worker (`trading_worker`) | Every org-wide stream of the organisation is stopped (all `<tenant>:` keys, also on the "no usable session" return; a user's credential streams only through the fan-in, into its own keys, never the lake - also no second websocket on the same token); the organisation's market data keeps its own cache keys (`md:byob:org.t<id>:...`, never `md:candles:*` / `md:tick:*`); no platform-wide option-chain recording; the OI-banner collector never reads through it; a confirmed broker is preferred as its data source; **without a confirmed-data broker no new evaluation** ("Waiting for Upstox/Dhan data: no new entries; exits continue" - square-off, the position monitor's exits and the stop guard run first); the fan-in sync runs in its own DB session. |
-| Alert rules, their events and last problem; screener runs; notifications | The creator's / runner's only: rules list and events (`/api/alerts/rules...`) and `/api/screener/runs/{id}` are scoped to the member; SCREEN_ALERT notifications are addressed to the rule's creator and the in-app feed (list, read, read-all) shows a member only the notifications addressed to them or to nobody. |
-| OI banner (`/api/option-chain/banners`, `/{u}/banner`, `/history`, `/strikes`) and OI alerts | Off (409, Tier C) - the banner is built by a platform-wide collector through other organisations' sessions; OI alerts are not evaluated for the organisation. |
+| Alert rules, their events and last problem; screener runs; notifications | The creator's / runner's only: rules list and events (`/api/alerts/rules...`) and `/api/screener/runs/{id}` are scoped to the member; SCREEN_ALERT notifications are addressed to the rule's creator; data-bearing notifications (SCREEN_ALERT, the "Live data: log in to ..." reminder) addressed to a member are private to them in the in-app feed (list, read, read-all) and in `/api/alert-channels/deliveries` - exits, emergency exits, failures, risk rejections and loss limits stay organisation-wide. |
+| OI banner (`/api/option-chain/banners`, `/{u}/banner`, `/history`, `/strikes`, `/{u}/alerts`, `/{u}/settings`), option-chain recorder coverage, and OI alerts | Off (409, Tier C) - the banner is built by a platform-wide collector through other organisations' sessions; OI alerts are not evaluated for the organisation. |
 | Shared market-data lake (`/api/market-data/history?store=shared`), recorded option chains (`/api/backtest/option-chain/snapshots`, recorded pricing in option backtests), Vision chart bars | Intraday shared-lake bars (recorded from other sessions' streams / backfills) -> 409; daily (EOD) bars are served. Recorded chains -> 409 / not used (synthetic fallback or uploaded rows instead). Vision audit charts use daily lake bars only. |
 | Broker smoke test, login URL, delete / disconnect | Smoke test and login URL are the holder's (403 otherwise); a broker whose terms are not confirmed has its smoke-test prices hidden. Delete / disconnect: the holder or an owner. |
 
@@ -158,8 +158,9 @@ secrets (409 / `error=changed_during_login`; the UI explains both codes).
 
 Recorded: the worker's deployment evaluation stays organisation-level (one data session per organisation; in the beta
 an organisation is one user), now only on a confirmed-data broker (BT1-4). Outbound alert channels (webhook / email /
-push) are organisation-level in the current model; a member's own linked Telegram chat already gets their rules' alerts
-(BT1-5).
+push) are organisation-level in the current model; a member's own linked Telegram chat already gets their rules' alerts.
+Accepted for the beta (one organisation = one user); before team tenants, a user-addressed SCREEN_ALERT must skip the
+organisation-wide channels (BT1-5).
 
 ## Follow-ups (not in this PR)
 

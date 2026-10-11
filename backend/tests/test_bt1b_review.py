@@ -438,3 +438,46 @@ def test_ltp_body_is_stale_when_the_time_is_unknown(monkeypatch):
     _byob(me["tenant_id"])
     body = client.get("/api/market-data/ltp?symbol=RELIANCE", headers=headers).json()
     assert body["timestamp"] is None and body["stale"] is True and body["stale_reason"] == body["data_tier"]["stale_reason"]
+
+
+# --- round 3: only data-bearing notifications are private; deliveries; remaining OI / coverage routes ---------------------
+
+def test_safety_notifications_stay_organisation_wide_and_deliveries_follow_the_feed():
+    from app.brokers.login_reminder import DATA_TITLE_PREFIX
+    from app.db.models import AlertChannelRecord
+    owner_headers, owner = _owner(_email("r3"))
+    member_headers, member = _member(owner_headers)
+    t = owner["tenant_id"]
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(AlertChannelRecord(tenant_id=t, channel_type="webhook", enabled=True, min_severity="INFO", encrypted_config="x"))
+            await session.commit()
+            emergency = await notify(session, t, NotificationType.EMERGENCY_EXIT, "Emergency exit: daily loss limit", user_id=member["id"])
+            failure = await notify(session, t, NotificationType.SYSTEM_FAILURE, "Deployment auto-paused", user_id=member["id"])
+            alert = await notify(session, t, NotificationType.SCREEN_ALERT, "Breakout: TCS 4,012.5", user_id=member["id"])
+            reminder = await notify(session, t, NotificationType.TOKEN_EXPIRED, f"{DATA_TITLE_PREFIX}upstox before the open", user_id=member["id"])
+            await session.commit()
+            return emergency.id, failure.id, alert.id, reminder.id
+    emergency, failure, alert, reminder = run(seed())
+    _byob(t)
+    owner_feed = {n["id"] for n in client.get("/api/notifications", headers=owner_headers).json()}
+    member_feed = {n["id"] for n in client.get("/api/notifications", headers=member_headers).json()}
+    assert {emergency, failure} <= owner_feed                       # a member-triggered emergency exit reaches the OWNER
+    assert alert not in owner_feed and reminder not in owner_feed   # the member's own data stays theirs
+    assert {emergency, failure, alert, reminder} <= member_feed
+    owner_deliveries = {d["notification_id"] for d in client.get("/api/alert-channels/deliveries?limit=200", headers=owner_headers).json()}
+    assert emergency in owner_deliveries and alert not in owner_deliveries
+    member_deliveries = {d["notification_id"] for d in client.get("/api/alert-channels/deliveries?limit=200", headers=member_headers).json()}
+    assert alert in member_deliveries
+
+
+def test_oi_settings_alert_history_and_chain_coverage_are_gated():
+    headers, me = _owner(_email("r3oi"))
+    assert client.get("/api/backtest/option-chain/coverage", headers=headers).status_code == 200
+    _byob(me["tenant_id"])
+    for path in ("/api/option-chain/NIFTY/settings", "/api/option-chain/NIFTY/alerts", "/api/backtest/option-chain/coverage"):
+        res = client.get(path, headers=headers)
+        assert res.status_code == 409 and res.headers["X-Data-Tier"] == "C", path
+    res = client.put("/api/option-chain/NIFTY/settings", headers=headers, json={"enabled": True})
+    assert res.status_code == 409

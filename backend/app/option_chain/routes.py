@@ -128,6 +128,7 @@ def _settings_json(row: Optional[OIBannerSettingRecord], effective: oi_regime.OI
 
 @router.get("/{underlying}/settings")
 async def get_settings(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     key = snapshots.DEFAULT_KEY if underlying == snapshots.DEFAULT_KEY else _underlying(underlying)
     default_row, own = await snapshots.settings_rows(session, user.tenant_id, key)
     row = default_row if key == snapshots.DEFAULT_KEY else own
@@ -137,6 +138,7 @@ async def get_settings(underlying: str, user: User = Depends(get_current_user), 
 @router.put("/{underlying}/settings")
 async def put_settings(underlying: str, body: SettingsBody, user: User = Depends(require_role(UserRole.OWNER)),
                        session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     key = snapshots.DEFAULT_KEY if underlying == snapshots.DEFAULT_KEY else _underlying(underlying)
     default_row, own = await snapshots.settings_rows(session, user.tenant_id, key)
     row = default_row if key == snapshots.DEFAULT_KEY else own
@@ -196,6 +198,7 @@ async def resume(underlying: str, user: User = Depends(_member), session: AsyncS
 @router.get("/{underlying}/alerts")
 async def alert_log(underlying: str, day: Optional[date] = Query(default=None, alias="date"), user: User = Depends(get_current_user),
                     session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     underlying = _underlying(underlying)
     day = day or datetime.now(timezone.utc).astimezone(IST).date()
     since = datetime.combine(day, time(), IST).astimezone(timezone.utc)

@@ -28,7 +28,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 import httpx
 
@@ -162,6 +162,25 @@ class Completion:
         self.cache_write_tokens += other.cache_write_tokens
 
 
+@dataclass
+class ToolCall:
+    """One tool the model asked for (H-C2, ADR-0019)."""
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+
+
+@dataclass
+class ToolTurn:
+    """One step of a tool-using conversation: text so far, the tools requested, and the assistant content exactly as
+    the provider returned it (thinking blocks included) - it must be sent back unchanged on the next step."""
+    text: str
+    calls: List["ToolCall"]
+    assistant_content: Any
+    usage: "Completion"
+    stop_reason: str = "end_turn"
+
+
 class ProviderError(RuntimeError):
     """A provider failure the caller shows as "AI unavailable" and answers from the rules. `usage` carries the tokens
     of the failed attempts when the provider reported them (they are billed)."""
@@ -288,6 +307,39 @@ class AnthropicProvider:
             spent.text, spent.stop_reason, spent.model = text, str(response.stop_reason or "end_turn"), str(getattr(response, "model", "") or self.model)
             return spent
         raise ProviderError(f"Anthropic's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
+
+
+    async def complete_tools(self, system: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]], *,
+                             max_tokens: int = 4000) -> ToolTurn:
+        """H-C2 (ADR-0019): one model step with our tool specs (provider-native tool use; our code runs the loop).
+        `messages` is the Anthropic message list; the caller appends `assistant_content` and the tool results."""
+        import anthropic
+        client = self._client()
+        budget = self._budget(max_tokens)
+        body = self._request(system, "", budget)
+        body["messages"] = messages
+        body["tools"] = [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]} for t in tools]
+        try:
+            response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**body)
+        except anthropic.AuthenticationError as exc:
+            raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings") from exc
+        except anthropic.RateLimitError as exc:
+            raise ProviderError("Anthropic rate limit (429) - try again shortly") from exc
+        except anthropic.APIStatusError as exc:
+            raise ProviderError(f"Anthropic error HTTP {exc.status_code}: {exc.type or exc.message}") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ProviderError(f"Anthropic unreachable: {exc.__class__.__name__}") from exc
+        usage = _usage_of(response)
+        usage.model, usage.provider = str(getattr(response, "model", "") or self.model), self.name
+        if response.stop_reason == "refusal":
+            detail = getattr(getattr(response, "stop_details", None), "explanation", None) or "the request was declined by a safety classifier"
+            raise ProviderError(f"Anthropic declined the request: {detail}", usage=usage)
+        if response.stop_reason == "max_tokens":
+            raise ProviderError(f"Anthropic's step was cut off at the token limit (model {self.model})", usage=usage)
+        text = "".join(block.text for block in response.content if block.type == "text")
+        calls = [ToolCall(block.id, block.name, dict(block.input or {})) for block in response.content if block.type == "tool_use"]
+        usage.text, usage.stop_reason = text, str(response.stop_reason or "end_turn")
+        return ToolTurn(text, calls, response.content, usage, usage.stop_reason)
 
 
 _OPENAI_CLIENT: Optional[httpx.AsyncClient] = None

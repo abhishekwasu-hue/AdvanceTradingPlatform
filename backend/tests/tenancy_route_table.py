@@ -114,6 +114,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/readiness"): "admin",
     ("GET", "/api/admin/retention"): "admin",
     ("POST", "/api/admin/retention/run"): "admin",
+    ("GET", "/api/admin/screener/audit"): "admin",
     ("GET", "/api/admin/tenants"): "admin",
     ("GET", "/api/admin/tenants/{tenant_id}"): "admin",
     ("PATCH", "/api/admin/tenants/{tenant_id}"): "admin",

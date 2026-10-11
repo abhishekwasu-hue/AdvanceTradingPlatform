@@ -87,12 +87,8 @@ KNOWN_UNSCOPED_WRITES: Dict[Tuple[str, str], str] = {}
 # still covers them; the "every scope denied" sweep does not apply.
 ROLE_ONLY_WRITE_PREFIXES = ("/api/fundamentals/", "/api/news-events")
 
-# 5xx another organisation's request may still get, and why it is not a tenancy failure. Not strict: the entry may stay
-# after the fix lands.
-KNOWN_5XX: Dict[Tuple[str, str], str] = {
-    ("POST", "/api/support-resistance/zones"):
-        "zero-volume VWAP raised TypeError for any caller (a computation bug, not tenancy); fixed by open PR #187 (Z10-a)",
-}
+# 5xx another organisation's request may still get, and why it is not a tenancy failure (none today).
+KNOWN_5XX: Dict[Tuple[str, str], str] = {}
 
 ROUTES: List[Route] = iter_api_routes(app)
 OPENAPI = app.openapi()

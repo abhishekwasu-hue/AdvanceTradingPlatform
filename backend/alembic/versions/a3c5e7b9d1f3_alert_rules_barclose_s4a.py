@@ -1,7 +1,7 @@
 """S4a: alert_rules gains universe_json, exchange, last_bar_at, last_checked_at, last_problem (bar-close engine)
 
 Revision ID: a3c5e7b9d1f3
-Revises: f1b3d5e7a9c1
+Revises: e2b4d6f8a0c3
 Create Date: 2026-10-11 07:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a3c5e7b9d1f3'
-down_revision: Union[str, Sequence[str], None] = 'f1b3d5e7a9c1'
+down_revision: Union[str, Sequence[str], None] = 'e2b4d6f8a0c3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

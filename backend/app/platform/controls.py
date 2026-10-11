@@ -98,9 +98,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     "screener_intrabar": "Intrabar alerts: rules may fire on the bar still forming (at most once per bar); bar-close stays the default",
     # H-C2 (ADR-0019): the Copilot agent (typed read tools, bounded loop). OFF: the single-shot Copilot is unchanged.
     "ai_agent": "Copilot agent: the AI reads typed, read-only tools (market memory, news, positions, P&L, risk limits) before answering",
+    # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
+    # deflated report. Nothing deploys. OFF until the operator turns it on.
+    "ai_research": "Strategy research loop: AI drafts are backtested in-sample on server bars, recorded as trials, and reported deflated",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent"})
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

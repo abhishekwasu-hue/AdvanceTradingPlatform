@@ -196,6 +196,40 @@ job, never tuned against results.
 - **Publishing.** Published screens (marketplace, later) carry a research-analyst-boundary flag. Publishing is Abhi's
   business decision.
 
+## S1a (built): ScreenQL grammar, AST and validator
+- **Package.** `app/screener/` holds `nodes` (the AST, its JSON wire form for the builder, the canonical text),
+  `parser` (hand-written recursive descent), `registry` (6 fields and 24 functions: Factors with units, Filters,
+  Classifiers) and `validator`. `compile_screen(text | builder JSON)` returns `(ast, validation)` with one error shape.
+- **Grammar `screenql/1`.**
+  - OR / AND / NOT; comparisons, BETWEEN … AND …, IN (literals); + - * /; unary minus.
+  - `field[n]@tf` and `Fn(args, key=value)[n]@tf`. The offset comes before the timeframe.
+  - `$parameters`; `ALL(...)` / `ANY(...)` as the builder's group forms.
+  - Keywords are case-insensitive. Registry names are case-sensitive.
+  - Text is capped at 4,000 characters and nesting at 60 levels.
+- **Validator.** It reports every problem at once, each with its character position.
+  - Types and units: `close > RSI(14)` is refused (price vs index); a literal or parameter takes the other side's unit.
+  - Names and arity. Windows must be whole numbers from 1 to 500, as a literal or a parameter. Missing and unknown
+    parameters are refused.
+  - Timeframes: a field finer than the screen's base timeframe is refused.
+  - Look-ahead: a negative offset is refused, both in the text and in a builder tree.
+  - Offsets are capped at 500.
+  - Cost: a per-tenant cap (default 200); cross-sectional functions cost more.
+  - The validation also carries the plan inputs: the timeframes used and the bars needed per timeframe
+    (offset + window).
+  - `closed_bars_only` is always true; the S1b runtime enforces it.
+- **Tests.** `tests/test_s1a_screenql.py` (16):
+  - text and JSON round trips;
+  - builder and text parity;
+  - a seeded fuzz: 600 random trees round-trip through text, and 3,000 garbage strings only ever raise
+    `ScreenQLSyntaxError`;
+  - error positions;
+  - offsets and mixed timeframes;
+  - look-ahead;
+  - units, parameters and cost.
+- `app/screener` is added to the mypy gate, and it is clean.
+- **Next.** S1b: the runtime over the registry (pandas on server bars, closed bars only), with one fixture test per
+  entry.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-1. Where does part S sit in the MASTER order?** Provisional: S0 now; S1 and S3 after H-C1; S2 onwards after part
   B merges.

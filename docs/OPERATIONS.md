@@ -906,6 +906,15 @@ Never publish a listing without an attached backtest run; the API refuses the su
   - Change the costs with `AI_RATE_WEIGHTS='{"POST strategist/build": 20}'`.
   - A refusal is 429 with `Retry-After`, and is counted in `atp_ai_rate_limited_total{scope}`.
   - Counts live in Redis when it is configured; otherwise they live in the process.
+- **AI call log and personal data (H-C1 e, DPDP)**:
+  - Every LLM call stays in `llm_calls` for the audit; the rows are never deleted.
+  - The stored copy has personal data masked: e-mails, mobile numbers, PAN, Aadhaar, and account/client ids written
+    after a label. The SHA-256 hashes are of the original text, so a trader's own copy can still be matched against the
+    record.
+  - When a trader uses "Forget everything" (Copilot profile delete), or an account is erased, the text of that person's
+    calls is replaced with `[erased]`. The row, hashes, model, prompt version and cost stay.
+  - `RETENTION_LLM_TEXT_DAYS` scrubs older text to `[expired]` in the daily retention run. The default is 0, which
+    keeps the text: removing it is your data-retention decision. Write the period you choose into your privacy notice.
 - **Output filter (H-C1 c)**: every Copilot, guide and thesis text is checked on the server before it is shown.
   - Guarantee and advice wording blocks the AI text: "guaranteed", "sure-shot", "risk-free", "I recommend", "you
     should buy", खात्रीशीर, हमखास, "मी शिफारस करतो" and the like. The model gets one retry; after that the

@@ -77,7 +77,7 @@ def _reset_flags():
         from app.platform import controls
         async with _session_factory() as session:
             current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
-            flags = {k: v for k, v in (current.get("flags") or {}).items() if k not in FLAGS[:2]}
+            flags = {k: v for k, v in (current.get("flags") or {}).items() if k not in (*FLAGS[:2], "byob_data_tier")}
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
             await session.commit()
     _run(go())
@@ -637,6 +637,34 @@ def test_a_replayed_screen_alert_whose_data_went_stale_is_suppressed():
     http, seen = _capture()
     assert _dispatch(ctx["tid"], http, utc(ist(date(2026, 3, 11), 10, 0))) == (0, 0) and seen == []
     assert (_rows(ctx["tid"])[0].status, _rows(ctx["tid"])[0].reason_code) == ("SUPPRESSED", "stale_data")
+
+
+def test_dead_letters_follow_bt1b_visibility():
+    """With `byob_data_tier` on, a member's screen-alert delivery is theirs only - also in the dead-letter list and its
+    retry; an exit notification stays organisation-wide (BT1b's feed rule)."""
+    from app.db.models import AlertChannelRecord
+    from tests.test_bt1b_guard_all_reads import _member
+    owner_headers, owner = _owner("z10b-bt1b-owner@example.com")
+    member_headers, member = _member(owner_headers)
+    t = owner["tenant_id"]
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(AlertChannelRecord(tenant_id=t, channel_type="webhook", enabled=True, min_severity="INFO", encrypted_config="x"))
+            await session.commit()
+            alert = await notify(session, t, NotificationType.SCREEN_ALERT, "Breakout: TCS", user_id=member["id"])
+            exit_ = await notify(session, t, NotificationType.EXIT, "TCS closed at stop", user_id=member["id"])
+            await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == t).values(status="DEAD"))
+            await session.commit()
+            return alert.id, exit_.id
+    alert, exit_ = _run(seed())
+    _flags(t, "byob_data_tier")
+    rows = {r.notification_id: r.id for r in _rows(t)}
+    owner_dead = {d["notification_id"] for d in client.get("/api/alerts/dead-letters", headers=owner_headers).json()}
+    member_dead = {d["notification_id"] for d in client.get("/api/alerts/dead-letters", headers=member_headers).json()}
+    assert owner_dead == {exit_} and member_dead == {alert, exit_}
+    assert client.post(f"/api/alerts/deliveries/{rows[alert]}/retry", headers=owner_headers).status_code == 404
+    assert client.post(f"/api/alerts/deliveries/{rows[alert]}/retry", headers=member_headers).json()["status"] == "PENDING"
 
 
 def test_flags_are_off_by_default():

@@ -3,7 +3,7 @@ unique; NULL for rows queued before the flag), `lease_until` / `claimed_by` (the
 until when). The new states DEAD and SUPPRESSED fit the existing `status` column (String(10)).
 
 Revision ID: c7e2a9d4b1f6
-Revises: f3a9c1e7b2d4
+Revises: a7d3e9f1c5b8
 Create Date: 2026-10-11 23:00:00
 """
 from typing import Sequence, Union
@@ -12,9 +12,10 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c7e2a9d4b1f6'
-down_revision: Union[str, Sequence[str], None] = 'f3a9c1e7b2d4'
+down_revision: Union[str, Sequence[str], None] = 'a7d3e9f1c5b8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z10-b: new UNIQUE index (idem_key) on the existing alert_deliveries table - per the Z11 rule; the previous release only writes NULL there
 
 
 def upgrade() -> None:

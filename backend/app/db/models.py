@@ -779,6 +779,20 @@ class EgressIpChangeRecord(Base):
     changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
 
 
+class ComplianceEvidenceRecord(Base):
+    """Part D6: evidence recorded for one go-live checklist item (append-only; the latest row per item counts).
+    `reference` is where the evidence lives (document id, register page, URL) - never the document or a secret."""
+
+    __tablename__ = "compliance_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class BrokerAccountRecord(Base):
     """Phase I2 (V3.14 rule 3): one trading account at a broker - the credential it authenticates
     with, the broker's own identifier, and the last synced balance/margin/P&L. Deployments may

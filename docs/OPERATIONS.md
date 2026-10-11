@@ -398,8 +398,11 @@ Never publish a listing without an attached backtest run; the API refuses the su
   A CRITICAL "No broker-side stop" means re-placing failed (margin, session): the software stop
   still runs every cycle, but close the position by hand if the broker session is gone.
 - **Tax report** (*Analytics → Tax report*): users pick the financial year and LIVE/PAPER/ALL and
-  download the CSV for their CA. Rates live in `backend/app/tax/report.py::RATES`; update them
-  in the same commit as a Finance Act change and note the date in the docstring.
+  download the CSV for their CA. Every statutory rate comes from the dated table
+  `backend/app/execution/india_costs.py` (the one PAPER fills and backtests use): add a new dated row
+  with its source when a Finance Act or circular changes a rate. F&O turnover method:
+  `TAX_FNO_TURNOVER_METHOD` (`ABS_PNL` default, or `ABS_PNL_PLUS_PREMIUM`, the older method); the report
+  and CSV name the method used.
 - **FX rates** (`PUT /api/admin/fx-rates`, admin): set `USD/INR`, `USDT/INR`, etc. when a tenant
   reports in a non-INR currency or trades a non-INR instrument; portfolio exposure lists
   `fx_missing` pairs it could not convert. Owners choose the reporting currency under *Team*.

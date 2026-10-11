@@ -24,9 +24,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Awaitable, Callable, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.execution import approval as approval_policy
 from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
@@ -328,6 +329,24 @@ async def close_position(
         realised_price = realised
         reason = outcome.exit_reason or reason
 
+    # Z3 (review M3): claim the close atomically - "Exit now" (web / Telegram), an approved exit and the worker's own sweep
+    # can reach the same open position at the same moment; only the one whose conditional UPDATE lands books it (one
+    # P&L, one EXIT notification). On Postgres the UPDATE row-locks until commit, so a concurrent claim re-checks and finds
+    # the position closed. The loser books nothing (a LIVE loser had already sent an exit: the books are flagged).
+    exit_time = now or datetime.now(timezone.utc)
+    claimed = await session.execute(update(TradeRecord).where(TradeRecord.id == trade.id, TradeRecord.exit_time.is_(None))
+                                    .values(exit_time=exit_time).execution_options(synchronize_session=False))
+    if claimed.rowcount != 1:
+        await session.refresh(trade)
+        outcome.warnings.append("Position was closed at the same moment by another exit - this close was not booked")
+        if trade.mode == ExecutionMode.LIVE.value and outcome.broker_exit_order_id:
+            from app.reconciliation.service import mark_broker_uncertain
+            tenant = await session.get(Tenant, trade.tenant_id)
+            if tenant is not None:
+                await mark_broker_uncertain(session, tenant, f"exit order {outcome.broker_exit_order_id} for trade {trade.id} went out after another close")
+                await session.commit()
+        return outcome
+
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
     charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING",
@@ -335,7 +354,7 @@ async def close_position(
                                                       exit_date=now or datetime.now(timezone.utc),
                                                       delivery=(getattr(trade, "holding", None) or "") == "SWING")
     trade.exit_price = round(realised_price, 2)
-    trade.exit_time = now or datetime.now(timezone.utc)
+    trade.exit_time = exit_time
     trade.exit_reason = reason
     trade.charges = charges
     trade.charges_source = "ESTIMATED"
@@ -363,6 +382,8 @@ async def close_position(
         severity=NotificationSeverity.WARNING if trade.pnl is not None and trade.pnl < 0 else NotificationSeverity.INFO,
         user_id=user_id, related_trade_id=trade.id,
     )
+    # Z3: an "Exit now?" question still open on this position is void now (best effort, after the close is booked).
+    await approval_policy.retire_proposals_for_closed(session, trade, reason)
     return outcome
 
 
@@ -526,11 +547,17 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, families: Optional[set] = None,
+    exit_approval: Optional[Callable[[TradeRecord], bool]] = None,
 ) -> List[CloseOutcome]:
     """The worker's per-cycle sweep for one tenant: current price for every open position, close
     the ones whose stop/target has been crossed. `price_lookup(symbol, exchange)` is normally
     MarketDataService.get_ltp. A failure on one position (quote unavailable, exit order error) is
-    recorded and the sweep continues - the other positions still need watching."""
+    recorded and the sweep continues - the other positions still need watching.
+
+    Z3 / BT2 (`exit_approval`, None = unchanged): for a position it returns True for, reaching a *target* asks "Exit
+    now?" (an EXIT_POSITION proposal) instead of closing. Every protective exit - the stop, a premium floor/ceiling,
+    a time exit, a structure rule - still closes here at once, before and regardless of any proposal or snooze
+    (ADR-0004); `determine_exit_price` checks the stop first, so a pending question never shadows it."""
     open_trades = list(await session.scalars(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
@@ -540,6 +567,7 @@ async def monitor_open_positions(
         from app.market_data.calendar import session_family
         open_trades = [t for t in open_trades if session_family(exchange_for_trade(t)) in families]
     outcomes: List[CloseOutcome] = []
+    asks: List[tuple] = []          # Z3: (trade, target reason, price) - "Exit now?" questions, raised after every exit
     # Phase H2: legs of one structure are judged together, never one by one.
     groups: Dict[str, List[TradeRecord]] = {}
     for trade in open_trades:
@@ -582,6 +610,10 @@ async def monitor_open_positions(
         if hit is None:
             continue
         reason, exit_price = hit
+        if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):
+            asks.append((trade, reason, price))          # asked after the sweep: no question ever delays another exit
+            outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"{reason}: waiting for \"Exit now?\" approval"]))
+            continue
         trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
         if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
             trade_broker = await broker_for_trade(session, trade)
@@ -598,6 +630,8 @@ async def monitor_open_positions(
             # Z6: the price range each open position has seen (MAE / MFE); queued off the sweep, never raises or waits.
             await journal_capture.on_marks(session, tenant_id, {t.id: float(t.mark_price) for t in open_trades
                                                                  if t.exit_time is None and t.mark_price is not None})
+    for trade, reason, price in asks:
+        await approval_policy.propose_exit(session, trade, reason, price)
     return outcomes
 
 

@@ -195,9 +195,10 @@ def prepare(bars: pd.DataFrame, settings: Optional[ZoneSettings] = None, swings:
     for i in sw[1]:
         confirmed_at.setdefault(i + s.structure_swing_order, []).append(("low", i))
     ts = pd.to_datetime(bars["timestamp"])
-    return PreparedBars(ts=ts, ns=ts.to_numpy().astype("datetime64[ns]").astype("int64") if getattr(ts.dt, "tz", None) is None
-                        else ts.dt.tz_convert("UTC").dt.tz_localize(None).to_numpy().astype("datetime64[ns]").astype("int64"), open=bars["open"].to_numpy(float), high=bars["high"].to_numpy(float),
-                        low=bars["low"].to_numpy(float), close=bars["close"].to_numpy(float), swings=sw, confirmed_at=confirmed_at)
+    utc_naive = ts if getattr(ts.dt, "tz", None) is None else ts.dt.tz_convert("UTC").dt.tz_localize(None)
+    return PreparedBars(ts=ts, ns=utc_naive.to_numpy().astype("datetime64[ns]").astype("int64"), open=bars["open"].to_numpy(float),
+                        high=bars["high"].to_numpy(float), low=bars["low"].to_numpy(float), close=bars["close"].to_numpy(float),
+                        swings=sw, confirmed_at=confirmed_at)
 
 
 def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settings: Optional[ZoneSettings] = None, start_after: Any = None,
@@ -264,7 +265,7 @@ def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settin
         overlap = bool(h[k] >= lo and low[k] <= hi)
         if overlap and not tracker.inside:
             emit(ZoneEvent.TOUCH, k)
-        elif not overlap and k > 0:
+        elif not overlap and not tracker.inside and k > 0:         # jumped across an edge from outside (not leaving)
             g_lo, g_hi = min(c[k - 1], o[k]), max(c[k - 1], o[k])
             if g_lo <= lo <= g_hi or g_lo <= hi <= g_hi:
                 emit(ZoneEvent.GAP_THROUGH, k)

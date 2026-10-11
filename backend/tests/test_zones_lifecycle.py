@@ -269,3 +269,12 @@ def test_memory_keeps_remembered_levels_on_a_night_with_no_level_found():
     out = apply_memory([], prev, {"15m": df}, df["timestamp"].iloc[-1])
     assert [(r["zone_low"], r["remembered"], r["formed_at"]) for r in out] == [(101.0, True, df["timestamp"].iloc[10])]   # never the dead one
     assert apply_memory([], prev, {"15m": df}, df["timestamp"].iloc[-1], resolve_settings({"memory_enabled": False})) == []
+
+
+def test_leaving_the_zone_with_a_gap_is_not_a_new_visit():
+    df = path(BASE + [118, 110, 104])
+    df = pd.concat([df, pd.DataFrame([{"timestamp": df["timestamp"].iloc[-1] + pd.Timedelta(hours=1), "open": 112.0, "high": 114.0,
+                                       "low": 111.0, "close": 113.0}])], ignore_index=True)       # inside at 104, opens above at 112
+    tr = new_tracker(100.0, 105.0, SUPPORT_SIDE)
+    track_zone(tr, df, start_after=df["timestamp"].iloc[START])
+    assert events(tr) == ["TOUCH"] and tr.touches == 1

@@ -13,8 +13,8 @@ Each firing writes one `ai_actions` row (PROPOSED) and one notification; duplica
 (deployment, rule) are suppressed while a proposal is open or was decided today. `decide()` is
 the human step; `execute()` runs only on APPROVED rows and reuses the ordinary services (pause =
 the deployments API's own status change; exit = the position monitor's `close_position`). Open
-proposals EXPIRE after `TTL_HOURS`. The optional LLM only *phrases* the reason for the human,
-never decides.
+proposals EXPIRE after `TTL_HOURS`. No model is called anywhere in this module: the reason the human
+reads is the rule's own sentence (H-C1 f corrects an earlier note that said an LLM phrased it).
 """
 import json
 from dataclasses import dataclass

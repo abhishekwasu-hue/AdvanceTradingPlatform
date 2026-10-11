@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+from app.compliance.order_policy import apply_entry_policy
 from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.circuit_breaker import breaker_for, observe_call
@@ -179,6 +180,15 @@ class OrderRouter:
             limit = protected_limit_price(signal.entry, order_request.transaction_type, self.market_protection_pct)
             order_request = order_request.model_copy(update={"order_type": "LIMIT", "price": limit})
             notes.append(f"Protected limit entry at {limit} ({self.market_protection_pct:g}% past {signal.entry})")
+        # Part D3: the broker's order-type policy for algo entries (rule-set data; the default changes nothing).
+        policed, policy_note = apply_entry_policy(
+            order_request, self.broker.name,
+            lambda: protected_limit_price(signal.entry, order_request.transaction_type, self.market_protection_pct))
+        if policed is None:
+            return ExecutionResult(executed=False, reasons=notes + [policy_note])
+        order_request = policed
+        if policy_note:
+            notes.append(policy_note)
         try:
             response = await self.broker.place_order(order_request)
         except Exception as exc:

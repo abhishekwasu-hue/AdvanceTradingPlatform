@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
 from app.compliance import algo_id as algo_ids
+from app.compliance import fo_limits
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderStatus
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
@@ -124,6 +125,14 @@ async def execute_signal_for_user(
         tenant = await session.get(Tenant, user.tenant_id)
         kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
+        fo_notes: list = []
+        if contract is not None:
+            # D7: a derivative on an underlying in the exchange's F&O ban period is not a new trade the market allows.
+            ban, ban_note = await fo_limits.entry_refusal(session, underlying_signal.symbol, underlying_signal.timestamp)
+            if ban:
+                kill_switch_reasons.append(ban)
+            elif ban_note:
+                fo_notes.append(ban_note)
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -164,6 +173,7 @@ async def execute_signal_for_user(
         # Phase Q / section 17: the instrument must exist and be tradable today, and - LIVE - the
         # account's margin must cover at least one unit. Both are business decisions (REJECTED).
         pre_notes: list = []
+        pre_notes.extend(fo_notes)
 
         # Phase V1: the platform ceilings clamp the tenant's settings, then the Risk Guardian's
         # entry rules run before sizing - cool-down after a stop-out (R10), the drawdown ladder

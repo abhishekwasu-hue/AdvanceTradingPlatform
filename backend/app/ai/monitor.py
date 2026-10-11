@@ -263,7 +263,13 @@ async def wake_snoozed(session: AsyncSession, now: datetime, *, tenant_id: Optio
                                                                      AiActionRecord.snoozed_until == snoozed_until)
                                         .values(**values).execution_options(synchronize_session=False))
         await session.commit()
-        if claimed.rowcount != 1 or expired:
+        if claimed.rowcount != 1:
+            continue
+        if expired:
+            # As in expire_stale: the expired proposal's Telegram buttons come off (best effort).
+            from app.telegram_inbound.service import sync_proposal_message
+            await session.refresh(row)
+            await sync_proposal_message(session, row, now=now)
             continue
         await notify(session, row.tenant_id, NotificationType.AI_PROPOSAL, title=f"Reminder: AI proposes {row.action.replace('_', ' ').lower()}",
                      message=f"{row.reason} You snoozed this proposal; it is waiting again. Approve, reject or snooze it under AI Copilot - nothing happens until you do.",

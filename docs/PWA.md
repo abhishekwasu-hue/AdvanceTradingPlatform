@@ -91,3 +91,36 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
   text, and no image means a text message. Never raises; the bot token never appears in logs.
 - Not ported: the Trade bot's long-polling service (`getUpdates`) - ATP uses the webhook with a secret token; the Trade
   bot's per-approver env lists - ATP has per-organisation chat allowlists and approvers in Settings.
+
+## Proposal card - Approve (PAPER) / Reject / Snooze, Trade in your broker app (PW5)
+
+Phase 0 rule (beta spec §4a): **ATP places no order through any broker API.** The card decides PAPER proposals and, for
+an exit, can open the user's own broker app with the order pre-filled; the user confirms there.
+
+- **The card** (`frontend/src/copilot/tabs/ProposalCard.tsx`, Watchtower). Title (what the agent proposes), the rule /
+  deployment / position line, a PAPER or LIVE badge, the reason, the evidence in a few chips (full JSON folded), the
+  time left before expiry, and three actions with 44 px targets: **Approve (PAPER)**, **Reject** (optional note),
+  **Snooze**. At 360 px Approve takes the first row, Reject and Snooze the second; no horizontal scroll
+  (Playwright: `the proposal card fits a 360 px phone`).
+- **LIVE is unchanged.** A LIVE deployment or position shows "Approve" with the authenticator note; the server still
+  asks for the step-up and the dialog retries - exactly the flow before PW5. No new LIVE path.
+- **Snooze.** 15 min, 1 hour or until 09:00 IST (today before nine, else tomorrow). `POST /api/ai/actions/{id}/snooze`
+  with `{"minutes": n}` (1-1440) or `{"until": "<ISO time>"}` (within 7 days); trader roles of the proposal's own
+  organisation only; PROPOSED only (409 otherwise, 404 for another organisation); audit event `ai_action_snoozed`.
+  Stored in `ai_actions.snoozed_until` (migration `d4e8a1c6f205`). A snooze is never a decision and never extends the
+  expiry: it is cut at `expires_at`, and a proposal that reaches its expiry while snoozed is EXPIRED, not announced.
+  While snoozed it is left out of `GET /api/ai/actions?status=PROPOSED` (the pending list and the Watchtower badge;
+  `snoozed=only|show` lists it) and shown in a folded "snoozed proposals" list, where it can still be decided at any
+  time. The worker (`monitor.wake_snoozed`, every cycle, market open or not) clears the snooze when it ends and
+  announces the proposal **once** more through the notification service (in-app, push, Telegram with fresh buttons).
+  Exits never consult a snooze. The live stream signature includes snoozes, so other open apps follow within ~2 s.
+- **Telegram.** A third one-time button, **Snooze 1h**, on its own row under Approve / Reject (same nonce + HMAC rows,
+  same chat and approver checks, PAPER pause/reduce/review only - LIVE and exits have no buttons, as before). Pressing
+  any of the three uses up the other two; the reminder brings new ones.
+- **"Trade in your broker app"** (flag `broker_app_links`, **off by default**). With the flag on, the list endpoint adds
+  a `ticket` to an EXIT_POSITION proposal on a still-open position: exchange, symbol, closing side, whole quantity and
+  the broker the position belongs to (`backend/app/ai/proposal_card.py`). `frontend/src/proposals/brokerLinks.ts` turns
+  it into a link only for brokers with a verified link format in `docs/BROKER_DATA_TERMS.md` - today Zerodha's Kite
+  Publisher basket (form POST to `https://kite.zerodha.com/connect/basket`, NSE/BSE cash equity only, needs
+  `KITE_PUBLISHER_API_KEY`, empty by default). Every other broker, PAUSE / REDUCE / REVIEW proposals, no key or flag
+  off: no link. The button submits the form in a new tab; ATP sends nothing to the broker.

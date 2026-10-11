@@ -1919,6 +1919,48 @@ class LlmCallRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
 
 
+class ScreenRecord(Base):
+    """S1d (ADR-0021): a saved ScreenQL screen - the canonical text and the AST the validator accepted, its base timeframe
+    and default parameters. Tenant-scoped; archived, never hard-deleted (a run may point at it)."""
+
+    __tablename__ = "screens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)              # canonical ScreenQL text
+    ast_json: Mapped[str] = mapped_column(Text, nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False, default="screenql/1")
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class ScreenRunRecord(Base):
+    """S1d (ADR-0021 §6): one screen run - what ran (AST hash and version), on which universe and data source, and what
+    matched. Append-only: a match list someone acted on can be reproduced."""
+
+    __tablename__ = "screen_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    screen_id: Mapped[int | None] = mapped_column(ForeignKey("screens.id", ondelete="SET NULL"), nullable=True, index=True)
+    ast_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False)
+    universe_json: Mapped[str] = mapped_column(Text, nullable=False)            # the symbols asked for
+    data_source: Mapped[str] = mapped_column(String(60), nullable=False)        # broker:<name> / lake (S2)
+    scanned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # [{symbol, matched, reason}]
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
 class ChartDrawingRecord(Base):
     """CH1 (ADR-0023): one user drawing on a symbol's chart, in our own engine-neutral JSON (`drawing/1`: time/price
     anchors, so every timeframe and every chart engine shows the same drawing). Versioned for optimistic concurrency

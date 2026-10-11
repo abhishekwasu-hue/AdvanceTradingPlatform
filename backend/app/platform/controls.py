@@ -101,9 +101,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
     # deflated report. Nothing deploys. OFF until the operator turns it on.
     "ai_research": "Strategy research loop: AI drafts are backtested in-sample on server bars, recorded as trials, and reported deflated",
+    # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
+    # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
+    "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research"})
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
+                               "beta_cohort_gate"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

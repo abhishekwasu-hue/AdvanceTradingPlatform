@@ -54,6 +54,8 @@ forgot_rate_limit = rate_limit("auth_forgot", limit=5, window_seconds=900)
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=MIN_LENGTH, max_length=MAX_LENGTH)
+    # PW6: read only while the `beta_cohort_gate` flag is on (then required); ignored otherwise.
+    invite_code: Optional[str] = Field(default=None, max_length=64)
 
 
 def _enforce_password_policy(password: str, email: str) -> None:
@@ -148,6 +150,13 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, request.email)
+    # PW6: the closed beta. Off (the default): nothing changes. On: a valid invite code and a place in the cohort, spent
+    # in this transaction - a sign-up that fails below does not use the code up. The operator's own configured
+    # SUPER_ADMIN addresses (SUPER_ADMIN_EMAILS) are exempt: they issue the codes, so they cannot need one.
+    beta_code = None
+    if not is_configured_super_admin(request.email) and await flag_enabled(session, "beta_cohort_gate"):
+        from app.beta.invites import redeem
+        beta_code = await redeem(session, request.invite_code)
 
     tenant = Tenant(name=request.email, webhook_token=None, webhook_token_hash=hash_webhook_token(secrets.token_urlsafe(24)))
     session.add(tenant)
@@ -161,6 +170,8 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     session.add(user)
     await session.flush()
     await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
+    if beta_code is not None:
+        await write_audit_log(session, tenant.id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
     await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
     issued = await start_session(session, user, http_request)
     await session.commit()

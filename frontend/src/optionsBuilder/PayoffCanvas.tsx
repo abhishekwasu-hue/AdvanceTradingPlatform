@@ -10,12 +10,10 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives";
 import {
-  cone, hitRadius, linear, linePath, maxLossY, money, niceTicks, seriesAt, signAreas, strikeAtPointer, strikeBounds, strikeForKey, yDomain,
+  canvasSize, cone, hitRadius, linear, linePath, maxLossY, money, niceTicks, seriesAt, signAreas, strikeAtPointer, strikeBounds, strikeForKey, yDomain,
   type Evaluation, type Leg,
 } from "./model";
 
-const W = 800;
-const H = 360;
 const M = { top: 16, right: 16, bottom: 44, left: 64 };
 
 export interface PayoffCanvasProps {
@@ -40,17 +38,18 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
   const uid = useId().replace(/:/g, "");
   const [hover, setHover] = useState<number | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
-  const [drawnWidth, setDrawnWidth] = useState(W);
+  const [drawnWidth, setDrawnWidth] = useState(800);
+  const { W, H, xTickCount } = canvasSize(drawnWidth);
   const xs = e.prices;
   const main = e.at_expiry ?? e.on_date;                       // shading follows the expiry payoff when there is one
   const later = e.days_forward > 0;
-  const sx = useMemo(() => linear([xs[0], xs[xs.length - 1]], [M.left, W - M.right]), [xs]);
-  const sy = useMemo(() => linear(yDomain([e.at_expiry, e.on_date, e.today]), [H - M.bottom, M.top]), [e.at_expiry, e.on_date, e.today]);
+  const sx = useMemo(() => linear([xs[0], xs[xs.length - 1]], [M.left, W - M.right]), [xs, W]);
+  const sy = useMemo(() => linear(yDomain([e.at_expiry, e.on_date, e.today]), [H - M.bottom, M.top]), [e.at_expiry, e.on_date, e.today, H]);
   const areas = useMemo(() => signAreas(xs, main, sx, sy), [xs, main, sx, sy]);
   const c = cone(spot, e.summary.expected_move);
   const clampX = (v: number) => Math.min(W - M.right, Math.max(M.left, v));
-  const yTicks = useMemo(() => niceTicks(sy.domain[0], sy.domain[1], 6), [sy]);
-  const xTicks = useMemo(() => Array.from({ length: 5 }, (_, i) => xs[0] + ((xs[xs.length - 1] - xs[0]) * i) / 4), [xs]);
+  const yTicks = useMemo(() => niceTicks(sy.domain[0], sy.domain[1], H < 360 ? 5 : 6), [sy]);
+  const xTicks = useMemo(() => Array.from({ length: xTickCount }, (_, i) => xs[0] + ((xs[xs.length - 1] - xs[0]) * i) / (xTickCount - 1)), [xs, xTickCount]);
   const bounds = strikeBounds(xs, step);
   const lossY = maxLossY(e.extremes, sy);
   const hit = hitRadius(drawnWidth, W);
@@ -59,7 +58,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
   useEffect(() => {
     const el = svg.current;
     if (!el || typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(([entry]) => setDrawnWidth(entry.contentRect.width || W));
+    const ro = new ResizeObserver(([entry]) => setDrawnWidth(entry.contentRect.width || 800));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -132,10 +131,10 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
         {/* the underlying's price */}
         <line x1={sx(spot)} x2={sx(spot)} y1={M.top} y2={H - M.bottom} className="stroke-info" strokeWidth={1.25} />
         <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-[11px]">spot {Math.round(spot).toLocaleString("en-IN")}</text>
-        {(e.breakevens ?? []).filter((b) => b >= xs[0] && b <= xs[xs.length - 1]).map((b) => (
-          <g key={b} data-testid="breakeven">
+        {(e.breakevens ?? []).filter((b) => b >= xs[0] && b <= xs[xs.length - 1]).map((b, i) => (
+          <g key={b} data-testid="breakeven">{/* alternate labels above / below zero so close breakevens stay readable */}
             <circle cx={sx(b)} cy={sy(0)} r={3.5} className="fill-surface stroke-fg" strokeWidth={1.5} />
-            <text x={sx(b)} y={sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-[11px]">{Math.round(b).toLocaleString("en-IN")}</text>
+            <text x={sx(b)} y={i % 2 ? sy(0) + 16 : sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-[11px]">{Math.round(b).toLocaleString("en-IN")}</text>
           </g>
         ))}
         {/* strikes: drag on the axis, or focus and use the keys */}
@@ -148,7 +147,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
                aria-valuetext={`${l.strike}`} onKeyDown={keyMove(l)}
                onPointerDown={(ev) => { ev.preventDefault(); svg.current?.setPointerCapture?.(ev.pointerId); setDrag(l.id); onDragging?.(true); }}
                className="cursor-ew-resize outline-none [touch-action:none] [&:focus-visible>.ring]:opacity-100" data-testid="strike-handle">
-              <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={buy ? "stroke-up/40" : "stroke-down/40"} strokeDasharray="1 3" />
+              <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={buy ? "stroke-up/40" : "stroke-down/40"} strokeDasharray="1 3" pointerEvents="none" />
               <circle r={hit} fill="transparent" pointerEvents="all" data-testid="strike-hit" />
               <circle r={12} className="ring fill-none stroke-brand opacity-0" strokeWidth={2} />
               <Handle buy={buy} active={drag === l.id} />

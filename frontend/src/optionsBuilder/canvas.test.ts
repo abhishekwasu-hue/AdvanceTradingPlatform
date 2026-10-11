@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  basketUnderlying, builderAreas, contractLabel, hitRadius, linear, maxLossY, seriesAt, strikeAtPointer, strikeBounds, strikeForKey,
+  basketUnderlying, builderAreas, canvasSize, contractLabel, hitRadius, linear, maxLossY, seriesAt, strikeAtPointer, strikeBounds, strikeForKey,
   type Evaluation,
 } from "./model";
 
@@ -82,6 +82,12 @@ describe("payoff rendering helpers", () => {
     expect(maxLossY(ext({ max_loss: 200 }), sy)).toBeNull();                // no loss anywhere
     expect(maxLossY(ext({ max_loss: -50000 }), sy)).toBeNull();             // off the chart
     expect(maxLossY(null, sy)).toBeNull();                                  // a calendar: no single expiry payoff
+  });
+  it("keeps the labels readable on a phone: a smaller viewBox below 640 px", () => {
+    expect(canvasSize(1000)).toEqual({ W: 800, H: 360, xTickCount: 5 });
+    const phone = canvasSize(360);
+    expect(phone.W).toBe(400);
+    expect((360 / phone.W) * 11).toBeGreaterThan(9.5);                     // an 11-unit label stays near 10 px on screen
   });
   it("gives every strike handle a 44 px hit area however small the chart is drawn", () => {
     expect(hitRadius(360, VIEW) * (360 / VIEW) * 2).toBeCloseTo(44);       // a phone: 44 px across on screen

@@ -81,7 +81,11 @@ export function MetricsCard({ evaluation: e, stale = false }: { evaluation: Eval
              hint={cost.note} />
         <Row label="Probability-weighted P&L" value={money(e.summary.expected_pnl)} tone={e.summary.expected_pnl >= 0 ? "up" : "down"} />
         <Row label="Expected move (1 sd)" value={`±${Math.round(e.summary.expected_move).toLocaleString("en-IN")}`} />
-        <Row label="Delta · Gamma · Vega" value={`${g.delta.toFixed(1)} · ${g.gamma.toFixed(3)} · ${g.vega.toFixed(0)}`} />
+      </dl>
+      <dl className="mt-2 grid grid-cols-4 gap-2 rounded-lg bg-surface-2 px-2 py-2 text-center" aria-label="Net Greeks">
+        {([["Delta", g.delta.toFixed(1)], ["Gamma", g.gamma.toFixed(3)], ["Theta", g.theta.toFixed(0)], ["Vega", g.vega.toFixed(0)]] as const).map(([k, v]) => (
+          <div key={k} className="min-w-0"><dt className="text-[10px] text-fg-muted">{k}</dt><dd className="truncate font-mono text-xs tabular-nums text-fg">{v}</dd></div>
+        ))}
       </dl>
       {ext && !ext.unbounded_loss && ext.max_loss != null && ext.max_loss < 0 && ext.max_profit != null && (
         <RiskGauge maxLoss={ext.max_loss} maxProfit={ext.max_profit} />

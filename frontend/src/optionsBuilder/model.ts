@@ -341,3 +341,9 @@ export function contractLabel(o: Pick<BasketOrder, "side" | "option_type" | "str
   const day = Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : o.expiry;
   return o.option_type === "FUT" ? `${o.side} FUT ${day}` : `${o.side} ${Math.round(o.strike ?? 0).toLocaleString("en-IN")} ${o.option_type} ${day}`;
 }
+
+/** The canvas's viewBox for the width it is drawn at: the full 800 x 360 from 640 px up; below that (a phone) a
+ * 400 x 300 box, so the labels stay about their 11 px size instead of shrinking to half, with three price ticks. */
+export function canvasSize(drawnWidth: number): { W: number; H: number; xTickCount: number } {
+  return drawnWidth >= 640 ? { W: 800, H: 360, xTickCount: 5 } : { W: 400, H: 300, xTickCount: 3 };
+}

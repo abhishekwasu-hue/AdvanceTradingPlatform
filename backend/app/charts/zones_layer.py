@@ -5,6 +5,8 @@ GET /api/charts/layers/market-zones?instrument=NSE:BANKNIFTY&at=<ISO time>&price
   * `at` (timezone-aware; default now): the snapshot `zones_as_of` returns then - the latest stored with as_of <= at, in
     the organisation's scope (its own settings' snapshot, else the platform's), never one computed from later bars and
     never another organisation's. A time in the future reads as now.
+  * an organisation whose own zone settings have no snapshot yet gets the platform's (default settings), with
+    `fallback: true` and `settings_note` - the chart says so on every band. ScreenQL never falls back.
   * `price` (default: the snapshot's own last close): the price roles and distances are measured from - a chart passes
     its last close so "demand" / "supply" follow the price on screen.
   * The response carries every number the chart draws (bounds, label prices, touches, strength, distances) and the
@@ -31,6 +33,7 @@ from app.price_action.zones.store import normalise_key
 router = APIRouter(prefix="/api/charts/layers", tags=["charts"])
 FLAG = "market_zones"
 NOTE = "Zones are reference levels from past prices, not signals or recommendations."
+FALLBACK_NOTE = "platform default settings (none stored with your organisation's zone settings yet)"
 
 
 def _iso(t: Optional[datetime]) -> Optional[str]:
@@ -56,15 +59,16 @@ async def market_zones_layer(instrument: str = Query(..., min_length=3, max_leng
     when = now if at is None or at > now else at.astimezone(timezone.utc)
     if price is not None and not math.isfinite(price):
         raise HTTPException(status_code=422, detail="price must be a finite number")
-    snap = await read.read_as_of(session, key, when, user.tenant_id)
+    snap = await read.read_as_of(session, key, when, user.tenant_id, allow_platform_fallback=True)
     if snap is None:
-        return {"instrument": key, "at": _iso(when), "as_of": None, "scope": None, "price": price, "price_source": None,
-                "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "note": NOTE}
+        return {"instrument": key, "at": _iso(when), "as_of": None, "scope": None, "fallback": False, "settings_note": None, "price": price,
+                "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "note": NOTE}
     ref, source = (price, "request") if price is not None else (snap.price, "snapshot")
     cands = chart.candidates(snap.rows, family)
     bands = chart.select_bands(cands, ref, max_bands=max_bands) if ref is not None else []
     scope = "platform" if snap.scope == "platform" else ("organisation" if snap.scope else None)
-    return {"instrument": key, "at": _iso(when), "as_of": _iso(snap.as_of), "scope": scope, "price": ref, "price_source": source,
+    return {"instrument": key, "at": _iso(when), "as_of": _iso(snap.as_of), "scope": scope, "fallback": snap.fallback,
+            "settings_note": FALLBACK_NOTE if snap.fallback else None, "price": ref, "price_source": source,
             "price_text": None if ref is None else chart.price_text(ref), "bands": bands, "zones": cands, "live_count": len(cands),
             "max_bands": max_bands, "note": NOTE}
 

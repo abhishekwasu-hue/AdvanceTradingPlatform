@@ -196,6 +196,14 @@ def test_role_follows_the_price_and_far_zones_are_left_out():
     assert inside["distance_pct"] == 0.0 and inside["role"] == "demand"
 
 
+def test_bands_from_snapshot_rows_skip_invalidated_and_filter_family():
+    rows = [_zrow("dem", "DEMAND_ZONE", 99.0, 99.5), _zrow("dead", "SUPPLY_ZONE", 100.5, 101.0, "invalidated"),
+            _zrow("lv", "RESISTANCE", 101.0, 101.0, strength=3)]
+    assert [b["zone_key"] for b in chart.bands_from_rows(rows, 100.0)] == ["lv", "dem"]
+    assert [b["zone_key"] for b in chart.bands_from_rows(rows, 100.0, family="zones")] == ["dem"]
+    assert [b["zone_key"] for b in chart.bands_from_rows(rows, 100.0, family="levels", max_bands=1)] == ["lv"]
+
+
 def test_labels_and_touch_counts():
     line = _cand("lv", "DYNAMIC_SR_RESISTANCE", 512.3, 512.3, "tested", 2, tf="15m", strength=3)
     band = chart.select_bands([line], 500.0)[0]
@@ -478,6 +486,11 @@ def test_screen_runs_on_stored_zones_per_tenant_when_on(screener_on, monkeypatch
     assert theirs["matched"] == []
     sup = client.post("/api/screener/run", json={**body, "source": 'ZoneRole(0.5) == "SUPPLY"'}, headers=other_headers).json()
     assert sup["matched"] == ["ZCHARTA"]
+    # an organisation with its own settings but no snapshot built with them: no platform fallback in a screen
+    third_headers, third = _owner("z7a3-third@example.com")
+    _run(_tenant_settings(third["tenant_id"]))
+    strict = {r["symbol"]: r for r in client.post("/api/screener/run", json=body, headers=third_headers).json()["results"]}
+    assert not strict["ZCHARTA"]["matched"] and "no stored market zones" in strict["ZCHARTA"]["reason"]
 
 
 # ----------------------------------------------------------------------------------------------- API: the chart layer
@@ -511,12 +524,14 @@ def test_chart_layer_reads_as_of_per_tenant_with_at_most_six_bands(screener_on):
     theirs = client.get(url, params={"instrument": KEY, "at": ist(D2, 12, 0).isoformat()}, headers=other_headers).json()
     assert [z["zone_key"] for z in theirs["zones"]] == ["mine"] and theirs["scope"] == "organisation"
     assert "tenant:" not in json.dumps(theirs)
-    # settings-hash rule: an organisation with its own settings but no snapshot built with them sees no zones (not the
-    # platform's, built with other settings)
+    assert body["fallback"] is False and body["settings_note"] is None and theirs["fallback"] is False
+    # settings-hash rule: an organisation with its own settings but no snapshot built with them gets the platform's on
+    # the chart only, marked as such (ScreenQL never falls back - test_timeline_* / test_screen_runs_*)
     third_headers, third = _owner("z7a3-layer-c@example.com")
     _run(_tenant_settings(third["tenant_id"]))
-    none = client.get(url, params={"instrument": KEY, "at": ist(D2, 12, 0).isoformat()}, headers=third_headers).json()
-    assert none["bands"] == [] and none["as_of"] is None
+    fb = client.get(url, params={"instrument": KEY, "at": ist(D2, 12, 0).isoformat()}, headers=third_headers).json()
+    assert fb["fallback"] is True and "default settings" in fb["settings_note"] and fb["scope"] == "platform" and len(fb["bands"]) == 6
+    assert _read(KEY, ist(D2, 12, 0), third["tenant_id"]) is None                                   # the strict read sees nothing
     # input checks
     assert client.get(url, params={"instrument": KEY, "at": "2026-03-11T12:00:00"}, headers=headers).status_code == 422
     assert client.get(url, params={"instrument": "bad key!"}, headers=headers).status_code == 422

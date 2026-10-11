@@ -18,6 +18,9 @@ describe("MarketZonesLegend (Z7a-3)", () => {
     expect(html).toContain('data-role="supply"');
     expect(html).toContain("as of 09 Oct, 15:30 IST");
     expect(html).toContain('title="reference levels"');
+    expect(html).not.toContain("market-zones-fallback");
+    const fb = renderToStaticMarkup(<MarketZonesLegend bands={bands} asOf={null} settingsNote="platform default settings" />);
+    expect(fb).toContain("from platform default settings");
   });
 
   it("renders nothing without bands (no zones stored, or the flag is off)", () => {

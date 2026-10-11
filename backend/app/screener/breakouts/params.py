@@ -1,4 +1,4 @@
-"""U6 BK1: every breakout threshold as an editable parameter - a documented default and a one-line research note.
+"""U6 BK1 / BK2: every breakout threshold as an editable parameter - a documented default and a one-line research note.
 
 Nothing here is fitted to data. Each default is a published convention or the practitioner range named in
 docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md §1; the note says which, and docs/research/breakouts.md gives the sources.
@@ -22,7 +22,7 @@ class Param:
     low: Optional[float] = None               # inclusive range for numbers
     high: Optional[float] = None
     choices: Tuple[Any, ...] = ()
-    group: str = "common"                     # common / B1 / B2 / B4 / B7 / B13 / B14 / quality / style
+    group: str = "common"                     # common / B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / intraday / quality / style
 
 
 # The context ladder: signal timeframe -> the two higher timeframes read for context (a weekly signal has one).
@@ -103,8 +103,9 @@ PARAMS: Tuple[Param, ...] = (
     Param("atr_pct_low", 100.0 / 3.0, "percentile at or below which the regime is 'low' volatility",
           "Lower tercile; breakouts from low-volatility regimes did best in the study (spec §1).", 0.0, 100.0, group="quality"),
     Param("atr_pct_high", 200.0 / 3.0, "percentile at or above which the regime is 'high' volatility", "Upper tercile.", 0.0, 100.0, group="quality"),
-    Param("stop_mode", "level_atr", "stop reference: level_atr (breakout level -/+ stop_atr_mult x ATR) or base (base low / high)",
-          "Spec §5 stop forms; editable.", choices=("level_atr", "base"), group="quality"),
+    Param("stop_mode", "level_atr", "stop reference: level_atr (breakout level -/+ stop_atr_mult x ATR), base (base low / high; B16: the "
+          "opposite side of the opening range) or midpoint (the middle of the base; B16: the opening-range midpoint)",
+          "Spec §5 stop forms; editable.", choices=("level_atr", "base", "midpoint"), group="quality"),
     Param("stop_atr_mult", 1.0, "ATRs beyond the breakout level for the level_atr stop reference", "One ATR: one bar of noise past the level.",
           0.0, 10.0, group="quality"),
     Param("room_min_r", 2.0, "room to the next opposing level must be at least this many stop distances (R)",
@@ -122,6 +123,39 @@ PARAMS: Tuple[Param, ...] = (
           "D0 = the smallest confirmed pullback (pa_settings).", 0, 3, group="quality"),
     Param("leg_rearm_bars", 20, "... or after this many bars without a new extreme beyond the signal bar's (a new base formed)",
           "As long as the default B1 range: a base that long is a new leg.", 1, 500, group="quality"),
+    # --- intraday (U6 BK2: B16 / B17 / B18) -------------------------------------------------------------------------------
+    Param("skip_first_min", 15, "intraday: no signal from a bar that starts in the first N minutes of the session (B16 also waits for its range)",
+          "Spec §1 'avoid the first minutes'; 15 minutes = the NSE opening-noise window (09:15-09:30) the platform's ORB strategy also waits out.",
+          0, 240, group="intraday"),
+    Param("tod_window_end", "calendar", "intraday: calendar = the signal bar must close by the exchange's no-new-entries time (NSE 15:00, from "
+          "app/market_data/calendar.py; a special session: its close); close = any bar up to the session close",
+          "The platform's own intraday cut-off (no new entries after 15:00 on NSE) is the time-of-day window of the spec's quality overlay.",
+          choices=("calendar", "close"), group="intraday"),
+    Param("tod_sessions", 20, "relative volume by time of day: the average is over the same slot (minutes from the open) in the previous N sessions",
+          "20 sessions = about one trading month, as vol_avg_n; the same-time average removes the U-shaped intraday volume curve (Jain & Joh 1988).",
+          2, 120, group="intraday"),
+    Param("tod_min_sessions", 5, "the time-of-day average needs at least this many prior sessions with the slot (before that: no value, no match)",
+          "One trading week of history before the average is trusted.", 1, 120, group="intraday"),
+    Param("tod_mode", "bar", "bar: this bar's volume / the slot average; cumulative: the session's volume so far / the average volume by the same time",
+          "Both forms are in use: bar confirms the break bar (like vol_mult); cumulative is the scanners' 'relative volume at time of day'.",
+          choices=("bar", "cumulative"), group="intraday"),
+    Param("tod_vol_mult", 1.5, "intraday screens: time-of-day relative volume >= this on the signal bar (0 = no volume condition; indices need 0)",
+          "Low end of the 1.5-2x practitioner range, as vol_mult, measured against the same time of day.", 0.0, 20.0, group="intraday"),
+    Param("vwap_agree", True, "intraday screens: the close is on the breakout side of the session VWAP (above for up, below for down); "
+          "VWAP needs volume, so indices need False",
+          "Spec B16 / B18: VWAP on the breakout side; VWAP is the intraday execution benchmark (Berkowitz, Logue & Noser 1988).", group="intraday"),
+    Param("intraday_max_per_session", 1, "B16 / B17: at most this many signals per side per session; a new signal needs a close back inside "
+          "the level and a new close beyond (a new leg)",
+          "The platform's ORB strategy takes only the first close beyond the range; a re-cross is often the whipsaw the failed-break rule warns of.",
+          1, 20, group="intraday"),
+    Param("or_minutes", 15, "B16: the opening range is the high / low of the session's first N minutes (a whole number of signal bars)",
+          "Crabel (1990) opening range; 15 / 30 / 60 minutes are the windows named in spec B16 (15 = the platform's ORB strategy).",
+          1, 240, group="B16"),
+    Param("day_level", "first_hour", "B17: first_hour (high / low of the first first_hour_min minutes), prev_day (the previous regular "
+          "session's high / low), first_candle (the session's first signal bar), premarket (pre-open bars, where the data has them)",
+          "The B17 levels named in the spec.", choices=("first_hour", "prev_day", "first_candle", "premarket"), group="B17"),
+    Param("first_hour_min", 60, "B17 first_hour: the minutes from the open that make the 'first hour' (a whole number of signal bars)",
+          "The first trading hour (09:15-10:15 on NSE) by name.", 1, 240, group="B17"),
     # --- style / timeframes -----------------------------------------------------------------------------------------------
     Param("context_ladder", DEFAULT_CONTEXT_LADDER, "signal timeframe -> the higher timeframes read for context (closed bars only)",
           "Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w).", group="style"),
@@ -202,6 +236,9 @@ def validate(overrides: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any]
     if clean["grade_b_min"] > clean["grade_a_min"]:
         errors.append("grade_b_min must not be above grade_a_min - defaults used")
         clean["grade_a_min"], clean["grade_b_min"] = DEFAULTS["grade_a_min"], DEFAULTS["grade_b_min"]
+    if clean["tod_min_sessions"] > clean["tod_sessions"]:
+        errors.append("tod_min_sessions must not be above tod_sessions - defaults used")
+        clean["tod_sessions"], clean["tod_min_sessions"] = DEFAULTS["tod_sessions"], DEFAULTS["tod_min_sessions"]
     if clean["base_min_bars"] > clean["base_max_bars"]:
         errors.append("base_min_bars must not be above base_max_bars - defaults used")
         clean["base_min_bars"], clean["base_max_bars"] = DEFAULTS["base_min_bars"], DEFAULTS["base_max_bars"]

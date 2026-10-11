@@ -46,6 +46,9 @@ class Spec:
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
     flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
+    timeframes: Tuple[str, ...] = ()       # U6 BK2: the only timeframes it runs on (empty = any)
+    min_sessions: int = 0                  # U6 BK2: whole sessions of history it needs (intraday; on top of min_bars)
+    sessions_arg: Optional[str] = None     # U6 BK2: the argument that sets min_sessions (prior sessions + the current one)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -77,6 +80,14 @@ _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_MIN_BARS = 50                            # ATR warm-up plus a leg pivot before the first signal
+# U6 BK2: the intraday screens read the same time of day in the previous `tod_sessions` sessions (20) plus the current one
+INTRADAY_SCREEN_TFS = ("1m", "3m", "5m", "15m")
+INTRADAY_SERIES_TFS = ("1m", "3m", "5m", "15m", "30m", "1h")
+TOD_SESSIONS = 20
+_V_TOD = Arg("v", NUM, 1.5, False)
+_VWAP = Arg("vwap", BOOL, True, False)
+_SKIP = Arg("skip", NUM, 15, False)
+_K = Arg("k", NUM, 0.2, False)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 
@@ -197,6 +208,29 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
          doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
              " both are labelled. With @tf it is the higher timeframe's trend from its closed bars"),
+    # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one
+    # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.
+    Spec("ORBreakout", "filter", BOOL, None, (_SIDE, Arg("minutes", NUM, 15, False), _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         doc="B16: the first close beyond the high (up) / low (down) of the session's first `minutes` by k ATR, with relative volume"
+             " by time of day >= v and the close on the breakout side of the session VWAP (vwap); no signal in the first `skip`"
+             " minutes; once per side per session"),
+    Spec("DayLevelBreak", "filter", BOOL, None, (_SIDE, Arg("level", STR, "first_hour", False, choices=("first_hour", "prev_day", "first_candle", "premarket")),
+                                                 _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         doc="B17: the first close beyond the first hour's, the previous session's, the first candle's or the pre-open bars' high (up)"
+             " / low (down) by k ATR, confirmed like ORBreakout"),
+    Spec("DayExtremeBreak", "filter", BOOL, None, (_SIDE, _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         doc="B18: a close beyond the session's high (up) / low (down) so far by k ATR, with relative volume by time of day >= v and"
+             " VWAP agreement; once per leg"),
+    Spec("RelVolumeTOD", "factor", NUM, "ratio", (Arg("sessions", "window", TOD_SESSIONS, False),
+                                                  Arg("mode", STR, "bar", False, choices=("bar", "cumulative"))),
+         cost=2.0, sessions_arg="sessions", timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
+         doc="volume (mode cumulative: the session's volume so far) / the mean of the same time of day in the previous `sessions`"
+             " sessions (prior sessions only; at least 5)"),
+    Spec("SessionVWAP", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
+         doc="VWAP from the session open on the exchange calendar (pre-open bars left out); equals VWAP on regular-session bars"),
 )}
 
 BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
@@ -211,7 +245,8 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "defaults": {a.name: a.default for a in spec.args if a.default is not None},
                           "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
-                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
+                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc,
+                          "timeframes": list(getattr(spec, "timeframes", ()))}
     return out
 
 

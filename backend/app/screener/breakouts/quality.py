@@ -5,8 +5,10 @@ The GRADE is fixed at the signal bar and uses only bars up to it (closed bars; c
   HTF trend agreement   Dow trend on each context timeframe (1 point each when it is WITH the break; a break against
                         every context timeframe is capped at C)
   volume expansion      relative volume >= vol_mult (the default when the screen's volume condition is off; no volume
-                        data: no point, said so)
+                        data: no point, said so). Intraday screens (B16-B18): relative volume against the same time of
+                        day >= tod_vol_mult
   base dry-up           the last dryup_n bars' mean volume <= dryup_ratio x the vol_avg_n-bar mean before the break
+                        (intraday: their mean time-of-day relative volume <= dryup_ratio)
   volatility regime     ATR / close percentile over atr_pct_lookback bars: low (<= atr_pct_low) earns the point
   room to run           distance to the next opposing level (confirmed swings + classical S/R from the zones port) >=
                         room_min_r x the stop distance; no opposing level (blue sky) counts as room
@@ -27,8 +29,9 @@ import numpy as np
 import pandas as pd
 
 from app.screener.breakouts import params as bp
+from app.screener.breakouts import session as ses
 from app.screener.breakouts import style
-from app.screener.breakouts.screens import SCREEN_TIMEFRAMES, SCREENS, Bars, evaluate_screen
+from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS, Bars, evaluate_screen
 
 DISCLAIMER = "Breakout matches are symbols whose bars passed the screen's rules; they are not recommendations."
 
@@ -145,17 +148,23 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
     if unknown:
         why.append(f"no trend read yet on {', '.join(unknown)}")
     rvol = b.rvol[j]
-    need = p["vol_mult"] if p["vol_mult"] > 0 else bp.DEFAULTS["vol_mult"]   # volume off in the screen: the check keeps the default
+    key = b.vol_key                                                          # vol_mult; intraday: tod_vol_mult
+    need = p[key] if p[key] > 0 else bp.DEFAULTS[key]                        # volume off in the screen: the check keeps the default
     vol_exp = bool(np.isfinite(rvol) and rvol >= need)
     checks["volume_expansion"] = vol_exp
     if not np.isfinite(rvol):
-        why.append("no volume data (volume checks skipped)")
+        why.append("no volume data (volume checks skipped)" if not b.intraday else
+                   "no time-of-day volume yet (too few prior sessions or no volume data; volume checks skipped)")
     elif vol_exp:
         points += 1
-        why.append(f"volume {rvol:.1f}x the {p['vol_avg_n']}-bar average")
+        why.append(f"volume {rvol:.1f}x the {b.rvol_basis}")
     n_avg, n_dry = int(p["vol_avg_n"]), int(p["dryup_n"])
     dry = False
-    if j >= n_avg:
+    if b.intraday:                                                           # quieter than usual for the time of day
+        recent_rv = b.rvol[max(0, j - n_dry):j]
+        recent_rv = recent_rv[np.isfinite(recent_rv)]
+        dry = bool(len(recent_rv) and float(recent_rv.mean()) <= p["dryup_ratio"])
+    elif j >= n_avg:
         recent, base = float(pd.Series(b.v[j - n_dry:j]).mean()), float(pd.Series(b.v[j - n_avg:j]).mean())   # NaN when no volume
         dry = bool(np.isfinite(recent) and np.isfinite(base) and base > 0 and recent <= p["dryup_ratio"] * base)
     checks["base_dry_up"] = dry
@@ -176,6 +185,8 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
     a = b.atr_prev[j]
     if p["stop_mode"] == "base" and np.isfinite(row["base_low" if side == "up" else "base_high"]):
         stop = float(row["base_low" if side == "up" else "base_high"])
+    elif p["stop_mode"] == "midpoint" and np.isfinite(row["base_low"]) and np.isfinite(row["base_high"]):
+        stop = (float(row["base_low"]) + float(row["base_high"])) / 2.0      # B16: the opening-range midpoint
     else:
         stop = level - sign * p["stop_atr_mult"] * (a if np.isfinite(a) else 0.0)
     risk = (close - stop) * sign
@@ -203,10 +214,11 @@ def _liquid(b: Bars, j: int, p: Dict[str, Any]) -> bool:
 
 
 def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *, params: Optional[Dict[str, Any]] = None,
-                 within: Optional[int] = None) -> BreakoutRun:
+                 within: Optional[int] = None, calendar: Optional[ses.SessionCalendar] = None) -> BreakoutRun:
     """One breakout screen with the quality overlay over closed bars. `frames` holds at least the signal timeframe; missing
     context timeframes are built from it. `within`: only signals on the last `within` bars (1 = the last closed bar - a
-    screen run); None = every signal in the history (fitness, tests). Raises ValueError for bad input."""
+    screen run); None = every signal in the history (fitness, tests). `calendar`: the exchange session for the intraday
+    screens (NSE by default; session.calendar_for(exchange)). Raises ValueError for bad input."""
     p = bp.settings(**(params or {}))
     if screen not in SCREENS:
         raise ValueError(f"unknown breakout screen {screen!r}; one of {', '.join(SCREENS)}")
@@ -216,11 +228,16 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
     context = style.context_timeframes(signal_tf, p["context_ladder"])
     all_frames = style.frames_for(frames, signal_tf, context)
     f = all_frames[signal_tf]
-    b = Bars(f, p)
+    intraday = screen in INTRADAY_SCREENS
+    b = Bars(f, p, tf=signal_tf, calendar=calendar)
+    if intraday:
+        b.use_time_of_day()
     sides = ("up", "down") if p["direction"] == "both" else (p["direction"],)
     result = evaluate_screen(f, screen, p, bars=b, sides=sides)
     trends = context_trends(all_frames, signal_tf, context, p)
     run = BreakoutRun(screen, signal_tf, context, p)
+    if intraday:
+        run.notes += _intraday_notes(screen, b, p)
     first = 0 if within is None else max(0, b.n - int(within))
     for side in sides:
         df = result[side]
@@ -251,9 +268,32 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
                 "htf": tr, "htf_pass": htf_pass(list(tr.values()), side, p["htf_filter"]),
                 "grade": g["grade"], "points": g["points"], "why": g["why"], "checks": g["checks"], "stop_ref": g["stop_ref"],
                 "status": status, "retest": retest, "decided_bar": decided,
+                **(_intraday_fields(b, int(j)) if intraday else {}),
             })
     run.signals.sort(key=lambda r: (r["bar"], r["side"]))
     return run
+
+
+def _intraday_fields(b: Bars, j: int) -> Dict[str, Any]:
+    vw = b.vwap()[j]
+    sm = b.sessions()
+    return {"vwap": round(float(vw), 6) if np.isfinite(vw) else None, "session": sm.dates[int(sm.session[j])].isoformat(),
+            "clock": ses.clock(b.f.index[j], b.calendar), "minutes_from_open": None if not np.isfinite(sm.minute[j]) else int(sm.minute[j])}
+
+
+def _intraday_notes(screen: str, b: Bars, p: Dict[str, Any]) -> List[str]:
+    sm = b.sessions()
+    notes: List[str] = []
+    if screen == "B17" and p["day_level"] == "premarket":
+        have = {int(x) for x in sm.pre_session[sm.pre]}
+        missing = len(sm.dates) - len(have)
+        if missing:
+            notes.append(f"{missing} of {len(sm.dates)} sessions have no pre-open bars in the data: no pre-market level for them")
+    if sm.special.any():
+        notes.append(f"{int(sm.special.sum())} special session(s) (another open time) are left out of the time-of-day averages")
+    if not np.isfinite(b.tod_rvol()).any() and p["tod_vol_mult"] > 0:
+        notes.append(f"relative volume by time of day needs {int(p['tod_min_sessions'])} prior sessions with volume: none yet")
+    return notes
 
 
 __all__ = ["run_breakout", "BreakoutRun", "grade_signal", "context_trends", "htf_pass", "atr_percentile", "atr_percentile_series", "DISCLAIMER"]

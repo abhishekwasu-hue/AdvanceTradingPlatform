@@ -1,10 +1,11 @@
-# Breakout screens - research notes (U6 BK1)
+# Breakout screens - research notes (U6 BK1, BK2)
 
 Source spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (§1 research summary). Code: `backend/app/screener/breakouts/`.
 
 Rule: no fitted numbers. Every threshold is an editable parameter (`params.py`) whose default is a published convention or
 the practitioner range named below, with a one-line note. The table at the end is the parameter list; a test
-(`tests/test_z7_bk1_breakouts.py`) checks that every parameter and its note appear here word for word.
+(`tests/test_z7_bk1_breakouts.py`) checks that every parameter and its note appear here word for word (BK2's intraday
+parameters included).
 
 ## What the sources say (spec §1, summarised)
 
@@ -55,6 +56,51 @@ the practitioner range named below, with a one-line note. The table at the end i
   greyed out when samples are small.
 - **Wording.** Results are "matches", never advice. Research only: nothing places, changes or blocks an order.
 
+## Intraday breakouts (U6 BK2: B16 / B17 / B18)
+
+Code: `backend/app/screener/breakouts/intraday.py` (the screens) and `session.py` (the session clock, session VWAP and
+relative volume by time of day). Tests: `backend/tests/test_z7_bk2_intraday.py`.
+
+What the sources say:
+- **Opening range breakout.** Toby Crabel, *Day Trading with Short Term Price Patterns and Opening Range Breakout*
+  (1990): the range of the first minutes of the session is the reference, and a move beyond it tends to carry on. The
+  common windows are 15, 30 and 60 minutes (spec B16). The platform's own ORB strategy (`strategy_engine/
+  combo_strategies.py`) already uses a 15-minute range, the first close beyond it, and a stop at the range midpoint.
+- **First-hour, previous-day and first-candle levels.** These are practitioner references, not studied effects: the
+  first hour's high / low, the previous session's high / low (PDH / PDL) and the first candle (spec B17). The pre-open
+  high needs pre-open bars, which most broker feeds do not carry, so this level is used "where data allows".
+- **Relative volume by time of day.** Intraday volume is U-shaped: heavy at the open and the close, light at midday
+  (Jain & Joh, "The Dependence between Hourly Prices and Trading Volume", *JFQA* 1988; Admati & Pfleiderer, "A Theory of
+  Intraday Patterns", *RFS* 1988). A plain n-bar average therefore calls every opening bar "high volume" and every midday
+  bar "low". The fair yardstick is the same time of day in earlier sessions (spec §1 and B16). The 1.5-2x practitioner
+  range carries over (`tod_vol_mult` 1.5).
+- **VWAP.** The session's volume-weighted average price is the standard intraday execution benchmark (Berkowitz, Logue &
+  Noser, "The Total Cost of Transactions on the NYSE", *Journal of Finance* 1988). Price on the breakout side of VWAP means
+  the session's average buyer (seller) is in profit - the spec's "VWAP on the breakout side" (B16, B18).
+- **Avoid the first minutes** (spec §1 false-break filters): the opening auction and the first prints are noisy. The
+  default skip is 15 minutes, the same window as the default opening range.
+
+How BK2 uses them:
+- **Session clock from the exchange calendar** (`app/market_data/calendar.EXCHANGE_SESSIONS`: NSE 09:15-15:30 IST, no new
+  entries after 15:00). Nothing in the screens hardcodes 09:15. Bars are placed by their start in exchange time.
+- **Half days and special sessions.** The calendar has holidays but no special sessions, so:
+  - a session is the bars its date has inside the window, and a half day just has fewer bars;
+  - a time-of-day slot that a half day never reached is averaged over the sessions that had it;
+  - an exchange circular can override a date's window (`session.calendar_for(exchange, special={date: (open, close)})`);
+  - an evening-only date (Muhurat) is recognised from its first bar and opens there.
+  A session that opens at another time than the regular open is left out of the time-of-day averages, and it is not the
+  next session's "previous day".
+- **Signals.** Each signal is a close beyond the level by `min_break_atr` x ATR, on a bar inside the time-of-day window.
+  That bar must also have the time-of-day volume and VWAP agreement. B16 / B17 levels are fixed for the session, so the
+  event is the cross (one per leg by construction), capped at `intraday_max_per_session` per side per session. B18's
+  level moves with each new extreme: it uses the BK1 swing-leg rule, re-armed at each session start.
+- **Quality overlay.** The overlay is the same equal-weight checklist. For B16-B18 two checks change: "volume expansion"
+  reads the time-of-day relative volume, and "base dry-up" asks whether the bars before the break traded at or below
+  their usual volume for the time of day. The time-of-day window (spec quality overlays; BK1-7) is a hard filter on the
+  intraday screens (`skip_first_min`, `tod_window_end`), not a grade point, so BK1's grade thresholds keep their meaning.
+- **"Then" template stop.** For the ORB templates the stop reference is the opening-range midpoint (`stop_mode` =
+  midpoint). `base` gives the opposite side of the range.
+
 ## Parameters
 
 | Parameter | Group | Default | Research note |
@@ -91,7 +137,7 @@ the practitioner range named below, with a one-line note. The table at the end i
 | `atr_pct_lookback` | quality | 100 | One regime window (about five months on Daily). |
 | `atr_pct_low` | quality | 33.33 | Lower tercile; breakouts from low-volatility regimes did best in the study (spec §1). |
 | `atr_pct_high` | quality | 66.67 | Upper tercile. |
-| `stop_mode` | quality | level_atr | Spec §5 stop forms; editable. |
+| `stop_mode` | quality | level_atr (ORB templates: midpoint) | Spec §5 stop forms; editable. |
 | `stop_atr_mult` | quality | 1 | One ATR: one bar of noise past the level. |
 | `room_min_r` | quality | 2 | 2R = conventional minimum reward:risk. |
 | `room_swing_degree` | quality | 1 | Same structure degree as B2. |
@@ -101,4 +147,15 @@ the practitioner range named below, with a one-line note. The table at the end i
 | `grade_b_min` | quality | 3 | Equal-weight checklist; no fitted weights. |
 | `leg_degree` | quality | 0 | D0 = the smallest confirmed pullback (pa_settings). |
 | `leg_rearm_bars` | quality | 20 | As long as the default B1 range: a base that long is a new leg. |
+| `skip_first_min` | intraday | 15 | Spec §1 'avoid the first minutes'; 15 minutes = the NSE opening-noise window (09:15-09:30) the platform's ORB strategy also waits out. |
+| `tod_window_end` | intraday | calendar | The platform's own intraday cut-off (no new entries after 15:00 on NSE) is the time-of-day window of the spec's quality overlay. |
+| `tod_sessions` | intraday | 20 | 20 sessions = about one trading month, as vol_avg_n; the same-time average removes the U-shaped intraday volume curve (Jain & Joh 1988). |
+| `tod_min_sessions` | intraday | 5 | One trading week of history before the average is trusted. |
+| `tod_mode` | intraday | bar | Both forms are in use: bar confirms the break bar (like vol_mult); cumulative is the scanners' 'relative volume at time of day'. |
+| `tod_vol_mult` | intraday | 1.5 | Low end of the 1.5-2x practitioner range, as vol_mult, measured against the same time of day. |
+| `vwap_agree` | intraday | True | Spec B16 / B18: VWAP on the breakout side; VWAP is the intraday execution benchmark (Berkowitz, Logue & Noser 1988). |
+| `intraday_max_per_session` | intraday | 1 | The platform's ORB strategy takes only the first close beyond the range; a re-cross is often the whipsaw the failed-break rule warns of. |
+| `or_minutes` | B16 | 15 | Crabel (1990) opening range; 15 / 30 / 60 minutes are the windows named in spec B16 (15 = the platform's ORB strategy). |
+| `day_level` | B17 | first_hour | The B17 levels named in the spec. |
+| `first_hour_min` | B17 | 60 | The first trading hour (09:15-10:15 on NSE) by name. |
 | `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, ... (see style.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |

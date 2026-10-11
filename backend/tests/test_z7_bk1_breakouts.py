@@ -71,7 +71,8 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "NewHighBreakout": {"weeks": "high_weeks", "v": "vol_mult", "k": "min_break_atr"},
             "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"}, "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
             "RelVolume": {"n": "vol_avg_n"}, "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"}, "DowTrend": {"degree": "htf_degree"}}
-    assert set(want) == set(BREAKOUT_FUNCTIONS)
+    bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
+    assert set(want) | bk2 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():

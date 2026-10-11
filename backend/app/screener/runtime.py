@@ -188,6 +188,9 @@ class _Eval:
         def _text(i: int, default: str) -> str:
             return str(self.ev(args[i], tf)) if len(args) > i else default
 
+        def _bool(i: int, default: bool) -> bool:
+            return bool(_last(self.ev(args[i], tf))) if len(args) > i else default
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
             "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
@@ -237,6 +240,17 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
+            "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
+                "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
+                "min_break_atr": num(5, 0.2)}, tf=tf),
+            "DayLevelBreak": lambda: _breakout(f, "B17", str(self.ev(args[0], tf)), {
+                "day_level": _text(1, "first_hour"), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
+                "min_break_atr": num(5, 0.2)}, tf=tf),
+            "DayExtremeBreak": lambda: _breakout(f, "B18", str(self.ev(args[0], tf)), {
+                "tod_vol_mult": num(1, 1.5), "vwap_agree": _bool(2, True), "skip_first_min": num(3, 15), "min_break_atr": num(4, 0.2)}, tf=tf),
+            "RelVolumeTOD": lambda: _rel_volume_tod(f, tf, win(0, 20), _text(1, "bar")),
+            "SessionVWAP": lambda: _session_vwap(f, tf),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -469,15 +483,16 @@ def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
         raise ScreenRuntimeError(str(exc)) from exc
 
 
-def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal") -> pd.Series:
+def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal", tf: Optional[str] = None) -> pd.Series:
     """U6 BK1: one breakout screen's per-leg signal on each bar (or, `type`, BOS / CHOCH on B2 signal bars), from
-    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal)."""
+    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal). `tf`: the bars'
+    timeframe (the BK2 intraday screens place bars on the session clock)."""
     from app.screener.breakouts.screens import evaluate_screen
     if side not in ("up", "down"):
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
     try:
-        out = evaluate_screen(f, screen, p, sides=(side,))[side]
+        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf)[side]
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     if what == "type":
@@ -495,6 +510,29 @@ def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
     from app.screener.breakouts.screens import Bars
     b = Bars(f, _breakout_params({"atr_n": atr_n}))
     return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
+
+
+def _session_bars(f: pd.DataFrame, tf: str, overrides: Dict[str, Any]) -> Any:
+    from app.screener.breakouts.screens import Bars
+    b = Bars(f, _breakout_params(overrides), tf=tf)
+    try:
+        b.sessions()
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    return b
+
+
+def _rel_volume_tod(f: pd.DataFrame, tf: str, sessions: int, mode: str) -> pd.Series:
+    """U6 BK2: relative volume against the same time of day in the previous `sessions` sessions (at least
+    min(5, sessions) of them), from app/screener/breakouts/session.py."""
+    from app.screener.breakouts import params as bp
+    b = _session_bars(f, tf, {"tod_sessions": sessions, "tod_min_sessions": min(int(bp.DEFAULTS["tod_min_sessions"]), sessions),
+                              "tod_mode": mode})
+    return pd.Series(b.tod_rvol(), index=f.index, dtype=float)
+
+
+def _session_vwap(f: pd.DataFrame, tf: str) -> pd.Series:
+    return pd.Series(_session_bars(f, tf, {}).vwap(), index=f.index, dtype=float)
 
 
 def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:

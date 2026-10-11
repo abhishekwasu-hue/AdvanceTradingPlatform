@@ -1401,6 +1401,12 @@ class AlertDeliveryRecord(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # S3a (ADR-0022): the Notification Service grows this outbox - priority routing, the burst group or digest bucket a
+    # delivery belongs to, and a reason code next to every non-sent status.
+    priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    digest_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class CompanyRecord(Base):
@@ -1959,6 +1965,73 @@ class ScreenRunRecord(Base):
     result_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # [{symbol, matched, reason}]
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+class AlertRuleRecord(Base):
+    """S3a (ADR-0022): a screen or instrument alert rule - what fires (a saved screen, or a ScreenQL condition on one
+    symbol), how loud (priority), how often (cooldown), and instant or digest delivery. Rules produce `alert_events`;
+    events produce notifications and outbox deliveries. A rule never places or changes an order."""
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)                 # screen / instrument
+    screen_id: Mapped[int | None] = mapped_column(ForeignKey("screens.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    condition_text: Mapped[str | None] = mapped_column(Text, nullable=True)        # canonical ScreenQL (instrument rules)
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")   # critical / normal / low
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="instant")      # instant / digest
+    digest_every: Mapped[str] = mapped_column(String(10), nullable=False, default="hourly")  # hourly / eod
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="active")     # active / paused
+    expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class AlertEventRecord(Base):
+    """S3a (ADR-0022): one firing of a rule for one symbol on one bar. `idem_key` (rule, symbol, condition hash, bar
+    time) is unique, so a re-run of the same bar never fires twice. Status: pending -> sent / suppressed / held (quiet
+    hours, hourly cap, digest), always with a reason code."""
+
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    condition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    idem_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False)
+    values_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")     # the trigger values, with their timestamps
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class NotificationPolicyRecord(Base):
+    """S3a (ADR-0022): an organisation's delivery policy - its timezone and quiet hours, the hourly cap, and the burst
+    grouping window. One row per tenant; missing = the defaults in app/alerts/engine.py."""
+
+    __tablename__ = "notification_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True)
+    timezone: Mapped[str] = mapped_column(String(40), nullable=False, default="Asia/Kolkata")
+    quiet_start: Mapped[str | None] = mapped_column(String(5), nullable=True)      # HH:MM in `timezone`
+    quiet_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    max_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    group_window_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    eod_digest_time: Mapped[str] = mapped_column(String(5), nullable=False, default="15:45")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class ChartDrawingRecord(Base):

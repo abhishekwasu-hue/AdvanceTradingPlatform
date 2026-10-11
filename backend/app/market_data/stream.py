@@ -687,6 +687,13 @@ class StreamManager:
         for key in list(self._streams):
             await self.drop(key)
 
+    async def drop_prefix(self, prefix: str) -> int:
+        """Stop every stream whose key starts with `prefix` (BT1b: all of one organisation's org-wide streams)."""
+        keys = [key for key in list(self._streams) if key.startswith(prefix)]
+        for key in keys:
+            await self.drop(key)
+        return len(keys)
+
     def status(self) -> Dict[str, dict]:
         return {key: stream.status().as_dict() for key, stream in self._streams.items()}
 

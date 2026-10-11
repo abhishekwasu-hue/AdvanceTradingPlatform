@@ -1562,6 +1562,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   stream), PW2 (mobile layout, on its branch), BYOK-V1 #160 (flag vision_byok off), PW6 in progress. All draft, all
   flags off, nothing deployed.
 
+### 2026-10-11 18:30 IST - Z3 (BT2/BT3, Phase 0): approval-only entries, re-quote, exits policy; per-user PAPER account
+- Z3-a (`claude/z3-paper-approval`, flag `approval_only_entries`, off):
+  - Deployment signals, TradingView alerts and public-API signals become ENTRY proposals on the monitor state machine.
+  - A gate in both order pipelines refuses any automatic entry that comes without an approved proposal. An AST census
+    test lists every caller of the pipelines.
+  - Approve re-quotes the price (0.5 % / ticks, stricter wins; re-proposed at most 2 times) and places one PAPER order.
+  - Entry proposals expire every cycle (15 min).
+  - Target exits ask "Exit now?"; protective exits stay automatic and are never held by a question or a snooze.
+  - "Exit now" via the API, the Positions button and Telegram `/exit`.
+  - Migration `f3a9c1e7b2d4`.
+- Z3-b (`claude/z3b-paper-account`, stacked on Z3-a, flag `paper_account`, off):
+  - One PAPER account per user: starting capital, balance, P&L after charges, positions, journal, would-have records.
+  - The PAPER-scope pause.
+  - The progression ladder card (PAPER stage, criteria from data).
+  - Telegram `/status /pause /resume /paper`, with the manual trigger ported from the Trade repo with parity cases.
+  - Migration `a7d3e9f1c5b8`.
+- Open questions Z3-1 to Z3-9. Not done, by the rules: nothing deployed, no flag turned on, no LIVE path, no broker API
+  order.
 ### 2026-10-11 - Z6 (P1-e): journal auto-capture, behaviour tags, discipline score, weekly review (flag off)
 - Split in two stacked draft PRs: Z6-a = auto-capture hooks, detectors, score, settings, `/api/journal` (backend);
   Z6-b = weekly review (backend) and the Journal & Discipline page. Flag `discipline_engine`, default OFF.

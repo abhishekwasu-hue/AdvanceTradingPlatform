@@ -6,7 +6,7 @@ the client are still accepted for demos, but they are labelled `sample` whatever
 evidence cannot approve or deploy anything (AI_EVIDENCE_SERVER_ONLY, on by default). No server data for the window
 means 409 - never a silent fallback to client data (OPEN_QUESTIONS H-5).
 """
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import pandas as pd
 from fastapi import HTTPException
@@ -36,15 +36,27 @@ def require_server(source: Optional[str], what: str) -> None:
 
 
 async def server_frame(session: AsyncSession, tenant_id: int, symbol: str, exchange: str, timeframe: str, *,
-                       broker: Optional[str] = None, lookback_days: int = 30) -> Tuple[pd.DataFrame, str]:
-    """Candles fetched by the server through the tenant's broker session -> (frame, source)."""
+                       broker: Optional[str] = None, lookback_days: int = 30, user: Any = None) -> Tuple[pd.DataFrame, str]:
+    """Candles fetched by the server through the tenant's broker session -> (frame, source).
+
+    BT1b (flag `byob_data_tier`): only through `user`'s own session at a confirmed broker, cached for that session
+    only (never the platform-wide candle key); otherwise 409 with the reason."""
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, tenant_id, broker, "primary")          # 409 when no session today
-    adapter = build_adapter(record)
+    if await live_access.byob_on(session, tenant_id):
+        own = await live_access.user_source(session, user if getattr(user, "tenant_id", None) == tenant_id else None,
+                                            [(symbol, exchange)], broker=broker)
+        if not own.allows(symbol, exchange):
+            raise live_access.LiveDataRefused(own.reason(symbol, exchange))
+        record = own.record
+        service = own.market_data(lookback_days=lookback_days)
+    else:
+        record = await _pick_record(session, tenant_id, broker, "primary")          # 409 when no session today
+        service = MarketDataService(build_adapter(record), lookback_days=lookback_days)
     try:
-        bars = await MarketDataService(adapter, lookback_days=lookback_days).get_candles(symbol.strip().upper(), exchange.strip().upper(), timeframe)
+        bars = await service.get_candles(symbol.strip().upper(), exchange.strip().upper(), timeframe)
     except Exception as exc:  # noqa: BLE001 - say what the broker said
         raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
     if not bars:

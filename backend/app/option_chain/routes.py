@@ -6,6 +6,7 @@
 * `GET /api/option-chain/{underlying}/strikes`  per-strike call/put OI through the day (the window of the latest slot)
 * `GET /api/option-chain/{underlying}/alerts` the tenant's alert decisions today (sent or held back, with the reason);
   `POST .../alerts/snooze` (minutes) and `POST .../alerts/mute-today` pause them - read-only actions, never an order
+  `POST .../alerts/test` sends one test alert through the organisation's channels
 * `GET /api/option-chain/{underlying}/settings` and `PUT` (owner) - the tenant's settings for the underlying; "*" is
   the tenant default for every underlying. `enabled` asks the collector to follow the underlying.
 
@@ -192,3 +193,11 @@ async def alert_log(underlying: str, day: Optional[date] = Query(default=None, a
     return {"underlying": underlying, "snoozed_until": own.snoozed_until.isoformat() if own and own.snoozed_until else None,
             "alerts": [{"alert_type": r.alert_type, "old_state": r.old_state, "new_state": r.new_state, "status": r.status,
                         "slot": r.slot_start.isoformat(), "at": r.created_at.isoformat(), "notification_id": r.notification_id} for r in rows]}
+
+
+@router.post("/{underlying}/alerts/test")
+async def test_alert(underlying: str, user: User = Depends(_member), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Sends one test alert through the organisation's channels (the normal severity floors apply; WARNING)."""
+    from app.option_chain import oi_alerts
+    record = await oi_alerts.send_test(session, user.tenant_id, _underlying(underlying))
+    return {"notification_id": record.id}

@@ -4,10 +4,11 @@ over a whole universe instead of once per symbol.
 The per-symbol runtime (`runtime._Eval`) pays pandas' fixed cost (tens of microseconds per operation) for every symbol
 and every factor: a 50-factor screen over 2,500 symbols is about 125,000 small operations, minutes of work. Here the
 symbols that share the same bar index are stacked into one frame per field (one column per symbol), and every
-operation runs once on the stack. pandas applies rolling windows, exponential averages, shifts, comparisons and the
-logic column by column with the same code as on one series, so each column is the very series the per-symbol runtime
-computes (`tests/test_z10d_vectorised_screen.py` checks this bit for bit, function by function, and match for match
-on random screens).
+operation runs once on the stack. Shifts, arithmetic, comparisons and the logic are elementwise; the window functions
+(rolling mean / standard deviation, exponential means) are kernels below that repeat pandas' own online algorithms
+operation for operation. So each column is the very series the per-symbol runtime computes
+(`tests/test_z10d_vectorised_screen.py` checks this bit for bit, function by function, and match for match on random
+screens).
 
 What it covers: fields and the functions in `FUNCTIONS` below on the screen's base timeframe, numbers, parameters,
 arithmetic, comparisons, BETWEEN / IN, ALL / ANY / NOT. Anything else (another timeframe, a cross-sectional rank, a
@@ -76,10 +77,11 @@ class Panel:
         return self._built[column]
 
     def __getitem__(self, column: str) -> pd.DataFrame:
-        out = self.get(column)
-        if out is None:
+        """An indicator's input column: like `frame[column]` per symbol, a symbol without it is an error (the group then
+        runs per symbol, where that symbol gets its reason)."""
+        if not all(column in f.columns for f in self.frames):
             raise KeyError(column)
-        return out
+        return self.get(column)  # type: ignore[return-value]
 
 
 # --- kernels: pandas' own window algorithms, run across all symbols at once ------------------------------------------

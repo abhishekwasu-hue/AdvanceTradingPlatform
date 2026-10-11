@@ -263,3 +263,11 @@ def test_the_flag_is_off_by_default_and_reaches_the_run_and_the_bar_close_engine
         async with _session_factory() as session:
             return await controls.flag_enabled(session, panel.FLAG, me["tenant_id"])
     assert asyncio.run(flagged()) is False
+
+
+def test_a_missing_column_is_missing_for_a_field_and_an_error_for_an_indicator_as_per_symbol():
+    data = [SymbolData(f"A{i}", {"1d": _walk(i, IDX_A)}) for i in range(4)]
+    data[1] = SymbolData("A1", {"1d": data[1].frames["1d"].drop(columns=["high"])})
+    for text in ("high > 0", "ATR(14) > 0", "close > SMA(close, 5)"):
+        ast, validated = compile_screen(text, base_tf="1d")
+        assert _as_tuples(run_screen(ast, validated, data, base_tf="1d", vectorized=True)) == _as_tuples(run_screen(ast, validated, data, base_tf="1d")), text

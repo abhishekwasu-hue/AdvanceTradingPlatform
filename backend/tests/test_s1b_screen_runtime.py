@@ -136,6 +136,41 @@ def test_offset_and_timeframe_in_either_order():
             parse(bad)
 
 
+def test_strategy_builder_and_scanner_entries_match_their_source():
+    from app.brokers.models import OptionChain, OptionChainRow
+    from app.option_chain.analysis import analyze_option_chain
+    from app.price_action.market_structure import analyze_market_structure
+    from app.strategy_engine.declarative import Operand
+    rng = np.random.default_rng(5)
+    day1 = _bars(list(100 + rng.normal(0, 0.5, 75).cumsum()), start="2026-03-02 03:45")
+    day2 = _bars(list(101 + rng.normal(0, 0.5, 75).cumsum()), start="2026-03-03 03:45")
+    f = pd.concat([day1, day2])
+    rows = [OptionChainRow(strike=s, call_oi=c, put_oi=p) for s, c, p in ((90.0, 50.0, 80.0), (100.0, 60.0, 70.0), (110.0, 90.0, 20.0))]
+    chain = OptionChain(underlying="X", expiry="2026-03-26", underlying_ltp=101.0, rows=rows)
+    d = SymbolData("S", {"5m": f}, option_chain=chain)
+
+    def op(ind, period=14, mult=3.0):
+        return Operand(type="indicator", indicator=ind, period=period, multiplier=mult).series(f)
+    pairs = {"PlusDI(10)": op("PLUS_DI", 10), "MinusDI(10)": op("MINUS_DI", 10), "Supertrend(7, 2.5)": op("SUPERTREND", 7, 2.5),
+             "BBUpper(20, 2)": op("BB_UPPER", 20, 2.0), "BBMid(20, 2)": op("BB_MID", 20, 2.0), "BBLower(20, 2)": op("BB_LOWER", 20, 2.0),
+             "DayOpen()": op("DAY_OPEN"), "PDH()": op("PDH"), "PDL()": op("PDL"), "PDC()": op("PDC"), "ORHigh(15)": op("OR_HIGH", 15),
+             "ORLow(15)": op("OR_LOW", 15), "VWAP()": op("VWAP")}
+    for text, expected in pairs.items():
+        got = _ev(text, d)
+        pd.testing.assert_series_equal(got.astype(float), expected.astype(float), check_names=False, obj=text)
+    structure = analyze_market_structure(f, window=3)
+    assert _ev("Trend(3)", d) == structure.trend.value
+    latest = structure.events[-1] if structure.events else None
+    assert _ev("StructureEvent(3)", d) == (f"{latest.event}_{latest.direction}".upper() if latest else "")
+    assert isinstance(_ev("PatternBullish()", d), bool) and isinstance(_ev("PatternBearish()", d), bool)
+    assert isinstance(_ev("NearSupport(0.5)", d), bool) and isinstance(_ev("NearResistance(0.5, 3)", d), bool)
+    a = analyze_option_chain(chain)
+    assert _ev("PCR()", d) == a.pcr and _ev("ChainBias()", d) == a.bias.value
+    assert round(_ev("MaxPainDistancePct()", d), 6) == round(abs(101.0 - a.max_pain) / 101.0 * 100, 6)
+    bare = SymbolData("S", {"5m": f})
+    assert np.isnan(_ev("PCR()", bare)) and _ev('ChainBias() == "BULLISH"', bare) is False         # no chain: never a match
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

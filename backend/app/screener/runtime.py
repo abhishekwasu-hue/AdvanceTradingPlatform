@@ -12,6 +12,8 @@ registry entry.
 """
 from __future__ import annotations
 
+import logging
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -27,6 +29,8 @@ from app.indicators.volatility import atr as _atr
 from app.screener import nodes as n
 from app.screener.registry import FUNCTIONS
 from app.screener.validator import Validated
+
+logger = logging.getLogger(__name__)
 
 _RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "1D", "1w": "W-MON", "1M": "MS"}
 _DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "15m": timedelta(minutes=15),
@@ -291,6 +295,9 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     return hi, lo, d
 
 
+_ZONE_CACHE: Dict[int, Tuple[Any, Any, Dict[Tuple[str, int], Tuple[np.ndarray, np.ndarray]]]] = {}
+
+
 def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series:
     """S5-A4: the zone at the last CONFIRMED swing low (support) or high (resistance) as of each bar, measured by the
     trade-port level_strength module (default settings) from bars up to that bar.
@@ -300,17 +307,35 @@ def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series
       is used only from the bar that confirmed it, and every bar after the origin that the measures read is <= the bar.
     - `strength` is strength_score (0-100) without leg labels (no leg classifier in ScreenQL) and without time at price
       (that needs 1-minute data), so those two parts score as unknown, the same way the module scores them.
-    - `distance` is (close - zone mid) / median range (dist_mr). Missing before the first confirmed pivot."""
+    - `distance` is (close - zone mid) / median range (dist_mr). Missing before the first confirmed pivot, and on a bar
+      with no price range to measure in (flat bars: a zero median range).
+    Strength and distance come from one pass, kept for the frame, so a screen using both pays once."""
+    if side not in ("low", "high"):
+        raise ScreenRuntimeError(f"unknown swing zone side {side!r}")
+    stamp = (len(f), f.index[-1] if len(f) else None, float(f["close"].iloc[-1]) if len(f) else None)
+    ref = _ZONE_CACHE.get(id(f))
+    if ref is None or ref[0]() is not f or ref[1] != stamp:               # another frame, or this one was changed
+        if len(_ZONE_CACHE) > 64:                                          # frames of finished runs: drop them
+            _ZONE_CACHE.clear()
+        ref = (weakref.ref(f), stamp, {})
+        _ZONE_CACHE[id(f)] = ref
+    key = (side, degree)
+    if key not in ref[2]:
+        ref[2][key] = _swing_zone_arrays(f, side, degree)
+    strength, distance = ref[2][key]
+    return pd.Series((strength if what == "strength" else distance).copy(), index=f.index)   # the cache stays intact
+
+
+def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndarray, np.ndarray]:
     from app.price_action import causal_swings as cs
     from app.price_action import level_strength as ls
     from app.price_action import pa_settings
-    if side not in ("low", "high"):
-        raise ScreenRuntimeError(f"unknown swing zone side {side!r}")
     s = pa_settings.settings()
     if not 0 <= degree < len(s["swing_atr_mult"]):
         raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
-    idx = pd.DatetimeIndex(f.index)
-    stamps = idx.tz_convert(None) if idx.tz is not None else idx          # naive UTC on both sides of the origin lookup
+    # level_strength finds the origin by timestamp; bar-numbered stamps make that lookup exact whatever the index holds
+    # (time zone, duplicates). Nothing else here reads the stamps (time at price is not used).
+    stamps = pd.to_datetime(np.arange(len(f)), unit="s")
     frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
     frame["timestamp"] = frame["bar_end"] = stamps
     kind = "L" if side == "low" else "H"
@@ -319,9 +344,12 @@ def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series
         if p.kind == kind and p.confirmed_idx is not None:
             origin[int(p.confirmed_idx):] = int(p.bar_idx)
     bars = ls.prep_bars(frame, s)
-    o, h, l, c = bars["o"], bars["h"], bars["l"], bars["c"]
-    out = np.full(len(f), np.nan)
+    o, h, l, c, mr = bars["o"], bars["h"], bars["l"], bars["c"], bars["mr"]
+    strength, distance = np.full(len(f), np.nan), np.full(len(f), np.nan)
     for t in np.flatnonzero(origin >= 0):
+        mr_t = mr[t] if np.isfinite(mr[t]) and mr[t] > 0 else float(np.nanmedian(h[:t + 1] - l[:t + 1]))
+        if not (np.isfinite(mr_t) and mr_t > 0):                           # nothing to measure in: missing, not a crash
+            continue
         b = int(origin[t])
         if side == "low":
             zone = {"low": float(l[b]), "high": float(max(l[b], min(o[b], c[b]))), "kind": "SUPPORT"}
@@ -329,8 +357,8 @@ def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series
             zone = {"low": float(min(h[b], max(o[b], c[b]))), "high": float(h[b]), "kind": "RESISTANCE"}
         zone["formed_at"] = stamps[b]
         feats = ls.strength_features(zone, frame, int(t), symbol="DEFAULT", settings=s, bars=bars)
-        out[t] = ls.strength_score(feats) if what == "strength" else feats["dist_mr"]
-    return pd.Series(out, index=f.index)
+        strength[t], distance[t] = ls.strength_score(feats), feats["dist_mr"]
+    return strength, distance
 
 
 def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:
@@ -552,6 +580,10 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
             out.append(Match(d.symbol, False, str(exc)))
+            continue
+        except Exception as exc:  # noqa: BLE001 - S5-A4 review: one symbol's bad data must not abort the whole universe
+            logger.exception("Screen evaluation failed for %s", d.symbol)
+            out.append(Match(d.symbol, False, f"could not be evaluated ({type(exc).__name__})"))
             continue
         out.append(Match(d.symbol, bool(value) if not (isinstance(value, float) and np.isnan(value)) else False))
     return out

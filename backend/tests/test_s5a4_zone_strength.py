@@ -24,7 +24,7 @@ def _ev(text, frame, tf="1m"):
 
 def _reference(f, side, degree):
     s = pa_settings.settings()
-    stamps = pd.DatetimeIndex(f.index).tz_convert(None)
+    stamps = pd.to_datetime(np.arange(len(f)), unit="s")                         # any unique increasing stamps
     frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
     frame["timestamp"] = frame["bar_end"] = stamps
     pivots = [p for p in cs.degree_pivots(frame, degree, s) if p.kind == ("L" if side == "low" else "H")]
@@ -81,13 +81,55 @@ def test_truncation_invariant(degree):
             assert (np.isnan(part) and np.isnan(full.iloc[j])) or part == pytest.approx(full.iloc[j]), (what, degree, j)
 
 
-def test_the_bar_clock_does_not_depend_on_the_time_zone():
-    """The origin is looked up by timestamp: an IST index must give the same series as UTC."""
+def test_the_index_time_zone_and_duplicate_stamps_do_not_move_the_origin():
+    """level_strength finds the origin by timestamp; the series must not depend on what the index holds."""
     f = generate(320, 100.0, 11)
+    want = {side: _ev(f'SwingZoneStrength("{side}")', f).to_numpy(float) for side in ("low", "high")}
     ist = f.tz_convert("Asia/Kolkata")
-    for side in ("low", "high"):
-        np.testing.assert_allclose(_ev(f'SwingZoneStrength("{side}")', ist).to_numpy(float),
-                                   _ev(f'SwingZoneStrength("{side}")', f).to_numpy(float), equal_nan=True)
+    naive_ist = ist.tz_localize(None)
+    doubled = f.set_axis(f.index[::2].repeat(2)[: len(f)])                      # every stamp twice
+    assert doubled.index.has_duplicates
+    for frame in (ist, naive_ist, doubled):
+        for side in ("low", "high"):
+            np.testing.assert_allclose(_ev(f'SwingZoneStrength("{side}")', frame).to_numpy(float), want[side], equal_nan=True)
+
+
+def test_flat_bars_give_missing_values_not_an_error():
+    """A suspended or circuit-locked stock: every bar at one price. Zero median range - nothing to measure in."""
+    f = generate(400, 100.0, 11)
+    f.iloc[120:, :4] = 101.0
+    for what in ("SwingZoneStrength", "SwingZoneDistance"):
+        got = _ev(f'{what}("low")', f)
+        assert got.iloc[-1:].isna().all() and got.iloc[:120].notna().any(), what
+
+
+def test_one_pass_serves_strength_and_distance(monkeypatch):
+    from app.screener import runtime
+    calls = []
+    original = runtime._swing_zone_arrays
+    monkeypatch.setattr(runtime, "_swing_zone_arrays", lambda *a: calls.append(a[1:]) or original(*a))
+    f = generate(320, 100.0, 12)
+    _ev('SwingZoneStrength("low") > 30 AND SwingZoneDistance("low") < 3', f)
+    assert calls == [("low", 0)]
+    f.iloc[-1, f.columns.get_loc("close")] += 0.5                              # the frame changed: computed again
+    _ev('SwingZoneStrength("low") > 30', f)
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("degree", [0, 1])
+def test_the_answer_does_not_depend_on_history_beyond_the_lookback(degree):
+    """Evaluated on exactly the validator's lookback, the last bar matches the long history (S5-A4 per-degree minimum)."""
+    text = f'SwingZoneDistance("low", {degree})'
+    lb = compile_screen(text, base_tf="1m")[1].lookback["1m"]
+    bad = total = 0
+    for seed in (301, 302, 303):
+        f = generate(1200, 100.0, seed)
+        full = _ev(text, f)
+        for j in range(len(f) - 1, len(f) - 200, -25):
+            part = _ev(text, f.iloc[j + 1 - lb: j + 1]).iloc[-1]
+            total += 1
+            bad += not ((np.isnan(part) and np.isnan(full.iloc[j])) or part == pytest.approx(full.iloc[j]))
+    assert total == 24 and bad == 0, (bad, total)
 
 
 def test_validation_and_units():
@@ -97,13 +139,17 @@ def test_validation_and_units():
     assert "is not one of" in ok('SwingZoneStrength("low", 7) > 60').problems[0].message
     assert not ok('SwingZoneStrength("low") > close').ok                           # a 0-100 score is not a price
     assert ok('SwingZoneStrength("low") > 60').lookback["5m"] >= 100               # the swing warm-up
+    for degree, bars in enumerate((100, 250, 600, 1200)):                           # more history for a larger degree
+        assert ok(f'SwingZoneStrength("low", {degree}) > 60').lookback["5m"] >= bars
+        assert ok(f'SwingLow({degree}) > close').lookback["5m"] >= bars
+    assert compile_screen('SwingLow($d) > close', base_tf="5m", params={"d": 2})[1].lookback["5m"] >= 600
 
 
 def test_cost_on_a_long_frame():
     f = generate(500, 100.0, 5)
     t0 = time.perf_counter()
     _ev('SwingZoneStrength("low") > 50 AND SwingZoneDistance("low") < 2', f)
-    assert time.perf_counter() - t0 < 2.0
+    assert time.perf_counter() - t0 < 0.6                                            # measured ~0.05 s
 
 
 def test_without_leg_labels_and_time_at_price_the_score_runs_5_to_70():
@@ -113,3 +159,18 @@ def test_without_leg_labels_and_time_at_price_the_score_runs_5_to_70():
     f = generate(320, 100.0, 11)
     got = _ev('SwingZoneStrength("high")', f).dropna()
     assert got.between(5.0, 70.0).all()
+
+
+def test_an_unexpected_error_on_one_symbol_does_not_abort_the_universe(monkeypatch):
+    from app.screener import runtime
+    original = runtime._swing_zone_arrays
+
+    def flaky(f, side, degree):
+        if float(f["close"].iloc[0]) > 150:                                         # only the second symbol's data
+            raise ZeroDivisionError("bad bars")
+        return original(f, side, degree)
+    monkeypatch.setattr(runtime, "_swing_zone_arrays", flaky)
+    universe = [SymbolData("A", {"1m": generate(320, 100.0, 11)}), SymbolData("B", {"1m": generate(320, 200.0, 12)})]
+    ast, v = compile_screen('SwingZoneStrength("low") >= 0', base_tf="1m")
+    a, b = runtime.run_screen(ast, v, universe, base_tf="1m")
+    assert a.reason is None and b.matched is False and "ZeroDivisionError" in b.reason

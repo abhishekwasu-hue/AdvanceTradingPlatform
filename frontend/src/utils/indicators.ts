@@ -124,7 +124,8 @@ export function supertrend(c: OHLCVBar[], period = 10, multiplier = 3): { line: 
   const a = atr(c, period);
   const line: Series = new Array(n).fill(null);
   const direction: (1 | -1 | null)[] = new Array(n).fill(null);
-  if (period >= n) return { line, direction };
+  // a fractional or non-positive period has no bar to start on (the engine's period is a whole number of bars)
+  if (!Number.isInteger(period) || period < 1 || period >= n) return { line, direction };
   let finalUpper = 0, finalLower = 0, trend: 1 | -1 = 1;
   for (let i = period; i < n; i++) {
     const at = a[i];

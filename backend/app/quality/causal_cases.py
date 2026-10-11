@@ -2,7 +2,7 @@
 
 What is registered:
 
-* indicator  - every function in app.indicators;
+* indicator  - every public function of the app.indicators modules;
 * operand    - every Strategy Builder indicator (`declarative.Operand`, the code the scanner, the strategies and the
   screener's Supertrend / Bollinger / VWAP / session levels share), on the base timeframe and on a higher one;
 * pattern    - every candlestick pattern, as the vectorised masks and as the bar-by-bar detectors;
@@ -12,9 +12,21 @@ What is registered:
 * screenql   - every function of the ScreenQL registry through the runtime, on the screen's timeframe and through
   `@` higher timeframes (the close-time alignment), plus the fields.
 
-`SCREENQL_EXEMPT` names the registry functions that read no bars, with the reason; the coverage test
-(tests/test_z10a_no_lookahead.py) fails when a registry function, an Operand indicator or a pattern has no case here
-and no exemption. A new function ships with its case.
+How to add a case (the coverage test, tests/test_z10a_no_lookahead.py, fails until you do, and its message names the
+exact line to add):
+
+* a new ScreenQL registry function `Foo` that gives one value per bar: add `"Foo": ["Foo(<typical args>)"]` to
+  SCREENQL_SERIES below (add an `@1h` variant when it is timeframed). Each expression must call `Foo` itself.
+* a function answered for the last bar only (`timeframed=False`, not varargs - registry.LAST_BAR_ONLY): add it to
+  SCREENQL_LAST_BAR, or to SCREENQL_EXEMPT with the reason when it reads no bars (option chain, reference data).
+* a new function in an app.indicators module: `register("indicator.<name>_<params>", lambda f: ..., group="indicator")`
+  in `_register_indicators`.
+* a new Operand indicator or candlestick pattern: nothing to add by hand - `_register_operands` / `_register_patterns`
+  loop over the Literal and over registry.PATTERN_NAMES (give an Operand a period in `periods` if 14 is wrong for it).
+* anything else that turns bars into a signal, a level or a zone: `register(name, fn, kind=SERIES | EVENTS | LAST_BAR,
+  ...)` in the matching `_register_*` - EVENTS needs `known_at` (the bar a record became known at).
+
+Then run `python -m pytest tests/test_z10a_no_lookahead.py -k <name>`: a case must also produce values (non-vacuity).
 """
 from __future__ import annotations
 
@@ -187,7 +199,7 @@ def _register_patterns() -> None:
     def detected(f: pd.DataFrame) -> List[Any]:
         pos = {ts: i for i, ts in enumerate(f.index)}
         return [(pos[m.timestamp], m.pattern, m.direction, m.confidence) for m in cp.detect_patterns(f)]
-    register("pattern.detect_patterns", detected, kind=EVENTS, group="pattern", known_at=lambda r: r[0], samples=4, length=250)
+    register("pattern.detect_patterns", detected, kind=EVENTS, group="pattern", known_at=lambda r: r[0], samples=12, length=200)
 
 
 def _register_swings() -> None:
@@ -197,12 +209,12 @@ def _register_swings() -> None:
         s = pa_settings.settings(swing_mode=mode) if mode != "atr" else pa_settings.settings()
         for d in degrees:
             register(f"swing.{mode}.degree_{d}", partial(_degree_pivots, d, s), kind=EVENTS, group="swing",
-                     known_at=lambda p: int(p.confirmed_idx), key=lambda p: (p.kind, p.bar_idx, p.confirmed_idx, p.price))
+                     known_at=lambda p: int(p.confirmed_idx), key=lambda p: (p.kind, p.bar_idx, p.confirmed_idx, p.price), samples=40)
     for window in (3, 5):
         def fractal(f: pd.DataFrame, window: int = window) -> List[Any]:
             pos = {ts: i for i, ts in enumerate(f.index)}
             return [(pos[s.timestamp] + window, pos[s.timestamp], s.kind, s.price) for s in find_swings(f, window)]
-        register(f"swing.fractal_window_{window}", fractal, kind=EVENTS, group="swing", known_at=lambda r: r[0], samples=6, length=300)
+        register(f"swing.fractal_window_{window}", fractal, kind=EVENTS, group="swing", known_at=lambda r: r[0], samples=30, length=300)
 
 
 def _register_structure() -> None:
@@ -212,7 +224,7 @@ def _register_structure() -> None:
         def events(f: pd.DataFrame, window: int = window) -> List[Any]:
             pos = {ts: i for i, ts in enumerate(f.index)}
             return [(pos[e.timestamp], e.event, e.direction, e.level) for e in analyze_market_structure(f, window).events]
-        register(f"structure.events_window_{window}", events, kind=EVENTS, group="structure", known_at=lambda r: r[0], samples=6, length=300)
+        register(f"structure.events_window_{window}", events, kind=EVENTS, group="structure", known_at=lambda r: r[0], samples=30, length=300)
     register("structure.trend", lambda f: analyze_market_structure(f, 3).trend.value, kind=LAST_BAR, group="structure", samples=6)
     register("structure.sr_engine_zones", lambda f: [z.model_dump() for z in SupportResistanceEngine().build_zones(f, "5m")],
              kind=LAST_BAR, group="structure", samples=3)
@@ -225,13 +237,13 @@ def _register_zones() -> None:
     for name, fn in {"order_blocks": detect.detect_order_blocks, "demand_supply": detect.detect_demand_supply_zones,
                      "overnight_gaps": detect.find_overnight_gaps}.items():
         register(f"zone.{name}", partial(_on_zone_frame, fn), kind=EVENTS, group="zone", bars="15m",
-                 known_at=lambda z: int(z["confirmed_bar"]), key=key)
+                 known_at=lambda z: int(z["confirmed_bar"]), key=key, samples=40)
 
     def markers(f: pd.DataFrame) -> List[Any]:
         head = f.iloc[:60]                                     # levels known from the first 60 bars (in every prefix checked)
         levels = [float(head["high"].max()), float(head["low"].min()), float(head["close"].median())]
         return rv.scan_markers(f, levels)
-    register("zone.reversal_markers", markers, kind=EVENTS, group="zone", min_t=70, samples=4, length=300,
+    register("zone.reversal_markers", markers, kind=EVENTS, group="zone", min_t=70, samples=10, length=240,
              known_at=lambda m: int(m["index"]), key=lambda m: (m["index"], m["level"], m["bullish"], m["score_pct"], m["label"]))
     register("zone.compute_all_zones", lambda f: compute.compute_all_zones({"15m": _zone_frame(f)}, {"15m": _zone_frame(f)}),
              kind=LAST_BAR, group="zone", bars="15m", samples=4)
@@ -241,7 +253,7 @@ def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak"))
-            register(f"screenql.{text}", _screenql(text), group="screenql", samples=5 if heavy else 8)
+            register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")
     for text in SCREENQL_DAILY:
@@ -264,18 +276,65 @@ def register_all() -> None:
     _register_screenql()
 
 
+def indicator_functions() -> List[str]:
+    """Public functions defined in the app.indicators modules (not only `__all__`: macd, bollinger and true_range are
+    shipped through their modules)."""
+    import inspect
+
+    from app.indicators import directional, momentum, trend, volatility, vwap
+    return sorted(f"{mod.__name__.rsplit('.', 1)[-1]}.{name}" for mod in (trend, momentum, volatility, directional, vwap)
+                  for name, fn in inspect.getmembers(mod, inspect.isfunction) if fn.__module__ == mod.__name__ and not name.startswith("_"))
+
+
+def screenql_case_mismatches() -> List[str]:
+    """SCREENQL_SERIES / SCREENQL_LAST_BAR expressions that do not call the function they are listed under."""
+    from app.screener import nodes
+    from app.screener.parser import parse
+    out: List[str] = []
+    for table, cases in (("SCREENQL_SERIES", SCREENQL_SERIES), ("SCREENQL_LAST_BAR", SCREENQL_LAST_BAR)):
+        for name, exprs in cases.items():
+            for text in exprs:
+                if not any(isinstance(node, nodes.Call) and node.name == name for node in nodes.walk(parse(text))):
+                    out.append(f"{table}[{name!r}] has {text!r}, which does not call {name}")
+    return out
+
+
 def coverage_gaps() -> List[str]:
-    """Shipped functions with no case and no exemption (the coverage test wants this empty)."""
-    from app.indicators import __all__ as indicator_names
-    from app.screener.registry import FUNCTIONS, PATTERN_NAMES
+    """Shipped functions with no case and no exemption, each with the exact thing to add (the coverage test wants this
+    empty)."""
+    from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, PATTERN_NAMES
     register_all()
     gaps: List[str] = []
     covered_sql = set(SCREENQL_SERIES) | set(SCREENQL_LAST_BAR) | set(SCREENQL_EXEMPT)
-    gaps += [f"ScreenQL {name}" for name in FUNCTIONS if name not in covered_sql]
-    gaps += [f"Operand {name}" for name in operand_indicators() if f"operand.{name}" not in REGISTRY]
-    gaps += [f"pattern {name}" for name in PATTERN_NAMES if f"pattern.{name}" not in REGISTRY]
-    gaps += [f"indicator {name}" for name in indicator_names if not any(n.startswith(f"indicator.{name}") for n in REGISTRY)]
+    for name in FUNCTIONS:
+        if name in covered_sql:
+            continue
+        if name in LAST_BAR_ONLY:
+            gaps.append(f"ScreenQL {name} (last bar only): add SCREENQL_LAST_BAR[{name!r}] = [\"{name}(...)\"] in "
+                        f"app/quality/causal_cases.py, or SCREENQL_EXEMPT[{name!r}] = \"<why it reads no bars>\"")
+        else:
+            gaps.append(f"ScreenQL {name}: add SCREENQL_SERIES[{name!r}] = [\"{name}(...)\"] in app/quality/causal_cases.py "
+                        f"(an expression that calls {name}; add an @1h variant if it is timeframed)")
+    gaps += screenql_case_mismatches()
+    gaps += [f"Operand {name}: no case operand.{name} (_register_operands loops over IndicatorName - is it imported?)"
+             for name in operand_indicators() if f"operand.{name}" not in REGISTRY]
+    gaps += [f"pattern {name}: no case pattern.{name} (_register_patterns loops over registry.PATTERN_NAMES)"
+             for name in PATTERN_NAMES if f"pattern.{name}" not in REGISTRY]
+    for qual in indicator_functions():
+        name = qual.split(".", 1)[1]
+        if not any(n.startswith(f"indicator.{name}") for n in REGISTRY):
+            gaps.append(f"indicator app.indicators.{qual}: add register(\"indicator.{name}_<params>\", lambda f: ..., "
+                        f"group=\"indicator\") in _register_indicators (app/quality/causal_cases.py)")
     return gaps
+
+
+def last_bar_answers(case_name: str, prefixes: int = 12) -> List[Any]:
+    """A last-bar case's answers on `prefixes` growing prefixes of its data set (non-vacuity: they must not all be
+    missing, and a filter must say yes somewhere)."""
+    from app.quality.lookahead import _DEFAULT_LENGTH, synthetic_bars
+    case = REGISTRY[case_name]
+    bars = synthetic_bars(case.length or _DEFAULT_LENGTH.get(case.bars, 600), tf=case.bars, seed=7)
+    return [case.fn(bars.iloc[:t + 1]) for t in np.linspace(case.min_t + 40, len(bars) - 1, num=prefixes).astype(int)]
 
 
 def sample_values(case_name: str) -> int:
@@ -296,4 +355,4 @@ def sample_values(case_name: str) -> int:
     return total
 
 
-__all__ = ["register_all", "coverage_gaps", "sample_values", "SCREENQL_EXEMPT", "SCREENQL_SERIES", "SCREENQL_LAST_BAR", "operand_indicators"]
+__all__ = ["register_all", "coverage_gaps", "sample_values", "last_bar_answers", "indicator_functions", "screenql_case_mismatches", "SCREENQL_EXEMPT", "SCREENQL_SERIES", "SCREENQL_LAST_BAR", "operand_indicators"]

@@ -70,6 +70,34 @@ def test_hand_checked_small_cases():
     assert_matches(bb["lower"], [None, None, 0.0, 1.0, 2.0], "BB lower")
 
 
+def test_hand_checked_adx_supertrend_vwap_macd():
+    """Worked by hand (period 2, alpha 1/2 for Wilder). Bars (h, l, c): (10,8,9) (12,9,11) (13,11,12) (12,10,10) (11,7,8).
+    TR 2, 3, 2, 2, 4 -> ATR(2) -, 2.5, 2.25, 2.125, 3.0625. +DM 0, 2, 1, 0 / -DM 0, 0, 0, 1 (bars 0-3)."""
+    rows = [(10.0, 8.0, 9.0), (12.0, 9.0, 11.0), (13.0, 11.0, 12.0), (12.0, 10.0, 10.0), (11.0, 7.0, 8.0)]
+    df = pd.DataFrame(rows, columns=["high", "low", "close"]).assign(open=lambda d: d["close"])
+    a = directional.adx(df.iloc[:4], 2)
+    # smoothed TR 2, 2.5, 2.25, 2.125; +DM 0, 1, 1, 0.5; -DM 0, 0, 0, 0.5 -> +DI -, 40, 44.44, 23.53; -DI -, 0, 0, 23.53
+    assert_matches(a["plus_di"], [None, 40.0, 400 / 9, 400 / 17], "+DI 2")
+    assert_matches(a["minus_di"], [None, 0.0, 0.0, 400 / 17], "-DI 2")
+    assert_matches(a["adx"], [None, None, 100.0, 50.0], "ADX 2")                  # DX 100, 100, 0 smoothed from bar 1
+    st = volatility.supertrend(df, 2, 1.0)
+    # bar 2: hl2 12 +/- 2.25 -> long, line 9.75; bar 3: lower band 8.875 < 9.75 keeps 9.75, close 10 stays long;
+    # bar 4: upper 9 + 3.0625 = 12.0625 < 13.125, close 8 < 9.75 -> short, line 12.0625
+    assert_matches(st["supertrend"], [None, None, 9.75, 9.75, 12.0625], "Supertrend 2,1")
+    assert list(st["trend"]) == [0, 0, 1, 1, -1]
+    idx = pd.DatetimeIndex(["2026-03-02 03:45", "2026-03-02 03:50", "2026-03-02 03:55", "2026-03-03 03:45", "2026-03-04 03:45"], tz="UTC")
+    bars = pd.DataFrame({"high": [11.0, 12, 13, 10, 10], "low": [9.0, 10, 11, 8, 8], "close": [10.0, 11, 12, 9, 9],
+                         "volume": [100.0, 300, 0, 50, 0]}, index=idx)
+    # typical prices 10, 11, 12 | 9 | 9: (1000 + 3300) / 400 = 10.75, a zero-volume bar keeps it; next day restarts;
+    # a session with no volume has no VWAP
+    assert_matches(vwap.session_vwap(bars), [10.0, 10.75, 10.75, 9.0, None], "VWAP")
+    m = trend.macd(pd.Series([1.0, 2, 3, 4, 5]), 2, 3, 2)
+    # EMA2 1, 5/3, 23/9, 95/27, 365/81; EMA3 1, 1.5, 2.25, 3.125, 4.0625 -> MACD 11/36, 85/216, 575/1296 (from bar 2)
+    assert_matches(m["macd"], [None, None, 11 / 36, 85 / 216, 575 / 1296], "MACD")
+    assert_matches(m["signal"], [None, None, None, 59 / 162, 811 / 1944], "MACD signal")
+    assert_matches(m["hist"], [None, None, None, 19 / 648, 103 / 3888], "MACD hist")
+
+
 # ------------------------------------------------------------------------------------------------- app.indicators
 def test_indicators_match_the_reference_formulas(bars):
     o, h, lo, c, v = _cols(bars)

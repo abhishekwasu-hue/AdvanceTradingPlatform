@@ -19,7 +19,7 @@ function expectSeries(got: Series, expected: (number | null)[], name: string) {
       expect(g, `${name} at bar ${i}: the backend has no value yet`).toBeNull();
     } else {
       expect(g, `${name} at bar ${i}: the backend has ${w}`).not.toBeNull();
-      expect(Math.abs((g as number) - w), `${name} at bar ${i}: ${g} vs ${w}`).toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(w)));
+      expect(Math.abs((g as number) - w), `${name} at bar ${i}: ${g} vs ${w}`).toBeLessThanOrEqual(1e-12 * Math.max(1, Math.abs(w)));
     }
   });
 }
@@ -52,5 +52,15 @@ describe("chart indicators match the backend (Z10-a parity fixture)", () => {
   });
   it("session VWAP (IST day)", () => {
     expectSeries(vwap(bars), want.vwap, "VWAP");
+  });
+});
+
+describe("Supertrend guards", () => {
+  it("draws nothing for a fractional or non-positive period", () => {
+    for (const p of [2.5, 0, -1]) {
+      const s = supertrend(bars, p, 3);
+      expect(s.line.every((v) => v === null)).toBe(true);
+      expect(s.direction.every((v) => v === null)).toBe(true);
+    }
   });
 });

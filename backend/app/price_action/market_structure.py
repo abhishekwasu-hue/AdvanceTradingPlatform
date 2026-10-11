@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 import pandas as pd
 
 from app.price_action.models import MarketStructureResult, StructureEvent, SwingPoint, TrendState
-from app.price_action.swings import alternate_swings, find_swings, swing_indices
+from app.price_action.swings import alternate_swings, find_swings, fractal_positions
 
 
 def _label_swings(swings: List[SwingPoint]) -> None:
@@ -64,12 +64,11 @@ def _detect_break_events(df: pd.DataFrame, window: int) -> List[StructureEvent]:
     `find_swings` needs to call it a swing - never from the pivot bar itself. Before, a swing counted from its own bar,
     so the event history depended on bars that had not happened yet: a break seen in real time could vanish (or a new
     one appear) once later bars arrived. Now the events up to any bar are exactly those `analyze_market_structure`
-    gives on the bars up to it (the no-look-ahead harness checks this), and events need two swings known at that bar."""
+    gives on the bars up to it (the no-look-ahead harness checks this). Events need two swings known at that bar; a
+    crossing before that marks the level broken without an event."""
     events: List[StructureEvent] = []
-    high_idx, low_idx = swing_indices(df, window)
     highs, lows = df["high"].to_numpy(float), df["low"].to_numpy(float)
-    # find_swings order: by bar, a swing high before a swing low on the same bar
-    raw = sorted([(i, 0) for i in high_idx] + [(i, 1) for i in low_idx])
+    raw = fractal_positions(df, window)                   # the swings find_swings gives, in its order
     known: List[SwingPoint] = []
     last_swing_high: Optional[float] = None
     last_swing_low: Optional[float] = None
@@ -81,8 +80,8 @@ def _detect_break_events(df: pd.DataFrame, window: int) -> List[StructureEvent]:
 
     for i, ts in enumerate(df.index):
         while k < len(raw) and raw[k][0] + window <= i:
-            j, low_side = raw[k]
-            swing = SwingPoint(timestamp=df.index[j], price=float(lows[j] if low_side else highs[j]), kind="LOW" if low_side else "HIGH")
+            j, kind = raw[k]
+            swing = SwingPoint(timestamp=df.index[j], price=float(lows[j] if kind == "LOW" else highs[j]), kind=kind)  # type: ignore[arg-type]
             k += 1
             if not _push_swing(known, swing):
                 continue
@@ -94,22 +93,25 @@ def _detect_break_events(df: pd.DataFrame, window: int) -> List[StructureEvent]:
                 broken_low = False
             current_trend = _trend_from_labels(known, len(known) - 1)
 
-        if len(known) < 2:
-            continue
         price = close[i]
+        # A break needs a known swing level. Before two swings are known no event is emitted, but a crossing still uses
+        # up that level (broken), so the first event is not a stale break reported late (Z10-a review).
+        emit = len(known) >= 2
         if last_swing_high is not None and not broken_high and price > last_swing_high:
-            event_type: Literal["BOS", "CHoCH"] = "BOS" if current_trend == TrendState.UPTREND else "CHoCH"
-            events.append(StructureEvent(
-                timestamp=ts, event=event_type, direction="BULLISH", level=last_swing_high,
-                note=f"Close {price:.2f} broke above swing high {last_swing_high:.2f}",
-            ))
+            if emit:
+                event_type: Literal["BOS", "CHoCH"] = "BOS" if current_trend == TrendState.UPTREND else "CHoCH"
+                events.append(StructureEvent(
+                    timestamp=ts, event=event_type, direction="BULLISH", level=last_swing_high,
+                    note=f"Close {price:.2f} broke above swing high {last_swing_high:.2f}",
+                ))
             broken_high = True
         if last_swing_low is not None and not broken_low and price < last_swing_low:
-            event_type = "BOS" if current_trend == TrendState.DOWNTREND else "CHoCH"
-            events.append(StructureEvent(
-                timestamp=ts, event=event_type, direction="BEARISH", level=last_swing_low,
-                note=f"Close {price:.2f} broke below swing low {last_swing_low:.2f}",
-            ))
+            if emit:
+                event_type = "BOS" if current_trend == TrendState.DOWNTREND else "CHoCH"
+                events.append(StructureEvent(
+                    timestamp=ts, event=event_type, direction="BEARISH", level=last_swing_low,
+                    note=f"Close {price:.2f} broke below swing low {last_swing_low:.2f}",
+                ))
             broken_low = True
 
     return events

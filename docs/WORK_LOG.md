@@ -1630,13 +1630,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `docs/design/Z10_LAUNCH_HARDENING.md`: Z10 split into Z10-a..f, each mapped to existing code. The pieces: the alert
   outbox and dispatcher, BT1 `alerts_suppressed`, the PW6 invite gate + `BETA_COHORT_CAP`, the feature flags,
   `scripts/loadtest.py`, the health probes and incidents, the retention / compliance rules, and the Copilot advice filter.
-- Z10-a (branch `claude/z10a-lookahead-correctness`, no PR yet: WIP limit):
+- Z10-a (branch `claude/z10a-lookahead-correctness`, draft PR #187):
   * the harness, `app/quality/lookahead.py`: truncation, future mutation (up-spike, down-spike, walk) and immutability
     checks; 161 registered cases in `app/quality/causal_cases.py`; a coverage test for every ScreenQL function,
     operand and pattern.
 - Bugs found and fixed:
-  1. Market-structure BOS / CHoCH used swings `window` bars before they were confirmed (look-ahead in ScreenQL
-     `Trend` / `StructureEvent`, the scanner's BOS / CHoCH filters and signal scoring).
+  1. Market-structure BOS / CHoCH events used swings `window` bars before they were confirmed. This was a look-ahead
+     in ScreenQL `StructureEvent`, the scanner's BOS / CHoCH filters and signal scoring. `Trend` and the swing list
+     do not change; about 7.5 % of symbols' latest event moves.
   2. The validator accepted last-bar-only functions inside history-reading ones (`Count(5, PatternBullish())`), so
      today's answer was repeated on earlier bars.
   3. `session_vwap` raised TypeError on a session without volume, which crashed the S/R engine on indices. It also
@@ -1656,3 +1657,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
   on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
 - BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.
+### 2026-10-12 IST - Z10-a review follow-ups (#187)
+- Merged origin/main (9c4c16a).
+- H1: Supertrend / Bollinger `k` and the zone filters' `tolerance_pct` are read once by the runtime, so an expression
+  there took its last-bar value for every bar (`Count(5, close > Supertrend(10, ATR(5) / 2))` read the future). Such
+  an argument (`Arg.literal_only`) must now be a literal or a numeric $parameter. Tests: the validator refuses, and the
+  harness flags the expression when the validator is bypassed.
+- M1: `causal_cases.py` documents how to add a case, and each coverage failure names the exact entry to add. Coverage
+  now enumerates the indicator modules' functions (macd, bollinger, true_range), checks that each ScreenQL case calls
+  its own function, and requires last-bar cases to answer.
+- M2: `app/screener/audit.py`, `scripts/audit_screens.py` and `GET /api/admin/screener/audit` list stored screens and
+  instrument alert rules that no longer validate.
+- Market structure:
+  * a crossing made before two swings are known marks the level broken, so the first event is never late;
+  * swings and events share one NaN-aware source (`swings.fractal_positions`);
+  * trend and swings are pinned against base-code outputs (gzip fixture, 48 frames).
+- Tests: hand-checked ADX / Supertrend / VWAP / MACD; denser event sampling; chart parity compared at 1e-12 relative.
+- Frontend: the chart's Supertrend refuses a fractional period.
+- CI: a `lookahead` marker; the harness runs as its own job (`backend-lookahead`) and the main run skips it.
+- Open: OPEN_QUESTIONS Z10-6 (VWAP without volume).

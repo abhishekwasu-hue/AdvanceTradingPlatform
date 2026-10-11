@@ -66,13 +66,24 @@ def _dump(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _close(a: Any, b: Any) -> bool:
+    """Equal, numbers within 1e-12 relative (a pandas / BLAS build may round the last bit differently)."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_close(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_close(x, y) for x, y in zip(a, b))
+    if isinstance(a, float) or isinstance(b, float):
+        return isinstance(a, (int, float)) and isinstance(b, (int, float)) and math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12)
+    return bool(a == b)
+
+
 def test_chart_parity_fixture_matches_the_backend():
     want = _dump(build())
     if os.environ.get("Z10_REGENERATE"):
         FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         FIXTURE.write_text(want)
     assert FIXTURE.exists(), f"missing {FIXTURE} - run with Z10_REGENERATE=1"
-    assert json.loads(FIXTURE.read_text()) == json.loads(want), "the chart parity fixture is stale - run with Z10_REGENERATE=1"
+    assert _close(json.loads(FIXTURE.read_text()), json.loads(want)), "the chart parity fixture is stale - run with Z10_REGENERATE=1"
     data = json.loads(want)
     assert {1, -1} <= {d for d in data["series"]["supertrend_10_3_direction"] if d is not None}      # it flips: not vacuous
     assert len({b["timestamp"][:10] for b in data["bars"]}) >= 3                                    # several sessions (VWAP resets)

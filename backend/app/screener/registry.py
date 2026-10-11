@@ -23,6 +23,7 @@ class Arg:
     default: Optional[object] = None
     required: bool = True
     choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
+    literal_only: bool = False      # Z10-a: a setting read once (a literal or a $parameter), never an expression per bar
 
 
 @dataclass(frozen=True)
@@ -99,10 +100,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # S1c: the Strategy Builder / scanner indicators (same implementation as app/strategy_engine/declarative.py)
     Spec("PlusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="+DI"),
     Spec("MinusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="-DI"),
-    Spec("Supertrend", "factor", NUM, "price", (Arg("n", "window", 10, False), Arg("k", NUM, 3.0, False)), doc="Supertrend line"),
-    Spec("BBUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="upper Bollinger band"),
-    Spec("BBMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="middle Bollinger band"),
-    Spec("BBLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="lower Bollinger band"),
+    Spec("Supertrend", "factor", NUM, "price", (Arg("n", "window", 10, False), Arg("k", NUM, 3.0, False, literal_only=True)), doc="Supertrend line"),
+    Spec("BBUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="upper Bollinger band"),
+    Spec("BBMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="middle Bollinger band"),
+    Spec("BBLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="lower Bollinger band"),
     Spec("DayOpen", "factor", NUM, "price", (), doc="the session's opening price"),
     Spec("PDH", "factor", NUM, "price", (), cost=1.5, doc="previous session high"),
     Spec("PDL", "factor", NUM, "price", (), cost=1.5, doc="previous session low"),
@@ -118,9 +119,9 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="latest structure event: BOS_BULLISH / BOS_BEARISH / CHOCH_BULLISH / CHOCH_BEARISH (empty when none)"),
     Spec("PatternBullish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bullish candlestick pattern on the last bar"),
     Spec("PatternBearish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bearish candlestick pattern on the last bar"),
-    Spec("NearSupport", "filter", BOOL, None, (Arg("tolerance_pct", NUM), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
+    Spec("NearSupport", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a support zone edge"),
-    Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
+    Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a resistance zone edge"),
     # S5-A: price action as series (bar by bar, causal), so they work with offsets, @timeframe, Count and alerts
     Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES),), cost=2.0, min_bars=3,
@@ -177,6 +178,7 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
                           "defaults": {a.name: a.default for a in spec.args if a.default is not None},
                           "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
+                          "literal": [a.name for a in spec.args if a.literal_only],
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
                           "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
     return out

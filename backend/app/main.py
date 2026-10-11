@@ -424,8 +424,11 @@ async def paper_execute(
             if not signal.is_tradeable or signal.entry is None:
                 return PaperExecuteResponse(signal=signal, executed=False, reasons=list(signal.reasons) or ["No trade signal"])
             key = f"console:{user.id}:{request.idempotency_key}" if request.idempotency_key else f"console:{user.id}:{uuid.uuid4().hex}"
-            row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
-                                               idempotency_key=key, user_id=user.id)
+            try:
+                row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
+                                                   idempotency_key=key, user_id=user.id)
+            except approval.EntriesPaused as exc:          # Z3-b (review V4): the user's PAPER pause - an answer, not a 500
+                return PaperExecuteResponse(signal=signal, executed=False, reasons=[str(exc)])
             return PaperExecuteResponse(signal=signal, executed=False, reasons=[
                 f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order at the live price"
                 if row is not None else "Approval-only mode: this signal was already proposed"])

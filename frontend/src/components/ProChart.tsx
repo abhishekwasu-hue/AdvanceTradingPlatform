@@ -12,6 +12,8 @@ import {
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
 import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
+import type { ChartEngine } from "../charting/engine";
+import { LightweightEngine } from "../charting/lightweight";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
@@ -118,15 +120,19 @@ export interface ProChartProps {
   /** Shown while an older page loads, and once the broker has nothing older. */
   loadingOlder?: boolean;
   olderExhausted?: boolean;
+  /** CH1 (ADR-0023): the chart behind the engine-neutral `ChartEngine` interface (drawings, layers, events); null on teardown. */
+  onEngine?: (engine: ChartEngine | null) => void;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
-  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false,
+  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false, onEngine,
 }: ProChartProps) {
   const onLoadOlderRef = useRef(onLoadOlder);
   onLoadOlderRef.current = onLoadOlder;
+  const onEngineRef = useRef(onEngine);
+  onEngineRef.current = onEngine;
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
   const [themeTick, setThemeTick] = useState(0);
@@ -258,6 +264,10 @@ export default function ProChart({
     }
     series.current = s;
     dataKey.current = "";
+    // CH1: the same chart behind the ChartEngine interface - ProChart keeps drawing everything it drew before.
+    const engine = new LightweightEngine(mainChart, s.candles as ISeriesApi<"Candlestick">,
+      (y) => (s.candles as ISeriesApi<"Candlestick">).coordinateToPrice(y));
+    onEngineRef.current?.(engine);
 
     // Scroll/zoom together.
     const all = made;
@@ -300,6 +310,8 @@ export default function ProChart({
     return () => {
       window.removeEventListener("resize", onResize);
       for (const u of unsubs) u();
+      engine.dispose();
+      onEngineRef.current?.(null);
       for (const c of all) c.remove();
       charts.current = {}; series.current = {}; priceLineRefs.current = [];
     };

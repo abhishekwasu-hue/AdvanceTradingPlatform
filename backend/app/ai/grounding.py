@@ -132,9 +132,60 @@ def check_tickers(text: str, allowed_text: str) -> Tuple[bool, List[str]]:
     return (not bad), bad
 
 
+# H-C1 d: direction claims. A word that asserts a direction counts; the same word naming a scenario or a pattern
+# ("bull case", "bearish divergence") is vocabulary, and a negated one ("not bullish") is no claim.
+_DIRECTION_WORDS = {
+    "BULL": ("bullish", "uptrend", "up-trend", "upside bias", "positive bias", "trending up", "trending_up",
+             "तेजी", "तेजीचा", "तेजीत", "वाढीचा कल"),
+    "BEAR": ("bearish", "downtrend", "down-trend", "downside bias", "negative bias", "trending down", "trending_down",
+             "मंदी", "मंदीचा", "मंदीत", "घसरणीचा कल"),
+}
+_DIR_WORD = "\\w\u0900-\u097F"
+_DIRECTION_RE = {d: re.compile(rf"(?<![{_DIR_WORD}])(?:{'|'.join(re.escape(w) for w in sorted(ws, key=len, reverse=True))})(?![{_DIR_WORD}])", re.IGNORECASE)
+                 for d, ws in _DIRECTION_WORDS.items()}
+_VOCAB_AFTER = re.compile(r"^\s*(?:case|scenario|scenarios|divergence|engulfing|pattern|candle|harami|flag|pennant|trap|setup|side|leg|view)\b", re.IGNORECASE)
+_NEGATED_BEFORE = re.compile(r"(?:\bnot|\bno|\bnever|n't|\bnor)\s+(?:\w+\s+){0,2}$", re.IGNORECASE)
+_NEGATED_AFTER_MR = re.compile(r"^\s*(?:\S+\s+)?(?:नाही|नव्हे)")
+
+
+def directions_in(text: str) -> Set[str]:
+    """{"BULL", "BEAR"} that `text` asserts (scenario/pattern vocabulary and negations excluded)."""
+    found: Set[str] = set()
+    text = text or ""
+    for direction, pattern in _DIRECTION_RE.items():
+        for m in pattern.finditer(text):
+            after, before = text[m.end():m.end() + 20], text[max(0, m.start() - 25):m.start()]
+            if _VOCAB_AFTER.match(after) or _NEGATED_BEFORE.search(before) or _NEGATED_AFTER_MR.match(after):
+                continue
+            found.add(direction)
+            break
+    return found
+
+
+def check_direction(text: str, facts_text: str) -> Tuple[bool, List[str]]:
+    """H-C1 d: a direction the answer asserts must be one the facts carry (regime, trend, bias lines). With no direction
+    in the facts, any directional claim is unsupported."""
+    claimed, allowed = directions_in(text), directions_in(facts_text)
+    bad = sorted(claimed - allowed)
+    return (not bad), [f"{d.lower()}ish claim" for d in bad]
+
+
+def provenance(text: str, verified: Set[str], user_provided: Set[str]) -> dict:
+    """H-C1 d: where each number in an answer came from. Numbers from the trader's own question are `user_provided`,
+    never `verified`; a number in both counts as verified (the facts carry it)."""
+    out: dict = {"verified": [], "user_provided": [], "unsupported": []}
+    for raw, value in numbers_in_text(text):
+        raw, norm = raw.rstrip(","), _norm(value)
+        key = "verified" if norm & verified else "user_provided" if norm & user_provided else "unsupported"
+        if raw not in out[key]:
+            out[key].append(raw)
+    return out
+
+
 def wrap_untrusted(name: str, lines: Iterable[str]) -> str:
     body = "\n".join(re.sub(r"(?i)<\s*/*\s*untrusted_data", "[untrusted_data", str(line))[:400] for line in lines)
     return f'<untrusted_data name="{name}">\n{body}\n</untrusted_data>'
 
 
-__all__ = ["numbers_in_values", "numbers_in_text", "allowed_from_text", "check_numbers", "tickers_in", "check_tickers", "wrap_untrusted", "ACRONYMS"]
+__all__ = ["numbers_in_values", "numbers_in_text", "allowed_from_text", "check_numbers", "tickers_in", "check_tickers", "wrap_untrusted", "ACRONYMS",
+           "directions_in", "check_direction", "provenance"]

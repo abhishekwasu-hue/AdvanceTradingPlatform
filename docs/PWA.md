@@ -44,3 +44,20 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
   (screenshot `docs/screenshots/pw1/pw1-offline-360.png`; iOS guide `pw1-ios-guide-390.png`).
 - Lighthouse 12 removed its PWA category; the installability criteria it used (manifest fields, 192/512 icons, a
   service worker with a fetch handler, an offline response) are what the checks above and the unit tests cover.
+
+## Phone layout (PW2)
+
+- **Bottom navigation** (below `md`, 768 px): Home, Screener, Chain, Positions, More (opens the full drawer). It keeps
+  clear of the home indicator (`env(safe-area-inset-bottom)`), toasts sit above it, and it steps aside while a field
+  is focused. The Screener's own bar (matched count, Save, Run) sits just above it.
+- **Touch targets** (coarse pointer only - mouse users see no change): every button, tab, switch and top-bar link has
+  a 44 x 44 px hit area; small ones keep their look and grow an invisible `::after`. Fields are 44 px tall with 16 px
+  text (no iOS zoom on focus); check boxes are 20 px with the label as the target.
+- **Notch and keyboard:** `viewport-fit=cover` + safe-area padding on the top bar; `interactive-widget=resizes-content`
+  so the keyboard shrinks the layout and a focused field scrolls clear of the bottom bar.
+- **Charts:** pinch to zoom, one-finger horizontal drag pans (a vertical swipe still scrolls the page), long press shows
+  the crosshair; on phones the indicators, strategies and drawing tools open in a bottom sheet ("Tools").
+- **Checks:** `e2e/mobile.e2e.ts` (Playwright project `phone`) - no sideways scroll, 44 px targets, nothing hidden behind
+  the bottom bar, the More drawer, no bottom bar on desktop; plus screenshots of 10 daily pages at 360 x 800 and
+  390 x 844 in dark and light (`e2e/__screenshots__`). After an intended layout change:
+  `npx playwright test --project=phone --update-snapshots`, look at the new images, commit them.

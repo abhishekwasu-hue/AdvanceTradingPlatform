@@ -51,7 +51,9 @@ export function useDrawingTools(engine: LightweightEngine | null, element: HTMLE
   return { view, controller: ctlRef.current };
 }
 
-export function DrawingToolbar({ view, controller }: { view: ToolView; controller: DrawingController }) {
+/** `onPick` (PW2): called after a tool is chosen, so the phone bottom sheet that holds this toolbar can close and leave
+ * the chart free for the tap that places the drawing. */
+export function DrawingToolbar({ view, controller, onPick }: { view: ToolView; controller: DrawingController; onPick?: () => void }) {
   const selected = view.selected ? view.drawings.find((d) => d.key === view.selected) : undefined;
   const pick = (kind: DrawingKind) => {
     if (view.tool === kind) { controller.setTool(null); return; }
@@ -59,9 +61,11 @@ export function DrawingToolbar({ view, controller }: { view: ToolView; controlle
       const text = window.prompt("Text for the label (no < or >)", "");
       if (text == null) return;
       controller.setTool(kind, text);
+      onPick?.();
       return;
     }
     controller.setTool(kind);
+    onPick?.();
   };
   const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
   return (

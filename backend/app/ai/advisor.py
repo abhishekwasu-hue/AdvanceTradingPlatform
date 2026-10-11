@@ -343,9 +343,14 @@ async def save_profile(session, user, answers: InterviewAnswers, prefs: Preferen
 async def delete_profile(session, user) -> bool:
     from sqlalchemy import select
     from app.db.models import TraderProfileRecord
+    from app.db.models import LlmCallRecord
+    from app.retention.service import scrub_llm_text
     row = await session.scalar(select(TraderProfileRecord).where(TraderProfileRecord.user_id == user.id))
+    # H-C1 e: "forget me" also clears the text of this trader's AI conversations (the audit rows and hashes stay).
+    scrubbed = await scrub_llm_text(session, LlmCallRecord.user_id == user.id, "[erased]")
     if row is None:
-        return False
+        await session.commit()
+        return scrubbed > 0
     await session.delete(row)
     await session.commit()
     return True

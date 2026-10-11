@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.wording import banned_terms
 from app.ai import settings as ai_settings
 from app.ai.providers import LLMProvider, ProviderError, RuleBasedProvider
 from app.ai.regime import REGIMES, classify_regime
@@ -425,6 +426,9 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
             raw = await provider.complete(read_system_prompt(language, scores), "SCAN RESULT:\n" + json.dumps(payload), max_tokens=3000)
             AI_PROVIDER_CALLS.labels(provider=provider.name, outcome="ok").inc()
             read = parse_read(_extract_json(raw), matches, regimes, scores)
+            bad = banned_terms(" ".join([read.summary, *(f"{r.thesis} {r.risks} {r.next_step}" for r in read.ranked)]))
+            if bad:                                        # ATP review 11: advice / promise wording -> the deterministic read
+                raise ValueError(f"wording check failed ({', '.join(bad[:5])})")
             read.provider, read.model = provider.name, provider.model
             await ai_settings.mark_used(session, tenant.id)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:

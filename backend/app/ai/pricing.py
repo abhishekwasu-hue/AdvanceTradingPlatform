@@ -29,8 +29,10 @@ _LIST_PRICES: Dict[str, Price] = {
     "gpt-4o-mini": (0.15, 0.6, 0.075), "gpt-4o": (2.5, 10.0, 1.25),
     "o4-mini": (1.1, 4.4, 0.275), "o3-mini": (1.1, 4.4, 0.55), "o3-pro": (20.0, 80.0, 20.0), "o3": (2.0, 8.0, 0.5), "o1": (15.0, 60.0, 7.5),
     "gpt-5-mini": (0.25, 2.0, 0.025), "gpt-5-nano": (0.05, 0.4, 0.005), "gpt-5-pro": (15.0, 120.0, 15.0), "gpt-5": (1.25, 10.0, 0.125),
+    # Google Gemini (BYOK only - a user's own key; prompts up to 200k tokens)
+    "gemini-2.5-flash-lite": (0.10, 0.40, 0.025), "gemini-2.5-flash": (0.30, 2.50, 0.075), "gemini-2.5-pro": (1.25, 10.0, 0.31),
 }
-_PROVIDER_PREFIX = {"anthropic": "claude-", "openai": ("gpt-", "o1", "o3", "o4")}
+_PROVIDER_PREFIX = {"anthropic": "claude-", "openai": ("gpt-", "o1", "o3", "o4"), "gemini": "gemini-"}
 _prices: Dict[str, Price] = {}
 
 

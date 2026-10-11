@@ -104,10 +104,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
+    # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
+    # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
+    "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "beta_cohort_gate"})
+                               "vision_byok", "beta_cohort_gate"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

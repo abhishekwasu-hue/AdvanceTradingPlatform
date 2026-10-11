@@ -1,7 +1,7 @@
 """PW6: beta_invite_codes (closed-beta invite codes, hashed) and feedback ("Send feedback" messages)
 
 Revision ID: d4e6f8a0b2c9
-Revises: c7a1d2e3f4b7
+Revises: d1b0e7a5c3f1
 Create Date: 2026-10-11 12:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd4e6f8a0b2c9'
-down_revision: Union[str, Sequence[str], None] = 'c7a1d2e3f4b7'
+down_revision: Union[str, Sequence[str], None] = 'd1b0e7a5c3f1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

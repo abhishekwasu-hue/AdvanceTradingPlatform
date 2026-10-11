@@ -8,6 +8,7 @@ import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import StaticIpCard from "../components/StaticIpCard";
+import VisionByokCard from "../components/VisionByokCard";
 import { Card } from "../components/ui";
 import AppearanceCard from "../components/AppearanceCard";
 import { PageHeader } from "../components/primitives";
@@ -260,6 +261,8 @@ export default function SettingsPage() {
       <ApiKeysCard />
 
       <AiProviderCard />
+
+      <VisionByokCard />
 
       <Card title="TradingView webhook">
         <p className="text-sm text-fg-muted mb-3">

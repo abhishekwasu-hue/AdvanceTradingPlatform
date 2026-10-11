@@ -144,6 +144,40 @@ def _json_table(name: str, default: dict) -> dict:
 
 AI_RATE_LIMITS = _json_table("AI_RATE_LIMITS", _AI_RATE_LIMITS_DEFAULT)
 AI_RATE_WEIGHTS = _json_table("AI_RATE_WEIGHTS", _AI_RATE_WEIGHTS_DEFAULT)
+
+
+def _byok_model(provider: str, default: str) -> str:
+    return (os.environ.get(f"BYOK_{provider.upper()}_VISION_MODEL", "") or default).strip()
+
+
+def _byok_choices(provider: str, default: str, extra: str) -> list:
+    """The models a user may pick for one provider: the default first, then BYOK_<PROVIDER>_VISION_MODELS (comma list)."""
+    raw = os.environ.get(f"BYOK_{provider.upper()}_VISION_MODELS", "").strip() or extra
+    out = [_byok_model(provider, default)]
+    for name in raw.split(","):
+        name = name.strip()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+# BYOK-V1 (docs/BYOK.md, flag `vision_byok`, off by default): "Vision with your own AI key". Per provider, the
+# cost-efficient vision-capable model a user's key runs on unless they pick another from the choices. The user pays the
+# provider directly; these are defaults only and every one can be overridden per deployment from the environment.
+BYOK_VISION_DEFAULT_MODELS = {
+    "anthropic": _byok_model("anthropic", "claude-haiku-5-5"),
+    "openai": _byok_model("openai", "gpt-4.1-mini"),
+    "gemini": _byok_model("gemini", "gemini-2.5-flash"),
+}
+BYOK_VISION_MODEL_CHOICES = {
+    "anthropic": _byok_choices("anthropic", "claude-haiku-5-5", "claude-sonnet-5-5"),
+    "openai": _byok_choices("openai", "gpt-4.1-mini", "gpt-4o-mini,gpt-4.1"),
+    "gemini": _byok_choices("gemini", "gemini-2.5-flash", "gemini-2.5-flash-lite,gemini-2.5-pro"),
+}
+# A new user's spend caps (USD, user-editable) and the highest cap a user may set.
+BYOK_DEFAULT_DAILY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_DAILY_CAP_USD", "1") or 1))
+BYOK_DEFAULT_MONTHLY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_MONTHLY_CAP_USD", "10") or 10))
+BYOK_MAX_CAP_USD = max(1.0, float(os.environ.get("BYOK_MAX_CAP_USD", "500") or 500))
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
 # Part D2 (rule IN-SEBI.ops.throttle): orders per second per client and exchange, exits first. Off by default; the
 # rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.

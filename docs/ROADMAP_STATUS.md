@@ -8,12 +8,12 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z | What | Status | PR | % |
 |---|---|---|---|---|
 | Z1 | PW5 proposal card + PW6 invite gate / feedback | merged | #162, #159 | 100 |
-| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | in progress | - | 10 |
+| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | in review (flag byob_data_tier off); BT1b follow-ups in docs/design/BT_BETA_DATA_TIERS.md | #167 | 80 |
 | Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | next | - | 0 |
 | Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | HB0 ready (#164), HB1 next | #164 | 30 |
 | Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | not started | - | 0 |
 | Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | not started | - | 0 |
-| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | next | - | 0 |
+| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection + golden parity in review (#168); Z7a-2 lifecycle/memory/storage, Z7a-3 chart/ScreenQL next | #168 | 30 |
 | Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | after Z7a | - | 0 |
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | not started | - | 0 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |

@@ -83,25 +83,33 @@ class Tick:
                    received_at=datetime.fromisoformat(d["received_at"]))
 
 
-def _tick_key(broker: str, exchange: str, symbol: str) -> str:
+def _tick_key(broker: str, exchange: str, symbol: str, namespace: Optional[str] = None) -> str:
+    if namespace:
+        # BT1: one user's own broker session (bring your own broker) - a key no other session can read.
+        return f"md:byob:{namespace}:tick:{broker}:{exchange.upper()}:{symbol.upper()}"
     return f"md:tick:{broker}:{exchange.upper()}:{symbol.upper()}"
 
 
 class TickCache:
-    """Newest tick per (broker, exchange, symbol). Process-local dict plus a Redis mirror."""
+    """Newest tick per (broker, exchange, symbol). Process-local dict plus a Redis mirror.
 
-    def __init__(self) -> None:
+    BT1: a cache with a `namespace` belongs to one user's broker session (`SessionRef.namespace`); its keys never meet
+    the shared worker cache or another session's, so a tick fetched under one user's entitlement is never read for
+    another user."""
+
+    def __init__(self, namespace: Optional[str] = None) -> None:
+        self.namespace = namespace or None
         self._local: Dict[str, Tick] = {}
         self.received = 0
 
     async def put(self, tick: Tick) -> None:
-        key = _tick_key(tick.broker, tick.exchange, tick.symbol)
+        key = _tick_key(tick.broker, tick.exchange, tick.symbol, self.namespace)
         self._local[key] = tick
         self.received += 1
         await cache_set(key, tick.to_json(), TICK_REDIS_TTL_SECONDS)
 
     async def get(self, broker: str, exchange: str, symbol: str) -> Optional[Tick]:
-        key = _tick_key(broker, exchange, symbol)
+        key = _tick_key(broker, exchange, symbol, self.namespace)
         tick = self._local.get(key)
         if tick is not None:
             return tick
@@ -389,6 +397,9 @@ class TickStream:
     def __init__(self, *, cache: Optional[TickCache] = None, connector: Optional[Connector] = None) -> None:
         self.cache = cache or tick_cache
         self.connector = connector or _websockets_connect
+        # BT1: a user's own (bring-your-own-broker) stream does not feed the platform-wide listeners (the lake recorder):
+        # data fetched under one user's entitlement is never pooled.
+        self.notify_listeners = True
         self._wanted: Dict[str, Tuple[str, str]] = {}     # wire key -> (symbol, exchange)
         self._pending: Set[str] = set()                     # wire keys not yet sent to this connection
         self._pending_unsub: Set[str] = set()
@@ -521,8 +532,9 @@ class TickStream:
             symbol, exchange = target
             tick = Tick(broker=self.name, exchange=exchange, symbol=symbol, ltp=float(ltp), exchange_ts=exchange_ts, received_at=now)
             await self.cache.put(tick)
-            for listener in tick_listeners:
-                listener(tick)
+            if self.notify_listeners:
+                for listener in tick_listeners:
+                    listener(tick)
             self.ticks += 1
             self.last_tick_at = now
             TICKS_RECEIVED.labels(broker=self.name).inc()

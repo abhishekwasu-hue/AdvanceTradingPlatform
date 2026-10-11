@@ -72,8 +72,8 @@ PARAMS: Tuple[Param, ...] = (
     # --- B7 N-week high ---------------------------------------------------------------------------------------------------
     Param("high_weeks", 52, "the prior high (low) is the highest high (lowest low) of the previous N calendar weeks",
           "52-week high (George & Hwang 2004 52-week-high momentum; O'Neil's new-high rule).", 1, 520, group="B7"),
-    Param("fresh_min_days", 25, "the old high was set at least this many sessions before the break -> 'fresh' (from a base), else 'extended'",
-          "About 5 weeks, O'Neil's minimum flat-base length.", 1, 500, group="B7"),
+    Param("fresh_min_days", 35, "the old high was set at least this many CALENDAR days before the break -> 'fresh' (from a base), else 'extended'",
+          "5 weeks, O'Neil's minimum flat-base length (calendar days, so Daily and Weekly read the same).", 1, 3650, group="B7"),
     # --- B13 ATR / range expansion ----------------------------------------------------------------------------------------
     Param("expansion_k", 2.0, "the bar's range is at least k x ATR", "Wide-range bar convention (Crabel range expansion; 2 x ATR).",
           0.5, 20.0, group="B13"),
@@ -202,6 +202,9 @@ def validate(overrides: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any]
     if clean["grade_b_min"] > clean["grade_a_min"]:
         errors.append("grade_b_min must not be above grade_a_min - defaults used")
         clean["grade_a_min"], clean["grade_b_min"] = DEFAULTS["grade_a_min"], DEFAULTS["grade_b_min"]
+    if clean["dryup_n"] > clean["vol_avg_n"]:
+        errors.append("dryup_n must not be above vol_avg_n (the dry-up window sits inside the average) - defaults used")
+        clean["dryup_n"], clean["vol_avg_n"] = DEFAULTS["dryup_n"], DEFAULTS["vol_avg_n"]
     if clean["base_min_bars"] > clean["base_max_bars"]:
         errors.append("base_min_bars must not be above base_max_bars - defaults used")
         clean["base_min_bars"], clean["base_max_bars"] = DEFAULTS["base_min_bars"], DEFAULTS["base_max_bars"]

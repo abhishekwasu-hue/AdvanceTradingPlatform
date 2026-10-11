@@ -64,13 +64,13 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
         return base
     if tf not in EXTRA_TFS:
         return runtime_resample(base, base_tf, tf)
-    from app.strategy_engine.declarative import _IST_OPEN_UTC
+    from app.screener.runtime import session_origin
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     if "oi" in base.columns:
         agg["oi"] = "last"
     if base.empty:
         return base
-    out = base.resample(EXTRA_TFS[tf][0], label="left", closed="left", origin=base.index[0].normalize() + _IST_OPEN_UTC).agg(agg)
+    out = base.resample(EXTRA_TFS[tf][0], label="left", closed="left", origin=session_origin(base.index)).agg(agg)
     out = out.dropna(subset=["close"])
     if len(out) and out.index[-1] + EXTRA_TFS[tf][1] > base.index[-1] + duration(base_tf):
         out = out.iloc[:-1]

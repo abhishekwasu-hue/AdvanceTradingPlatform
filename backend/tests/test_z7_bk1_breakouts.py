@@ -152,7 +152,8 @@ def test_breakdown_is_the_mirror_of_the_breakout():
 def test_b2_bos_with_the_trend_and_choch_against_it():
     up = frame(zigzag([60, 75, 66, 82, 73, 90, 81, 98, 89, 105], 5))
     rows = [r for r in _signals("B2", up, swing_degree=0) if r["side"] == "up"]
-    assert [r["event"] for r in rows] == ["CHOCH", "BOS", "BOS"]          # no trend yet at the first break
+    # no trend read in the first 40 bars (DOW_MIN_BARS): a break there is a plain BREAK, then BOS with the uptrend
+    assert [r["event"] for r in rows] == ["BREAK", "BREAK", "BOS"]
     assert rows[-1]["level"] == 98.5                                       # the last confirmed swing high (plus the spread)
     down = frame(zigzag([140, 125, 134, 119, 128, 113, 122, 107, 116, 101, 125], 5))
     last = _signals("B2", down, swing_degree=0)[-1]
@@ -212,7 +213,7 @@ def test_b7_52_week_high_break_fresh_with_days_since():
     window = f[(f.index >= t - pd.Timedelta(days=364)) & (f.index < t)]
     assert s["level"] == window["high"].max()
     old = int(np.flatnonzero(f["high"].to_numpy()[:-1] == window["high"].max())[-1])
-    assert s["days_since"] == len(f) - 1 - old and s["event"] == "FRESH"
+    assert s["days_since"] == (f.index[-1] - f.index[old]).days and s["event"] == "FRESH"     # calendar days (L3)
     assert _one(_signals("B7", f, fresh_min_days=s["days_since"] + 1))["event"] == "EXTENDED"
 
 
@@ -454,3 +455,104 @@ def test_screenql_factors_match_the_engine(m15):
     ap = evaluate(parse("ATRPercentile(14, 100)"), sd, base_tf="15m").to_numpy(float)
     assert np.allclose(ap, atr_percentile_series(b.atr_prev, b.c, 100), equal_nan=True)
     assert list(evaluate(parse("DowTrend(0)"), sd, base_tf="15m")) == list(b.dow(0))
+
+
+# ------------------------------------------------------------------------------------------------- review fixes (H1, M4-M6, L)
+def _fetch_shaped(t, seed):
+    """The history the platform fetches: ~272 daily sessions (400 calendar days) for a daily-or-coarser signal, ~42
+    sessions (the 60-day intraday cap) of 1-minute bars resampled to an intraday signal timeframe. The daily series ends
+    on a 15-session advance on volume so a breakout can occur."""
+    if t.signal_tf in ("1d", "1w"):
+        d = generate(272, 100.0, seed, daily=True).copy()
+        ramp = np.linspace(1.0, 1.25, 15)
+        for c in ("open", "high", "low", "close"):
+            d.iloc[-15:, d.columns.get_loc(c)] *= ramp
+        d.iloc[-15:, d.columns.get_loc("volume")] *= 3
+        return d if t.signal_tf == "1d" else resample(d, "1d", "1w")
+    return resample(generate(375 * 42, 100.0, seed), "1m", t.signal_tf)
+
+
+@pytest.mark.parametrize("tid", [t.id for t in templates.TEMPLATES])
+def test_every_template_can_match_on_the_history_the_platform_fetches(tid):
+    t = templates.BY_ID[tid]
+    text, _ = templates.screenql(t.screen, t.signal_tf, templates.template_params(t))
+    ast, validated = compile_screen(text, base_tf=t.signal_tf)
+    matched = 0
+    for seed in (1, 2):
+        data = SymbolData("S", {t.signal_tf: _fetch_shaped(t, seed)})
+        m = run_screen(ast, validated, [data], base_tf=t.signal_tf, check_history=True)[0]
+        assert m.reason is None, (tid, m.reason)                        # never "not enough history on 1M, 1w"
+        matched += int(evaluate(ast, data, base_tf=t.signal_tf).fillna(False).astype(bool).sum())
+    assert matched > 0, tid
+
+
+def test_unknown_context_does_not_block_not_against_but_earns_no_point():
+    d = generate(272, 100.0, 1, daily=True)                             # 13 monthly bars: the monthly trend is unknown
+    run = run_breakout("B2", {"1d": d}, "1d", params=templates.template_params(templates.BY_ID["daily_swing_break"], {"swing_degree": 0}),
+                       within=None)
+    assert run.signals and all(s["htf"]["1M"] is None for s in run.signals)
+    assert any(s["htf_pass"] for s in run.signals)
+    assert htf_pass([None, None], "up", "not_against") and not htf_pass([None, "UP"], "up", "agree")
+    assert not htf_pass(["DOWN", None], "up", "not_against")
+
+
+def test_dow_trend_waits_for_its_warm_up():
+    from app.screener.breakouts.screens import DOW_MIN_BARS
+    f = frame(zigzag(UPTREND * 2, 5))
+    dow = Bars(f, bp.settings()).dow(0)
+    assert all(x is None for x in dow[:DOW_MIN_BARS[0]]) and dow[-1] == "UP"
+
+
+def test_dry_up_window_never_wraps_and_must_fit_the_average():
+    _, errors = bp.validate({"dryup_n": 30, "vol_avg_n": 20})
+    assert errors and "dryup_n" in errors[0]
+    with pytest.raises(ValueError):
+        run_breakout("B13", {"1d": frame(zigzag(UPTREND, 5))}, "1d", params={"dryup_n": 30, "vol_avg_n": 20})
+    # an early signal (bar 26 < vol_avg_n + dryup_n) grades the same whatever comes after it
+    warm = zigzag([60, 66, 63, 70], 8) + [(70.5, 78.0, 70.3, 77.8, 2500.0)]
+    f = frame(warm + [(77.8, 79, 77, 78.5, 1000.0)] * 5)
+    a = [s for s in _signals("B13", f, vol_mult=1.0) if s["bar"] == len(warm) - 1]
+    b = [s for s in _signals("B13", f.iloc[:len(warm)], vol_mult=1.0) if s["bar"] == len(warm) - 1]
+    assert a and b and (a[0]["grade"], a[0]["checks"]) == (b[0]["grade"], b[0]["checks"])
+
+
+def test_session_anchoring_on_ist_aware_bars():
+    df = generate(375 * 3, 100.0, 5)
+    ist = df.tz_convert("Asia/Kolkata")
+    for tf, want in (("1h", ["09:15", "10:15", "11:15"]), ("2h", ["09:15", "11:15", "13:15", "15:15"]), ("4h", ["09:15", "13:15"])):
+        got = style.resample(ist, "1m", tf)
+        assert [t.strftime("%H:%M") for t in got.index[:len(want)]] == want, tf
+        assert got.index.equals(style.resample(df, "1m", tf).index.tz_convert("Asia/Kolkata"))      # same bars either way
+    assert [t.strftime("%H:%M") for t in resample(ist, "1m", "15m").index[:2]] == ["09:15", "09:30"]
+
+
+def test_weeks_and_months_are_exchange_calendar_buckets():
+    d = generate(60, 100.0, 4, daily=True)
+    d.index = d.index.tz_convert("Asia/Kolkata").normalize().tz_convert("UTC")      # 00:00 IST = 18:30 UTC the day before
+    w = resample(d, "1d", "1w")
+    for label in w.index:
+        start = label.tz_convert("Asia/Kolkata")
+        assert start.weekday() == 0 and start.hour == 0                                 # Monday 00:00 IST
+        members = d[(d.index >= label) & (d.index < label + pd.Timedelta(days=7))]
+        assert {t.tz_convert("Asia/Kolkata").isocalendar()[1] for t in members.index} == {start.isocalendar()[1]}
+    # a weekly value reaches the daily bars only after the week's last session closed
+    trend = pd.Series(range(len(w)), index=w.index, dtype=float)
+    seen = style.align_closed(trend, "1w", d.index, "1d")
+    for i, t in enumerate(d.index):
+        done = w.index[w.index + pd.Timedelta(days=7) <= t + pd.Timedelta(days=1)]
+        want = trend[done[-1]] if len(done) else np.nan
+        assert (np.isnan(want) and np.isnan(seen.iloc[i])) or seen.iloc[i] == want
+    m = resample(d, "1d", "1M")
+    assert all(t.tz_convert("Asia/Kolkata").day == 1 for t in m.index)
+
+
+def test_screenql_arguments_are_range_checked_and_new_highs_are_daily_or_weekly():
+    ok = lambda text, tf="1d": compile_screen(text, base_tf=tf)[1]  # noqa: E731
+    assert "k must be between 0 and 5" in ok('RangeBreakout("up", 20, -1)').problems[0].message
+    assert "n must be between 2 and 500" in ok('RangeBreakout("up", 1)').problems[0].message
+    assert "v must be between 0.5 and 50" in ok('VolumeBreakout("up", 0.1)').problems[0].message
+    assert "@1d / @1w bars only" in ok('NewHighBreakout("up")', "15m").problems[0].message
+    assert ok('NewHighBreakout("up")').lookback["1d"] == 260 and ok('NewHighBreakout("up")', "1w").lookback["1w"] == 52
+    assert ok("ATRPercentile(14, 100) < 30").lookback["1d"] == 114
+    v = compile_screen('RangeBreakout("up", 20, $k)', base_tf="1d", params={"k": 9})[1]
+    assert not v.ok and "k must be between" in v.problems[0].message

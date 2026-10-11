@@ -59,13 +59,14 @@ def context_trends(frames: Dict[str, pd.DataFrame], signal_tf: str, context: Tup
 
 
 def htf_pass(trends: List[Optional[str]], side: str, mode: str) -> bool:
-    """agree: every context trend is WITH the side; not_against: every one is known and none against; off: always."""
+    """agree: every context trend is known and WITH the side; not_against: no context trend is known to be AGAINST it (an
+    unknown trend - too little higher-timeframe history - does not block; it earns no grade point either); off: always."""
     with_, against = ("UP", "DOWN") if side == "up" else ("DOWN", "UP")
     if mode == "off":
         return True
     if mode == "agree":
         return bool(trends) and all(t == with_ for t in trends)
-    return bool(trends) and all(t is not None and t != against for t in trends)
+    return all(t != against for t in trends)
 
 
 def atr_percentile_series(atr_prev: np.ndarray, close: np.ndarray, lookback: int) -> np.ndarray:
@@ -155,7 +156,7 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
         why.append(f"volume {rvol:.1f}x the {p['vol_avg_n']}-bar average")
     n_avg, n_dry = int(p["vol_avg_n"]), int(p["dryup_n"])
     dry = False
-    if j >= n_avg:
+    if j >= max(n_avg, n_dry):                                                    # never a slice that wraps past bar 0
         recent, base = float(pd.Series(b.v[j - n_dry:j]).mean()), float(pd.Series(b.v[j - n_avg:j]).mean())   # NaN when no volume
         dry = bool(np.isfinite(recent) and np.isfinite(base) and base > 0 and recent <= p["dryup_ratio"] * base)
     checks["base_dry_up"] = dry

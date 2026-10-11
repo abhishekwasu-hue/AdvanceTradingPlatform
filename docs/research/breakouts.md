@@ -77,7 +77,7 @@ the practitioner range named below, with a one-line note. The table at the end i
 | `nr_setup` | B4 | nr7 | Crabel (1990) NR4 / NR7; the inside bar is the classic mother-bar setup. |
 | `nr_trigger_bars` | B4 | 1 | Crabel: the trade is the break on the next bar; widen for slower follow-through. |
 | `high_weeks` | B7 | 52 | 52-week high (George & Hwang 2004 52-week-high momentum; O'Neil's new-high rule). |
-| `fresh_min_days` | B7 | 25 | About 5 weeks, O'Neil's minimum flat-base length. |
+| `fresh_min_days` | B7 | 35 | 5 weeks, O'Neil's minimum flat-base length (calendar days, so Daily and Weekly read the same). |
 | `expansion_k` | B13 | 2 | Wide-range bar convention (Crabel range expansion; 2 x ATR). |
 | `shock_mult` | B14 | 2 | Upper end of the 1.5-2x practitioner range: a shock, not a confirmation. |
 | `level_tol_atr` | B14 | 0.25 | A quarter ATR: inside one bar's noise. |

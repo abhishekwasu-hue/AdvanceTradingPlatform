@@ -22,6 +22,8 @@ case "$ENV_NAME" in
   production) FILES="-f docker-compose.yml -f docker-compose.prod.yml"; PROJECT="atp"; API="http://localhost:8000" ;;   # Phase AX: Caddy + off-site copy
   *) echo "usage: scripts/deploy.sh staging|production [git ref]" >&2; exit 2 ;;
 esac
+# COMPOSE_OVERLAYS: extra compose files for this host, e.g. "-f docker-compose.hostinger.yml" (deploy/hostinger/deploy.sh)
+FILES="$FILES ${COMPOSE_OVERLAYS:-}"
 COMPOSE="docker compose $FILES -p $PROJECT"
 TIMEOUT="${DEPLOY_TIMEOUT:-120}"
 log() { printf '%s deploy[%s]: %s\n' "$(date -u +%H:%M:%S)" "$ENV_NAME" "$*"; }

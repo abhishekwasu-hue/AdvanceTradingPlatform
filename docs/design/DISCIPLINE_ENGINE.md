@@ -35,7 +35,10 @@ These are solved from the entry premium (`app/option_chain/leg_greeks.py`) and t
 The underlying's price travels in the contract meta as `underlying_entry`. Only the journal reads it, and it is not a
 trade column. When that price is missing, the entry reads `{"unavailable": "<why>"}`.
 
-IV at exit is a column, but nothing fills it yet: the exit path has no underlying quote (see open question Z6-3).
+IV at exit is solved the same way from the exit premium and the underlying quote the exit was judged on: the
+position monitor's option and structure exits and the mark-price endpoint pass it to `close_position(...,
+underlying_price=...)`. Exits without such a quote (kill switch, square-off, AI-action exits) leave it empty (open
+question Z6-3).
 
 ## Where capture hooks in (and the Z3 integration point)
 
@@ -44,14 +47,25 @@ IV at exit is a column, but nothing fills it yet: the exit path has no underlyin
 | `capture.on_entry` | `trading/persistence.persist_trade`, after the trade row commits | plan, entry fill, entry chart reference, Greeks |
 | `capture.on_marks` | `position_monitor.monitor_open_positions`, after the sweep's marks commit | the highest and lowest price seen while open |
 | `capture.on_stop_change` | `position_monitor._apply_trade_exit_rules`, after a stop change commits | the stop history |
-| `capture.on_exit` | `position_monitor.close_position`, after the exit commits | exit fill, costs, exit chart reference |
+| `capture.on_exit` | `position_monitor.close_position`, after the exit commits | exit fill, costs, exit chart reference, IV at exit |
 
 Every hook follows the same rules:
-- it opens its **own database session**;
-- it does nothing unless the flag is on for the tenant;
+- it reads the flag through the **caller's own session** (the connection it already holds), cached for
+  `FLAG_TTL_SECONDS` (10 s); with the flag off it does nothing else, so it never takes a second pool connection;
+- with the flag on it only **queues** the work (plain values, never the caller's row) and returns. One background task
+  per event loop runs the queue in order, one job at a time, each in its own session and cancelled after
+  `HOOK_TIMEOUT_SECONDS` (15 s). The journal therefore holds at most one pool connection, never while a trade waits
+  for it; a full queue (`QUEUE_LIMIT`) drops the job with a log line;
 - it logs and swallows its own errors.
 
-So a journal failure can never fail, roll back or delay a trade or an order (a test checks this). Anything a hook
+So a journal failure can never fail, roll back, delay or block a trade, an order or an exit, the emergency exit of a
+position without a broker stop included (ADR-0004; tests check this with a two-connection pool, a flag-off connection
+count and a stuck job).
+
+Concurrent writers (the hooks, a weekly refresh, two tabs) never collide: entries are created with
+`INSERT ... ON CONFLICT (trade_id) DO NOTHING` and re-read, tags with `ON CONFLICT (trade_id, tag) DO NOTHING` (a trader's
+own tag `DO UPDATE` to CONFIRMED), the price range is widened in one `UPDATE ... GREATEST/LEAST(COALESCE(...))`, IV is
+written once (`WHERE ... IS NULL`), and on PostgreSQL two refreshes of one trader take a per-trader advisory lock. Anything a hook
 missed is rebuilt from the trade row (`capture.ensure_entries`) the next time the week is read. This covers a trade
 opened while the flag was off, or one opened before this feature existed.
 
@@ -82,7 +96,7 @@ The risk counters stay tenant-wide (risk is an organisation budget); the journal
 | `moved_stop_against` | A stop change that moved the stop farther from the entry. Read from the stop history, or from the trade row (final stop vs initial stop) when no history was captured. |
 | `no_stop` | No stop at entry: missing, zero, or on the wrong side of the entry. A multi-leg leg that is covered by its group stop does not count. |
 | `overtrading` | The trades of a day beyond the daily norm. The norm is `overtrading_daily_norm` when set; otherwise the trader's own median trades per active day over `overtrading_lookback_days` x `overtrading_multiple`, and never below `overtrading_min_norm`. |
-| `early_exit` | Closed between the stop and the first target, for a reason none of the platform's exit rules gave (`SYSTEMATIC_EXIT_MARKERS`: stop, target, time rule, square-off, structure, kill switch, an approved AI action, ...). In other words, closed by hand with no invalidation. |
+| `early_exit` | Closed between the stop and the first target by the trader's own decision rather than one of the platform's exit rules (`SYSTEMATIC_EXIT_MARKERS`: stop, target, time rule, square-off, structure, kill switch, ...). A trader's decision is a hand exit or an exit the trader approved: an approved AI-action exit or an "Exit now" (`TRADER_EXIT_MARKERS`, checked first, so "AI action #12 (stop_too_wide) approved" still counts). In other words, closed by choice with no invalidation. |
 | `held_through_event` | Open across the start of an events-calendar event of a kind in `event_kinds`. The event must apply to the trade's underlying, using the Risk Guardian's scope rule: none or `*` = every symbol, `INDEX` = index underlyings, else that one underlying. The start is the event's start time, or the session open (09:15 IST) when it has none. |
 
 The legs of one multi-leg structure count as **one decision**:

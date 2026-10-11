@@ -35,7 +35,10 @@ DEFAULT_LOOKBACK_DAYS = 5
 DAILY_MIN_LOOKBACK_DAYS = 400   # Phase AS: about 270 sessions - enough for a 200-day average
 
 
-def _cache_key(broker_name: str, exchange: str, symbol: str, interval: str) -> str:
+def _cache_key(broker_name: str, exchange: str, symbol: str, interval: str, namespace: Optional[str] = None) -> str:
+    if namespace:
+        # BT1: candles fetched through one user's own broker session are cached for that session only.
+        return f"md:byob:{namespace}:candles:{broker_name}:{exchange}:{symbol}:{interval}"
     return f"md:candles:{broker_name}:{exchange}:{symbol}:{interval}"
 
 
@@ -74,18 +77,20 @@ def _session_origin(df: pd.DataFrame) -> pd.Timestamp:
 class MarketDataService:
     def __init__(
         self, broker: BrokerInterface, *, cache_ttl_seconds: int = DEFAULT_CANDLE_CACHE_TTL_SECONDS,
-        lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+        lookback_days: int = DEFAULT_LOOKBACK_DAYS, cache_namespace: Optional[str] = None,
     ) -> None:
         self.broker = broker
         self.cache_ttl_seconds = cache_ttl_seconds
         self.lookback_days = lookback_days
+        # BT1: set for a user's own broker session (bring your own broker); None keeps the shared worker cache.
+        self.cache_namespace = cache_namespace or None
 
     async def get_candles(
         self, symbol: str, exchange: str = "NSE", interval: str = "1min", now: Optional[datetime] = None, fresh: bool = False,
     ) -> List[OHLCVBar]:
         """Recent history plus today's bars so far, ascending, from cache when fresh. `fresh` skips the cache read (the
         result is still cached for others): S4b-2 intrabar alerts need the bar forming now, not a copy up to a TTL old."""
-        key = _cache_key(self.broker.name, exchange, symbol, interval)
+        key = _cache_key(self.broker.name, exchange, symbol, interval, self.cache_namespace)
         lookback = self._lookback(interval)
         if lookback != DEFAULT_LOOKBACK_DAYS:
             # Phase AA: the research pages ask for longer windows than the worker; a 5-day
@@ -110,7 +115,7 @@ class MarketDataService:
         before = min(before, datetime.now(timezone.utc).astimezone(IST).date())   # never today's forming bars
         start = datetime.combine(before - timedelta(days=self.lookback_days), dtime(0, 0), tzinfo=IST)
         end = datetime.combine(before - timedelta(days=1), dtime(23, 59), tzinfo=IST)
-        key = f"{_cache_key(self.broker.name, exchange, symbol, interval)}:hist:{start.date()}:{end.date()}"
+        key = f"{_cache_key(self.broker.name, exchange, symbol, interval, self.cache_namespace)}:hist:{start.date()}:{end.date()}"
         cached = await cache_get(key)
         if cached:
             try:
@@ -158,8 +163,9 @@ class MarketDataService:
         Phase S: when a streaming tick for the symbol is younger than TICK_MAX_AGE_SECONDS it is
         the price - it is the exchange's last trade, not a poll - and no REST call is made. An
         older or missing tick falls through to the REST quote exactly as before."""
-        from app.market_data.stream import tick_cache
-        tick = await tick_cache.fresh(self.broker.name, exchange, symbol, now)
+        from app.market_data.stream import TickCache, tick_cache
+        ticks = TickCache(self.cache_namespace) if self.cache_namespace else tick_cache
+        tick = await ticks.fresh(self.broker.name, exchange, symbol, now)
         if tick is not None:
             return float(tick.ltp)
         quote = await self.broker.get_quote_for_symbol(symbol, exchange)

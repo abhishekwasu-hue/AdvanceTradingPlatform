@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Table, and_, delete, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import JournalEntryRecord, JournalTagRecord, MarketEventRecord, TradeRecord, User
@@ -29,6 +29,7 @@ _WEEK = re.compile(r"^(\d{4})-W(\d{2})$")
 # Context loaded before a week: revenge needs the losing exits just before it, the own-median daily norm needs its
 # look-back days; positions still open at the week's start are always loaded (averaging into them).
 _MIN_CONTEXT_DAYS = 2
+TAG_TABLE = cast(Table, JournalTagRecord.__table__)   # Core statements (upserts, guarded updates) target the table
 
 
 class WeekError(ValueError):
@@ -151,24 +152,44 @@ async def _context_trades(session: AsyncSession, user: User, start: datetime, en
 
 
 async def _sync_tags(session: AsyncSession, user: User, trade_ids: Sequence[int], detections: Sequence[Detection]) -> None:
-    """AUTO tags follow the detectors; the trader's decisions (CONFIRMED / DISMISSED) and own tags are never touched."""
+    """AUTO tags follow the detectors; the trader's decisions (CONFIRMED / DISMISSED) and own tags are never touched.
+
+    Concurrency-safe: new tags go in with ON CONFLICT (trade_id, tag) DO NOTHING, and the evidence update and the
+    removal of a tag that no longer fires are guarded by `source = AUTO` (and `status = SUGGESTED` for the removal),
+    so a second refresh, the trader's decision in another tab, or a row already removed never errors or is undone."""
     if not trade_ids:
         return
     rows = list(await session.scalars(select(JournalTagRecord).where(
         JournalTagRecord.user_id == user.id, JournalTagRecord.trade_id.in_(list(trade_ids)))))
     by_key = {(r.trade_id, r.tag): r for r in rows}
     found = {(d.trade_id, d.tag): d for d in detections}
+    tags = TAG_TABLE
+    now = datetime.now(timezone.utc)
+    new_rows: List[Dict[str, Any]] = []
     for key, d in found.items():
         row = by_key.get(key)
         evidence = json.dumps(d.evidence, sort_keys=True, default=str)
         if row is None:
-            session.add(JournalTagRecord(tenant_id=user.tenant_id, user_id=user.id, trade_id=d.trade_id, tag=d.tag, source="AUTO",
-                                         status="SUGGESTED", evidence_json=evidence))
+            new_rows.append({"tenant_id": user.tenant_id, "user_id": user.id, "trade_id": d.trade_id, "tag": d.tag, "source": "AUTO",
+                             "status": "SUGGESTED", "evidence_json": evidence, "detected_at": now, "decided_at": None})
         elif row.source == "AUTO" and row.evidence_json != evidence:
-            row.evidence_json = evidence
-    for key, row in by_key.items():
-        if key not in found and row.source == "AUTO" and row.status == "SUGGESTED":
-            await session.delete(row)
+            await session.execute(update(tags).where(tags.c.id == row.id, tags.c.source == "AUTO").values(evidence_json=evidence))
+    if new_rows:
+        await session.execute(capture.dialect_insert(session, tags).on_conflict_do_nothing(index_elements=["trade_id", "tag"]), new_rows)
+    stale = [row.id for key, row in by_key.items() if key not in found and row.source == "AUTO" and row.status == "SUGGESTED"]
+    if stale:
+        await session.execute(delete(tags).where(tags.c.id.in_(stale), tags.c.source == "AUTO", tags.c.status == "SUGGESTED"))
+
+
+# Namespace of the per-trader advisory lock that serialises two refreshes of the same trader's journal (PostgreSQL).
+_REFRESH_LOCK_NAMESPACE = 0x5A36
+
+
+async def _lock_trader(session: AsyncSession, user: User) -> None:
+    """Two refreshes of one trader's week (two tabs, a double click) run one after the other on PostgreSQL. The upserts
+    above already make an overlap harmless; the lock just avoids the wasted work. Released at commit."""
+    if session.get_bind().dialect.name == "postgresql":
+        await session.execute(text("SELECT pg_advisory_xact_lock(:ns, :uid)"), {"ns": _REFRESH_LOCK_NAMESPACE, "uid": int(user.id)})
 
 
 async def refresh_week(session: AsyncSession, user: User, label: Optional[str] = None, *, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -176,6 +197,7 @@ async def refresh_week(session: AsyncSession, user: User, label: Optional[str] =
     Idempotent. Returns the pieces the routes and the weekly review read."""
     now = now or datetime.now(timezone.utc)
     week, start, end = week_bounds(label, now=now)
+    await _lock_trader(session, user)
     s = await journal_settings.load(session, user)
     context = await _context_trades(session, user, start, end, s)
     week_trades = [t for t in context if start <= (_utc(t.entry_time) or start) < end]
@@ -188,7 +210,7 @@ async def refresh_week(session: AsyncSession, user: User, label: Optional[str] =
     await session.commit()
     tags = list(await session.scalars(select(JournalTagRecord).where(
         JournalTagRecord.user_id == user.id, JournalTagRecord.trade_id.in_([t.id for t in week_trades] or [-1])).order_by(
-        JournalTagRecord.trade_id, JournalTagRecord.tag)))
+        JournalTagRecord.trade_id, JournalTagRecord.tag).execution_options(populate_existing=True)))
     units = {t.id: (f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}") for t in week_trades}
     score = weekly_score(units, [TagState(r.trade_id, r.tag, r.status) for r in tags], s)
     return {"week": week, "start": start, "end": end, "settings": s, "trades": week_trades, "entries": entries, "tags": tags, "score": score}
@@ -264,20 +286,22 @@ async def set_tag_status(session: AsyncSession, user: User, tag_id: int, status:
 
 
 async def add_user_tag(session: AsyncSession, user: User, trade: TradeRecord, tag: str, note: Optional[str]) -> JournalTagRecord:
+    """The trader's own tag, or the trader's confirmation of a tag that is already there - one atomic upsert, so a
+    detector run inserting the same tag at the same moment never turns it into an error."""
     if tag not in TAGS:
         raise ValueError(f"Unknown tag '{tag}' - known: {list(TAGS)}")
-    row = await session.scalar(select(JournalTagRecord).where(and_(JournalTagRecord.trade_id == trade.id, JournalTagRecord.tag == tag)))
     now = datetime.now(timezone.utc)
     evidence = json.dumps({"note": (note or "").strip()[:300]} if note else {}, sort_keys=True)
-    if row is None:
-        row = JournalTagRecord(tenant_id=user.tenant_id, user_id=user.id, trade_id=trade.id, tag=tag, source="USER", status="CONFIRMED",
-                               evidence_json=evidence, decided_at=now)
-        session.add(row)
-    else:
-        row.status = "CONFIRMED"
-        row.decided_at = now
+    tags = TAG_TABLE
+    stmt = capture.dialect_insert(session, tags).values(
+        tenant_id=user.tenant_id, user_id=user.id, trade_id=trade.id, tag=tag, source="USER", status="CONFIRMED",
+        evidence_json=evidence, detected_at=now, decided_at=now)
+    await session.execute(stmt.on_conflict_do_update(index_elements=["trade_id", "tag"], set_={"status": "CONFIRMED", "decided_at": now}))
     await session.commit()
-    await session.refresh(row)
+    row = await session.scalar(select(JournalTagRecord).where(and_(JournalTagRecord.trade_id == trade.id, JournalTagRecord.tag == tag))
+                               .execution_options(populate_existing=True))
+    if row is None:   # just upserted; only a concurrent delete of the trade itself (cascade) gets here
+        raise LookupError(f"trade {trade.id} no longer exists")
     return row
 
 

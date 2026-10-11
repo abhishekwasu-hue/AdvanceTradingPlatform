@@ -341,7 +341,7 @@ def _zone(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> None:
     if zone is None:
         row["note"] = "no live zone within the tolerance at the matched bar"
         return
-    zone_terms = [
+    zone_terms: List[Dict[str, Any]] = [
         {"text": "close", "value": _num(close), "value_text": value_text(close, "price"), "unit": "price", "literal": False},
         {"text": f"{zone['role']} zone", "value": f"{zone['low_text']}-{zone['high_text']}", "value_text": f"{zone['low_text']}-{zone['high_text']}",
          "unit": "price", "literal": False},

@@ -36,6 +36,9 @@ class Validated:
     problems: List[Problem] = field(default_factory=list)
     timeframes: Set[str] = field(default_factory=set)
     lookback: Dict[str, int] = field(default_factory=dict)          # timeframe -> bars of history needed
+    # U6 BK1: bars to FETCH per timeframe - at least `lookback`, more where a function reads better on a longer history
+    # than it needs to run (a Dow trend is missing, not refused, on a short frame). Fetch sizing only; never a refusal.
+    fetch_lookback: Dict[str, int] = field(default_factory=dict)
     cost: float = 0.0
     cross_sectional: bool = False
     params_used: Set[str] = field(default_factory=set)
@@ -71,6 +74,7 @@ class _Checker:
     def _need(self, tf: str, bars: int) -> None:
         self.out.timeframes.add(tf)
         self.out.lookback[tf] = max(self.out.lookback.get(tf, 0), bars)
+        self.out.fetch_lookback[tf] = max(self.out.fetch_lookback.get(tf, 0), bars)
 
     def _offset(self, node: Any) -> int:
         if node.offset < 0:
@@ -121,12 +125,13 @@ class _Checker:
         if not lo <= float(value) <= hi:
             self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
 
-    def degree_bars(self, node: Any, spec: Any) -> int:
+    def degree_bars(self, node: Any, spec: Any, table: Optional[Tuple[int, ...]] = None) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
         largest when it cannot be read (the choice check reports that separately)."""
+        table = table if table is not None else spec.degree_min_bars
         pos = next((i for i, a in enumerate(spec.args) if a.name == "degree"), None)
         if pos is None:
-            return max(spec.degree_min_bars)
+            return max(table)
         arg = node.args[pos] if pos < len(node.args) else None
         if arg is None:
             value: Any = spec.args[pos].default
@@ -137,9 +142,9 @@ class _Checker:
         else:
             value = None
         try:
-            return spec.degree_min_bars[int(value)]
+            return table[int(value)]
         except (TypeError, ValueError, IndexError):
-            return max(spec.degree_min_bars)
+            return max(table)
 
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
@@ -328,6 +333,9 @@ class _Checker:
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
         self._need(own_tf, offset + max(window, 1, min_bars) + spec.extra_bars)
+        if spec.fetch_degree_bars:                                    # U6 BK1: fetch more than the refusal needs
+            fetch_need = offset + self.degree_bars(node, spec, spec.fetch_degree_bars)
+            self.out.fetch_lookback[own_tf] = max(self.out.fetch_lookback.get(own_tf, 0), fetch_need)
         self.out.cost += spec.cost * (1 + window / 100)
         if spec.returns == NUM:
             unit = spec.unit

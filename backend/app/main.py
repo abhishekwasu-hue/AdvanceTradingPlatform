@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
@@ -417,10 +418,32 @@ async def paper_execute(
             return PaperExecuteResponse(signal=signal, executed=False, reasons=reasons)
 
     if user is not None:
+        from app.execution import approval
+        # Z3 (review M1): a persisted entry needs a trading role and the trading:write scope, like every other order route.
+        if not approval.can_trade(user):
+            raise HTTPException(status_code=403, detail="Insufficient role for this action")
+        if await approval.required(session, user.tenant_id):
+            # Z3 / BT2: approval-only - the console's signal (priced from the candles this request sent) becomes an ENTRY
+            # proposal like any other; Approve re-quotes it at the live price, so a client-sent price never fills.
+            if not signal.is_tradeable or signal.entry is None:
+                return PaperExecuteResponse(signal=signal, executed=False, reasons=list(signal.reasons) or ["No trade signal"])
+            key = f"console:{user.id}:{request.idempotency_key}" if request.idempotency_key else f"console:{user.id}:{uuid.uuid4().hex}"
+            row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
+                                               idempotency_key=key, user_id=user.id)
+            return PaperExecuteResponse(signal=signal, executed=False, reasons=[
+                f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order at the live price"
+                if row is not None else "Approval-only mode: this signal was already proposed"])
         result, order = await execute_signal_for_user(
             session, user, mode="PAPER", strategy_id=strategy_id, signal=signal,
             idempotency_key=request.idempotency_key, risk_config=request.risk_config,
         )
+        if order.trade_id is not None:
+            # Z3 (review M1/H2): priced from candles the browser sent - kept out of the PAPER account and the ladder.
+            from app.db.models import TradeRecord
+            trade = await session.get(TradeRecord, order.trade_id)
+            if trade is not None:
+                trade.price_source = "client"
+                await session.commit()
         return PaperExecuteResponse(
             signal=signal, executed=result.executed, reasons=result.reasons, order_id=order.id,
         )

@@ -900,6 +900,7 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1");
   hiding, API shape and filters, flags off by default. Frontend: taxonomy filtering and counts, the starters contract,
   gallery render (rail, chips, cards, empty cell, matrix, disabled Open, no advice wording, no Devanagari), a Playwright
   spec (flag off: no button; rail -> chip -> empty cell -> card -> Open loads the starter), Storybook stories.
+
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
 parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.
@@ -948,12 +949,24 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 
   The fitness statistics by grade, timeframe and regime come in BK5.
 
 ### U6 BK1 review follow-up
-- **Templates on the history the platform fetches (H1).** A Dow trend is read after `DOW_MIN_BARS` (40 at D0, measured)
-  and is missing before that; `DowTrend` asks the validator for 1 bar, so a short context frame reads as unknown
-  instead of refusing the symbol. `not_against` means no context trend is known to be against the break (ScreenQL
-  `NOT DowTrend(0)@tf == "DOWN"`); an unknown trend passes but earns no grade point. A test runs every template on
-  fetch-shaped history (~272 daily sessions; 42 intraday sessions) with the history check on: no "not enough history",
-  and every template matches.
+- **Templates on the history the platform fetches (H1, then verification A).**
+  - A Dow trend is read after `dow_min_bars` (40 at D0, measured) and is missing before.
+  - `DowTrend` asks the validator for 1 bar, so a short frame is never refused. The fetch is sized separately, through
+    `Spec.fetch_degree_bars` -> `Validated.fetch_lookback` (100 / 250 / 600 / 1200 bars by degree). The screener run and
+    alert rules size their fetch with `fetch_lookback`.
+  - An intraday screen that reads a daily-or-coarser timeframe gets the broker's daily history as its "1d" frame
+    (`fetch_frames._attach_daily`). The runtime builds @1w / @1M from that frame. Alert rules keep it, cut to the
+    sessions closed by the evaluated bar.
+  - `not_against` BLOCKS on an unknown trend: `DowTrend(0)@tf != "DOWN"` is false on a missing value, and
+    `quality.htf_pass` matches it. An alert therefore never fires on context it could not read. Reviewer repro: 121
+    counter-trend NR7 breaks hidden by /run, 0 matched by the template on the alert window.
+  - Daily and weekly signals have one context timeframe (1d -> 1w, 1w -> 1M). The weekly 52-week template has no
+    context filter (BK1-2).
+  - A test runs every template on the alert fetch window (fetch-sized intraday bars plus the daily history) with the
+    history check on. No "not enough history", and every template matches.
+- **Months (verification B).** `runtime.bar_close` counts a month in exchange time. A month labelled 1 Aug 00:00 IST
+  (31 Jul 18:30 UTC) used to close on 30 Aug in UTC arithmetic, a session early. Tested on UTC 03:45, UTC 18:30 and
+  IST-aware daily stamps.
 - **Alerts (M1-M3).** A screen rule on a saved breakout screen is gated like an instrument rule. While the flag is off,
   a breakout rule stays active and is skipped with `last_problem` (flag read once per tenant per cycle); it resumes when
   the flag is back. Breakout rules fire on bar close only: `fire_on = "intrabar"` is refused at creation and skipped by

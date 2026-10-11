@@ -243,14 +243,17 @@ def test_b14_volume_shock_at_and_through_the_level():
 
 
 # ---------------------------------------------------------------------------------------------- overlay: HTF, status
+TWO_CONTEXTS = {"1d": ["1w", "1M"]}                      # the editable ladder: weekly and monthly context on a daily signal
+
+
 def _with_context(points):
     f = base_then([TRUE_BREAK, (103.8, 105.5, 103.5, 105.2, 1500.0)])
     return {"1d": f, "1w": context_frame(points, f.index[0], "W-MON"), "1M": context_frame(points, f.index[0], "MS")}
 
 
 def test_break_against_the_higher_timeframe_trend_is_capped_at_c():
-    against = _one(_signals("B1", _with_context(HTF_DOWN)))
-    agree = _one(_signals("B1", _with_context(HTF_UP)))
+    against = _one(_signals("B1", _with_context(HTF_DOWN), context_ladder=TWO_CONTEXTS))
+    agree = _one(_signals("B1", _with_context(HTF_UP), context_ladder=TWO_CONTEXTS))
     assert against["htf"] == {"1w": "DOWN", "1M": "DOWN"} and against["grade"] == "C" and against["htf_pass"] is False
     assert agree["htf"] == {"1w": "UP", "1M": "UP"} and agree["grade"] == "A" and agree["htf_pass"] is True
     assert agree["points"] == against["points"] + 2
@@ -320,12 +323,12 @@ def test_one_signal_per_leg():
 
 def test_grade_is_deterministic_and_fixed_at_the_signal_bar():
     frames = _with_context(HTF_UP)
-    a = run_breakout("B1", frames, "1d", within=None).signals
-    b = run_breakout("B1", frames, "1d", within=None).signals
+    a = run_breakout("B1", frames, "1d", params={"context_ladder": TWO_CONTEXTS}, within=None).signals
+    b = run_breakout("B1", frames, "1d", params={"context_ladder": TWO_CONTEXTS}, within=None).signals
     assert a == b
     s = a[-1]
     cut = {k: (v.iloc[:s["bar"] + 1] if k == "1d" else v) for k, v in frames.items()}
-    c = run_breakout("B1", cut, "1d", within=None).signals[-1]
+    c = run_breakout("B1", cut, "1d", params={"context_ladder": TWO_CONTEXTS}, within=None).signals[-1]
     for key in ("grade", "points", "why", "checks", "htf", "level", "rvol", "dist_atr"):
         assert c[key] == s[key], key
     assert c["status"] == "pending"
@@ -388,7 +391,7 @@ def _engine_series(screen, f, tf, params):
     ("B14", "5m", {"htf_filter": "off"}), ("B14", "15m", {"direction": "down"}),
 ])
 def test_template_text_matches_the_engine_bar_by_bar(screen, tf, params):
-    df = generate(375 * 30, 100.0, 21)
+    df = generate(375 * 60, 100.0, 21)                         # 60 sessions: the daily trend is read after 40
     f = resample(df, "1m", tf)
     text, why = templates.screenql(screen, tf, params)
     assert why is None and text is not None
@@ -458,42 +461,97 @@ def test_screenql_factors_match_the_engine(m15):
 
 
 # ------------------------------------------------------------------------------------------------- review fixes (H1, M4-M6, L)
-def _fetch_shaped(t, seed):
-    """The history the platform fetches: ~272 daily sessions (400 calendar days) for a daily-or-coarser signal, ~42
-    sessions (the 60-day intraday cap) of 1-minute bars resampled to an intraday signal timeframe. The daily series ends
-    on a 15-session advance on volume so a breakout can occur."""
+def _alert_shaped(t, seed):
+    """The frames a saved screen / alert evaluates (`routes.fetch_frames`): the signal timeframe's fetch sized by the
+    validator's FETCH lookback (`fetch_days`, intraday capped at 60 days), plus the broker's daily history (~272
+    sessions) as the "1d" frame when the screen reads a daily-or-coarser timeframe. A daily-or-coarser signal is the
+    daily fetch itself. The daily series ends on a 15-session advance on volume so a 52-week break can occur."""
+    from app.screener.routes import fetch_days
+    text, _ = templates.screenql(t.screen, t.signal_tf, templates.template_params(t))
+    _, validated = compile_screen(text, base_tf=t.signal_tf)
+    d = generate(272, 100.0, seed, daily=True).copy()
+    ramp = np.linspace(1.0, 1.25, 15)
+    for c in ("open", "high", "low", "close"):
+        d.iloc[-15:, d.columns.get_loc(c)] *= ramp
+    d.iloc[-15:, d.columns.get_loc("volume")] *= 3
     if t.signal_tf in ("1d", "1w"):
-        d = generate(272, 100.0, seed, daily=True).copy()
-        ramp = np.linspace(1.0, 1.25, 15)
-        for c in ("open", "high", "low", "close"):
-            d.iloc[-15:, d.columns.get_loc(c)] *= ramp
-        d.iloc[-15:, d.columns.get_loc("volume")] *= 3
-        return d if t.signal_tf == "1d" else resample(d, "1d", "1w")
-    return resample(generate(375 * 42, 100.0, seed), "1m", t.signal_tf)
+        return {t.signal_tf: d if t.signal_tf == "1d" else resample(d, "1d", "1w")}, validated
+    days = fetch_days(validated.fetch_lookback, t.signal_tf)
+    sessions = int(np.busday_count(np.datetime64("2026-01-01"), np.datetime64("2026-01-01") + np.timedelta64(days, "D")))
+    m1 = generate(375 * sessions, 100.0, seed)
+    frames = {t.signal_tf: resample(m1, "1m", t.signal_tf)}
+    if any(bp.TF_MINUTES[tf] >= bp.TF_MINUTES["1d"] for tf in validated.fetch_lookback):
+        frames["1d"] = generate(272, 100.0, seed + 100, daily=True, end=m1.index[0].to_pydatetime())   # completed sessions before
+    return frames, validated
 
 
 @pytest.mark.parametrize("tid", [t.id for t in templates.TEMPLATES])
-def test_every_template_can_match_on_the_history_the_platform_fetches(tid):
+def test_every_template_can_match_on_the_alert_fetch_window(tid):
     t = templates.BY_ID[tid]
     text, _ = templates.screenql(t.screen, t.signal_tf, templates.template_params(t))
-    ast, validated = compile_screen(text, base_tf=t.signal_tf)
+    ast, _ = compile_screen(text, base_tf=t.signal_tf)
     matched = 0
-    for seed in (1, 2):
-        data = SymbolData("S", {t.signal_tf: _fetch_shaped(t, seed)})
+    for seed in (1, 2, 3):
+        frames, validated = _alert_shaped(t, seed)
+        data = SymbolData("S", frames)
         m = run_screen(ast, validated, [data], base_tf=t.signal_tf, check_history=True)[0]
-        assert m.reason is None, (tid, m.reason)                        # never "not enough history on 1M, 1w"
+        assert m.reason is None, (tid, m.reason)                        # never "not enough history"
         matched += int(evaluate(ast, data, base_tf=t.signal_tf).fillna(False).astype(bool).sum())
     assert matched > 0, tid
 
 
-def test_unknown_context_does_not_block_not_against_but_earns_no_point():
-    d = generate(272, 100.0, 1, daily=True)                             # 13 monthly bars: the monthly trend is unknown
+def test_dow_trend_fetch_is_sized_but_never_refuses():
+    _, v = compile_screen('DowTrend(0)@1h != "DOWN"', base_tf="15m")
+    assert v.lookback["1h"] == 1 and v.fetch_lookback["1h"] == 100
+    _, v = compile_screen('DowTrend(1)@1d == "UP"', base_tf="15m")
+    assert v.lookback["1d"] == 1 and v.fetch_lookback["1d"] == 250
+
+
+def test_unknown_context_blocks_not_against():
+    assert not htf_pass([None, "UP"], "up", "not_against") and not htf_pass(["DOWN", "UP"], "up", "not_against")
+    assert htf_pass(["RANGE", "UP"], "up", "not_against") and not htf_pass([None, "UP"], "up", "agree")
+    d = generate(272, 100.0, 1, daily=True)                             # a daily signal: 57 weeks, the weekly trend is read
     run = run_breakout("B2", {"1d": d}, "1d", params=templates.template_params(templates.BY_ID["daily_swing_break"], {"swing_degree": 0}),
                        within=None)
-    assert run.signals and all(s["htf"]["1M"] is None for s in run.signals)
-    assert any(s["htf_pass"] for s in run.signals)
-    assert htf_pass([None, None], "up", "not_against") and not htf_pass([None, "UP"], "up", "agree")
-    assert not htf_pass(["DOWN", None], "up", "not_against")
+    for s in run.signals:
+        assert s["htf_pass"] == (s["htf"]["1w"] is not None and s["htf"]["1w"] != ("DOWN" if s["side"] == "up" else "UP"))
+
+
+def test_alert_text_never_fires_a_break_that_run_hides_as_counter_trend():
+    """Reviewer repro (BK1 verification A): counter-trend NR7 breaks hidden by /run must not match the template text on
+    the frames an alert evaluates (intraday fetch window + the daily history before that day)."""
+    from app.screener.routes import fetch_days
+    t = templates.BY_ID["intraday_15m_nr7"]
+    params = templates.template_params(t, {"vol_mult": 0.0})
+    text, _ = templates.screenql(t.screen, t.signal_tf, params)
+    ast, v = compile_screen(text, base_tf="15m")
+    days = fetch_days(v.fetch_lookback, "15m")
+    hidden = matched = 0
+    for seed in (1, 2, 3):
+        m15 = resample(generate(375 * 70, 100.0, seed), "1m", "15m")
+        daily = resample(m15, "15m", "1d")
+        for s in run_breakout("B4", {"15m": m15, "1d": daily}, "15m", params=params, within=None).signals:
+            if s["htf_pass"] or s["bar"] < 25 * 45:
+                continue
+            hidden += 1
+            end = m15.index[s["bar"]]
+            win = m15[(m15.index > end - pd.Timedelta(days=days)) & (m15.index <= end)]
+            frames = {"15m": win, "1d": daily[style.bar_close(daily.index, "1d") <= end]}
+            matched += run_screen(ast, v, [SymbolData("S", frames)], base_tf="15m")[0].matched
+    assert hidden > 0 and matched == 0
+
+
+def test_a_month_is_never_visible_before_its_last_session():
+    d = generate(400, 100.0, 3, daily=True)
+    for idx in (d.index, d.index.tz_convert("Asia/Kolkata").normalize().tz_convert("UTC"), d.index.tz_convert("Asia/Kolkata").normalize()):
+        base = pd.DataFrame(d.to_numpy(), columns=d.columns, index=idx)
+        months = resample(base, "1d", "1M")
+        seen = evaluate(parse("close@1M"), SymbolData("S", {"1d": base}), base_tf="1d")
+        for i, (label, close) in enumerate(zip(months.index[:-1], months["close"].iloc[:-1])):
+            nxt = months.index[i + 1]
+            members = base[(base.index >= label) & (base.index < nxt)]
+            assert (seen.loc[members.index[:-1]] != close).all()          # never during the month before its last session
+            assert seen.loc[base.index[base.index >= nxt][0]] == close   # and read by the next month's first session
 
 
 def test_dow_trend_waits_for_its_warm_up():

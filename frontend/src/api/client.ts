@@ -39,6 +39,7 @@ import type {
   EnrichedSignal,
   InviteInfo,
   LoginEvent,
+  ExitNowResponse,
   MarkPriceResponse,
   MarketStructureResult,
   MfaStatus,
@@ -477,6 +478,9 @@ export const api = {
     if (!response.ok) throw await apiErrorFrom(response);
     return response.json() as Promise<ContractNoteIngest>;
   },
+
+  /** Z3 "Exit now" (approval-only on): closes a PAPER position at once at the live price, else the last price seen. */
+  exitNow: (tradeId: number) => request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST" }),
 
   markPrice: (tradeId: number, currentPrice: number) =>
     request<MarkPriceResponse>(`/positions/${tradeId}/mark-price`, {

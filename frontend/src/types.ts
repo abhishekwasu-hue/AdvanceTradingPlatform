@@ -575,6 +575,12 @@ export interface MarkPriceResponse {
   pnl: number | null;
 }
 
+/** Z3 "Exit now": every leg closed (a structure closes whole), with what the close said. */
+export interface ExitNowResponse {
+  closed: MarkPriceResponse[];
+  warnings: string[];
+}
+
 export interface StoredBrokerInfo {
   broker_name: string;
   updated_at: string;
@@ -1800,7 +1806,8 @@ export interface AiAction {
   id: number;
   deployment_id: number | null;
   trade_id: number | null;
-  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY";
+  /** ENTRY (Z3): an approval-only entry signal; Approve places a PAPER order at a re-quoted price. */
+  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY" | "ENTRY";
   rule: string;
   reason: string;
   evidence: Record<string, unknown>;

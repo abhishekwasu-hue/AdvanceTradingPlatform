@@ -10,6 +10,7 @@ saved screens and runs on server data.
 from __future__ import annotations
 
 import hashlib
+import logging
 import json
 import math
 import time
@@ -36,6 +37,7 @@ from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 FLAG = "screener_v2"
@@ -252,7 +254,30 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             continue
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames))
+    if interval != "day" and universe and any(nodes.TF_MINUTES.get(tf, 0) >= nodes.TF_MINUTES["1d"] for tf in lookback):
+        await _attach_daily(MarketDataService(build_adapter(record), lookback_days=5), universe, exchange, now)
     return universe, problems, f"broker:{record.broker_name}"
+
+
+async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:
+    """U6 BK1 verification (A): an intraday screen that reads a daily-or-coarser timeframe gets the broker's daily history
+    (completed sessions, about 400 calendar days) as its "1d" frame; the runtime builds @1d / @1w / @1M from it instead of
+    from the short intraday window (60 days at most), so a higher-timeframe trend can be read. Closed bars only. A symbol
+    whose daily fetch fails keeps the intraday-built context (shorter; a trend there may read as unknown)."""
+    for data in universe:
+        try:
+            bars = await service.get_candles(data.symbol, exchange, "day")
+        except Exception:  # noqa: BLE001 - the screen still runs on the intraday-built context
+            logger.warning("daily context fetch failed for %s", data.symbol, exc_info=True)
+            continue
+        df = bars_to_dataframe(bars) if bars else pd.DataFrame()
+        if df.empty:
+            continue
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        df = closed_only(df, "1d", now or datetime.now(timezone.utc))
+        if not df.empty:
+            data.frames["1d"] = df
 
 
 def missing_data(ast: Any) -> List[str]:
@@ -291,7 +316,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                 "yet (sector / index / F&O lists or the option chain); a run uses bars only",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback)
+    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)

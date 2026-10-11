@@ -32,10 +32,10 @@ from app.db.models import BrokerCredentialRecord, IndexEodRecord, User
 from app.market_data.calendar import IST, is_trading_day
 from app.market_data.data_terms import DataTermsStatus, terms_for
 from app.market_data.fanin import FLAG, Priority, SessionRef, SessionSymbols, session_cap, session_symbols
-from app.market_data.freshness import quote_is_stale
+from app.market_data.freshness import candle_staleness, quote_is_stale
 
 __all__ = ["FLAG", "DataTier", "Entitlement", "resolve", "resolve_many", "own_records", "eod_as_of", "eod_staleness", "eod_badge",
-           "session_summaries"]
+           "session_summaries", "pick_session"]
 
 
 class DataTier(str, Enum):
@@ -66,13 +66,16 @@ class Entitlement:
         return f"broker:{self.session.broker}" if self.live and self.session else "eod"
 
     def badge(self, *, as_of: Optional[datetime] = None, eod_date: Optional[date] = None, now: Optional[datetime] = None,
-              holidays: Iterable[date] = ()) -> dict:
+              holidays: Iterable[date] = (), timeframe: Optional[str] = None, last_bar_start: Optional[datetime] = None) -> dict:
         """What the page shows next to the number: tier, label, timestamp, staleness. Stale data suppresses alerts
-        (the Phase G1 / U3 rule: no decision and no alert on data older than the staleness limit)."""
+        (the Phase G1 / U3 rule: no decision and no alert on data older than the staleness limit).
+
+        BT1b: the time is the data's own - the tick / quote time (`as_of`), or for bars the newest bar
+        (`last_bar_start` + `timeframe`, judged by the G1 candle rule). Unknown time = stale (fails closed)."""
         now = now or datetime.now(timezone.utc)
         if self.live and self.session is not None:
             name = terms_for(self.session.broker).display_name
-            stale_reason = quote_is_stale(as_of, now) if as_of is not None else None
+            stale_reason = _live_staleness(as_of, now, timeframe, last_bar_start)
             return {"tier": self.tier.value, "label": f"Live · your {name}", "source": self.source, "broker": self.session.broker,
                     "display_name": name, "as_of": as_of.isoformat() if as_of else None, "eod_date": None,
                     "stale": stale_reason is not None, "stale_reason": stale_reason, "alerts_suppressed": stale_reason is not None,
@@ -82,6 +85,14 @@ class Entitlement:
         out.update({"reason": self.reason, "cap": self.cap, "broker_cap": self.broker_cap, "poll_seconds": self.poll_seconds,
                     "degraded": self.degraded, "symbol": self.symbol, "exchange": self.exchange})
         return out
+
+
+def _live_staleness(as_of: Optional[datetime], now: datetime, timeframe: Optional[str], last_bar_start: Optional[datetime]) -> Optional[str]:
+    if timeframe and last_bar_start is not None:
+        return candle_staleness(last_bar_start, timeframe, now)
+    if as_of is not None:
+        return quote_is_stale(as_of, now)
+    return "no timestamp from the broker for this data: its age is unknown"
 
 
 # --- EOD (Tier C) date and staleness ------------------------------------------------------------------------------------
@@ -162,7 +173,7 @@ def _no_session_reason(records: Sequence[BrokerCredentialRecord], now: datetime,
     return reasons[0] if reasons else "No live session available: EOD data only."
 
 
-def _pick_session(records: Sequence[BrokerCredentialRecord], now: datetime) -> Optional[BrokerCredentialRecord]:
+def pick_session(records: Sequence[BrokerCredentialRecord], now: datetime) -> Optional[BrokerCredentialRecord]:
     for record in records:
         if terms_for(record.broker_name).tier_a_allowed and token_is_usable(record, now):
             return record
@@ -185,7 +196,7 @@ async def resolve_many(session: AsyncSession, user: User, symbols: Sequence[Tupl
     now = now or datetime.now(timezone.utc)
     registry = registry or session_symbols
     records = await own_records(session, user, broker, account_label)
-    record = _pick_session(records, now)
+    record = pick_session(records, now)
     out: Dict[Tuple[str, str], Entitlement] = {}
     if record is None:
         reason = _no_session_reason(records, now, broker, not records and await _teammates_linked(session, user))

@@ -92,7 +92,7 @@ def test_candles_and_regime_summarise_server_bars_with_as_of(monkeypatch):
 def test_quote_and_option_chain(monkeypatch):
     _, me = _owner("hc2b3-chain@example.com")
 
-    async def broker(ctx):
+    async def broker(ctx, *_symbol_exchange):   # BT1b: the symbol / exchange decide the entitlement with the flag on
         return _Adapter(), "broker:fake"
     monkeypatch.setattr(market, "_broker", broker)
     q = _call(me["id"], "get_quote", {"symbol": "nifty"})

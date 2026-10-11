@@ -82,7 +82,9 @@ def _source(record: BrokerCredentialRecord, byob: bool = False) -> dict:
     if byob:
         # BT1: whether this broker's data may be shown in ATP at all (docs/BROKER_DATA_TERMS.md).
         terms = terms_for(record.broker_name)
-        out.update({"data_status": terms.status.value, "tier_a": terms.tier_a_allowed and out["usable"]})
+        # BT1b: "usable" means usable *for data in ATP*: a valid token at a broker whose terms allow display.
+        out.update({"data_status": terms.status.value, "tier_a": terms.tier_a_allowed and out["usable"], "token_usable": out["usable"]})
+        out["usable"] = out["tier_a"]
     return out
 
 
@@ -174,6 +176,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
 
     out: Dict[str, dict] = {}
     fetched = 0
+    newest: List[datetime] = []      # BT1b: each symbol's newest bar - the badge is timed by the data, not the fetch
     for raw in body.symbols:
         symbol = raw.strip().upper()
         if not symbol or symbol in out:
@@ -193,6 +196,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 bars = _frame_to_bars(build_frames(bars, "1min", [body.timeframe])[body.timeframe])
             out[symbol] = {"bars": [b.model_dump(mode="json") for b in bars], "count": len(bars),
                            "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None}
+            if bars:
+                last_ts = bars[-1].timestamp
+                newest.append(last_ts if last_ts.tzinfo else last_ts.replace(tzinfo=timezone.utc))
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
@@ -209,7 +215,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
               "symbols": out, "warnings": warnings,
               "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
     if live is not None:
-        result["data_tier"] = live.badge(as_of=now, now=now)
+        # The stalest symbol decides (a batch is only as fresh as its oldest feed); no bars at all = age unknown = stale.
+        oldest = min(newest) if newest else None
+        result["data_tier"] = live.badge(now=now, timeframe=body.timeframe if oldest is not None else None, last_bar_start=oldest)
         result["note"] = "Candles come from your own broker session, are shown only to you and are cached for your session only."
     return result
 
@@ -232,8 +240,12 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         if not ent.live or ent.record is None or ent.session is None:
             raise _tier_c({(symbol, exchange): ent})
         body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now)
-        as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else now
+        # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
+        as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
+        if as_of is None:
+            # BT1b: no broker timestamp = age unknown = stale, in the body as on the badge.
+            body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
     record = await _pick_record(session, user.tenant_id, broker, account_label)
     return await _ltp_body(record, tick_cache, symbol, exchange, now)
@@ -324,7 +336,8 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
               "fetched_at": datetime.now(timezone.utc).isoformat(), "symbols": out, "warnings": warnings,
               "note": "Live chain through your own broker session; option-chain filters and the analyser read it exactly as they read a sample chain."}
     if live is not None:
-        result["data_tier"] = live.badge(as_of=now, now=now)
+        # The chain carries no exchange timestamp: its age is unknown, so the badge says stale (alerts suppressed).
+        result["data_tier"] = live.badge(now=now)
     return result
 
 

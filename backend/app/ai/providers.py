@@ -22,6 +22,7 @@ P0.8-C:
 * C5 - `Completion` carries the usage so `app.ai.metering` can price and record every call.
 """
 import asyncio
+import base64
 import hashlib
 import json
 import logging
@@ -190,6 +191,10 @@ class ProviderError(RuntimeError):
         self.usage = usage
 
 
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
 class LLMProvider(Protocol):
     name: str
     model: str
@@ -197,6 +202,14 @@ class LLMProvider(Protocol):
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str: ...
 
     async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion: ...
+
+
+class VisionProvider(Protocol):
+    """BYOK-V2: a provider that also takes one chart image (PNG) with the text - Anthropic, OpenAI and Gemini."""
+    name: str
+    model: str
+
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion: ...
 
 
 _ANTHROPIC_CLIENTS: Dict[Any, Any] = {}
@@ -256,11 +269,16 @@ class AnthropicProvider:
             _ANTHROPIC_CLIENTS[key] = client
         return client
 
-    def _request(self, system: str, user: str, budget: int) -> dict:
+    def _request(self, system: str, user: str, budget: int, image_png: Optional[bytes] = None) -> dict:
+        content: Any = user
+        if image_png is not None:
+            # BYOK-V2: one chart image (base64 PNG) before the text, as the Messages API takes it.
+            content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": _b64(image_png)}},
+                       {"type": "text", "text": user}]
         body: dict = {"model": self.model, "max_tokens": budget,
                       # C4: the system prompt is the static part - cacheable; the user text changes every call.
                       "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-                      "messages": [{"role": "user", "content": user}],
+                      "messages": [{"role": "user", "content": content}],
                       "betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
         if _supports_effort(self.model):
             body["thinking"] = {"type": "adaptive"}
@@ -273,14 +291,14 @@ class AnthropicProvider:
     async def complete(self, system: str, user: str, *, max_tokens: int = 16000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
 
-    async def complete_full(self, system: str, user: str, *, max_tokens: int = 16000) -> Completion:
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 16000, image_png: Optional[bytes] = None) -> Completion:
         import anthropic
         client = self._client()
         budget = self._budget(max_tokens)
         spent = Completion(text="", model=self.model, provider=self.name)
         for attempt in range(2):
             try:
-                response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**self._request(system, user, budget))
+                response = await client.with_options(timeout=timeout_for(budget)).beta.messages.create(**self._request(system, user, budget, image_png))
             except anthropic.AuthenticationError as exc:
                 raise ProviderError("Anthropic rejected the API key (401) - re-enter it under Settings", usage=spent) from exc
             except anthropic.RateLimitError as exc:
@@ -361,11 +379,16 @@ class OpenAIProvider:
     base_url: str = "https://api.openai.com"
     tier: str = "strong"
 
-    def _payload(self, system: str, user: str, budget: int) -> dict:
+    def _payload(self, system: str, user: str, budget: int, image_png: Optional[bytes] = None) -> dict:
         # C3: `max_completion_tokens` is the current parameter for every model; reasoning models reject `temperature`
         # and take `reasoning_effort` instead (low for the fast tier, like the Anthropic effort).
+        content: Any = user
+        if image_png is not None:
+            # BYOK-V2: the chart as a data URL (low detail is enough for a candle chart and costs a fixed few tokens).
+            content = [{"type": "text", "text": user},
+                       {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_b64(image_png)}", "detail": "low"}}]
         payload: dict = {"model": self.model, "max_completion_tokens": budget,
-                         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+                         "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}]}
         if is_reasoning_model(self.model):
             payload["reasoning_effort"] = _effort_for(self.tier)
         else:
@@ -379,14 +402,14 @@ class OpenAIProvider:
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
 
-    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion:
         headers = {"Authorization": f"Bearer {self.api_key}", "content-type": "application/json"}
         client = self.client or _openai_client()
         budget = self._budget(max_tokens)
         spent = Completion(text="", model=self.model, provider=self.name)
         for attempt in range(2):
             try:
-                response = await client.post(f"{self.base_url}/v1/chat/completions", json=self._payload(system, user, budget), headers=headers,
+                response = await client.post(f"{self.base_url}/v1/chat/completions", json=self._payload(system, user, budget, image_png), headers=headers,
                                              timeout=timeout_for(budget))
             except httpx.HTTPError as exc:
                 raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}", usage=spent) from exc
@@ -532,9 +555,13 @@ class GeminiProvider:
     base_url: str = "https://generativelanguage.googleapis.com"
     tier: str = "cheap"
 
-    def _payload(self, system: str, user: str, budget: int) -> dict:
+    def _payload(self, system: str, user: str, budget: int, image_png: Optional[bytes] = None) -> dict:
+        parts: List[Dict[str, Any]] = [{"text": user}]
+        if image_png is not None:
+            # BYOK-V2: the chart inline (base64 PNG) before the text.
+            parts = [{"inlineData": {"mimeType": "image/png", "data": _b64(image_png)}}, {"text": user}]
         return {"systemInstruction": {"parts": [{"text": system}]},
-                "contents": [{"role": "user", "parts": [{"text": user}]}],
+                "contents": [{"role": "user", "parts": parts}],
                 "generationConfig": {"maxOutputTokens": budget, "temperature": 0.2}}
 
     def _budget(self, max_tokens: int) -> int:
@@ -544,7 +571,7 @@ class GeminiProvider:
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
 
-    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000, image_png: Optional[bytes] = None) -> Completion:
         if not _GEMINI_MODEL_ID.match(self.model or ""):
             raise ProviderError("Gemini model id is not valid - pick another under Settings")
         headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
@@ -554,7 +581,7 @@ class GeminiProvider:
         url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
         for attempt in range(2):
             try:
-                response = await client.post(url, json=self._payload(system, user, budget), headers=headers, timeout=timeout_for(budget))
+                response = await client.post(url, json=self._payload(system, user, budget, image_png), headers=headers, timeout=timeout_for(budget))
             except httpx.HTTPError as exc:
                 raise ProviderError(f"Gemini unreachable: {exc.__class__.__name__}", usage=spent) from exc
             detail = _error_detail(response, self.api_key) if response.status_code >= 400 else ""
@@ -599,7 +626,7 @@ class GeminiProvider:
 BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
 
 
-def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None) -> LLMProvider:
+def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None) -> VisionProvider:
     """BYOK-V1: one user's provider, on that user's key and chosen model, at the cheap tier (low effort). `client` is the
     Anthropic SDK http client or an `httpx.AsyncClient` (tests hand in mock transports). Never falls back to another key."""
     name = (name or "").lower()

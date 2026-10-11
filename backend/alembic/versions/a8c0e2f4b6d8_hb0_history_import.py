@@ -7,7 +7,7 @@
 - `history_import_files`: one row per object of the R2 store - the importer's resume point and the HB4 progress source.
 
 Revision ID: a8c0e2f4b6d8
-Revises: e9c1a3b5d7f9
+Revises: e4c2a9b7d1f6
 Create Date: 2026-10-11 18:00:00
 """
 from typing import Sequence, Union
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a8c0e2f4b6d8'
-down_revision: Union[str, Sequence[str], None] = 'e9c1a3b5d7f9'
+down_revision: Union[str, Sequence[str], None] = 'e4c2a9b7d1f6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

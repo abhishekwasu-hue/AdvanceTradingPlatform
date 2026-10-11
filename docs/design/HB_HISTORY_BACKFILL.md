@@ -4,11 +4,17 @@ Owner spec: "History backfill" (HB0-HB4). Builds on Part B (docs/design/B_DATA_L
 their END in UTC, every row carries `ingested_at` and `version`, adjustment is a read-time view (B4), quality problems
 are events (B3), never edits.
 
+> **Update (Phase 0 freeze, Z4):** the owner cancelled the Trade-repo R2 collector. The R2 importer below stays in the
+> code as an **optional, flag-gated path** (flag `history_import`, off) for any R2 bucket or local folder in this
+> layout, but nothing depends on it. **HB1 (NSE bhavcopy backfill + nightly EOD job) is the primary daily path**; the
+> owner's 1-minute history (HB2) still lands only in the owner's tenant store (`md_tenant_candles`) whichever way it
+> is loaded.
+
 ## Status
 | # | Item | Status | PR |
 |---|---|---|---|
-| HB0 | R2 importer: manifest + sha256 checks, daily -> shared lake, 1-minute -> owner tenant only, import state, progress API, flag `history_import` (off) | this PR (draft) | - |
-| HB1 | Daily backfill: 10 years, all NSE equities + indices, adjusted via B4 (unadjusted kept), quality gates, gaps reported | planned (runs HB0 on the daily folders) | - |
+| HB0 | R2 importer (optional path - collector cancelled): manifest + sha256 checks, daily -> shared lake, 1-minute -> owner tenant only, import state, progress API, flag `history_import` (off) | this PR | #164 |
+| HB1 | Daily backfill: 10 years, all NSE equities + indices, adjusted via B4 (unadjusted kept), quality gates, gaps reported | planned - **primary daily path**: NSE bhavcopy archives + nightly EOD job (the R2 daily folders are optional) | - |
 | HB2 | Owner intraday: 1-minute from the owner's Upstox entitlement since Jan 2022, resampled on read to 3/5/15/30/60 | planned (runs HB0 on the m1 folders) | - |
 | HB3 | Extend the universe (new listings, delistings, renames via ISIN) | planned | - |
 | HB4 | Native nightly jobs on the VPS + admin progress page (symbols done / pending / last error) | planned - reads `history_import_files` | - |
@@ -35,7 +41,7 @@ filter - one missed filter is a licensing breach. The separate table changes no 
 dropping it. The price: reads of the private store go through `tenant_store` rather than `adjust.candles`, so a later
 backtest reader must call it explicitly (HB2).
 
-## The R2 layout (written by the Trade-repo collector)
+## The R2 layout (as the cancelled Trade-repo collector would have written it; any producer may use it)
 ```
 daily/{exchange}/{symbol}/{yyyy}.parquet
 m1/{exchange}/{symbol}/{yyyy-mm}.parquet
@@ -95,7 +101,8 @@ Environment names only - values are set on the server, never committed:
 
 1. Deploy this release and run `alembic upgrade head` (migration `a8c0e2f4b6d8`).
 2. Admin > Controls: turn the `history_import` flag on (it is off by default).
-3. Daily (HB1): `python -m app.market_lake.r2_import --dataset daily` (inside the backend container). Optional:
+3. Daily (optional - HB1's bhavcopy backfill is the primary path): `python -m app.market_lake.r2_import --dataset daily`
+   (inside the backend container). Optional:
    `--symbols A,B` to start small, `--limit N` to import at most N files per run (re-run to continue).
 4. 1-minute (HB2), with `HISTORY_OWNER_TENANT_ID` set: `python -m app.market_lake.r2_import --dataset m1`.
 5. Check `GET /api/admin/history-import/progress`; refused / failed files show their reason. Fix the source (or the
@@ -115,8 +122,8 @@ returns private bars; resampling aligned to 09:15 IST with the last bucket endin
 SUPER_ADMIN only; the R2 client is driven through a fake S3 client.
 
 ## Open questions for the owner
-1. Manifest schema: the importer accepts the shape above. Does the Trade-repo collector write exactly this (field names
-   `files[].path|key`, `rows`, `sha256`, `row_counts`, `date_range`)? If not, the parser is the one place to adapt.
+1. Manifest schema: the importer accepts the shape above. The Trade-repo collector is cancelled; if another producer
+   ever fills an R2 bucket, it must write this shape (or the parser is the one place to adapt).
 2. Daily bar END: the importer takes the collector's `ts` as is. Recommended: 15:30 IST (10:00 UTC) on the trading day.
 3. `ingested_at` for backfilled rows is the import time, so an `as_of` replay earlier than the import does not see
    them. Should the backfill instead use `fetched_at` (still recent) or a fixed "known since" date for research?

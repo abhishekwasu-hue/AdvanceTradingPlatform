@@ -118,6 +118,7 @@ import type {
   ByokProviderName,
   ByokStatus,
   ByokTestResponse,
+  VisionReportsResponse,
   VerificationSendResult,
   TaxReport,
   FxRate,
@@ -731,6 +732,9 @@ export const api = {
   byokDeleteKey: (provider: ByokProviderName) => request<ByokStatus>(`/ai/byok/key/${provider}`, { method: "DELETE" }),
   byokTestKey: (provider: ByokProviderName) => request<ByokTestResponse>(`/ai/byok/test/${provider}`, { method: "POST" }),
   byokSavePrefs: (body: ByokPrefsInput) => request<ByokStatus>("/ai/byok/prefs", { method: "PUT", body: JSON.stringify(body) }),
+  // BYOK-V2: the caller's own Vision reports on proposals (404 while vision_byok is off).
+  byokReports: (actionId?: number) => request<VisionReportsResponse>(`/ai/byok/reports${actionId ? `?action_id=${actionId}` : ""}`),
+  byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
   aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {
@@ -803,6 +807,8 @@ export const api = {
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
   aiRejectAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiSnoozeAction: (id: number, snooze: { minutes: number } | { until: string }) =>
+    request<AiAction>(`/ai/actions/${id}/snooze`, { method: "POST", body: JSON.stringify(snooze) }),
   // ---- Phase K: billing, API keys, marketplace
   billingPlans: () => request<PlanCatalogueEntry[]>("/billing/plans"),
   billingOverview: () => request<BillingOverview>("/billing"),

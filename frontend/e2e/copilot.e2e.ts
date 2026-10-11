@@ -144,6 +144,29 @@ test.describe("Watchtower decisions", () => {
     expect(calls.posts.filter((c) => /\/ai\/actions\/\d+\/approve$/.test(c.url))).toHaveLength(1);
   });
 
+  test("BYOK-V2: the caller's own Vision report shows on the card, comment only; nothing while the flag is off", async ({ page }) => {
+    const calls = await mockApi(page);
+    const lines = ["Vision report - NIFTY 5min (Anthropic (Claude), claude-haiku-5-5)", "Zones: ✅ clean support near the lows (range 100.00 - 120.00)",
+                   "Structure: ⚠️ higher lows but a lower high (last close 110.00)", "Pullback & trigger: ❌ no pullback yet",
+                   "Entry/SL/Target: ✅ levels suit the structure (no open position)", "Comment only - Vision never approves, rejects or changes anything."];
+    await page.route(/\/api(?:\/v1)?\/ai\/byok\/reports/, async (route) => {
+      const id = Number(new URL(route.request().url()).searchParams.get("action_id"));
+      const reports = id === 1 ? [{ id: 9, ai_action_id: 1, status: "ok", provider: "anthropic", model: "claude-haiku-5-5", reason: null,
+                                    report: lines.join("\n"), lines, line: null, image_sha256: "a".repeat(64), image_stored: false, cost_usd: 0.001,
+                                    telegram_status: "none", created_at: null, finished_at: null }] : [];
+      await route.fulfill({ json: { reports, vision_line: "Vision off - add your API key in Settings", in_app: true } });
+    });
+    await page.goto("/copilot/watchtower");
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);
+    const panels = page.getByTestId("vision-report");
+    await expect(panels).toHaveCount(2);
+    await expect(page.getByText("clean support near the lows (range 100.00 - 120.00)")).toBeVisible();
+    await expect(page.getByText("Vision off - add your API key in Settings")).toBeVisible();
+    // Nothing on the report decides anything: no write went out (the session refresh aside).
+    expect(calls.posts.filter((c) => !/\/auth\/refresh$/.test(c.url))).toEqual([]);
+    await expect(page.getByTestId("vision-report").first().getByRole("button")).toHaveCount(0);
+  });
+
   test("reject: asks for an optional note and sends it", async ({ page }) => {
     const calls = await mockApi(page);
     await page.goto("/copilot/watchtower");
@@ -171,6 +194,37 @@ test.describe("Watchtower decisions", () => {
     await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
     const flow = calls.posts.map((c) => c.url.replace(/\d+/, "N")).filter((u) => /actions\/N\/approve|mfa\/step-up/.test(u));
     expect(flow).toEqual(["/ai/actions/N/approve", "/auth/mfa/step-up", "/ai/actions/N/approve"]);
+  });
+
+  test("snooze: the proposal leaves the pending list and the badge, and waits in the snoozed list", async ({ page }) => {
+    const calls = await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);
+    await page.getByTestId("watch-proposal").first().getByRole("button", { name: "Snooze" }).click();
+    const menu = page.getByTestId("watch-snooze-menu");
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: "1 hour" }).click();
+    await expect(page.getByText(/^Snoozed until .* IST\. It will come back once\.$/)).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    await expect(page.getByTestId("tab-watchtower")).toContainText("1");
+    await page.getByTestId("watch-snoozed").getByText("1 snoozed proposal").click();
+    await expect(page.getByTestId("watch-snoozed-proposal")).toHaveCount(1);
+    const sent = calls.posts.filter((c) => /\/ai\/actions\/\d+\/snooze$/.test(c.url));
+    expect(sent.map((c) => c.body)).toEqual([{ minutes: 60 }]);
+  });
+
+  test("the proposal card fits a 360 px phone with 44 px actions", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    const card = page.getByTestId("watch-proposal").first();
+    await expect(card).toBeVisible();
+    for (const name of ["Approve", "Reject", "Snooze"]) {
+      const box = await card.getByRole("button", { name }).boundingBox();
+      expect(box && box.height >= 44 && box.x >= 0 && box.x + box.width <= 360).toBeTruthy();
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });
 

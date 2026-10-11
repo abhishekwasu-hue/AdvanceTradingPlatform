@@ -163,6 +163,10 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
                      severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id)
+        # BYOK-V2: queue the deployment creator's Vision audit (flag vision_byok; a DB row only, in a savepoint, never
+        # raises). The audit itself runs later in the worker and only comments - it never touches this proposal.
+        from app.ai import vision_audit
+        await vision_audit.enqueue_for_proposal(session, row, now=now)
         created.append(row)
     await session.commit()
     return created
@@ -208,6 +212,74 @@ async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, a
     await session.commit()
     await session.refresh(action)
     return action
+
+
+def is_snoozed(action: AiActionRecord, now: Optional[datetime] = None) -> bool:
+    """PW5: a PROPOSED row whose snooze has not ended yet (hidden from the pending list and the badge)."""
+    now = now or datetime.now(timezone.utc)
+    return action.status == "PROPOSED" and action.snoozed_until is not None and _utc(action.snoozed_until) > now
+
+
+async def snooze(session: AsyncSession, action: AiActionRecord, user: User, *, until: datetime, via: str = "web",
+                 now: Optional[datetime] = None) -> AiActionRecord:
+    """PW5: hide a PROPOSED proposal until `until`; the worker announces it once more when it wakes (`wake_snoozed`).
+    A snooze never extends the expiry: it is cut at `expires_at`, and the proposal expires on time as before. It is
+    not a decision (status stays PROPOSED, nobody is recorded as the decider) and no exit ever looks at it."""
+    now = now or datetime.now(timezone.utc)
+    if action.status != "PROPOSED":
+        raise ValueError(f"Action is {action.status}; only PROPOSED actions can be snoozed")
+    expires = _utc(action.expires_at)
+    if expires <= now:
+        action.status, action.result = "EXPIRED", "Expired before the decision"
+        await session.commit()
+        raise ValueError("This proposal has expired")
+    until = _utc(until)
+    if until <= now:
+        raise ValueError("A snooze must end in the future")
+    wake = min(until, expires)
+    # Conditional, like decide(): a decision taken at the same instant on another surface wins, the snooze is refused.
+    claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id, AiActionRecord.tenant_id == action.tenant_id,
+                                                                 AiActionRecord.status == "PROPOSED")
+                                    .values(snoozed_until=wake).execution_options(synchronize_session=False))
+    if claimed.rowcount != 1:
+        await session.refresh(action)
+        raise ValueError(f"Action is {action.status}; it was decided concurrently")
+    await write_audit_log(session, action.tenant_id, user.id, "ai_action_snoozed",
+                          f"#{action.id} {action.action} until {wake.isoformat()} via {via}" + (" (cut at the expiry)" if wake < until else ""))
+    await session.commit()
+    await session.refresh(action)
+    return action
+
+
+async def wake_snoozed(session: AsyncSession, now: datetime, *, tenant_id: Optional[int] = None) -> int:
+    """PW5: snoozes that ended. Each still-open proposal is announced once more through the ordinary notification
+    service (in-app, push, Telegram with fresh buttons); one that reached its expiry meanwhile is EXPIRED instead.
+    The conditional UPDATE that clears `snoozed_until` is the "once": two workers never both re-announce a row."""
+    query = select(AiActionRecord).where(AiActionRecord.status == "PROPOSED", AiActionRecord.snoozed_until.is_not(None),
+                                         AiActionRecord.snoozed_until <= now)
+    if tenant_id is not None:
+        query = query.where(AiActionRecord.tenant_id == tenant_id)
+    woken = 0
+    for row in list(await session.scalars(query.order_by(AiActionRecord.id).limit(500))):
+        snoozed_until, expired = row.snoozed_until, _utc(row.expires_at) <= now
+        values = {"snoozed_until": None} if not expired else {"status": "EXPIRED", "result": "No decision within the time window (expired while snoozed)"}
+        claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == row.id, AiActionRecord.status == "PROPOSED",
+                                                                     AiActionRecord.snoozed_until == snoozed_until)
+                                        .values(**values).execution_options(synchronize_session=False))
+        await session.commit()
+        if claimed.rowcount != 1:
+            continue
+        if expired:
+            # As in expire_stale: the expired proposal's Telegram buttons come off (best effort).
+            from app.telegram_inbound.service import sync_proposal_message
+            await session.refresh(row)
+            await sync_proposal_message(session, row, now=now)
+            continue
+        await notify(session, row.tenant_id, NotificationType.AI_PROPOSAL, title=f"Reminder: AI proposes {row.action.replace('_', ' ').lower()}",
+                     message=f"{row.reason} You snoozed this proposal; it is waiting again. Approve, reject or snooze it under AI Copilot - nothing happens until you do.",
+                     severity=NotificationSeverity.WARNING, related_trade_id=row.trade_id, ai_action_id=row.id)
+        woken += 1
+    return woken
 
 
 async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, price_lookup=None, broker=None, now: Optional[datetime] = None) -> AiActionRecord:
@@ -264,4 +336,4 @@ def as_dict(row: AiActionRecord) -> dict:
     return {"id": row.id, "deployment_id": row.deployment_id, "trade_id": row.trade_id, "action": row.action, "rule": row.rule, "reason": row.reason,
             "evidence": json.loads(row.evidence_json or "{}"), "status": row.status, "decided_by": row.decided_by, "decided_at": iso(row.decided_at),
             "decision_note": row.decision_note, "executed_at": iso(row.executed_at), "result": row.result, "expires_at": iso(row.expires_at),
-            "created_at": iso(row.created_at)}
+            "created_at": iso(row.created_at), "snoozed_until": iso(row.snoozed_until)}

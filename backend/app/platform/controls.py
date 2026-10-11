@@ -107,13 +107,16 @@ FEATURE_FLAGS: Dict[str, str] = {
     # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
     # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
     "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
+    # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
+    # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
+    "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
     # HB0 (docs/design/HB_HISTORY_BACKFILL.md): lets the operator run the R2 history import by hand (CLI). OFF: the
     # importer refuses to start. Nothing runs on a schedule; 1-minute data only ever goes to the owner's tenant.
     "history_import": "History import from the R2 store: daily bars into the shared lake, 1-minute bars into the owner's private store",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "history_import"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "history_import"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

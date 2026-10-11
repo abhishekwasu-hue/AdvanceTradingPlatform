@@ -1407,6 +1407,8 @@ class AlertDeliveryRecord(Base):
     group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     digest_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
     reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # S3b-2: a per-user destination on the channel (a linked Telegram chat); NULL = the channel's own address.
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class CompanyRecord(Base):
@@ -2015,6 +2017,39 @@ class AlertEventRecord(Base):
     notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
     sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class NotificationLinkRecord(Base):
+    """S3b-2 (ADR-0022): a user's own Telegram chat, linked by a one-time code sent to the organisation's bot as
+    `/start <code>`. Only the code's hash is stored; a code expires and works once. A linked chat receives the screen
+    alerts of rules that user created - it gains no command rights (those stay on the channel's approver list)."""
+
+    __tablename__ = "notification_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False, default="telegram")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")          # pending | linked | revoked
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    code_expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    linked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class EmailOptOutRecord(Base):
+    """S3b-2: an address that unsubscribed (signed link in the mail, or List-Unsubscribe one-click) from an
+    organisation's screen-alert emails. Risk and system emails are not affected. A trader can remove the row."""
+
+    __tablename__ = "email_opt_outs"
+    __table_args__ = (UniqueConstraint("tenant_id", "address", "scope", name="uq_email_opt_outs_tenant_address_scope"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    address: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="screen_alerts")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class NotificationPolicyRecord(Base):

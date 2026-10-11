@@ -152,6 +152,8 @@ async def _send(session: AsyncSession, rule: AlertRuleRecord, events: List[Alert
     note = await notify(session, rule.tenant_id, NotificationType.SCREEN_ALERT, title=title, message=body, severity=SEVERITY[rule.priority])
     await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.notification_id == note.id)
                           .values(priority=rule.priority, group_id=group_id, digest_bucket=bucket).execution_options(synchronize_session=False))
+    from app.alerts.links import add_linked_delivery                    # S3b-2: the rule creator's own linked Telegram chat
+    await add_linked_delivery(session, rule.tenant_id, note.id, rule.created_by, priority=rule.priority, group_id=group_id, digest_bucket=bucket)
     for e in events:
         e.status, e.reason_code, e.group_id, e.notification_id, e.sent_at = "sent", None, group_id, note.id, now
     return note

@@ -345,7 +345,39 @@ job, never tuned against results.
   reason.
 - Next (S3b-2): Telegram per-user linking, email unsubscribe link.
 
+## S3b-2 (built): per-user Telegram linking and email unsubscribe
+
+- **Telegram linking.**
+  - `POST /api/alerts/telegram/link-code` gives a one-time code; the user sends `/start <code>` to the organisation's
+    bot from a private chat. The code is stored only as a hash, expires after 15 minutes, works once, and a new code
+    voids the previous one.
+  - Refused: group chats (a group would see one user's alerts), unknown, used or expired codes, and another
+    organisation's codes. The attempt is rate limited and audited (`telegram_linked` / `telegram_link_refused`).
+  - The linked chat gets the screen alerts of rules that user created, as its own outbox row
+    (`alert_deliveries.address`), so retries are per chat. The row exists only when the organisation's Telegram
+    channel took the notification (same severity floor). A linked chat gains **no** command rights.
+  - `GET` / `DELETE /api/alerts/telegram/link` shows the link and unlinks.
+- **Email unsubscribe.**
+  - Screen-alert mails go to one recipient at a time. When `PUBLIC_BASE_URL` is set, each mail carries its own signed
+    link plus `List-Unsubscribe` and `List-Unsubscribe-Post` (RFC 8058 one-click).
+  - The link opens a page with a button; only the POST unsubscribes, so a mail scanner that follows links does
+    nothing. The token is an HMAC over tenant and address: a forged or tampered token is refused.
+  - An opt-out stops screen-alert mails to that address for that organisation only. Risk and system mails still go to
+    every address.
+  - `GET` / `DELETE /api/alerts/email-opt-outs` lets a trader see opt-outs and re-subscribe an address. Changes are
+    audited.
+- **Storage.** `notification_links`, `email_opt_outs` and `alert_deliveries.address` (migration `f1b3d5e7a9c1`,
+  Postgres round-trip OK).
+- **Tests.** `tests/test_s3b2_links_unsubscribe.py` (4), plus 4 mutation checks: private-chat check, linked delivery,
+  opt-out filter, single use.
+- **Not yet.** Bounce handling needs an inbound mail source and is deferred until one is chosen (SC-9).
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-9. Unsubscribe scope and bounces.** Provisional:
+  - an unsubscribe stops screen-alert emails only; risk and system emails cannot be unsubscribed;
+  - a retry after one recipient's failure re-sends to the earlier recipients of that alert (at most 10 addresses).
+  - Owner questions: should system emails also offer an opt-out? Which bounce source should be used (SMTP DSN
+    mailbox, or the provider's webhook)?
 - **SC-8. `screen_runs` retention.** Provisional: runs are kept, with no retention rule yet, because they make a match
   list reproducible. Whether and when to delete old runs is the owner's decision (§14).
 - **SC-7. "day" operands inside intraday scans.** The Strategy Builder's `timeframe="day"` filter resamples to

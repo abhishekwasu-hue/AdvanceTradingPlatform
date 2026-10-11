@@ -17,6 +17,7 @@ import httpx
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.wording import banned_terms
 from app.ai import settings as ai_settings
 from app.ai.providers import LLMProvider, ProviderError
 from app.audit.log import write_audit_log
@@ -107,6 +108,16 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         except (ValueError, ValidationError) as exc:
             last_error = str(exc)[:400]
             continue
+        # ATP review 11: the explanation a person reads must not read as advice or a promise - one more round naming
+        # the words; on the last attempt it is withheld (the rules and the checklist still stand).
+        bad_words = banned_terms(" ".join([explanation or "", *map(str, warnings)]))
+        if bad_words and attempt < MAX_ATTEMPTS - 1:
+            last_error = f"the explanation used words that read as advice or a promise ({', '.join(bad_words[:5])})"
+            continue
+        if bad_words:
+            explanation = None
+            warnings = [w for w in warnings if not banned_terms(str(w))] + [
+                f"The AI's explanation was withheld: it used words that read as advice or a promise ({', '.join(bad_words[:5])})."]
         # Phase V2: the compliance checklist. A draft-level failure gets one AI auto-fix round
         # (the errors go back with the request); on the last attempt the deterministic fixes
         # apply, so what is saved is compliant either way and the fixes are on the record.

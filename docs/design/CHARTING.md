@@ -92,6 +92,34 @@ frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1
 - **Next.** CH1b: `frontend/src/charting/engine.ts` (`ChartEngine`), ProChart behind it with no visible change, and the
   drawings API client.
 
+## CH1b (built): the ChartEngine interface, with ProChart behind it
+- **Interface.** `frontend/src/charting/engine.ts` holds `ChartEngine`:
+  - symbol, timeframe, bars and live bar;
+  - studies;
+  - drawings, plus `supports(kind)`;
+  - layers with an `asOf`;
+  - `serialize`/`deserialize`;
+  - events: crosshair, click, `drawingChanged`, visible range.
+- **Drawings client.** `frontend/src/charting/drawings.ts` has the `drawing/1` types and the backend's anchor rules,
+  checked before a request. `drawingsApi` covers list, create, update with a version, lock, delete with a version,
+  export and import. A stale edit raises `DrawingConflict` carrying the current drawing.
+- **B-lite adapter.** `frontend/src/charting/lightweight.ts` puts `LightweightEngine` over ProChart's lightweight-charts
+  v4 chart.
+  - Drawn now: hline as a price line; trendline, ray and measure as a two-point line.
+  - Other kinds are kept in the layout and drawn by the CH2 primitives core.
+  - Layer lines become price lines.
+  - `dispose()` removes every object the adapter added and unsubscribes its handlers.
+- **ProChart.** It builds the engine over its own main chart and hands it out through `onEngine`. Nothing ProChart
+  drew before changes.
+- **Tests.** `src/charting/charting.test.ts` (7) covers:
+  - schema parity with the backend;
+  - 409 → `DrawingConflict`;
+  - delete with a version;
+  - render, keep and round-trip;
+  - no leaked chart objects;
+  - events carry data values.
+- The frontend has 59 tests in total, and `tsc` is clean.
+
 ## Open questions (provisional answers, work continues)
 - **CH-1. Order against parts H, S, B.** As above.
 - **CH-2. TradingView Advanced Charts access** is a business application by Abhi (company and product details; the

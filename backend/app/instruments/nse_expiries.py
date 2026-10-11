@@ -18,8 +18,9 @@ Every bhavcopy lists each live contract with its expiry date: `EXPIRY_DT` (e.g. 
 
 Guards (the build fails, nothing is written): a calendar week with no file at all (NSE never closes a whole week -
 the archive refused or was cut), an expiry of a STRICT underlying (NIFTY, BANKNIFTY) with no file on its day that no move
-explains, and - against the files already in `--out` - an earlier coverage end or fewer expired rows for any
-underlying. A 403 is retried, then counted as "no file" (the guards catch a block).
+explains, any 403 the archive still answered after its retries (a block is not a holiday), and - against the files
+already in `--out` - an earlier coverage end or fewer expired rows for any underlying among the expiries from the
+new `--start` on. A run that starts later than the committed file keeps the committed rows before its start.
 
 Output (committed, read by `app.instruments.expiry_data`): `data/nse_index_expiries.csv`
 (symbol, expiry, kind, first_seen, status) and `data/nse_index_expiries.meta.json` (coverage, files read, drops).
@@ -34,6 +35,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import gzip
 import io
 import json
 import sys
@@ -58,6 +60,10 @@ HEADERS = {
 
 # (symbol, expiry, is_future)
 Contract = Tuple[str, dt.date, bool]
+
+# A day this recent with no file may only be unpublished yet: its "no file" is not cached (the cache outlives a run).
+UNSETTLED_DAYS = 7
+_FORBIDDEN = object()
 
 
 def legacy_url(day: dt.date) -> str:
@@ -120,9 +126,7 @@ class Archive:
                 if e.code == 404:
                     return None
                 if e.code == 403 and attempt == self.retries - 1:
-                    with self._lock:
-                        self.forbidden += 1
-                    return None
+                    return _FORBIDDEN    # type: ignore[return-value]   - counted by day() only if no name answered
                 time.sleep(2 ** attempt)
             except (urllib.error.URLError, TimeoutError, ConnectionError):
                 time.sleep(2 ** attempt)
@@ -131,28 +135,36 @@ class Archive:
     def day(self, day: dt.date) -> Optional[str]:
         if day.weekday() >= 5:
             return None
-        hit = self.cache / f"{day:%Y%m%d}.csv" if self.cache else None
+        hit = self.cache / f"{day:%Y%m%d}.csv.gz" if self.cache else None   # gzip: the Actions cache stays small
         miss = self.cache / f"{day:%Y%m%d}.none" if self.cache else None
         if hit and hit.exists():
-            return hit.read_text()
+            return gzip.decompress(hit.read_bytes()).decode("utf-8")
         if miss and miss.exists():
             return None
         urls = [udiff_url(day), legacy_url(day)] if day >= UDIFF_FROM else [legacy_url(day), udiff_url(day)]
         text = None
+        refused = False
         for url in urls:
             time.sleep(self.pause)
             blob = self._get(url)
+            if blob is _FORBIDDEN:
+                refused = True
+                continue
             if blob:
                 text = _unzip(blob)
                 break
+        if text is None and refused:
+            with self._lock:
+                self.forbidden += 1
         if text is None:
-            if miss:
+            # Only a real "no file" (404 on both names) is remembered: never a 403, never a day that may be unpublished.
+            if miss and not refused and day < dt.date.today() - dt.timedelta(days=UNSETTLED_DAYS):
                 miss.write_text("")
             return None
         with self._lock:
             self.files_read += 1
         if hit:
-            hit.write_text(text)
+            hit.write_bytes(gzip.compress(text.encode("utf-8"), mtime=0))
         return text
 
 
@@ -307,19 +319,22 @@ def build(start: dt.date, end: dt.date, fetch: Callable[[dt.date], Optional[str]
     return rows, meta
 
 
-def check_against(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict) -> None:
-    """Refuses a result that knows less than the files already there: an earlier coverage end or fewer expired rows."""
+def check_against(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict, start: Optional[dt.date] = None) -> None:
+    """Refuses a result that knows less than the files already there: an earlier coverage end, or fewer expired rows
+    for an underlying. Only expiries on/after `start` (the run's first day) are compared - a run from a later start
+    never read the years before it, so they say nothing about this result (`merge_previous` keeps them)."""
     old_meta, old_csv = previous_dir / "nse_index_expiries.meta.json", previous_dir / "nse_index_expiries.csv"
     if not old_meta.exists() or not old_csv.exists():
         return
     prev = json.loads(old_meta.read_text())
     if meta["coverage_end"] < prev["coverage_end"]:
         raise BuildRefused(f"coverage would end on {meta['coverage_end']}, before the current {prev['coverage_end']}")
+    since = (start or dt.date.min).isoformat()
 
     def expired(rs: Iterable[Dict[str, str]], until: str) -> Dict[str, int]:
         out: Dict[str, int] = {}
         for x in rs:
-            if x["expiry"] <= until:
+            if since <= x["expiry"] <= until:
                 out[x["symbol"]] = out.get(x["symbol"], 0) + 1
         return out
     with open(old_csv, newline="") as f:
@@ -327,7 +342,33 @@ def check_against(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict) ->
     after = expired(rows, prev["coverage_end"])
     shrunk = {s: (n, after.get(s, 0)) for s, n in before.items() if after.get(s, 0) < n}
     if shrunk:
-        raise BuildRefused(f"fewer expiries than the current file up to {prev['coverage_end']}: {shrunk}")
+        raise BuildRefused(f"fewer expiries than the current file from {since} to {prev['coverage_end']}: {shrunk}")
+
+
+def merge_previous(previous_dir: Path, rows: List[Dict[str, str]], meta: Dict, start: dt.date) -> List[Dict[str, str]]:
+    """A run that starts after the committed file's start keeps the committed expiries before `start` (it never read
+    them) and the earlier first-seen day of a contract both saw; the coverage start stays the committed one."""
+    old_meta, old_csv = previous_dir / "nse_index_expiries.meta.json", previous_dir / "nse_index_expiries.csv"
+    if not old_meta.exists() or not old_csv.exists():
+        return rows
+    prev = json.loads(old_meta.read_text())
+    if prev["coverage_start"] >= meta["coverage_start"]:
+        return rows
+    if start > dt.date.fromisoformat(prev["coverage_end"]) + dt.timedelta(days=7):
+        raise BuildRefused(f"--start {start} leaves a gap after the committed coverage end {prev['coverage_end']} - "
+                           "start on or before it so the kept rows stay continuous")
+    with open(old_csv, newline="") as f:
+        old = list(csv.DictReader(f))
+    first_seen = {(r["symbol"], r["expiry"]): r["first_seen"] for r in old}
+    kept = [r for r in old if r["expiry"] < start.isoformat()]
+    fresh = [dict(r, first_seen=min(r["first_seen"], first_seen.get((r["symbol"], r["expiry"]), r["first_seen"]))) for r in rows]
+    merged = sorted(kept + fresh, key=lambda r: (r["symbol"], r["expiry"]))
+    meta["coverage_start"] = prev["coverage_start"]
+    meta["rows"] = len(merged)
+    meta["kept_before"] = start.isoformat()
+    meta["note"] = (f"rows before {start.isoformat()} kept from the committed file; dropped / moved / delisted and the "
+                    "sampling counts describe this run's range only")
+    return merged
 
 
 def write(rows: List[Dict[str, str]], meta: Dict, out: Path) -> None:
@@ -348,10 +389,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--workers", type=int, default=3)
     a = p.parse_args(argv)
     archive = Archive(Path(a.cache) if a.cache else None)
+    start = dt.date.fromisoformat(a.start)
     try:
-        rows, meta = build(dt.date.fromisoformat(a.start), dt.date.fromisoformat(a.end), archive.day, a.workers,
-                           log=lambda m: print(m, flush=True))
-        check_against(Path(a.out), rows, meta)
+        rows, meta = build(start, dt.date.fromisoformat(a.end), archive.day, a.workers, log=lambda m: print(m, flush=True))
+        if archive.forbidden:
+            raise BuildRefused(f"the archive answered 403 for {archive.forbidden} file(s) after retries - a block, not holidays")
+        check_against(Path(a.out), rows, meta, start)
+        rows = merge_previous(Path(a.out), rows, meta, start)
     except BuildRefused as exc:
         print(f"REFUSED: {exc} (403 answers: {archive.forbidden})", file=sys.stderr)
         return 2

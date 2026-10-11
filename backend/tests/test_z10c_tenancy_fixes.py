@@ -125,15 +125,34 @@ def test_bulk_refresh_reports_an_unreachable_provider_per_symbol(monkeypatch):
     assert response.json()["created"] == 0 and "NSE unreachable" in json.dumps(response.json()["results"])
 
 
-@pytest.mark.xfail(strict=True, reason="OPEN_QUESTIONS Z10c-3: an uploaded option-chain history is platform-wide; the fix "
-                                       "(uploads private to the uploader) needs backtest/routes.py, owned by open PR #177")
 def test_uploaded_option_chain_history_stays_with_the_uploading_organisation():
+    """Z10c-3: an upload was platform-wide history - it priced other organisations' option backtests, they could read
+    it, and an upload inside the recorder's interval stopped the live capture for everyone."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.backtest import chain_recorder
+    from app.brokers.models import OptionChain, OptionChainRow
+
     uploader, _ = _owner("z10c-fix-chain-a@example.com")
     other, _ = _owner("z10c-fix-chain-b@example.com")
-    row = {"timestamp": "2026-09-25T05:00:00+00:00", "expiry": "2026-09-30", "strike": 26000.0, "right": "CE", "ltp": 1.11}
-    uploaded = client.post("/api/backtest/option-chain/snapshots", headers=uploader, json={"underlying": "Z10CIDX", "rows": [row]})
+    viewer = _member("z10c-fix-chain-viewer@example.com", client.get("/api/auth/me", headers=uploader).json()["tenant_id"], "VIEWER")
+    now = datetime(2026, 9, 25, 5, 0, tzinfo=timezone.utc)
+    row = {"timestamp": now.isoformat(), "expiry": "2026-09-30", "strike": 26000.0, "right": "CE", "ltp": 1.11}
+    body = {"underlying": "Z10CIDX", "rows": [row]}
+    assert client.post("/api/backtest/option-chain/snapshots", headers=viewer, json=body).status_code == 403
+    uploaded = client.post("/api/backtest/option-chain/snapshots", headers=uploader, json=body)
     assert uploaded.status_code == 200 and uploaded.json()["written"] == 1, uploaded.text
-    seen = client.get("/api/backtest/option-chain/snapshots", headers=other,
-                      params={"underlying": "Z10CIDX", "start": "2026-09-25T00:00:00Z", "end": "2026-09-26T00:00:00Z"})
-    assert seen.status_code == 200
-    assert seen.json() == []        # today: the other organisation's backtests read (and are priced from) these quotes
+    span = {"underlying": "Z10CIDX", "start": "2026-09-25T00:00:00Z", "end": "2026-09-26T00:00:00Z"}
+    assert [r["ltp"] for r in client.get("/api/backtest/option-chain/snapshots", headers=uploader, params=span).json()] == [1.11]
+    assert client.get("/api/backtest/option-chain/snapshots", headers=other, params=span).json() == []
+    assert client.get("/api/backtest/option-chain/coverage", headers=other, params={"underlying": "Z10CIDX"}).json() == []
+    # The other organisation uploads the same contract and time: its own row, not "a duplicate" of someone else's.
+    assert client.post("/api/backtest/option-chain/snapshots", headers=other, json={"underlying": "Z10CIDX", "rows": [{**row, "ltp": 2.22}]}).json()["written"] == 1
+    assert [r["ltp"] for r in client.get("/api/backtest/option-chain/snapshots", headers=other, params=span).json()] == [2.22]
+
+    async def capture():
+        async with _session_factory() as session:
+            chain = OptionChain(underlying="Z10CIDX", expiry="2026-09-30", underlying_ltp=26000.0,
+                                rows=[OptionChainRow(strike=26000.0, call_ltp=50.0, put_ltp=40.0)])
+            return await chain_recorder.record_chain(session, "Z10CIDX", chain, now + timedelta(minutes=1), interval_minutes=5)
+    assert asyncio.run(capture()) == 2      # the uploads inside the interval did not stop the recorder's own capture

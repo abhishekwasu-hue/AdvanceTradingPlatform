@@ -59,25 +59,19 @@ SCOPE_BY_PREFIX: List[Tuple[str, str]] = [
     ("/api/broker/", "brokers:write"), ("/api/accounts/", "brokers:write"),
     ("/api/billing/", "billing:manage"), ("/api/marketplace/listings", "marketplace:publish"),
     ("/api/api-keys", "api_keys:manage"), ("/api/ai/provider", "ai:manage"), ("/api/ai/drafts", "ai:manage"),
+    ("/api/option-chain/{underlying}/alerts", "alerts:write"),
 ]
 
 # Known gaps in files owned by open PRs (Z10-c does not edit them). Each one is an expected failure, strict: the day
 # the route honours its scope the test passes, xfail(strict) turns that into a failure, and the entry is removed.
-_GAP_177 = "OPEN_QUESTIONS Z10c-2: the scope is not checked; the file belongs to open PR #177 (BT1b) - fix after it merges"
-_GAP_174 = "OPEN_QUESTIONS Z10c-2: the scope is not checked; the file belongs to open PR #174 (Z3-b) - fix after it merges"
-_GAP_AI = "OPEN_QUESTIONS Z10c-2: the scope is not checked; ai/routes.py belongs to open PRs #177 / #179 - fix after they merge"
+_GAP_AI = "OPEN_QUESTIONS Z10c-2: the scope is not checked; ai/routes.py belongs to open PR #179 - fix after it merges"
+_GAP_178 = "OPEN_QUESTIONS Z10c-2: the scope is not checked; alerts/rules_routes.py belongs to open PR #178 - fix after it merges"
 KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], str] = {
-    ("DELETE", "/api/broker/{name}/credentials"): _GAP_177,
-    ("POST", "/api/broker/{name}/disconnect"): _GAP_177,
-    ("POST", "/api/broker/{name}/smoke-test"): _GAP_177,
-    ("POST", "/api/broker/{name}/authenticate"): _GAP_177,
-    ("POST", "/api/alerts/rules"): _GAP_177,
-    ("POST", "/api/alerts/rules/{rule_id}/{action}"): _GAP_177,
-    ("PUT", "/api/alerts/policy"): _GAP_177,
-    ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): _GAP_177,
-    ("DELETE", "/api/alerts/email-opt-outs/{opt_out_id}"): _GAP_177,
-    ("POST", "/api/api-keys"): _GAP_174,
-    ("DELETE", "/api/api-keys/{key_id}"): _GAP_174,
+    ("POST", "/api/alerts/rules"): _GAP_178,
+    ("POST", "/api/alerts/rules/{rule_id}/{action}"): _GAP_178,
+    ("PUT", "/api/alerts/policy"): _GAP_178,
+    ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): _GAP_178,
+    ("DELETE", "/api/alerts/email-opt-outs/{opt_out_id}"): _GAP_178,
     ("PUT", "/api/ai/provider"): _GAP_AI,
     ("DELETE", "/api/ai/provider"): _GAP_AI,
     ("POST", "/api/ai/drafts"): _GAP_AI,
@@ -86,13 +80,7 @@ KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/drafts/{draft_id}/reject"): _GAP_AI,
 }
 # Trader writes a member denied every scope can still make (role gate without a scope), same rule as above.
-_GAP_OI = "OPEN_QUESTIONS Z10c-2: role gate without trading:write / alerts:write; option_chain/routes.py belongs to open PR #177"
-KNOWN_UNSCOPED_WRITES: Dict[Tuple[str, str], str] = {
-    ("POST", "/api/option-chain/{underlying}/alerts/snooze"): _GAP_OI,
-    ("POST", "/api/option-chain/{underlying}/alerts/mute-today"): _GAP_OI,
-    ("POST", "/api/option-chain/{underlying}/alerts/resume"): _GAP_OI,
-    ("POST", "/api/option-chain/{underlying}/alerts/test"): _GAP_OI,
-}
+KNOWN_UNSCOPED_WRITES: Dict[Tuple[str, str], str] = {}
 
 # Writes gated by role alone, on purpose: contributing shared reference data needs a trading role of an active
 # organisation (`require_contributor`), and no catalogue scope covers it (OPEN_QUESTIONS Z10c-1). The VIEWER sweep

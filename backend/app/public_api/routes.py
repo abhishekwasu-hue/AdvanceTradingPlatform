@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_owner
+from app.auth.scopes import require_scope
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import Signal
 from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, TradeRecord, User
@@ -60,7 +61,7 @@ async def scopes() -> dict:
     return SCOPES
 
 
-@keys_router.post("", status_code=201)
+@keys_router.post("", status_code=201, dependencies=[Depends(require_scope("api_keys:manage"))])
 async def create_key(body: ApiKeyCreate, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
     tenant = await session.get(Tenant, user.tenant_id)
     require_feature(tenant, "public_api", "The public API")
@@ -78,7 +79,7 @@ async def create_key(body: ApiKeyCreate, user: User = Depends(require_owner), se
     return {**_key_dict(record), "key": key, "note": "Store this key now - it is not shown again."}
 
 
-@keys_router.delete("/{key_id}", status_code=204)
+@keys_router.delete("/{key_id}", status_code=204, dependencies=[Depends(require_scope("api_keys:manage"))])
 async def revoke_key(key_id: int, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> None:
     record = await session.get(ApiKeyRecord, key_id)
     if record is None or record.tenant_id != user.tenant_id:

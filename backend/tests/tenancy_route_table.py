@@ -46,7 +46,6 @@ S_OWN_PROFILE = "self: the caller's own trader profile"
 S_OWN_ACK = "self: the caller's own Copilot terms acknowledgement"
 S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
-S_SNAPSHOT_UPLOAD = "self: KNOWN ISSUE Z10c-3 (OPEN_QUESTIONS): uploads become platform-wide history; fix waits for PR #177 (backtest/routes.py)"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
@@ -231,7 +230,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
     ("GET", "/api/backtest/option-chain/snapshots"): "member",
-    ("POST", "/api/backtest/option-chain/snapshots"): S_SNAPSHOT_UPLOAD,
+    ("POST", "/api/backtest/option-chain/snapshots"): "trader",
     ("POST", "/api/backtest/walk-forward"): S_BACKTEST,
     ("GET", "/api/backtests"): "member",
     ("GET", "/api/backtests/{run_id}"): "member",

@@ -53,7 +53,7 @@ export interface Evaluation {
 
 /** An estimate, always: `value` null when only the broker can say (undefined risk, calendars, futures). */
 export interface Margin { value: number | null; estimated: true; basis: string; note: string }
-export interface CostParts { stt: number; exch: number; sebi: number; stamp: number; brokerage: number; tax: number; total: number }
+export interface CostParts { stt: number; exch: number; sebi: number; stamp: number; brokerage: number; tax: number; total: number; other: number }
 export interface Costs { to_open: CostParts; round_trip: number; brokerage_per_order: number; orders: number; as_of: string; note: string }
 
 /** The basket shown before "Place as basket" (hedge first), from the engine. Review only in this release. */

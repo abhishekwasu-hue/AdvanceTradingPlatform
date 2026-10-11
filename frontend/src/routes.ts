@@ -13,6 +13,7 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   fundamentals: () => import("./pages/FundamentalsPage"),
   signals: () => import("./pages/SignalsPage"),
   scanner: () => import("./pages/ScannerPage"),
+  screener: () => import("./pages/ScreenerPage"),
   "news-events": () => import("./pages/NewsEventsPage"),
   quant: () => import("./pages/QuantPage"),
   backtest: () => import("./pages/BacktestPage"),

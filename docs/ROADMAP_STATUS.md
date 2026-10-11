@@ -4,13 +4,15 @@ Working rules: docs/WORKING_RULES.md (multitasking and self-review are required)
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-11 06:19 IST.
+Last update: 2026-10-11 10:05 IST.
+
+Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged - 72 squash merges to main, plus #106 merged into its own chain (its content reached main with #105/#155). Logs of the train branches land with this docs PR (#154). Main after the last merge (2cb833d): frontend tsc / vitest 167 / build / bundle budgets / English-only check green. Nothing deployed, no flag on, no LIVE, no secrets touched.
 
 | Part | What | Status | PR | % |
 |---|---|---|---|---|
-| A | Review fixes (13 items) | done, CI green, waiting for the owner's merge | #82 | 100 |
-| Go-live | Hostinger KVM 2: bootstrap / deploy / rollback blocks, runbook, 8 GB budget | done, CI green, waiting for the owner's merge; the owner runs the blocks when the server IP exists | #84 | 100 |
-| Go-live | H-1 Redis guard (lock loss fails closed, memory warning) + H-2 Cloudflare R2 off-site | done, CI green (stacked on #84) | #85 | 100 |
+| A | Review fixes (13 items) | merged | #82 | 100 |
+| Go-live | Hostinger KVM 2: bootstrap / deploy / rollback blocks, runbook, 8 GB budget | merged; the owner runs the blocks when the server IP exists | #84 | 100 |
+| Go-live | H-1 Redis guard (lock loss fails closed, memory warning) + H-2 Cloudflare R2 off-site | merged | #85 | 100 |
 | C1 | HTF lookahead: closed bars only | done | #83 | 100 |
 | C3 | Speed (indicator prefix cache), benchmark, CI guard | done; portfolio backtest still to come | #83 | 75 |
 | C4 | Reproducibility fingerprint | done | #83 | 100 |
@@ -45,7 +47,14 @@ Last update: 2026-10-11 06:19 IST.
 | CH0 | Advanced charting: spec, design note, ADR-0023 ChartEngine | done (design) | #107 | 100 |
 | CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage, CH1b ChartEngine + B-lite adapter, CH2a lightweight-charts v5 (render parity), CH2b primitives drawing core (all 12 drawing/1 kinds; second-pass ray fix) done; CH2c-1 tool controller (place, drag, undo/redo, conflicts) + CH2c-2 wiring and toolbar on ProChart (draft PRs); CH3 layers next | #126, #130, #133, #136, #139, #141 | 60 |
 | P1 | Profitability mission, manual trading, Options Strategy Builder (P1 spec) | P1-a core port (#148); P1-b model - T+0 / 0DTE curves, exact PoP and extremes, 38 templates, any broker's chain (#149); P1-c builder API + page with payoff canvas, draggable strikes, metrics (PRs next); P1-d basket / order ticket next | #148, #149, P1-c PRs | 8 |
-| OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built; each suite green; waiting for the owner's merge | #109, #111-#114, #116 | 100 |
+| OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built and merged | #109, #111-#114, #116 | 100 |
+| PW1 | PWA shell: manifest + icons, service worker app-shell cache (never market data), offline page, install + update prompts | done, CI green, draft | #156 | 100 |
+| PW2 | Mobile layout: bottom navigation, safe areas, 44 px targets, keyboard-aware fields, chart tools sheet, Screener bar above the nav, phone visual regression (360 / 390, dark / light) | built on its branch; PR after PW1 merges | - | 90 |
+| PW3 | Web push everywhere: explain-first permission, iOS install-first, categories, deep links, delivery log | done, draft (stacked on #156) | #157 | 100 |
+| PW4 | Telegram <-> app: Open in app on alerts and proposals; live stream (decisions on both sides within 2 s) | done, draft (stacked on #157) | #158 | 100 |
+| PW5 | Phase 0 proposal card (Approve PAPER / Reject / Snooze, broker-app deep link) | next | - | 0 |
+| PW6 | Beta cohort gate (invite codes, cap 500), install/update metrics, Send feedback (flag beta_cohort_gate off) | in progress | - | 50 |
+| BYOK-V1 | Vision with the user's own AI key: per-user encrypted keys, key test, caps, settings (flag vision_byok off) | done, draft | #160 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |
 | v1.3 | Crypto adapters: CoinDCX (exists) -> Binance spot -> Bybit/KuCoin/OKX (perps/options only where allowed) -> CoinSwitch PRO/ZebPay; Kraken later; registry `fiu_registered` (India resident: FIU-registered + spot only); 30 % + 1 % TDS report seam | after the Hostinger PAPER go-live | - | 0 |

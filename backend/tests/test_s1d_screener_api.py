@@ -114,6 +114,10 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     assert out.status_code == 200, out.text
     body = out.json()
     assert body["matched"] == ["UP"] and body["data_source"] == "broker:fake" and body["scanned"] == 3
+    funnel = body["funnel"]                                                                      # U5: the survivors after each stage
+    assert funnel["universe"] == 3 and funnel["with_data"] == 2
+    assert [s["survivors"] for s in funnel["stages"]] == [1, 1] and funnel["stages"][-1]["survivors"] == len(body["matched"])
+    assert funnel["stages"][0]["text"] == "close > SMA(close, 20)"
     assert {r["symbol"]: r["matched"] for r in body["results"]} == {"UP": True, "DOWN": False, "BROKEN": False}
     assert "broker said no" in next(r["reason"] for r in body["results"] if r["symbol"] == "BROKEN")
     assert all(a[2] == "day" for a in asked) and "recommendation" in body["disclaimer"]
@@ -125,6 +129,16 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
         async with _session_factory() as session:
             return list(await session.scalars(select(ScreenRunRecord).where(ScreenRunRecord.tenant_id == me["tenant_id"])))
     assert len(_run(rows())) == 1
+    assert funnel["passes"] == {"UP": [True, True], "DOWN": [False, False]}                     # U5 D2: per-symbol, per-stage
+    preview = client.post("/api/screener/run", json={"screen_id": made["id"], "symbols": ["UP", "DOWN"], "preview": True}, headers=headers).json()
+    assert preview["run_id"] is None and preview["preview"] is True and preview["matched_count"] == 1
+    assert [s["survivors"] for s in preview["funnel"]["stages"]] == [s["survivors"] for s in funnel["stages"]]
+    # not stored, so counts only: no match list, removed symbols or per-symbol passes (those come from a stored Run)
+    assert "results" not in preview and "matched" not in preview and "passes" not in preview["funnel"]
+    assert all(set(s) == {"text", "survivors"} for s in preview["funnel"]["stages"])
+    assert len(_run(rows())) == 1                                                                 # a live count while editing is not stored
+    refused = client.post("/api/screener/run", json={"source": "close > 1 AND IsFnO()", "symbols": ["UP"]}, headers=headers)
+    assert refused.status_code == 422 and "IsFnO()" in refused.text                              # bars only: never a silent "nothing matched"
     weekly = client.post("/api/screener/run", json={"source": "close > close[1]", "base_tf": "1w", "symbols": ["UP"]}, headers=headers).json()
     assert weekly["matched"] == ["UP"]                                                            # weekly bars resampled from server daily bars
     assert parse(body["text"]) == parse(made["text"]) and n.VERSION == stored["version"]

@@ -636,6 +636,102 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - no failed-retest confirmation.
 - **Next (S5-A4).** Zone strength (`level_strength`).
 
+## U5 D1 (built): the Screener page - the funnel you can see
+Design direction: addendum U5 (`docs/specs/ATP_SCREENER_UI_DESIGN_ADDENDUM.md`). D1 is the tokens, the funnel canvas
+with the indicator block, and the result table.
+
+- **Tokens** (`src/styles/tokens.css`; extended, not forked).
+  - New colours, each with dark, light and colour-blind values:
+    - `--surface-inset`, the recessed fourth surface;
+    - `--signal`, the funnel trail and the matched state (cyan-teal in dark, deep teal in light);
+    - `--armed`, auto-execution armed only (amber-orange).
+  - In colour-blind mode, profit and loss already use blue and orange. Signal and armed therefore move to Okabe-Ito
+    reddish purple and yellow, so every meaning keeps its own hue.
+  - Shape: radii 6 / 10, type 12 / 13 / 15 / 18 / 24 / 32, row 36, stage 44.
+  - `tokens.test.ts` reads the stylesheet and checks that signal and armed meet AA (4.5:1) on every surface in all
+    four modes. It caught the first light `--armed` at 4.37:1.
+- **The funnel** (`src/screener/FunnelCanvas.tsx`).
+  - The universe count sits at the top. Each stage is a row in one ALL bracket, drawn as a continuous left edge.
+  - The survivor trail on each row's right edge shows a thin recessed track, the count after the stage, and how many
+    the stage removed.
+  - The stage that removes the last symbols turns warn and offers "See what this removes": the symbols it took out.
+  - A count shows only while the scan is the one that ran: the same stages, scan timeframe and symbols (a run stamp
+    compared on every render). After a change to any of the three, the trail shows a dash and "with data" is hidden;
+    a number from another scan is never shown.
+  - One live region: the foot announces "Matched N of M" once per run. The per-stage trails are not live regions.
+- **Stage row** (`StageRow.tsx`, the indicator block). It reads as a sentence edited in place: "RSI (14) on 15m above
+  60".
+  - The number turns into an input on click; Enter commits, Escape cancels, and a half-typed value is dropped. Enter
+    and Escape put the focus back on the number.
+  - Native selects (sized to the chosen value, with a small chevron) handle the indicator, operator, timeframe and
+    choices.
+  - Other controls: drag handle, Alt+Up / Alt+Down to move (the focus stays on the handle), an on/off switch,
+    duplicate, remove. A drag that ends outside any stage is cleared.
+  - The advanced fold switches the right side between a number and another indicator, and shows the stage in plain
+    words ("Reads: RSI(14) on 15m above 60") and as ScreenQL. The plain-words line is also the handle's description
+    for screen readers.
+  - Validation problems from `/validate` land on the stage whose text they point at. A problem with no position (the
+    cost cap) shows under the canvas. Run waits for the check of the current text, so a scan never runs on the
+    verdict for an earlier text.
+- **Server.**
+  - `POST /api/screener/run` returns `funnel: {universe, with_data, stages: [{text, survivors, removed}]}`:
+    - a top-level ALL is a list of stages; anything else is one stage;
+    - `with_data` is the universe minus the symbols that could not be evaluated (no bars, too little history, an
+      error), so stage one never "removes" a symbol it could not read;
+    - each stage is evaluated once over those symbols and the counts are the running AND, so a cross-sectional
+      stage (`Rank(...)`) ranks over the same set as in the full screen;
+    - the last count equals the screen's match count (tested, including with `Rank` and with a short-history symbol).
+  - The texts the builder writes are a contract: `src/screener/builderTexts.json` holds stages, the registry entries
+    they use and the expected texts. The frontend test writes each text from its stage; the backend test validates
+    every text and checks the registry entries still match `describe()`.
+  - `GET /registry` adds each argument's type, its default, and `cross_sectional`, so the builder can edit parameters
+    inline.
+- **Results.** A dense, sortable table: matched first, then not matched, then "could not be read" with the reason. The
+  rows settle in after a run. Once the scan changes, the rows stay but are dimmed, under "The scan changed since this
+  run. Run it again to update these results."
+- **Motion.** The one orchestrated moment: on a run, the trails fill top to bottom (≤ 600 ms in total) and the
+  results settle in. Reduce motion (the setting or the system) turns it off.
+- **Layout.**
+  - Three columns (Universe 280 / funnel / Results 380) when the page itself is at least 1400 px wide. This is a
+    container query, because the app's sidebar takes part of the viewport.
+  - From 900 px, the universe runs across the top and the funnel sits beside the results.
+  - Below that, everything stacks. On a phone, a sticky bar keeps the matched count, Save and Run in reach.
+  - The Screener is a workspace page, so the shell lets it use the full width (it was capped at `max-w-6xl`).
+- **States.**
+  - Empty: "Start with a template or add your first condition." Three neutral starting points plus "Add a condition".
+  - No results: the killing stage is highlighted and the message says "This condition removes every symbol. Loosen it
+    or disable it to see candidates." with "Show the stage" (scrolls to it and focuses it) and "Disable it". A new run
+    closes an open "what this removes" list.
+  - Freshness: a pill "Ran at HH:MM IST". It re-checks every 30 s and turns warn once the run is more than two of the
+    scan's bars old ("N min ago, run again for newer bars").
+  - Errors are sentences: 404 means the screener is off, and 409 says to connect a broker.
+- **Tests.**
+  - Frontend:
+    - `model.test.ts` (14): text, spans, summaries, trail, run stamp, the builder-text contract, edits, symbols;
+    - `tokens.test.ts` (6);
+    - `parts.test.ts` (5): inline parse, sort, freshness, trail bar.
+  - Backend: `tests/test_u5_funnel.py` (6: stages, one-stage forms, registry fields, the builder-text contract, Rank
+    parity, short history left out), plus the run test.
+  - Headless (vite + Chromium, API mocked), at 1440 and 1920 wide, in dark, light, colour-blind dark/light and on a
+    phone:
+    - inline edit by keyboard, with the focus back on the number;
+    - Run disabled while the edit is being checked;
+    - counts dropped and results marked stale after a stage edit, fresh again after undoing it, stale after a symbols
+      edit;
+    - the killing stage and its removed list;
+    - keyboard reorder, with the focus kept on the moved handle;
+    - no page errors.
+  - Screenshots are in `docs/screenshots/screener-u5d1/`.
+- **Design notes.**
+  - The funnel is the only element with colour and motion. Everything else is surfaces, hairlines and mono numbers.
+  - There are no shadows on panels and no all-caps.
+  - The trail track is the inset surface, so the funnel reads as a channel the stream flows down.
+- **Not in D1** (U5 order):
+  - D2: remaining block forms, ANY / NOT group brackets, live counts while editing, why-matched chips;
+  - D3: heatmap, chart grid, RRG, template sheet;
+  - D4: Then drawer, mode chip, arm banner, alert composer, delivery log;
+  - D5: Lighthouse, the visual-regression suite in CI, 50-stage performance.
+  - The universe picker (index, sector, F&O chips) comes from U1-d. D1 takes typed symbols, up to the run limit of 50.
 ## S5-A4 (built): `SwingZoneStrength(side, degree=0)` and `SwingZoneDistance(side, degree=0)`
 - **What they are.** The zone at the last confirmed swing low (`low`, support) or swing high (`high`, resistance),
   measured on every bar by the trade-port module `app/price_action/level_strength.py` (default settings).
@@ -699,7 +795,64 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - a cache that ignores a changed frame.
 - **Next (S5-C).** Category C.
 
+## U5 D2 (built): the other block forms, groups, live counts, why it matched
+- **Block forms** (`StageRow.tsx`; one row shell, a body per kind). Each reads as a sentence edited in place:
+  - **Filter**: a yes / no function of the bar - `Pattern("doji")@15m`, `NearSupport(0.5, 3)`,
+    `ReversalAt(PDH(), "bearish")`. The crosses stay in the indicator block. A new filter starts from the first one
+    with no text to type.
+  - Functions that need data beyond bars (`needs` in the registry: Sector, Industry, McapBucket, IndexMember, IsFnO
+    need the reference lists; PCR, ChainBias, MaxPainDistancePct need the option chain) are not offered: the run path
+    loads bars only, so they would read empty and remove every symbol. A screen that uses one anyway (typed, or
+    saved earlier) is refused by `/run` with the reason, never answered with a silent "nothing matched" (SC-18).
+  - **Category**: a classifier is / is not one value (`==`, `!=`) or one of several (`IN (...)`, `NOT (... IN ...)`).
+    Values with a fixed set are toggle chips (the last one cannot be switched off); the others are typed. A category
+    with no value, or a blank text argument, is a problem on its block before anything runs (it would otherwise run
+    as `== ""`, which means "no event" for StructureEvent).
+  - **Rank**: `Rank(PctChange(close, 5)) <= 10` or `PercentileRank(...) >= 90`, across the universe.
+  - **Group**: ANY of its blocks (`( a OR b )`) or NOT all of them (`NOT ( a AND b )`), drawn as its own bracket
+    with its label inside the ALL bracket; its blocks nest, can be added, edited, moved (Alt+arrow), duplicated and
+    switched off. A group is one funnel stage (the funnel counts top-level stages).
+  - Argument kinds: a literal number with no registry default (`tolerance_pct`) is a number, a `level` picks from
+    PDH() / PDL() / PDC() / DayOpen() / close, a free string is typed.
+  - "Add a condition" adds a block of the kind picked beside it.
+- **Live counts.** Once the current text passes the check and the trader pauses (0.9 s), a preview run
+  (`POST /run` with `preview: true`: evaluated exactly like a run, not stored) fills the trails and the matched count,
+  marked "live". A Run's counts take over while the scan is unchanged. "Live counts while editing" in the Universe
+  panel turns previews off.
+  - A preview returns counts only (no match list, removed symbols or per-symbol passes): what is not stored does not
+    hand out lists; the list comes from a Run, which is stored and can be reproduced.
+  - One preview at a time per page: edits made while one is out wait, and the next one goes for the scan as it is
+    then; a preview's counts show only while they are for the current scan. None during a Run.
+  - `/run` (Runs and previews) has a per-user limit of 60 a minute. Previews read the same server bars, cached for a
+    minute by the market-data service.
+  - The live region announces Runs only; live counts update the number quietly.
+- **Why it matched.** The run's funnel carries `passes` - for each evaluated symbol, whether it passed each stage on
+  its own (even after an earlier stage removed it). The result table's "Stages" column shows one dot per stage
+  (filled = passed), with the stage's words on hover and for screen readers. Shown only while the scan is the one
+  that ran.
+- **Problems** land on the innermost block they point at (`stageSpans` walks into groups).
+- **Contract.** `builderTexts.json` now has 23 cases covering every kind, ANY and NOT groups and a disabled block in
+  a group (groups do not nest in the builder); both sides test it.
+- **Tests.** Frontend: `model.test.ts` (20: D2 adds block predicates, defaults, every kind starts usable, group text
+  with disabled and empty groups, innermost spans, deep duplicate, why chips). Backend: `test_u5_funnel.py`
+  (passes per stage), `test_s1d_screener_api.py` (passes in the API, preview not stored). Headless Chromium: adding a
+  group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
+  live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
+  uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).
+  - Owner question: please send U2 and U4 if they exist as separate addenda.
+- **SC-18. Reference data and the option chain on the run path.** The screener run loads bars only, so the
+  functions that need the universe lists or the chain are hidden in the builder and refused by `/run`. Provisional:
+  they come back when U1-d (the universe picker and its as-of lists) and a per-run chain fetch are wired into
+  `fetch_frames` (`RUN_PROVIDES` in `routes.py` is the switch).
+- **SC-17. Three columns inside the app shell.** At 1440 px the app's sidebar leaves the 280 / flex / 380 layout a
+  funnel about 400 px wide, which breaks every stage onto several lines. Provisional:
+  - three columns from 1400 px of page width;
+  - otherwise the universe runs across the top;
+  - the Screener page is no longer capped at `max-w-6xl`.
+  - Owner question: should the app sidebar collapse to icons on the Screener instead?
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no
   BANKNIFTY bar fixtures are in this repository. Only the expiry calendars are. Provisional: the S5-A tests use the
   session-shaped generator (`tests/sample_market.py`), the same one the trade-port tests use. The NIFTY holdout stays

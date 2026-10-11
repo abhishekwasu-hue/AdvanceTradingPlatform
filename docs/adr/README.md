@@ -22,3 +22,5 @@ costs and what it buys), **Status**.
 | [0012](0012-news-feed-shared-ingest-tenant-classification.md) | News feed: shared ingest of official feeds, classification with the organisation's own key, corroborated proposals | accepted |
 | [0019](0019-agent-tools-and-loop.md) | Copilot agent: typed read-only tools, a bounded loop, an answer contract, proposals only | provisional |
 | [0020](0020-ai-evals-and-governance.md) | AI evals in CI and AI governance: golden sets per prompt version, a model registry, a kill switch | provisional |
+| [0021](0021-screener-engine.md) | Screener engine: one typed AST (ScreenQL) over Factor/Filter/Classifier primitives, server data only | provisional |
+| [0022](0022-notification-service.md) | Notification Service: grow the existing alert outbox, do not build a second one | provisional |

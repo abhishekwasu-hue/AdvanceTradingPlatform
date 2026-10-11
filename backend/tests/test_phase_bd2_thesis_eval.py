@@ -148,7 +148,12 @@ def test_weekly_thesis_report_is_flag_gated_idempotent_and_read_only():
                                          created_at=NOW - timedelta(days=i + 1), scored_at=NOW if outcome else None, outcome=outcome, score=score))
             await session.commit()
     _run(seed())
-    report = client.get("/api/ai/thesis/report", headers=headers).json()
+    # The route reads the 7 days before the real clock; the seeded rows are dated from the fixed NOW, so the content
+    # is checked through the same service at NOW (the route itself is covered by the flag and empty checks above).
+    async def report_at(now):
+        async with _session_factory() as session:
+            return await th.weekly_report(session, tenant_id, now=now)
+    report = _run(report_at(NOW))
     assert report["scored"] == 3 and report["hits"] == 1 and report["misses"] == 1 and report["flat"] == 1 and report["hit_rate"] == 0.33 and report["avg_shadow"] == 0.75
     assert report["pending"] == 1 and report["unknown"] == 1 and report["title"].startswith("Thesis scoreboard 2026-W41: 1/3 right (33%)")
     assert any("NIFTY 50: 1/2 right, 1 wrong" in line for line in report["lines"]) and any("never applied" in line for line in report["lines"])

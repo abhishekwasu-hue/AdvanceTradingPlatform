@@ -46,7 +46,7 @@ the practitioner range named below, with a one-line note. The table at the end i
   a wide breakout bar does not set its own yardstick.
 - **Higher-timeframe trend.** A Dow trend is read only after 40 bars at D0. Measured on the session generator (40 seeds,
   daily and weekly): the trend on the last bar from N bars agrees with the full history 95.5 % at N = 30, 98.7 % at 40,
-  99.9 % at 60. An unknown trend does not block "not against" but earns no point.
+  99.9 % at 60 (`dow_min_bars`). An unknown trend blocks "not against" - the cautious reading - and earns no point.
 - **One signal per leg.** After a signal the side re-arms after a confirmed pullback swing, a failed break, or a new base
   (`leg_rearm_bars` bars without a new extreme).
 - **Quality overlay.** An equal-weight checklist of 6 points: higher-timeframe agreement (one point per context

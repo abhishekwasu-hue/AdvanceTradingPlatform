@@ -26,7 +26,7 @@ from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
     OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
     AlertDeliveryRecord, FeedbackRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
-    TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord,
+    TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord, VisionReportRecord,
 )
 from app.retention.policy import RetentionPolicy, load_policy
 
@@ -166,6 +166,8 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     await session.execute(delete(UserAiKeyRecord).where(UserAiKeyRecord.user_id == user.id, UserAiKeyRecord.tenant_id == user.tenant_id))
     await session.execute(delete(UserVisionPrefsRecord).where(UserVisionPrefsRecord.user_id == user.id,
                                                               UserVisionPrefsRecord.tenant_id == user.tenant_id))
+    # BYOK-V2: their Vision reports (text and chart hash; no image is ever stored).
+    await session.execute(delete(VisionReportRecord).where(VisionReportRecord.user_id == user.id, VisionReportRecord.tenant_id == user.tenant_id))
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
     await session.execute(delete(FeedbackRecord).where(FeedbackRecord.user_id == user.id, FeedbackRecord.tenant_id == user.tenant_id))
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")

@@ -338,6 +338,6 @@ def test_migration_is_the_single_head_and_chains_onto_the_previous_one():
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
     script = ScriptDirectory.from_config(cfg)
-    assert script.get_heads() == ["d4e8a1c6f205"]
+    assert len(script.get_heads()) == 1                      # one head; later migrations chain on top of this one
     rev = script.get_revision("d4e8a1c6f205")
     assert rev.down_revision == "e9c1a3b5d7f9"

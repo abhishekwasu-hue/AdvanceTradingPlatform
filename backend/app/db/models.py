@@ -2097,6 +2097,34 @@ class UserVisionPrefsRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+class VisionReportRecord(Base):
+    """BYOK-V2 (docs/BYOK.md): one user's Vision report on one proposal, made with THAT user's own key and shown to that
+    user only. Queued as `pending` when the proposal is raised (never blocking it), audited later by the worker:
+    `ok` (report written), `skipped` (no call made: vision off, no key, a cap, no chart data, proposal already decided)
+    or `failed` (the provider call failed; `reason` is sanitised and never contains the key). The chart image is not
+    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything."""
+
+    __tablename__ = "vision_reports"
+    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    ai_action_id: Mapped[int] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", index=True)   # pending/running/ok/skipped/failed
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)            # why skipped / failed (sanitised)
+    report_text: Mapped[str | None] = mapped_column(Text, nullable=True)              # <= 12 lines, numbers from the engine
+    image_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)       # the chart sent; the image is not kept
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    telegram_status: Mapped[str] = mapped_column(String(10), nullable=False, default="none", server_default="none")   # none/sent/failed
+    telegram_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a
 # source can correct itself, a `version`: a query "as of T" sees only rows ingested at or before T and, per key, the
 # highest such version. Times are bar END / event time in UTC. On TimescaleDB the four time-series tables become

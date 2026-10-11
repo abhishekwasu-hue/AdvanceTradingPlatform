@@ -59,14 +59,14 @@ def context_trends(frames: Dict[str, pd.DataFrame], signal_tf: str, context: Tup
 
 
 def htf_pass(trends: List[Optional[str]], side: str, mode: str) -> bool:
-    """agree: every context trend is known and WITH the side; not_against: no context trend is known to be AGAINST it (an
-    unknown trend - too little higher-timeframe history - does not block; it earns no grade point either); off: always."""
+    """agree: every context trend is known and WITH the side; not_against: every context trend is known and none is
+    AGAINST it - an unknown trend (too little higher-timeframe history) blocks, the cautious reading; off: always."""
     with_, against = ("UP", "DOWN") if side == "up" else ("DOWN", "UP")
     if mode == "off":
         return True
     if mode == "agree":
         return bool(trends) and all(t == with_ for t in trends)
-    return all(t != against for t in trends)
+    return bool(trends) and all(t is not None and t != against for t in trends)
 
 
 def atr_percentile_series(atr_prev: np.ndarray, close: np.ndarray, lookback: int) -> np.ndarray:

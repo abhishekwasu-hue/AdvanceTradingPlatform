@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
-from app.screener.runtime import SymbolData, run_screen
+from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +198,11 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
         for sym in missing:
             data = got.get(sym)
             frame = closed_frame(data.frames.get(tf, pd.DataFrame()), tf, bar) if data is not None else None
-            closed = SymbolData(sym, {tf: frame}, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            kept: Dict[str, pd.DataFrame] = {tf: frame} if frame is not None else {}
+            daily = data.frames.get("1d") if data is not None and tf != "1d" else None
+            if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
+                kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
+            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
             cache.frames[key(sym)] = (need, closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
@@ -239,7 +243,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
                                  if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
             return "unsupported", 0
-        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar)
+        current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0

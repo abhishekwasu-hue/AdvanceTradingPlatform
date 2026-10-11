@@ -52,7 +52,10 @@ def duration(tf: str) -> Any:
 
 
 def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
-    return index + duration(tf)
+    from app.screener.runtime import bar_close as runtime_bar_close
+    if tf in EXTRA_TFS:
+        return index + duration(tf)
+    return runtime_bar_close(index, tf)                                 # months counted in exchange time
 
 
 def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
@@ -72,7 +75,7 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
         return base
     out = base.resample(EXTRA_TFS[tf][0], label="left", closed="left", origin=session_origin(base.index)).agg(agg)
     out = out.dropna(subset=["close"])
-    if len(out) and out.index[-1] + EXTRA_TFS[tf][1] > base.index[-1] + duration(base_tf):
+    if len(out) and out.index[-1] + EXTRA_TFS[tf][1] > bar_close(base.index[-1:], base_tf)[0]:
         out = out.iloc[:-1]
     return out
 

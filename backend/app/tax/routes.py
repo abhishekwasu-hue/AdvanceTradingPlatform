@@ -1,4 +1,7 @@
-"""Phase P2: `GET /api/tax/years`, `GET /api/tax/report?fy=2026-27&mode=LIVE|PAPER|ALL`, `GET /api/tax/report.csv`."""
+"""Phase P2: `GET /api/tax/years`, `GET /api/tax/report?fy=2026-27&mode=LIVE|PAPER|ALL`, `GET /api/tax/report.csv`.
+
+Both report routes take an optional `turnover_method` (ABS_PNL | ABS_PNL_PLUS_PREMIUM); omitted = the configured
+`TAX_FNO_TURNOVER_METHOD`. The report names the method it used."""
 from datetime import datetime
 from typing import Optional
 
@@ -22,15 +25,16 @@ def _mode(value: str) -> Optional[str]:
     return None if value == "ALL" else value
 
 
-async def _build(session: AsyncSession, user: User, fy: Optional[str], mode: str) -> dict:
+async def _build(session: AsyncSession, user: User, fy: Optional[str], mode: str, turnover_method: Optional[str] = None) -> dict:
     fy = fy or tax.financial_year(datetime.now(IST).date())
     try:
         tax.fy_bounds(fy)
+        method = tax.turnover_method(turnover_method)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     selected = _mode(mode)
     trades = await tax.closed_trades(session, user.tenant_id, fy, mode=selected)
-    return tax.build_report(trades, fy, mode=selected)
+    return tax.build_report(trades, fy, mode=selected, method=method)
 
 
 @router.get("/years")
@@ -40,13 +44,15 @@ async def years(user: User = Depends(get_current_user), session: AsyncSession = 
 
 @router.get("/report")
 async def report(fy: Optional[str] = Query(default=None), mode: str = Query(default="LIVE"),
+                 turnover_method: Optional[str] = Query(default=None),
                  user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    return await _build(session, user, fy, mode)
+    return await _build(session, user, fy, mode, turnover_method)
 
 
 @router.get("/report.csv", response_class=PlainTextResponse)
 async def report_csv(fy: Optional[str] = Query(default=None), mode: str = Query(default="LIVE"),
+                     turnover_method: Optional[str] = Query(default=None),
                      user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> PlainTextResponse:
-    body = await _build(session, user, fy, mode)
+    body = await _build(session, user, fy, mode, turnover_method)
     return PlainTextResponse(tax.to_csv(body), media_type="text/csv",
                              headers={"Content-Disposition": f'attachment; filename="tax-report-{body["financial_year"]}-{body["mode"]}.csv"'})

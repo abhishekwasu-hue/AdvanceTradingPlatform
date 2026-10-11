@@ -143,6 +143,10 @@ def _json_table(name: str, default: dict) -> dict:
 AI_RATE_LIMITS = _json_table("AI_RATE_LIMITS", _AI_RATE_LIMITS_DEFAULT)
 AI_RATE_WEIGHTS = _json_table("AI_RATE_WEIGHTS", _AI_RATE_WEIGHTS_DEFAULT)
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
+# Part D2 (rule IN-SEBI.ops.throttle): orders per second per client and exchange, exits first. Off by default; the
+# rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.
+OPS_THROTTLE_ENABLED = os.environ.get("OPS_THROTTLE_ENABLED", "false").lower() in ("1", "true", "yes")
+OPS_PER_SECOND = float(os.environ.get("OPS_PER_SECOND", "0") or 0) or None
 
 # Phase E1: observability. METRICS_TOKEN protects GET /metrics on the API (empty = open, fine
 # behind a private network); WORKER_METRICS_PORT serves the worker's own metrics (0 = off).

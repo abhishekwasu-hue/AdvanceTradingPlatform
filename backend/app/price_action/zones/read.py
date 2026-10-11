@@ -40,6 +40,7 @@ class Snapshot:
     scope: Optional[str]
     price: Optional[float]
     rows: List[Dict[str, Any]]
+    fallback: bool = False          # the platform's snapshot served for a tenant whose own settings have none (chart only)
 
 
 @dataclass
@@ -63,20 +64,23 @@ class ZoneTimeline:
         return self.snapshots[i] if i >= 0 else None
 
 
-def _snapshot(run: Any, rows: List[Dict[str, Any]], scope: Optional[str]) -> Optional[Snapshot]:
+def _snapshot(run: Any, rows: List[Dict[str, Any]], scope: Optional[str], fallback: bool = False) -> Optional[Snapshot]:
     if run is None:
         return None
     as_of = store._utc(run.as_of)
     assert as_of is not None
-    return Snapshot(int(run.id), as_of, scope, None if run.price is None else float(run.price), [r for r in rows if is_live(r)])
+    return Snapshot(int(run.id), as_of, scope, None if run.price is None else float(run.price), [r for r in rows if is_live(r)],
+                    bool(fallback))
 
 
-async def read_as_of(session: AsyncSession, key: str, at: Any, tenant_id: Optional[int]) -> Optional[Snapshot]:
+async def read_as_of(session: AsyncSession, key: str, at: Any, tenant_id: Optional[int], *,
+                     allow_platform_fallback: bool = False) -> Optional[Snapshot]:
     """The snapshot `store.zones_as_of` returns for the tenant at `at` (timezone-aware), live rows only; None when none.
-    The settings-hash rule applies: a tenant whose settings differ from the platform's reads its own scope only (no
-    platform fallback - a zone built with other settings is not this tenant's zone)."""
-    result = await store.zones_as_of(session, key, _aware_utc(at), tenant_id)
-    return _snapshot(result.run, result.rows, result.scope)
+    The settings-hash rule applies: a tenant whose settings differ from the platform's reads its own scope only. With
+    `allow_platform_fallback` (the chart layer only, never ScreenQL) such a tenant without its own snapshot gets the
+    platform's, marked `fallback` - the caller must say so."""
+    result = await store.zones_as_of(session, key, _aware_utc(at), tenant_id, allow_platform_fallback=allow_platform_fallback)
+    return _snapshot(result.run, result.rows, result.scope, getattr(result, "fallback", False))
 
 
 async def timeline(session: AsyncSession, key: str, tenant_id: Optional[int], start: Any, end: Any,

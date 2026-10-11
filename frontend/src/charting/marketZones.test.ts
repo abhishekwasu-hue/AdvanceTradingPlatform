@@ -67,6 +67,9 @@ describe("the layer and its shapes", () => {
     expect(shapes[1]).toMatchObject({ type: "text", x: 396, align: "right", text: "demand 102.00 (tested) · 2 touches" });
     expect(shapes[2]).toMatchObject({ type: "segment", y1: 510, y2: 510, x2: 400, dash: "solid" });
     expect(bandShapes([{ low: 1, high: 2 }], { ...conv, y: () => null })).toEqual([]);
+    // the platform's default-settings zones served as a fallback say so on every band
+    expect(bandsLayer(bands, null, true).bands?.map((b) => b.label)).toEqual([
+      "demand 102.00 (tested) · 2 touches · default settings", "demand 98.00 (fresh) · no touches · default settings"]);
   });
 
   it("re-picks from the response only when the price on screen moved", () => {

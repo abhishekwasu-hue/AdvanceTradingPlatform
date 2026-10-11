@@ -11,19 +11,23 @@ import { Button, cx } from "../components/primitives";
 import { duplicateStage, isLive, moveStage, newBlock, newStage, trail, type FunnelResult, type Registry, type Stage, type StageKind } from "./model";
 import { SelectInline } from "./ParamInline";
 import { KIND_LABEL, StageRow } from "./StageRow";
+import starterRows from "./starters.json";
 import "./screener.css";
 
-export interface StarterTemplate { name: string; summary: string; build: (reg: Registry) => Stage[] }
+export interface StarterTemplate { id: string; name: string; summary: string; build: (reg: Registry) => Stage[] }
 
-/** Starting points, worded neutrally (a research tool, never a recommendation). */
-export const STARTERS: StarterTemplate[] = [
-  { name: "Momentum", summary: "RSI(14) above 60 and close above EMA(close, 20)",
-    build: (r) => [newStage(r, "RSI", { kind: "value", value: 60 }), newStage(r, "close", { kind: "series", ref: { fn: "EMA", params: { x: "close", n: 20 }, tf: null } })] },
-  { name: "Oversold", summary: "RSI(14) at or below 30",
-    build: (r) => [newStage(r, "RSI", { kind: "value", value: 30 }, "<=")] },
-  { name: "Trend on the daily", summary: "close above EMA(close, 50) on 1d",
-    build: (r) => { const s = newStage(r, "close", { kind: "series", ref: { fn: "EMA", params: { x: "close", n: 50 }, tf: "1d" } }); s.left.tf = "1d"; return [s]; } },
-];
+/** How each starter builds its stages, by id. Names and summaries live in starters.json, which the server reads too:
+ * U9 TX1 files every starter id in the screen taxonomy, and CI fails when one is not filed. */
+export const STARTER_BUILDS: Record<string, (reg: Registry) => Stage[]> = {
+  "starter.momentum": (r) => [newStage(r, "RSI", { kind: "value", value: 60 }), newStage(r, "close", { kind: "series", ref: { fn: "EMA", params: { x: "close", n: 20 }, tf: null } })],
+  "starter.oversold": (r) => [newStage(r, "RSI", { kind: "value", value: 30 }, "<=")],
+  "starter.daily_trend": (r) => { const s = newStage(r, "close", { kind: "series", ref: { fn: "EMA", params: { x: "close", n: 50 }, tf: "1d" } }); s.left.tf = "1d"; return [s]; },
+};
+
+/** Starting points, worded neutrally (a research tool, never a recommendation). A row without a build is left out. */
+export const STARTERS: StarterTemplate[] = starterRows.starters
+  .filter((t) => t.id in STARTER_BUILDS)
+  .map((t) => ({ ...t, build: STARTER_BUILDS[t.id] }));
 
 export interface FunnelCanvasProps {
   stages: Stage[];

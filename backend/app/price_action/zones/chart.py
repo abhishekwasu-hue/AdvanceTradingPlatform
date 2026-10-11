@@ -12,7 +12,7 @@ price moves; both are checked against the same cases (`tests/fixtures/zones/char
     remembered) - provisional weights, docs/OPEN_QUESTIONS.md Z7a3-2.
   * `candidates(rows)`: the live rows (any state but invalidated) as chart candidates with their strength and the
     price texts (every number a chart shows comes from here, never from pixels).
-  * `select_bands(cands, price)`: at most 6 bands - per role, the strongest of each overlapping cluster, then the
+  * `select_bands(cands, price)` (`bands_from_rows(rows, price)` from snapshot rows): at most 6 bands - per role, the strongest of each overlapping cluster, then the
     nearest to the price: 3 demand + 3 supply, a short side's slots going to the other side. Top to bottom by price.
   * labels: "demand 512.30 (fresh)", "supply 530.00 (tested)" and the touch count ("2 touches").
   * `nearest_zone(...)`: the live zone nearest to a price within a tolerance - what NearZone / ZoneRole / ZoneState /
@@ -171,6 +171,11 @@ def select_bands(cands: Sequence[Mapping[str, Any]], price: float, max_bands: in
     return out
 
 
+def bands_from_rows(rows: Iterable[Mapping[str, Any]], price: float, family: str = "all", max_bands: int = MAX_BANDS) -> List[Dict[str, Any]]:
+    """Snapshot rows straight to the bands a chart draws at `price` (what a server-side chart image calls)."""
+    return select_bands(candidates(rows, family), price, max_bands=max_bands)
+
+
 def nearest_zone(rows: Iterable[Mapping[str, Any]], price: float, role: str = "any", tolerance_pct: float = 0.5,
                  family: str = "all") -> Optional[Dict[str, Any]]:
     """The live zone nearest to `price` (role by that price) within `tolerance_pct` % of it, or None. Ties: the
@@ -194,4 +199,4 @@ def nearest_zone(rows: Iterable[Mapping[str, Any]], price: float, role: str = "a
 
 
 __all__ = ["DEMAND", "SUPPLY", "FAMILIES", "MAX_BANDS", "PER_ROLE", "MAX_DISTANCE_PCT", "role_at", "distance_pct", "zone_strength",
-           "candidate", "candidates", "select_bands", "nearest_zone", "label", "touch_text", "price_text", "is_live"]
+           "candidate", "candidates", "select_bands", "bands_from_rows", "nearest_zone", "label", "touch_text", "price_text", "is_live"]

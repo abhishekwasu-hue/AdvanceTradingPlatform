@@ -19,7 +19,8 @@ function asOfText(iso: string | null): string {
 }
 
 /** The legend: one row per band, top to bottom (the same order as on the chart). Renders nothing without bands. */
-export function MarketZonesLegend({ bands, asOf, note }: { bands: readonly ZoneBand[]; asOf: string | null; note?: string }) {
+export function MarketZonesLegend({ bands, asOf, note, settingsNote }: { bands: readonly ZoneBand[]; asOf: string | null; note?: string;
+                                                                      settingsNote?: string | null }) {
   if (bands.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted" data-testid="market-zones-legend" title={note}>
@@ -32,6 +33,7 @@ export function MarketZonesLegend({ bands, asOf, note }: { bands: readonly ZoneB
         </span>
       ))}
       {asOf && <span className="opacity-70">as of {asOfText(asOf)} IST</span>}
+      {settingsNote && <span className="text-warn" data-testid="market-zones-fallback">from {settingsNote}</span>}
     </div>
   );
 }
@@ -60,13 +62,13 @@ export function MarketZonesLayer({ engine, instrument, price }: { engine: ChartE
 
   useEffect(() => {
     if (!engine) return;
-    engine.setLayer(LAYER_ID, bands.length ? bandsLayer(bands, layer?.as_of) : null);
+    engine.setLayer(LAYER_ID, bands.length ? bandsLayer(bands, layer?.as_of, !!layer?.fallback) : null);
     return () => engine.setLayer(LAYER_ID, null);
-  }, [engine, bands, layer?.as_of]);
+  }, [engine, bands, layer?.as_of, layer?.fallback]);
 
   if (failed) return <div className="text-xs text-fg-muted">Market zones could not be loaded.</div>;
   if (!layer) return null;
-  return <MarketZonesLegend bands={bands} asOf={layer.as_of} note={layer.note} />;
+  return <MarketZonesLegend bands={bands} asOf={layer.as_of} note={layer.note} settingsNote={layer.fallback ? layer.settings_note : null} />;
 }
 
 export default MarketZonesLayer;

@@ -1,6 +1,7 @@
 /** U5: the screener endpoints the funnel page uses (S1d API). Same auth, refresh and error handling as every request. */
 import { request } from "../api/client";
 import type { FunnelResult, Registry } from "./model";
+import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
 export interface ValidateResponse { ok: boolean; problems: Problem[]; text: string | null; plan: { cost: number; lookback: Record<string, number> } }
@@ -23,6 +24,8 @@ export const screenerApi = {
   /** D2 live counts while editing: the same evaluation, not stored as a run. */
   preview: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
     request<PreviewResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, preview: true }) }),
+  /** U9 TX1: the screen library's taxonomy (flag `screener_gallery`; 503 while it is off - the page then shows no gallery). */
+  taxonomy: () => request<Taxonomy>("/screener/taxonomy"),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

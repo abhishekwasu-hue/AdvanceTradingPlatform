@@ -156,7 +156,7 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
   };
 
   return (
-    <Dialog open={evidenceId != null} onOpenChange={(open) => { if (!open) onClose(); }} size="xl"
+    <Dialog open={evidenceId != null} onOpenChange={(open) => { if (!open) onClose(); }} wide
             title={`Why ${pack?.symbol ?? symbol ?? ""} matched`} description="Only the screen's own conditions are drawn, with the engine's numbers.">
       {error ? <p role="alert" className="text-warn">{error}</p>
         : !pack ? <p className="text-fg-muted">Loading the evidence…</p>

@@ -187,6 +187,22 @@ def test_price_action_series_s5a():
     assert _ev('SwingZoneDistance("high")', data).notna().any()
 
 
+def test_market_zone_functions_z7a3():
+    # deeper checks (as-of per bar, no look-ahead, text vs engine, tenant scope) are in tests/test_zones_chart_screenql.py
+    from datetime import datetime, timezone
+    from app.price_action.zones.read import Snapshot, ZoneTimeline
+    d = _sym([100.0, 100.2, 100.4, 100.6])                                   # 5m bars from 03:45 UTC; the third closes at 04:00
+    zone = {"zone_key": "z", "zone_type": "DEMAND_ZONE", "timeframe": "1h", "zone_low": 99.6, "zone_high": 99.9, "state": "tested",
+            "touches": 1, "strength": None, "remembered": False}
+    seen_from = pd.Timestamp("2026-03-02 04:00", tz="UTC")
+    d.zones = ZoneTimeline("NSE:S", np.array([seen_from.value], dtype="int64"),
+                           [Snapshot(1, datetime(2026, 3, 2, 4, 0, tzinfo=timezone.utc), "platform", 100.0, [zone])])
+    assert _ev('NearZone("demand", 0.5)', d).tolist() == [False, False, True, False]   # not before its as_of; 0.69 % away at 100.6
+    assert _ev("ZoneRole(1.0)", d).tolist() == [None, None, "DEMAND", "DEMAND"]
+    assert _ev('ZoneState("supply", 1.0)', d).isna().all() and _ev('ZoneState("any", 1.0, "zones")', d).iloc[-1] == "TESTED"
+    assert _ev("ZoneStrength()", d).iloc[2] == 60.0 and np.isnan(_ev('ZoneStrength("any", 0.5, "levels")', d).iloc[2])
+
+
 def test_breakout_series_u6_bk1():
     # deeper checks (fixtures per screen, overlay, parity with the engine) are in tests/test_z7_bk1_breakouts.py
     closes = [100 + 3 * np.sin(i / 6) + i * 0.05 for i in range(200)]

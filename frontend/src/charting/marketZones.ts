@@ -44,6 +44,9 @@ export interface MarketZonesLayerResponse {
   at: string;
   as_of: string | null;
   scope: "platform" | "organisation" | null;
+  /** The platform's zones (default settings) served because none are stored with the organisation's own settings. */
+  fallback?: boolean;
+  settings_note?: string | null;
   price: number | null;
   price_source: "request" | "snapshot" | null;
   price_text?: string | null;
@@ -122,11 +125,15 @@ const STATE_STYLE: Record<string, { opacity: number; style: "solid" | "dashed" |
   flipped: { opacity: 0.11, style: "dotted" },
 };
 
-/** The bands as an engine layer (minimal style: a tinted band or a line per zone, its label and touch count). */
-export function bandsLayer(bands: readonly ZoneBand[], asOf?: string | null): LayerData {
+export const FALLBACK_TAG = "default settings";
+
+/** The bands as an engine layer (minimal style: a tinted band or a line per zone, its label and touch count). Zones
+ * served from the platform's default settings (`fallback`) say so on every band. */
+export function bandsLayer(bands: readonly ZoneBand[], asOf?: string | null, fallback = false): LayerData {
   const out: LayerBand[] = bands.map((b) => {
     const st = STATE_STYLE[b.state] ?? STATE_STYLE.tested;
-    return { low: b.low, high: b.high, color: ZONE_COLORS[b.role], opacity: st.opacity, style: st.style, label: `${b.label} · ${b.touch_text}` };
+    const label = `${b.label} · ${b.touch_text}${fallback ? ` · ${FALLBACK_TAG}` : ""}`;
+    return { low: b.low, high: b.high, color: ZONE_COLORS[b.role], opacity: st.opacity, style: st.style, label };
   });
   return { asOf: asOf ?? undefined, bands: out };
 }

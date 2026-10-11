@@ -310,6 +310,8 @@ chart's pointer events and a toolbar to it.
 - Backend: `GET /api/charts/layers/market-zones?instrument=&at=&price=&family=&max_bands=` (flag `market_zones`, off ->
   503): the organisation's stored zones as of `at` (timezone-aware; never a later snapshot, never another
   organisation's), at most 6 bands, every number and text included (bounds, label prices, touches, strength, distance).
+  An organisation whose own zone settings have no snapshot yet gets the platform's as a labelled fallback
+  (`fallback: true`; every band label ends "· default settings"); ScreenQL never falls back.
 - One rule, two places: `app/price_action/zones/chart.py` `select_bands` (also for the U8 evidence charts drawn
   server-side, e.g. Telegram images) and its port `frontend/src/charting/marketZones.ts` `selectBands` (re-picks when the
   price on screen moves); both are tested against `backend/tests/fixtures/zones/chart_bands_cases.json`.

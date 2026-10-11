@@ -3,16 +3,16 @@ import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cx } from "./cx";
 
-interface Base { open: boolean; onOpenChange: (open: boolean) => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode;
-  /** U8: a wide modal (a chart with its panel); the default is the narrow one. */
-  size?: "md" | "xl" }
+interface Base { open: boolean; onOpenChange: (open: boolean) => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean }
 
-function Shell({ side, open, onOpenChange, title, description, children, footer, size = "md" }: Base & { side?: "right" | "bottom" }) {
+function Shell({ side, open, onOpenChange, title, description, children, footer, wide = false }: Base & { side?: "right" | "bottom" }) {
   const panel = side === "right"
     ? "inset-y-0 right-0 h-full w-full max-w-md border-l"
     : side === "bottom"
       ? "inset-x-0 bottom-0 max-h-[85vh] w-full rounded-t-xl border-t"
-      : cx("left-1/2 top-1/2 w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border", size === "xl" ? "max-h-[92vh] max-w-5xl" : "max-w-lg");
+      : wide   // a workspace sheet (U9 gallery): most of the screen, scrolling inside
+        ? "left-1/2 top-1/2 max-h-[90vh] w-[calc(100vw-2rem)] max-w-6xl -translate-x-1/2 -translate-y-1/2 rounded-xl border"
+        : "left-1/2 top-1/2 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border";
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>

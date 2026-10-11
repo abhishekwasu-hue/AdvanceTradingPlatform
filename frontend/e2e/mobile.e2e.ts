@@ -12,6 +12,7 @@ import { mockApi } from "./mockApi";
  */
 const PAGES: [string, string][] = [
   ["dashboard", "/"],
+  ["screener", "/screener"],
   ["option-chain", "/option-chain"],
   ["positions", "/positions"],
   ["orders", "/orders"],

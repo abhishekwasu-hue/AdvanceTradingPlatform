@@ -180,6 +180,11 @@ def test_price_action_series_s5a():
     assert hi.notna().any() and lo.notna().any() and (hi.dropna() > lo.dropna().min()).all()
     assert set(_ev("SwingDirection()", data).dropna().unique()) <= {"UP", "DOWN"}
     assert _ev("MedianRange(5)", data).iloc[-1] == pytest.approx(2.0)          # high - low is 2 on every bar
+    assert _ev('ReversalAt(SwingLow(), "bullish")', data).dtype == bool        # S5-A2 (deeper checks: test_s5a2_reversal.py)
+    assert _ev('RealBreak(SwingLow(), "below")', data).dtype == bool         # S5-A3 (deeper checks: test_s5a3_breaks.py)
+    zs = _ev('SwingZoneStrength("low")', data)                                  # S5-A4 (test_s5a4_zone_strength.py)
+    assert zs.notna().any() and zs.dropna().between(0, 100).all()
+    assert _ev('SwingZoneDistance("high")', data).notna().any()
 
 
 def test_every_registry_entry_has_a_runtime_test():

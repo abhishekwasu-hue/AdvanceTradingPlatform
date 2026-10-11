@@ -12,6 +12,8 @@ registry entry.
 """
 from __future__ import annotations
 
+import logging
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
@@ -27,6 +29,8 @@ from app.indicators.volatility import atr as _atr
 from app.screener import nodes as n
 from app.screener.registry import FUNCTIONS
 from app.screener.validator import Validated
+
+logger = logging.getLogger(__name__)
 
 _RESAMPLE = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "1D", "1w": "W-MON", "1M": "MS"}
 _DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes=3), "5m": timedelta(minutes=5), "15m": timedelta(minutes=15),
@@ -211,6 +215,10 @@ class _Eval:
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
+            "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
+            "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
+            "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -285,6 +293,154 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     lo = pd.Series(low, index=f.index).ffill()
     d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
+
+
+_ZONE_CACHE: Dict[int, Tuple[Any, Any, Dict[Tuple[str, int], Tuple[np.ndarray, np.ndarray]]]] = {}
+
+
+def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series:
+    """S5-A4: the zone at the last CONFIRMED swing low (support) or high (resistance) as of each bar, measured by the
+    trade-port level_strength module (default settings) from bars up to that bar.
+
+    - The zone is the pivot candle from its extreme to its body: support [low, min(open, close)], resistance
+      [max(open, close), high]. The pivot bar is the zone's origin (departure and base are measured from it); the pivot
+      is used only from the bar that confirmed it, and every bar after the origin that the measures read is <= the bar.
+    - `strength` is strength_score (0-100) without leg labels (no leg classifier in ScreenQL) and without time at price
+      (that needs 1-minute data), so those two parts score as unknown, the same way the module scores them.
+    - `distance` is (close - zone mid) / median range (dist_mr). Missing before the first confirmed pivot, and on a bar
+      with no price range to measure in (flat bars: a zero median range).
+    Strength and distance come from one pass, kept for the frame, so a screen using both pays once."""
+    if side not in ("low", "high"):
+        raise ScreenRuntimeError(f"unknown swing zone side {side!r}")
+    stamp = (len(f), f.index[-1] if len(f) else None, float(f["close"].iloc[-1]) if len(f) else None)
+    ref = _ZONE_CACHE.get(id(f))
+    if ref is None or ref[0]() is not f or ref[1] != stamp:               # another frame, or this one was changed
+        if len(_ZONE_CACHE) > 64:                                          # frames of finished runs: drop them
+            _ZONE_CACHE.clear()
+        ref = (weakref.ref(f), stamp, {})
+        _ZONE_CACHE[id(f)] = ref
+    key = (side, degree)
+    if key not in ref[2]:
+        ref[2][key] = _swing_zone_arrays(f, side, degree)
+    strength, distance = ref[2][key]
+    return pd.Series((strength if what == "strength" else distance).copy(), index=f.index)   # the cache stays intact
+
+
+def _swing_zone_arrays(f: pd.DataFrame, side: str, degree: int) -> Tuple[np.ndarray, np.ndarray]:
+    from app.price_action import causal_swings as cs
+    from app.price_action import level_strength as ls
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    # level_strength finds the origin by timestamp; bar-numbered stamps make that lookup exact whatever the index holds
+    # (time zone, duplicates). Nothing else here reads the stamps (time at price is not used).
+    stamps = pd.to_datetime(np.arange(len(f)), unit="s")
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = stamps
+    kind = "L" if side == "low" else "H"
+    origin = np.full(len(f), -1, dtype=int)                               # the pivot bar known at each bar (-1: none yet)
+    for p in cs.degree_pivots(frame, degree, s):
+        if p.kind == kind and p.confirmed_idx is not None:
+            origin[int(p.confirmed_idx):] = int(p.bar_idx)
+    bars = ls.prep_bars(frame, s)
+    o, h, l, c, mr = bars["o"], bars["h"], bars["l"], bars["c"], bars["mr"]
+    strength, distance = np.full(len(f), np.nan), np.full(len(f), np.nan)
+    for t in np.flatnonzero(origin >= 0):
+        mr_t = mr[t] if np.isfinite(mr[t]) and mr[t] > 0 else float(np.nanmedian(h[:t + 1] - l[:t + 1]))
+        if not (np.isfinite(mr_t) and mr_t > 0):                           # nothing to measure in: missing, not a crash
+            continue
+        b = int(origin[t])
+        if side == "low":
+            zone = {"low": float(l[b]), "high": float(max(l[b], min(o[b], c[b]))), "kind": "SUPPORT"}
+        else:
+            zone = {"low": float(min(h[b], max(o[b], c[b]))), "high": float(h[b]), "kind": "RESISTANCE"}
+        zone["formed_at"] = stamps[b]
+        feats = ls.strength_features(zone, frame, int(t), symbol="DEFAULT", settings=s, bars=bars)
+        strength[t], distance[t] = ls.strength_score(feats), feats["dist_mr"]
+    return strength, distance
+
+
+def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:
+    """S5-A2: on each bar, did price logically reverse at that bar's `level` (app/price_action/reversal.py, composite
+    mode, default settings; another reversal_mode is refused)? The same answer `evaluate_reversal` gives on the candles up to that bar - the window always
+    ends on the bar, so it is causal. A bar whose last few candles never reached the level cannot pass the touch test,
+    so only bars that did are evaluated (a cheap filter; the result is the same)."""
+    from app.price_action import pa_settings
+    from app.price_action import reversal as rv
+    from app.price_action.breaks import median_range
+    if direction not in ("bullish", "bearish"):
+        raise ScreenRuntimeError(f"unknown reversal direction {direction!r}")
+    s = pa_settings.settings()
+    if s["reversal_mode"] != "composite":                    # this series is the composite rule only (rv.evaluate)
+        raise ScreenRuntimeError(f"ReversalAt supports the composite reversal rule, not {s['reversal_mode']!r}")
+    dirn = 1 if direction == "bullish" else -1
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    mr = median_range(frame, s["median_range_n"])
+    bars = rv.Bars(frame, mr)
+    lv = level.to_numpy(float) if isinstance(level, pd.Series) else np.full(len(f), float(level))
+    tol = s["touch_tol_mr"] * np.where(np.isfinite(mr), mr, 0.0)
+    # the longest window evaluate() reads: the composite (1..N) plus the legacy follow-through candle; the addendum mode
+    # also reads composites ending up to followthrough_max_bars before the bar
+    reach_n = s["touch_reclaim_window"] + 1
+    if s.get("followthrough_mode", "legacy") != "legacy":
+        reach_n += int(s.get("followthrough_max_bars", 1))
+    if dirn > 0:
+        reached = frame["low"].rolling(reach_n, min_periods=1).min().to_numpy() <= lv + tol
+    else:
+        reached = frame["high"].rolling(reach_n, min_periods=1).max().to_numpy() >= lv - tol
+    out = np.zeros(len(f), dtype=bool)
+    for j in np.flatnonzero(reached & np.isfinite(lv)):
+        out[j] = bool(rv.evaluate(bars, int(j), dirn, [float(lv[j])], float(tol[j]), s)["ok"])
+    return pd.Series(out, index=f.index)
+
+
+def _real_break_series(f: pd.DataFrame, level: pd.Series, side: str, n_: int) -> pd.Series:
+    """S5-A3: on each bar j, was a REAL break of the level (its value at j) confirmed within bars j-n+1..j
+    (app/price_action/breaks.first_real_break, default settings, with the failed-retest confirmation)? It reads only bars
+    up to j (`end=j` - the rule and the retest check stop there): a break still waiting for its acceptance bars is not
+    counted yet. An event in the window, like the other windowed filters: a break confirmed and later reclaimed still
+    reads true until it leaves the window (AND it with the close for "still beyond")."""
+    from app.price_action import pa_settings
+    from app.price_action.breaks import first_real_break, median_range
+    from app.price_action.reversal import retest_fn
+    if side not in ("above", "below"):
+        raise ScreenRuntimeError(f"unknown break side {side!r}")
+    s = pa_settings.settings()
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    mr = median_range(frame, s["median_range_n"])
+    retest = retest_fn(frame, s, mr) if s.get("break_retest_confirm") else None
+    lv = level.to_numpy(float) if isinstance(level, pd.Series) else np.full(len(f), float(level))
+    close = frame["close"]
+    buffer = s["break_buffer_mr"] * pd.Series(mr)
+    n_ = max(1, n_)
+    out = np.zeros(len(f), dtype=bool)
+    # A real break starts with a close beyond THIS bar's level by the buffer somewhere in the window, so a window whose
+    # most extreme (close -/+ buffer) never got there cannot hold one; only the others are scanned (same result). The
+    # rule tests close < level - buffer, which can round differently from close + buffer < level on tick prices, so the
+    # filter is loosened by a relative epsilon: it may let an extra bar through (the rule then decides), never drop one.
+    eps = 1e-9 * np.maximum(1.0, np.abs(lv))
+    if side == "below":
+        reach = (close + buffer).rolling(n_, min_periods=1).min().to_numpy() < lv + eps
+    else:
+        reach = (close - buffer).rolling(n_, min_periods=1).max().to_numpy() > lv - eps
+    closes = close.to_numpy(float)
+    for j in np.flatnonzero(reach & np.isfinite(lv)):
+        start = break_scan_start(closes, int(j), float(lv[j]), side, n_)
+        if start is None:
+            continue
+        out[j] = first_real_break(frame, start, float(lv[j]), side, s, mr=mr, end=int(j), retest_fn=retest) is not None
+    return pd.Series(out, index=f.index)
+
+
+def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: int) -> Optional[int]:
+    """A break is a CROSSING: price comes from the near side of the level. The scan starts after the FIRST bar of
+    j-n..j that closed on the near side, so every break inside the window that crossed from the near side is found;
+    None when price stayed beyond the level all window (an older break, still held, is not a new one)."""
+    lo = max(0, j - n_)
+    near = closes[lo:j + 1] >= level if side == "below" else closes[lo:j + 1] <= level
+    hit = np.flatnonzero(near)
+    return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
@@ -367,6 +523,28 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
     return ((x - x.rolling(n_).mean()) / std.replace(0.0, np.nan)).astype(float)
 
 
+def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None) -> Dict[str, Any]:
+    """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
+
+    Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
+    same universe as in the full screen) and the results are ANDed cumulatively: the count after a stage is the
+    symbols that passed it and every stage before it, and the last count equals the screen's match count.
+    Symbols the screen cannot evaluate at all (not enough history, a runtime problem) are left out of the funnel
+    (`with_data`) instead of being "removed" by the first stage."""
+    full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params))}
+    usable = [d for d in universe if full[d.symbol].reason is None]
+    items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
+    alive = [d.symbol for d in usable]
+    stages: List[Dict[str, Any]] = []
+    for item in items:
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params) if m.matched}
+        removed = [s for s in alive if s not in passed]
+        alive = [s for s in alive if s in passed]
+        stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
+    return {"with_data": len(usable), "stages": stages}
+
+
 def _last(value: Any) -> Any:
     if isinstance(value, pd.Series):
         return value.iloc[-1] if len(value) else np.nan
@@ -424,6 +602,10 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
             out.append(Match(d.symbol, False, str(exc)))
+            continue
+        except Exception as exc:  # noqa: BLE001 - S5-A4 review: one symbol's bad data must not abort the whole universe
+            logger.exception("Screen evaluation failed for %s", d.symbol)
+            out.append(Match(d.symbol, False, f"could not be evaluated ({type(exc).__name__})"))
             continue
         out.append(Match(d.symbol, bool(value) if not (isinstance(value, float) and np.isnan(value)) else False))
     return out

@@ -7,7 +7,7 @@ import type { Page } from "./Sidebar";
  * from md up (the sidebar is always visible there). The bar keeps clear of the home indicator (safe-area inset). */
 export const BOTTOM_NAV: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "dashboard", label: "Home", icon: LayoutDashboard },
-  { id: "scanner", label: "Screener", icon: Radar },
+  { id: "screener", label: "Screener", icon: Radar },
   { id: "option-chain", label: "Chain", icon: Link2 },
   { id: "positions", label: "Positions", icon: ListChecks },
 ];

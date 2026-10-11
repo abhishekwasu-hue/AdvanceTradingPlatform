@@ -2160,6 +2160,166 @@ class DataQualityEventRecord(Base):
     detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+# --- Screener addendum U1: NSE universe reference data (as-of) ------------------------------------------------------------
+class SecurityRecord(Base):
+    """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the
+    tradability layer and joins on ISIN/symbol. `last_seen_on` is the last equity-list file that carried it; a security
+    missing from today's file is not marked delisted on that alone (delisting comes from the exchange's own list)."""
+
+    __tablename__ = "securities"
+
+    isin: Mapped[str] = mapped_column(String(12), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    series: Mapped[str] = mapped_column(String(4), nullable=False)
+    listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delisting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    face_value: Mapped[float | None] = mapped_column(Money, nullable=True)
+    market_lot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exchanges: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")          # "NSE", "NSE,BSE"
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ACTIVE")         # ACTIVE / SUSPENDED / DELISTED
+    is_sme: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_etf: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    underlying: Mapped[str | None] = mapped_column(String(100), nullable=True)                 # ETFs: the tracked index/asset
+    last_seen_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class SymbolHistoryRecord(Base):
+    """U1-a: which symbol an ISIN traded under, as half-open ranges [valid_from, valid_to); valid_to NULL = still current.
+    valid_from NULL = since before the first record we hold (never invented). A change closes the open range and opens
+    a new one; nothing is overwritten."""
+
+    __tablename__ = "symbol_history"
+    __table_args__ = (UniqueConstraint("isin", "symbol", "valid_from", name="uq_symbol_history_range"),
+                      Index("ix_symbol_history_symbol", "symbol", "valid_from"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexRecord(Base):
+    """U1-b: one index (broad / sectoral / thematic / strategy). The catalogue is data (app/universe/data/indices.json);
+    `broker_symbols` maps the index to each broker's spelling (JSON object)."""
+
+    __tablename__ = "indices"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    family: Mapped[str] = mapped_column(String(20), nullable=False)          # BROAD / SECTORAL / THEMATIC / STRATEGY / FIXED_INCOME
+    base_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    method: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    broker_symbols: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    has_derivatives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexMembershipRecord(Base):
+    """U1-b: an ISIN's membership of an index as a half-open range [valid_from, valid_to). A rebalance closes ranges and
+    opens new ones; nothing is overwritten. `start_observed` = the start is only the first file we saw it in (the real
+    inclusion may be earlier - backfill U1-e extends it from older files, never by guessing). `weight` is the latest
+    published weight, not a history."""
+
+    __tablename__ = "index_membership"
+    __table_args__ = (UniqueConstraint("index_code", "isin", "valid_from", name="uq_index_membership_range"),
+                      Index("ix_index_membership_lookup", "index_code", "valid_from", "valid_to"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    index_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ClassificationRecord(Base):
+    """U1-b: an ISIN's industry classification over time (scheme NSE: macro-economic sector -> sector -> industry ->
+    basic industry). A level the source does not give stays NULL - never inferred."""
+
+    __tablename__ = "classifications"
+    __table_args__ = (UniqueConstraint("isin", "scheme", "valid_from", name="uq_classification_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    scheme: Mapped[str] = mapped_column(String(12), nullable=False, default="NSE")
+    macro_sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    basic_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexEodRecord(Base):
+    """U1-c: one index's daily close from the exchange's all-indices file, with the valuation ratios it publishes."""
+
+    __tablename__ = "index_eod"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[float | None] = mapped_column(Price, nullable=True)
+    high: Mapped[float | None] = mapped_column(Price, nullable=True)
+    low: Mapped[float | None] = mapped_column(Price, nullable=True)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    pe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    div_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoMembershipRecord(Base):
+    """U1-c: an underlying's F&O eligibility and market lot over time, half-open [valid_from, valid_to). Index
+    underlyings have no ISIN. A lot-size change closes the range and opens a new one."""
+
+    __tablename__ = "fo_membership"
+    __table_args__ = (UniqueConstraint("underlying", "valid_from", name="uq_fo_membership_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
+    is_index: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoBanRecord(Base):
+    """U1-c: the exchange's own F&O ban list, one row per (underlying, trade date). D7's computed ban status is checked
+    against it."""
+
+    __tablename__ = "fo_ban_history"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class ScreenRecord(Base):
     """S1d (ADR-0021): a saved ScreenQL screen - the canonical text and the AST the validator accepted, its base timeframe
     and default parameters. Tenant-scoped; archived, never hard-deleted (a run may point at it)."""

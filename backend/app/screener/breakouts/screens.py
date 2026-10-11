@@ -8,7 +8,8 @@ breakout bar cannot inflate its own yardstick.
 Each screen gives, per side ("up" = breakout, "down" = breakdown), a frame with:
   raw         the screen's condition on this bar
   signal      `raw`, one per leg: after a signal the side re-arms only once a `leg_degree` swing AGAINST it is confirmed
-              after the signal bar, or the break fails (a close back inside the fail level) - so an alert fires once
+              after the signal bar, the break fails (a close back inside the fail level), or `leg_rearm_bars` bars pass
+              without a new extreme (a new base) - so an alert fires once per leg
   level       the breakout level (B13: the wide bar's midpoint; B14 'at the level' without a close through it: the bar's
               opposite extreme)
   fail_level  the level a close back inside of means "failed" (B4: the mother bar's opposite extreme - the mother-bar rule)
@@ -330,23 +331,31 @@ def _b14(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> No
 _RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14}
 
 
-def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_degree: int) -> np.ndarray:
-    """The first raw bar of each leg. After a signal at bar i the side re-arms when a swing AGAINST it (a swing low for
-    a breakout), whose extreme is after bar i, is confirmed - or when a close goes back inside the fail level (the break
-    failed). Both are known only at the bar they happen, so the result is causal."""
+def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_degree: int, rearm_bars: int) -> np.ndarray:
+    """The first raw bar of each leg. After a signal at bar i the side re-arms when (a) a swing AGAINST it (a swing low
+    for a breakout) whose extreme is after bar i is confirmed, (b) a close goes back inside the fail level (the break
+    failed), or (c) `rearm_bars` bars pass without a new extreme beyond the highest point since the signal (a new base).
+    Each is known at the bar it happens, so the result is causal."""
     against = "L" if s.sign > 0 else "H"
     events = sorted((int(pv.confirmed_idx), int(pv.bar_idx)) for pv in b.pivots(leg_degree) if pv.kind == against)
     out = np.zeros(b.n, dtype=bool)
     armed, sig, fail, k = True, -1, np.nan, 0
+    peak, peak_bar = -np.inf, -1
     for t in range(b.n):
         while k < len(events) and events[k][0] <= t:
             if not armed and events[k][1] > sig:
                 armed = True
             k += 1
-        if not armed and np.isfinite(fail) and s.c[t] < fail:
-            armed = True
+        if not armed:
+            if np.isfinite(fail) and s.c[t] < fail:
+                armed = True
+            elif t - peak_bar >= rearm_bars:
+                armed = True
+            if s.h[t] > peak:
+                peak, peak_bar = s.h[t], t
         if armed and raw[t]:
             out[t], armed, sig, fail = True, False, t, fail_level[t]
+            peak, peak_bar = s.h[t], t
     return out
 
 
@@ -361,7 +370,7 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
         s = b.side(1 if side == "up" else -1)
         out = _empty(b.n)
         _RULES[screen](b, s, p, out)
-        out["signal"] = one_per_leg(b, s, out["raw"], out["fail_level"], int(p["leg_degree"]))
+        out["signal"] = one_per_leg(b, s, out["raw"], out["fail_level"], int(p["leg_degree"]), int(p["leg_rearm_bars"]))
         for key in ("level", "fail_level", "base_high", "base_low"):            # prices back to the real orientation
             out[key] = s.back(out[key])
         if s.sign < 0:

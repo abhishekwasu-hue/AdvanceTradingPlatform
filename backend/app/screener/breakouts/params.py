@@ -118,8 +118,10 @@ PARAMS: Tuple[Param, ...] = (
           "Equal-weight checklist; no fitted weights (HTF counts twice because it is two timeframes).", 0, 6, group="quality"),
     Param("grade_b_min", 3, "grade B needs at least this many points (below: C); a break against both context timeframes is C",
           "Equal-weight checklist; no fitted weights.", 0, 6, group="quality"),
-    Param("leg_degree", 0, "one signal per leg: a side re-arms after a swing of this degree against it is confirmed, or after a failed break",
+    Param("leg_degree", 0, "one signal per leg: a side re-arms after a swing of this degree against it is confirmed, after a failed break ...",
           "D0 = the smallest confirmed pullback (pa_settings).", 0, 3, group="quality"),
+    Param("leg_rearm_bars", 20, "... or after this many bars without a new extreme beyond the signal bar's (a new base formed)",
+          "As long as the default B1 range: a base that long is a new leg.", 1, 500, group="quality"),
     # --- style / timeframes -----------------------------------------------------------------------------------------------
     Param("context_ladder", DEFAULT_CONTEXT_LADDER, "signal timeframe -> the higher timeframes read for context (closed bars only)",
           "Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w).", group="style"),

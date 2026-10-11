@@ -4,7 +4,8 @@ status (accepted / failed) that tags the result for the journal and the fitness 
 The GRADE is fixed at the signal bar and uses only bars up to it (closed bars; context timeframes by close time):
   HTF trend agreement   Dow trend on each context timeframe (1 point each when it is WITH the break; a break against
                         every context timeframe is capped at C)
-  volume expansion      relative volume >= vol_mult (no volume data: no point, said so)
+  volume expansion      relative volume >= vol_mult (the default when the screen's volume condition is off; no volume
+                        data: no point, said so)
   base dry-up           the last dryup_n bars' mean volume <= dryup_ratio x the vol_avg_n-bar mean before the break
   volatility regime     ATR / close percentile over atr_pct_lookback bars: low (<= atr_pct_low) earns the point
   room to run           distance to the next opposing level (confirmed swings + classical S/R from the zones port) >=
@@ -144,7 +145,8 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
     if unknown:
         why.append(f"no trend read yet on {', '.join(unknown)}")
     rvol = b.rvol[j]
-    vol_exp = bool(np.isfinite(rvol) and rvol >= max(p["vol_mult"], 1e-12))
+    need = p["vol_mult"] if p["vol_mult"] > 0 else bp.DEFAULTS["vol_mult"]   # volume off in the screen: the check keeps the default
+    vol_exp = bool(np.isfinite(rvol) and rvol >= need)
     checks["volume_expansion"] = vol_exp
     if not np.isfinite(rvol):
         why.append("no volume data (volume checks skipped)")

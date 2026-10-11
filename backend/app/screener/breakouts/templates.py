@@ -21,7 +21,7 @@ from app.screener.breakouts import style
 from app.screener.breakouts.screens import SCREEN_TIMEFRAMES, SCREENS
 
 # The parameters that change a screen's per-leg signal, and the ones its ScreenQL call takes as arguments (in order).
-_COMMON = ("atr_n", "vol_avg_n", "leg_degree")
+_COMMON = ("atr_n", "vol_avg_n", "leg_degree", "leg_rearm_bars")
 SIGNAL_KEYS: Dict[str, Tuple[str, ...]] = {
     "B1": _COMMON + ("range_mode", "range_n", "min_break_atr", "vol_mult", "base_min_bars", "base_max_bars", "base_max_height_atr",
                      "base_contraction", "prior_advance_pct", "prior_advance_n"),
@@ -130,7 +130,7 @@ def blocks() -> Dict[str, Any]:
                        "fields": [described[k] for k in dict.fromkeys(own + ["direction"])],
                        "timeframes": list(SCREEN_TIMEFRAMES.get(code, style.STYLES["intraday"] + style.STYLES["swing"]))})
     quality = [d for d in described.values() if d["group"] == "quality"]
-    common = [described[k] for k in ("atr_n", "vol_avg_n", "vol_mult", "min_break_atr", "close_loc", "leg_degree")]
+    common = [described[k] for k in ("atr_n", "vol_avg_n", "vol_mult", "min_break_atr", "close_loc", "leg_degree", "leg_rearm_bars")]
     return {"breakout": family, "quality": {"name": "Breakout quality", "fields": quality, "grades": ["A", "B", "C"]},
             "common": common, "result_columns": list(RESULT_COLUMNS)}
 

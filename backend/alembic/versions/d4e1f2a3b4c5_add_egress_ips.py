@@ -1,7 +1,7 @@
 """Part D4: registered static egress IPs per broker (PRIMARY / BACKUP) and their change history
 
 Revision ID: d4e1f2a3b4c5
-Revises: a1c3e5f7b9d2
+Revises: e2b4d6f8a0c1
 Create Date: 2026-10-10 23:30:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd4e1f2a3b4c5'
-down_revision: Union[str, Sequence[str], None] = 'a1c3e5f7b9d2'
+down_revision: Union[str, Sequence[str], None] = 'e2b4d6f8a0c1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

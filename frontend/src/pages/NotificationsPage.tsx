@@ -3,7 +3,8 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
 import type { NotificationEntry, NotificationSeverity } from "../types";
-import { PageHeader } from "../components/primitives";
+import { PageHeader, Tabs } from "../components/primitives";
+import { AlertRulesPanel } from "../components/AlertRulesPanel";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -20,6 +21,7 @@ export default function NotificationsPage() {
   const { user, loading: authLoading } = useAuth();
   const [notifications, setNotifications] = useState<NotificationEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState("feed");
 
   function refresh() {
     if (!user) return;
@@ -60,24 +62,8 @@ export default function NotificationsPage() {
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <PageHeader title="Notifications" description="Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches, emergency exits, and system failures - shared across your account." />
-        {unreadCount > 0 && (
-          <button
-            onClick={markAllRead}
-            className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs shrink-0"
-          >
-            Mark all read ({unreadCount})
-          </button>
-        )}
-      </div>
-
-      {error && <div className="text-sm text-down">{error}</div>}
-
-      <Card title={`Feed (${notifications.length})`}>
+  const feed = (
+      <Card className="mt-3">
         {notifications.length === 0 ? (
           <div className="text-sm text-fg-muted py-4 text-center">No notifications yet.</div>
         ) : (
@@ -111,6 +97,28 @@ export default function NotificationsPage() {
           </div>
         )}
       </Card>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between">
+        <PageHeader title="Notifications" description="Entries, exits, rejections, broker disconnects, risk/daily-loss limit breaches, emergency exits, and system failures - shared across your account." />
+        {unreadCount > 0 && (
+          <button
+            onClick={markAllRead}
+            className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1.5 text-xs shrink-0"
+          >
+            Mark all read ({unreadCount})
+          </button>
+        )}
+      </div>
+
+      {error && <div className="text-sm text-down">{error}</div>}
+
+      <Tabs value={tab} onChange={setTab} items={[
+        { value: "feed", label: `Feed (${notifications.length})`, content: feed },
+        { value: "rules", label: "Rules & delivery", content: <div className="pt-3"><AlertRulesPanel /></div> },
+      ]} />
     </div>
   );
 }

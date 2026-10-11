@@ -132,7 +132,10 @@ import type {
   BrokerLoginUrl,
   AiAcknowledgement,
   AiPreferences,
- StaticIp, StaticIpOverview } from "../types";
+  StaticIp,
+  StaticIpOverview,
+} from "../types";
+import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 
@@ -829,6 +832,21 @@ export const api = {
     request<{ ok: boolean; detail: string }>(`/alert-channels/${type}/test`, { method: "POST" }),
 
   listAlertDeliveries: (limit = 20) => request<AlertDelivery[]>(`/alert-channels/deliveries?limit=${limit}`),
+
+  // S3c (ADR-0022): alert rules, delivery policy, dead letters, personal Telegram link and email opt-outs.
+  listAlertRules: () => request<AlertRule[]>("/alerts/rules"),
+  createAlertRule: (body: AlertRuleInput) => request<AlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
+  setAlertRuleStatus: (id: number, action: "pause" | "resume") => request<AlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
+  alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
+  getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
+  putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),
+  listDeadLetters: () => request<DeadLetter[]>("/alerts/dead-letters"),
+  retryDelivery: (id: number) => request<{ id: number; status: string }>(`/alerts/deliveries/${id}/retry`, { method: "POST" }),
+  telegramLinkStatus: () => request<{ linked: boolean; linked_at: string | null }>("/alerts/telegram/link"),
+  telegramLinkCode: () => request<TelegramLinkCode>("/alerts/telegram/link-code", { method: "POST" }),
+  telegramUnlink: () => request<{ linked: boolean }>("/alerts/telegram/link", { method: "DELETE" }),
+  listEmailOptOuts: () => request<EmailOptOut[]>("/alerts/email-opt-outs"),
+  removeEmailOptOut: (id: number) => request<{ removed: number }>(`/alerts/email-opt-outs/${id}`, { method: "DELETE" }),
 
   // Phase BE: Telegram inbound (commands + PAPER approval buttons) - owner-only settings.
   telegramInboundStatus: () => request<TelegramInboundStatus>("/telegram/inbound/status"),

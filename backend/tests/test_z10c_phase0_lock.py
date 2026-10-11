@@ -1,0 +1,206 @@
+"""Z10-c (G6, Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock, flag `phase0_paper_only`.
+
+Off by default and never turned on by code. While on, every new LIVE entry is refused - at the entry checks and at the
+broker-order chokepoint - and exits of an existing LIVE position still reach the broker (ADR-0004)."""
+import asyncio
+from datetime import timedelta
+from typing import List, Optional
+
+from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
+from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
+from app.core.enums import OrderSide
+from app.db.models import StrategyDeploymentRecord, User
+from app.execution.tagging import LEG_ENTRY, LEG_EXIT, LEG_STOP, build_order_tag
+from app.platform import controls, phase0_lock
+from tests.test_auth_api import _session_factory
+from tests.test_trading_worker import (
+    BAR_TS, LATE_NOW, OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker,
+)
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+async def _store_lock(session, on: bool, tenants: Optional[List[int]] = None) -> None:
+    """What Admin Console -> Feature flags stores (the admin route's own audit is covered by the Phase N tests)."""
+    flags = dict((await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {})
+    flags[phase0_lock.FLAG] = {"on": on, "tenants": sorted(tenants or [])}
+    await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+    await session.commit()
+
+
+def _set_lock(on: bool, tenants: Optional[List[int]] = None) -> None:
+    async def go():
+        async with _session_factory() as session:
+            await _store_lock(session, on, tenants)
+    _run(go())
+
+
+def _flags() -> dict:
+    async def go():
+        async with _session_factory() as session:
+            return await controls.feature_flags(session)
+    return _run(go())
+
+
+def _order(leg: Optional[str], *, algo: Optional[str] = None, broker: Optional[str] = None) -> BrokerOrderRequest:
+    tag = build_order_tag(strategy_id="ema_rsi", leg=leg, algo_id=algo, broker=broker) if leg else None
+    return BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1, tag=tag)
+
+
+class _Inner:
+    name = "upstox"
+    access_token = None
+
+    def __init__(self) -> None:
+        self.calls: List[str] = []
+
+    async def place_order(self, order):
+        self.calls.append(f"place:{order.tag}")
+        return BrokerOrderResponse(order_id="B1", status="OPEN")
+
+    async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None):
+        self.calls.append(f"modify:{order_id}")
+        return BrokerOrderResponse(order_id=order_id, status="OPEN")
+
+    async def cancel_order(self, order_id):
+        self.calls.append(f"cancel:{order_id}")
+        return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+
+
+def _wrapped(tenant_id: Optional[int] = 7):
+    inner = _Inner()
+    return RateLimitedBroker(inner, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=tenant_id), inner  # type: ignore[arg-type]
+
+
+def test_flag_is_registered_off_by_default_and_live_trading_keeps_its_default():
+    flags = _flags()
+    assert flags[phase0_lock.FLAG]["on"] is False            # flags default off (standing rule)
+    assert phase0_lock.FLAG in controls.DEFAULT_OFF_FLAGS
+    assert flags["live_trading"]["on"] is True                 # the kill flag's default is the owner's decision (Z10-3)
+    assert "live_trading" not in controls.DEFAULT_OFF_FLAGS
+
+
+def test_entry_tags_are_recognised_and_exits_never_are():
+    assert phase0_lock.is_entry_order(_order(LEG_ENTRY))
+    assert phase0_lock.is_entry_order(_order(LEG_ENTRY, algo="ALGO42"))
+    for leg in (LEG_EXIT, LEG_STOP, None):
+        assert not phase0_lock.is_entry_order(_order(leg))
+        assert not phase0_lock.is_entry_order(_order(leg, algo="ALGO42"))
+
+
+def test_chokepoint_refuses_entries_only_while_locked():
+    async def go():
+        broker, inner = _wrapped()
+        phase0_lock.remember(False, ())
+        assert (await broker.place_order(_order(LEG_ENTRY))).status == "OPEN"        # off: unchanged
+        phase0_lock.remember(True, ())
+        refused = await broker.place_order(_order(LEG_ENTRY))
+        assert refused.status == "REJECTED" and refused.message.startswith(phase0_lock.REFUSAL)
+        # Exits, stops, untagged orders, modifies and cancels always reach the broker (ADR-0004).
+        for leg in (LEG_EXIT, LEG_STOP, None):
+            assert (await broker.place_order(_order(leg))).status == "OPEN"
+        assert (await broker.modify_order("SL1", trigger_price=97.5)).status == "OPEN"
+        assert (await broker.cancel_order("SL1")).status == "CANCELLED"
+        return inner.calls
+    try:
+        calls = _run(go())
+    finally:
+        phase0_lock.reset_cache()
+    assert calls == ["place:ema_rsi-ENT", "place:ema_rsi-EXIT", "place:ema_rsi-SL", "place:None", "modify:SL1", "cancel:SL1"]
+
+
+def test_chokepoint_honours_the_tenant_allow_list():
+    async def go():
+        phase0_lock.remember(False, [7])
+        locked, _ = _wrapped(7)
+        other, _ = _wrapped(8)
+        unknown, _ = _wrapped(None)
+        return [(await b.place_order(_order(LEG_ENTRY))).status for b in (locked, other, unknown)]
+    try:
+        assert _run(go()) == ["REJECTED", "OPEN", "REJECTED"]   # an unknown tenant is refused while anyone is locked
+    finally:
+        phase0_lock.reset_cache()
+
+
+def test_entry_blocks_name_the_lock_for_live_only():
+    async def go(on: bool, mode: str):
+        async with _session_factory() as session:
+            await _store_lock(session, on)
+            user = User(id=0, tenant_id=1, email="x@example.com", hashed_password="x", role="OWNER")
+            return await controls.entry_blocks(session, user=user, mode=mode, broker_name="upstox")
+    try:
+        assert phase0_lock.ENTRY_REASON in _run(go(True, "LIVE"))
+        assert phase0_lock.ENTRY_REASON not in _run(go(True, "PAPER"))
+        assert phase0_lock.ENTRY_REASON not in _run(go(False, "LIVE"))
+    finally:
+        _set_lock(False)
+
+
+def test_worker_refuses_a_live_entry_but_paper_still_trades(monkeypatch):
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    t = _tenant("z10c-lock-entry@example.com")
+    live_id = _deploy(t, mode="LIVE")
+    paper_id = _deploy(t, mode="PAPER")
+    broker = _FakeBroker(ltp=101.0)
+    worker = _worker(monkeypatch, broker)
+    _force_signal(monkeypatch, _signal)
+    _set_lock(True)
+    try:
+        report = _run(worker.run_cycle(now=OPEN_NOW))
+    finally:
+        _set_lock(False)
+    assert broker.placed == []                                            # nothing reached the broker
+    assert phase0_lock.ENTRY_REASON in (_get(StrategyDeploymentRecord, live_id).last_error or "")
+    assert report.signals_executed == 1 and [tr.mode for tr in _trades(t["tenant_id"])] == ["PAPER"]
+    assert _get(StrategyDeploymentRecord, paper_id).last_error is None
+
+
+class _StopStandingBroker(_FakeBroker):
+    """The protective stop stays working at the broker (not filled) until cancelled, so an exit needs a market order."""
+
+    def __init__(self, ltp: float = 101.0) -> None:
+        super().__init__(ltp=ltp, intraday_bars=360)
+        self.cancelled: List[str] = []
+
+    async def cancel_order(self, order_id):
+        self.cancelled.append(order_id)
+        return BrokerOrderResponse(order_id=order_id, status="CANCELLED")
+
+    async def get_order_book(self):
+        book = await super().get_order_book()
+        for row in book:
+            if row.order_type == "SL-M":
+                row.filled_quantity, row.average_price = 0, None
+                row.status = "CANCELLED" if row.order_id in self.cancelled else "TRIGGER PENDING"
+        return book
+
+
+def test_worker_exits_an_existing_live_position_while_locked(monkeypatch):
+    """ADR-0004: the LIVE position opened before the lock went on is squared off at the broker, through the chokepoint."""
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    monkeypatch.setattr("app.trading.position_monitor.FILL_POLL_DELAY_SECONDS", 0)
+    t = _tenant("z10c-lock-exit@example.com")
+    _deploy(t, mode="LIVE")
+    broker = _StopStandingBroker(ltp=101.0)
+    worker = _worker(monkeypatch, broker)
+    _force_signal(monkeypatch, _signal)
+    _run(worker.run_cycle(now=OPEN_NOW))                                  # lock off: entry + protective stop
+    trade = _trades(t["tenant_id"])[0]
+    assert trade.mode == "LIVE" and trade.exit_time is None and len(broker.placed) == 2
+
+    _set_lock(True)
+    try:
+        broker.ltp = 100.7
+        _force_signal(monkeypatch, lambda: _signal(ts=BAR_TS + timedelta(hours=4, minutes=46)))
+        report = _run(worker.run_cycle(now=LATE_NOW))
+    finally:
+        _set_lock(False)
+    closed = _trades(t["tenant_id"])
+    assert report.positions_closed == 1 and closed[0].exit_reason == "Intraday square-off"
+    assert len(closed) == 1                                               # no new entry
+    exit_order = broker.placed[-1]
+    assert exit_order.tag is not None and exit_order.tag.endswith(LEG_EXIT)
+    assert exit_order.transaction_type == OrderSide.SELL and exit_order.order_type == "MARKET"
+    assert broker.cancelled == ["ORD-2"]                                  # the standing stop was cancelled first

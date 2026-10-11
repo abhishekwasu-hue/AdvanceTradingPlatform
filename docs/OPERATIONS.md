@@ -1149,6 +1149,26 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
   10 verdicts the organisation's "news trust" (useful share, floor 0.25) scales the thesis news factor; the
   summary endpoint shows precision per source so a noisy source can be switched off in the feed settings.
 
+### 1.6aj Phase 0 PAPER-only lock (Z10-c)
+
+- **Owner step at install - turn it on yourself.** Admin Console -> Feature flags (Admin > Controls) -> `phase0_paper_only`
+  -> on. The flag is OFF by default and nothing turns it on for you: no code, migration, script or deploy step (the
+  bootstrap, `deploy.sh` and `atp.sh` included) ever changes it. A health report may show "phase0_paper_only off" as
+  an owner action; it never flips it. Turning it on (or off) is an audit event (`feature_flag_set`).
+- **What it does while on**: every new LIVE entry is refused - at the entry checks (the reason
+  "Phase 0 PAPER-only lock ..." on the order trail, single-leg and multi-leg alike) and again at the broker-order
+  chokepoint in the worker (an order tagged as an entry gets a REJECTED answer without reaching the broker). PAPER is
+  untouched. With the flag off and tenants listed in its allow-list, only those tenants are locked.
+- **What it never does**: block an exit. Exits of an existing LIVE position, protective stops, stop moves and cancels
+  pass (ADR-0004). It does not change the `live_trading` flag (still a kill flag, ON by default - owner decision
+  Z10-3 / Z11-7), a plan, or a deployment's mode.
+- **Check it**: Admin Console -> Feature flags shows the state; a LIVE deployment's refused entry names the lock in
+  its order trail and its `last_error`.
+- **"No API order path reachable"** (Phase 0 exit criterion) is also a test: `tests/test_z10c_order_paths.py` fails
+  when any API route or process entry point can reach a broker order method outside its allow-list, and no API route
+  may reach an entry at all. The allow-listed routes are exits only (close a position, emergency exit, an approved
+  exit proposal).
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`

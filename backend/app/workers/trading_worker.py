@@ -1349,7 +1349,7 @@ class TradingWorker:
             ops = self._ops.get(key)
             if ops is None:
                 ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
-        return RateLimitedBroker(adapter, budget, ops=ops)
+        return RateLimitedBroker(adapter, budget, ops=ops, tenant_id=tenant_id)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

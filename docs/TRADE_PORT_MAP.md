@@ -34,10 +34,10 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 
 | Status | Rows |
 |---|---|
-| ported | 9 |
-| partial | 16 |
+| ported | 11 |
+| partial | 18 |
 | partial (unverified) | 9 |
-| in progress (Z7a) | 10 |
+| in progress (Z7a) | 6 |
 | missing | 48 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 | **Total** | **191** |
@@ -45,7 +45,7 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
-| 2. Right after Phase 0 (N-list) | 28 | 0 | 1 | 3 | 10 | 14 | 0 |
+| 2. Right after Phase 0 (N-list) | 28 | 2 | 3 | 3 | 6 | 14 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
@@ -109,10 +109,10 @@ The six safety checks the spec lists for `order_safety.py`:
 | `market_report.py` | 16:00 report for the next day's intraday and positional option selling (index levels, OI, VIX, ranges) | `backend/app/ai/briefing.py`, `backend/app/ai/global_cues.py` (pre-open) | missing: merge into the briefing / global cues (N2) | none |
 | `eod_market_report.py` | Runs `market_report` for NIFTY, BANKNIFTY and SENSEX and sends it | `backend/app/ai/briefing.py` | missing (as above) | none |
 | `level_memory.py` | Keeps levels across days: ATR-scaled tolerance, merge, retire after N days without a touch, max distance and count, role by price | none yet | in progress (Z7a) | Z7a adds golden parity (Trade has `tests/test_level_memory.py`) |
-| `market_zones.py` | Zone store: order blocks, demand / supply, role by price, mitigation, S/R on 1H, dynamic S/R, gaps, 5m/15m confluence | `backend/app/support_resistance/zones.py` (ATP's own swing zones, not a port) | in progress (Z7a): first touch becomes fresh -> tested, not the zone's death | Z7a (Trade has `tests/test_market_zones.py`) |
-| `sr_dynamic.py` | Python version of the Pine script "Support Resistance - Dynamic v2" (pivot clusters into S/R channels) | none | in progress (Z7a) | Z7a (Trade has `tests/test_sr_dynamic.py`) |
-| `sr_levels_v3.py` | Experimental S/R v3: recency, reaction, MTF confluence, PDH / PDL / PWH / PWL, role reversal, gaps, graded | none | in progress (Z7a): Z7a reviews and ports its level logic; the "S/R levels v3" template follows | Z7a (Trade has `tests/test_sr_levels_v3.py`) |
-| `signals.py` | Price-action signal engine: RSI / Supertrend, market structure, break / pullback / retest, S/R levels, order blocks, trendlines | `backend/app/indicators/`, `backend/app/price_action/market_structure.py` (ATP's own) | in progress (Z7a) for `find_swings`, `filter_major_swings`, `find_support_resistance_levels`, `find_order_block`; the rest is missing (group 5) | Z7a (Trade has `tests/test_signals_major_swings.py`) |
+| `market_zones.py` | Zone store: order blocks, demand / supply, role by price, mitigation, S/R on 1H, dynamic S/R, gaps, 5m/15m confluence | `backend/app/price_action/zones/detect.py`, `compute.py` | partial: detection ported (Z7a-1, #168); lifecycle fresh -> tested -> flipped -> invalidated, memory and storage in Z7a-2 | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
+| `sr_dynamic.py` | Python version of the Pine script "Support Resistance - Dynamic v2" (pivot clusters into S/R channels) | `backend/app/price_action/zones/levels.py` (`compute_dynamic_sr`) | ported (Z7a-1, #168) | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
+| `sr_levels_v3.py` | Experimental S/R v3: recency, reaction, MTF confluence, PDH / PDL / PWH / PWL, role reversal, gaps, graded | `backend/app/price_action/zones/sr_v3.py` | ported (Z7a-1, #168): level logic; the "S/R levels v3" template follows | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
+| `signals.py` | Price-action signal engine: RSI / Supertrend, market structure, break / pullback / retest, S/R levels, order blocks, trendlines | `backend/app/indicators/`, `backend/app/price_action/market_structure.py` (ATP's own) | partial: `filter_major_swings`, `find_support_resistance_levels`, `find_order_block`, `is_retesting_order_block` ported to `backend/app/price_action/zones/` (Z7a-1, #168); the rest is missing (group 5) | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
 | `refresh_market_zones.py` | Nightly job: one year of OHLC -> S/R, order blocks, demand / supply, gaps -> stored | none | in progress (Z7a): Z7a-2 storage job | none |
 | `refresh_market_zones_intraday.py` | Intraday refresh of dynamic S/R 15M / 30M / 60M zones | none | in progress (Z7a): Z7a-2 bar-close job | none |
 | `refresh_market_zones_mcx.py` | Dynamic S/R 30M / 60M for MCX futures | none | in progress (Z7a): same job; MCX symbols wait for the MCX template | none |
@@ -125,7 +125,7 @@ The six safety checks the spec lists for `order_safety.py`:
 | `srv2_momentum_reversal_strategy.py` | Template: 15 / 30 / 60-minute dynamic S/R reversal with a momentum filter | none | missing: template | none (Trade has `tests/test_srv2_momentum_reversal_strategy.py`) |
 | `classic_sr_reversal_trader.py` | Template: classic S/R reversal | none | missing: template | none (Trade has `tests/test_classic_sr_reversal_trader.py`) |
 | `gap_fill_reversal_strategy.py` | Template: 1H Supertrend trend -> opening gap -> gap fill -> reversal | `backend/app/price_action/gap_context.py` (placeholder only) | missing: template | none |
-| `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` goes in Z7a | none (Trade has `tests/test_page_mtf_multi.py`) |
+| `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` ported to `backend/app/price_action/zones/detect.py` (Z7a-1, #168) | none (Trade has `tests/test_page_mtf_multi.py`) |
 | `oi_greeks_vix_strategy.py` | Template: OI + Greeks + India VIX decision tree | `backend/app/option_chain/oi_regime.py` (the OI part) | missing: template | none |
 | `nifty_futures_swing_rsi_st.py` | Template: NIFTY futures swing, RSI(5) + Supertrend(7, 2) at S/R | `backend/app/indicators/` (RSI, Supertrend) | missing: template | none |
 | `mcx_futures_trader.py` | Template: MCX futures (CRUDEOIL, NATURALGAS, GOLD, SILVER, COPPER) at S/R touches | none | missing: template, only if MCX data and a broker are available | none (Trade has `tests/test_mcx_futures_trader.py`) |

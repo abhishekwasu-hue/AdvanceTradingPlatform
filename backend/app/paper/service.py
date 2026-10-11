@@ -65,9 +65,19 @@ async def get_account(session: AsyncSession, user: User) -> PaperAccountRecord:
     return row
 
 
+class CapitalLocked(ValueError):
+    """Review M7: the starting capital is fixed once the account has a PAPER trade."""
+
+
 async def set_starting_capital(session: AsyncSession, user: User, amount: float) -> PaperAccountRecord:
+    """Only before the first PAPER trade (review M7): changing it later would rewrite past balances and the drawdown the
+    ladder measures."""
     if not app_config.PAPER_MIN_CAPITAL <= float(amount) <= app_config.PAPER_MAX_CAPITAL:
         raise ValueError(f"Starting capital must be between {app_config.PAPER_MIN_CAPITAL:,.0f} and {app_config.PAPER_MAX_CAPITAL:,.0f}")
+    traded = await session.scalar(select(TradeRecord.id).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id,
+                                                               TradeRecord.mode == "PAPER").limit(1))
+    if traded is not None:
+        raise CapitalLocked("The starting capital is fixed once your PAPER account has a trade (it is what your balance, drawdown and ladder are measured from)")
     row = await get_account(session, user)
     old = float(row.starting_capital)
     row.starting_capital = round(float(amount), 2)
@@ -93,6 +103,8 @@ async def paused_reason(session: AsyncSession, user_id: Optional[int]) -> Option
         return None
     row = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.user_id == user_id))
     if row is None or not row.paused:
+        return None
+    if not await enabled(session, row.tenant_id):            # review L6: the pause does not outlive the flag
         return None
     return f"PAPER entries paused for this user ({row.paused_reason or 'paused'}) - /resume to continue; exits keep running"
 
@@ -132,11 +144,17 @@ async def _paper_trades(session: AsyncSession, user: User) -> List[TradeRecord]:
                                                                 TradeRecord.mode == "PAPER").order_by(TradeRecord.id)))
 
 
+def _counted(trade: TradeRecord) -> bool:
+    """Review H2: a trade priced from anything but the platform's own quotes (`price_source`, e.g. "client" for a console
+    entry priced from browser candles) is left out of the account and the ladder - they cannot be fed by made-up prices."""
+    return not trade.price_source
+
+
 async def _not_taken(session: AsyncSession, user: User, limit: int = 20) -> List[Dict]:
-    """Would-have records: entry proposals this user rejected, or that expired unanswered in their organisation."""
+    """Would-have records: this user's own entry proposals (review L7) that were rejected or expired unanswered."""
     rows = await session.scalars(select(AiActionRecord).where(
-        AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY",
-        ((AiActionRecord.status == "REJECTED") & (AiActionRecord.decided_by == user.id)) | ((AiActionRecord.status == "EXPIRED") & AiActionRecord.decided_by.is_(None)),
+        AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", AiActionRecord.owner_user_id == user.id,
+        (AiActionRecord.status == "REJECTED") | ((AiActionRecord.status == "EXPIRED") & AiActionRecord.decided_by.is_(None)),
     ).order_by(AiActionRecord.id.desc()).limit(limit))
     out = []
     for row in rows:
@@ -151,9 +169,10 @@ async def _not_taken(session: AsyncSession, user: User, limit: int = 20) -> List
 async def _proposal_counts(session: AsyncSession, user: User) -> Dict[str, int]:
     async def count(*conditions) -> int:
         return int(await session.scalar(select(func.count()).select_from(AiActionRecord).where(
-            AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", *conditions)) or 0)
-    return {"approved_by_you": await count(AiActionRecord.decided_by == user.id, AiActionRecord.status.in_(("APPROVED", "EXECUTED", "FAILED", "EXPIRED"))),
-            "rejected_by_you": await count(AiActionRecord.decided_by == user.id, AiActionRecord.status == "REJECTED"),
+            AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", AiActionRecord.owner_user_id == user.id, *conditions)) or 0)
+    # Review L7: the user's own entry proposals only.
+    return {"approved_by_you": await count(AiActionRecord.decided_by.is_not(None), AiActionRecord.status.in_(("APPROVED", "EXECUTED", "FAILED", "EXPIRED"))),
+            "rejected_by_you": await count(AiActionRecord.status == "REJECTED"),
             "pending": await count(AiActionRecord.status == "PROPOSED"),
             "expired_unanswered": await count(AiActionRecord.status == "EXPIRED", AiActionRecord.decided_by.is_(None))}
 
@@ -163,7 +182,8 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
     user's own PAPER trades and proposals."""
     now = now or datetime.now(timezone.utc)
     account = await get_account(session, user)
-    trades = await _paper_trades(session, user)
+    every = await _paper_trades(session, user)
+    trades = [t for t in every if _counted(t)]
     closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (_utc(t.exit_time), t.id))
     open_ = [t for t in trades if t.exit_time is None]
     net = sum(float(t.pnl or 0.0) for t in closed)
@@ -185,12 +205,14 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
         "win_rate": round(wins / len(closed), 4) if closed else None, "sessions": len(sessions),
         **equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed]),
         "paused": bool(account.paused), "paused_reason": account.paused_reason,
+        "excluded_trades": len(every) - len(trades),
         "positions": [_trade_row(t) for t in open_],
         "journal": [_trade_row(t) for t in reversed(closed[-50:])],
         "not_taken": await _not_taken(session, user),
         "proposals": await _proposal_counts(session, user),
         "as_of": now.isoformat(),
-        "note": "Figures from your own PAPER trades: net P&L is after the estimated charges of each trade (a contract note replaces the estimate).",
+        "note": "Figures from your own PAPER trades priced from platform quotes: net P&L is after the estimated charges of each trade (a contract "
+                "note replaces the estimate). Trades priced from your own inputs (console candles) are left out.",
     }
 
 

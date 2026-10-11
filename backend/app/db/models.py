@@ -294,6 +294,9 @@ class TradeRecord(Base):
         ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
     # Phase T: the broker account the LIVE position sits in (routing + FEWEST_POSITIONS + reconciliation).
+    # Z3 (review M1/H2): where the trade's prices came from when not from the platform's own quotes - "client" for a
+    # console paper-execute priced from candles the browser sent. The PAPER account and the ladder leave such trades out.
+    price_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
@@ -1189,6 +1192,10 @@ class AiActionRecord(Base):
     # Z3 / BT2: the signal an ENTRY proposal was raised for ("deployment:<id>:<bar>", "tv:<alert id>", "requote:<id>");
     # NULL for the monitoring agent's own proposals.
     idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Z3 (review L7/L8): the person a proposal is for - an entry proposal's deployment creator / alert owner / sender, an
+    # "Exit now?" question's position holder. Only they (or the organisation OWNER) decide it; NULL = the monitoring
+    # agent's organisation-wide proposals, decided as before.
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class AiCandidateRecord(Base):
@@ -2186,8 +2193,10 @@ class TradePlanRecord(Base):
     override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     costs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | REFUSED
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | PROPOSED | REFUSED
     reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order (Z3-a).
+    proposal_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
     trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
@@ -2330,9 +2339,132 @@ class DataQualityEventRecord(Base):
     source: Mapped[str] = mapped_column(String(30), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
     detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    # HB0: NULL = an event about the shared lake (everyone may count it); set = an event about a tenant's private store
+    # (md_tenant_candles) - only that tenant sees it, like the bars themselves.
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
 
 
-# --- Screener addendum U1: NSE universe reference data (as-of) ------------------------------------------------------------
+class MdTenantCandleRecord(Base):
+    """HB0: a tenant-PRIVATE candle store (the owner's licensed 1-minute history). Same shape and as-of/version rules as
+    `md_candles`, plus `tenant_id` in the key. Kept as a separate table on purpose: no shared read path (history API's
+    shared store, quality scans, backtests) ever queries it, so a missing filter can never leak licensed bars; the only
+    reader is `app.market_lake.tenant_store`, which requires a tenant id."""
+
+    __tablename__ = "md_tenant_candles"
+
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    timeframe: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)          # bar END, UTC
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    open: Mapped[float] = mapped_column(Price, nullable=False)
+    high: Mapped[float] = mapped_column(Price, nullable=False)
+    low: Mapped[float] = mapped_column(Price, nullable=False)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class HistoryImportFileRecord(Base):
+    """HB0: one object of the R2 history store and what the importer did with it - the resume point (a file is skipped
+    once `done` with the same sha256) and the progress source for the HB4 admin page (per dataset / symbol: done,
+    pending, refused, last error). Status: pending | running | done | refused | failed."""
+
+    __tablename__ = "history_import_files"
+    __table_args__ = (Index("ix_history_import_files_dataset_symbol", "dataset", "exchange", "symbol"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    manifest_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    dataset: Mapped[str] = mapped_column(String(8), nullable=False)               # daily | m1
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)                # yyyy (daily) | yyyy-mm (m1)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)  # m1 only
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)               # as listed in the manifest
+    etag: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rows_expected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rows_read: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_in_lake: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    corrected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    first_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    imported_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class HistoryBackfillFileRecord(Base):
+    """HB1: one NSE daily file - a segment (`cm` cash bhavcopy, `fo` F&O bhavcopy, `index` all-indices closes) for one
+    trade date - and what the backfill did with it. The resume point (a `done` day is never fetched again) and the
+    progress source of the admin page. Status: pending | running | done | no_file (the archive has no file: a holiday,
+    a weekend, or not published yet) | blocked (the archive refused after its retries - upload the file by hand) |
+    refused (the file failed a check; nothing written) | failed (unexpected error; retried on the next run)."""
+
+    __tablename__ = "history_backfill_files"
+    __table_args__ = (UniqueConstraint("segment", "trade_date", name="uq_history_backfill_file"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment: Mapped[str] = mapped_column(String(8), nullable=False)                # cm | fo | index
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)          # nse_archives | local_dir | upload
+    file_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    file_format: Mapped[str | None] = mapped_column(String(16), nullable=True)     # cm_legacy | cm_udiff | cm_full | fo_legacy | ...
+    # What the bars' volume counts: shares (cash), contracts (legacy F&O), unconfirmed (UDiFF F&O TtlTradgVol),
+    # withheld (F&O volume stored as 0 until the unit is settled), none (indices).
+    volume_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)          # of the bytes as received (zip or csv)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_read: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_loaded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    corrected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class MdIsinSymbolRecord(Base):
+    """HB1: which symbol an ISIN traded under, as OBSERVED in the exchange's own daily cash files - one row per
+    contiguous run (first and last trade date seen), so a rename and back (X -> Y -> X) is two X runs. Survivorship-free
+    by construction - a delisted or suspended name keeps its rows - and the join that stitches one company's daily
+    history across symbol changes and ISIN changes (`app.market_lake.by_isin`). Kept apart from U1's `symbol_history`
+    (derived from the exchange's symbol-change file) so neither rewrites the other."""
+
+    __tablename__ = "md_isin_symbols"
+    __table_args__ = (UniqueConstraint("exchange", "isin", "symbol", "first_date", name="uq_md_isin_symbol_run"),
+                      Index("ix_md_isin_symbols_symbol", "exchange", "symbol"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    series: Mapped[str] = mapped_column(String(4), nullable=False)               # the series of the latest row seen
+    first_date: Mapped[date] = mapped_column(Date, nullable=False)
+    last_date: Mapped[date] = mapped_column(Date, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+# --- Screener addendum U1: NSE universe reference data (as-of)------------------------------------------------------------
 class SecurityRecord(Base):
     """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the
     tradability layer and joins on ISIN/symbol. `last_seen_on` is the last equity-list file that carried it; a security
@@ -2663,6 +2795,24 @@ class ChartDrawingRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class OptionStrategyRecord(Base):
+    """Z5 / P1-c (ADR-0025): a strategy saved from the Options Builder - the instrument inputs and the legs as the page
+    held them (`strategy_json`), shared within the tenant. Research data only: it places nothing. Archived, never
+    hard-deleted. Behind the `options_builder_saved` flag (off by default)."""
+
+    __tablename__ = "option_strategies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    strategy_json: Mapped[str] = mapped_column(Text, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 

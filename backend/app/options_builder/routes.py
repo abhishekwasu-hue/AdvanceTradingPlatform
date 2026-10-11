@@ -8,6 +8,11 @@ the platform's execution and risk layers).
                                         breakevens, PoP, expected move, probability-weighted P&L, net and per-leg Greeks;
                                         with the underlying's daily bars, each short strike's breach chance (Z5).
 - `POST /api/options-builder/suggest`   a selector rule (P1-a, ported) on a broker chain through the adapter.
+- `POST /api/options-builder/basket`    Z5: the legs in placement order (hedge first) with quantities and builder keys,
+                                        for review before "Place as basket"; nothing is placed or staged.
+
+Z5 adds the metrics card's money lines to `evaluate` (`metrics.py`): net premium, reward to risk, a labelled margin
+estimate and the charges to open (and to close at today's premiums), so the page computes no number itself.
 
 Instrument numbers (strike step, lot size, width) always come from the caller (the instrument master on the page);
 nothing here defaults them.
@@ -27,10 +32,10 @@ from app.auth.dependencies import get_current_user
 from app.brokers.models import OptionChain
 from app.core.config import RISK_FREE_RATE
 from app.core.rate_limit import user_rate_limit
-from app.option_chain.greeks import IST
 from app.db.models import User
 from app.db.session import get_session
-from app.options_builder import catalog, chain, model, selectors, strike_breach
+from app.option_chain.greeks import IST
+from app.options_builder import catalog, chain, metrics, model, selectors, strike_breach
 from app.options_builder.greeks import leg_with_model_greeks
 from app.options_builder.payoff import build_default_price_range, compute_strategy_payoff_curve
 from app.platform.controls import require_flag
@@ -83,6 +88,7 @@ class EvaluateBody(BaseModel):
     range_pct: float = Field(default=10.0, gt=0, le=60)
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
     rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    brokerage_per_order: float = Field(default=20.0, ge=0, le=1000, allow_inf_nan=False, description="for the cost line; the trader's own")
     # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
     # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
     # (+1 up, -1 down, 0 unknown); `holidays`: exchange holidays between now and the expiry (sessions are counted).
@@ -94,6 +100,11 @@ class EvaluateBody(BaseModel):
     @classmethod
     def _when(cls, v: Any) -> Any:
         return _parse_when(v)
+
+
+class BasketBody(BaseModel):
+    underlying: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9&_.-]+$")
+    legs: List[LegIn] = Field(min_length=1, max_length=MAX_LEGS)
 
 
 class TemplateBody(BaseModel):
@@ -234,6 +245,9 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
                   # the model's price now at the leg's own IV: what a leg priced by the model is worth after an edit
                   "theoretical": round(model.leg_theoretical(leg, body.spot, as_of, r=body.rate), 2)} for leg in legs],
         "single_expiry": single, "disclaimer": DISCLAIMER,
+        "net_premium": round(metrics.net_premium(legs), 2),
+        "costs": metrics.costs(legs, as_of.astimezone(IST).date() if isinstance(as_of, datetime) else as_of,
+                               brokerage_per_order=body.brokerage_per_order),
         "strike_breach": _strike_breach(body, legs, as_of),
     }
     if single:
@@ -245,11 +259,15 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
                            "max_profit_at": ext["max_profit_at"], "max_loss_at": ext["max_loss_at"]}
         out["profitable"] = [[_finite(a), _finite(b)] for a, b in intervals]
         out["breakevens"] = sorted({round(x, 6) for a, b in intervals for x in (a, b) if 0 < x < math.inf})
+        out["reward_to_risk"] = metrics.reward_to_risk(ext["max_profit"], ext["max_loss"])
+        out["margin"] = metrics.margin_estimate(legs, ext)
     else:
         out["at_expiry"] = None                     # a calendar has no single expiry payoff; `on_date` at the near expiry draws it
         out["extremes"] = None
         out["profitable"] = None
         out["breakevens"] = None
+        out["reward_to_risk"] = None
+        out["margin"] = metrics.margin_estimate(legs, None)
     return out
 
 
@@ -261,6 +279,16 @@ def _strike_breach(body: EvaluateBody, legs: List[Dict[str, Any]], as_of: Union[
     day = as_of.astimezone(IST).date() if isinstance(as_of, datetime) else as_of
     return strike_breach.report(legs, spot=body.spot, as_of=day, bars=[b.model_dump() for b in body.daily_bars], structure=body.structure,
                                 holidays=body.holidays)
+
+
+@router.post("/basket", dependencies=[Depends(compute_rate_limit)])
+async def basket(body: BasketBody) -> Dict[str, Any]:
+    """The basket the page shows before "Place as basket": hedge first, quantities, builder keys. Review only - placing
+    it in PAPER arrives with the plan-before-trade ticket (P1-d); there is no LIVE path here."""
+    legs = [{**leg.model_dump(), "expiry": leg.expiry.isoformat()} for leg in body.legs]
+    return {"underlying": body.underlying, "orders": metrics.basket(body.underlying, legs),
+            "net_premium": round(metrics.net_premium(legs), 2), "placeable": False,
+            "why_not": "Placing a PAPER basket comes with the plan-before-trade ticket. Nothing is placed from this page."}
 
 
 @router.post("/suggest", dependencies=[Depends(compute_rate_limit)])

@@ -130,6 +130,7 @@ class CycleReport:
     ai_snoozes_woken: int = 0     # PW5: snoozed proposals announced again this cycle
     master_synced: Optional[Dict[str, int]] = None
     universe_synced: Optional[Dict[str, int]] = None      # U1-a
+    history_eod_started: bool = False                     # HB1: the nightly EOD bhavcopy job was started this cycle
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
@@ -215,6 +216,9 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
+        # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
+        self._last_history_eod_day = None
+        self._history_eod_task: Optional["asyncio.Task[None]"] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -245,6 +249,8 @@ class TradingWorker:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._history_eod_task is not None and not self._history_eod_task.done():
+            self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -356,6 +362,15 @@ class TradingWorker:
                     logger.exception("Waking snoozed proposals failed")
                     await session.rollback()
                     report.errors.append(f"ai snooze wake: {exc}")
+                # Z3 (review M6): proposal expiry for every organisation, every cycle, market open or not - also for an
+                # organisation with no deployment or a lapsed token (entry proposals live minutes; an approval interrupted
+                # between decide and execute is failed after ORPHAN_MINUTES so it never holds a deployment's slot).
+                try:
+                    await ai_monitor.expire_stale(session, now)
+                except Exception as exc:  # noqa: BLE001 - housekeeping; never breaks trading or delivery
+                    logger.exception("Expiring proposals failed")
+                    await session.rollback()
+                    report.errors.append(f"ai expiry: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
@@ -463,6 +478,13 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
+                # HB1: the nightly EOD job - once per IST day from HISTORY_BACKFILL_HOUR_IST, only while the
+                # `history_backfill` flag is on; it runs in its own task, so a slow archive never holds up a cycle.
+                try:
+                    report.history_eod_started = await self._maybe_start_history_eod(session, now)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("History EOD job not started")
+                    report.errors.append(f"history eod: {exc}")
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -854,11 +876,38 @@ class TradingWorker:
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
-            # Z3: every cycle, this organisation's rows only - an entry proposal lives for minutes, not a day.
-            await ai_monitor.expire_stale(session, now, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
+
+    async def _maybe_start_history_eod(self, session: AsyncSession, now: datetime) -> bool:
+        """HB1: starts the nightly bhavcopy job (today's files + the catch-up window) when it is due and the flag is on.
+        One task per worker; the backfill's advisory lock keeps a second replica (or a manual run) out."""
+        from app.market_lake import bhavcopy_backfill
+        from app.platform.controls import flag_enabled
+
+        day = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
+        if day is None or (self._history_eod_task is not None and not self._history_eod_task.done()):
+            return False
+        if not await flag_enabled(session, bhavcopy_backfill.FLAG):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._last_history_eod_day = day                 # started: the next run is tomorrow
+
+        async def run() -> None:
+            from app.market_lake.nse_fetch import PoliteFetcher
+            fetcher = PoliteFetcher()
+            try:
+                summary = await bhavcopy_backfill.run_nightly(self.session_factory, fetcher, now=now)
+                logger.info("History EOD job: %s", summary.as_dict())
+            except bhavcopy_backfill.BackfillConfigError as exc:
+                logger.warning("History EOD job did not run: %s", exc)
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("History EOD job failed")
+            finally:
+                await fetcher.aclose()
+
+        self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own
@@ -1040,7 +1089,7 @@ class TradingWorker:
             row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                                idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
                                                requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                               user_id=dep.created_by, now=now)
+                                               user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
         except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
             dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
             await session.commit()

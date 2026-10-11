@@ -8,9 +8,12 @@ PROPOSED -> APPROVED -> EXECUTED, or REJECTED / EXPIRED / FAILED, with Snooze (P
 order through a broker API).
 
 * **Gate (the backstop).** `execute_signal_for_user` and `execute_structure` ask `gate_refusal` on every call. Unless
-  the call is a person's own manual entry (the console's paper-execute) or carries the id of an APPROVED entry
-  proposal of the same organisation (and deployment), an approval-only entry is REJECTED on the order trail. The
-  default `origin` is "automatic", so a new caller that forgets to say what it is is refused, not let through.
+  the call carries the id of an APPROVED entry proposal of the same organisation (and deployment), an approval-only
+  entry is REJECTED on the order trail. There is no bypass: the console's paper-execute raises a proposal too (review
+  M1). The default `origin` is "automatic", so a new caller that forgets to say what it is is refused.
+* **Who decides (review L8).** A proposal has an owner (`owner_user_id`): the deployment's creator, the alert's owner,
+  the person who sent a manual setup, the holder of the position. Only the owner or the organisation OWNER decides it,
+  and an approved entry is placed for the owner (their PAPER account).
 * **Expiry.** An entry proposal expires after `APPROVAL_ENTRY_TTL_MINUTES`; the worker expires due rows every cycle.
 * **Re-quote.** On Approve the entry is priced again at the current LTP (`requote_check`). A move from the proposal
   price beyond `APPROVAL_REQUOTE_MAX_DRIFT_PCT` % or `APPROVAL_REQUOTE_MAX_DRIFT_TICKS` ticks (the stricter limit wins)
@@ -20,7 +23,9 @@ order through a broker API).
 * **Exits (ADR-0004).** Protective exits - stop loss, premium floor/ceiling, time stop, square-off, kill switch, any
   structure rule - stay automatic and never look at a proposal or a snooze. A target exit (Target 1 / Target 2) on an
   approval-only position asks "Exit now?" instead (an EXIT_POSITION proposal, once per level per position). "Exit now"
-  (`exit_now`) is always available: the API, the Telegram `/exit` command and the proposal's Approve button.
+  (`exit_now`) is available with the flag on: the API, the Telegram `/exit` command and the proposal's Approve button.
+  It books PAPER only (LIVE positions are closed in the broker app - Phase 0 has no broker order path), at the live
+  price of the holder's own entitlement or the last price the monitor saw - never a price someone types (review M2).
 """
 from __future__ import annotations
 
@@ -48,13 +53,13 @@ RULE_ENTRY = "ENTRY_SIGNAL"
 ENTRY_MODES = ("AUTO", "APPROVAL")
 
 ORIGIN_AUTOMATIC = "automatic"     # the default: a deployment, a webhook, the public API - needs an approved proposal
-ORIGIN_MANUAL = "manual"           # a person's own entry from the console (they are the approval)
 ORIGIN_APPROVAL = "approval"       # the execution of an APPROVED entry proposal (must carry its id)
+TARGET_RULES = ("TARGET_1_REACHED", "TARGET_2_REACHED")
 
 SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
-                 "manual": "Manual setup", "requote": "Re-quoted entry"}
+                 "manual": "Manual setup", "ticket": "PAPER ticket", "requote": "Re-quoted entry", "console": "Console signal"}
 
-PriceLookup = Callable[[str], Awaitable[float]]
+PriceLookup = Callable[..., Awaitable[float]]       # (symbol, exchange="NSE") -> last price
 
 
 class EntriesPaused(ValueError):
@@ -80,11 +85,44 @@ async def required(session: AsyncSession, tenant_id: int, deployment: Optional[S
     return await flag_on(session, tenant_id)
 
 
+def can_trade(user: User) -> bool:
+    """The `require_trader` rule for paths that hold a user object (Telegram, the console): a trading role and the
+    `trading:write` scope."""
+    from app.auth.dependencies import TRADING_ROLES
+    from app.auth.scopes import has_scope
+    from app.core.enums import UserRole
+    if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in TRADING_ROLES}:
+        return False
+    return has_scope(user, "trading:write")
+
+
+def _is_owner_role(user: User) -> bool:
+    from app.core.enums import UserRole
+    return user.role in (UserRole.OWNER.value, UserRole.SUPER_ADMIN.value)
+
+
+def may_decide(user: User, action: AiActionRecord) -> bool:
+    """Review L8: a proposal with an owner is decided by that person or the organisation OWNER only."""
+    return action.owner_user_id is None or action.owner_user_id == user.id or _is_owner_role(user)
+
+
+def may_act_on_trade(user: User, trade: TradeRecord) -> bool:
+    """Review L8: "Exit now" on a position - its holder or the organisation OWNER."""
+    return trade.user_id == user.id or _is_owner_role(user)
+
+
+async def exit_now_enabled(session: AsyncSession, tenant_id: int) -> bool:
+    """Review M4: "Exit now" (API, Telegram /exit, the Positions button) exists with approval-only or the PAPER account on."""
+    if await flag_on(session, tenant_id):
+        return True
+    from app.paper.service import enabled as paper_enabled
+    return await paper_enabled(session, tenant_id)
+
+
 async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: Optional[int], origin: str,
                        approval_action_id: Optional[int]) -> Optional[str]:
-    """Why this entry must be refused under approval-only mode, or None. Called by every order pipeline entry point."""
-    if origin == ORIGIN_MANUAL:
-        return None
+    """Why this entry must be refused under approval-only mode, or None. Called by every order pipeline entry point.
+    No origin bypasses it: only an APPROVED entry proposal of this organisation (and deployment) lets an entry through."""
     deployment = await session.get(StrategyDeploymentRecord, deployment_id) if deployment_id is not None else None
     if deployment is not None and deployment.tenant_id != tenant_id:
         deployment = None
@@ -145,12 +183,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
                         exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
                         now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
-                        strike_breach: Optional[Dict] = None) -> Optional[AiActionRecord]:
+                        exchange: str = "NSE", strike_breach: Optional[Dict] = None, ticket: Optional[Dict] = None) -> Optional[AiActionRecord]:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
-    for a deployment, another open entry proposal) is already there; raises EntriesPaused when `user_id` paused their
-    PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d). `strike_breach` (Z5): the short strikes' breach
-    chances of an option proposal (app/options_builder/strike_breach.py::report), shown on the card. Places nothing."""
+    for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
+    EntriesPaused when that user paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
+    `strike_breach` (Z5): the short strikes' breach chances of an option proposal (app/options_builder/strike_breach.py
+    ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
+    risk_cap_amount}) - the approved order keeps them. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
@@ -162,6 +202,8 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
     if locked:
         raise EntriesPaused(locked)
+    if deployment is not None:
+        await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
     expires = now + timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES)
     label = SOURCE_LABELS.get(source, source)
@@ -173,10 +215,11 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,
                 "strategy_id": strategy_id, "mode": "PAPER", "requested_mode": requested_mode, "exit_rules": exit_rules,
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
-                "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach}
+                "exchange": (exchange or "NSE").upper(),
+                "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
                          action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=json.dumps(evidence, default=str),
-                         status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200])
+                         status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200], owner_user_id=user_id)
     try:
         async with session.begin_nested():       # a duplicate is dropped alone; the caller's objects stay intact
             session.add(row)
@@ -195,11 +238,32 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     return row
 
 
+async def _free_deployment_slot(session: AsyncSession, tenant_id: int, deployment_id: int, now: datetime) -> None:
+    """Review M6: a deployment holds one open entry proposal; one that is overdue (PROPOSED past its expiry, or APPROVED
+    and interrupted for ORPHAN_MINUTES) must not swallow the next signal. Settled here first, conditionally."""
+    from app.ai.monitor import ORPHAN_MINUTES, _orphan_outcome
+    rows = await session.scalars(select(AiActionRecord).where(AiActionRecord.tenant_id == tenant_id, AiActionRecord.deployment_id == deployment_id,
+                                                              AiActionRecord.rule == RULE_ENTRY, AiActionRecord.status.in_(("PROPOSED", "APPROVED"))))
+    for row in list(rows):
+        if row.status == "PROPOSED" and _utc(row.expires_at) <= now:
+            values = {"status": "EXPIRED", "result": "No decision within the time window"}
+        elif row.status == "APPROVED" and row.decided_at is not None and (now - _utc(row.decided_at)).total_seconds() >= ORPHAN_MINUTES * 60:
+            values = await _orphan_outcome(session, row, now)
+        else:
+            continue
+        await session.execute(update(AiActionRecord).where(AiActionRecord.id == row.id, AiActionRecord.status == row.status)
+                              .values(**values).execution_options(synchronize_session=False))
+    await session.flush()
+
+
 async def execute_entry(session: AsyncSession, action: AiActionRecord, user: User, *, price_lookup: Optional[PriceLookup],
                         now: Optional[datetime] = None) -> AiActionRecord:
     """Runs an APPROVED entry proposal: re-quote, then one PAPER order through the ordinary pipeline (kill switches,
     platform controls, risk engine, order state machine). Never a broker order. The row ends EXECUTED (with the trade),
-    FAILED (with why), or EXPIRED (the price moved; possibly re-quoted as a new proposal)."""
+    FAILED (with why), or EXPIRED (the price moved; possibly re-quoted as a new proposal). The order is placed for the
+    proposal's owner (their PAPER account) whoever approved it (the owner or the organisation OWNER, review L8); the
+    re-quote reads the approver's own live price (review M5)."""
+    from app.ai.worker_bridge import NoLivePrice
     from app.execution.signal_execution import execute_signal_for_user
     now = now or datetime.now(timezone.utc)
     if action.status != "APPROVED" or action.action != ACTION_ENTRY:
@@ -214,12 +278,21 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             if open_trade is not None:
                 raise ValueError(f"Deployment #{deployment.id} already has an open position (#{open_trade}) - the entry was not placed")
         symbol, direction = str(evidence["symbol"]), str(evidence["direction"])
+        exchange = str(evidence.get("exchange") or (deployment.exchange if deployment is not None else None) or "NSE")
         if price_lookup is None:
             raise ValueError("No live price to re-quote the entry at - nothing was placed (a broker session supplies quotes)")
         try:
-            price = float(await price_lookup(symbol))
+            price = float(await price_lookup(symbol, exchange))
+        except NoLivePrice as exc:
+            raise ValueError(f"No live price for {symbol} on your own broker session - nothing was placed ({exc})") from exc
         except Exception as exc:  # noqa: BLE001 - no quote, no order
             raise ValueError(f"No live price for {symbol} to re-quote the entry at ({type(exc).__name__}) - nothing was placed") from exc
+        owner: User = user
+        if action.owner_user_id is not None and action.owner_user_id != user.id:
+            holder = await session.get(User, action.owner_user_id)
+            if holder is None or holder.tenant_id != action.tenant_id or not holder.is_active:
+                raise ValueError("The person this proposal is for is no longer an active member - nothing was placed")
+            owner = holder
         verdict, why = requote_check(direction, float(evidence["proposal_price"]), price, stop_loss=evidence.get("stop_loss"),
                                      target1=evidence.get("target1"), max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
                                      max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=tick_size_for(symbol))
@@ -231,9 +304,11 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         signal = signal.model_copy(update={"entry": price, "risk_reward": rr, "timestamp": now,
                                            "reasons": list(signal.reasons) + [f"Approved proposal #{action.id}, re-quoted at {price:g}"]})
         result, order = await execute_signal_for_user(
-            session, user, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
+            session, owner, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
             idempotency_key=f"approval:{action.id}", deployment_id=action.deployment_id, exit_rules=evidence.get("exit_rules"),
             holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
+            max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
@@ -265,7 +340,7 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         idempotency_key=f"requote:{action.id}", deployment=deployment,
                                         requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
                                         holding=str(evidence.get("holding") or "INTRADAY"), user_id=user.id, now=now,
-                                        requotes=requotes + 1, requoted_from=action.id)
+                                        requotes=requotes + 1, requoted_from=action.id, ticket=evidence.get("ticket"))
         except EntriesPaused:
             fresh = None
             action.result = f"Not placed: {why}. No re-quote: PAPER entries are paused"[:300]
@@ -293,19 +368,22 @@ def _target_rule(reason: str) -> str:
 
 async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
                                   deployments: Iterable[StrategyDeploymentRecord]) -> Optional[Callable[[TradeRecord], bool]]:
-    """Which of this organisation's positions ask "Exit now?" on a target: every position with the flag on, else the
-    positions of APPROVAL deployments. None when no position does (the monitor behaves exactly as before), and None when
-    the flag cannot be read: the exits sweep then runs as before rather than not at all (ADR-0004)."""
+    """Which of this organisation's positions ask "Exit now?" on a target: the open PAPER positions that were entered by
+    an approved entry proposal (review L2) - any other position keeps its automatic target exit. None when there is none
+    (the monitor behaves exactly as before), and None when they cannot be read: the exits sweep then runs as before rather
+    than not at all (ADR-0004)."""
+    del deployments                      # kept for the caller's signature; the trades themselves say how they entered
     try:
-        if await flag_on(session, tenant_id):
-            return lambda trade: True
+        ids = set(await session.scalars(
+            select(AiActionRecord.trade_id).join(TradeRecord, TradeRecord.id == AiActionRecord.trade_id)
+            .where(AiActionRecord.tenant_id == tenant_id, AiActionRecord.action == ACTION_ENTRY, AiActionRecord.status == "EXECUTED",
+                   TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.mode == "PAPER")))
     except Exception:  # noqa: BLE001 - never in the way of the exits sweep
-        logger.exception("Approval-only flag unreadable for tenant %s - target exits stay automatic this cycle", tenant_id)
+        logger.exception("Approved positions unreadable for tenant %s - target exits stay automatic this cycle", tenant_id)
         return None
-    ids = {d.id for d in deployments if (d.entry_mode or "AUTO") == "APPROVAL"}
     if not ids:
         return None
-    return lambda trade: trade.deployment_id in ids
+    return lambda trade: trade.mode == "PAPER" and trade.id in ids
 
 
 async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, price: float, now: Optional[datetime] = None) -> Optional[AiActionRecord]:
@@ -325,7 +403,7 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
                              reason=text, evidence_json=json.dumps({"reason": reason, "price": price, "entry_price": trade.entry_price,
                                                                     "stop_loss": trade.stop_loss, "target1": trade.target1, "target2": trade.target2,
                                                                     "mode": trade.mode}, default=str),
-                             status="PROPOSED", expires_at=expires)
+                             status="PROPOSED", expires_at=expires, owner_user_id=trade.user_id)
         async with session.begin_nested():       # a concurrent duplicate drops this row alone
             session.add(row)
             await session.flush()
@@ -346,25 +424,40 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
 
 
 async def retire_proposals_for_closed(session: AsyncSession, trade: TradeRecord, reason: str) -> int:
-    """A position closed (by its stop, a time exit, an "Exit now"...): its open "Exit now?" proposals are void."""
+    """A position closed (by its stop, a time exit, an "Exit now"...): its open "Exit now?" questions are void, and their
+    Telegram messages lose the buttons (review L5). Only the questions this module raised (TARGET_* rules), so with
+    approval-only off - no such question - it does nothing."""
     try:
+        rows = list(await session.scalars(select(AiActionRecord).where(
+            AiActionRecord.tenant_id == trade.tenant_id, AiActionRecord.trade_id == trade.id, AiActionRecord.action == "EXIT_POSITION",
+            AiActionRecord.rule.in_(TARGET_RULES), AiActionRecord.status == "PROPOSED")))
+        if not rows:
+            return 0
+        retired: List[AiActionRecord] = []
         async with session.begin_nested():       # a failure rolls back the savepoint only; the close is already committed
-            done = await session.execute(update(AiActionRecord).where(AiActionRecord.tenant_id == trade.tenant_id, AiActionRecord.trade_id == trade.id,
-                                                                      AiActionRecord.action == "EXIT_POSITION", AiActionRecord.status == "PROPOSED")
-                                         .values(status="EXPIRED", result=f"Position closed: {reason}"[:300]).execution_options(synchronize_session=False))
+            for row in rows:
+                done = await session.execute(update(AiActionRecord).where(AiActionRecord.id == row.id, AiActionRecord.status == "PROPOSED")
+                                             .values(status="EXPIRED", result=f"Position closed: {reason}"[:300]).execution_options(synchronize_session=False))
+                if getattr(done, "rowcount", 0) == 1:
+                    retired.append(row)
         await session.commit()
-        return int(getattr(done, "rowcount", 0) or 0)
+        from app.telegram_inbound.service import sync_proposal_message
+        for row in retired:
+            await session.refresh(row)
+            await sync_proposal_message(session, row)
+        return len(retired)
     except Exception:  # noqa: BLE001 - bookkeeping only
         logger.warning("Could not retire proposals of closed trade %s", trade.id)
         return 0
 
 
-async def execution_sources(session: AsyncSession, action: AiActionRecord) -> Tuple[Optional[PriceLookup], Optional[object]]:
-    """(price lookup, broker adapter) an approved ENTRY / EXIT_POSITION needs, for the web and Telegram alike."""
+async def execution_sources(session: AsyncSession, action: AiActionRecord, user: User) -> Tuple[Optional[PriceLookup], Optional[object]]:
+    """(price lookup, broker adapter) an approved ENTRY / EXIT_POSITION needs, for the web and Telegram alike. The price
+    is the deciding person's own (with `byob_data_tier` on: their Tier A entitlement only, review M5)."""
     if action.action not in (ACTION_ENTRY, "EXIT_POSITION"):
         return None, None
-    from app.ai.worker_bridge import price_lookup_for_tenant
-    lookup = await price_lookup_for_tenant(session, action.tenant_id)
+    from app.ai.worker_bridge import price_lookup_for_user
+    lookup = await price_lookup_for_user(session, user)
     broker = None
     if action.action == "EXIT_POSITION" and action.trade_id is not None:
         from app.trading.position_monitor import broker_for_trade
@@ -373,41 +466,43 @@ async def execution_sources(session: AsyncSession, action: AiActionRecord) -> Tu
     return lookup, broker
 
 
-async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, price: Optional[float] = None, via: str = "web"):
-    """"Exit now": closes the position at once, whatever is pending or snoozed (ADR-0004). The live price when a broker
-    session can quote it; else, for PAPER, the price the person gives, else the last price the monitor saw. A leg of a
-    structure closes the whole structure. Returns the close outcomes; raises ValueError when there is no price at all."""
-    from app.ai.worker_bridge import price_lookup_for_tenant
-    from app.trading.position_monitor import broker_for_trade, close_group, close_position
-    lookup = await price_lookup_for_tenant(session, trade.tenant_id)
+async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
+    """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
+    the person's own entitlement, else the last price the monitor saw for it - never a typed price (review M2). LIVE is
+    refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app (review M4). A leg of a
+    structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
+    Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
+    from app.ai.worker_bridge import price_lookup_for_user
+    from app.trading.position_monitor import close_group, close_position, exchange_for_trade
+    if trade.mode != "PAPER":
+        raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
+    lookup = await price_lookup_for_user(session, user)
 
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
         if lookup is not None:
             try:
-                return float(await lookup(leg.symbol)), "live price"
+                return float(await lookup(leg.symbol, exchange_for_trade(leg))), "live price"
             except Exception as exc:  # noqa: BLE001 - fall back below
                 logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
-        if leg.mode == "PAPER" and price is not None and len(legs) == 1:
-            return float(price), "your price"
-        if leg.mode == "PAPER" and leg.mark_price:
+        if leg.mark_price:
             return float(leg.mark_price), "last seen price"
-        if leg.mode == "LIVE" and leg.mark_price:
-            return float(leg.mark_price), "last seen price (reference; the broker fills at market)"
-        raise ValueError(f"No price for {leg.symbol} - give the exit price")
+        raise ValueError(f"No price for {leg.symbol} yet: no live quote and the monitor has not priced this position - "
+                         "try again once a quote is available (the stop and time exits keep running)")
 
     legs = [trade]
     if trade.leg_group_id:
         legs = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == trade.tenant_id, TradeRecord.leg_group_id == trade.leg_group_id,
                                                                     TradeRecord.exit_time.is_(None)).order_by(TradeRecord.id)))
+        if any(leg.mode != "PAPER" for leg in legs):
+            raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     prices: Dict[int, float] = {}
     sources: List[str] = []
     for leg in legs:
         prices[leg.id], source = await price_of(leg)
         sources.append(source)
-    reason = f"Exit now ({via})"
+    reason = f"Exit now ({via}, {'live price' if set(sources) == {'live price'} else 'last seen price'})"
     await write_audit_log(session, trade.tenant_id, user.id, "exit_now", f"trade #{trade.id} ({len(legs)} leg(s)) via {via} at {', '.join(sorted(set(sources)))}")
     await session.commit()
     if len(legs) > 1:
         return await close_group(session, legs, prices, reason, broker=None, user_id=user.id)
-    broker = await broker_for_trade(session, trade)
-    return [await close_position(session, trade, prices[trade.id], reason, broker=broker, user_id=user.id)]
+    return [await close_position(session, trade, prices[trade.id], reason, broker=None, user_id=user.id)]

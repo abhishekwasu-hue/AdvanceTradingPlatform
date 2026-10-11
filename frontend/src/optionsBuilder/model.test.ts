@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  cone, contractKey, daysBetween, evaluatedById, isCurrent, niceTicks, rangePctFor, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, netPremium, rewardToRisk, signAreas, snapStrike, thumbnailShape,
+  cone, contractKey, daysBetween, evaluatedById, isCurrent, niceTicks, rangePctFor, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, signAreas, snapStrike, thumbnailShape,
   yDomain, type Leg, type TemplateInfo,
 } from "./model";
 
@@ -16,19 +16,6 @@ describe("legs", () => {
     expect(snapStrike(22124, 50)).toBe(22100);
     expect(snapStrike(10, 50)).toBe(50);
     expect(snapStrike(22137, 0)).toBe(22137);                       // no step known: left as typed
-  });
-  it("adds premiums as money: credit positive, debit negative", () => {
-    expect(netPremium([leg({ direction: "SELL", premium: 100 }), leg({ premium: 40 })])).toBe((100 - 40) * 50);
-    expect(netPremium([leg({ premium: 10, lots: 2 })])).toBe(-1000);
-    // review P1-c: a futures leg's entry price is not premium (a covered call is a credit, not a ₹1 crore debit)
-    expect(netPremium([leg({ option_type: "FUT", premium: 22000 }), leg({ direction: "SELL", premium: 100 })])).toBe(100 * 50);
-  });
-  it("gives reward to risk only when both ends are finite and there is a risk", () => {
-    expect(rewardToRisk({ max_profit: 3000, max_loss: -6000, unbounded_profit: false, unbounded_loss: false })).toBe(0.5);
-    expect(rewardToRisk({ max_profit: 3000, max_loss: null, unbounded_profit: false, unbounded_loss: true })).toBeNull();
-    expect(rewardToRisk({ max_profit: 3000, max_loss: 0, unbounded_profit: false, unbounded_loss: false })).toBeNull();
-    expect(rewardToRisk(null)).toBeNull();
-    expect(rewardToRisk({ max_profit: -500, max_loss: -6000, unbounded_profit: false, unbounded_loss: false })).toBeNull();   // no profit anywhere
   });
 });
 

@@ -2371,6 +2371,8 @@ export interface PaperAccount {
   realised: { gross: number; charges: number; net: number }; unrealised: number;
   closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
   max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
+  excluded_trades: number;
   positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
   proposals: { approved_by_you: number; rejected_by_you: number; pending: number; expired_unanswered: number };
   as_of: string; note: string;

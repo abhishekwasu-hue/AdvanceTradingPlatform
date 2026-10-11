@@ -23,7 +23,8 @@ from app.risk_engine import by_default, vix_gate
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _get, _tenant, _worker
 from tests.test_z3_approval_entries import _price, _sig
-from tests.test_z3b_paper_account import _member
+from tests.test_z3_approval_entries import _flag_for as _approval_flag
+from tests.test_z3b_paper_account import _member, _paper_flag
 
 UTC = timezone.utc
 
@@ -118,7 +119,7 @@ def _enter(user_id, symbol="RELIANCE", direction=SignalDirection.LONG, entry=100
             user = await session.get(User, user_id)
             sig = _sig(entry=entry, stop=stop, target=target, direction=direction, symbol=symbol)
             result, order = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=sig,
-                                                          idempotency_key=f"z5d:{uuid.uuid4().hex}", origin="manual")
+                                                          idempotency_key=f"z5d:{uuid.uuid4().hex}")
             return result.executed, json.loads(order.reasons_json or "[]"), (result.trade.quantity if result.trade else None)
     return _run(go())
 
@@ -374,11 +375,12 @@ def test_daily_loss_lockout_refuses_new_entries_and_proposals_but_never_exits(mo
     with pytest.raises(approval.EntriesPaused, match="Daily loss limit"):
         _run(propose())
 
-    # Exit now still closes the locked user's position.
-    _price(monkeypatch, None)
-    out = client.post(f"/api/positions/{open_id}/exit-now", headers=t["headers"], json={"price": 101.0})
+    # Exit now still closes the locked user's position (at the user's own live price).
+    _paper_flag(t["tenant_id"])
+    _price(monkeypatch, 101.0)
+    out = client.post(f"/api/positions/{open_id}/exit-now", headers=t["headers"])
     assert out.status_code == 200, out.text
-    assert out.json()["closed"][0]["exit_reason"] == "Exit now (web)"
+    assert out.json()["closed"][0]["exit_reason"].startswith("Exit now (web") and out.json()["closed"][0]["exit_price"] == 101.0
 
 
 def test_a_locked_users_stop_still_closes_the_position(monkeypatch):
@@ -517,8 +519,9 @@ def test_vix_gate_in_the_ticket_and_pipeline_entries_only(monkeypatch):
     assert status["enabled"] and status["bullish_paused"] and status["latest"]["last"] == 14.0
     # Exits are never gated.
     trade_id = _open(t, symbol="NIFTY")
-    _price(monkeypatch, None)
-    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 99.0}).status_code == 200
+    _paper_flag(t["tenant_id"])
+    _price(monkeypatch, 99.0)
+    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"]).status_code == 200
 
 
 def test_vix_high_level_cuts_the_size():
@@ -532,3 +535,27 @@ def test_vix_high_level_cuts_the_size():
     assert any("risk per trade cut 50%" in w for w in view["warnings"])
     executed, reasons, qty = _enter(t["user_id"], symbol="NIFTY")
     assert executed and qty == 2500.0
+
+
+def test_under_approval_only_the_ticket_raises_a_proposal_and_approve_keeps_its_limits(monkeypatch):
+    """No entry bypasses approval-only mode (Z3-a): the ticket raises an ENTRY proposal carrying the plan's quantity
+    ceiling and checked cap (the override's room included); Approve places the PAPER order within them."""
+    t = _tenant_t("ticket-approval")
+    _org(t, risk_pct=2.0)
+    _flag(by_default.FLAG, t["tenant_id"])
+    _approval_flag(t["tenant_id"])
+    _price(monkeypatch, 100.0)
+    out = _place(t, quantity=6000, override=True, override_reason="High conviction setup, documented")
+    assert out["status"] == "PROPOSED" and out["proposal"]["status"] == "PROPOSED" and out["trade_id"] is None
+
+    async def evidence():
+        from app.db.models import AiActionRecord
+        async with _session_factory() as session:
+            row = await session.get(AiActionRecord, out["proposal"]["id"])
+            return json.loads(row.evidence_json)
+    ev = _run(evidence())
+    assert ev["source"] == "ticket" and ev["ticket"] == {"plan_id": out["id"], "max_quantity": 6000.0, "risk_cap_amount": 12_000.0}
+    approved = client.post(f"/api/ai/actions/{out['proposal']['id']}/approve", headers=t["headers"], json={})
+    assert approved.status_code == 200, approved.text
+    plan = client.get("/api/paper/plans", headers=t["headers"]).json()[0]
+    assert plan["proposal"]["status"] == "EXECUTED" and plan["trade_id"] and plan["filled"]["quantity"] == 6000

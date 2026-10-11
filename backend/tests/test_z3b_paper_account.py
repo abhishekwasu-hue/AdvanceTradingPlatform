@@ -65,13 +65,14 @@ def _user(user_id) -> User:
     return _run(go())
 
 
-def _trade(t, *, pnl=None, charges=0.0, exit_days_ago=None, mark=None, mode="PAPER", entry=100.0, quantity=10.0, entry_days_ago=1):
+def _trade(t, *, pnl=None, charges=0.0, exit_days_ago=None, mark=None, mode="PAPER", entry=100.0, quantity=10.0, entry_days_ago=1,
+           price_source=None):
     async def go():
         async with _session_factory() as session:
             now = datetime.now(UTC)
             trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode=mode, symbol="RELIANCE", strategy_id="ema_rsi_scalper_1m",
                                 direction="LONG", entry_time=now - timedelta(days=entry_days_ago), entry_price=entry, quantity=quantity, stop_loss=95.0,
-                                target1=110.0, exchange="NSE", pnl=pnl, charges=charges, mark_price=mark,
+                                target1=110.0, exchange="NSE", pnl=pnl, charges=charges, mark_price=mark, price_source=price_source,
                                 exit_time=(now - timedelta(days=exit_days_ago)) if exit_days_ago is not None else None,
                                 exit_price=(entry + 1) if exit_days_ago is not None else None, exit_reason="Target 1" if exit_days_ago is not None else None)
             session.add(trade)
@@ -100,6 +101,11 @@ def test_new_user_starts_in_paper_with_the_default_capital_and_can_change_it_wit
     assert client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 5.0}).status_code == 422
     out = client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 250_000})
     assert out.status_code == 200 and out.json()["starting_capital"] == 250_000 and out.json()["balance"] == 250_000
+    # Review M7: fixed once there is a PAPER trade - it is what the balance, drawdown and ladder are measured from.
+    _trade(t, pnl=-5_000.0, charges=20.0, exit_days_ago=1)
+    locked = client.put("/api/paper/account", headers=t["headers"], json={"starting_capital": 10_000_000})
+    assert locked.status_code == 409 and "fixed" in locked.text
+    assert client.get("/api/paper/account", headers=t["headers"]).json()["starting_capital"] == 250_000
 
 
 def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
@@ -116,11 +122,13 @@ def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
     _trade(owner, pnl=999.0, charges=1.0, exit_days_ago=1, mode="LIVE")              # LIVE: not in the PAPER account
     _trade(member, pnl=5_000.0, charges=10.0, exit_days_ago=1)                       # same organisation, another user
     _trade(stranger, pnl=-7_000.0, charges=10.0, exit_days_ago=1)                    # another organisation
+    _trade(owner, pnl=9_000.0, charges=1.0, exit_days_ago=1, price_source="client")   # priced from browser candles (H2)
 
     body = client.get("/api/paper/account", headers=owner["headers"]).json()
     assert body["realised"] == {"gross": 300.0, "charges": 50.0, "net": 250.0}
     assert body["balance"] == 100_250.0 and body["unrealised"] == 30.0 and body["equity"] == 100_280.0
     assert body["closed_trades"] == 2 and body["open_positions"] == 1 and [p["id"] for p in body["positions"]] == [open_id]
+    assert body["excluded_trades"] == 1
     assert body["wins"] == 1 and body["losses"] == 1 and body["sessions"] == 3
     journal = body["journal"]
     assert [j["net_pnl"] for j in journal] == [-230.0, 480.0] and journal[1]["gross_pnl"] == 500.0 and journal[1]["charges"] == 20.0
@@ -130,7 +138,7 @@ def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
     theirs = client.get("/api/paper/account", headers=stranger["headers"]).json()
     assert theirs["realised"]["net"] == -7_000.0 and theirs["closed_trades"] == 1
     serialized = json.dumps(body)
-    assert "5000" not in serialized and "7000" not in serialized
+    assert "5000" not in serialized and "7000" not in serialized and "9000" not in serialized
 
 
 def test_equity_drawdown_is_peak_to_trough_of_the_closed_trade_curve():
@@ -158,6 +166,17 @@ def test_rejected_and_expired_entry_proposals_are_would_have_records():
     assert records[rejected]["status"] == "REJECTED" and records[rejected]["proposal_price"] == 100.0 and records[rejected]["note"] == "no"
     assert records[expired]["status"] == "EXPIRED" and records[expired]["symbol"] == "RELIANCE"
     assert body["proposals"]["rejected_by_you"] == 1 and body["proposals"]["expired_unanswered"] == 1
+
+    # Review L7: another member's proposals are theirs, not in this account's records or counts.
+    from tests.test_z3_members import member
+    mate = member(t)
+    theirs = _propose(mate, entry=99.0)
+    assert client.post(f"/api/ai/actions/{theirs}/reject", headers=mate["headers"], json={}).status_code == 200
+    again = client.get("/api/paper/account", headers=t["headers"]).json()
+    assert theirs not in {r["proposal_id"] for r in again["not_taken"]} and again["proposals"]["rejected_by_you"] == 1
+    _paper_flag(mate["tenant_id"])
+    mine = client.get("/api/paper/account", headers=mate["headers"]).json()
+    assert {r["proposal_id"] for r in mine["not_taken"]} == {theirs} and mine["proposals"]["rejected_by_you"] == 1
 
 
 # --- PAPER-scope pause -------------------------------------------------------------------------------------------------
@@ -209,6 +228,14 @@ def test_pause_stops_only_this_users_new_paper_entries_and_proposals_never_exits
             return list(await session.scalars(select(AiActionRecord).where(AiActionRecord.tenant_id == owner["tenant_id"], AiActionRecord.action == "ENTRY")))
     assert _run(entries()) == []
 
+    # Review L6: the pause does not outlive the flag.
+    async def paused_now():
+        async with _session_factory() as session:
+            return await service.paused_reason(session, owner["user_id"])
+    assert _run(paused_now()) is not None
+    _paper_flag(owner["tenant_id"], on=False)
+    assert _run(paused_now()) is None
+    _paper_flag(owner["tenant_id"])
     assert client.post("/api/paper/resume", headers=owner["headers"]).json()["paused"] is False
     _, reasons = _run(enter(owner["user_id"]))
     assert not any("paused" in r for r in reasons), reasons        # (the risk guardian may still refuse after the stop-out)

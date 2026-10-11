@@ -93,9 +93,9 @@ async def execute_signal_for_user(
     caller. A LIVE request without a broker is REJECTED on the order trail rather than raised:
     the worker's token gate normally prevents it, but if it ever happens it must be visible.
 
-    Z3 / BT2: `origin` says who asks - "manual" (a person's own console entry), "approval" (an APPROVED entry proposal,
-    whose id is `approval_action_id`) or "automatic" (the default: worker, webhook, public API). Under approval-only
-    mode an automatic entry without an approved proposal is REJECTED here (app/execution/approval.py::gate_refusal).
+    Z3 / BT2: `origin` says who asks - "approval" (an APPROVED entry proposal, whose id is `approval_action_id`) or
+    "automatic" (the default: worker, webhook, public API, console). Under approval-only mode any entry without an
+    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal) - there is no bypass.
 
     Z5 / P1-d: `max_quantity` caps the size (a PAPER ticket's checked quantity); `risk_cap_amount` is the user's checked
     cap for this entry (a ticket's, an override included). With the `risk_by_default` flag on, a PAPER entry is sized

@@ -41,6 +41,8 @@ async def set_capital(body: CapitalBody, user: User = Depends(require_trader), s
     await _enabled(session, user)
     try:
         await service.set_starting_capital(session, user, body.starting_capital)
+    except service.CapitalLocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return await service.summary(session, user)

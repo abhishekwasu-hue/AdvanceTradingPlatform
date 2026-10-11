@@ -48,20 +48,24 @@ breach block) and `vix_gate`. With both off nothing changes. PAPER only: nothing
 - `approval.propose_entry`: no proposal is raised for a locked-out user (`EntriesPaused`, as the Z3-b pause).
 - **Exits never pass through any of these.** Stops, targets, time stops, square-off, the kill switch, "Exit now" and
   "Exit now?" are untouched. Tests close a locked-out user's position by "Exit now" and by its stop (with a VIX spike
-  active too).
+  active too). "Exit now" itself is Z3's (its flags, the user's own live price, PAPER only).
 
 ## The ticket's placement
 
-The plan is checked again on the server and stored (`trade_plans`). The entry is re-priced at the live price; outside
-the re-quote limit (`APPROVAL_REQUOTE_MAX_DRIFT_*`) nothing is placed and the plan must be updated. Then one PAPER
-order goes through the ordinary pipeline as the person's own entry (`origin="manual"`), with:
+The plan is checked again on the server and stored (`trade_plans`). The entry is re-priced at the user's own live
+price (their BT1 entitlement, never a teammate's session); outside the re-quote limit (`APPROVAL_REQUOTE_MAX_DRIFT_*`)
+nothing is placed and the plan must be updated. Under approval-only mode no entry bypasses the gate (Z3-a review): the
+ticket raises an ENTRY proposal (source "ticket") carrying the plan's limits in `evidence.ticket`, the plan becomes
+PROPOSED, and Approve places the PAPER order within those limits. Otherwise one PAPER order goes through the ordinary
+pipeline, with:
 
 - the plan's quantity as a ceiling (fewer units when the live price is farther from the stop, so the risk stays inside
   the cap);
 - the checked cap as `risk_cap_amount`;
 - the time stop as the position's `time_exit_at`.
 
-The plan row ends PLACED (with its order and position) or REFUSED (with the reasons).
+The plan row ends PLACED (with its order and position), PROPOSED (with its proposal, whose outcome the plan shows) or
+REFUSED (with the reasons).
 
 ## Strike breach model (Trade `strike_breach_model.py`)
 

@@ -45,6 +45,7 @@ def upgrade() -> None:
         sa.Column('costs_json', sa.Text(), nullable=False),
         sa.Column('status', sa.String(12), nullable=False),
         sa.Column('reasons_json', sa.Text(), nullable=False),
+        sa.Column('proposal_id', sa.Integer(), sa.ForeignKey('ai_actions.id', ondelete='SET NULL'), nullable=True),
         sa.Column('order_id', sa.Integer(), sa.ForeignKey('orders.id', ondelete='SET NULL'), nullable=True),
         sa.Column('trade_id', sa.Integer(), sa.ForeignKey('trades.id', ondelete='SET NULL'), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),

@@ -17,10 +17,11 @@ from here, the page computes nothing:
 * **the checklist** - the user's ticks plus two the server fills (reward:risk and size within the cap). Skipping is
   allowed and counted as a discipline miss (stored on the plan; the journal reads it in P1-e).
 
-Placing re-prices the entry at the live price (as an approved proposal does, Z3-a): beyond the re-quote limit nothing is
-placed and the plan must be updated. Then one PAPER order goes through the ordinary pipeline (kill switches, platform
-controls, risk engine, order state machine) as the person's own entry, with the plan's quantity as its ceiling. The plan
-is stored with the order and the position, or with the reasons it was refused. PAPER only: nothing here can reach a
+Placing re-prices the entry at the user's own live price (as an approved proposal does, Z3-a): beyond the re-quote limit
+nothing is placed and the plan must be updated. Then one PAPER order goes through the ordinary pipeline (kill switches,
+platform controls, risk engine, order state machine) with the plan's quantity as its ceiling - or, under approval-only
+mode (no entry without an approved proposal), an ENTRY proposal carrying those limits is raised and Approve places it.
+The plan is stored with the order and the position (or the proposal), or with the reasons it was refused. PAPER only: nothing here can reach a
 broker's order API, and nothing here ever stands in the way of an exit (ADR-0004).
 """
 from __future__ import annotations
@@ -38,7 +39,7 @@ from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
-from app.db.models import Tenant, TradePlanRecord, TradeRecord, User
+from app.db.models import AiActionRecord, Tenant, TradePlanRecord, TradeRecord, User
 from app.execution import approval
 from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
@@ -200,8 +201,10 @@ def _plan_row(user: User, plan: Plan, view: Dict[str, Any]) -> TradePlanRecord:
 
 async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: Optional[PriceLookup],
                 now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Checks the plan again, stores it, re-prices the entry at the live price and places one PAPER order through the
-    ordinary pipeline. Returns the stored plan (PLACED with its order and position, or REFUSED with the reasons)."""
+    """Checks the plan again, stores it, re-prices the entry at the live price (the user's own entitlement) and either
+    places one PAPER order through the ordinary pipeline or - under approval-only mode, where no entry goes through
+    without an approved proposal (Z3-a) - raises an ENTRY proposal carrying the plan's limits; Approve places it.
+    Returns the stored plan: PLACED (order and position), PROPOSED (the proposal) or REFUSED (the reasons)."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.trading.exit_rules import ExitRules
     now = now or datetime.now(timezone.utc)
@@ -217,8 +220,8 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
         else:
             try:
                 price = float(await price_lookup(view["symbol"]))
-            except Exception as exc:  # noqa: BLE001 - no quote, no order
-                reasons.append(f"No live price for {view['symbol']} ({type(exc).__name__}) - nothing was placed")
+            except Exception as exc:  # noqa: BLE001 - no quote, no order (NoLivePrice included)
+                reasons.append(f"No live price for {view['symbol']} on your own broker session ({type(exc).__name__}) - nothing was placed")
     if not reasons and price is not None:
         verdict, why = approval.requote_check(view["direction"], float(plan.entry), price, stop_loss=plan.stop_loss, target1=plan.target,
                                               max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
@@ -234,21 +237,35 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     s = view["sizing"]
     multiplier = s["size_multiplier"] or 1.0
     # The checked cap before the guardian's cut (the pipeline applies the cut again), with the override's room if used.
-    cap_amount = max(min(s["user_cap"], s["org_cap"]), s["risk_amount"] / multiplier if multiplier > 0 else 0.0)
+    cap_amount = round(max(min(s["user_cap"], s["org_cap"]), s["risk_amount"] / multiplier if multiplier > 0 else 0.0), 2)
     risk = abs(price - plan.stop_loss)
     signal = Signal(symbol=view["symbol"], strategy_id=f"plan_{plan.setup.lower()}", strategy_name=f"PAPER ticket: {SETUPS[plan.setup]}",
                     direction=SignalDirection(view["direction"]), timestamp=now, entry=price, stop_loss=plan.stop_loss, target1=plan.target,
                     risk_reward=round(abs(plan.target - price) / risk, 2) if risk > 0 else None, score=0, grade=SignalGrade.VALID,
                     reasons=[f"Plan #{row.id}: {SETUPS[plan.setup]}" + (f"; invalidation: {row.invalidation}" if row.invalidation else ""),
-                             f"Placed from the PAPER ticket at the live price {price:g}"], timeframe_combo="plan")
+                             f"From the PAPER ticket at the live price {price:g}"], timeframe_combo="plan")
+    exit_rules = ExitRules(time_exit_at=plan.time_stop).to_json() if plan.time_stop else None
     if row.override:
         await write_audit_log(session, user.tenant_id, user.id, "risk_cap_override",
                               f"plan #{row.id} {view['symbol']} qty {s['quantity']:g} risks {s['risk_amount']:,.2f} > cap {s['cap']:,.2f}: {row.override_reason}"[:500])
     await session.commit()
+    if await approval.required(session, user.tenant_id):
+        try:
+            action = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=signal.strategy_id, source="ticket",
+                                                  idempotency_key=f"ticket:{row.id}", exit_rules=exit_rules, user_id=user.id, now=now,
+                                                  ticket={"plan_id": row.id, "max_quantity": s["quantity"], "risk_cap_amount": cap_amount})
+        except approval.EntriesPaused as exc:
+            action, row.reasons_json = None, json.dumps([str(exc)])
+        row = await session.get(TradePlanRecord, row.id) or row
+        row.proposal_id = action.id if action is not None else None
+        row.status = "PROPOSED" if action is not None else "REFUSED"
+        if action is not None:
+            row.reasons_json = json.dumps([f"Approval-only mode: entry proposal #{action.id} raised - approve it to place the PAPER order"])
+        await session.commit()
+        return await plan_view(session, row)
     result, order = await execute_signal_for_user(
         session, user, mode=by_default.MODE, strategy_id=signal.strategy_id, signal=signal, idempotency_key=f"ticket:{row.id}",
-        exit_rules=ExitRules(time_exit_at=plan.time_stop).to_json() if plan.time_stop else None, holding="INTRADAY",
-        origin=approval.ORIGIN_MANUAL, max_quantity=s["quantity"], risk_cap_amount=round(cap_amount, 2))
+        exit_rules=exit_rules, holding="INTRADAY", max_quantity=s["quantity"], risk_cap_amount=cap_amount)
     row = await session.get(TradePlanRecord, row.id) or row
     row.order_id, row.trade_id = order.id, order.trade_id
     row.status = "PLACED" if result.executed else "REFUSED"
@@ -260,9 +277,15 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
 async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, Any]:
     """The stored plan and what became of it: the fill (the live price, and the quantity the pipeline placed - smaller
     than planned when the price moved away from the stop, so the risk stays within the cap)."""
-    filled = None
-    if row.trade_id is not None:
-        trade = await session.get(TradeRecord, row.trade_id)
+    filled, proposal = None, None
+    trade_id = row.trade_id
+    if row.proposal_id is not None:
+        action = await session.get(AiActionRecord, row.proposal_id)
+        if action is not None and action.tenant_id == row.tenant_id:
+            proposal = {"id": action.id, "status": action.status, "result": action.result}
+            trade_id = trade_id or action.trade_id
+    if trade_id is not None:
+        trade = await session.get(TradeRecord, trade_id)
         if trade is not None and trade.tenant_id == row.tenant_id:
             filled = {"quantity": float(trade.quantity), "price": float(trade.entry_price),
                       "risk_amount": round(abs(float(trade.entry_price) - float(trade.stop_loss)) * float(trade.quantity), 2)}
@@ -277,7 +300,7 @@ async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, An
             "reward_risk": row.reward_risk, "time_stop": row.time_stop, "invalidation": row.invalidation, "checklist": loads(row.checklist_json, {}),
             "checklist_complete": row.checklist_complete, "quantity": row.quantity, "risk_amount": row.risk_amount, "risk_cap": row.risk_cap,
             "override": row.override, "override_reason": row.override_reason, "costs": loads(row.costs_json, {}),
-            "reasons": loads(row.reasons_json, []), "order_id": row.order_id, "trade_id": row.trade_id, "filled": filled,
+            "reasons": loads(row.reasons_json, []), "order_id": row.order_id, "trade_id": trade_id, "filled": filled, "proposal": proposal,
             "created_at": (row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=timezone.utc)).isoformat()}
 
 

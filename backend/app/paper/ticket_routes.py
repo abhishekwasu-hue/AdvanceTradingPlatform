@@ -90,8 +90,8 @@ async def preview(body: PlanBody, user: User = Depends(require_trader), session:
 async def place(body: PlanBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     """Places one PAPER order from the plan, or stores why not. Answers 200 either way, with the plan's status."""
     await _enabled(session, user)
-    from app.ai.worker_bridge import price_lookup_for_tenant
-    lookup = await price_lookup_for_tenant(session, user.tenant_id)
+    from app.ai.worker_bridge import price_lookup_for_user
+    lookup = await price_lookup_for_user(session, user)            # the user's own entitlement (BT1), never a teammate's
     return await ticket.place(session, user, body.plan(), price_lookup=lookup)
 
 

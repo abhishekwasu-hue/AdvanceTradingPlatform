@@ -79,7 +79,7 @@ def test_catalog_and_graded_run_when_on(screener_on, monkeypatch):
     f = base_then([TRUE_BREAK])
     asked = []
 
-    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False):
+    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **kw):
         asked.append((tuple(symbols), base_tf))
         return [SymbolData(s, {base_tf: f}) for s in symbols if s != "NODATA"], {"NODATA": "no bars from the broker"}, "broker:fake"
     from app.screener.breakouts import routes as bk_routes
@@ -199,7 +199,7 @@ def test_weekly_signal_reads_monthly_context_from_daily_bars(screener_on, monkey
     daily = generate(272, 100.0, 3, daily=True)
     asked, seen = [], {}
 
-    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False):
+    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **kw):
         asked.append(base_tf)
         return [SymbolData(s, {base_tf: daily}) for s in symbols], {}, "broker:fake"
 

@@ -25,6 +25,8 @@ from app.market_lake import adjust, tenant_store
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
+DAILY_TIMEFRAMES = frozenset({"1d", "day", "d", "1day"})
+
 
 def _utc(value: Optional[datetime]) -> Optional[datetime]:
     if value is None:
@@ -46,6 +48,12 @@ async def history(
         raise HTTPException(status_code=422, detail="end must be after start")
     preferred = [s.strip() for s in sources.split(",") if s.strip()] if sources else None
     sym = symbol or instrument_key.split(":")[-1]
+    if store == "shared" and timeframe.strip().lower() not in DAILY_TIMEFRAMES:
+        from app.market_data import live_access
+        if await live_access.byob_on(session, user.tenant_id):
+            # BT1b: intraday bars in the shared lake were recorded from other organisations' broker streams / backfills.
+            raise live_access.LiveDataRefused("Intraday bars in the shared history were recorded through other sessions' broker feeds, so "
+                                              "they are not shown while the bring-your-own-broker data tier is on; daily (EOD) bars are.")
     if store == "tenant":
         try:
             bars = await tenant_store.candles(session, user.tenant_id, instrument_key, timeframe, start, end, symbol=sym,

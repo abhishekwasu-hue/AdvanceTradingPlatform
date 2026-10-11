@@ -128,6 +128,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
     "approval_only_entries": "Approval-only entries: automatic entries become proposals; Approve places a PAPER order at a re-quoted price",
+    # Z3-b / BT3: each user's own PAPER account (starting capital, balance, P&L after charges, positions, journal), the
+    # progression ladder card (PAPER stage only in Phase 0) and the Telegram /status /pause /resume /paper commands.
+    "paper_account": "Per-user PAPER account, progression ladder card and Telegram /status /pause /resume /paper",
     # U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library taxonomy (method x setup) and the gallery
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
@@ -140,7 +143,8 @@ FEATURE_FLAGS: Dict[str, str] = {
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery", "screener_breakouts"})
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
+                               "screener_breakouts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

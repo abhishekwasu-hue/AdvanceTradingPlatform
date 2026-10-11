@@ -11,7 +11,7 @@ Grammar (keywords are case-insensitive; field and function names are case-sensit
     additive   := term (("+" | "-") term)*
     term       := unary (("*" | "/") unary)*
     unary      := "-" unary | postfix                      ("-" NUMBER is the literal itself)
-    postfix    := primary ["[" INT "]"] ["@" TIMEFRAME]    (offset/timeframe only on fields and calls)
+    postfix    := primary ["[" INT "]"] ["@" TIMEFRAME]    (either order; offset/timeframe only on fields and calls)
     primary    := NUMBER | STRING | "TRUE" | "FALSE" | "$" NAME | NAME "(" [arg ("," arg)*] ")" | NAME | "(" or_expr ")"
     arg        := NAME "=" or_expr | or_expr
 
@@ -196,17 +196,23 @@ class _Parser:
     def postfix(self) -> n.Node:
         node = self.primary()
         if isinstance(node, (n.Field, n.Call)):
-            if self._is("op", "["):
+            seen_offset = seen_tf = False
+            while self._is("op", "[") or self._is("tf"):                         # [n]@tf or @tf[n]; printed as [n]@tf
+                if self._is("tf"):
+                    if seen_tf:
+                        raise ScreenQLSyntaxError("a timeframe is given twice", self.tok.pos)
+                    node.tf, seen_tf = self._next().text[1:], True
+                    continue
                 bracket = self._next()
+                if seen_offset:
+                    raise ScreenQLSyntaxError("an offset is given twice", bracket.pos)
                 if self._is("op", "-"):
                     raise ScreenQLSyntaxError("a negative offset would read a future bar (look-ahead); offsets count bars back: [1], [2]...", bracket.pos)
                 num = self._expect("num", what="a whole number of bars back")
                 if not num.text.isdigit() or len(num.text) > 4:
                     raise ScreenQLSyntaxError("an offset is a whole number of bars back, at most 4 digits", num.pos)
-                node.offset = int(num.text)
+                node.offset, seen_offset = int(num.text), True
                 self._expect("op", "]")
-            if self._is("tf"):
-                node.tf = self._next().text[1:]
         elif self._is("op", "[") or self._is("tf"):
             raise ScreenQLSyntaxError("offsets and timeframes apply to fields and functions only", self.tok.pos)
         return node

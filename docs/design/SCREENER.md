@@ -230,6 +230,25 @@ job, never tuned against results.
 - **Next.** S1b: the runtime over the registry (pandas on server bars, closed bars only), with one fixture test per
   entry.
 
+## S1b (built): the ScreenQL runtime
+- **Module.** `app/screener/runtime.py` evaluates a validated AST with one implementation per registry entry. Indicators
+  come from `app/indicators`, so the values are identical to the strategies'.
+- **Input.** `SymbolData`: closed bars per timeframe, plus sector, industry, market-cap bucket, F&O flag and index
+  memberships, all as of the run date.
+- **Higher timeframes.**
+  - A coarser timeframe is computed on its own bars and shifted by its own offset.
+  - It is aligned to the screen's bars by close time, so a 1d value appears only on bars that close after that day
+    closes. The test shows day 1's close is invisible while day 1 trades, and day 2 sees only day 1.
+  - A missing coarser frame is resampled from the base bars, and a trailing incomplete bucket is dropped.
+  - Either `[n]@tf` or `@tf[n]` is accepted; `[n]@tf` is canonical.
+- **Cross-sectional.** Rank (1 = highest) and PercentileRank (optionally `by=` a classifier) run over the universe's
+  last bars, innermost first.
+- **NaN never matches.** Short history, x/0 and missing reference data all produce no match. `run_screen` reports
+  "not enough history" per symbol, using the validator's lookback.
+- **Tests.** `tests/test_s1b_screen_runtime.py` (10). There is a hand-computed fixture per entry, and a guard test
+  fails if a registry entry has no runtime test.
+- **Next.** S1c: `/api/scanner/run` translated onto ScreenQL with a parity test, saved screens and runs, and the API.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-1. Where does part S sit in the MASTER order?** Provisional: S0 now; S1 and S3 after H-C1; S2 onwards after part
   B merges.

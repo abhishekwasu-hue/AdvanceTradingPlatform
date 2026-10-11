@@ -283,6 +283,13 @@ def test_liquidity_floor_excludes_thin_names():
     assert run.signals == [] and run.excluded == 1
 
 
+def test_an_index_without_volume_screens_with_the_volume_condition_off():
+    f = base_then([TRUE_BREAK]).assign(volume=0.0)                    # indices carry no volume
+    assert _signals("B1", f) == []                                      # the volume condition cannot pass
+    s = [r for r in _signals("B1", f, vol_mult=0.0) if r["bar"] == len(f) - 1][0]
+    assert s["rvol"] is None and "no volume data (volume checks skipped)" in s["why"] and s["checks"]["base_dry_up"] is False
+
+
 def test_atr_percentile_and_regime():
     f = frame(zigzag(UPTREND * 3, 5) + box(60, 100, 101))          # volatility contracts into the box
     b = Bars(f, bp.settings())

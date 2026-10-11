@@ -156,7 +156,7 @@ def grade_signal(b: Bars, j: int, side: str, row: pd.Series, trends: Dict[str, O
     n_avg, n_dry = int(p["vol_avg_n"]), int(p["dryup_n"])
     dry = False
     if j >= n_avg:
-        recent, base = np.nanmean(b.v[j - n_dry:j]), np.nanmean(b.v[j - n_avg:j])
+        recent, base = float(pd.Series(b.v[j - n_dry:j]).mean()), float(pd.Series(b.v[j - n_avg:j]).mean())   # NaN when no volume
         dry = bool(np.isfinite(recent) and np.isfinite(base) and base > 0 and recent <= p["dryup_ratio"] * base)
     checks["base_dry_up"] = dry
     if dry:
@@ -198,7 +198,7 @@ def _liquid(b: Bars, j: int, p: Dict[str, Any]) -> bool:
     if p["liq_min_value"] <= 0:
         return True
     lo = max(0, j - int(p["liq_n"]) + 1)
-    value = np.nanmedian(b.c[lo:j + 1] * b.v[lo:j + 1])
+    value = float(pd.Series(b.c[lo:j + 1] * b.v[lo:j + 1]).median())          # NaN (no volume): below any floor
     return bool(np.isfinite(value) and value >= p["liq_min_value"])
 
 

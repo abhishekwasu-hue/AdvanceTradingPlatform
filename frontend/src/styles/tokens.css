@@ -26,6 +26,12 @@
   --ai: 167 139 250;
   --ai-2: 34 211 238;
   --glass: 16 20 29;
+  /* U5 (screener design): the fourth surface step, recessed below the page (wells, the funnel's trail track). */
+  --surface-inset: 6 8 13;
+  /* U5: `signal` is the funnel's live trail and the "matched" state - a restrained cyan-teal; `armed` is used only for
+     auto-execution armed / LIVE indicators (amber-orange), so it never loses its meaning. */
+  --signal: 45 212 191;
+  --armed: 251 146 60;
 }
 
 :root[data-theme="light"] {
@@ -50,10 +56,26 @@
   --ai: 109 40 217;
   --ai-2: 8 145 178;
   --glass: 255 255 255;
+  --surface-inset: 232 236 242;
+  --signal: 15 118 110;
+  --armed: 176 56 8;
 }
 
 /* Red-green colour blindness: profit blue, loss orange (Okabe-Ito sky blue / blue; an orange kept clear of the amber "warn"), in both
    themes. Profit blue is lighter and greener than the brand blue so a profit never reads as a link or a button, and
    "info" turns neutral so it cannot be mistaken for profit. */
-:root[data-cvd="on"] { --up: 86 180 233; --down: 249 115 22; --info: 148 163 184; }
-:root[data-theme="light"][data-cvd="on"] { --up: 0 114 178; --down: 194 65 12; --info: 71 85 105; }
+:root[data-cvd="on"] { --up: 86 180 233; --down: 249 115 22; --info: 148 163 184; --signal: 204 121 167; --armed: 240 228 66; }
+:root[data-theme="light"][data-cvd="on"] { --up: 0 114 178; --down: 194 65 12; --info: 71 85 105; --signal: 136 46 114; --armed: 120 94 0; }
+
+/* U5: in colour-blind mode the profit blue and the loss orange take the hues the signal and armed colours had, so those
+   two move to Okabe-Ito reddish purple (signal) and yellow (armed) - every meaning keeps a distinct hue. */
+
+/* U5 shape and rhythm (screener design; other pages adopt them as they are migrated):
+   radii - 6 px for controls, 10 px for panels, nothing else; spacing on a 4-pt grid (panel padding 16, row 36,
+   funnel stage 44); type 12 / 13 / 15 / 18 / 24 / 32 at weights 400 / 500 / 600, numbers in tabular figures. */
+:root {
+  --radius-control: 6px;
+  --radius-panel: 10px;
+  --row-h: 36px;
+  --stage-h: 44px;
+}

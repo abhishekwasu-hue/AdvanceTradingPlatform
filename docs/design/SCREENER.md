@@ -917,8 +917,13 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
 - **ScreenQL.** `ORBreakout(side, minutes, v, vwap, skip, k)`, `DayLevelBreak(side, level, v, vwap, skip, k)`,
   `DayExtremeBreak(side, v, vwap, skip, k)`, `RelVolumeTOD(sessions, mode)` and `SessionVWAP()`. They are flagged with
   the family and limited to intraday timeframes (the validator says so). Their lookback is whole sessions (20 prior +
-  today), counted in the screen's own bars. Five intraday templates are added; their text is checked against the engine
-  bar by bar and on the last bar.
+  today), counted in the screen's own bars. Every breakout function's arguments (BK1 and BK2) are checked against
+  their parameter's range and choices at validate time (`params.SCREENQL_ARGS`). Five intraday templates are added;
+  their text is checked against the engine bar by bar and on the last bar. A test runs each template on broker-shaped
+  history: IST-aware bars limited to the real fetch window, `check_history=True`.
+- **Time zones.** Intraday buckets anchor at 09:15 IST of the first bar's UTC day (`runtime.session_origin`). Session
+  dates, VWAP resets and time-of-day slots use exchange time, so an IST-aware broker index gives the same result as a
+  UTC one (tested).
 - **API.** The breakout run fetches whole sessions for an intraday screen and uses the request's exchange clock. A
   screen asked for on a timeframe it does not run on gets a 422.
 

@@ -27,7 +27,8 @@ import pandas as pd
 
 from app.indicators.volatility import true_range
 from app.price_action.zones.levels import find_pivots_indexed
-from app.price_action.zones.settings import SRV3Settings, ZoneSettings
+from app.price_action.zones.compute import exchange_time
+from app.price_action.zones.settings import TF_MINUTES, SRV3Settings, ZoneSettings
 
 TF_ORDER = ("5m", "15m", "30m", "1h", "4h", "1d", "1w")
 TF_SHORT = {"5m": "5M", "15m": "15M", "30m": "30M", "1h": "1H", "4h": "4H", "1d": "D", "1w": "W"}
@@ -429,15 +430,27 @@ def _tags(zone: Dict[str, Any]) -> List[str]:
     return tags
 
 
+def _closed_by(df: pd.DataFrame, tf: str, as_of: Optional[pd.Timestamp]) -> pd.DataFrame:
+    """Prepared bars (naive exchange time) that had closed by as_of: stamp + bar length <= as_of."""
+    if as_of is None or df.empty:
+        return df
+    return df[df["timestamp"] + pd.Timedelta(minutes=TF_MINUTES[tf]) <= as_of].reset_index(drop=True)
+
+
 def compute_sr_v3(frames: Mapping[str, Optional[pd.DataFrame]], daily_df: Optional[pd.DataFrame] = None,
-                  current_price: Optional[float] = None, settings: Optional[ZoneSettings] = None) -> Dict[str, Any]:
+                  current_price: Optional[float] = None, settings: Optional[ZoneSettings] = None, as_of: Any = None) -> Dict[str, Any]:
     """frames {timeframe: bars} (any of TF_ORDER) -> {"levels": [... best score first ...], "meta": {...}}. Each level:
     level (the line), low / high (the zone), role (SUPPORT / RESISTANCE / ZONE by the price), score, grade, tags, tfs,
-    pivot_count, components, distance_pct (+ above the price)."""
+    pivot_count, components, distance_pct (+ above the price).
+    as_of (a clock time, naive exchange time or tz-aware): every frame and daily_df is first cut to the bars that had
+    CLOSED by then (stamp + bar length <= as_of), so nothing later - nor the unfinished part of a bar - is used."""
     s = settings if settings is not None else ZoneSettings()
     cfg, tz = s.sr_v3, s.session_timezone
-    prepared = {tf: _prep(df, tz) for tf, df in (frames or {}).items() if tf in TF_ORDER}
+    cut = exchange_time(as_of, tz) if as_of is not None else None
+    prepared = {tf: _closed_by(_prep(df, tz), tf, cut) for tf, df in (frames or {}).items() if tf in TF_ORDER}
     prepared = {tf: df for tf, df in prepared.items() if not df.empty}
+    if daily_df is not None and cut is not None:
+        daily_df = _closed_by(_prep(daily_df, tz), "1d", cut)
     if not prepared:
         return {"levels": [], "meta": {"frames": [], "reason": "no data"}}
 

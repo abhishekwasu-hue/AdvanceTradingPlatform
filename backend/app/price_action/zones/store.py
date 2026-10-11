@@ -124,14 +124,18 @@ async def followed(session: AsyncSession) -> List[Tuple[int, str]]:
 
 # ---------------------------------------------------------------- snapshots
 
-def _dt(x: Any) -> Optional[datetime]:
-    """A stored time: tz-aware UTC (naive stamps are taken as UTC)."""
+EXCHANGE_TZ = "Asia/Kolkata"
+
+
+def _dt(x: Any, exchange_tz: str = EXCHANGE_TZ) -> Optional[datetime]:
+    """A stored time: tz-aware UTC. A naive stamp is exchange time (the zones package convention; the job's own frames
+    are always tz-aware)."""
     if x is None or (isinstance(x, float) and x != x):
         return None
     t = pd.Timestamp(x)
     if t is pd.NaT:
         return None
-    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    t = t.tz_localize(exchange_tz).tz_convert("UTC") if t.tzinfo is None else t.tz_convert("UTC")
     return t.to_pydatetime()
 
 

@@ -18,7 +18,9 @@ Trade, all deliberate:
     their tracker over the following bars.
   * a dynamic S/R row's `formed_at` is the last bar of its own frame (Trade stamped every row with the 1H frame's last bar).
   * `role` (RESISTANCE_SUPPLY / SUPPORT_DEMAND) comes from the price for every row (Trade computed it in the callers).
-`as_of`: every frame is cut to bars stamped <= as_of first, so a zone as of T never uses a later bar.
+`as_of` (a clock time): every frame is first cut to the bars that had CLOSED by then (stamp + bar length <= as_of, per
+frame), so a zone as of T never uses a later bar - nor the unfinished part of a higher-timeframe bar. Stamps and as_of
+may be naive (exchange time) or tz-aware (converted with settings.session_timezone).
 """
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -30,7 +32,7 @@ from app.price_action.zones.detect import (DEMAND_ZONE, SUPPLY_ZONE, detect_dema
 from app.price_action.zones.levels import compute_dynamic_sr, find_support_resistance_levels
 from app.price_action.zones.lifecycle import ZoneTracker, frame_swings, new_tracker, origin_side, track_zone
 from app.price_action.zones.memory import zone_tolerance
-from app.price_action.zones.settings import ZoneSettings
+from app.price_action.zones.settings import TF_MINUTES, ZoneSettings
 
 Frames = Mapping[str, Optional[pd.DataFrame]]
 
@@ -39,11 +41,30 @@ def _s(settings: Optional[ZoneSettings]) -> ZoneSettings:
     return settings if settings is not None else ZoneSettings()
 
 
-def cut_as_of(df: Optional[pd.DataFrame], as_of: Any) -> Optional[pd.DataFrame]:
-    """Bars stamped <= as_of (None -> unchanged). Pass the stamp of the last CLOSED bar."""
+def exchange_time(ts: Any, tz: str) -> Any:
+    """Stamps (a Series or one value) as naive exchange time: tz-aware -> converted to `tz` and made naive; naive -> taken
+    as exchange time already. Lets tz-aware frames, naive frames and a naive or aware as_of be compared safely."""
+    if isinstance(ts, pd.Series):
+        t = pd.to_datetime(ts)
+        return t.dt.tz_convert(tz).dt.tz_localize(None) if getattr(t.dt, "tz", None) is not None else t
+    t1 = pd.Timestamp(ts)
+    return t1.tz_convert(tz).tz_localize(None) if t1.tzinfo is not None else t1
+
+
+def cut_as_of(df: Optional[pd.DataFrame], as_of: Any, timeframe: str, tz: str = "Asia/Kolkata") -> Optional[pd.DataFrame]:
+    """The bars of a `timeframe` frame that had CLOSED by `as_of` (None -> unchanged). Bars are stamped at their open, so a
+    bar counts once stamp + bar length <= as_of: as of 14:00 a 1h bar stamped 14:00 (15m data to 14:59) is not used,
+    nor a 15m bar stamped 13:50. Conservative at a session's short last bar (a 1h bar stamped 15:00 counts from 16:00)."""
     if df is None or as_of is None:
         return df
-    return df[pd.to_datetime(df["timestamp"]) <= pd.Timestamp(as_of)]
+    if timeframe not in TF_MINUTES:
+        raise ValueError(f"unknown timeframe {timeframe!r} - its bar length is needed to cut as of a time")
+    closes = exchange_time(df["timestamp"], tz) + pd.Timedelta(minutes=TF_MINUTES[timeframe])
+    return df[(closes <= exchange_time(as_of, tz)).to_numpy()]
+
+
+def _cut_all(frames: Optional[Frames], as_of: Any, tz: str) -> Dict[str, Optional[pd.DataFrame]]:
+    return {tf: cut_as_of(df, as_of, tf, tz) for tf, df in (frames or {}).items()}
 
 
 def tracker_fields(tracker: ZoneTracker) -> Dict[str, Any]:
@@ -85,11 +106,11 @@ def _level_rows(levels: Dict[str, Any], prefix: str, timeframe: str, df: pd.Data
     return rows
 
 
-def _latest_close(frames: List[Optional[pd.DataFrame]]) -> Optional[float]:
+def _latest_close(frames: List[Optional[pd.DataFrame]], tz: str) -> Optional[float]:
     live = [f for f in frames if f is not None and len(f)]
     if not live:
         return None
-    last = max(live, key=lambda f: pd.Timestamp(f["timestamp"].iloc[-1]))
+    last = max(live, key=lambda f: exchange_time(f["timestamp"].iloc[-1], tz))
     return float(last["close"].iloc[-1])
 
 
@@ -111,8 +132,8 @@ def compute_all_zones(frames: Frames, dynamic_frames: Optional[Frames] = None, s
     dynamic_frames: {timeframe: recent bars} for dynamic S/R (Trade passed ~20 days per timeframe; its 15m fell back to
     the long 15m history when no recent frame was given - a caller choice here). Missing frames skip their family."""
     s = _s(settings)
-    frames = {tf: cut_as_of(df, as_of) for tf, df in frames.items()}
-    dyn = {tf: cut_as_of(df, as_of) for tf, df in (dynamic_frames or {}).items()}
+    frames = _cut_all(frames, as_of, s.session_timezone)
+    dyn = _cut_all(dynamic_frames, as_of, s.session_timezone)
     rows: List[Dict[str, Any]] = []
 
     df_sr = frames.get(s.sr_timeframe)
@@ -138,7 +159,7 @@ def compute_all_zones(frames: Frames, dynamic_frames: Optional[Frames] = None, s
         for gap in find_overnight_gaps(df_g, s):
             rows.append(_state_row(gap, s.gap_timeframe, df_g, df_g[ts > pd.Timestamp(gap["formed_at"])], s, sw))
 
-    price = current_price if current_price is not None else _latest_close([df_z, df_sr, df_g, *dyn.values()])
+    price = current_price if current_price is not None else _latest_close([df_z, df_sr, df_g, *dyn.values()], s.session_timezone)
     for row in rows:
         row["role"] = role_by_price(row["zone_low"], row["zone_high"], price) if price is not None else None
     return rows
@@ -148,7 +169,7 @@ def compute_intraday_sr_zones(dynamic_frames: Frames, settings: Optional[ZoneSet
     """Only the intraday dynamic S/R rows (settings.intraday_sr_timeframes, default 15m / 30m / 1h) - Trade's separate
     intraday refresh that never touches the other zone types."""
     s = _s(settings)
-    dyn = {tf: cut_as_of(df, as_of) for tf, df in dynamic_frames.items()}
+    dyn = _cut_all(dynamic_frames, as_of, s.session_timezone)
     rows = dynamic_sr_rows(dyn, s.intraday_sr_timeframes, s)
     for row in rows:
         df = dyn[row["timeframe"]]
@@ -224,4 +245,4 @@ def compute_confluence_table(current_price: float, frames: Frames, settings: Opt
                              as_of: Any = None) -> List[Dict[str, Any]]:
     """One confluence row per settings.confluence_timeframes entry (frames[tf] may be missing -> an empty row)."""
     s = _s(settings)
-    return [compute_confluence_row(tf, cut_as_of(frames.get(tf), as_of), current_price, s) for tf in s.confluence_timeframes]
+    return [compute_confluence_row(tf, cut_as_of(frames.get(tf), as_of, tf, s.session_timezone), current_price, s) for tf in s.confluence_timeframes]

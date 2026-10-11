@@ -62,9 +62,28 @@ def test_settings_layer_platform_tenant_symbol_and_refuse_bad_input():
         resolve_settings({"zone_timeframe": "7m"})
     with pytest.raises(ValidationError):
         resolve_settings({"dynamic_sr_timeframes": ["15m", "2h"]})
-    for bad in ({"avg_window": 4}, {"memory_tol_min_pct": 0.5}, {"sr_v3": {"grade_b": 70}}):
+    for bad in ({"avg_window": 4}, {"memory_tol_min_pct": 0.5}, {"sr_v3": {"grade_b": 70}},
+                # regressions (review of #168): every one of these used to be accepted
+                {"session_timezone": "Not/AZone"}, {"sr_v3": {"flip_frame": "15M"}}, {"sr_v3": {"session_end": "25:99"}},
+                {"sr_v3": {"prd": {"2m": 3}}}, {"sr_v3": {"prd": {"5m": 0}}}, {"sr_v3": {"lookback_days": {"5m": -1}}},
+                {"sr_v3": {"key_level_points": {"PMH": 5}}}, {"memory_retire_days_by_tf": {"7m": 3}}):
         with pytest.raises(ValidationError):
             resolve_settings(bad)
+    with pytest.raises(ValidationError):                                  # extra keys are refused by the models too
+        ZoneSettings.model_validate({"bogus": 1})
+    with pytest.raises(ValidationError):
+        ZoneSettings.model_validate({"sr_v3": {"bogus": 1}})
+
+
+def test_dict_settings_merge_key_by_key():
+    """Regression (review of #168): overriding one timeframe of a per-timeframe map replaced the whole map."""
+    s = resolve_settings({"sr_v3": {"prd": {"5m": 3}}}, {"sr_v3": {"atr_period": 7, "lookback_days": {"1d": 300.0}}},
+                         {"memory_retire_days_by_tf": {"1m": 1}}, {"sr_v3": {"prd": {"1w": 2}}})
+    d = ZoneSettings().sr_v3
+    assert s.sr_v3.prd == {**d.prd, "5m": 3, "1w": 2} and s.sr_v3.atr_period == 7
+    assert s.sr_v3.lookback_days == {**d.lookback_days, "1d": 300.0} and s.sr_v3.lookback_days["5m"] == 3.0
+    assert s.sr_v3.tf_factor == d.tf_factor
+    assert s.memory_retire_days_by_tf == {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 30}
 
 
 # --- role by price ----------------------------------------------------------------------------------------------------------
@@ -122,6 +141,14 @@ def test_first_touch_event_touch_gap_through_and_none():
     ev = D.first_touch_event(*zone, jump)
     assert ev["event"] == D.GAP_THROUGH and ev["bar"] == 1
     assert D.first_touch_event(*zone, jump[["timestamp", "high", "low"]]) is None    # no open / close -> overlap only (Trade)
+    # regression (review of #168): the gap at bar 1 comes before the overlap at bar 3 -> GAP_THROUGH@1, not TOUCH@3
+    later_touch = bars([(110, 112, 108, 111), (97, 98, 95, 96), (96, 99, 94, 98), (98, 102, 97, 101)])
+    assert D.first_touch_event(*zone, later_touch) == {"event": D.GAP_THROUGH, "bar": 1, "time": later_touch["timestamp"].iloc[1]}
+    # an overlap before a later gap stays a TOUCH; on the same bar the overlap wins
+    early_touch = bars([(110, 112, 104, 111), (111, 113, 109, 112), (97, 98, 95, 96)])
+    assert D.first_touch_event(*zone, early_touch)["event"] == D.TOUCH and D.first_touch_event(*zone, early_touch)["bar"] == 0
+    same_bar = bars([(110, 112, 108, 111), (103, 104, 95, 96)])
+    assert D.first_touch_event(*zone, same_bar) == {"event": D.TOUCH, "bar": 1, "time": same_bar["timestamp"].iloc[1]}
 
 
 def test_gap_zone_jumped_through_is_tested_by_gap_not_removed():
@@ -160,20 +187,66 @@ def test_zones_as_of_t_use_only_bars_up_to_t(name):
             assert z["formed_bar"] < z["confirmed_bar"] <= t
 
 
-def test_compute_all_zones_as_of_equals_the_series_cut_at_t():
+def known_at(s15, t):
+    """What really existed at clock time t: the 15m bars closed by t, and the 30m / 1h bars rebuilt from only those 15m
+    bars, keeping just the higher-timeframe bars that had themselves closed (no partial bar)."""
+    m15 = s15[s15["timestamp"] + pd.Timedelta(minutes=15) <= t]
+    out = {"15m": m15}
+    for tf, rule, minutes in (("30m", "30min", 30), ("1h", "1h", 60)):
+        r = G.resample(m15, rule)
+        out[tf] = r[r["timestamp"] + pd.Timedelta(minutes=minutes) <= t].reset_index(drop=True)
+    return out
+
+
+def test_compute_all_zones_as_of_uses_only_bars_closed_by_t_on_every_timeframe():
+    """Regression (review of #168): a 1h bar stamped 14:00 holds 15m data up to 14:59 - as of 14:00 it must not be used.
+    Full frames + as_of must equal frames rebuilt from what had closed by t, at every sampled t (incl. mid-hour)."""
     F = G.frames()
-    frames, dyn = {"1h": F["s1h"], "15m": F["s15"]}, {"15m": F["s15"], "30m": F["s30"], "1h": F["s1h"]}
-    for t in F["s15"]["timestamp"].iloc[[300, 450, 600, 749]]:
+    s15 = F["s15"]
+    frames, dyn = {"1h": F["s1h"], "15m": s15}, {"15m": s15, "30m": F["s30"], "1h": F["s1h"]}
+    stamps = list(s15["timestamp"].iloc[200::7]) + [pd.Timestamp("2026-03-18 14:00"), pd.Timestamp("2026-03-18 14:20")]
+    for t in stamps:
+        k = known_at(s15, t)
         got = C.compute_all_zones(frames, dyn, as_of=t)
-        cut = C.compute_all_zones({k: v[v["timestamp"] <= t] for k, v in frames.items()}, {k: v[v["timestamp"] <= t] for k, v in dyn.items()})
-        assert got == cut
-        assert all(pd.Timestamp(r["formed_at"]) <= t and pd.Timestamp(r["confirmed_at"]) <= t for r in got)
-        assert all(r["first_touch"] is None or pd.Timestamp(r["first_touch"]["time"]) <= t for r in got)
-        # appending future bars never changes a zone known at t (only its later state)
-        later = {(r["zone_type"], r["timeframe"], r["zone_low"], r["zone_high"], str(r["formed_at"])) for r in C.compute_all_zones(frames, dyn)
-                 if r["zone_type"] not in ("SUPPORT", "RESISTANCE") and not r["zone_type"].startswith("DYNAMIC")}
-        assert {(r["zone_type"], r["timeframe"], r["zone_low"], r["zone_high"], str(r["formed_at"])) for r in got
-                if r["zone_type"] not in ("SUPPORT", "RESISTANCE") and not r["zone_type"].startswith("DYNAMIC")} <= later
+        assert got == C.compute_all_zones({"1h": k["1h"], "15m": k["15m"]}, {tf: k[tf] for tf in ("15m", "30m", "1h")}), t
+        assert all(pd.Timestamp(r["formed_at"]) < t and pd.Timestamp(r["confirmed_at"]) < t for r in got)
+        assert all(r["first_touch"] is None or pd.Timestamp(r["first_touch"]["time"]) < t for r in got)
+    # the reviewer's case: the 12:00 bearish block exists only through the unfinished 14:00 1h bar
+    t = pd.Timestamp("2026-03-18 14:00")
+    assert not [r for r in C.compute_all_zones(frames, as_of=t) if r["zone_type"] == "BEARISH_OB" and str(r["formed_at"]) == "2026-03-18 12:00:00"]
+    # appending future bars never changes a zone already known at t (only its later state)
+    full = {(r["zone_type"], r["timeframe"], r["zone_low"], r["zone_high"], str(r["formed_at"])) for r in C.compute_all_zones(frames, dyn)}
+    early = C.compute_all_zones(frames, dyn, as_of=s15["timestamp"].iloc[450])
+    assert {(r["zone_type"], r["timeframe"], r["zone_low"], r["zone_high"], str(r["formed_at"])) for r in early
+            if r["zone_type"] not in ("SUPPORT", "RESISTANCE") and not r["zone_type"].startswith("DYNAMIC")} <= full
+
+
+def test_cut_as_of_is_by_bar_close_and_tz_safe():
+    df = bars([(100, 101, 99, 100)] * 4, start=pd.Timestamp("2026-03-02 13:00"))           # 1h bars 13:00 .. 16:00
+    assert list(C.cut_as_of(df, "2026-03-02 14:00", "1h")["timestamp"].dt.hour) == [13]
+    assert list(C.cut_as_of(df, "2026-03-02 14:59", "1h")["timestamp"].dt.hour) == [13]
+    assert list(C.cut_as_of(df, "2026-03-02 15:00", "1h")["timestamp"].dt.hour) == [13, 14]
+    with pytest.raises(ValueError):
+        C.cut_as_of(df, "2026-03-02 15:00", "2h")
+    aware = df.assign(timestamp=df["timestamp"].dt.tz_localize("Asia/Kolkata"))
+    assert len(C.cut_as_of(aware, "2026-03-02 15:00", "1h")) == 2                           # naive as_of = exchange time
+    assert len(C.cut_as_of(aware, pd.Timestamp("2026-03-02 09:30", tz="UTC"), "1h")) == 2   # 09:30 UTC = 15:00 IST
+    assert len(C.cut_as_of(df, pd.Timestamp("2026-03-02 09:30", tz="UTC"), "1h")) == 2
+
+
+def test_tz_aware_frames_give_the_same_zones_as_naive_ones():
+    """Regression (review of #168): tz-aware frames with a naive as_of (or mixed aware / naive frames) raised TypeError."""
+    F = G.frames()
+    aware = lambda df: df.assign(timestamp=df["timestamp"].dt.tz_localize("Asia/Kolkata"))
+    t = "2026-03-10 10:00"
+    naive = C.compute_all_zones({"1h": F["s1h"], "15m": F["s15"]}, {"30m": F["s30"]}, as_of=t)
+    mixed = C.compute_all_zones({"1h": aware(F["s1h"]), "15m": F["s15"]}, {"30m": aware(F["s30"])}, as_of=t)
+    utc = C.compute_all_zones({"1h": aware(F["s1h"]), "15m": aware(F["s15"])}, {"30m": aware(F["s30"])},
+                              as_of=pd.Timestamp(t, tz="Asia/Kolkata").tz_convert("UTC"))
+    strip = lambda rows: [(r["zone_type"], r["timeframe"], r["zone_low"], r["zone_high"], r["state"], r["role"],
+                           str(pd.Timestamp(r["formed_at"]).tz_localize(None) if pd.Timestamp(r["formed_at"]).tzinfo else r["formed_at"]))
+                          for r in rows]
+    assert naive and strip(naive) == strip(mixed) == strip(utc)
 
 
 def test_dynamic_sr_and_sr_v3_ignore_bars_after_t():
@@ -182,11 +255,18 @@ def test_dynamic_sr_and_sr_v3_ignore_bars_after_t():
     for t in (450, 600, 750):
         cut = w.iloc[:t + 1]
         assert L.compute_dynamic_sr(cut) == L.compute_dynamic_sr(pd.concat([cut, cut.iloc[-1:]]).iloc[:t + 1])
-    t = F["s15"]["timestamp"].iloc[500]
-    frames = {"15m": F["s15"], "30m": F["s30"], "1h": F["s1h"]}
-    res = V.compute_sr_v3({k: v[v["timestamp"] <= t] for k, v in frames.items()})
-    assert res["meta"]["now"] <= t
-    assert all(z["anchor"] is None or z["anchor"]["ts"] is None or z["anchor"]["ts"] <= t for z in res["levels"])
+    s15 = F["s15"]
+    frames = {"15m": s15, "30m": F["s30"], "1h": F["s1h"]}
+    for t in (s15["timestamp"].iloc[500], pd.Timestamp("2026-03-18 14:20"), s15["timestamp"].iloc[700] + pd.Timedelta(minutes=5)):
+        got = V.compute_sr_v3(frames, as_of=t)
+        want = V.compute_sr_v3(known_at(s15, t))
+        norm = lambda r: G.to_json(G._v3(r, [], {}, lambda x: x))
+        assert norm(got) == norm(want) and got["levels"], t
+        assert got["meta"]["now"] < t
+        assert all(z["anchor"] is None or z["anchor"]["ts"] is None or z["anchor"]["ts"] < t for z in got["levels"])
+    daily = G.frames()["bn"]
+    t = pd.Timestamp("2022-06-01 12:00")
+    assert norm(V.compute_sr_v3({"1d": daily}, as_of=t)) == norm(V.compute_sr_v3({"1d": daily[daily["timestamp"] < "2022-06-01"]}))
 
 
 # --- multi-timeframe consistency ----------------------------------------------------------------------------------------------

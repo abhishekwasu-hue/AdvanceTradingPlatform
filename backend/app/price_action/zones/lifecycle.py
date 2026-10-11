@@ -150,14 +150,14 @@ def frame_swings(bars: pd.DataFrame, settings: ZoneSettings) -> Swings:
     return swing_indices(bars, settings.structure_swing_order)
 
 
-def _align(t: Any, ts: pd.Series) -> pd.Timestamp:
-    """A stamp comparable with the frame's stamps (naive vs tz-aware made consistent; naive = UTC)."""
+def _align(t: Any, ts: pd.Series, exchange_tz: str) -> pd.Timestamp:
+    """A stamp comparable with the frame's stamps. Naive stamps are exchange time (as in compute.exchange_time)."""
     t = pd.Timestamp(t)
     tz = getattr(ts.dt, "tz", None)
     if tz is not None and t.tzinfo is None:
-        return t.tz_localize("UTC").tz_convert(tz)
+        return t.tz_localize(exchange_tz).tz_convert(tz)
     if tz is None and t.tzinfo is not None:
-        return t.tz_convert("UTC").tz_localize(None)
+        return t.tz_convert(exchange_tz).tz_localize(None)
     return t
 
 
@@ -182,7 +182,7 @@ def track_zone(tracker: ZoneTracker, bars: pd.DataFrame, settings: Optional[Zone
     bars = bars.reset_index(drop=True)
     ts = pd.to_datetime(bars["timestamp"])
     after = tracker.last_bar_at if tracker.last_bar_at is not None else start_after
-    first = 0 if after is None else int(np.searchsorted(ts.to_numpy(), _align(after, ts).to_datetime64(), side="right"))
+    first = 0 if after is None else int((ts <= _align(after, ts, s.session_timezone)).sum())        # bars are oldest first
     n = len(bars)
     if first >= n:
         return tracker

@@ -33,7 +33,7 @@ from app.price_action.zones.store import (PLATFORM_SCOPE, followed, latest_run, 
 logger = logging.getLogger(__name__)
 
 FLAG = "market_zones"
-TF_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
+INTRADAY_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
 LAKE_LABELS = {"1m": ("1m",), "3m": ("3m",), "5m": ("5m",), "15m": ("15m",), "30m": ("30m",), "1h": ("60m", "1h"), "4h": ("240m", "4h"),
                "1d": ("1d", "day"), "1w": ("1w", "week")}
 FRAME_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume", "close_at"]
@@ -61,8 +61,8 @@ def bars_to_frame(rows: List[Any], timeframe: str, s: ZoneSettings) -> pd.DataFr
     if not rows:
         return pd.DataFrame(columns=FRAME_COLUMNS)
     end = pd.to_datetime([r.ts for r in rows], utc=True)
-    if timeframe in TF_MINUTES:
-        start = end - pd.Timedelta(minutes=TF_MINUTES[timeframe])
+    if timeframe in INTRADAY_MINUTES:
+        start = end - pd.Timedelta(minutes=INTRADAY_MINUTES[timeframe])
     elif timeframe == "1d":                                  # a daily bar starts at that session's open
         local = end.tz_convert(s.session_timezone)
         open_t = _hm(s.session_open)
@@ -107,10 +107,10 @@ async def load_frame(session: AsyncSession, key: str, timeframe: str, start: dat
         rows = await candles_as_of(session, key, label, start, end, as_of=end)
         if rows:
             return bars_to_frame(rows, timeframe, s)
-    if timeframe in TF_MINUTES and timeframe != "1m":
+    if timeframe in INTRADAY_MINUTES and timeframe != "1m":
         rows = await candles_as_of(session, key, "1m", start, end, as_of=end)
         if rows:
-            df = resample_closed(bars_to_frame(rows, "1m", s), TF_MINUTES[timeframe], end, s)
+            df = resample_closed(bars_to_frame(rows, "1m", s), INTRADAY_MINUTES[timeframe], end, s)
             return df if len(df) else None
     return None
 

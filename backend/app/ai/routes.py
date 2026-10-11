@@ -829,52 +829,61 @@ class ResearchBody(BaseModel):
     max_drafts: int = Field(default=6, ge=1, le=8)
 
 
-@router.post("/research")
+@router.post("/research", status_code=202)
 async def research_study(body: ResearchBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
-    """H-C3 (behind `ai_research`, off by default): the research loop on server bars. Every draft is a trial in the
-    ledger; the report is deflated by the whole search. Nothing is saved as a strategy or deployed here."""
-    from app.ai import research_loop
-    from app.ai.tools import ToolContext
-    from app.ai.tools.market import _frame
-    from app.core.models import RiskConfig
-    from app.risk_engine.routes import get_tenant_risk_config
+    """H-C3 (behind `ai_research`, off by default): queues a research study (H-C3c). The research worker runs it on
+    server bars - every draft a trial in the ledger, the report deflated by the whole search - and GET shows its progress.
+    Nothing is saved as a strategy or deployed here. One study at a time per organisation."""
+    from app.ai import research_jobs
     await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, "ai_research", user.tenant_id)
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="generation", user_id=user.id)
     if getattr(provider, "name", "") == "rule_based":
         raise HTTPException(status_code=409, detail="The research loop needs an AI provider (Settings > AI provider).")
-    from app.backtest.data_policy import filter_allowed, holdout_start
-    frame, source = await _frame(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, body.timeframe, body.days)
-    frame = filter_allowed(frame, holdout_start())                # the sealed holdout is cut off, never searched
-    if len(frame) < 50:
-        raise HTTPException(status_code=422, detail=f"Only {len(frame)} bars before the sealed holdout; a study needs at least 50.")
-    risk = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     try:
-        out = await research_loop.run_study(session, tenant_id=user.tenant_id, user_id=user.id,
-                                            spec=research_loop.StudyInput(body.idea, body.symbol.upper(), body.exchange, body.timeframe,
-                                                                          body.max_drafts),
-                                            frame=frame, risk=risk, propose=research_loop.llm_proposer(provider))
-    except research_loop.HoldoutError as exc:
-        raise HTTPException(status_code=422, detail=f"The window reaches the sealed holdout: {exc}") from exc
-    from app.ai import metering
-    return {**out, "data_source": source, "usage": metering.spent_by(provider)}
+        row = await research_jobs.enqueue(session, tenant_id=user.tenant_id, user_id=user.id, idea=body.idea, symbol=body.symbol,
+                                          exchange=body.exchange, timeframe=body.timeframe, days=body.days, max_drafts=body.max_drafts)
+    except research_jobs.StudyBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {**research_jobs.study_dict(row), "progress": await research_jobs.progress(session, row)}
+
+
+@router.get("/research")
+async def research_studies(user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+    """This organisation's recent studies (newest first) with their job state."""
+    from app.ai import research_jobs
+    from app.db.models import ResearchStudyRecord
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    await require_flag(session, "ai_research", user.tenant_id)
+    rows = (await session.scalars(select(ResearchStudyRecord).where(ResearchStudyRecord.tenant_id == user.tenant_id)
+                                  .order_by(ResearchStudyRecord.created_at.desc(), ResearchStudyRecord.id.desc()).limit(20))).all()
+    return {"studies": [{**research_jobs.study_dict(r), "progress": await research_jobs.progress(session, r)} for r in rows]}
 
 
 @router.get("/research/{study_id}")
 async def research_study_get(study_id: str, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
-    """The study's trials (every draft tried) and its deflated report."""
-    from app.ai import research, research_loop
+    """The study's job state and progress, its trials (every draft tried) and - once there are trials - its deflated
+    report. Studies from before H-C3c have trials but no job row; they still read."""
+    from app.ai import research, research_jobs, research_loop
+    from app.db.models import ResearchStudyRecord
     await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, "ai_research", user.tenant_id)
+    job = await session.scalar(select(ResearchStudyRecord).where(ResearchStudyRecord.tenant_id == user.tenant_id,
+                                                                 ResearchStudyRecord.study_id == study_id))
     trials = await research.study_trials(session, user.tenant_id, study_id)
-    if not trials:
+    if job is None and not trials:
         raise HTTPException(status_code=404, detail="Study not found")
-    first = trials[0].created_at if trials[0].created_at.tzinfo else trials[0].created_at.replace(tzinfo=timezone.utc)
-    earlier = await research.earlier_studies(session, user.tenant_id, trials[0].symbol, trials[0].timeframe, study_id,
-                                             since=first - timedelta(days=research_loop.EARLIER_STUDIES_DAYS))
-    return {"study_id": study_id, "report": research.study_report(trials, earlier=earlier),
-            "trials": [{"seq": t.seq, "status": t.status, "reason": t.reason, "dsl": json.loads(t.dsl_json), "metrics": json.loads(t.metrics_json),
-                        "created_at": t.created_at.isoformat()} for t in trials if t.status != "oos"]}   # the OOS check is in the report
+    out: dict = {"study_id": study_id, "status": "done", "report": None, "trials": []}
+    if job is not None:
+        out.update({**research_jobs.study_dict(job), "progress": await research_jobs.progress(session, job)})
+    if trials:
+        first = trials[0].created_at if trials[0].created_at.tzinfo else trials[0].created_at.replace(tzinfo=timezone.utc)
+        earlier = await research.earlier_studies(session, user.tenant_id, trials[0].symbol, trials[0].timeframe, study_id,
+                                                 since=first - timedelta(days=research_loop.EARLIER_STUDIES_DAYS))
+        out["report"] = research.study_report(trials, earlier=earlier)
+        out["trials"] = [{"seq": t.seq, "status": t.status, "reason": t.reason, "dsl": json.loads(t.dsl_json), "metrics": json.loads(t.metrics_json),
+                          "created_at": t.created_at.isoformat()} for t in trials if t.status != "oos"]   # the OOS check is in the report
+    return out
 
 
 @router.post("/copilot")

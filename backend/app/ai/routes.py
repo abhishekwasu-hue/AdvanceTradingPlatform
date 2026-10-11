@@ -787,6 +787,35 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
     return out
 
 
+class AgentAskBody(BaseModel):
+    question: str = Field(min_length=2, max_length=2000)
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+
+
+@router.post("/agent/ask")
+async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+    """H-C2 (ADR-0019, behind the `ai_agent` flag, off by default): the AI answers after reading typed, read-only tools.
+    A provider without tool use (the rules, or one not wired yet) gets the ordinary Copilot answer. Never an order."""
+    from app.ai import agent
+    from app.ai.prompt_versions import stamp
+    from app.ai.tools import ToolContext
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    await require_flag(session, "ai_agent", user.tenant_id)
+    lang = body.language or _ai_language(user)
+    provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
+    if not getattr(provider, "supports_tools", False):
+        out = await copilot_answer(session, user, body.question, lang)
+        out["agent"] = {"used": False, "reason": "the configured AI provider does not support tools here; ordinary Copilot answer"}
+        return out
+    stamp(provider, agent.PROMPT_VERSION)
+    answer = await agent.run_agent(provider, ToolContext(session, user.tenant_id, user), body.question, lang=lang)
+    from app.ai import metering
+    return {"answer": answer.text, "source": answer.source, "language": lang, "note": answer.note, "numbers": answer.numbers,
+            "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped,
+                      "tools": [{k: c[k] for k in ("name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
+            "usage": metering.spent_by(provider)}
+
+
 @router.post("/copilot")
 async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """One box for everything - see `copilot_answer`."""

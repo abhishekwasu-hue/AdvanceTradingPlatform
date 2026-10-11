@@ -1,7 +1,7 @@
 """H-C3a: research_trials - the append-only trial ledger of a strategy research study
 
 Revision ID: b4d6f8a0c2e4
-Revises: c5e7a9b1d3f5
+Revises: e9a1c3d5f7b9
 Create Date: 2026-10-11 08:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b4d6f8a0c2e4'
-down_revision: Union[str, Sequence[str], None] = 'c5e7a9b1d3f5'
+down_revision: Union[str, Sequence[str], None] = 'e9a1c3d5f7b9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

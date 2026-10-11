@@ -26,7 +26,7 @@ from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
     OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
     AlertDeliveryRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
-    TenantInviteRecord, User, UserSessionRecord,
+    TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord,
 )
 from app.retention.policy import RetentionPolicy, load_policy
 
@@ -162,5 +162,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     await session.execute(delete(PasswordResetRecord).where(PasswordResetRecord.user_id == user.id))
     await session.execute(update(LoginEventRecord).where(LoginEventRecord.email == old_email.lower()).values(email=placeholder))
     await scrub_llm_text(session, LlmCallRecord.user_id == user.id, "[erased]")       # H-C1 e: their AI conversations
+    # BYOK-V1: their own AI provider keys and Vision settings go with the account.
+    await session.execute(delete(UserAiKeyRecord).where(UserAiKeyRecord.user_id == user.id, UserAiKeyRecord.tenant_id == user.tenant_id))
+    await session.execute(delete(UserVisionPrefsRecord).where(UserVisionPrefsRecord.user_id == user.id,
+                                                              UserVisionPrefsRecord.tenant_id == user.tenant_id))
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")
     return placeholder

@@ -115,17 +115,20 @@ def _sha(text: Optional[str]) -> Optional[str]:
 
 
 async def log_call(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], feature: str, provider: str, model: str, prompt_version: Optional[str],
-                   system: str, user: str, response: Optional[str], status: str, result: Optional[Completion], cost_usd: float = 0.0) -> None:
+                   system: str, user: str, response: Optional[str], status: str, result: Optional[Completion], cost_usd: float = 0.0,
+                   billed_to_user_key: bool = False) -> None:
     """P0.8-D: the full LLM input and output in `llm_calls` (rows never deleted). H-C1 e: the stored text has personal
     data masked (`app.ai.pii`); the hashes are of the original text. Joins the caller's transaction in a savepoint like
-    the usage rows."""
+    the usage rows. BYOK-V1: `billed_to_user_key` marks a call that ran on the user's own provider key (app/ai/byok.py) -
+    it counts against that user's caps, never against the plan's AI budget (no usage rows are written for it)."""
     async with session.begin_nested():
         session.add(LlmCallRecord(tenant_id=tenant_id, user_id=user_id, feature=feature, provider=provider, model=model or "", prompt_version=prompt_version,
                                   system_sha256=_sha(system) or "", user_sha256=_sha(user) or "", response_sha256=_sha(response),
                                   system_text=redact(system or "", strict=False), user_text=redact(user or ""),       # H-C1 e: PII masked
                                   response_text=redact(response), status=status[:300],
                                   input_tokens=(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens) if result else 0,
-                                  output_tokens=result.output_tokens if result else 0, cost_usd=float(cost_usd or 0.0)))
+                                  output_tokens=result.output_tokens if result else 0, cost_usd=float(cost_usd or 0.0),
+                                  billed_to_user_key=bool(billed_to_user_key)))
         await session.flush()
 
 

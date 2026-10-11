@@ -4,6 +4,8 @@
 * `GET /api/option-chain/{underlying}/banner`   the latest slot's banner, with stale / market-closed flags
 * `GET /api/option-chain/{underlying}/history`  the day's banner timeline (`interval` 5, 10 or 15 minutes, newest first)
 * `GET /api/option-chain/{underlying}/strikes`  per-strike call/put OI through the day (the window of the latest slot)
+* `GET /api/option-chain/{underlying}/alerts` the tenant's alert decisions today (sent or held back, with the reason);
+  `POST .../alerts/snooze` (minutes) and `POST .../alerts/mute-today` pause them - read-only actions, never an order
 * `GET /api/option-chain/{underlying}/settings` and `PUT` (owner) - the tenant's settings for the underlying; "*" is
   the tenant default for every underlying. `enabled` asks the collector to follow the underlying.
 
@@ -11,16 +13,17 @@ Every reading is recomputed from the stored strikes with the caller's tenant set
 Nothing here places, changes or suggests an order (ADR-0006).
 """
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import UserRole
-from app.db.models import OIBannerSettingRecord, User
+from app.db.models import OIAlertLogRecord, OIBannerSettingRecord, User
 from app.db.session import get_session
 from app.market_data.calendar import market_session_status
 from app.option_chain import oi_regime, snapshots
@@ -140,3 +143,52 @@ async def put_settings(underlying: str, body: SettingsBody, user: User = Depends
     row.updated_by, row.updated_at = user.id, datetime.now(timezone.utc)
     await session.commit()
     return {"underlying": key, **_settings_json(row, await snapshots.settings_for(session, user.tenant_id, key))}
+
+
+# Pausing the organisation's OI alerts is for members who trade or build strategies, not for viewers / support.
+_member = require_role(UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
+
+
+class SnoozeBody(BaseModel):
+    minutes: int = Field(default=60, ge=1, le=24 * 60)
+
+
+async def _snooze_until(session: AsyncSession, user: User, underlying: str, until: Optional[datetime]) -> Dict[str, Any]:
+    _, own = await snapshots.settings_rows(session, user.tenant_id, underlying)
+    if own is None:
+        own = OIBannerSettingRecord(tenant_id=user.tenant_id, underlying=underlying, overrides="{}")
+        session.add(own)
+    own.snoozed_until, own.updated_by, own.updated_at = until, user.id, datetime.now(timezone.utc)
+    await session.commit()
+    return {"underlying": underlying, "snoozed_until": until.isoformat() if until else None}
+
+
+@router.post("/{underlying}/alerts/snooze")
+async def snooze(underlying: str, body: SnoozeBody, user: User = Depends(_member), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    return await _snooze_until(session, user, _underlying(underlying), datetime.now(timezone.utc) + timedelta(minutes=body.minutes))
+
+
+@router.post("/{underlying}/alerts/mute-today")
+async def mute_today(underlying: str, user: User = Depends(_member), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    tomorrow = datetime.now(timezone.utc).astimezone(IST).date() + timedelta(days=1)
+    return await _snooze_until(session, user, _underlying(underlying), datetime.combine(tomorrow, time(), IST).astimezone(timezone.utc))
+
+
+@router.post("/{underlying}/alerts/resume")
+async def resume(underlying: str, user: User = Depends(_member), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    return await _snooze_until(session, user, _underlying(underlying), None)
+
+
+@router.get("/{underlying}/alerts")
+async def alert_log(underlying: str, day: Optional[date] = Query(default=None, alias="date"), user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    underlying = _underlying(underlying)
+    day = day or datetime.now(timezone.utc).astimezone(IST).date()
+    since = datetime.combine(day, time(), IST).astimezone(timezone.utc)
+    rows = await session.scalars(select(OIAlertLogRecord).where(OIAlertLogRecord.tenant_id == user.tenant_id, OIAlertLogRecord.underlying == underlying,
+                                                                OIAlertLogRecord.created_at >= since, OIAlertLogRecord.created_at < since + timedelta(days=1))
+                                 .order_by(OIAlertLogRecord.created_at.desc()).limit(200))
+    _, own = await snapshots.settings_rows(session, user.tenant_id, underlying)
+    return {"underlying": underlying, "snoozed_until": own.snoozed_until.isoformat() if own and own.snoozed_until else None,
+            "alerts": [{"alert_type": r.alert_type, "old_state": r.old_state, "new_state": r.new_state, "status": r.status,
+                        "slot": r.slot_start.isoformat(), "at": r.created_at.isoformat(), "notification_id": r.notification_id} for r in rows]}

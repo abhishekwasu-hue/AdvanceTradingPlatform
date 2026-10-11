@@ -467,6 +467,16 @@ class TradingWorker:
                         except Exception as exc:  # noqa: BLE001 - try the next tenant's session
                             await own.rollback()
                             logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
+            # O4: each following tenant's banner state and alerts for this slot (also when the read failed: a stale
+            # collector is itself an alert). Its own session; a failure never stops the cycle.
+            from app.option_chain import oi_alerts
+            for tenant_id in sorted({t for t, _ in tenants}):
+                async with self.session_factory() as own:
+                    try:
+                        await oi_alerts.evaluate_tenant(own, tenant_id, underlying, now, market_open=True)
+                    except Exception as exc:  # noqa: BLE001
+                        await own.rollback()
+                        logger.warning("OI alerts of %s for tenant %s failed: %s", underlying, tenant_id, exc)
         return stored
 
     async def _market_memory(self, session: AsyncSession, now: datetime, broker_reads: bool = True) -> int:

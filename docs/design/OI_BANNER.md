@@ -103,6 +103,39 @@ Kept as in the source, and flagged for review:
 - **Presentation logic** is in `src/oi/format.ts` and tested in vitest: line layout, chips, tone tokens, Indian digit
   grouping, per-strike change, and no order words (buy/sell/target/recommended) in any banner text.
 
+## O4a: alerts on banner changes
+
+- **State history:** `oi_banner_states` stores one row per (tenant, underlying, slot) with that tenant's own settings:
+  direction, stable direction and strength, PCR band, max pain (and the reference for move alerts), DTE and the OI wall.
+  Every alert compares the new slot with the previous one, never re-reads a single snapshot.
+- **Alert types** (`OIAlertSettings.types`, all on by default once `alerts.enabled` is set):
+  - `DIRECTION_CHANGE`;
+  - `STABLE_FLIP` (hysteresis-confirmed);
+  - `STRENGTH_CHANGE` (Strong ↔ Weakening);
+  - `PCR_BAND` (WARNING when entering Oversold/Overbought);
+  - `MAX_PAIN_MOVE` (≥ `max_pain_strikes` strikes from the last alerted value);
+  - `OI_WALL` (formed or broken at the psychological level in the stable direction);
+  - `DTE` (milestones, default expiry tomorrow and today);
+  - `COLLECTOR_STALE` (ops, WARNING, once per IST day).
+- **Rules:**
+  - alerts fire only on a change;
+  - the dedupe key `tenant:underlying:type:new_state:slot` is unique in `oi_alert_log`;
+  - a per-type cooldown applies;
+  - quiet hours (IST, may wrap midnight), snooze (`POST …/alerts/snooze`) and mute-today hold an alert back, and the
+    log records the reason;
+  - no evaluation runs while the venue is closed.
+- **Delivery** goes through the existing `notify()` → `enqueue_for_notification` → dispatcher, routed by the existing
+  `severity_reaches` floors. That means exactly one notification per change and one delivery per channel, with no
+  second pipeline.
+  - **Types:** event types are `OI_BANNER` / `OI_COLLECTOR`.
+  - **Template:** the message is the spec's template.
+  - **Webhook:** webhooks get the versioned `metadata_json` (`oi_banner.v1`: underlying, alert_type, old_state,
+    new_state, snapshot, data_timestamps).
+- **Wording:** messages state activity and bias; a test checks that no order words appear.
+- **Later in O4b:** Telegram buttons (open chain / open chart / snooze 1h / mute today, all read-only), the daily
+  digest, and the alert settings UI.
+- **Rollover-bias flip alerts** wait for next-expiry chain collection, which is not collected yet.
+
 ## Golden fixtures
 
 `backend/tests/fixtures/oi_regime/golden.json` holds 1,300+ cases produced by running Trade's own functions on

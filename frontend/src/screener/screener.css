@@ -1,0 +1,33 @@
+/* U5: the one orchestrated moment - when a scan runs, the survivor trails fill top to bottom (600 ms in all) and the
+   result board settles. Everything else answers user actions only. Reduce motion (the trader's setting or the
+   system's) turns all of it off. */
+.trail-fill {
+  transition: width 300ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--trail-delay, 0ms);
+}
+.board-settle { animation: board-settle 240ms ease-out var(--board-delay, 0ms) both; }
+@keyframes board-settle { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+:root[data-motion="reduce"] .trail-fill, :root[data-motion="reduce"] .board-settle { transition: none; animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .trail-fill, .board-settle { transition: none; animation: none; }
+}
+
+/* U5 layout, by the page's own width (a container query - the app's sidebar takes part of the viewport): the three
+   columns (Universe 280 / funnel / Results 380) need about 1400 px so the funnel keeps one line per stage; from 900 px
+   the universe runs across the top and the funnel sits beside the results; below that everything stacks (the phone
+   keeps a sticky Run bar). The Screener is a workspace, so the shell lets it use the full width (App.tsx). */
+.screener-page { container-type: inline-size; }
+.screener-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "universe" "canvas" "results"; }
+.screener-universe { grid-area: universe; }
+.screener-canvas { grid-area: canvas; min-width: 0; }
+.screener-results { grid-area: results; min-width: 0; }
+.screener-universe-body { display: block; }
+@container (min-width: 900px) {
+  .screener-grid { grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "universe universe" "canvas results"; }
+  .screener-universe-body { display: grid; grid-template-columns: minmax(0, 1fr) 200px minmax(0, 1fr); column-gap: 24px; align-items: start; }
+}
+@container (min-width: 1400px) {
+  .screener-grid { grid-template-columns: 280px minmax(0, 1fr) 380px; grid-template-areas: "universe canvas results"; }
+  .screener-universe-body { display: block; }
+}

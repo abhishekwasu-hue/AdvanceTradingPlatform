@@ -40,7 +40,8 @@ export function ScreenGallery({ taxonomy, canOpen, onOpen, initial, legends = nu
   const detailCard = detail ? cardFor(legends, detail.id) : null;
   const detailScreen = detail ? taxonomy.screens.find((s) => s.id === detail.id) : undefined;
   const showsLegends = !!legends && shown.some((s) => cardFor(legends, s.id));
-  const pick = (next: Partial<GalleryFilter>) => setFilter((f) => ({ ...f, ...next }));
+  // A new rail / chip / search pick closes an open Legends card, so the grid it changes is the one shown.
+  const pick = (next: Partial<GalleryFilter>) => { setDetail(null); setFilter((f) => ({ ...f, ...next })); };
   const methods = taxonomy.methods;
   const setups = taxonomy.setups;
 

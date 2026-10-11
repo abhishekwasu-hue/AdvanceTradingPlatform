@@ -15,7 +15,7 @@ import re
 import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 
@@ -84,13 +84,13 @@ def render_text(notification: NotificationRecord) -> Tuple[str, str]:
 
 # --- senders -----------------------------------------------------------------------------------
 
-async def send_telegram(config: TelegramConfig, html_text: str, client: Optional[httpx.AsyncClient] = None) -> None:
+async def send_telegram(config: TelegramConfig, html_text: str, client: Optional[httpx.AsyncClient] = None, chat_id: Optional[str] = None) -> None:
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=SEND_TIMEOUT_SECONDS)
     try:
         response = await client.post(
             f"{TELEGRAM_API}/bot{config.bot_token}/sendMessage",
-            json={"chat_id": config.chat_id, "text": html_text, "parse_mode": "HTML", "disable_web_page_preview": True},
+            json={"chat_id": chat_id or config.chat_id, "text": html_text, "parse_mode": "HTML", "disable_web_page_preview": True},
         )
         try:
             payload = response.json()
@@ -117,21 +117,57 @@ def _smtp_send(config: EmailConfig, message: EmailMessage) -> None:
         smtp.send_message(message)
 
 
-async def send_email(config: EmailConfig, subject: str, plain_text: str) -> None:
+async def send_email(config: EmailConfig, subject: str, plain_text: str, to: Optional[List[str]] = None,
+                     headers: Optional[Dict[str, str]] = None) -> None:
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = str(config.from_address)
-    message["To"] = ", ".join(str(a) for a in config.to_addresses)
+    message["To"] = ", ".join(to if to is not None else [str(a) for a in config.to_addresses])
+    for name, value in (headers or {}).items():
+        message[name] = value
     message.set_content(plain_text)
     await asyncio.to_thread(_smtp_send, config, message)
 
 
-def webhook_payload(notification: NotificationRecord) -> dict:
-    return {
+WEBHOOK_SCHEMA = "atp.notification/1"
+ALERT_SCHEMA = "atp.alert/1"
+REPLAY_WINDOW_SECONDS = 300          # receivers should refuse an X-ATP-Timestamp older (or newer) than this
+
+
+def webhook_payload(notification: NotificationRecord, alert: Optional[dict] = None) -> dict:
+    """The versioned body (S3b): every notification, plus an `alert` block - rule, symbols, trigger values with their
+    data timestamps, bar time - when the notification is a screen/instrument alert."""
+    body = {
+        "schema": WEBHOOK_SCHEMA,
         "id": notification.id, "event_type": notification.event_type, "severity": notification.severity, "title": notification.title,
         "message": notification.message, "created_at": _as_utc(notification.created_at).isoformat(), "tenant_id": notification.tenant_id,
         "metadata": json.loads(notification.metadata_json) if getattr(notification, "metadata_json", None) else None,
     }
+    if alert:
+        body["alert"] = {"schema": ALERT_SCHEMA, **alert}
+    return body
+
+
+def chartink_payload(alert: dict) -> dict:
+    """The Chartink-shaped body some existing tools read (`stocks`, `trigger_prices` as comma lists)."""
+    symbols = alert.get("symbols") or []
+    values = alert.get("trigger_values") or {}
+    prices = [str(values.get(s, {}).get("close", "")) for s in symbols]
+    return {"stocks": ",".join(symbols), "trigger_prices": ",".join(prices), "triggered_at": alert.get("bar_time"),
+            "scan_name": alert.get("rule_name"), "alert_name": alert.get("rule_name"), "scan_url": ""}
+
+
+def verify_webhook(secret: str, body: bytes, timestamp: str, signature: str, *, now: Optional[datetime] = None,
+                   window_seconds: int = REPLAY_WINDOW_SECONDS) -> bool:
+    """What a receiver does: the signature matches AND the timestamp is inside the replay window."""
+    try:
+        sent = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    current = int((now or _utcnow()).timestamp())
+    if abs(current - sent) > window_seconds:
+        return False
+    return hmac.compare_digest(sign_webhook(secret, body, timestamp), signature)
 
 
 def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
@@ -140,14 +176,19 @@ def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
     return f"sha256={digest}"
 
 
-async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
-    """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success."""
+async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+                       alert: Optional[dict] = None) -> None:
+    """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success. S3b: versioned body, optional
+    Chartink shape for screen alerts, schema header."""
     if config.event_types and notification.event_type not in config.event_types:
         return
-    body = json.dumps(webhook_payload(notification), separators=(",", ":"), sort_keys=True).encode()
+    chartink = getattr(config, "payload_format", "atp") == "chartink" and alert is not None
+    payload = chartink_payload(alert) if chartink and alert is not None else webhook_payload(notification, alert)
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     timestamp = str(int(_utcnow().timestamp()))
     headers = {"Content-Type": "application/json", "X-ATP-Timestamp": timestamp, "X-ATP-Signature": sign_webhook(config.secret, body, timestamp),
-               "X-ATP-Event": notification.event_type, "User-Agent": "ATP-Webhooks/1.0"}
+               "X-ATP-Event": notification.event_type, "X-ATP-Schema": "chartink/1" if chartink else WEBHOOK_SCHEMA,
+               "User-Agent": "ATP-Webhooks/1.0"}
     await check_url_resolved(str(config.url))                       # P0.2 / S5: resolved right before the request
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
@@ -237,20 +278,45 @@ async def send_push(config: PushConfig, notification: NotificationRecord, client
     return gone
 
 
+async def _send_screen_alert_email(session: Optional[AsyncSession], channel: AlertChannelRecord, config: EmailConfig, subject: str,
+                                   plain: str) -> None:
+    """S3b-2: one mail per recipient, each with its own signed unsubscribe link (when PUBLIC_BASE_URL is set);
+    addresses that opted out are skipped."""
+    from app.alerts.links import opted_out, unsubscribe_url
+    recipients = [str(a) for a in config.to_addresses]
+    skip = await opted_out(session, channel.tenant_id, recipients) if session is not None else set()
+    for address in recipients:
+        if address.strip().lower() in skip:
+            continue
+        url = unsubscribe_url(channel.tenant_id, address)
+        if url is None:
+            await send_email(config, subject, plain, to=[address])
+            continue
+        body = f"{plain}\n\nStop screen-alert emails to this address: {url}"
+        await send_email(config, subject, body, to=[address],
+                         headers={"List-Unsubscribe": f"<{url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"})
+
+
 async def send_via_channel(
-    channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+    channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None, alert: Optional[dict] = None,
+    address: Optional[str] = None, session: Optional[AsyncSession] = None,
 ) -> None:
     """Sends one notification through one channel. Raises on failure with a message safe to store.
     A PUSH channel whose devices have gone gets its config rewritten in place (caller commits)."""
     config = decrypt_config(channel)
     plain, html_body = render_text(notification)
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
-        await send_telegram(config, html_body, client)  # type: ignore[arg-type]
+        if address and address == config.chat_id:  # type: ignore[union-attr]
+            return                                         # S3b-2: the linked chat is the channel's own chat - sent once already
+        await send_telegram(config, html_body, client, chat_id=address)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.EMAIL.value:
         subject = f"[{notification.severity}] {notification.title}"
-        await send_email(config, subject, plain)  # type: ignore[arg-type]
+        if notification.event_type == NotificationType.SCREEN_ALERT.value:
+            await _send_screen_alert_email(session, channel, config, subject, plain)  # type: ignore[arg-type]
+        else:
+            await send_email(config, subject, plain)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
-        await send_webhook(config, notification, client)  # type: ignore[arg-type]
+        await send_webhook(config, notification, client, alert)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.PUSH.value:
         gone = await send_push(config, notification, client)  # type: ignore[arg-type]
         if gone:
@@ -286,6 +352,55 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         return False
 
 
+async def _telegram_oi_buttons(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord,
+                               client: Optional[httpx.AsyncClient]) -> bool:
+    """OI Banner O4b: an OI alert to Telegram carries read-only buttons (open chain / chart links, snooze / mute
+    callbacks). False -> the plain send. A failure to build the buttons never stops the alert itself."""
+    if channel.channel_type != AlertChannelType.TELEGRAM.value or notification.event_type not in (NotificationType.OI_BANNER.value, NotificationType.OI_COLLECTOR.value):
+        return False
+    from app.core import config as app_config
+    from app.option_chain import oi_alerts
+    from app.telegram_inbound import service as telegram_inbound
+    try:
+        cfg = decrypt_config(channel)
+        meta = json.loads(notification.metadata_json) if notification.metadata_json else {}
+        underlying = str(meta.get("underlying") or "")
+        if not underlying:
+            return False
+        from app.option_chain import snapshots
+        _, own = await snapshots.settings_rows(session, channel.tenant_id, underlying)
+        exchange = own.exchange if own is not None else "NSE"
+        keyboard = oi_alerts.telegram_keyboard(underlying, exchange, app_config.FRONTEND_URL, bool(getattr(cfg, "inbound_enabled", False)))
+        if keyboard is None:
+            return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Telegram OI buttons not built (%s); sending the plain alert", exc)
+        return False
+    _, html_body = render_text(notification)
+    answer = await telegram_inbound.reply(cfg, cfg.chat_id, html_body, client, reply_markup=keyboard)  # type: ignore[union-attr, arg-type]
+    if not answer.get("ok", False):
+        raise RuntimeError(f"Telegram API: {answer.get('description') or 'send failed'}")
+    return True
+
+
+async def alert_context(session: AsyncSession, notification: NotificationRecord) -> Optional[dict]:
+    """S3b: the alert block for a screen/instrument alert notification - rule, symbols, trigger values with their data
+    timestamps, bar time - read from the alert events the notification grouped."""
+    if notification.event_type != "SCREEN_ALERT":
+        return None
+    from app.db.models import AlertEventRecord, AlertRuleRecord
+    events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.notification_id == notification.id)
+                                        .order_by(AlertEventRecord.symbol)))
+    if not events:
+        return None
+    rule = await session.get(AlertRuleRecord, events[0].rule_id)
+    values = {e.symbol: json.loads(e.values_json or "{}") for e in events}
+    bar_time = max(_as_utc(e.bar_time) for e in events).isoformat()
+    return {"rule_id": events[0].rule_id, "rule_name": rule.name if rule else None, "screen_id": rule.screen_id if rule else None,
+            "symbols": [e.symbol for e in events], "trigger_values": values, "bar_time": bar_time,
+            "data_timestamps": {s: v.get("as_of") for s, v in values.items()}, "group_id": events[0].group_id}
+
+
 # --- the drain -----------------------------------------------------------------------------------
 
 async def dispatch_pending(
@@ -313,18 +428,22 @@ async def dispatch_pending(
         if channel is None or notification is None or not channel.enabled:
             delivery.status = AlertDeliveryStatus.FAILED.value
             delivery.last_error = "Channel disabled or removed before delivery"
+            delivery.reason_code = "channel_disabled"
             await session.commit()
             failed += 1
             continue
         try:
-            if not await _telegram_proposal_buttons(session, channel, notification, client):
-                await send_via_channel(channel, notification, client)
+            if not await _telegram_proposal_buttons(session, channel, notification, client) \
+                    and not await _telegram_oi_buttons(session, channel, notification, client):
+                await send_via_channel(channel, notification, client, await alert_context(session, notification), address=delivery.address,
+                                       session=session)
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
             delivery.attempts += 1
             delivery.last_error = str(exc)[:500]
             channel.last_error = delivery.last_error
             if delivery.attempts >= MAX_ATTEMPTS:
                 delivery.status = AlertDeliveryStatus.FAILED.value
+                delivery.reason_code = "dead_letter"               # S3b: kept for the operator; retry from the dead-letter list
                 ALERT_DELIVERIES.labels(channel=channel.channel_type, status="FAILED").inc()
                 logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, delivery.attempts, exc)
             else:

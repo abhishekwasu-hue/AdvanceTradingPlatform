@@ -6,6 +6,7 @@ import pandas as pd
 
 from app.ai import interview as iv
 from app.deployments.routes import DeploymentCreateRequest
+from tests.server_evidence import serve_candles
 from tests.test_auth_api import _register, client
 
 UTC = timezone.utc
@@ -106,17 +107,18 @@ def test_plan_in_marathi_with_a_deployable_paper_setup():
     assert tested
 
 
-def test_plan_endpoint_end_to_end_in_english():
+def test_plan_endpoint_end_to_end_in_english(monkeypatch):
     headers = {"Authorization": f"Bearer {_register('interview@example.com')}"}
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume}
                for ts, r in df.iterrows()]
+    serve_candles(monkeypatch, candles)                                    # H-C1 a: server-fetched, not posted
     started = client.post("/api/ai/interview/start", headers=headers, json={"prompt": "give me a strategy for nifty"}).json()
     assert started["needs_interview"] and started["prefill"]["symbol"] == "NIFTY 50"
     r = client.post("/api/ai/interview/plan", headers=headers, json={
         "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday",
                     "vehicle": "option_buy", "goal": "big_trends"},
-        "base_timeframe": "5min", "candles": candles, "data_source": "broker:upstox"})
+        "base_timeframe": "5min"})
     assert r.status_code == 200, r.text
     plan = r.json()
     assert plan["language"] == "en" and plan["risk_config"]["capital"] == 300_000 and plan["risk_config"]["risk_per_trade_pct"] == 1.0

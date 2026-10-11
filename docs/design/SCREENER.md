@@ -841,10 +841,10 @@ with the indicator block, and the result table.
 
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
-parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-7 are in `docs/OPEN_QUESTIONS.md`.
-- **Screens.** B1 range / consolidation (fixed N bars or the auto base), B2 swing high / low with BOS / CHoCH (causal
+parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.
+- **Screens.** B1 range / consolidation (fixed N bars or the auto base), B2 swing high / low with BOS / CHoCH / BREAK (causal
   swings of a chosen degree, confirmed by the bar before the break), B4 inside bar / NR4 / NR7 (mother-bar failure
-  rule), B7 N-week high (calendar weeks; Daily / Weekly only), B13 range expansion, B14 volume shock at or through
+  rule), B7 N-week high (calendar weeks; Daily / Weekly only; fresh vs extended in calendar days), B13 range expansion, B14 volume shock at or through
   the range edge.
   - Each is a causal per-bar series on closed bars. ATR is read on the bar before the signal.
   - The down side is the up rule on mirrored prices.
@@ -885,6 +885,27 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-7 a
   - the time-of-day window.
 
   The fitness statistics by grade, timeframe and regime come in BK5.
+
+### U6 BK1 review follow-up
+- **Templates on the history the platform fetches (H1).** A Dow trend is read after `DOW_MIN_BARS` (40 at D0, measured)
+  and is missing before that; `DowTrend` asks the validator for 1 bar, so a short context frame reads as unknown
+  instead of refusing the symbol. `not_against` means no context trend is known to be against the break (ScreenQL
+  `NOT DowTrend(0)@tf == "DOWN"`); an unknown trend passes but earns no grade point. A test runs every template on
+  fetch-shaped history (~272 daily sessions; 42 intraday sessions) with the history check on: no "not enough history",
+  and every template matches.
+- **Alerts (M1-M3).** A screen rule on a saved breakout screen is gated like an instrument rule. While the flag is off,
+  a breakout rule stays active and is skipped with `last_problem` (flag read once per tenant per cycle); it resumes when
+  the flag is back. Breakout rules fire on bar close only: `fire_on = "intrabar"` is refused at creation and skipped by
+  the engine.
+- **Buckets (M5, M6).** Intraday buckets start at 09:15 IST whatever the index's time zone (an IST-aware index used to
+  start them at 09:45). Daily-and-coarser buckets are made in Asia/Kolkata, so a daily bar stamped 00:00 IST (18:30
+  UTC the day before) falls in its own week and month. Both are in `runtime.resample`, so every screen gets them.
+- **/run (M7, M8, L6-L8).** Rows that fail the template's higher-timeframe filter are hidden (counted in
+  `htf_failed_hidden`; `include_htf_failed` lists them). Grading runs in a worker thread; `within x symbols` is capped at
+  2,500. B7 on a wrong timeframe and malformed symbols are refused before any fetch. A daily-or-coarser signal builds
+  every frame from one daily fetch.
+- **Validation (L1, L2).** Breakout arguments carry their parameter's range. `NewHighBreakout` runs on @1d / @1w only
+  and asks for weeks x 5 daily bars. `ATRPercentile` asks for n + lookback bars.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

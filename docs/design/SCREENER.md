@@ -544,7 +544,8 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - fetch days without weekends.
   - **Noted, not changed.**
     - Degree 3 swings depend on where the fetched history starts (ZigZag is path-dependent), so they can move when an
-      unrelated part of the screen changes the fetch window. Degrees 0 to 2 agreed in the review's probes. (SC-14)
+      unrelated part of the screen changes the fetch window. (SC-14; the S5-A4 review measured D1 and D2 disagreeing too
+      at 100 bars, so the history is now set per degree: see S5-A4.)
     - Older items, not new here:
       - lookback is not summed through nested calls (`Lag(SwingHigh(0), 50)`);
       - parametrised screens cannot become alert rules;
@@ -635,12 +636,82 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - no failed-retest confirmation.
 - **Next (S5-A4).** Zone strength (`level_strength`).
 
+## S5-A4 (built): `SwingZoneStrength(side, degree=0)` and `SwingZoneDistance(side, degree=0)`
+- **What they are.** The zone at the last confirmed swing low (`low`, support) or swing high (`high`, resistance),
+  measured on every bar by the trade-port module `app/price_action/level_strength.py` (default settings).
+  - `SwingZoneStrength` is `strength_score`, 0-100, from departure, a short base, recency and role reversal.
+  - `SwingZoneDistance` is (close - zone mid) / median range: positive above the zone.
+  - Both are missing before the first confirmed pivot of that side.
+- **The zone.** The pivot candle from its extreme to its body: support is [low, min(open, close)], resistance is
+  [max(open, close), high]. The pivot bar is the zone's origin, so departure and base are measured from it.
+- **Causal.** A pivot is used only from the bar that confirmed it. Every bar the measures read is at or before the bar
+  (the module clips the departure window to the bar). Tested by parity with the module on the pivot confirmed by each
+  bar (found independently), and by truncation invariance for degrees 0 and 1.
+- **Stamps.** The module finds the origin by timestamp, so it is given bar-numbered stamps: the lookup is exact whatever
+  the index holds. An IST, naive-IST or duplicated-stamp index gives the same series as UTC (tested). Nothing else
+  reads the stamps, because time at price is not used.
+- **Flat bars.** A suspended or circuit-locked stock has no price range to measure in (a zero median range). Those bars
+  are missing, not an error (review finding: it was a ZeroDivisionError).
+- **One bad symbol does not stop a run.** `run_screen` now reports an unexpected error on one symbol as "could not be
+  evaluated (ErrorName)", logs it, and goes on to the next symbol. Before, any error other than a screen error ended
+  the whole universe (review finding).
+- **What the score leaves out.**
+  - Leg labels: ScreenQL has no leg classifier yet, so the origin-strength part scores 0.
+  - Time at price: that needs 1-minute data, so it scores as unknown (half).
+  - So the score runs from 5 to 70 today, not 0 to 100. Thresholds should be read on that scale (SC-15).
+- **Cost.** One `strength_features` call per bar after the first pivot, with the bar arrays prepared once per frame.
+  Strength and distance come from one pass, kept for the frame, so a screen using both pays once. A 500-bar frame
+  takes about 0.05 s; the test allows 0.6 s. Cost weight 4.
+  - A 1-minute screen over about 1,900 bars costs roughly 0.2 s per symbol. That is about 100 s for 500 symbols, too
+    slow for a 10-second intrabar alert. Computing only the tail is open (SC-15).
+- **History by swing degree (all swing functions).** ZigZag pivots depend on where the history starts. Measured on
+  session-shaped samples (the last bar on exactly N bars against a long history):
+  - D0 agrees from 100 bars;
+  - D1 from 250;
+  - D2 from 600 (37 of 60 differed at 100 bars).
+
+  `SwingHigh`, `SwingLow`, `SwingDirection` and both zone functions now ask for 100 / 250 / 600 / 1200 bars by degree
+  (`Spec.degree_min_bars`; a parameter degree is read from its value). A D2 screen on 1h bars therefore needs more
+  history than the 60-day fetch cap. It reports "not enough history" instead of a pivot that a longer history would
+  not give.
+- **Tests.**
+  - `tests/test_s5a4_zone_strength.py` (14):
+    - parity for both sides;
+    - the distance sign;
+    - truncation for degrees 0 and 1;
+    - no dependence on history beyond the lookback (degrees 0 and 1);
+    - IST, naive-IST and duplicated stamps;
+    - flat bars;
+    - one pass for both functions, and a changed frame recomputed;
+    - one bad symbol does not stop the run;
+    - validation, units and the history per degree;
+    - cost;
+    - the 5-70 scale.
+  - Mutation checks, 9/9 killed:
+    - origin at the confirmation bar;
+    - a pivot used before it was confirmed;
+    - the support zone to the body top;
+    - either pivot kind;
+    - index stamps;
+    - the distance sign;
+    - no flat-bar guard;
+    - a cache that ignores the side;
+    - a cache that ignores a changed frame.
+- **Next (S5-C).** Category C.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no
   BANKNIFTY bar fixtures are in this repository. Only the expiry calendars are. Provisional: the S5-A tests use the
   session-shaped generator (`tests/sample_market.py`), the same one the trade-port tests use. The NIFTY holdout stays
   sealed.
   - Owner question: should a BANKNIFTY bar sample (from your own data, outside the holdout) be added as a fixture?
+- **SC-15. The swing zone and its strength scale.** Provisional:
+  - The zone is the pivot candle from its extreme to its body.
+  - The score runs 5-70 until a leg classifier and 1-minute time at price are available.
+  - Owner questions:
+    - Should the zone be wider (for example the base candles before the pivot)?
+    - Should the score be rescaled to 0-100 over the parts that are known?
+    - For intrabar alerts on 1-minute bars, should only the tail (the bars Lag and Cross need) be computed?
 - **SC-14. Degree-3 swings and the fetch window.** Provisional: documented, not fixed. A D3 pivot can differ when
   the screen's total lookback (and so the fetch start) changes.
   - Owner question: should D3 be computed from a fixed warm-up anchor (for example, always 400 bars before now)?

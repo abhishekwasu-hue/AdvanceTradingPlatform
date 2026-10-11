@@ -12,12 +12,12 @@ a staging host.
 
 | Target (§1.5) | CI runner, median of 5 | Budget | Per-symbol runtime (flag off) |
 |---|---|---|---|
-| EOD screen, 2,500 symbols x 50 factors, daily bars | **0.41-0.67 s** | 3 s | about 70-100 s (estimated: 50 symbols timed, then x 50) |
-| The same screen again, from the result cache | **2-3 ms** (key: universe + as_of); **14-24 ms** (key: bar fingerprints) | 0.2 s | same |
+| EOD screen, 2,500 symbols x 50 factors, daily bars | **0.38-0.67 s** | 3 s | 50-82 s (estimated: 50 symbols timed, then x 50) |
+| The same screen again, from the result cache | **2-3 ms** (key: universe + as_of); **14-26 ms** (key: bar fingerprints) | 0.2 s | same |
 | Bar-close scan, 200 symbols (4 rules x 50), 5-minute bars, through the bar-close engine | **0.10-0.20 s** | 1 s | **0.66-1.44 s** (over the target on the slower runners) |
 
-These are the ranges over the CI runs of 2026-10-11 (GitHub-hosted `ubuntu-latest`; the calibration took 0.058-0.079 s,
-so the CI factor was 1.00). Each run writes its numbers as check-run notices (`G4 ...`), so the latest figures can be
+These are the ranges over the CI runs of 2026-10-11 (GitHub-hosted `ubuntu-latest`). The calibration took 0.057-0.083 s,
+so the CI factor was 1.00-1.03. Each run writes its numbers as check-run notices (`G4 ...`), so the latest figures can be
 read from the `perf` check without the job log.
 
 **How it is measured** (`backend/scripts/bench_screener.py`, gated by `backend/tests/test_z10d_perf.py`):
@@ -70,6 +70,8 @@ symbols that share a bar index into one frame per field (one column per symbol) 
   reason. A symbol alone in its index group (a new listing, a suspension gap) also runs per symbol.
 - **Few symbols, many bars.** For a frame with fewer symbols than bars, the kernels hand the work to pandas column by
   column, which is cheaper there.
+- **Speed-up.** About 130x for the 2,500-symbol EOD screen and about 7x for a bar-close cycle (50 symbols per rule)
+  on the CI runners.
 - **Opt-in, behind the operator flag `screener_vectorized` (off by default).** When it is on, the screener run
   (`/api/screener/run`, including the U5 funnel) and the bar-close engine pass `vectorized=True`. OPEN_QUESTIONS Z10-d1
   proposes turning it on.
@@ -121,26 +123,34 @@ The test app is `scripts/loadtest_app.py`:
 - the real app on a throwaway SQLite file;
 - the auth and AI rate limits off, as in the test suite (every in-process user shares one fake IP);
 - synthetic broker bars;
-- `screener_v2` on.
+- `screener_v2` and `paper_account` on.
 
-The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 0.5 --annotate`.
+The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --annotate`.
 The job fails when the SLO is missed.
 
-Run of 2026-10-11 (GitHub-hosted runner): 20 users for 30 s, 4,610 requests, 150 requests/s, 0 server errors, **SLO
-PASS**.
+Run of 2026-10-11 (GitHub-hosted runner): 20 users (5 accounts) for 30 s, 3,198 requests, 102 requests/s, 0 server
+errors, **SLO PASS**.
 
 | Scenario | n | p50 ms | p95 ms |
 |---|---|---|---|
-| login | 20 | 232 | 302 |
-| dashboard /api/auth/me | 725 | 39 | 152 |
-| dashboard /api/deployments | 725 | 55 | 176 |
-| dashboard /api/notifications | 725 | 59 | 185 |
-| dashboard /api/system/status | 725 | 61 | 193 |
-| dashboard /api/portfolio/exposure | 725 | 83 | 241 |
-| proposals | 357 | 37 | 144 |
-| positions | 361 | 33 | 160 |
-| chart | 175 | 73 | 221 |
-| screener_run (5 symbols, preview) | 72 | 80 | 195 |
+| login | 5 | 252 | 414 |
+| dashboard /api/auth/me | 469 | 16 | 56 |
+| dashboard /api/deployments | 469 | 25 | 77 |
+| dashboard /api/notifications | 469 | 29 | 93 |
+| dashboard /api/system/status | 469 | 26 | 88 |
+| dashboard /api/portfolio/exposure | 469 | 33 | 114 |
+| proposals | 245 | 8 | 52 |
+| positions | 222 | 10 | 71 |
+| paper_account | 222 | 18 | 134 |
+| chart | 106 | 34 | 114 |
+| screener_run (5 symbols, preview) | 53 | 34 | 77 |
+
+**Saturation.** With half the think time (0.5 s), the same app on the same runner served 106-150 requests/s:
+- the p95s rose to 150-490 ms (queueing in one process on SQLite);
+- one run went over on `/api/paper/account` (520 ms).
+
+CI uses the 1 s think time so that the job measures service time, not a saturated queue. That is also closer to how
+people poll.
 
 ### The owner: 500 users against staging
 
@@ -166,9 +176,15 @@ python scripts/loadtest.py --base https://<staging host> --users 500 --seconds 6
     processes, so it should not.
 - **Results.** Paste the table here with the date.
 
-### Bottleneck found and fixed: bcrypt held the event loop
+### Bottlenecks found and fixed
 
-Every login ran `bcrypt.checkpw` inline in its async route, a quarter of a second or more of CPU. The same was true
+**`/api/paper/account` counted proposals in four queries.** It was the slowest read in the sessions: p50 265 ms
+against 120-230 ms for the dashboard reads in the saturated run. The four proposal counts (approved, rejected,
+pending, expired unanswered) are now one aggregate query, so the route makes five database round trips instead of
+eight. The numbers are the same, tested against the four separate counts. The gain was not measured on its own: the
+next CI run also moved to the 1 s think time.
+
+**bcrypt held the event loop.** Every login ran `bcrypt.checkpw` inline in its async route, a quarter of a second or more of CPU. The same was true
 of registration, password reset and change, invite acceptance and MFA disable. While it ran, every other request of
 that API process waited.
 
@@ -210,7 +226,8 @@ scenarios above include five of them.
   liveness check. The first lever is `uvicorn --workers N` behind the nginx front end. The second is caching
   `/api/system/status` in Redis for a few seconds: it is unauthenticated and identical for everyone.
 - **Screener and bar-close CPU.** With the per-symbol runtime, the screener and the bar-close engine are CPU-bound per
-  symbol and factor. The vectorised runtime cuts that by 7-100x (largest on wide universes). Turning
+  symbol and factor. The vectorised runtime cuts that by about 7x for a bar-close cycle and about 130x for a 2,500-symbol
+  EOD screen. Turning
   `screener_vectorized` on is the lever for the bar-close target.
 - **Entry latency (SLO-7, signal to fill).** It depends on the broker's API round trip and is exported as
   `atp_order_entry_latency_seconds`. It cannot be load-tested without a broker sandbox.

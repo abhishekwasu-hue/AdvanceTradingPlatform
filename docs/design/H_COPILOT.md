@@ -104,6 +104,16 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **H-8. Plain-text agent answers.** Provisional: they are accepted without claims (grounding and the filter still
   apply), and the evals measure the rate. Strict JSON-only can follow once the rate is known.
 
+- **H-9. Research loop limits.** Provisional:
+  - at most 8 drafts per study and a 30% out-of-sample tail of the window;
+  - the study stops early when the cost cap is reached;
+  - the report calls evidence "strong" only when the Deflated Sharpe probability is at least 0.95;
+  - the report counts other studies on the same symbol and timeframe in the last 30 days, but deflates only this
+    study's trials. There is no hard limit on how many studies may run.
+  - Owner questions:
+    - other limits, or a stricter bar?
+    - should repeated studies on one symbol be capped per week, or deflated together?
+
 ## H-C2a (built): tool registry, bounded loop, audit - read tools only
 - **Tools.** `app/ai/tools/` is a typed registry:
   - each tool has a pydantic input model whose JSON schema has `additionalProperties: false`, a kind, cost units and a
@@ -219,3 +229,101 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Mutation check: disabling the guard's untrusted-text check drops injection to 0.9091 and fails CI.
 - **Later slices.** The nightly real-provider runner (flag plus operator budget cap, off until set), the DSL set (c),
   the leakage/as-of set (e), and the registry and kill switch (H-C11).
+
+## H-C3 plan: the strategy research loop (spec C3)
+- **H-C3a: ledger and honest report.** No LLM in this step.
+  - `research_trials` is append-only, and every draft is recorded, including ones that failed validation.
+  - The report:
+    - picks the best trial by in-sample Sharpe of daily returns;
+    - deflates it by every trial tried (Deflated Sharpe);
+    - estimates PBO by CSCV across the trials' aligned daily returns;
+    - carries the out-of-sample check, or says it was not run;
+    - lists what is not simulated.
+  - `split_window` gives in-sample / out-of-sample bounds and refuses any window that reaches the sealed holdout.
+- **H-C3b: the loop driver.** Behind a flag, default off.
+  - Each round: idea, DSL draft (the model), `validate_dsl`, `run_backtest` on server bars in-sample, diagnose (the
+    model reads the metrics), revise.
+  - At most N drafts within the cost cap. Then one out-of-sample run of the chosen draft only.
+  - The final report goes to the existing human approval gate; nothing deploys on its own (ADR-0006).
+- **H-C3c: UI.** The study page shows the trials table, the deflated summary, and "chosen from N trials" wording.
+
+## H-C3a (built): the trial ledger and the deflated study report
+- **Storage.** `research_trials` (migration `b4d6f8a0c2e4`, Postgres round-trip OK). The table is never updated or
+  deleted by the app.
+- **Code.** `app/ai/research.py`: `record_trial`, `study_trials`, `study_report`, `daily_returns`, `split_window`.
+  Each study numbers its trials 1..N.
+- **The report says, in words**, "Chosen from N backtested trials (M drafts)", gives the Deflated Sharpe probability,
+  and calls the evidence weak (< 0.5), moderate or strong (>= 0.95). The disclaimer says it is a simulation and not a
+  recommendation.
+- **Tests.** `tests/test_hc3a_research_ledger.py` (6):
+  - noise trials are deflated (DSR < 0.5, PBO reported);
+  - a real edge survives;
+  - more trials raise the bar (SR0 grows with N);
+  - tenant scope;
+  - daily returns by IST day, ignoring exits outside the window;
+  - the holdout refusal;
+  - append-only order.
+  - Plus 4 mutation checks: no deflation, one trial only, no holdout check, out-of-window exits.
+- **Note for merging.** This stack and the screener stack both branch from migration `a1c3e5f7b9d2`. Whichever lands
+  second needs an empty Alembic merge revision joining the two heads.
+
+## H-C3b (built): the research loop driver and its API
+- **Code.** `app/ai/research_loop.run_study`:
+  - each round: idea, draft (proposer), validate (`CustomStrategyConfig` plus a `DeclarativeStrategy`), backtest on the
+    in-sample part of server bars;
+  - at most `MAX_DRAFTS` (8) rounds; the proposer may stop early with `null`;
+  - then ONE out-of-sample run of the chosen draft, stored as an `oos` row: the study's check, not a trial.
+- **Ledger.** Every draft is a trial in the ledger, including invalid and failed ones. The ledger is committed after
+  each trial, so an interrupted study keeps what it tried.
+- **Proposer.** `llm_proposer` uses the tenant's metered provider (task `generation`) and sends the idea, the rule
+  schema and earlier trials' metrics, never raw prices. The reply is untrusted: only a JSON object is a draft,
+  anything else is an invalid draft, and `null` ends the study.
+- **API.**
+  - `POST /api/ai/research` needs the AI acknowledgement and the flags `ai_copilot` + `ai_research`. `ai_research` is
+    new and off by default.
+  - The rule-based provider gets 409, because it cannot draft.
+  - Bars come from the market tools (server data only).
+  - A window reaching the holdout gets 422.
+  - `GET /api/ai/research/{id}` returns the trials and the report, scoped to the organisation.
+- **Not here.** Adopting a draft still goes through the existing human approval gate; nothing is saved as a strategy
+  or deployed.
+  - The request runs the whole study synchronously, at most 8 drafts.
+  - A background job with progress is part of H-C3c, together with the UI.
+- **Tests.**
+  - `tests/test_hc3b_research_loop.py` (4):
+    - validate / record / OOS once;
+    - in-sample never sees OOS bars;
+    - the draft cap;
+    - the holdout refused before any work;
+    - a failing proposer;
+    - the prompt carries metrics, not data.
+  - `tests/test_hc3b_research_api.py` (3): flag off -> 503, rules -> 409, the full study through the API, cross-tenant
+    404, JSON-only proposer.
+  - Mutation checks: in-sample leak, no draft cap.
+
+## H-C3b review follow-up (second pass, fresh eyes)
+- **Out-of-sample warm-up.** The OOS run now starts a warm-up of `min_history` bars before the cut, so indicators have
+  their history. Only trades **entered** at or after the cut count, and the report shows `warmup_bars`. Before this, an
+  EMA(200) draft on 60-minute bars made no OOS trades and was reported as run.
+- **No evidence is weak evidence.** A chosen draft whose daily returns do not vary (no trades) gets `dsr: None` with a
+  note, and the verdict is "weak". The weak threshold is now `<= 0.5`; before, a flat draft read "moderate".
+- **The cut is a session start.** No IST day is in both the in-sample and out-of-sample windows.
+- **PBO through the API.** The default window is now 120 calendar days (limit 180), about 80 sessions, so the
+  in-sample part clears `MIN_DAYS_FOR_PBO`. At 60 days, PBO was never computed.
+- **Holdout.** The route cuts the sealed holdout off the bars (`filter_allowed`) instead of refusing every request
+  once `BACKTEST_HOLDOUT_START` is set. It refuses (422) only when fewer than 50 bars remain.
+- **Failed OOS run.** A failed OOS run is stored as an `oos` row with the error, and the report says "Out-of-sample
+  check failed". It is no longer a 500 after the trials were committed.
+- **Search spread over studies.** The report now counts other studies on the same symbol and timeframe in the last 30
+  days (`earlier_studies`) and says the real search was larger (H-9).
+- **GET consistency.** `GET /api/ai/research/{id}` needs the AI acknowledgement and the `ai_copilot` flag, like POST.
+- **Tests added.**
+  - Flat draft rated weak.
+  - Cut at a session start.
+  - OOS counts trades from the cut only; a failed check is reported.
+  - Earlier studies named.
+  - Default window long enough for PBO; holdout cut off; 422 when nothing is left.
+- **Noted, not changed.**
+  - `seq` is count + 1 without a lock. That is safe while `study_id` is server-made and trials run one at a time.
+  - "Append-only" is a convention in code; the database does not enforce it.
+  - The study runs inside one request (up to 8 model calls and 9 backtests). The background job is H-C3c.

@@ -15,6 +15,7 @@ revision: str = '612f572d7ad2'
 down_revision: Union[str, Sequence[str], None] = 'a7d3e9f1c5b8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive (new tables; nullable columns and one with a server default) - the previous release runs on this schema
 
 
 def upgrade() -> None:

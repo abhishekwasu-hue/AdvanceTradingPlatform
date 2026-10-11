@@ -1,0 +1,309 @@
+{
+ "version": "tx1/1",
+ "methods": [
+  {
+   "id": "price_action",
+   "code": "A",
+   "label": "Price action",
+   "definition": "Structure, levels, candles and liquidity; no indicator required.",
+   "user_built": false
+  },
+  {
+   "id": "indicator",
+   "code": "B",
+   "label": "Indicator",
+   "definition": "Moving averages, oscillators, bands, channels and volatility measures.",
+   "user_built": false
+  },
+  {
+   "id": "volume_flow",
+   "code": "C",
+   "label": "Volume and order flow",
+   "definition": "Relative volume, delivery %, open interest, implied volatility and participant data.",
+   "user_built": false
+  },
+  {
+   "id": "fundamental",
+   "code": "D",
+   "label": "Fundamental and ownership",
+   "definition": "Financial statements, ratios, shareholding and disclosures.",
+   "user_built": false
+  },
+  {
+   "id": "legends",
+   "code": "E",
+   "label": "Legends",
+   "definition": "Screens named after published methods of well-known traders and investors.",
+   "user_built": false
+  },
+  {
+   "id": "my_screens",
+   "code": "F",
+   "label": "My screens",
+   "definition": "Screens you or your team built. Pre-built screens are never filed here.",
+   "user_built": true
+  }
+ ],
+ "setups": [
+  {
+   "id": "breakout",
+   "code": "1",
+   "label": "Breakout / breakdown",
+   "definition": "Price leaving a range, level or base.",
+   "user_built": false
+  },
+  {
+   "id": "pullback",
+   "code": "2",
+   "label": "Pullback / continuation",
+   "definition": "A trend, a correction against it and a trigger back in its direction.",
+   "user_built": false
+  },
+  {
+   "id": "reversal",
+   "code": "3",
+   "label": "Reversal",
+   "definition": "Exhaustion, divergence, a failed break or a sweep at a level.",
+   "user_built": false
+  },
+  {
+   "id": "mean_reversion",
+   "code": "4",
+   "label": "Range / mean reversion",
+   "definition": "Range edges, bands and squeezes before a move.",
+   "user_built": false
+  },
+  {
+   "id": "momentum",
+   "code": "5",
+   "label": "Momentum / relative strength",
+   "definition": "Strength against the market or a sector, and leadership.",
+   "user_built": false
+  },
+  {
+   "id": "options_volatility",
+   "code": "6",
+   "label": "Options and volatility",
+   "definition": "Futures and options buildups, IV rank, PCR, premium decay and spreads.",
+   "user_built": false
+  },
+  {
+   "id": "events_flow",
+   "code": "7",
+   "label": "Events and flow",
+   "definition": "Results, ex-dates, disclosures, bulk deals, FII/DII flows and gaps on news.",
+   "user_built": false
+  },
+  {
+   "id": "internals",
+   "code": "8",
+   "label": "Market internals",
+   "definition": "Breadth, regime and sector rotation.",
+   "user_built": false
+  }
+ ],
+ "tags": {
+  "timeframe_family": [
+   {
+    "id": "intraday",
+    "label": "Intraday"
+   },
+   {
+    "id": "swing",
+    "label": "Swing"
+   },
+   {
+    "id": "positional",
+    "label": "Positional"
+   }
+  ],
+  "direction": [
+   {
+    "id": "long",
+    "label": "Long side"
+   },
+   {
+    "id": "short",
+    "label": "Short side"
+   },
+   {
+    "id": "both",
+    "label": "Both sides"
+   }
+  ],
+  "data_tier": [
+   {
+    "id": "live_per_user",
+    "label": "Your broker"
+   },
+   {
+    "id": "eod",
+    "label": "End of day"
+   }
+  ],
+  "difficulty": [
+   {
+    "id": "beginner",
+    "label": "Beginner"
+   },
+   {
+    "id": "intermediate",
+    "label": "Intermediate"
+   },
+   {
+    "id": "advanced",
+    "label": "Advanced"
+   }
+  ],
+  "universe_default": [
+   {
+    "id": "your_list",
+    "label": "Your symbol list"
+   },
+   {
+    "id": "fo_stocks",
+    "label": "F&O stocks"
+   },
+   {
+    "id": "nifty500",
+    "label": "NIFTY 500"
+   },
+   {
+    "id": "indices",
+    "label": "Indices"
+   }
+  ]
+ },
+ "screens": [
+  {
+   "id": "starter.momentum",
+   "source": "starter",
+   "name": "Momentum",
+   "definition": "RSI(14) above 60 and close above EMA(close, 20) on the scan's timeframe.",
+   "method": "indicator",
+   "setup": "momentum",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "intraday"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "live_per_user"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "starter.oversold",
+   "source": "starter",
+   "name": "Oversold",
+   "definition": "RSI(14) at or below 30 on the scan's timeframe.",
+   "method": "indicator",
+   "setup": "reversal",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "intraday"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "live_per_user"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "starter.daily_trend",
+   "source": "starter",
+   "name": "Trend on the daily",
+   "definition": "Close above EMA(close, 50) on daily bars.",
+   "method": "indicator",
+   "setup": "pullback",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "positional"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "live_per_user"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  }
+ ],
+ "matrix": {
+  "price_action": {
+   "breakout": 0,
+   "pullback": 0,
+   "reversal": 0,
+   "mean_reversion": 0,
+   "momentum": 0,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  },
+  "indicator": {
+   "breakout": 0,
+   "pullback": 1,
+   "reversal": 1,
+   "mean_reversion": 0,
+   "momentum": 1,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  },
+  "volume_flow": {
+   "breakout": 0,
+   "pullback": 0,
+   "reversal": 0,
+   "mean_reversion": 0,
+   "momentum": 0,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  },
+  "fundamental": {
+   "breakout": 0,
+   "pullback": 0,
+   "reversal": 0,
+   "mean_reversion": 0,
+   "momentum": 0,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  },
+  "legends": {
+   "breakout": 0,
+   "pullback": 0,
+   "reversal": 0,
+   "mean_reversion": 0,
+   "momentum": 0,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  },
+  "my_screens": {
+   "breakout": 0,
+   "pullback": 0,
+   "reversal": 0,
+   "mean_reversion": 0,
+   "momentum": 0,
+   "options_volatility": 0,
+   "events_flow": 0,
+   "internals": 0
+  }
+ },
+ "total": 3,
+ "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice."
+}

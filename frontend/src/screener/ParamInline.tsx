@@ -1,8 +1,10 @@
 /**
  * U5: a parameter edited in place - the number reads as plain mono text in the stage's sentence; click (or Enter / Space
- * on it) turns it into an input; Enter or leaving commits, Escape cancels. Selects stay native for keyboard and screen
- * readers. Nothing here knows the stage; it reports a value.
+ * on it) turns it into an input; Enter or leaving commits, Escape cancels, and Enter / Escape put the focus back on the
+ * value so a keyboard user carries on from where they were. Selects stay native for keyboard and screen readers, with a
+ * small chevron so they read as choices. Nothing here knows the stage; it reports a value.
  */
+import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives";
 import type { ParamValue } from "./model";
@@ -33,8 +35,13 @@ export function NumberInline({ value, label, integer = false, min, onChange }: N
   const [text, setText] = useState(String(value));
   const [bad, setBad] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);                 // set by Enter / Escape; a click elsewhere keeps its own focus
   useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
-  useEffect(() => { if (editing) input.current?.select(); }, [editing]);
+  useEffect(() => {
+    if (editing) input.current?.select();
+    else if (refocus.current) { refocus.current = false; button.current?.focus(); }
+  }, [editing]);
 
   const commit = () => {
     const v = parseInline(text, integer, min);
@@ -45,7 +52,7 @@ export function NumberInline({ value, label, integer = false, min, onChange }: N
   };
   if (!editing) {
     return (
-      <button type="button" className={chip} aria-label={`${label}: ${value}. Edit`} onClick={() => setEditing(true)}>
+      <button ref={button} type="button" className={chip} aria-label={`${label}: ${value}. Edit`} onClick={() => setEditing(true)}>
         {value}
       </button>
     );
@@ -60,8 +67,8 @@ export function NumberInline({ value, label, integer = false, min, onChange }: N
       onChange={(e) => { setText(e.target.value); setBad(false); }}
       onBlur={() => { if (parseInline(text, integer, min) === null) { setEditing(false); setBad(false); } else commit(); }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") { e.preventDefault(); commit(); }
-        if (e.key === "Escape") { e.preventDefault(); setEditing(false); setBad(false); }
+        if (e.key === "Enter") { e.preventDefault(); refocus.current = parseInline(text, integer, min) !== null; commit(); }
+        if (e.key === "Escape") { e.preventDefault(); refocus.current = true; setEditing(false); setBad(false); }
       }}
       className={cx("w-16 rounded-control border bg-surface-inset px-1 font-mono font-tabular text-t13 text-fg focus:outline-none focus:ring-2",
         bad ? "border-warn focus:ring-warn" : "border-border focus:ring-brand")}
@@ -80,21 +87,25 @@ export interface SelectInlineProps {
 
 export function SelectInline({ value, options, label, mono = true, format = String, onChange }: SelectInlineProps) {
   // a native select is as wide as its longest option; the sentence reads better when it is as wide as the chosen one
-  const width = `calc(${Math.max(2, format(value).length) + (mono ? 0.5 : 1)}ch + 10px)`;
+  // (words in the proportional face run wider than 1ch each, hence the larger allowance; 14px is the chevron)
+  const width = `calc(${Math.max(2, format(value).length) + (mono ? 0.5 : 2)}ch + 24px)`;
   return (
-    <select
-      aria-label={label}
-      value={String(value)}
-      style={{ width }}
-      onChange={(e) => {
-        const picked = options.find((o) => String(o) === e.target.value);
-        if (picked !== undefined) onChange(picked);
-      }}
-      className={cx("cursor-pointer appearance-none rounded-control border border-transparent bg-transparent px-1 text-t13 text-fg",
-        "hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
-        mono && "font-mono font-tabular")}
-    >
-      {options.map((o) => <option key={String(o)} value={String(o)}>{format(o)}</option>)}
-    </select>
+    <span className="relative inline-flex items-center">
+      <select
+        aria-label={label}
+        value={String(value)}
+        style={{ width }}
+        onChange={(e) => {
+          const picked = options.find((o) => String(o) === e.target.value);
+          if (picked !== undefined) onChange(picked);
+        }}
+        className={cx("cursor-pointer appearance-none rounded-control border border-transparent bg-transparent py-0 pl-1 pr-4 text-t13 text-fg",
+          "hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+          mono && "font-mono font-tabular")}
+      >
+        {options.map((o) => <option key={String(o)} value={String(o)}>{format(o)}</option>)}
+      </select>
+      <ChevronDown size={12} aria-hidden className="pointer-events-none absolute right-1 text-fg-muted" />
+    </span>
   );
 }

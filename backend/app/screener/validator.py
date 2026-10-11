@@ -306,7 +306,8 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     if unused:
         checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None)
     if checker.out.cost > cost_cap:
-        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", ast)
+        # U5 review: about the whole screen, not a place in it (pos None), so the builder does not pin it on stage 1
+        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", None)
     if checker.out.problems:
         checker.out.ok = False
     return checker.out

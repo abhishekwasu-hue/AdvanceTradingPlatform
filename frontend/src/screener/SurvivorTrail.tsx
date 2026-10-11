@@ -1,7 +1,8 @@
 /**
  * U5: the survivor trail on the right edge of a stage - how many symbols are still in after it, as a bar on a thin
  * recessed track plus the number, and how many it removed. The stage that removes the last symbols turns warn and
- * offers to show what it removes. No count yet (not run, or edited since) is a quiet dash, never a stale number.
+ * offers to show what it removes. No count yet (not run, or changed since) is a quiet dash, never a stale number. The
+ * trail is not a live region: the canvas announces one summary per run, not a count per stage.
  */
 import { cx } from "../components/primitives";
 
@@ -22,7 +23,7 @@ export function SurvivorTrail({ survivors, removed, total, kills = false, onShow
   const known = survivors != null;
   const pct = trailFraction(survivors, total) * 100;
   return (
-    <div className="flex w-28 shrink-0 flex-col items-end gap-1" aria-live="polite">
+    <div className="flex w-28 shrink-0 flex-col items-end gap-1">
       <div className="flex items-baseline gap-1.5">
         {known && removed != null && removed > 0 && (
           <span className="font-mono font-tabular text-t12 text-fg-muted" aria-label={`removes ${removed}`}>−{removed}</span>

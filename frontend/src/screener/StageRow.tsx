@@ -3,13 +3,14 @@
  * "RSI (14) on 15m above 60". The indicator, the operator and every number are inline controls; the advanced fold
  * switches the right side between a number and another indicator and shows the stage's ScreenQL.
  *
- * Keyboard: the handle moves the stage with Alt+Up / Alt+Down; every control is a native button, input or select.
+ * Keyboard: the handle moves the stage with Alt+Up / Alt+Down and keeps the focus as the stage moves; every control is
+ * a native button, input or select.
  */
 import { ChevronDown, Copy, GripVertical, LineChart, Trash2 } from "lucide-react";
-import { useId, useState, type DragEvent } from "react";
+import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { cx } from "../components/primitives";
 import {
-  defaultParams, indicatorNames, OPS, paramKinds, seriesRef, stageText, type Op, type Operand, type ParamValue, type Registry,
+  defaultParams, indicatorNames, OPS, paramKinds, seriesRef, stageSummary, stageText, type Op, type Operand, type ParamValue, type Registry,
   type SeriesRef, type Stage, type TrailRow,
 } from "./model";
 import { NumberInline, SelectInline } from "./ParamInline";
@@ -32,6 +33,7 @@ export interface StageRowProps {
   onRemove: () => void;
   onShowRemoved?: () => void;
   onDragStart?: (e: DragEvent) => void;
+  onDragEnd?: (e: DragEvent) => void;   // a drop outside any stage (or Escape) still ends the drag
   onDragOver?: (e: DragEvent) => void;
   onDrop?: (e: DragEvent) => void;
   dragging?: boolean;
@@ -69,10 +71,24 @@ export function StageRow(props: StageRowProps) {
   const { stage, index, registry, scanTf, trail, total, problem, onChange } = props;
   const [open, setOpen] = useState(false);
   const foldId = useId();
+  const summaryId = useId();
+  const handle = useRef<HTMLButtonElement>(null);
+  const moved = useRef(false);
+  // moving a stage re-inserts its row, which drops the focus in some browsers: put it back on the handle (a move at
+  // either end changes nothing, so the flag is cleared on the next frame either way)
+  useEffect(() => {
+    if (moved.current) { moved.current = false; handle.current?.focus(); }
+  }, [index]);
+  const move = (d: -1 | 1) => {
+    moved.current = true;
+    props.onMove(d);
+    window.requestAnimationFrame(() => { moved.current = false; });
+  };
   const setRight = (right: Operand) => onChange({ ...stage, right });
   return (
     <li
       data-testid="stage-row"
+      data-stage-id={stage.id}
       style={{ ["--trail-delay" as string]: `${props.trailDelayMs ?? 0}ms` }}
       onDragOver={props.onDragOver}
       onDrop={props.onDrop}
@@ -80,14 +96,17 @@ export function StageRow(props: StageRowProps) {
     >
       <div className="flex min-h-stage flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1">
         <button
+          ref={handle}
           type="button"
           draggable
           onDragStart={props.onDragStart}
+          onDragEnd={props.onDragEnd}
           onKeyDown={(e) => {
-            if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); props.onMove(-1); }
-            if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); props.onMove(1); }
+            if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+            if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); move(1); }
           }}
           aria-label={`Stage ${index + 1}. Drag, or press Alt and an arrow key, to move it`}
+          aria-describedby={summaryId}
           className="cursor-grab rounded-control p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand active:cursor-grabbing"
         >
           <GripVertical size={14} aria-hidden />
@@ -122,6 +141,7 @@ export function StageRow(props: StageRowProps) {
         </div>
         <SurvivorTrail survivors={trail.survivors} removed={trail.removed} total={total} kills={trail.kills} onShowRemoved={props.onShowRemoved} />
       </div>
+      <span id={summaryId} className="sr-only">{stageSummary(registry, stage)}{stage.enabled ? "" : " (disabled)"}</span>
       {problem && <p role="alert" className="px-10 pb-2 text-t12 text-warn">{problem}</p>}
       {props.removedList && (
         <p className="mx-10 mb-2 rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted">
@@ -146,7 +166,8 @@ export function StageRow(props: StageRowProps) {
             <TimeframeChip value={stage.right.ref.tf} scanTf={scanTf} label="Timeframe of the right side"
                            onChange={(tf) => stage.right.kind === "series" && setRight({ kind: "series", ref: { ...stage.right.ref, tf } })} />
           )}
-          <code className="ml-auto truncate font-mono text-t12 text-fg-muted" title="This stage in ScreenQL">{stageText(registry, stage)}</code>
+          <span className="basis-full text-fg">Reads: {stageSummary(registry, stage)}</span>
+          <code className="truncate font-mono text-t12 text-fg-muted" title="This stage in ScreenQL">{stageText(registry, stage)}</code>
         </div>
       )}
     </li>

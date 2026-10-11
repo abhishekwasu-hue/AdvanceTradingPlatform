@@ -223,7 +223,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
-    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
     results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
@@ -235,7 +235,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await session.commit()
     return {"run_id": run_row.id, "text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
             "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
-            "funnel": {"universe": len(symbols), "with_data": len(universe), "stages": stages}, "disclaimer": DISCLAIMER}
+            "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

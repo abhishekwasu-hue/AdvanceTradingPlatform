@@ -14,7 +14,7 @@ import type { PageProps } from "../routes";
 import { screenerApi, type RunResponse } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas } from "../screener/FunnelCanvas";
-import { parseSymbols, screenText, stageAt, stageText, TIMEFRAMES, trail, type Registry, type Stage } from "../screener/model";
+import { parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
 import "../screener/screener.css";
 
@@ -38,7 +38,8 @@ export default function ScreenerPage(_props: PageProps) {
   const [otherProblem, setOtherProblem] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<RunResponse | null>(null);
-  const [ranTexts, setRanTexts] = useState<string[] | null>(null);
+  const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
+  const [validating, setValidating] = useState(false);
   const [ranAt, setRanAt] = useState<Date | null>(null);
   const [runKey, setRunKey] = useState(0);
   const [savedId, setSavedId] = useState<number | undefined>(undefined);
@@ -51,10 +52,12 @@ export default function ScreenerPage(_props: PageProps) {
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
   const text = useMemo(() => (registry ? screenText(registry, stages) : ""), [registry, stages]);
 
-  // Every edit is checked on the server (debounced); a problem lands on the stage it is about.
+  // Every edit is checked on the server (debounced); a problem lands on the stage it is about. Run waits for the check
+  // of the current text (`validating`), so a scan is never run on the previous text's verdict.
   useEffect(() => {
-    if (!registry || !text) { setProblems({}); setOtherProblem(null); return undefined; }
-    const seq = ++validateSeq.current;
+    const seq = ++validateSeq.current;                // also invalidates a check in flight for an older text
+    if (!registry || !text) { setProblems({}); setOtherProblem(null); setValidating(false); return undefined; }
+    setValidating(true);
     const timer = window.setTimeout(() => {
       screenerApi.validate(text, scanTf).then((v) => {
         if (seq !== validateSeq.current) return;
@@ -67,20 +70,24 @@ export default function ScreenerPage(_props: PageProps) {
         }
         setProblems(byStage);
         setOtherProblem(other);
-      }).catch(() => undefined);                       // a failed check is not a problem in the scan; Run reports errors
+      }).catch(() => undefined)                        // a failed check is not a problem in the scan; Run reports errors
+        .finally(() => { if (seq === validateSeq.current) setValidating(false); });
     }, VALIDATE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [registry, text, scanTf, stages]);
 
-  const canRun = !!registry && !!text && symbols.length > 0 && Object.keys(problems).length === 0 && !otherProblem && !running;
+  const canRun = !!registry && !!text && symbols.length > 0 && !validating && Object.keys(problems).length === 0 && !otherProblem && !running;
+  const now = useMemo(() => (registry ? runStamp(registry, stages, scanTf, symbols) : null), [registry, stages, scanTf, symbols]);
+  const fresh = !!now && sameRun(ran, now);
 
   const doRun = useCallback(async () => {
-    if (!registry || !canRun) return;
+    if (!registry || !canRun || !now) return;
     setRunning(true);
+    const stamp = now;                                 // the scan as sent, not as it may be by the time the reply lands
     try {
       const out = await screenerApi.run(text, scanTf, symbols);
       setRun(out);
-      setRanTexts(stages.filter((s) => s.enabled).map((s) => stageText(registry, s)));
+      setRan(stamp);
       setRanAt(new Date());
       setRunKey((k) => k + 1);
     } catch (e) {
@@ -88,7 +95,13 @@ export default function ScreenerPage(_props: PageProps) {
     } finally {
       setRunning(false);
     }
-  }, [registry, canRun, text, scanTf, symbols, stages, toast]);
+  }, [registry, canRun, now, text, scanTf, symbols, toast]);
+
+  const showStage = (id: string) => {
+    const handle = document.querySelector<HTMLElement>(`[data-stage-id="${id}"] button`);
+    handle?.scrollIntoView({ block: "center", behavior: "smooth" });
+    handle?.focus({ preventScroll: true });
+  };
 
   const doSave = async () => {
     if (!text) return;
@@ -101,10 +114,10 @@ export default function ScreenerPage(_props: PageProps) {
     }
   };
 
-  const rows = registry ? trail(stages, run?.funnel ?? null, ranTexts, registry) : [];
+  const rows = trail(stages, run?.funnel ?? null, fresh);
   const killer = rows.find((r) => r.kills);
-  // the matched count shows only while the stages are the ones that ran (trail() drops every count after an edit)
-  const matchedNow = rows.some((r) => r.survivors !== null) ? run?.matched.length ?? null : null;
+  // the matched count shows only while the scan is the one that ran (stages, timeframe and symbols unchanged)
+  const matchedNow = fresh && run ? run.matched.length : null;
 
   if (loadError) {
     return <div className="rounded-panel border border-border bg-surface-1 p-4 text-t13 text-fg-muted">{loadError}</div>;
@@ -155,7 +168,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={run?.funnel ?? null}
-                          ranTexts={ranTexts} matched={matchedNow} problems={problems} runKey={runKey} onChange={setStages} />
+                          fresh={fresh} matched={matchedNow} problems={problems} runKey={runKey} onChange={setStages} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}
@@ -168,11 +181,12 @@ export default function ScreenerPage(_props: PageProps) {
             <div role="status" className="rounded-panel border border-warn/50 bg-surface-1 p-3 text-t13 text-fg">
               <p>This condition removes every symbol. Loosen it or disable it to see candidates.</p>
               <div className="mt-2 flex gap-2">
+                <Button size="sm" onClick={() => showStage(killer.id)}>Show the stage</Button>
                 <Button size="sm" onClick={() => setStages((all) => all.map((s) => (s.id === killer.id ? { ...s, enabled: false } : s)))}>Disable it</Button>
               </div>
             </div>
           )}
-          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} />
+          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh} />
           {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
         </div>
       </div>

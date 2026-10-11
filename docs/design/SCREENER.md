@@ -654,24 +654,40 @@ with the indicator block, and the result table.
   - The survivor trail on each row's right edge shows a thin recessed track, the count after the stage, and how many
     the stage removed.
   - The stage that removes the last symbols turns warn and offers "See what this removes": the symbols it took out.
-  - A count shows only while the stages are the ones that ran. After any edit the trail shows a dash, never a stale
-    number.
+  - A count shows only while the scan is the one that ran: the same stages, scan timeframe and symbols (a run stamp
+    compared on every render). After a change to any of the three, the trail shows a dash and "with data" is hidden;
+    a number from another scan is never shown.
+  - One live region: the foot announces "Matched N of M" once per run. The per-stage trails are not live regions.
 - **Stage row** (`StageRow.tsx`, the indicator block). It reads as a sentence edited in place: "RSI (14) on 15m above
   60".
-  - The number turns into an input on click; Enter commits, Escape cancels, and a half-typed value is dropped.
-  - Native selects (sized to the chosen value) handle the indicator, operator, timeframe and choices.
-  - Other controls: drag handle, Alt+Up / Alt+Down to move, an on/off switch, duplicate, remove.
-  - The advanced fold switches the right side between a number and another indicator, and shows the stage's
-    ScreenQL.
-  - Validation problems from `/validate` land on the stage whose text they point at.
+  - The number turns into an input on click; Enter commits, Escape cancels, and a half-typed value is dropped. Enter
+    and Escape put the focus back on the number.
+  - Native selects (sized to the chosen value, with a small chevron) handle the indicator, operator, timeframe and
+    choices.
+  - Other controls: drag handle, Alt+Up / Alt+Down to move (the focus stays on the handle), an on/off switch,
+    duplicate, remove. A drag that ends outside any stage is cleared.
+  - The advanced fold switches the right side between a number and another indicator, and shows the stage in plain
+    words ("Reads: RSI(14) on 15m above 60") and as ScreenQL. The plain-words line is also the handle's description
+    for screen readers.
+  - Validation problems from `/validate` land on the stage whose text they point at. A problem with no position (the
+    cost cap) shows under the canvas. Run waits for the check of the current text, so a scan never runs on the
+    verdict for an earlier text.
 - **Server.**
   - `POST /api/screener/run` returns `funnel: {universe, with_data, stages: [{text, survivors, removed}]}`:
-    - a top-level ALL is a list of stages, and each is evaluated only on the symbols still in;
-    - the last count equals the screen's match count (tested).
+    - a top-level ALL is a list of stages; anything else is one stage;
+    - `with_data` is the universe minus the symbols that could not be evaluated (no bars, too little history, an
+      error), so stage one never "removes" a symbol it could not read;
+    - each stage is evaluated once over those symbols and the counts are the running AND, so a cross-sectional
+      stage (`Rank(...)`) ranks over the same set as in the full screen;
+    - the last count equals the screen's match count (tested, including with `Rank` and with a short-history symbol).
+  - The texts the builder writes are a contract: `src/screener/builderTexts.json` holds stages, the registry entries
+    they use and the expected texts. The frontend test writes each text from its stage; the backend test validates
+    every text and checks the registry entries still match `describe()`.
   - `GET /registry` adds each argument's type, its default, and `cross_sectional`, so the builder can edit parameters
     inline.
 - **Results.** A dense, sortable table: matched first, then not matched, then "could not be read" with the reason. The
-  rows settle in after a run.
+  rows settle in after a run. Once the scan changes, the rows stay but are dimmed, under "The scan changed since this
+  run. Run it again to update these results."
 - **Motion.** The one orchestrated moment: on a run, the trails fill top to bottom (≤ 600 ms in total) and the
   results settle in. Reduce motion (the setting or the system) turns it off.
 - **Layout.**
@@ -683,23 +699,26 @@ with the indicator block, and the result table.
 - **States.**
   - Empty: "Start with a template or add your first condition." Three neutral starting points plus "Add a condition".
   - No results: the killing stage is highlighted and the message says "This condition removes every symbol. Loosen it
-    or disable it to see candidates." with Disable.
-  - Freshness: a pill showing the data time in IST, which turns warn once the data is more than two of the scan's bars
-    old.
+    or disable it to see candidates." with "Show the stage" (scrolls to it and focuses it) and "Disable it". A new run
+    closes an open "what this removes" list.
+  - Freshness: a pill "Ran at HH:MM IST". It re-checks every 30 s and turns warn once the run is more than two of the
+    scan's bars old ("N min ago, run again for newer bars").
   - Errors are sentences: 404 means the screener is off, and 409 says to connect a broker.
 - **Tests.**
   - Frontend:
-    - `model.test.ts` (11): text, spans, summaries, trail, edits, symbols;
+    - `model.test.ts` (14): text, spans, summaries, trail, run stamp, the builder-text contract, edits, symbols;
     - `tokens.test.ts` (6);
     - `parts.test.ts` (5): inline parse, sort, freshness, trail bar.
-  - Backend: `tests/test_u5_funnel.py` (4: stages, one-stage forms, registry fields, the builder's text validates),
-    plus the run test.
+  - Backend: `tests/test_u5_funnel.py` (6: stages, one-stage forms, registry fields, the builder-text contract, Rank
+    parity, short history left out), plus the run test.
   - Headless (vite + Chromium, API mocked), at 1440 and 1920 wide, in dark, light, colour-blind dark/light and on a
     phone:
-    - inline edit by keyboard;
-    - counts dropped after an edit;
+    - inline edit by keyboard, with the focus back on the number;
+    - Run disabled while the edit is being checked;
+    - counts dropped and results marked stale after a stage edit, fresh again after undoing it, stale after a symbols
+      edit;
     - the killing stage and its removed list;
-    - keyboard reorder;
+    - keyboard reorder, with the focus kept on the moved handle;
     - no page errors.
   - Screenshots are in `docs/screenshots/screener-u5d1/`.
 - **Design notes.**

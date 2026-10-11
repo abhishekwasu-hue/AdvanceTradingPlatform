@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultParams, duplicateStage, indicatorNames, isIndicator, moveStage, newStage, paramKinds, parseSymbols, screenText,
-  stageAt, stageSpans, stageSummary, stageText, trail, type Registry, type Stage,
+  runStamp, sameRun, stageAt, stageSpans, stageSummary, stageText, trail, type Registry, type Stage,
 } from "./model";
+import contract from "./builderTexts.json";
 
 // A slice of the real registry (GET /api/screener/registry) - shapes as the server sends them.
 const REG: Registry = {
@@ -76,25 +77,57 @@ describe("the survivor trail", () => {
   const b = stage({ id: "b", left: { fn: "close", params: {}, tf: null }, right: { kind: "value", value: 100 } });
   const off = stage({ id: "off", enabled: false });
   const funnel = { universe: 12, with_data: 10, stages: [{ text: "RSI(14) > 60", survivors: 4 }, { text: "close > 100", survivors: 0 }] };
-  const ran = ["RSI(14) > 60", "close > 100"];
 
   it("shows the count after each stage, what it removed, and marks the stage that removed the last symbols", () => {
-    expect(trail([a, off, b], funnel, ran, REG)).toEqual([
+    expect(trail([a, off, b], funnel, true)).toEqual([
       { id: "a", survivors: 4, removed: 6, kills: false },
       { id: "off", survivors: null, removed: null, kills: false },
       { id: "b", survivors: 0, removed: 4, kills: true },
     ]);
   });
 
-  it("drops every count once a stage changed since the run (an old number would mislead)", () => {
-    const edited = { ...b, right: { kind: "value" as const, value: 90 } };
-    expect(trail([a, edited], funnel, ran, REG).every((r) => r.survivors === null)).toBe(true);
-    expect(trail([a, b], null, null, REG).every((r) => r.survivors === null && !r.kills)).toBe(true);
+  it("shows no count when the run is stale, missing or of another shape", () => {
+    expect(trail([a, b], funnel, false).every((r) => r.survivors === null && !r.kills)).toBe(true);
+    expect(trail([a, b], null, true).every((r) => r.survivors === null && !r.kills)).toBe(true);
+    expect(trail([a], funnel, true).every((r) => r.survivors === null)).toBe(true);
   });
 
   it("marks only the first stage that empties the funnel", () => {
     const zero = { universe: 3, with_data: 3, stages: [{ text: "RSI(14) > 60", survivors: 0 }, { text: "close > 100", survivors: 0 }] };
-    expect(trail([a, b], zero, ran, REG).map((r) => r.kills)).toEqual([true, false]);
+    expect(trail([a, b], zero, true).map((r) => r.kills)).toEqual([true, false]);
+  });
+});
+
+describe("is this still the scan that ran", () => {
+  const a = stage({ id: "a" });
+  const b = stage({ id: "b", left: { fn: "close", params: {}, tf: null }, right: { kind: "value", value: 100 } });
+  const ran = runStamp(REG, [a, b], "5m", ["TCS", "INFY"]);
+
+  it("is, while the stages, the timeframe and the symbols are unchanged", () => {
+    expect(ran.texts).toEqual(["RSI(14) > 60", "close > 100"]);
+    expect(sameRun(ran, runStamp(REG, [a, b], "5m", ["TCS", "INFY"]))).toBe(true);
+    expect(sameRun(ran, runStamp(REG, [a, { ...b, enabled: false }, b], "5m", ["TCS", "INFY"]))).toBe(true);  // a disabled stage is not in the scan
+  });
+
+  it("is not after any one of them changes (U5 review: counts of another universe or timeframe would mislead)", () => {
+    expect(sameRun(ran, runStamp(REG, [a, { ...b, right: { kind: "value", value: 90 } }], "5m", ["TCS", "INFY"]))).toBe(false);
+    expect(sameRun(ran, runStamp(REG, [b, a], "5m", ["TCS", "INFY"]))).toBe(false);
+    expect(sameRun(ran, runStamp(REG, [a, b], "15m", ["TCS", "INFY"]))).toBe(false);
+    expect(sameRun(ran, runStamp(REG, [a, b], "5m", ["TCS"]))).toBe(false);
+    expect(sameRun(ran, runStamp(REG, [a, b], "5m", ["TCS", "INFY", "ABB"]))).toBe(false);
+    expect(sameRun(ran, runStamp(REG, [a, b], "5m", ["TCS", "ABB"]))).toBe(false);
+    expect(sameRun(null, ran)).toBe(false);
+  });
+});
+
+describe("the builder-text contract with the server (builderTexts.json; tests/test_u5_funnel.py validates every text)", () => {
+  it("writes exactly the text the server was shown, from the registry it describes", () => {
+    const reg = contract.registry as unknown as Registry;
+    expect(contract.cases.length).toBeGreaterThanOrEqual(10);
+    for (const c of contract.cases) {
+      expect(stageText(reg, { id: "x", kind: "indicator", enabled: true, ...c.stage } as Stage)).toBe(c.text);
+    }
+    for (const fn of new Set(contract.cases.map((c) => c.stage.left.fn))) expect(isIndicator(reg[fn])).toBe(true);
   });
 });
 

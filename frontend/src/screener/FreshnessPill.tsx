@@ -1,7 +1,9 @@
 /**
  * U5: how fresh the scan's data is - the source and when it was read, as a pill in the header. It turns warn when the
- * data is older than the scan's own timeframe allows. The time is always the real one, never fixed text.
+ * data is older than the scan's own timeframe allows (it re-checks every 30 s, so it turns without a click). The time
+ * is always the real one, never fixed text.
  */
+import { useEffect, useState } from "react";
 import { cx } from "../components/primitives";
 
 const TF_MS: Record<string, number> = {
@@ -19,10 +21,18 @@ export function formatIst(d: Date): string {
   return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
 }
 
+export const FRESHNESS_TICK_MS = 30e3;
+
 export interface FreshnessPillProps { ranAt: Date | null; source: string | null; scanTf: string; now?: Date }
 
-export function FreshnessPill({ ranAt, source, scanTf, now = new Date() }: FreshnessPillProps) {
-  const f = freshness(ranAt, now, scanTf);
+export function FreshnessPill({ ranAt, source, scanTf, now }: FreshnessPillProps) {
+  const [tick, setTick] = useState(() => new Date());
+  useEffect(() => {
+    if (now || !ranAt) return undefined;                 // a fixed `now` (stories, tests) needs no clock
+    const id = window.setInterval(() => setTick(new Date()), FRESHNESS_TICK_MS);
+    return () => window.clearInterval(id);
+  }, [now, ranAt]);
+  const f = freshness(ranAt, now ?? tick, scanTf);
   if (!ranAt) {
     return <span className="inline-flex h-6 items-center rounded-full border border-border px-2.5 text-t12 text-fg-muted">Not run yet</span>;
   }
@@ -31,8 +41,8 @@ export function FreshnessPill({ ranAt, source, scanTf, now = new Date() }: Fresh
           className={cx("inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-t12",
             f.stale ? "border-warn/60 text-warn" : "border-border text-fg-muted")}>
       <span aria-hidden className={cx("h-1.5 w-1.5 rounded-full", f.stale ? "bg-warn" : "bg-signal")} />
-      Data at <span className="font-mono font-tabular">{formatIst(ranAt)}</span> IST
-      {f.stale && f.behindMin != null && <span> · behind by {f.behindMin} min</span>}
+      Ran at <span className="font-mono font-tabular">{formatIst(ranAt)}</span> IST
+      {f.stale && f.behindMin != null && <span> · {f.behindMin} min ago, run again for newer bars</span>}
     </span>
   );
 }

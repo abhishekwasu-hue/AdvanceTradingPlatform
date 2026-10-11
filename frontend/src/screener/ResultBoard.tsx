@@ -26,9 +26,10 @@ export interface ResultBoardProps {
   results: RunResult[] | null;
   running?: boolean;
   runKey?: number;
+  stale?: boolean;           // the scan changed since this run: the rows are kept, dimmed, with a note to run again
 }
 
-export function ResultBoard({ results, running = false, runKey }: ResultBoardProps) {
+export function ResultBoard({ results, running = false, runKey, stale = false }: ResultBoardProps) {
   const [sort, setSort] = useState<SortState>({ key: "result", dir: "asc" });
   const rows = useMemo(() => (results ? sortResults(results, sort) : []), [results, sort]);
   const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -40,12 +41,17 @@ export function ResultBoard({ results, running = false, runKey }: ResultBoardPro
         <h2 className="text-t15 font-semibold text-fg">Results</h2>
         <span className="text-t12 text-fg-muted">Table</span>
       </header>
+      {stale && results != null && (
+        <p role="status" data-testid="results-stale" className="border-b border-border bg-surface-inset px-4 py-2 text-t12 text-fg-muted">
+          The scan changed since this run. Run it again to update these results.
+        </p>
+      )}
       {results == null ? (
         <p className="px-4 py-8 text-center text-t13 text-fg-muted">{running ? "Running the scan…" : "Run the scan to see which symbols pass."}</p>
       ) : results.length === 0 ? (
         <p className="px-4 py-8 text-center text-t13 text-fg-muted">No symbols were read.</p>
       ) : (
-        <div className="min-h-0 overflow-auto" key={runKey}>
+        <div className={cx("min-h-0 overflow-auto transition-opacity", stale && "opacity-50")} key={runKey} aria-hidden={stale || undefined}>
           <table className="w-full border-collapse text-t13">
             <caption className="sr-only">{matched} of {results.length} symbols matched</caption>
             <thead className="sticky top-0 bg-surface-1 text-t12 text-fg-muted">

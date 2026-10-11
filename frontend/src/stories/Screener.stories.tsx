@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas } from "../screener/FunnelCanvas";
-import { newStage, stageText, type FunnelResult, type Registry, type Stage } from "../screener/model";
+import { newStage, runStamp, sameRun, stageText, type FunnelResult, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
 import { StageRow } from "../screener/StageRow";
 import { SurvivorTrail } from "../screener/SurvivorTrail";
@@ -33,25 +33,28 @@ function stages(): Stage[] {
   return [a, b, c];
 }
 
-function funnelFor(list: Stage[], survivors: number[], withData = 48): { funnel: FunnelResult; ran: string[] } {
+const SYMBOLS = ["RELIANCE", "TCS", "INFY"];
+
+function funnelFor(list: Stage[], survivors: number[], withData = 48): { funnel: FunnelResult; ran: RunStamp } {
   const enabled = list.filter((s) => s.enabled);
   return {
     funnel: { universe: 50, with_data: withData, stages: enabled.map((s, i) => ({ text: stageText(REGISTRY, s), survivors: survivors[i], removed: i === 2 ? ["ABB", "TCS"] : [] })) },
-    ran: enabled.map((s) => stageText(REGISTRY, s)),
+    ran: runStamp(REGISTRY, list, "5m", SYMBOLS),
   };
 }
+const fresh = (ran: RunStamp, list: Stage[]) => sameRun(ran, runStamp(REGISTRY, list, "5m", SYMBOLS));
 
 export const Empty: Story = {
   render: function Empty() {
     const [list, setList] = useState<Stage[]>([]);
-    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} ranTexts={null} matched={null} problems={{}} onChange={setList} />;
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} fresh={false} matched={null} problems={{}} onChange={setList} />;
   },
 };
 
 export const Editing: Story = {
   render: function Editing() {
     const [list, setList] = useState<Stage[]>(stages);
-    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} ranTexts={null} matched={null} problems={{}} onChange={setList} />;
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} fresh={false} matched={null} problems={{}} onChange={setList} />;
   },
 };
 
@@ -59,7 +62,7 @@ export const AfterARun: Story = {
   render: function AfterARun() {
     const [list, setList] = useState<Stage[]>(stages);
     const [{ funnel, ran }] = useState(() => funnelFor(list, [21, 9, 4]));
-    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={funnel} ranTexts={ran} matched={4} problems={{}} runKey={1} onChange={setList} />;
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={funnel} fresh={fresh(ran, list)} matched={4} problems={{}} runKey={1} onChange={setList} />;
   },
 };
 
@@ -67,14 +70,14 @@ export const AStageRemovesEverything: Story = {
   render: function Kills() {
     const [list, setList] = useState<Stage[]>(stages);
     const [{ funnel, ran }] = useState(() => funnelFor(list, [21, 9, 0]));
-    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={funnel} ranTexts={ran} matched={0} problems={{}} onChange={setList} />;
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={funnel} fresh={fresh(ran, list)} matched={0} problems={{}} onChange={setList} />;
   },
 };
 
 export const AProblemOnAStage: Story = {
   render: function Problem() {
     const [list, setList] = useState<Stage[]>(stages);
-    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} ranTexts={null} matched={null}
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={null} fresh={false} matched={null}
                          problems={{ [list[1].id]: "close cannot be compared with RSI(14): a price against an oscillator. Compare it with another price." }} onChange={setList} />;
   },
 };
@@ -108,6 +111,14 @@ export const Results: Story = {
         { symbol: "RELIANCE", matched: true, reason: null }, { symbol: "TCS", matched: false, reason: null },
         { symbol: "INFY", matched: true, reason: null }, { symbol: "ABB", matched: false, reason: "no bars from the broker" },
       ]} />
+    </div>
+  ),
+};
+
+export const ResultsAfterAnEdit: Story = {
+  render: () => (
+    <div className="max-w-md">
+      <ResultBoard runKey={1} stale results={[{ symbol: "RELIANCE", matched: true, reason: null }, { symbol: "TCS", matched: false, reason: null }]} />
     </div>
   ),
 };

@@ -452,20 +452,25 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
 
 
 def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
-                    params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage); after each stage,
-    the symbols that passed it and every stage before it. Each stage is the same evaluation as in the whole screen
-    (same lookback and history check), run only on the symbols still in, so the last count is the screen's match
-    count. `removed` names the symbols each stage took out ("see what this removes")."""
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None) -> Dict[str, Any]:
+    """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
+
+    Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
+    same universe as in the full screen) and the results are ANDed cumulatively: the count after a stage is the
+    symbols that passed it and every stage before it, and the last count equals the screen's match count.
+    Symbols the screen cannot evaluate at all (not enough history, a runtime problem) are left out of the funnel
+    (`with_data`) instead of being "removed" by the first stage."""
+    full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params))}
+    usable = [d for d in universe if full[d.symbol].reason is None]
     items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
-    alive = [d for d in universe]
-    out: List[Dict[str, Any]] = []
+    alive = [d.symbol for d in usable]
+    stages: List[Dict[str, Any]] = []
     for item in items:
-        passed = {m.symbol for m in run_screen(item, validated, alive, base_tf=base_tf, params=params) if m.matched}
-        removed = [d.symbol for d in alive if d.symbol not in passed]
-        alive = [d for d in alive if d.symbol in passed]
-        out.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
-    return out
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params) if m.matched}
+        removed = [s for s in alive if s not in passed]
+        alive = [s for s in alive if s in passed]
+        stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
+    return {"with_data": len(usable), "stages": stages}
 
 
 def _last(value: Any) -> Any:

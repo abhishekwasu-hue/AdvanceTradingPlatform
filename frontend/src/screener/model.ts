@@ -178,19 +178,33 @@ export function stageSummary(reg: Registry, s: Stage): string {
 
 export interface TrailRow { id: string; survivors: number | null; removed: number | null; kills: boolean }
 
+/** What a run was made of: each enabled stage's ScreenQL, the scan timeframe and the symbols, in order. */
+export interface RunStamp { texts: string[]; scanTf: string; symbols: string[] }
+
+export function runStamp(reg: Registry, stages: Stage[], scanTf: string, symbols: string[]): RunStamp {
+  return { texts: stages.filter((s) => s.enabled).map((s) => stageText(reg, s)), scanTf, symbols: symbols.slice() };
+}
+
+/** Is `now` the scan that ran? A changed stage, timeframe or symbol list makes every count and result of that run stale. */
+export function sameRun(ran: RunStamp | null, now: RunStamp): boolean {
+  if (!ran) return false;
+  const eq = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  return ran.scanTf === now.scanTf && eq(ran.texts, now.texts) && eq(ran.symbols, now.symbols);
+}
+
 /**
  * The survivor trail beside each stage from a run's funnel: the count after the stage, how many it removed, and whether
- * it is the stage that removed the last symbols (its trail turns to the warning colour). Disabled stages and stages
- * edited since the run have no count (null) - an old number beside a changed stage would mislead.
+ * it is the stage that removed the last symbols (its trail turns to the warning colour). Disabled stages - and every
+ * stage once the scan changed since the run (a stage, the timeframe or the symbols: `fresh` false) - have no count
+ * (null): an old number beside a changed scan would mislead.
  */
-export function trail(stages: Stage[], funnel: FunnelResult | null, ranTexts: string[] | null, reg: Registry): TrailRow[] {
+export function trail(stages: Stage[], funnel: FunnelResult | null, fresh: boolean): TrailRow[] {
   const enabled = stages.filter((s) => s.enabled);
-  const fresh = !!funnel && !!ranTexts && ranTexts.length === enabled.length
-    && enabled.every((s, i) => ranTexts[i] === stageText(reg, s)) && funnel.stages.length === enabled.length;
+  const usable = fresh && !!funnel && funnel.stages.length === enabled.length;
   let before = funnel?.with_data ?? null;
   let killed = false;
   return stages.map((s) => {
-    if (!s.enabled || !fresh || !funnel) return { id: s.id, survivors: null, removed: null, kills: false };
+    if (!s.enabled || !usable || !funnel) return { id: s.id, survivors: null, removed: null, kills: false };
     const i = enabled.indexOf(s);
     const after = funnel.stages[i].survivors;
     const removed = before == null ? null : before - after;

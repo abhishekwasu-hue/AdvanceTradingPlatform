@@ -5,7 +5,7 @@
  * GroupBracket. When a stage removes the last symbols its trail turns warn and offers to show what it removes.
  */
 import { Plus } from "lucide-react";
-import { useState, type DragEvent } from "react";
+import { useEffect, useState, type DragEvent } from "react";
 import { Button, cx } from "../components/primitives";
 import { duplicateStage, moveStage, newStage, trail, type FunnelResult, type Registry, type Stage } from "./model";
 import { StageRow } from "./StageRow";
@@ -29,7 +29,7 @@ export interface FunnelCanvasProps {
   scanTf: string;
   universe: number;                  // symbols the scan will read
   funnel: FunnelResult | null;       // the last run
-  ranTexts: string[] | null;         // each enabled stage's ScreenQL at that run (counts only show while unchanged)
+  fresh: boolean;                    // the scan is still the one that ran (stages, timeframe, symbols): counts show only then
   matched: number | null;
   problems: Record<string, string>;  // stage id -> what to fix
   runKey?: number;                   // bumps on every run: replays the fill
@@ -41,8 +41,9 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
   const { stages, registry, scanTf, funnel, onChange } = props;
   const [dragId, setDragId] = useState<string | null>(null);
   const [showing, setShowing] = useState<string | null>(null);
-  const rows = trail(stages, funnel, props.ranTexts, registry);
-  const total = funnel?.with_data ?? null;
+  const rows = trail(stages, funnel, props.fresh);
+  useEffect(() => { setShowing(null); }, [props.runKey]);              // a new run closes the old "what this removes" list
+  const total = props.fresh ? funnel?.with_data ?? null : null;      // "with data" belongs to the run's universe only
   const enabledCount = stages.filter((s) => s.enabled).length;
   const step = enabledCount ? Math.min(60, 300 / enabledCount) : 0;     // the fill reaches the last stage within 600 ms
 
@@ -79,7 +80,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
   let enabledIndex = -1;
   return (
     <section aria-label="Conditions" className="rounded-panel border border-border bg-surface-1 p-4" data-run={props.runKey}>
-      <FunnelHead universe={props.universe} withData={funnel?.with_data ?? null} />
+      <FunnelHead universe={props.universe} withData={total} />
       <div className="relative mt-3 pl-6">
         {/* the ALL bracket: one continuous left edge with its label - the group, not a nested grey box */}
         <div aria-hidden className="absolute bottom-2 left-1 top-2 w-3 rounded-l-control border-y border-l border-fg-muted/50" />
@@ -100,6 +101,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
                   onShowRemoved={() => { setShowing(showing === s.id ? null : s.id); props.onShowRemoved?.(s.id); }}
                   removedList={showing === s.id && rows[i].survivors != null ? funnel?.stages[enabledIndex]?.removed ?? [] : null}
                   onDragStart={(e) => { setDragId(s.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => setDragId(null)}
                   onDragOver={(e) => { if (dragId) e.preventDefault(); }}
                   onDrop={drop(s.id)}
                   dragging={dragId === s.id}
@@ -110,7 +112,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 pl-6">
         <Button size="sm" onClick={() => onChange([...stages, newStage(registry)])}><Plus size={14} /> Add a condition</Button>
-        <MatchedFoot matched={props.matched} kills={rows.some((r) => r.kills)} />
+        <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} />
       </div>
     </section>
   );
@@ -128,13 +130,16 @@ function FunnelHead({ universe, withData = null }: { universe: number; withData?
   );
 }
 
-function MatchedFoot({ matched, kills }: { matched: number | null; kills: boolean }) {
+/** The canvas's one live region: a single summary per run ("Matched 4 of 48"), not a count per stage. */
+function MatchedFoot({ matched, of, kills }: { matched: number | null; of: number | null; kills: boolean }) {
   return (
-    <p className="text-t12 text-fg-muted" aria-live="polite">
+    <p className="text-t12 text-fg-muted" aria-live="polite" aria-atomic="true">
       Matched{" "}
       <span className={cx("font-mono font-tabular text-t18 font-semibold", matched == null ? "text-fg-muted" : kills || matched === 0 ? "text-warn" : "text-signal")}>
         {matched ?? "–"}
       </span>
+      {matched != null && of != null && <span> of <span className="font-mono font-tabular">{of}</span></span>}
+      {matched == null && <span className="sr-only">not counted yet</span>}
     </p>
   );
 }

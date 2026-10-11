@@ -7,7 +7,7 @@ extremes of `model.payoff_extremes`, so the page draws numbers from the engine a
   price, not money changing hands, so it is left out.
 - `reward_to_risk`: max profit over max loss, only when both are finite and there is a loss to risk.
 - `margin_estimate`: an ESTIMATE, labelled so. A defined-risk structure needs at least its max loss (long-only: the
-  premium paid). Undefined risk and calendars need the broker's SPAN + exposure number, which arrives with the order
+  premium paid). Undefined risk, short options not covered by long ones (a naked put too) and calendars need the broker's SPAN + exposure number, which arrives with the order
   ticket (P1-d); the builder never shows a made-up figure for them.
 - `costs`: the statutory charges and brokerage to open the strategy (and to close it at today's premiums), from the
   platform's one table of Indian charges by date (`app.execution.india_costs`, pure: rates only, no order path).
@@ -49,6 +49,18 @@ def reward_to_risk(max_profit: Optional[float], max_loss: Optional[float]) -> Op
     return max_profit / abs(max_loss)
 
 
+def uncovered_short(legs: Sequence[Leg]) -> bool:
+    """True when, for calls or for puts, more option quantity is sold than bought. A short put's loss stops at an
+    underlying of zero, so the payoff calls it bounded - but the broker margins it as naked (often a tenth of that
+    "max loss"), so it is not a defined-risk structure (a naked put, a put ratio spread)."""
+    for kind in ("CE", "PE"):
+        short = sum(_qty(leg) for leg in legs if leg["option_type"] == kind and leg["direction"] == "SELL")
+        long_ = sum(_qty(leg) for leg in legs if leg["option_type"] == kind and leg["direction"] == "BUY")
+        if short > long_:
+            return True
+    return False
+
+
 def margin_estimate(legs: Sequence[Leg], extremes: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     """The margin line of the metrics card: `value` in money or None, `basis` saying how it was made (or why there is
     no estimate), and `estimated: True` always - nothing here is the broker's number."""
@@ -61,6 +73,9 @@ def margin_estimate(legs: Sequence[Leg], extremes: Optional[Mapping[str, Any]]) 
         return out
     if any(leg["option_type"] == "FUT" for leg in legs):
         out["basis"] = "Includes a futures leg: needs the broker's margin."
+        return out
+    if uncovered_short(legs):
+        out["basis"] = "Short options not covered by long ones: needs the broker's margin."
         return out
     max_loss = extremes.get("max_loss")
     if max_loss is None or not math.isfinite(max_loss):

@@ -31,6 +31,7 @@ import { useMediaQuery } from "../utils/useMediaQuery";
 /** Desktop layout (legs left, numbers right) from Tailwind's lg breakpoint. */
 const WIDE_QUERY = "(min-width: 1024px)";
 const DEFAULT_BROKERAGE = "20";
+const MAX_BROKERAGE = 1000;                                 // the API's limit on brokerage_per_order
 
 const EVALUATE_DELAY_MS = 200;
 /** After a 429 the page waits this long and asks again, once per wait (the server's limit is per minute). */
@@ -84,7 +85,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const wide = useMediaQuery(WIDE_QUERY);
   const phone = useMediaQuery("(max-width: 767px)");
   const asOf = useMemo(todayIst, []);
-  const brokerage = nonNegative(brokerageText) ?? Number(DEFAULT_BROKERAGE);
+  const brokerage = Math.min(nonNegative(brokerageText) ?? Number(DEFAULT_BROKERAGE), MAX_BROKERAGE);   // the API caps it
 
   const spot = positive(spotText);
   const step = positive(stepText);

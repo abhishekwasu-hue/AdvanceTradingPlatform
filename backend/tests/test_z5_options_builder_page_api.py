@@ -83,6 +83,17 @@ def test_margin_is_never_a_made_up_number_for_undefined_risk_calendars_or_future
     assert covered["net_premium"] == pytest.approx(covered["legs"][1]["premium"] * 50, abs=0.01)   # the future is not premium
 
 
+def test_naked_put_and_put_ratio_get_no_made_up_margin():
+    # a short put's loss stops at zero, so the payoff says "bounded"; the margin is still the broker's (review M1)
+    h = _headers("z5-naked-put@example.com")
+    naked_put = _evaluate(h, [_leg("SELL", "PE", SPOT)])
+    assert naked_put["margin"]["value"] is None and "not covered" in naked_put["margin"]["basis"]
+    ratio = _evaluate(h, [_leg("BUY", "PE", SPOT), {**_leg("SELL", "PE", SPOT - 200), "lots": 2}])
+    assert ratio["margin"]["value"] is None and "not covered" in ratio["margin"]["basis"]
+    assert metrics.uncovered_short(CONDOR) is False
+    assert metrics.uncovered_short([_leg("BUY", "PE", SPOT - 200), _leg("SELL", "PE", SPOT)]) is False   # bull put spread
+
+
 def test_metrics_unit_rules():
     assert metrics.reward_to_risk(100.0, -50.0) == 2.0
     assert metrics.reward_to_risk(None, -50.0) is None and metrics.reward_to_risk(100.0, None) is None

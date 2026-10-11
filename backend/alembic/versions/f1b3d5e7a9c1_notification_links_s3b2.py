@@ -1,7 +1,7 @@
 """S3b-2: notification_links (per-user Telegram linking), email_opt_outs (unsubscribe), alert_deliveries.address
 
 Revision ID: f1b3d5e7a9c1
-Revises: e9a1c3d5f7b9
+Revises: e2b4d6f8a0c2
 Create Date: 2026-10-11 06:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f1b3d5e7a9c1'
-down_revision: Union[str, Sequence[str], None] = 'e9a1c3d5f7b9'
+down_revision: Union[str, Sequence[str], None] = 'e2b4d6f8a0c2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

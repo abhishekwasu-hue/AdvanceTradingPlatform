@@ -130,6 +130,9 @@ class TickCache:
 
 tick_cache = TickCache()
 
+# Part B2: synchronous listeners told about every cached tick (the lake recorder when LAKE_TICK_WRITER_ENABLED).
+tick_listeners: List[Callable[["Tick"], None]] = []
+
 
 # --- protobuf wire-format reader (Upstox Market Data Feed V3) -------------------------------------
 
@@ -516,8 +519,10 @@ class TickStream:
             if target is None or ltp is None or ltp <= 0:
                 continue
             symbol, exchange = target
-            await self.cache.put(Tick(broker=self.name, exchange=exchange, symbol=symbol, ltp=float(ltp),
-                                      exchange_ts=exchange_ts, received_at=now))
+            tick = Tick(broker=self.name, exchange=exchange, symbol=symbol, ltp=float(ltp), exchange_ts=exchange_ts, received_at=now)
+            await self.cache.put(tick)
+            for listener in tick_listeners:
+                listener(tick)
             self.ticks += 1
             self.last_tick_at = now
             TICKS_RECEIVED.labels(broker=self.name).inc()

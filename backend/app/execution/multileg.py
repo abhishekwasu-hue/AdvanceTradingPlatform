@@ -41,6 +41,8 @@ from app.execution.order_safety import wing_fill_complete
 from app.execution.paper_broker import PaperBroker
 from app.execution.router import OrderRouter
 from app.execution.signal_execution import entry_refusals
+from app.compliance import fo_limits
+from app.compliance.algo_id import order_algo_id
 from app.execution.tagging import LEG_ENTRY, LEG_EXIT, build_order_tag
 from app.instruments.contracts import ContractResolutionError, ContractRules
 from app.instruments.models import ContractSpec
@@ -110,6 +112,9 @@ async def execute_structure(
 
     refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                     broker_name=getattr(broker, "name", None) if broker is not None else None)
+    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
+    if ban:
+        refusals.append(ban)
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",
@@ -355,7 +360,7 @@ async def _place_live_legs(
     book (P0.5 / T3), so the account is never short without its protection. A leg that does not fill inside the
     poll window is cancelled and the structure fails; every confirmed leg is unwound. A fill price is recorded only
     when the book reports one, never as 0.0. Returns (ok, failure_text)."""
-    algo_id = tenant.algo_id if tenant is not None else None
+    algo_id = order_algo_id(tenant.algo_id if tenant is not None else None, broker.name)   # D1: registered, else generic
     max_tag = getattr(broker, "max_tag_length", None) or 20
     router = OrderRouter(mode=ExecutionMode.LIVE, risk_config=RiskConfig(), broker=broker)
     placed: List = []          # (leg, filled quantity) with a confirmed fill - what an unwind must reverse
@@ -381,7 +386,7 @@ async def _place_live_legs(
             request = BrokerOrderRequest(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
                 quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
-                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag),
+                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name),
             )
             try:
                 response = await broker.place_order(request)
@@ -413,7 +418,7 @@ async def _unwind(broker: BrokerInterface, placed: List, quantity: float, strate
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange,
                 transaction_type=OrderSide.SELL if leg.side == OrderSide.BUY else OrderSide.BUY,
                 quantity=filled if filled and filled > 0 else quantity * leg.ratio, order_type="MARKET", product="MIS",
-                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag),
+                tag=build_order_tag(strategy_id=strategy_id, leg=LEG_EXIT, algo_id=algo_id, max_length=max_tag, broker=broker.name),
             ))
             done += 1
         except Exception as exc:  # noqa: BLE001 - reported; reconciliation resolves the rest

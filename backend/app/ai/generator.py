@@ -76,6 +76,24 @@ def parse_answer_full(text: str) -> Tuple[CustomStrategyConfig, str, List[str], 
     return config, explanation, warnings + extra, suggestion
 
 
+def text_problem(explanation: Optional[str], warnings: List[str], config, suggestion, context: dict, prompt: str) -> Optional[str]:
+    """H-C1 d: why the model's prose about a draft cannot be shown, or None. Numbers must come from the draft's config,
+    the deployment suggestion, the risk context or the trader's own request; advice/guarantee words are never shown."""
+    from app.ai import grounding, output_filter
+    allowed = (grounding.numbers_in_values(json.loads(config.model_dump_json())) | grounding.numbers_in_values(context)
+               | grounding.allowed_from_text(prompt))
+    if suggestion is not None:
+        allowed |= grounding.numbers_in_values(json.loads(suggestion.model_dump_json()))
+    for text in [explanation or "", *warnings]:
+        ok, bad = grounding.check_numbers(text, allowed)
+        if not ok:
+            return f"numbers not in the strategy: {', '.join(bad[:5])}"
+        blocked = output_filter.blocked_terms(text)
+        if blocked:
+            return f"advice/guarantee words: {', '.join(blocked[:5])}"
+    return None
+
+
 async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: str, *, client: Optional[httpx.AsyncClient] = None,
                    provider: Optional[LLMProvider] = None, regime: Optional[str] = None, language: str = "en",
                    symbol: Optional[str] = None) -> AiStrategyDraftRecord:
@@ -114,10 +132,12 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         if bad_words and attempt < MAX_ATTEMPTS - 1:
             last_error = f"the explanation used words that read as advice or a promise ({', '.join(bad_words[:5])})"
             continue
+        withheld_note = None
         if bad_words:
             explanation = None
-            warnings = [w for w in warnings if not banned_terms(str(w))] + [
-                f"The AI's explanation was withheld: it used words that read as advice or a promise ({', '.join(bad_words[:5])})."]
+            warnings = [w for w in warnings if not banned_terms(str(w))]
+            # added after the H-C1 text check below: the note quotes the words, and is the platform's text, not the AI's
+            withheld_note = f"The AI's explanation was withheld: it used words that read as advice or a promise ({', '.join(bad_words[:5])})."
         # Phase V2: the compliance checklist. A draft-level failure gets one AI auto-fix round
         # (the errors go back with the request); on the last attempt the deterministic fixes
         # apply, so what is saved is compliant either way and the fixes are on the record.
@@ -126,6 +146,16 @@ async def generate(session: AsyncSession, tenant: Tenant, user: User, prompt: st
         if report.failed and not final_attempt:
             last_error = f"it violated the risk rules - {report.failure_text()}"
             continue
+        # H-C1 d/c: the explanation and warnings may only carry numbers from the strategy, the trader's request and the
+        # risk context, and no advice/guarantee words. One retry; on the last attempt the text is withheld, not shown.
+        why = text_problem(explanation, warnings, config, suggestion, context.as_dict(), prompt)
+        if why and not final_attempt:
+            last_error = why
+            continue
+        if why:
+            explanation, warnings = f"(AI explanation withheld: {why})", [w for w in warnings if not text_problem(w, [], config, suggestion, context.as_dict(), prompt)]
+        if withheld_note:
+            warnings = [*warnings, withheld_note]
         draft.config_json = config.model_dump_json()
         draft.explanation = explanation or None
         draft.warnings_json = json.dumps(warnings)

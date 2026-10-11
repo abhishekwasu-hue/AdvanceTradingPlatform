@@ -29,39 +29,42 @@ def redis_backed() -> bool:
     return RATE_LIMIT_BACKEND == "redis" or (not RATE_LIMIT_BACKEND and ENVIRONMENT in HARDENED_ENVIRONMENTS)
 
 
-def _local_hit(name: str, key: str, limit: int, window_seconds: float) -> bool:
-    """True when this call is within the limit (and counts it)."""
+def _local_hit(name: str, key: str, limit: int, window_seconds: float, units: int = 1) -> bool:
+    """True when this call (worth `units`) is within the limit (and counts it)."""
     bucket = _WINDOWS[(name, key)]
     now = time.monotonic()
     while bucket and now - bucket[0] > window_seconds:
         bucket.popleft()
-    if len(bucket) >= limit:
+    if len(bucket) + units > limit:
         return False
-    bucket.append(now)
+    bucket.extend([now] * units)
     return True
 
 
 # INCR and EXPIRE in one script: a process dying between the two would leave a counter that never expires
 # and a key that refuses its holder forever.
-_HIT_LUA = "local c = redis.call('incr', KEYS[1]); if c == 1 then redis.call('expire', KEYS[1], ARGV[1]) end; return c"
+# H-C1 b: INCRBY so one call can count several units (the AI's heavy jobs).
+_HIT_LUA = ("local c = redis.call('incrby', KEYS[1], ARGV[2]); if c == tonumber(ARGV[2]) then redis.call('expire', KEYS[1], ARGV[1]) end; "
+            "return c")
 
 
-async def _redis_hit(name: str, key: str, limit: int, window_seconds: float) -> Optional[bool]:
+async def _redis_hit(name: str, key: str, limit: int, window_seconds: float, units: int = 1) -> Optional[bool]:
     """True/False within Redis; None when Redis did not answer (caller falls back to the local window)."""
     from app.cache.client import _get_client
     try:
-        count = await _get_client().eval(_HIT_LUA, 1, f"rl:{name}:{key}", max(1, int(window_seconds)))
+        count = await _get_client().eval(_HIT_LUA, 1, f"rl:{name}:{key}", max(1, int(window_seconds)), max(1, int(units)))
         return int(count) <= limit
     except Exception:  # noqa: BLE001 - Redis down is handled by the local window
         return None
 
 
-async def allow(name: str, key: str, limit: int, window_seconds: float) -> bool:
+async def allow(name: str, key: str, limit: int, window_seconds: float, units: int = 1) -> bool:
+    units = max(1, int(units))
     if redis_backed():
-        verdict = await _redis_hit(name, key, limit, window_seconds)
+        verdict = await _redis_hit(name, key, limit, window_seconds, units)
         if verdict is not None:
             return verdict
-    return _local_hit(name, key, limit, window_seconds)
+    return _local_hit(name, key, limit, window_seconds, units)
 
 
 def _too_many() -> HTTPException:

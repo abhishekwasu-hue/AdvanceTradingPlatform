@@ -891,6 +891,29 @@ Never publish a listing without an attached backtest run; the API refuses the su
   budget and otherwise dropped with "cut off" in the note - you never see half a sentence presented as the answer.
   Long drafts get a longer timeout (`AI_TIMEOUT_PER_1K_SECONDS`, default 8 s per 1,000 tokens of budget, on top of
   `AI_PROVIDER_TIMEOUT_SECONDS`).
+- **Rate limit (H-C1 b)**: every `/api/ai/*` and `/api/scanner/ai/*` call costs units, by default 1. The heavy jobs cost
+  more: a strategist build costs 20, and an interview plan or market-memory refresh costs 10. Units are counted per
+  user and per organisation in a 60 s window (`AI_RATE_WINDOW_SECONDS`). The defaults per plan are:
+
+  | Plan | User | Organisation |
+  |---|---|---|
+  | free | 60 | 120 |
+  | pro | 180 | 600 |
+  | business | 360 | 3,000 |
+
+  - Change the limits with `AI_RATE_LIMITS='{"pro": {"user": 180, "tenant": 600}}'`; a value of 0 means no limit for
+    that scope.
+  - Change the costs with `AI_RATE_WEIGHTS='{"POST strategist/build": 20}'`.
+  - A refusal is 429 with `Retry-After`, and is counted in `atp_ai_rate_limited_total{scope}`.
+  - Counts live in Redis when it is configured; otherwise they live in the process.
+- **Output filter (H-C1 c)**: every Copilot, guide and thesis text is checked on the server before it is shown.
+  - Guarantee and advice wording blocks the AI text: "guaranteed", "sure-shot", "risk-free", "I recommend", "you
+    should buy", खात्रीशीर, हमखास, "मी शिफारस करतो" and the like. The model gets one retry; after that the
+    rule-based answer is shown with a note.
+  - A text that names a specific buy/sell level is kept, with an educational line added in the answer's language.
+  - The word list is data, in `backend/app/ai/data/advice_terms.json`. To use your own list, point
+    `AI_ADVICE_TERMS_FILE` at a copy.
+  - Results are counted in `atp_ai_output_filtered_total{kind, where}`.
 - Prometheus: `atp_ai_tokens_total{provider,model,kind}` and `atp_ai_cost_usd_total{provider,model}`.
 
 ### 1.6ab-11 English dashboard and AI answer language (P0.9)

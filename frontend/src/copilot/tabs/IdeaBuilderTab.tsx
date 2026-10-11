@@ -71,7 +71,7 @@ export default function IdeaBuilderTab() {
   const [selected, setSelected] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [reasons, setReasons] = useState<string[]>([]);
-  const fetched = useRef<{ tf: string; candles: OHLCVBar[]; label: string } | null>(null);
+  const fetched = useRef<{ tf: string; candles: OHLCVBar[]; label: string; lookbackDays?: number } | null>(null);
   const task = useAiTask(t, 120_000);
   const estimate = useCostEstimate("strategist");
 
@@ -166,13 +166,12 @@ export default function IdeaBuilderTab() {
     if (src.mode === "sample") {
       const swing = style === "swing";
       const r = await src.fetch([symbol], swing ? "day" : "1min", { count: swing ? 300 : 3000, startPriceFor: () => 24_000, seedFor: () => 11, daily: swing });
-      return { tf: swing ? "day" : "1min", candles: r.candles[symbol] ?? [], label: "sample" };
+      return { tf: swing ? "day" : "1min", candles: r.candles[symbol] ?? [], label: "sample", lookbackDays: undefined };
     }
     const tf = style === "swing" ? "day" : style === "scalping" ? "1min" : "5min";
-    const r = await api.marketDataCandles([symbol], tf, tf === "day" ? 400 : tf === "1min" ? 5 : 20, "NSE", src.broker || undefined);
-    const entry = r.symbols[symbol];
-    if (!entry || entry.error || !entry.bars.length) throw new Error(entry?.error ?? t("lab.drafts.noCandles", { symbol }));
-    return { tf, candles: entry.bars, label: `broker:${r.source.broker}` };
+    // H-C1 a: the server fetches the candles itself (the only evidence an option can be deployed from).
+    const lookbackDays = tf === "day" ? 400 : tf === "1min" ? 5 : 20;
+    return { tf, candles: [] as OHLCVBar[], label: `broker:${src.broker ?? ""}`, lookbackDays };
   }
   async function buildPlan() {
     setError(null); setDone(null);
@@ -180,7 +179,7 @@ export default function IdeaBuilderTab() {
       const data = await candlesFor(answers.style || "intraday", source);
       fetched.current = { ...data, candles: data.candles.slice(-3000) };
       advance(1);
-      return api.aiInterviewPlan(answersBody(), data.tf, fetched.current.candles, data.label, signal);
+      return api.aiInterviewPlan(answersBody(), data.tf, fetched.current.candles, data.label, signal, data.lookbackDays);
     });
     if (out) { setPlan(out); setSelected(null); }
   }
@@ -189,7 +188,7 @@ export default function IdeaBuilderTab() {
     if (!f || !option.option || reasons.length === 0) return;
     setError(null); setDone(null);
     const out = await task.run([t("idea.step.refine"), t("idea.step.test")], (signal) =>
-      api.aiInterviewRefine(answersBody(), f.tf, f.candles, f.label, reasons, option.option!.id, option.recommended?.strategy_id ?? null, signal));
+      api.aiInterviewRefine(answersBody(), f.tf, f.candles, f.label, reasons, option.option!.id, option.recommended?.strategy_id ?? null, signal, f.lookbackDays));
     if (!out) return;
     setAnswers(Object.fromEntries(Object.entries(out.answers).map(([k, v]) => [k, String(v)])));
     setPlan(out); setSelected(null); setRejecting(null); setReasons([]);

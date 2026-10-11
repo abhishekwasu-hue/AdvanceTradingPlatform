@@ -115,6 +115,33 @@ SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMA
 # Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
 # (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
 # keeps working; turn on once live trading is offered to customers.
+# H-C1 a: AI approval evidence (draft backtests, interview options) must run on server-fetched candles; client-posted
+# candles are recorded as "sample" and cannot approve or deploy. On by default (a safety rule, not a feature).
+AI_EVIDENCE_SERVER_ONLY = os.environ.get("AI_EVIDENCE_SERVER_ONLY", "true").lower() in ("1", "true", "yes")
+# H-C1 b: AI rate limit (app/ai/rate_limit.py). Units per window for each plan, per user and per organisation; a call
+# costs 1 unit unless AI_RATE_WEIGHTS names its route ("METHOD path-after-/api/ai/"). Both are JSON objects in the
+# environment; an empty or invalid value keeps the defaults below. 0 = no limit for that scope.
+AI_RATE_WINDOW_SECONDS = max(1, int(os.environ.get("AI_RATE_WINDOW_SECONDS", "60") or 60))
+_AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 180, "tenant": 600}, "business": {"user": 360, "tenant": 3000}}
+_AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
+                            "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
+                            "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3}
+
+
+def _json_table(name: str, default: dict) -> dict:
+    import json
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return default
+    return value if isinstance(value, dict) else default
+
+
+AI_RATE_LIMITS = _json_table("AI_RATE_LIMITS", _AI_RATE_LIMITS_DEFAULT)
+AI_RATE_WEIGHTS = _json_table("AI_RATE_WEIGHTS", _AI_RATE_WEIGHTS_DEFAULT)
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
 
 # Phase E1: observability. METRICS_TOKEN protects GET /metrics on the API (empty = open, fine

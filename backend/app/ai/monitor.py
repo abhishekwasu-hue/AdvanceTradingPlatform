@@ -163,6 +163,10 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
                      severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id)
+        # BYOK-V2: queue the deployment creator's Vision audit (flag vision_byok; a DB row only, in a savepoint, never
+        # raises). The audit itself runs later in the worker and only comments - it never touches this proposal.
+        from app.ai import vision_audit
+        await vision_audit.enqueue_for_proposal(session, row, now=now)
         created.append(row)
     await session.commit()
     return created

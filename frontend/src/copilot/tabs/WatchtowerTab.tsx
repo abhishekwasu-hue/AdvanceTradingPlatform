@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { Badge, Button, Dialog, EmptyState, fieldClass, type Tone } from "../../components/primitives";
 import StepUpDialog, { isStepUpError } from "../../components/StepUpDialog";
+import VisionReportPanel from "../../components/VisionReportPanel";
 import type { AiAction, NotificationEntry, TelegramInboundStatus } from "../../types";
 import { friendlyError } from "../aiTask";
 import TiltCard from "../components/TiltCard";
@@ -57,6 +58,7 @@ function ProposalCard({ a, onDecided }: { a: AiAction; onDecided: (msg: string) 
         <summary className="cursor-pointer hover:text-fg">{t("watch.evidence")}</summary>
         <pre className="mt-1 overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-[11px] text-fg">{JSON.stringify(a.evidence, null, 2)}</pre>
       </details>
+      <VisionReportPanel actionId={a.id} />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="primary" icon={<CheckCircle2 size={13} />} loading={busy && !rejectOpen} disabled={busy} onClick={() => void approve()}>{t("watch.approve")}</Button>
         <Button size="sm" variant="danger" icon={<XCircle size={13} />} disabled={busy} onClick={() => setRejectOpen(true)}>{t("watch.reject")}</Button>

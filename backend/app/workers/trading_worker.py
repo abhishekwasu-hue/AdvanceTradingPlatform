@@ -47,7 +47,7 @@ from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SEC
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
-from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, WorkerHeartbeatRecord
+from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
@@ -207,6 +207,8 @@ class TradingWorker:
         self._regimes: Dict[int, str] = {}
         self._regime_wanted: set = set()
         self._last_ai_expiry_day = None
+        # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
+        self._vision_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -336,6 +338,12 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
+                try:
+                    if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
+                        self._spawn_vision_drain()
+                except Exception as exc:  # noqa: BLE001 - Vision is advisory; never breaks trading
+                    logger.warning("Vision audit check failed: %s", exc.__class__.__name__)
+                    await session.rollback()
                 # Phase AR: the Copilot's market memory - every 15 minutes while NSE is open and in
                 # the hour after the close (the day's final read); before the open only the global
                 # cues (no broker read). Never blocks trading.
@@ -826,6 +834,26 @@ class TradingWorker:
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
+
+    def _spawn_vision_drain(self) -> None:
+        """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own
+        session - a slow provider never holds up a cycle, and one drain runs at a time per worker. Claims are
+        conditional updates, so a second replica never audits the same row."""
+        if self._vision_task is not None and not self._vision_task.done():
+            return
+
+        async def run() -> None:
+            from app.ai import vision_audit
+            try:
+                async with self.session_factory() as own:
+                    await vision_audit.drain(own)
+            except Exception:  # noqa: BLE001 - advisory; never reaches trading
+                logger.exception("Vision audit drain failed")
+
+        try:
+            self._vision_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._vision_task = None
 
     async def _evaluate_deployment(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,

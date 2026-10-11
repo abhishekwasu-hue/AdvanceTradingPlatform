@@ -1,4 +1,5 @@
 """BYOK-V1: `/api/ai/byok/*` - the logged-in user's own AI provider keys, key test, spend caps and Vision preferences.
+BYOK-V2: `/reports` - the user's own Vision reports on proposals (read and delete).
 
 Every route works on the caller's own rows only (user id AND tenant id from the session, never from the request; bodies
 refuse unknown fields, so a `user_id` cannot be smuggled in). With the `vision_byok` flag off every route answers 404.
@@ -6,11 +7,11 @@ The key goes in once (PUT) and never comes back: responses carry the hint (first
 """
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import byok
+from app.ai import byok, vision_audit
 from app.ai.rate_limit import ai_rate_limit
 from app.auth.dependencies import get_current_user
 from app.db.models import User
@@ -111,3 +112,21 @@ async def put_prefs(body: PrefsBody, user: User = Depends(byok_user), session: A
     except byok.ByokError as exc:
         raise _bad(exc) from None
     return await byok.status(session, user)
+
+
+# --- BYOK-V2: the caller's own Vision reports on proposals ----------------------------------------------------------------
+
+@router.get("/reports")
+async def list_reports(action_id: Optional[int] = Query(default=None, ge=1), user: User = Depends(byok_user),
+                       session: AsyncSession = Depends(get_session)) -> dict:
+    """The caller's own Vision reports (never another user's), for one proposal or the latest ones, plus the line the
+    proposal card shows when there is none ("Vision off - add your API key in Settings", ...)."""
+    return await vision_audit.reports_for(session, user, action_id)
+
+
+@router.delete("/reports/{report_id}")
+async def delete_report(report_id: int = Path(ge=1), user: User = Depends(byok_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Deletes one of the caller's own reports; 404 for anybody else's (the same answer as for a missing one)."""
+    if not await vision_audit.delete_report(session, user, report_id):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return {"deleted": report_id}

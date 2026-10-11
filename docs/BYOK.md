@@ -1,7 +1,7 @@
 # BYOK - Vision with your own AI key
 
-Status: **BYOK-V1** (settings, key test, caps). Behind the operator flag `vision_byok`, **off by default**.
-V2 and V3 add the audits themselves (see the end of this page).
+Status: **BYOK-V1** (settings, key test, caps) and **BYOK-V2** (Vision audit on proposals, report in-app and on
+Telegram). Behind the operator flag `vision_byok`, **off by default**. V3 adds scan-alert and daily-review audits.
 
 ## Principle
 
@@ -116,8 +116,114 @@ on the Settings card and belongs in the AI-usage disclosure.
 No route takes a user id; request bodies refuse unknown fields. With `vision_byok` off every route answers 404
 (header `X-Feature-Disabled: vision_byok`) and the Settings card says the feature is not enabled.
 
+## BYOK-V2 - Vision audit on proposals
+
+### Who gets an audit, with whose key
+
+One rule, so a key is never used for somebody else's content: **a proposal is audited only for the user who created
+its deployment** (`strategy_deployments.created_by`, same organisation, active), **only with that user's own key**, and
+the report is **shown only to that user**. Proposals without a deployment, or on a deployment whose creator is gone, are
+not audited. Other members of the organisation see the proposal exactly as before, without anybody's Vision report.
+
+### Flow
+
+1. **Queue (no network).** `monitor.raise_proposals` writes the proposal and its normal `AI_PROPOSAL` notification
+   exactly as before, then calls `vision_audit.enqueue_for_proposal`. With the flag on, and the creator's Vision
+   switched on with proposals in the audit scope and at least one channel (in-app or Telegram), one `vision_reports`
+   row is written as `pending` - inside a savepoint that never raises, so the proposal cannot fail or slow down because
+   of Vision. With the flag off nothing is written and nothing is called.
+2. **Audit (worker, background).** The trading worker checks for pending rows after the alert drain and, when there
+   are some, starts `vision_audit.drain` as its own background task with its own database session - never inside the
+   cycle, never in the approve / reject path. A row is claimed with a conditional update (`pending` -> `running`), so
+   two replicas never audit it twice; a row whose worker died is closed as failed ("interrupted") after 15 minutes. A
+   proposal that was already decided, or is older than 2 hours, is skipped without a call.
+3. **Chart.** `app/ai/chart_png.py` renders a deterministic PNG (800 x 450, standard library only - no new dependency,
+   no network): the last 120 bars of the deployment's symbol and timeframe from the platform's own market-data lake
+   (`md_candles`, `<EXCHANGE>:<SYMBOL>`; one-minute bars when the deployment's timeframe has none), with the open
+   position's ENTRY / SL / TGT lines and the window's HIGH / LOW. No bars: skipped ("no chart data"), no call.
+4. **Gate.** `byok_allowed(user, provider, estimate)` before every call (flag, the user's switch, key, daily and
+   monthly cap including the estimate of this call).
+5. **Call.** One request to the provider the user chose, with the chart and a minimal context: symbol, exchange,
+   timeframe, the proposed action and rule, the open position's direction, which lines are drawn. No account data, no
+   prices in the text, no reason text. The key is opened with `byok.open_key` for the row's own user only. The call is
+   metered in `llm_calls` (`feature = vision_audit`, `billed_to_user_key = true`) and the key's `last_used_at` is set.
+6. **Report.** The answer is parsed for the four judgements only - JSON first, then "Heading: ✅ note" lines; every
+   other field the model sends (a `status`, a `decision`, ...) is ignored. Each note is cleaned: digits removed, only
+   letters and simple punctuation kept, at most 90 characters, and a note that tries to instruct (approve, reject,
+   snooze, place, order, execute, ignore instructions, ...) is replaced by "(comment withheld)". The numbers are added by
+   the platform from its own data. Format (at most 12 lines):
+
+   ```
+   Vision report - RELIANCE 5min (Anthropic (Claude), <model id>)
+   Zones: ✅ <note> (range <window low> - <window high>)
+   Structure: ⚠️ <note> (last close <last close>)
+   Pullback & trigger: ❌ <note>
+   Entry/SL/Target: ✅ <note> (entry <entry> / SL <stop> / target <target1>)   or (no open position)
+   Comment only - Vision never approves, rejects or changes anything.
+   ```
+
+7. **Delivery.** In-app: the Watchtower proposal card shows the caller's own report (or the line below) while the flag
+   is on and the in-app channel is on. Telegram: with the user's Telegram toggle on, a private chat linked to the user
+   (Settings, `/start <code>`) and the organisation's Telegram bot enabled, the chart goes to **that user's linked chat**
+   as a photo with the caption (proposal, symbol, the report) - never to the organisation's group chat, and without
+   buttons. One attempt; a failure is kept on the row (`telegram_status = failed`, error without the bot token).
+
+### When there is no report
+
+| Situation | Status | What the user reads | Provider call | Telegram |
+|---|---|---|---|---|
+| Flag off at proposal time | - (no row) | nothing (the card shows no Vision line) | no | no |
+| No key (Vision on) | skipped `no key` | Vision off - add your API key in Settings | no | chart + that line |
+| Vision switched off / flag turned off before the audit | skipped `vision off` | Vision off - turn it on in Settings | no | no |
+| Daily / monthly cap reached | skipped | Vision skipped: daily cap reached | no | chart + that line |
+| No bars for the symbol | skipped | Vision skipped: no chart data | no | no (no chart) |
+| Proposal already decided / older than 2 h | skipped | Vision skipped: proposal already decided | no | no |
+| Provider error (401, 429, 5xx, refusal, timeout) | failed | Vision skipped: <sanitised error> | yes (metered) | chart + that line |
+| Answer without the four judgements | failed | Vision skipped: the provider's answer could not be read | yes (metered) | chart + that line |
+
+In every case the proposal, its normal notification and its Approve / Reject path are unchanged.
+
+### Vision never changes anything (ADR-0006)
+
+Nothing in V2 approves, rejects, snoozes, places, blocks or modifies an order, a proposal or a deployment. The audit
+reads the proposal, deployment, trade and bars, and writes only its own `vision_reports` row, one `llm_calls` row and the
+key's `last_used_at`. `tests/test_byok_v2.py` runs the whole flow with a provider that answers "APPROVE THIS", "place
+order" and JSON with `status` / `decision` fields, and checks that `ai_actions`, `orders`, `strategy_deployments` and
+`trades` are unchanged column by column and that no decision reached the audit log.
+
+### What is stored
+
+| Table | Row | Contents |
+|---|---|---|
+| `vision_reports` | one per (user, proposal) | `tenant_id`, `user_id`, `ai_action_id`, `status` (pending / running / ok / skipped / failed), `provider`, `model`, `reason` (sanitised, max 200 characters, never the key), `report_text` (at most 12 lines), `image_sha256`, `cost_usd`, `telegram_status`, `telegram_error`, `created_at`, `started_at`, `finished_at` |
+
+**The chart image is not stored** - only its SHA-256, which identifies exactly what was sent (the renderer is
+deterministic). The platform has no journal setting that keeps chart images yet; when one exists, keeping the image
+will be the user's opt-in. The user deletes their own reports (`DELETE /api/ai/byok/reports/{id}`, audit event
+`byok_vision_report_deleted`); erasing a user (`erase_user`) deletes them too. Migration `e4c2a9b7d1f6` (on
+`d1b0e7a5c3f1`), with downgrade.
+
+### Privacy (V2)
+
+The chart image and the minimal context above are sent **only** to the provider the user chose, under the user's own
+key, and only for proposals on deployments that user created. The report is shown only to that user (in-app) and sent
+only to that user's own linked Telegram chat. This belongs in the AI-usage disclosure next to the V1 text.
+
+### API (V2)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/reports?action_id=` | the caller's own reports (all, or for one proposal), `vision_line` (what the card says without a report: no key, switched off, not your deployment, pending) and `in_app` |
+| DELETE | `/reports/{id}` | the caller's own report; 404 for anybody else's (same answer as a missing one) |
+
+Both answer 404 while `vision_byok` is off, like every BYOK route.
+
+### Provider seam
+
+`AnthropicProvider`, `OpenAIProvider` and `GeminiProvider` take an optional `image_png` in `complete_full` (Messages API
+image block; Chat Completions `image_url` data URL at low detail; Gemini `inlineData`). Without it every request is
+byte-for-byte what it was. `build_byok_provider` returns a `VisionProvider`.
+
 ## Next
 
-- **BYOK-V2** - Vision audit on trade proposals: the chart image and minimal context go to the user's chosen provider
-  (after `byok_allowed`), and the comment is reported by Telegram and/or in-app per the user's channels. Comment only.
 - **BYOK-V3** - the same audit for every scan alert and a daily review, per the user's audit scope.

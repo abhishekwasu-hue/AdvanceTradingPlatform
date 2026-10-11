@@ -144,6 +144,28 @@ test.describe("Watchtower decisions", () => {
     expect(calls.posts.filter((c) => /\/ai\/actions\/\d+\/approve$/.test(c.url))).toHaveLength(1);
   });
 
+  test("BYOK-V2: the caller's own Vision report shows on the card, comment only; nothing while the flag is off", async ({ page }) => {
+    const calls = await mockApi(page);
+    const lines = ["Vision report - NIFTY 5min (Anthropic (Claude), claude-haiku-5-5)", "Zones: ✅ clean support near the lows (range 100.00 - 120.00)",
+                   "Structure: ⚠️ higher lows but a lower high (last close 110.00)", "Pullback & trigger: ❌ no pullback yet",
+                   "Entry/SL/Target: ✅ levels suit the structure (no open position)", "Comment only - Vision never approves, rejects or changes anything."];
+    await page.route(/\/api(?:\/v1)?\/ai\/byok\/reports/, async (route) => {
+      const id = Number(new URL(route.request().url()).searchParams.get("action_id"));
+      const reports = id === 1 ? [{ id: 9, ai_action_id: 1, status: "ok", provider: "anthropic", model: "claude-haiku-5-5", reason: null,
+                                    report: lines.join("\n"), lines, line: null, image_sha256: "a".repeat(64), image_stored: false, cost_usd: 0.001,
+                                    telegram_status: "none", created_at: null, finished_at: null }] : [];
+      await route.fulfill({ json: { reports, vision_line: "Vision off - add your API key in Settings", in_app: true } });
+    });
+    await page.goto("/copilot/watchtower");
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);
+    const panels = page.getByTestId("vision-report");
+    await expect(panels).toHaveCount(2);
+    await expect(page.getByText("clean support near the lows (range 100.00 - 120.00)")).toBeVisible();
+    await expect(page.getByText("Vision off - add your API key in Settings")).toBeVisible();
+    // Nothing on the report decides anything: no request but the reads went out.
+    expect(calls.posts).toEqual([]);
+  });
+
   test("reject: asks for an optional note and sends it", async ({ page }) => {
     const calls = await mockApi(page);
     await page.goto("/copilot/watchtower");

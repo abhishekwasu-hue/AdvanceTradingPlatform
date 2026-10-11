@@ -1628,6 +1628,36 @@ export interface ByokPrefsInput {
   models?: Partial<Record<ByokProviderName, string>>;
 }
 
+// ---- BYOK-V2: the user's own Vision report on a proposal (comment only) ----------------------------
+
+export type VisionReportStatus = "pending" | "running" | "ok" | "skipped" | "failed";
+
+export interface VisionReport {
+  id: number;
+  ai_action_id: number;
+  status: VisionReportStatus;
+  provider: ByokProviderName | null;
+  model: string | null;
+  reason: string | null;
+  /** At most 12 lines; every number in it comes from the engine's data. Null while pending. */
+  report: string | null;
+  lines: string[];
+  /** The one line to show when there is no report text: pending, "Vision off - ..." or "Vision skipped: <reason>". */
+  line: string | null;
+  image_sha256: string | null;
+  image_stored: boolean;
+  cost_usd: number;
+  telegram_status: "none" | "sent" | "failed";
+  created_at: string | null;
+  finished_at: string | null;
+}
+
+export interface VisionReportsResponse {
+  reports: VisionReport[];
+  vision_line: string;
+  in_app: boolean;
+}
+
 // ---- Phase L: AI layer -------------------------------------------------------------------------
 
 export type AiProviderName = "anthropic" | "openai" | "rule_based";

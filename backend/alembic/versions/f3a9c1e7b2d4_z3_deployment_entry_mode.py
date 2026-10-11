@@ -4,7 +4,7 @@ signal becomes an ENTRY proposal; only an approved one places a PAPER order). Ex
 monitoring agent's own proposals).
 
 Revision ID: f3a9c1e7b2d4
-Revises: e4c2a9b7d1f6
+Revises: a8c0e2f4b6d8
 Create Date: 2026-10-11 21:00:00
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f3a9c1e7b2d4'
-down_revision: Union[str, Sequence[str], None] = 'e4c2a9b7d1f6'
+down_revision: Union[str, Sequence[str], None] = 'a8c0e2f4b6d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

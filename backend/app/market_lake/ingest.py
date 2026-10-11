@@ -10,16 +10,28 @@
   pipeline is testable and usable before the owner picks a vendor (OPEN_QUESTIONS B-2 - no paid vendor until then).
 """
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
 
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import MdCandleRecord
+from app.db.models import MdCandleRecord, MdTenantCandleRecord
+from app.market_data.calendar import IST
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# The END every DAILY lake bar carries: the NSE close, 15:30 IST = 10:00 UTC on the trade date (HB0 / HB1).
+DAILY_END_IST = (15, 30)
+
+
+def trade_date(ts: datetime) -> date:
+    """The trading day a bar belongs to - ONE rule for every reader (import checks, gap detection, adjustment): the IST
+    date of (END - 1 microsecond). A bar ending exactly at IST midnight belongs to the day before; NSE bars (09:15 to
+    15:30 IST, daily END 15:30 IST) fall on the same date in IST and UTC."""
+    ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+    return (ts - timedelta(microseconds=1)).astimezone(IST).date()
 
 
 def timeframe_minutes(timeframe: str) -> int:
@@ -130,6 +142,56 @@ async def write_candles(session: AsyncSession, bars: Iterable[LakeBar], source: 
         else:
             result.corrected += 1
     await session.commit()
+    return result
+
+
+def _as_utc(ts: datetime) -> datetime:
+    return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+
+
+async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], source: str, *, tenant_id: Optional[int] = None,
+                             ingested_at: Optional[datetime] = None) -> WriteResult:
+    """`write_candles` for large batches (HB0 import): the same skip / new-version rules, one read per instrument and
+    timeframe and one multi-row insert. Does NOT commit - the caller commits it together with its own bookkeeping.
+    `tenant_id` set writes that tenant's private store (md_tenant_candles) instead of the shared lake. Two bars with the
+    same END in one batch are refused (ValueError): the caller must decide which one is true, never this function."""
+    model = MdTenantCandleRecord if tenant_id is not None else MdCandleRecord
+    now = ingested_at or datetime.now(timezone.utc)
+    result = WriteResult()
+    groups: Dict[Tuple[str, str], List[LakeBar]] = defaultdict(list)
+    for bar in bars:
+        groups[(bar.instrument_key, bar.timeframe)].append(bar)
+    rows: List[dict] = []
+    for (key, tf), group in groups.items():
+        ends = [_as_utc(b.ts) for b in group]
+        if len(set(ends)) != len(ends):
+            raise ValueError(f"{key} {tf}: {len(ends) - len(set(ends))} duplicate bar end(s) in one batch")
+        query = select(model.ts, model.version, model.open, model.high, model.low, model.close, model.volume, model.oi).where(
+            model.instrument_key == key, model.timeframe == tf, model.source == source, model.ts >= min(ends), model.ts <= max(ends))
+        if tenant_id is not None:
+            query = query.where(MdTenantCandleRecord.tenant_id == tenant_id)
+        latest: Dict[datetime, Tuple] = {}
+        for r in await session.execute(query):
+            ts = _as_utc(r.ts)
+            if ts not in latest or r.version > latest[ts][0]:
+                latest[ts] = (r.version, LakeBar(key, tf, ts, float(r.open), float(r.high), float(r.low), float(r.close),
+                                                 int(r.volume), r.oi))
+        for bar, ts in zip(group, ends):
+            old = latest.get(ts)
+            if old is not None and old[1].values() == bar.values():
+                result.skipped += 1
+                continue
+            row = dict(instrument_key=key, timeframe=tf, ts=ts, source=source, version=(old[0] + 1) if old else 1,
+                       open=bar.open, high=bar.high, low=bar.low, close=bar.close, volume=int(bar.volume), oi=bar.oi, ingested_at=now)
+            if tenant_id is not None:
+                row["tenant_id"] = tenant_id
+            rows.append(row)
+            if old is None:
+                result.inserted += 1
+            else:
+                result.corrected += 1
+    for i in range(0, len(rows), 5000):
+        await session.execute(insert(model), rows[i:i + 5000])
     return result
 
 

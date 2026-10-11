@@ -17,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
 from app.db.models import MdCorporateActionRecord
-from app.market_data.calendar import IST
 from app.market_lake.asof import candles_as_of
-from app.market_lake.ingest import LakeBar
+from app.market_lake.ingest import LakeBar, trade_date
 
 SHARE_ACTIONS = ("SPLIT", "BONUS")
 EQUITY_KINDS = ("EQ", "EQUITY", "UNDERLYING")
@@ -54,7 +53,7 @@ def dividend_factors(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActio
     for a in actions:
         if a.action != "DIVIDEND" or not a.amount:
             continue
-        before = [b for b in bars if b.ts.astimezone(IST).date() < a.ex_date]
+        before = [b for b in bars if trade_date(b.ts) < a.ex_date]
         if before and before[-1].close > 0:
             out.append((a.ex_date, max(0.0, 1 - float(a.amount) / before[-1].close)))
     return out
@@ -66,7 +65,7 @@ def adjust(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActionRecord], 
     divs = dividend_factors(bars, actions) if use_div else []
     out: List[LakeBar] = []
     for bar in bars:
-        day = bar.ts.astimezone(IST).date()
+        day = trade_date(bar.ts)
         shares = share_factor(actions, day)
         f = shares
         for ex_date, df in divs:

@@ -1,5 +1,6 @@
 """Part D4: Settings > Static IP - the IPs an organisation registered with its brokers (SEBI retail-algo framework)."""
-from datetime import datetime
+from dataclasses import asdict
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,9 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
-from app.auth.dependencies import get_current_user, require_owner
-from app.compliance import rules, static_ip
+from app.auth.dependencies import get_current_user, require_owner, require_role
+from app.compliance import golive, rules, static_ip
 from app.core import config
+from app.core.enums import UserRole
 from app.db.models import User
 from app.db.session import get_session
 
@@ -52,3 +54,29 @@ async def set_static_ip(body: StaticIpBody, user: User = Depends(require_owner),
     await write_audit_log(session, user.tenant_id, user.id, "static_ip_set", f"{record.broker_name} {record.role} -> {record.ip}")
     await session.commit()
     return _row(record)
+
+
+class EvidenceBody(BaseModel):
+    item_id: str = Field(min_length=3, max_length=60)
+    reference: str = Field(min_length=1, max_length=500)
+    valid_until: Optional[date] = None
+
+
+@router.get("/golive")
+async def golive_items(user: User = Depends(require_role(UserRole.SUPER_ADMIN)), session: AsyncSession = Depends(get_session)) -> dict:
+    """Part D6: the go-live items only a human can evidence, plus the two the platform checks itself (SUPER_ADMIN)."""
+    return {"items": [asdict(i) for i in await golive.evaluate(session)],
+            "breach_notify_hours": rules.load().param(golive.RULE, "dpdp_breach_notify_hours")}
+
+
+@router.put("/golive/evidence")
+async def record_golive_evidence(body: EvidenceBody, user: User = Depends(require_role(UserRole.SUPER_ADMIN)),
+                                 session: AsyncSession = Depends(get_session)) -> dict:
+    try:
+        row = await golive.record_evidence(session, body.item_id, body.reference, body.valid_until, user.id)
+    except golive.EvidenceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await write_audit_log(session, user.tenant_id, user.id, "golive_evidence", f"{row.item_id}: {row.reference}"
+                          + (f" (valid until {row.valid_until.isoformat()})" if row.valid_until else ""))
+    await session.commit()
+    return {"item_id": row.item_id, "reference": row.reference, "valid_until": row.valid_until.isoformat() if row.valid_until else None}

@@ -45,6 +45,7 @@ class Spec:
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
+    flag: Optional[str] = None             # an operator flag that must be on for a screen to use it (API layer; U6 BK1 / Z7a-3)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -74,6 +75,14 @@ BREAK_EXTRA_BARS = 21                             # RealBreak: the median range 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
+# Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
+ZONES_FLAG = "market_zones"
+_ZROLE = Arg("role", STR, "any", False, choices=("any", "demand", "supply"))
+_ZTOL = Arg("tolerance_pct", NUM, 0.5, False)
+_ZFAMILY = Arg("family", STR, "all", False, choices=("all", "zones", "levels"))
+_ZDOC = (" - the live zone nearest to the close within tolerance_pct % of it (role by the close: demand below, supply above;"
+         " family zones = order blocks / demand-supply bases / gaps, levels = S/R lines), from the stored snapshot as of this"
+         " bar's close")
 
 FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("SMA", "factor", NUM, "same", (_X, _N), doc="simple moving average of x over n bars"),
@@ -158,7 +167,18 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
     Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
     Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
+    # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
+    Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
+         doc="true when there is a zone of that role" + _ZDOC),
+    Spec("ZoneRole", "classifier", CAT, None, (_ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("DEMAND", "SUPPLY"), needs=("zones",),
+         flag=ZONES_FLAG, doc="DEMAND or SUPPLY: the role of that zone (missing when there is none)" + _ZDOC),
+    Spec("ZoneState", "classifier", CAT, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("FRESH", "TESTED", "FLIPPED"),
+         needs=("zones",), flag=ZONES_FLAG, doc="FRESH / TESTED / FLIPPED: that zone's lifecycle state (missing when there is none)" + _ZDOC),
+    Spec("ZoneStrength", "factor", NUM, "index", (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
+         doc="0-100 strength of that zone (family, timeframe, state, touches; NaN when there is none)" + _ZDOC),
 )}
+
+ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
 
 
 def describe() -> Dict[str, Dict[str, object]]:
@@ -174,4 +194,4 @@ def describe() -> Dict[str, Dict[str, object]]:
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "ZONE_FUNCTIONS", "ZONES_FLAG", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

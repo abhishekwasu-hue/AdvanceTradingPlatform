@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
+ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
@@ -204,7 +205,8 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
 
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
-                        holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False) -> Tuple[str, int]:
+                        holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
+                        zones_enabled: bool = True) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
     from app.alerts.engine import record_event
     now = _utc(now)
@@ -230,7 +232,16 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
+        from app.screener import zones as zone_gate
+        zone_calls = zone_gate.flagged_calls(ast)
+        if zone_calls and (not zones_enabled or intrabar):
+            # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
+            rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
+            return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar)
+        if zone_calls and current:
+            # the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it closed)
+            await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, validated.lookback)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
@@ -271,6 +282,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
                                        .order_by(AlertRuleRecord.last_checked_at.is_not(None), AlertRuleRecord.last_checked_at, AlertRuleRecord.id)))
     enabled: Dict[int, bool] = {}
     intrabar_on: Dict[int, bool] = {}
+    zones_on: Dict[int, bool] = {}
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -285,8 +297,11 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             continue
         if rule.fire_on == "intrabar" and rule.tenant_id not in intrabar_on:
             intrabar_on[rule.tenant_id] = await flag_enabled(session, INTRABAR_FLAG, rule.tenant_id)
+        if rule.tenant_id not in zones_on:
+            zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
-                                           intrabar_enabled=intrabar_on.get(rule.tenant_id, False))
+                                           intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
+                                           zones_enabled=zones_on[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired

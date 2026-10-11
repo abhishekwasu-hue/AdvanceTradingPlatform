@@ -52,6 +52,7 @@ class SymbolData:
     is_fno: Optional[bool] = None
     indices: Set[str] = field(default_factory=set)
     option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
+    zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
 
 
 @dataclass
@@ -185,6 +186,9 @@ class _Eval:
         def num(i: int, default: float) -> float:
             return float(_last(self.ev(args[i], tf))) if len(args) > i else default
 
+        def _text(i: int, default: str) -> str:
+            return str(self.ev(args[i], tf)) if len(args) > i else default
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
             "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
@@ -219,6 +223,11 @@ class _Eval:
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
+            # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
+            "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
+            "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -441,6 +450,11 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     near = closes[lo:j + 1] >= level if side == "below" else closes[lo:j + 1] <= level
     hit = np.flatnonzero(near)
     return None if hit.size == 0 else lo + int(hit[0]) + 1
+
+
+def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
+    from app.screener.zones import zone_series
+    return zone_series(data, f, tf, what, role, tolerance_pct, family)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

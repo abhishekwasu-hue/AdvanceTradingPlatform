@@ -69,6 +69,24 @@ def _rule_dict(r: AlertRuleRecord) -> Dict[str, Any]:
             "last_bar_at": r.last_bar_at.isoformat() if r.last_bar_at else None, "last_problem": r.last_problem}
 
 
+async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+    """Z7a-3 (the U6 BK1 pattern): a rule (instrument condition or saved screen) using a market-zone function needs
+    `market_zones` on, and fires on bar close only - never intrabar."""
+    from app.screener import nodes
+    from app.screener import zones as zone_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    names = zone_gate.flagged_calls(tree)
+    if not names:
+        return
+    why = None
+    if await zone_gate.blocked_calls(session, user.tenant_id, tree):
+        why = zone_gate.refusal(names)
+    elif fire_on == "intrabar":
+        why = zone_gate.intrabar_refusal(names)
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
     if body.kind == "screen":
         if body.screen_id is None:
@@ -80,6 +98,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
+        await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -90,6 +109,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail={"message": "the condition did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
+    await _zone_check(session, user, ast, body.fire_on)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

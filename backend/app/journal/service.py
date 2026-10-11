@@ -303,3 +303,74 @@ async def add_user_tag(session: AsyncSession, user: User, trade: TradeRecord, ta
     if row is None:   # just upserted; only a concurrent delete of the trade itself (cascade) gets here
         raise LookupError(f"trade {trade.id} no longer exists")
     return row
+
+
+# --- Z6-b: the weekly review ------------------------------------------------------------------------------------------
+
+def _group_risk(legs: Sequence[TradeRecord]) -> float:
+    """A structure's risk in rupees: its max loss per unit (`risk_per_unit`, else `max_loss`) times the 1x quantity, from
+    the group meta the structure was sized on. 0 when the meta does not say (no R for that decision)."""
+    for leg in legs:
+        meta = capture._loads(leg.group_meta, {})
+        per_unit = meta.get("risk_per_unit") or meta.get("max_loss")
+        quantity = meta.get("quantity") or leg.quantity
+        try:
+            risk = abs(float(per_unit)) * abs(float(quantity)) if per_unit else 0.0
+        except (TypeError, ValueError):
+            continue
+        if risk > 0:
+            return risk
+    return 0.0
+
+
+def review_trades(trades: Sequence[TradeRecord]) -> List[Any]:
+    """The week's decisions for the review: a single trade as it is, the legs of one structure summed into one (net P&L
+    and charges added up, closed only when every leg is, the group's risk from its max loss) - the unit the discipline
+    score counts, so a 4-leg iron condor is one trade, not four."""
+    from app.journal.review import ReviewTrade
+    units: Dict[str, List[TradeRecord]] = {}
+    for t in trades:
+        units.setdefault(f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}", []).append(t)
+    out = []
+    for unit, legs in units.items():
+        legs = sorted(legs, key=lambda leg: leg.id)
+        closed = all(leg.pnl is not None and leg.exit_time is not None for leg in legs)
+        entry_times = [x for x in (_utc(leg.entry_time) for leg in legs) if x is not None]
+        exit_times = [x for x in (_utc(leg.exit_time) for leg in legs) if x is not None]
+        if len(legs) == 1 and not legs[0].leg_group_id:
+            t = legs[0]
+            stop = t.initial_stop_loss if t.initial_stop_loss is not None else t.stop_loss
+            sign = 1 if t.direction == "LONG" else -1
+            per_unit = sign * (float(t.entry_price) - float(stop)) if stop else 0.0
+            risk = per_unit * abs(float(t.quantity)) if per_unit > 0 else 0.0
+        else:
+            risk = _group_risk(legs)
+        holding = None
+        if closed and entry_times and exit_times:
+            holding = (max(exit_times) - min(entry_times)).total_seconds() / 60.0
+        out.append(ReviewTrade(id=legs[0].id, setup=legs[0].strategy_id, unit=unit,
+                               pnl=round(sum(float(leg.pnl) for leg in legs if leg.pnl is not None), 2) if closed else None,
+                               charges=float(sum(float(leg.charges or 0.0) for leg in legs)), risk=risk, holding_minutes=holding,
+                               trade_ids=tuple(leg.id for leg in legs)))
+    return out
+
+
+async def weekly_review(session: AsyncSession, user: User, label: Optional[str] = None, *, history_weeks: int = 4,
+                        now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The week's review from the journal, with the trader's own previous `history_weeks` weeks for comparison."""
+    from app.journal.review import _stats, build_review
+    from app.journal.score import counted
+    data = await refresh_week(session, user, label, now=now)
+    s: DisciplineSettings = data["settings"]
+    live = counted([TagState(r.trade_id, r.tag, r.status) for r in data["tags"]], s)
+    history: List[Dict[str, Any]] = []
+    week = data["week"]
+    for _ in range(max(0, history_weeks)):
+        week = previous_week(week)
+        past = await refresh_week(session, user, week, now=now)
+        stats = _stats(review_trades(past["trades"]))
+        history.append({"week": week, "score": past["score"]["score"], "trades": stats["trades"], "net_pnl": stats["net_pnl"],
+                        "avg_r": stats["avg_r"], "win_rate": stats["win_rate"]})
+    review = build_review(data["week"], review_trades(data["trades"]), [(t.trade_id, t.tag) for t in live], data["score"], history, s)
+    review.update(start=data["start"].isoformat(), end=data["end"].isoformat())
+    return review

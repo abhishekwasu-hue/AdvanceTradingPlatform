@@ -1633,3 +1633,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - ScreenQL `ORBreakout`, `DayLevelBreak`, `DayExtremeBreak`, `RelVolumeTOD`, `SessionVWAP` (flagged, intraday timeframes
   only, lookback in whole sessions). Five intraday templates; parity with the engine bar by bar.
 - Open questions: BK2-1..BK2-7.
+### 2026-10-11 - Z8 U9 TX1: screen taxonomy (method x setup) + gallery rail and chips
+- Taxonomy as a reviewed data file (`backend/app/screener/data/taxonomy.json`: methods A-F, setups 1-8, tag vocabulary,
+  the three U5 starters filed), linted on load (both axes, vocabulary, definition <= 160 characters, no advice wording).
+- CI guard: template sources register (`taxonomy.register_source`, optional flag); the starters file
+  (`frontend/src/screener/starters.json`) is read by both sides; an unfiled template fails `tests/test_z8_tx1_taxonomy.py`.
+- `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
+  on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
+- BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.

@@ -174,5 +174,15 @@ def catalog() -> Dict[str, Any]:
     return {"selector": style.selector(), "blocks": blocks(), "templates": rows, "params": bp.describe()}
 
 
+def _register_taxonomy() -> None:
+    """U9 TX1: every template is filed in the screen taxonomy (app/screener/data/taxonomy.json, OPEN_QUESTIONS TX1-6); the
+    CI guard (taxonomy.coverage_problems) fails on an unfiled one. Hidden while `screener_breakouts` is off."""
+    from app.screener import taxonomy
+    taxonomy.register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES], flag="screener_breakouts")
+
+
+_register_taxonomy()
+
+
 __all__ = ["TEMPLATES", "BY_ID", "Template", "screenql", "screenql_ast", "screen_call", "blocks", "catalog", "template_params",
            "SIGNAL_KEYS", "CALLS", "RESULT_COLUMNS", "INTRADAY_COLUMNS"]

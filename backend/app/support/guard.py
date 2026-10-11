@@ -30,22 +30,24 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"ipos?|futures?)\b.{0,40}\b(?:buy|sell|hold|invest|pick|trade|choose|short|go\s+up|rise|rally)\b",
     r"\b(?:stock|share|trading|intraday|option|options|f&o|crypto)\s+tips?\b",
     r"\btips?\s+(?:for|on)\s+(?:today|tomorrow|this\s+week|intraday|nifty|bank\s*nifty)\b",
-    r"\b(?:price\s+)?target\s+(?:for|of|price)\b",
-    r"\bwill\s+\S+(?:\s+\S+)?\s+(?:go\s+up|go\s+down|rise|fall|crash|rally|recover|move\s+up|move\s+down)\b",
+    r"\bprice\s+target\b|\btarget\s+price\b|\bwhat\s+(?:is|will\s+be)\s+the\s+target\b",
+    r"\bwill\s+\S+(?:\s+\S+)?\s+(?:go\s+up|go\s+down|rise|fall(?!\s+back)|rally|move\s+up|move\s+down)\b",
     r"\b(?:go\s+up|go\s+down|rise|fall|crash|rally)\s+(?:today|tomorrow|this\s+week|next\s+week)\b",
     r"\bis\s+(?:it|this|now)\s+(?:a\s+)?(?:good|right|safe)\s+(?:time|stock|share|buy|entry|idea|trade)\b",
     r"\b(?:good|safe)\s+(?:stocks?|shares?|buys?|investments?)\b",
     r"\b(?:best|top)\s+(?:stocks?|shares?|strateg(?:y|ies)|options?|strikes?|trades?|picks?|funds?|coins?)\b",
-    r"\b(?:recommend|suggest|advise)\b.{0,40}\b(?:stocks?|shares?|buy|sell|invest|trade|options?|strikes?|strateg(?:y|ies)|funds?|coins?)\b",
+    r"\b(?:recommend|suggest|advise)\s+(?:me\s+)?(?:(?:a|an|some|any|the|which|good|best)\s+)?"
+    r"(?:stocks?|shares?|options?|strikes?|strateg(?:y|ies)|funds?|coins?|trades?)\b",
+    r"\b(?:recommend|suggest|advise)\b.{0,40}\b(?:buy|sell|invest)\b",
     r"\bhow\s+much\s+(?:should|to|must|can)\s+(?:i\s+)?(?:invest|buy|put|allocate|risk)\b",
-    r"\b(?:buy|sell)\s+or\s+(?:sell|hold|buy)\b",
     r"\bsure[- ]?shot\b|\bmultibagger\b|\bjackpot\b",
     r"शिफारस|कोणता\s+शेअर|घ्यावा\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
 
 _ACT = r"(?:buy|sell|short|place|cancel|modify|amend|exit|close|square\s*-?\s*off|execute|book)"
 _ORDERS = [re.compile(p, re.I) for p in (
-    rf"^\s*(?:please\s+|pls\s+|kindly\s+)?{_ACT}\b",
+    # an imperative at the start ("sell my INFY", "buy 50 TCS") - not a question about a control ("exit now button ...")
+    rf"^\s*(?:please\s+|pls\s+|kindly\s+)?{_ACT}\b(?!.{{0,30}}\b(?:button|page|tab|dialog|screen|feature|link|menu|option\s+in)\b)",
     rf"\b(?:can|could|will|would)\s+you\s+(?:please\s+)?{_ACT}\b",
     rf"\b{_ACT}\b.{{0,40}}\bfor\s+me\b",
     rf"\b(?:i\s+want|i'd\s+like|i\s+would\s+like)\s+(?:you\s+)?to\s+{_ACT}\b",

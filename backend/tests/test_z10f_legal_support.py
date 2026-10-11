@@ -374,7 +374,9 @@ def test_bot_refuses_order_requests_and_points_to_the_exit(bot_on, question):
 
 def test_how_to_wording_about_orders_and_positions_is_not_refused():
     for q in ("how do I close a position?", "where do I see my orders?", "how can I cancel a proposal?",
-              "what is a stop-loss order?", "how do I see my P&L?"):
+              "what is a stop-loss order?", "how do I see my P&L?", "how do I set a target for my strategy?",
+              "will my alerts fall back to email?", "can you suggest how to build a strategy?",
+              "exit now button is not working", "close the help dialog", "how do I buy or sell in paper mode?"):
         assert guard.classify(q) is None, q
 
 

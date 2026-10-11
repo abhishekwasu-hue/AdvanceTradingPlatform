@@ -12,7 +12,11 @@ GREEK_KEYS = ("delta", "gamma", "theta", "vega")
 
 def compute_leg_payoff(underlying_price: float, direction: str, option_type: str, strike: float, premium: float,
                        lots: float, lot_size: float, **_extra: Any) -> float:
-    """One leg's P&L at expiry for an underlying price. Other keys on the leg are accepted and ignored."""
+    """One leg's P&L at expiry for an underlying price. Other keys on the leg are accepted and ignored.
+    P1-b: an underlying leg (option_type "FUT") is linear - its `premium` is the entry price (its `strike` is ignored)."""
+    if option_type == "FUT":
+        move = underlying_price - premium
+        return (move if direction == "BUY" else -move) * lots * lot_size
     intrinsic = max(underlying_price - strike, 0) if option_type == "CE" else max(strike - underlying_price, 0)
     if direction == "BUY":
         return (intrinsic - premium) * lots * lot_size

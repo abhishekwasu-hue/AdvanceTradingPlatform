@@ -203,7 +203,7 @@ def parse_answer(text: Optional[str]) -> Optional[Dict[str, Tuple[str, str]]]:
 
 
 def _price(value: Optional[float]) -> str:
-    return f"{float(value):.2f}"
+    return f"{float(value):.2f}" if value is not None else "-"
 
 
 @dataclass

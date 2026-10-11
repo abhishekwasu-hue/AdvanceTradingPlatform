@@ -162,8 +162,9 @@ test.describe("Watchtower decisions", () => {
     await expect(panels).toHaveCount(2);
     await expect(page.getByText("clean support near the lows (range 100.00 - 120.00)")).toBeVisible();
     await expect(page.getByText("Vision off - add your API key in Settings")).toBeVisible();
-    // Nothing on the report decides anything: no request but the reads went out.
-    expect(calls.posts).toEqual([]);
+    // Nothing on the report decides anything: no write went out (the session refresh aside).
+    expect(calls.posts.filter((c) => !/\/auth\/refresh$/.test(c.url))).toEqual([]);
+    await expect(page.getByTestId("vision-report").first().getByRole("button")).toHaveCount(0);
   });
 
   test("reject: asks for an optional note and sends it", async ({ page }) => {

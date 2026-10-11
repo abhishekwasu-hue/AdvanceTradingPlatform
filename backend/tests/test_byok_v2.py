@@ -21,7 +21,7 @@ from app.db.models import (AiActionRecord, AlertChannelRecord, AuditLogRecord, L
                            StrategyDeploymentRecord, TradeRecord, User, VisionReportRecord)
 from app.secrets_store.envelope import ensure_tenant_key
 from tests.test_auth_api import _register, _session_factory, client
-from tests.test_byok_v1 import _flag, flag_on  # noqa: F401 - the fixture is used by name
+from tests.test_byok_v1 import _flag
 from tests.test_phase_l_ai import _anthropic_mock
 
 A_KEY = "sk-ant-api03-FAKEFAKE-v2-only-aaaaaaaaaaaaaaaaaaaaaa-1111"
@@ -37,6 +37,13 @@ ENTRY, STOP, TARGET = 2450.0, 2430.0, 2490.0
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture
+def flag_on():
+    _flag(True)
+    yield
+    _flag(False)
 
 
 def _headers(token):

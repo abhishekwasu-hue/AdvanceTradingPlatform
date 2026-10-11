@@ -1680,6 +1680,46 @@ class OptionChainSnapshotRecord(Base):
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
 
+class AgentRunRecord(Base):
+    """H-C2 (ADR-0019): one Copilot agent request - who asked (the question only as a hash; its text is in llm_calls,
+    masked), the prompt version and model, the limits, and how it ended. Append-only; never deleted (like llm_calls)."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    question_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    limits_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    steps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class AgentStepRecord(Base):
+    """H-C2: one tool call inside an agent run - the arguments, a hash of the output (untrusted payloads by hash only),
+    success and duration."""
+
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(60), nullable=False)
+    arguments_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    untrusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class OISnapshotRecord(Base):
     """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
     `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from

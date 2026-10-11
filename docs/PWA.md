@@ -44,3 +44,21 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
   (screenshot `docs/screenshots/pw1/pw1-offline-360.png`; iOS guide `pw1-ios-guide-390.png`).
 - Lighthouse 12 removed its PWA category; the installability criteria it used (manifest fields, 192/512 icons, a
   service worker with a fetch handler, an offline response) are what the checks above and the unit tests cover.
+
+## Push notifications (PW3)
+
+- **Where.** Settings -> Alert delivery -> Push notifications. One push channel per organisation, one subscription per
+  device (up to 20); "Send test" goes out at once; the last push deliveries are listed with their status.
+- **Asking.** The browser is asked only after the user has read what they will get (the categories ticked, the severity
+  floor, "emergencies always come through") and pressed Continue. A blocked permission is explained (site settings),
+  never re-asked in a loop.
+- **iPhone / iPad.** Web push works only in the app added to the Home Screen (iOS 16.4+). In Safari the section says
+  so and the Enable button stays off until the app is opened from the Home Screen.
+- **Categories.** proposals, trades, alerts, risk, account, reports (`backend/app/alerts/deeplink.py`). A category
+  that is off creates no outbox row. EMERGENCY notifications ignore the preference. A channel saved before PW3 has no
+  preference, which means every category.
+- **Deep links.** Every push carries the in-app path of its subject: `/copilot/watchtower?action=<id>` for a
+  proposal, `/positions?trade=<id>`, `/orders?order=<id>`, `/option-chain` for an OI banner, `/settings` for a broker
+  login, else `/notifications?n=<id>`. Paths only, so a payload cannot open another site. The service worker focuses
+  an open app window and navigates it, or opens a new one; the Watchtower and the Notifications feed scroll to and
+  outline the item.

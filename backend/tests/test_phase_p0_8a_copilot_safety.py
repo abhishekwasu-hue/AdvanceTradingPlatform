@@ -23,6 +23,7 @@ from app.news_feed import classify as cl
 from app.news_feed import service as nf
 from app.telegram_inbound import service as tg
 from app.trading.position_monitor import CloseOutcome
+from tests.server_evidence import serve_candles
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_phase_be_telegram_inbound import _Telegram, _dispatch, _post, _propose
 from tests.test_trading_worker import _deploy, _tenant
@@ -343,15 +344,16 @@ def test_news_scope_circuit_and_pause_target():
 
 
 # --- A3 (interview) ------------------------------------------------------------------------------------------------------------
-def test_interview_deploy_goes_through_the_candidate_gate():
+def test_interview_deploy_goes_through_the_candidate_gate(monkeypatch):
     from tests.test_phase_ap_interview import _sessions
     t = _tenant("p08a-interview@example.com")
     headers = t["headers"]
     df = _sessions(days=5)
     candles = [{"timestamp": ts.isoformat(), "open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume} for ts, r in df.iterrows()]
+    serve_candles(monkeypatch, candles)                                    # H-C1 a: server-fetched, not posted
     plan = client.post("/api/ai/interview/plan", headers=headers, json={
         "answers": {"language": "en", "experience": "learning", "capital": 300000, "risk": "moderate", "style": "intraday", "vehicle": "option_buy", "goal": "big_trends"},
-        "base_timeframe": "5min", "candles": candles, "data_source": "broker:upstox"}).json()
+        "base_timeframe": "5min"}).json()
     assert plan["candidate_id"] and all(o["candidate_id"] for o in plan["options"])
     cid = plan["candidate_id"]
     # Five sessions of synthetic candles give the templates no trades: the gate refuses before anything else is looked at.

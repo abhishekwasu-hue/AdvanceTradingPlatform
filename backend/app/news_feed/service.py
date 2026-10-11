@@ -299,6 +299,8 @@ async def classify_for_tenant(session: AsyncSession, tenant: Tenant, provider, *
     pending = [r for r in rows if r.id not in done and int(classification_of(r).get("severity", 1)) >= min_keyword_severity][:limit]
     if not pending:
         return {"classified": 0, "proposals": 0, "skipped": "nothing new to classify"}
+    from app.ai.prompt_versions import stamp
+    stamp(provider, cl.PROMPT_VERSION)                                   # H-C1 f
     text = await provider.complete(cl.SYSTEM_PROMPT, cl.ai_prompt([{"id": r.id, "title": r.headline, "published_at": r.published_at} for r in pending]), max_tokens=4000)
     parsed = cl.parse_ai(text, {r.id for r in pending})
     proposals = 0

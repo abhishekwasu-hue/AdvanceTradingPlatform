@@ -59,6 +59,18 @@ describe("drawings API client", () => {
   });
 });
 
+describe("drawingsApi status mapping (CH2c review)", () => {
+  it("404 (deleted elsewhere) is a conflict with no current drawing, for update, delete and lock", async () => {
+    const stored = { id: 7, symbol: "X", exchange: "NSE", kind: "hline" as const, drawing: sample("hline"), version: 4, locked: false, updated_at: null };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "Drawing not found" }), { status: 404, headers: { "content-type": "application/json" } })));
+    for (const call of [() => drawingsApi.update(stored, sample("hline")), () => drawingsApi.remove(stored), () => drawingsApi.lock(stored, true)]) {
+      const err = await call().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(DrawingConflict);
+      expect((err as DrawingConflict).current).toBeNull();
+    }
+  });
+});
+
 function fakes() {
   const priceLines: { price: number; title: string }[] = [];
   const primitives: DrawingPrimitive[] = [];

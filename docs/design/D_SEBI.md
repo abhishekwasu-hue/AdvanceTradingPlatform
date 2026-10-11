@@ -86,7 +86,7 @@ configured pre-open time when a LIVE deployment's token will not last the sessio
 | D3 | order-type policy per broker | planned (PR 3) |
 | D4 | static IP model + UI + checklist | runbook only; model planned (PR 4) |
 | D5 | generic daily login + reminder | done: `app/brokers/login_reminder.py` (login method per broker, pre-open reminder from the worker) |
-| D6 | go-live checklist items | partly exists; planned (PR 6) |
+| D6 | go-live checklist items | done: `app/compliance/golive.py` (evidence items vendor / strategy / AI / DPDP with expiry, auto checks log retention + RA gate, platform readiness LIVE items); strategy class as evidence (OPEN_QUESTIONS D-4) |
 | D7 | FutEq / MWPL, expiry-day margin, lot as-of | needs part B data; planned (PR 6) |
 | D8 | COMPLIANCE_IN.md + tests | skeleton in PR 1 |
 

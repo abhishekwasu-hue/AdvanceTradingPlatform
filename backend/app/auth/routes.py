@@ -18,7 +18,7 @@ from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, REFRESH_COOKIE_N
 from app.auth.passwords import MAX_LENGTH, MIN_LENGTH, password_problem
 from app.webhooks.routes import hash_webhook_token
 from app.auth.sessions import IssuedTokens, revoke_all_sessions, revoke_session, rotate_refresh_token, start_session
-from app.auth.security import hash_password, verify_password
+from app.auth.security import hash_password, hash_password_async, verify_password_async
 from app.core.enums import UserRole
 from app.core.rate_limit import rate_limit
 from app.db.models import (
@@ -164,7 +164,7 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     await ensure_tenant_key(session, tenant.id)  # Phase N1: every tenant gets its own data key
 
     user = User(
-        tenant_id=tenant.id, email=request.email, hashed_password=hash_password(request.password),
+        tenant_id=tenant.id, email=request.email, hashed_password=await hash_password_async(request.password),
         role=UserRole.SUPER_ADMIN.value if is_configured_super_admin(request.email) else UserRole.OWNER.value,
     )
     session.add(user)
@@ -197,7 +197,7 @@ async def login(request: LoginRequest, http_request: Request, response: Response
     user = await session.scalar(select(User).where(User.email == email))
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
     # time doesn't leak whether an email is registered (see _DUMMY_PASSWORD_HASH above).
-    password_ok = verify_password(request.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
+    password_ok = await verify_password_async(request.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
     if user is None or not password_ok or not user.is_active:
         reason = "unknown_email" if user is None else "inactive" if not user.is_active else "bad_password"
         await record_login_event(session, email=email, user=user, success=False, reason=reason, request=http_request)
@@ -332,7 +332,7 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     _enforce_password_policy(request.password, record.email)
 
     user = User(
-        tenant_id=record.tenant_id, email=record.email, hashed_password=hash_password(request.password), role=record.role,
+        tenant_id=record.tenant_id, email=record.email, hashed_password=await hash_password_async(request.password), role=record.role,
     )
     session.add(user)
     await session.flush()
@@ -557,7 +557,7 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="This account is no longer active")
     _enforce_password_policy(request.password, user.email)
-    user.hashed_password = hash_password(request.password)
+    user.hashed_password = await hash_password_async(request.password)
     record.used_at = datetime.now(timezone.utc)
     await revoke_all_sessions(session, user.id, "password reset")
     await write_audit_log(session, user.tenant_id, user.id, "password_reset_completed")
@@ -574,12 +574,12 @@ async def change_password(
 ) -> TokenResponse:
     """Requires the current password. Every *other* session is ended; this one continues with
     a fresh token pair."""
-    if not verify_password(request.current_password, user.hashed_password):
+    if not await verify_password_async(request.current_password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
     if request.current_password == request.new_password:
         raise HTTPException(status_code=400, detail="New password must differ from the current one")
     _enforce_password_policy(request.new_password, user.email)
-    user.hashed_password = hash_password(request.new_password)
+    user.hashed_password = await hash_password_async(request.new_password)
     count = await revoke_all_sessions(session, user.id, "password changed", except_session_id=session_id)
     await write_audit_log(session, user.tenant_id, user.id, "password_changed", f"{count} other session(s) ended")
     if session_id is not None:
@@ -747,7 +747,7 @@ async def mfa_disable(
     password alone can switch the second factor off."""
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
-    if not verify_password(request.password, user.hashed_password):
+    if not await verify_password_async(request.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Password is incorrect")
     ok, _ = await mfa.verify_code(session, user, request.code)
     if not ok:

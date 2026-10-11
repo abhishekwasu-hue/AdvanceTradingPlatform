@@ -40,6 +40,20 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(raw, hashed.encode())
 
 
+async def verify_password_async(password: str, hashed: str) -> bool:
+    """`verify_password` on a worker thread. bcrypt is slow on purpose (a quarter of a second or more per check); run
+    inline in an async route it holds the event loop, so every other request of that API process waits behind each
+    login (Z10-d load test: dashboard p99 about 2 s while users logged in). bcrypt releases the GIL while it works."""
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(verify_password, password, hashed)
+
+
+async def hash_password_async(password: str) -> str:
+    """`hash_password` on a worker thread (same reason as `verify_password_async`)."""
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(hash_password, password)
+
+
 def create_access_token(user_id: int, email: Optional[str] = None, session_id: Optional[int] = None) -> str:
     """`email` is accepted for call-site compatibility and deliberately not put in the token."""
     now = datetime.now(timezone.utc)

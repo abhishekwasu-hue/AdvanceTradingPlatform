@@ -225,6 +225,23 @@ LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 # The R2 credentials (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_ENDPOINT) are read only by the importer.
 _history_owner = os.environ.get("HISTORY_OWNER_TENANT_ID", "").strip()
 HISTORY_OWNER_TENANT_ID = int(_history_owner) if _history_owner.isdigit() and int(_history_owner) > 0 else None
+# HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill and nightly EOD job - both only while the
+# `history_backfill` flag is on. Politeness: one request at a time, at least HISTORY_BACKFILL_PAUSE_SECONDS apart, and
+# exponential backoff (honouring Retry-After) on 429 / 403 / 5xx / timeouts, HISTORY_BACKFILL_RETRIES attempts per URL.
+HISTORY_BACKFILL_PAUSE_SECONDS = float(os.environ.get("HISTORY_BACKFILL_PAUSE_SECONDS", "1.5") or 1.5)
+HISTORY_BACKFILL_RETRIES = max(1, int(os.environ.get("HISTORY_BACKFILL_RETRIES", "4") or 4))
+HISTORY_BACKFILL_MAX_BACKOFF_SECONDS = float(os.environ.get("HISTORY_BACKFILL_MAX_BACKOFF_SECONDS", "120") or 120)
+HISTORY_BACKFILL_USER_AGENT = os.environ.get("HISTORY_BACKFILL_USER_AGENT", "").strip()     # empty: a browser-like default
+# Cash-market series loaded as equities (main board, trade-for-trade, SME); the first listed wins if a symbol has two.
+HISTORY_BACKFILL_SERIES = tuple(s.strip().upper() for s in os.environ.get("HISTORY_BACKFILL_SERIES", "EQ,BE,BZ,SM,ST,SZ").split(",") if s.strip())
+HISTORY_BACKFILL_FO_OPTIONS = os.environ.get("HISTORY_BACKFILL_FO_OPTIONS", "false").lower() in ("1", "true", "yes")
+# A file with fewer rows than this share of the median of the last done days of its segment is refused (truncated).
+HISTORY_BACKFILL_MIN_ROWS_RATIO = float(os.environ.get("HISTORY_BACKFILL_MIN_ROWS_RATIO", "0.5") or 0.5)
+# Optional: keep every file as received under this directory ({segment}/{yyyy}/{name}); empty = not kept.
+HISTORY_BACKFILL_ARCHIVE_DIR = os.environ.get("HISTORY_BACKFILL_ARCHIVE_DIR", "").strip()
+# Nightly EOD job (trading worker): once per IST day from this hour, today's files plus a catch-up of the last N days.
+HISTORY_BACKFILL_HOUR_IST = int(os.environ.get("HISTORY_BACKFILL_HOUR_IST", "19") or 19)
+HISTORY_BACKFILL_CATCHUP_DAYS = int(os.environ.get("HISTORY_BACKFILL_CATCHUP_DAYS", "7") or 7)
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

@@ -140,8 +140,9 @@ def _as_utc(ts: datetime) -> datetime:
 
 async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], source: str, *, tenant_id: Optional[int] = None,
                              ingested_at: Optional[datetime] = None) -> WriteResult:
-    """`write_candles` for large batches (HB0 import): the same skip / new-version rules, one read per instrument and
-    timeframe and one multi-row insert. Does NOT commit - the caller commits it together with its own bookkeeping.
+    """`write_candles` for large batches (HB0 import, HB1 bhavcopy days): the same skip / new-version rules, one read
+    per chunk of instruments (one instrument over a year, or two thousand instruments on one day) and one multi-row
+    insert. Does NOT commit - the caller commits it together with its own bookkeeping.
     `tenant_id` set writes that tenant's private store (md_tenant_candles) instead of the shared lake. Two bars with the
     same END in one batch are refused (ValueError): the caller must decide which one is true, never this function."""
     model = MdTenantCandleRecord if tenant_id is not None else MdCandleRecord
@@ -150,23 +151,33 @@ async def write_candles_bulk(session: AsyncSession, bars: Sequence[LakeBar], sou
     groups: Dict[Tuple[str, str], List[LakeBar]] = defaultdict(list)
     for bar in bars:
         groups[(bar.instrument_key, bar.timeframe)].append(bar)
-    rows: List[dict] = []
+    ends_of: Dict[Tuple[str, str], List[datetime]] = {}
     for (key, tf), group in groups.items():
         ends = [_as_utc(b.ts) for b in group]
         if len(set(ends)) != len(ends):
             raise ValueError(f"{key} {tf}: {len(ends) - len(set(ends))} duplicate bar end(s) in one batch")
-        query = select(model.ts, model.version, model.open, model.high, model.low, model.close, model.volume, model.oi).where(
-            model.instrument_key == key, model.timeframe == tf, model.source == source, model.ts >= min(ends), model.ts <= max(ends))
+        ends_of[(key, tf)] = ends
+    latest: Dict[Tuple[str, str, datetime], Tuple] = {}
+    group_keys = list(groups)
+    for i in range(0, len(group_keys), 500):
+        chunk = group_keys[i:i + 500]
+        all_ends = [ts for g in chunk for ts in ends_of[g]]
+        query = select(model.instrument_key, model.timeframe, model.ts, model.version, model.open, model.high, model.low,
+                       model.close, model.volume, model.oi).where(
+            model.instrument_key.in_(sorted({k for k, _ in chunk})), model.timeframe.in_(sorted({tf for _, tf in chunk})),
+            model.source == source, model.ts >= min(all_ends), model.ts <= max(all_ends))
         if tenant_id is not None:
             query = query.where(MdTenantCandleRecord.tenant_id == tenant_id)
-        latest: Dict[datetime, Tuple] = {}
         for r in await session.execute(query):
             ts = _as_utc(r.ts)
-            if ts not in latest or r.version > latest[ts][0]:
-                latest[ts] = (r.version, LakeBar(key, tf, ts, float(r.open), float(r.high), float(r.low), float(r.close),
-                                                 int(r.volume), r.oi))
-        for bar, ts in zip(group, ends):
-            old = latest.get(ts)
+            at = (r.instrument_key, r.timeframe, ts)
+            if at not in latest or r.version > latest[at][0]:
+                latest[at] = (r.version, LakeBar(r.instrument_key, r.timeframe, ts, float(r.open), float(r.high), float(r.low),
+                                                 float(r.close), int(r.volume), r.oi))
+    rows: List[dict] = []
+    for (key, tf), group in groups.items():
+        for bar, ts in zip(group, ends_of[(key, tf)]):
+            old = latest.get((key, tf, ts))
             if old is not None and old[1].values() == bar.values():
                 result.skipped += 1
                 continue

@@ -34,17 +34,17 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 
 | Status | Rows |
 |---|---|
-| ported | 7 |
+| ported | 9 |
 | partial | 16 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 10 |
-| missing | 50 (25 of them are G rows that wait for the owner's "stable" mark) |
+| missing | 48 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 | **Total** | **191** |
 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
-| 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 0 | 11 | 4 | 0 | 4 | 2 |
+| 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
 | 2. Right after Phase 0 (N-list) | 28 | 0 | 1 | 3 | 10 | 14 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
@@ -57,8 +57,8 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 |---|---|---|---|---|
 | 1 | `order_safety.py` (+ `process_lock.py`, `clear_exit_state.py`) | `backend/app/execution/order_safety.py`, `backend/app/execution/multileg.py`, `backend/app/execution/router.py`, `backend/app/execution/prechecks.py` | partial | Z3 (PAPER), Z10 |
 | 2 | `charges.py` (golden check) | `backend/app/execution/india_costs.py`, `backend/app/execution/paper_broker.py` | partial | Z3 |
-| 3 | `strike_breach_model.py` | `backend/app/options_builder/model.py` (metrics), `backend/app/ai/proposal_card.py` | missing | Z5 |
-| 4 | India VIX regime / spike halt (`check_vix_spike_halt.py`, `trading_engine.check_vix_spike_halt`) | `backend/app/risk_engine/` (risk by default: size cut or new-entry pause; exits never blocked) | missing | Z5 |
+| 3 | `strike_breach_model.py` | `backend/app/options_builder/strike_breach.py` (builder `evaluate` answer), `backend/app/ai/proposal_card.py` (`strike_breach`) | ported (Z5 P1-d; card behind flag `risk_by_default`, off) | Z5 |
+| 4 | India VIX regime / spike halt (`check_vix_spike_halt.py`, `trading_engine.check_vix_spike_halt`) | `backend/app/risk_engine/vix_gate.py` via `guardian.guard_entry` (spike: new bullish index entries paused for the day; high level: size cut; exits never gated) | ported (Z5 P1-d; flag `vix_gate`, off) | Z5 |
 | 5 | `paper/` + Telegram commands | `backend/app/execution/paper_broker.py`, `backend/app/trading/`, `backend/app/telegram_inbound/service.py` | partial | Z3 (BT2 / BT3) |
 | 6 | `position_stream_monitor.py` + `trade_monitor.py` exit logic (+ `price_stream.py`) | `backend/app/trading/position_monitor.py`, `backend/app/market_data/stream.py`, `backend/app/workers/trading_worker.py` | partial | Z3 (PAPER exit engine) |
 | 7 | Expiry rule (`weekly_dual_expiry_option_seller.py`; next-expiry choice from `elliott/contracts.py`) | `backend/app/instruments/expiry_calendar.py` (`ExpiryBook.choose`, already ported) -> wire into `backend/app/options_builder/` and proposals | partial | Z5 |
@@ -82,8 +82,8 @@ The six safety checks the spec lists for `order_safety.py`:
 | `process_lock.py` | One running process per bot (file lock), part of the duplicate-order guard | `backend/app/workers/redis_guard.py`, `backend/app/execution/order_persistence.py` | partial (unverified): ATP's guard is a worker lock plus order idempotency, not per bot | none |
 | `clear_exit_state.py` | Operator escape that clears a stuck partial-exit state after a manual check | none | missing: needed only if ATP adopts Trade's exit-state lock (row above) | none |
 | `charges.py` | Real charges per order: brokerage per broker (Upstox calculator, Stocko statutory), STT, exchange, SEBI, stamp, GST; by trade and per period | `backend/app/execution/india_costs.py` (dated statutory rates, ported from `elliott/costs.py`), `backend/app/execution/paper_broker.py` | partial: statutory rates are ported from `elliott/costs.py`; `charges.py` itself (per-broker brokerage, order-level turnover) has not been checked against ATP on golden fixtures | `backend/tests/test_trade_port_contracts_costs.py` covers `elliott/costs.py` only |
-| `strike_breach_model.py` | Logistic model: chance that a short strike at distance z is breached before expiry (by DTE, weekday, ADX regime); required distance for a target breach risk | none | missing: target `backend/app/options_builder/model.py` metrics and the proposal card (`backend/app/ai/proposal_card.py`) | none (Trade has `tests/test_strike_breach_model.py`) |
-| `check_vix_spike_halt.py` | 09:20 IST job: India VIX % move against the previous close; above the threshold, new bullish index entries halt for the day | none (VIX is only context in `backend/app/ai/briefing.py`) | missing: target `backend/app/risk_engine/` risk by default (size cut / new-entry pause; exits never blocked) | none (Trade has `tests/test_check_vix_spike_halt.py`) |
+| `strike_breach_model.py` | Logistic model: chance that a short strike at distance z is breached before expiry (by DTE, weekday, ADX regime); required distance for a target breach risk | `backend/app/options_builder/strike_breach.py` (frozen NIFTY coefficients, features, `required_z`, per-leg report), builder `POST /evaluate` (`strike_breach`, with the underlying's daily bars), `backend/app/ai/proposal_card.py` | ported: inference and inversion only (the fitting/report code is research and stays in Trade); the daily market structure is an input (neutral unless the caller knows it) because Trade's `StructureTracker` is not ported | `backend/tests/test_z5_p1d_strike_breach.py` (golden cases from Trade's own functions: `tests/fixtures/strike_breach/make_golden.py`; plus Trade's no-look-ahead and inversion tests in English) |
+| `check_vix_spike_halt.py` | 09:20 IST job: India VIX % move against the previous close; above the threshold, new bullish index entries halt for the day | `backend/app/risk_engine/vix_gate.py` (`spike_decision`, `evaluate`; readings from the organisation's market memory, `app/ai/market_memory.py`), applied in `guardian.guard_entry` for both order pipelines and the PAPER ticket | ported (flag `vix_gate`, off): same threshold (5 %, `>=`), same scope (NIFTY, BANKNIFTY, SENSEX; bullish only; PAPER and LIVE), same fail-safe for a missing price. Differences: any reading of the day (not one 09:20 run); an added high-level size cut (`VIX_GATE_HIGH_LEVEL`); no Telegram message per run | `backend/tests/test_z5_p1d_risk_by_default.py` (Trade's `tests/test_check_vix_spike_halt.py` decision cases, in English) |
 | `trading_engine.py` | Trade lifecycle: open and close LIVE and PAPER, SL / target / EOD / OI-reversal / trailing exits, broker reconciliation, VIX halt gate, max-loss caps | `backend/app/execution/router.py`, `backend/app/execution/multileg.py`, `backend/app/trading/position_monitor.py`, `backend/app/reconciliation/engine.py` | partial (unverified): ATP has its own lifecycle; the exit rules and the VIX gate are the parts to port (rows above and below) | none |
 | `trade_monitor.py` | Exit loop: runs `manage_open_trades` every few seconds with live prices, a lock, heartbeat and the PAPER watch | `backend/app/trading/position_monitor.py` (`monitor_open_positions`), `backend/app/workers/trading_worker.py` | partial: ATP's monitor covers SL / target / time exits; compare against Trade's rules and cadence for the Z3 PAPER exit engine | none (Trade has `tests/test_trade_monitor.py`) |
 | `position_stream_monitor.py` | Runs the exit cycle on WebSocket ticks for open positions (lower slippage than polling) | `backend/app/market_data/stream.py`, `backend/app/trading/position_monitor.py` | partial: ATP streams quotes; a tick-driven exit cycle with throttled updates is the Z3 target | none |
@@ -322,7 +322,7 @@ Non-Python files at the top level (`config.yaml`, `PRE_LIVE_CHECKLIST.md`, `requ
    For `iv_snapshot_collector` only the daily ATM +/- 5 IV record is left.
 4. **`charges.py` has not been verified.** The earlier cost port came from `elliott/costs.py` (statutory rates by
    date). The per-broker brokerage in `charges.py` has not been checked on golden fixtures.
-5. **ATP has no VIX risk gate.** India VIX appears only as AI context.
+5. **The VIX risk gate is ported (Z5 P1-d, flag `vix_gate` off).** Before it India VIX appeared only as AI context.
 6. **Stocko has no ATP adapter.** It is not "an adapter ATP already has", so it is listed in group 5 for an owner
    decision.
 7. **Trade has 140 top-level `.py` files** (the spec says about 140) and 25 code packages. Several packages the

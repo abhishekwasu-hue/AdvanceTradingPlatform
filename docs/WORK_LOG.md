@@ -1590,3 +1590,26 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
+- Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
+  Design note: `docs/design/RISK_BY_DEFAULT.md`.
+- Plan ticket (`app/paper/ticket.py`, `/api/paper/ticket[/preview]`, `/api/paper/risk`, `/api/paper/plans`):
+  - the plan: setup, levels, minimum reward:risk, time stop, invalidation, checklist (a skip is allowed and counted);
+  - sizing from the user's cap, strictest wins with the organisation's limit and the guardian's cuts;
+  - an override that is logged, bounded (2x) and counted;
+  - the cost line with the break-even move;
+  - placement re-priced at the live price, stored as `trade_plans`.
+- Risk by default (`app/risk_engine/by_default.py`): the user's cap on every PAPER entry; a daily loss lockout
+  (`risk_lockouts`, kept for the day) and an entries-per-day limit in `entry_refusals`; no proposal for a locked user.
+  Exits are never locked: tests close a locked user's position with Exit now and at its stop.
+- Trade ports:
+  - `strike_breach_model.py` -> `app/options_builder/strike_breach.py`: golden parity on Trade's own functions;
+    builder `evaluate` and the proposal card;
+  - `check_vix_spike_halt.py` -> `app/risk_engine/vix_gate.py`, applied in `guard_entry`; parity cases from Trade's
+    tests.
+- Frontend:
+  - "Plan before trade (PAPER)" card on Positions: risk strip, lockout line, plan form, server-sized ticket with the
+    risk gauge and cost line;
+  - risk check and breach lines on the proposal card.
+- Migration `612f572d7ad2` (revises `a7d3e9f1c5b8`): upgrade, downgrade, upgrade and `alembic check` on local Postgres.
+- Open questions Z5D-1 to Z5D-6.

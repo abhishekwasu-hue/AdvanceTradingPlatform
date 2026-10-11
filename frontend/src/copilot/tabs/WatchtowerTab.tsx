@@ -10,6 +10,7 @@ import TiltCard from "../components/TiltCard";
 import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
 import { useDeepLinkTarget } from "../../utils/useDeepLinkTarget";
+import { useLiveEvents } from "../../live/useLiveEvents";
 import { Panel } from "./shared";
 
 /**
@@ -93,6 +94,8 @@ export default function WatchtowerTab() {
   }, []);
 
   const decided = (msg: string) => { setMessage(msg); reloadActions(); loadHistory(); };
+  // PW4: approved or rejected on Telegram (or in another tab) -> this list follows within about 2 s.
+  useLiveEvents(["ai_actions"], () => { reloadActions(); loadHistory(); });
   // PW3: a push or Telegram link opens /copilot/watchtower?action=<id> - that proposal is scrolled to and outlined.
   const target = useDeepLinkTarget("action", "proposal", pending.length > 0);
 

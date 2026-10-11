@@ -6,6 +6,7 @@ import type { NotificationEntry, NotificationSeverity } from "../types";
 import { PageHeader, Tabs } from "../components/primitives";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
+import { useLiveEvents } from "../live/useLiveEvents";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -32,6 +33,7 @@ export default function NotificationsPage() {
   }
 
   useEffect(refresh, [user]);
+  useLiveEvents(["notifications"], refresh);                 // PW4: a new alert appears without a reload
 
   async function markRead(id: number) {
     try {

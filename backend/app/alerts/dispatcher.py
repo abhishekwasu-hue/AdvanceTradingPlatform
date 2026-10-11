@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.observability.metrics import ALERT_DELIVERIES
 from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, decrypt_raw, encrypt_config, severity_reaches
 from app.alerts import webpush
-from app.alerts.deeplink import app_path, push_wanted
+from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
@@ -95,13 +95,15 @@ def render_text(notification: NotificationRecord) -> Tuple[str, str]:
 
 # --- senders -----------------------------------------------------------------------------------
 
-async def send_telegram(config: TelegramConfig, html_text: str, client: Optional[httpx.AsyncClient] = None, chat_id: Optional[str] = None) -> None:
+async def send_telegram(config: TelegramConfig, html_text: str, client: Optional[httpx.AsyncClient] = None, chat_id: Optional[str] = None,
+                        reply_markup: Optional[dict] = None) -> None:
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=SEND_TIMEOUT_SECONDS)
     try:
         response = await client.post(
             f"{TELEGRAM_API}/bot{config.bot_token}/sendMessage",
-            json={"chat_id": chat_id or config.chat_id, "text": html_text, "parse_mode": "HTML", "disable_web_page_preview": True},
+            json={"chat_id": chat_id or config.chat_id, "text": html_text, "parse_mode": "HTML", "disable_web_page_preview": True,
+                  **({"reply_markup": reply_markup} if reply_markup else {})},
         )
         try:
             payload = response.json()
@@ -319,7 +321,9 @@ async def send_via_channel(
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
         if address and address == config.chat_id:  # type: ignore[union-attr]
             return                                         # S3b-2: the linked chat is the channel's own chat - sent once already
-        await send_telegram(config, html_body, client, chat_id=address)  # type: ignore[arg-type]
+        row = open_in_app_row(notification)                # PW4: every Telegram alert opens its screen in the app
+        await send_telegram(config, html_body, client, chat_id=address,  # type: ignore[arg-type]
+                            reply_markup={"inline_keyboard": [row]} if row else None)
     elif channel.channel_type == AlertChannelType.EMAIL.value:
         subject = f"[{notification.severity}] {notification.title}"
         if notification.event_type == NotificationType.SCREEN_ALERT.value:
@@ -355,7 +359,8 @@ async def _telegram_proposal_buttons(session: AsyncSession, channel: AlertChanne
         if action is None or action.tenant_id != channel.tenant_id:
             return False
         _, html_body = render_text(notification)
-        return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client)
+        return await telegram_inbound.send_proposal_buttons(session, channel, action, html_body, client,
+                                                            extra_row=open_in_app_row(notification))
     except RuntimeError:
         raise                                         # Telegram refused the send: the ordinary retry path
     except Exception as exc:  # noqa: BLE001 - a bug in the buttons must not stop the alert itself

@@ -83,12 +83,18 @@ function fakes() {
     createPriceLine(o) { const l = { price: o.price, title: o.title }; priceLines.push(l); return l as never; },
     removePriceLine(l) { priceLines.splice(priceLines.indexOf(l as never), 1); },
     priceToCoordinate: (p) => 1000 - p * 5,
+    coordinateToPrice: (y) => (1000 - y) / 5,
     subscribeDataChanged(h) { handlers.data.push(h as (p: unknown) => void); },
     unsubscribeDataChanged(h) { handlers.data = handlers.data.filter((x) => x !== h); },
     attachPrimitive(p) { primitives.push(p); },
     detachPrimitive(p) { primitives.splice(primitives.indexOf(p), 1); },
   };
-  const chart: ChartLike = {
+  const options: { handleScroll?: boolean; handleScale?: boolean }[] = [];
+  const chart: ChartLike & { options: typeof options } = {
+    options,
+    applyOptions(o) { options.push(o); },
+    paneSize: () => ({ width: 400, height: 300 }),
+    priceScale: () => ({ width: () => 0 }),
     subscribeCrosshairMove(h) { handlers.cross.push(h as (p: unknown) => void); },
     unsubscribeCrosshairMove(h) { handlers.cross = handlers.cross.filter((x) => x !== h); },
     subscribeClick(h) { handlers.click.push(h as (p: unknown) => void); },
@@ -97,6 +103,7 @@ function fakes() {
       subscribeVisibleTimeRangeChange(h) { handlers.range.push(h as (p: unknown) => void); },
       unsubscribeVisibleTimeRangeChange(h) { handlers.range = handlers.range.filter((x) => x !== h); },
       logicalToCoordinate: (l: number) => l * 8,
+      coordinateToLogical: (x: number) => x / 8,
     }),
   };
   return { chart, candles, priceLines, primitives, handlers };

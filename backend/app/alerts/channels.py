@@ -1,7 +1,7 @@
 """Per-tenant alert channel configuration: validated shapes, encryption at rest, masking for
 the API, and the severity floor that decides what gets queued."""
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator
 
@@ -74,6 +74,9 @@ class WebhookConfig(BaseModel):
     url: HttpUrl
     secret: str = Field(min_length=16, max_length=200)
     event_types: List[str] = Field(default_factory=list, max_length=30)   # empty = every event type
+    # S3b (ADR-0022): "atp" = the versioned atp.notification/1 body (with an `alert` block for screen alerts);
+    # "chartink" = the Chartink-shaped body for tools that already read Chartink webhooks (screen alerts only).
+    payload_format: Literal["atp", "chartink"] = "atp"
 
     @field_validator("url")
     @classmethod

@@ -138,6 +138,45 @@ frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1
 - **Next (CH2b).** The primitives drawing core on v5 (`ISeriesPrimitive`): parallel channel, rectangle/zone, Fibonacci,
   text, long/short position, vertical line. Then the kinds `supports()` reports false today are drawn.
 
+## CH2b (built): the primitives drawing core on v5
+
+- **Every `drawing/1` kind is drawn now.** `supports()` is true for all 12 kinds.
+  - `hline` stays a price line, so it keeps its axis label.
+  - Every other kind is one v5 series primitive (`ISeriesPrimitive`) attached to the candle series.
+- **Pure geometry.** `frontend/src/charting/geometry.ts` turns a drawing plus converters (time to x, price to y, pane
+  size) into plain shapes: segments, rectangles, polygons and text. It does not touch the chart library or a canvas.
+  - Rectangle/zone: a filled box between the two anchors.
+  - Vertical line: spans the pane at its time.
+  - Parallel channel: the third anchor sets the offset of a line parallel to the first two; fill plus dashed midline.
+  - Fibonacci retracement: 0 at the second anchor, 1 at the first. Default levels are 0, 0.236, 0.382, 0.5, 0.618,
+    0.786 and 1; the drawing's own `levels` replace them. Each label shows the level and its price.
+  - Fibonacci extension: the first move (anchor 1 to 2), projected from the third anchor. Default levels are 0,
+    0.618, 1, 1.618 and 2.618.
+  - Ray: extends to the right edge. Trendline and channel extend only per `style.extend`.
+  - Measure: labels the change and the percentage.
+  - Text: drawn at its anchor.
+  - Long/short position (entry, stop, target): profit and loss zones, target and stop labels with percentages, and
+    R:R. A stop or target on the wrong side of the entry is shown as a problem, never silently flipped.
+- **Labels come from anchor prices, never from pixels.**
+- **Time to x.** An anchor time becomes a fractional bar index over the candles' real times, then x through
+  `logicalToCoordinate`.
+  - Between bars it interpolates, so a drawing made on 5m lands correctly on 15m.
+  - Past either end it extrapolates with the nearest bar spacing, so a future target still has a place.
+  - An overnight gap is one bar step, not hours of empty space.
+  - Bar times are re-read only when the candle data changes (`subscribeDataChanged`), not on every paint.
+- **Painter.** `frontend/src/charting/primitives.ts`: one `DrawingPrimitive` per drawing. It paints in media
+  coordinates on the top layer and always restores the canvas state. `dispose()` and `removeDrawing` detach it.
+- **Tests.**
+  - `geometry.test.ts` (11): every kind's geometry, the time mapping, R:R and its wrong-side checks, "nothing drawn
+    when an anchor cannot be placed", and the painter.
+  - `charting.test.ts` (8): primitives attached and detached, converter caching, no leaked objects.
+  - Mutation checks failed the suite as they should: interpolation, channel offset, short risk, Fibonacci direction,
+    ray extension, cache invalidation, the hline guard, the polygon guard and canvas restore.
+- **Headless render.** ProChart with all 10 drawn kinds over synthetic bars shows each one in its place, with no
+  page errors from the chart.
+- **Next (CH2c).** Interactive drawing tools on the chart (click to place anchors, drag handles, select, delete),
+  stored through `drawingsApi`, with undo/redo over versions and lock.
+
 ## Open questions (provisional answers, work continues)
 - **CH-1. Order against parts H, S, B.** As above.
 - **CH-2. TradingView Advanced Charts access** is a business application by Abhi (company and product details; the
@@ -149,3 +188,6 @@ frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1
   (`attributionLogo`); it stays on.
 - **CH-5. Drawings scope.** Drawings are per user and symbol and shared across timeframes (time/price anchors).
   Sharing with team members is later (tenant-scoped, read-only).
+- **CH-6. Position tool width.** `drawing/1` has no end time for long/short positions, so the box runs from the
+  entry to the right edge. Provisional: keep it so. If a fixed width is wanted, an optional fourth anchor (time
+  only) can be added in a schema minor version, and old drawings keep working.

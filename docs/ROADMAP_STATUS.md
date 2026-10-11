@@ -2,23 +2,27 @@
 
 ## Phase 0 (owner's scope freeze - docs/specs/ATP_PHASE0_FREEZE.md; overrides the order below until Phase 0 ships)
 
-Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Progress: Z1 and Z9 merged; Z2 and Z4 in review/progress; others not started.
+Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Progress: Z1, Z4, Z6 and Z9 merged; Z5 P1-c merged (P1-d in review); Z2 BT1 merged (BT1b in review); Z3, Z7a, Z7 and Z8 in review/progress; Z10, Z11 not started. Every PR waits for green CI and, for engine/data/security/migration work, an independent review; flags stay off.
 Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan partner application; company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
 
 | Z | What | Status | PR | % |
 |---|---|---|---|---|
 | Z1 | PW5 proposal card + PW6 invite gate / feedback | merged | #162, #159 | 100 |
-| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | in review (flag byob_data_tier off); BT1b follow-ups in docs/design/BT_BETA_DATA_TIERS.md | #167 | 80 |
-| Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | next | - | 0 |
-| Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | HB0 ready (#164), HB1 next | #164 | 30 |
-| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | not started | - | 0 |
-| Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | not started | - | 0 |
-| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection + golden parity merged (#168, 6528/6528 values identical to Trade); Z7a-2 lifecycle, level memory (golden parity 5336/5336) and nightly as-of zone store (flag `market_zones` off) in review (#176); Z7a-3 chart layer (<= 6 bands, as-of read API) + ScreenQL NearZone / ZoneRole / ZoneState / ZoneStrength built on branch `claude/z7a3-zones-chart-screenql` (no PR yet: open-PR limit) | #168 merged, #176 | 60 |
-| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 in progress (branch claude/z7-bk1-breakouts); BK2, EV1, EV2 next | - | 5 |
-| Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | not started | - | 0 |
+| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | BT1 merged (flag byob_data_tier off); BT1b (guard every live read, credential holder, staleness) in review: security review fixes in progress | #167 merged, #177 | 85 |
+| Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | Z3-a approval-only entries + Z3-b PAPER account/ladder/Telegram: independent review and verification done (no safety blocker); last verification fixes in progress | #173, #174 | 85 |
+| Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | merged (flags history_import / history_backfill off); owner intraday history comes from HB2 after Z11 (see note) | #164, #169 | 100 |
+| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | P1-c merged (+ review follow-ups #180); P1-d (ticket, caps, daily loss lockout with exits allowed, strike breach, VIX gate) in independent review | #170, #180 merged; #179 | 75 |
+| Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | merged (flag discipline_engine off) | #171, #172 | 100 |
+| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection merged (6528/6528 identical to Trade); Z7a-2 lifecycle/memory/store reviewed, review fixes pushed (job off the trading worker, all-daily defaults, settings-hash reads, retention, compressed golden fixtures; parity 5336/5336) - re-review next; Z7a-3 chart layer (<= 6 bands, as-of read API, labelled platform fallback) + ScreenQL NearZone / ZoneRole / ZoneState / ZoneStrength built on branch `claude/z7a3-zones-chart-screenql` (no PR yet: open-PR limit) | #168 merged; #176 | 55 |
+| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 reviewed, fixes in progress (template history depth, alert flag gates, IST anchoring); BK2 built, aligning with BK1 fixes; EV1 + EV2 after Z7a-3 | #178, #181 | 35 |
+| Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 merged (flag `screener_gallery` off): taxonomy data file + lint + CI guard (every pre-built screen filed), `GET /api/screener/taxonomy`, gallery rail / chips / matrix; breakouts register when #178 merges (OPEN_QUESTIONS TX1-6); LG1 next | #184 merged | 60 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
-| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | not started | - | 0 |
-| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | not started | - | 0 |
+| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | next | - | 0 |
+| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | next | - | 0 |
+
+Also merged: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method (STT rows from 1 Apr 2026 still marked verify, OPEN_QUESTIONS TX-1).
+
+Data source note: the Trade-repo data collector was cancelled by the owner (2026-10-11), so HB0's R2 importer (#164) stays idle unless data arrives in that store. HB1 (NSE bhavcopy, run on the server) covers the daily history. The owner's intraday history comes from **HB2** (an intraday capture/backfill job on the server), kept in the plan right after Z11.
 
 docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).
@@ -29,7 +33,8 @@ Starts as soon as Z11 merges, in this order. A Phase 0 bug, beta feedback or a s
 
 | N | What | Status |
 |---|---|---|
-| N1 | E execution core (ADR-0014) -> U4 X1-X2 -> F portfolio risk | after Z11 |
+| HB2 | Owner intraday history on the server (replaces the cancelled Trade-repo collector as the intraday source) | right after Z11 |
+| N1 | E execution core (ADR-0014) -> U4 X1-X2 -> F portfolio risk. The proposal engine reuses the Trade level-bot confirmation rules (trend first -> area -> handover study -> dominant commitment candle on higher volume -> Vision -> approval) once the Trade replay report is in; see docs/TRADE_PORT_MAP.md | after Z11 |
 | N2 | P1-f/g/h: progression ladder, decision tools, context panel, manual-trading workspace polish, education pages | after Z11 |
 | N2-J | **Journal module (owner spec, after Phase 0)**: `docs/specs/ATP_JOURNAL_MODULE_SPEC.md` (v1 + v1.1). Extends the Z6 journal package (`backend/app/journal`, #171/#172): broker API sync (read-only) and file import, fills -> positions -> trade groups, charges on `india_costs`, auto charts, rulesets and checklist, AI text review and BYOK vision review, trade plan and alert-only guardrails, Telegram/email reports, analytics, plans on the existing Razorpay billing, tax, mentor mode. English UI only for now. Plan: `docs/journal/PLAN.md` (PRs J1-a..J8-c); questions JM-1..JM-34 in `docs/journal/OPEN_QUESTIONS.md` | plan done (milestone 0); build after Z11, next to N2 |
 | N3-N9 | Remaining screener, charting CH3-CH7, Copilot H-C4+ / BYOK-V3, G trade engine port, backtest C2-C6 / I, Phase 1 items behind flags, crypto / IBKR / K | after Z11, in that order |
@@ -39,13 +44,13 @@ Starts as soon as Z11 merges, in this order. A Phase 0 bug, beta feedback or a s
 docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872) to ATP, with status and parity tests.
 Each port PR updates its row in the map and these counts.
 
-| Status | Rows (of 191) |
+| Status | Rows (of 192) |
 |---|---|
 | ported | 9 |
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 6 |
-| missing | 50 (25 are G rows that wait for the owner's "stable" mark) |
+| missing | 51 (25 are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 
 Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (missing),
@@ -56,7 +61,7 @@ Working rules: docs/WORKING_RULES.md (multitasking and self-review are required)
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-11 10:05 IST.
+Last update: 2026-10-11 20:45 IST (refreshed after every merge).
 
 ## Parts and status
 

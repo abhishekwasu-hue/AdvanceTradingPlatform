@@ -29,8 +29,8 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 
 One row per top-level `.py` file (140) and per folder (35: 25 code packages and 10 others such as `tests/`,
 `research/`, `data/`), except three folders that are split because their parts have different statuses: `paper/`
-(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest). 140 + 32 + 9 + 8 + 2 =
-**191 rows**.
+(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest), plus one planned Trade module
+(the level-bot confirmation gate, added 2026-10-11). 140 + 32 + 9 + 8 + 2 + 1 = **192 rows**.
 
 | Status | Rows |
 |---|---|
@@ -38,14 +38,14 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 4 |
-| missing | 50 (25 of them are G rows that wait for the owner's "stable" mark) |
+| missing | 51 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
-| **Total** | **191** |
+| **Total** | **192** |
 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 0 | 11 | 4 | 0 | 4 | 2 |
-| 2. Right after Phase 0 (N-list) | 28 | 4 | 3 | 3 | 4 | 14 | 0 |
+| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
@@ -108,7 +108,7 @@ The six safety checks the spec lists for `order_safety.py`:
 | `pnl_reports.py` | Daily / weekly / monthly P&L with real charges (net P&L) | `backend/app/trading/analytics.py`, `backend/app/tax/report.py` | partial (unverified) | none (Trade has `tests/test_pnl_reports.py`) |
 | `market_report.py` | 16:00 report for the next day's intraday and positional option selling (index levels, OI, VIX, ranges) | `backend/app/ai/briefing.py`, `backend/app/ai/global_cues.py` (pre-open) | missing: merge into the briefing / global cues (N2) | none |
 | `eod_market_report.py` | Runs `market_report` for NIFTY, BANKNIFTY and SENSEX and sends it | `backend/app/ai/briefing.py` | missing (as above) | none |
-| `level_memory.py` | Keeps levels across days: ATR-scaled tolerance, merge, retire after N days without a touch, max distance and count, role by price | `backend/app/price_action/zones/memory.py` (knobs in `ZoneSettings`; also remembers classical S/R; role by price by default), used by `zones/snapshot.py` and the nightly job | ported (Z7a-2) | `backend/tests/test_zones_memory_parity.py` (golden: tolerance, last touch, day-by-day merge walks, remember / nightly apply) |
+| `level_memory.py` | Keeps levels across days: ATR-scaled tolerance, merge, retire after N days without a touch, max distance and count, role by price | `backend/app/price_action/zones/memory.py` (knobs in `ZoneSettings`; remembers dynamic S/R like Trade, classical S/R too when `memory_families` asks; role by price by default), used by `zones/snapshot.py` and the nightly job | ported (Z7a-2) | `backend/tests/test_zones_memory_parity.py` (golden: tolerance, last touch, day-by-day merge walks, remember / nightly apply) |
 | `market_zones.py` | Zone store: order blocks, demand / supply, role by price, mitigation, S/R on 1H, dynamic S/R, gaps, 5m/15m confluence | `backend/app/price_action/zones/` (`detect.py`, `compute.py`; lifecycle `lifecycle.py`; store `store.py` + `job.py`). `backend/app/support_resistance/zones.py` is ATP's own swing zones, not a port | ported (Z7a-1 detection, Z7a-2 lifecycle + storage). Deliberate change: Trade's FILLED (first touch) is ATP's fresh -> tested event; a zone dies only on a structural break; lifecycle tracked from confirmation. Chart layer (`zones/chart.py`, `GET /api/charts/layers/market-zones`) and ScreenQL zone functions (`app/screener/zones.py`): Z7a-3 | `backend/tests/test_zones_parity.py` (detection, first touch); lifecycle `backend/tests/test_zones_lifecycle.py` (ATP rule, no Trade equivalent) |
 | `sr_dynamic.py` | Python version of the Pine script "Support Resistance - Dynamic v2" (pivot clusters into S/R channels) | `backend/app/price_action/zones/levels.py` (`compute_dynamic_sr`, `find_pivots_indexed`) | ported (Z7a-1); levels get memory and a lifecycle in Z7a-2 | `backend/tests/test_zones_parity.py` (`dynamic_sr`) |
 | `sr_levels_v3.py` | Experimental S/R v3: recency, reaction, MTF confluence, PDH / PDL / PWH / PWL, role reversal, gaps, graded | `backend/app/price_action/zones/sr_v3.py` (settings `ZoneSettings.sr_v3`); its break rule (0.10 % buffer, 2 closes) is the default of the ATP zone flip | ported (Z7a-1, level logic); the "S/R levels v3" template follows | `backend/tests/test_zones_parity.py` (`sr_v3`, `sr_v3_gaps`, `sr_v3_flip`) |
@@ -124,6 +124,7 @@ The six safety checks the spec lists for `order_safety.py`:
 | `dynamic_sr_instant_trader.py` | Template: 1-min / 5-min instant reversal at dynamic S/R levels | none | missing: template | none (Trade has `tests/test_dynamic_sr_instant_trader.py`) |
 | `srv2_momentum_reversal_strategy.py` | Template: 15 / 30 / 60-minute dynamic S/R reversal with a momentum filter | none | missing: template | none (Trade has `tests/test_srv2_momentum_reversal_strategy.py`) |
 | `classic_sr_reversal_trader.py` | Template: classic S/R reversal | none | missing: template | none (Trade has `tests/test_classic_sr_reversal_trader.py`) |
+| `bots_common/level_reaction.py` (level-bot confirmation gate, Trade TRADE_SESSION_LEVEL_BOTS_CONFIRMATION.md; in progress in Trade) | One shared gate for the level bots: trend first -> stored level is only a candidate area -> handover study inside the area (trend-side vs counter-side candle size and volume, wedge / channel / double-top patterns) -> dominant commitment candle on higher volume -> Vision -> Telegram approval | none | missing: N-list (N1 / U4 proposal engine uses the same rules); wait for the Trade replay report (touch vs confirmation) before porting | none yet |
 | `gap_fill_reversal_strategy.py` | Template: 1H Supertrend trend -> opening gap -> gap fill -> reversal | `backend/app/price_action/gap_context.py` (placeholder only) | missing: template | none |
 | `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` ported to `backend/app/price_action/zones/detect.py` (Z7a-1, #168) | none (Trade has `tests/test_page_mtf_multi.py`) |
 | `oi_greeks_vix_strategy.py` | Template: OI + Greeks + India VIX decision tree | `backend/app/option_chain/oi_regime.py` (the OI part) | missing: template | none |

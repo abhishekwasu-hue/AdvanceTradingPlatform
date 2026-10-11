@@ -2156,6 +2156,45 @@ export interface StrategistRequestParsed {
 /** P0.9: the language of the AI's written answers; the dashboard is English only. */
 export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }
 
+/** H-C3c: a research study (a queued job) and, once drafts were tried, its deflated report. */
+export type ResearchStatus = "queued" | "running" | "done" | "failed" | "interrupted";
+export interface ResearchProgress { drafts_tried: number; max_drafts: number }
+export interface ResearchStudy {
+  study_id: string;
+  status: ResearchStatus;
+  error: string | null;
+  idea: string;
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  days: number;
+  data_source: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  progress: ResearchProgress;
+}
+export interface ResearchReport {
+  trials: number;
+  backtested: number;
+  invalid: number;
+  errors: number;
+  summary?: string;
+  disclaimer: string;
+  not_simulated: string[];
+  deflated: { dsr?: number | null; note?: string } | null;
+  pbo: { pbo?: number | null; note?: string } | null;
+  out_of_sample: { run: boolean; note?: string; [k: string]: unknown };
+  earlier_studies?: number;
+}
+export interface ResearchTrial { seq: number; status: string; reason: string | null; metrics: Record<string, unknown>; created_at: string }
+export interface ResearchStudyDetail extends Partial<ResearchStudy> {
+  study_id: string;
+  status: ResearchStatus;
+  report: ResearchReport | null;
+  trials: ResearchTrial[];
+}
+
 /** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
 export interface StaticIp {
   broker_name: string;

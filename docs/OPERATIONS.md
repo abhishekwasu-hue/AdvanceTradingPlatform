@@ -842,6 +842,22 @@ Never publish a listing without an attached backtest run; the API refuses the su
   both. Dependabot-style tag updates are not automatic.
 - RSS/Atom feeds are parsed with defusedxml (new dependency, in the image on the next build).
 
+### 1.6ab-R AI research studies (H-C3c)
+- **What it is.** The research loop is off by default (flag `ai_research`). It runs in its own process,
+  `research-worker`, which is also off by default:
+  ```
+  docker compose --profile research up -d research-worker
+  ```
+  Without that process, studies stay "queued".
+- **What it does.** It runs one study at a time; each organisation can have one study queued or running. Every draft
+  is a backtest on server bars, with the sealed holdout cut off. It places no orders and saves no strategies.
+- **Watch.**
+  - `research_studies.status`.
+  - A study `running` with no heartbeat for 20 minutes becomes `interrupted` on the worker's next step. Its trials
+    are kept.
+  - Model spend shows on the study (`usage`) and in the usual AI metering.
+- **Stopping.** Stop the service. A study cut off mid-way becomes `interrupted`; nothing else is affected.
+
 ### 1.6ab-7 AI Copilot approvals and hand-offs (P0.8-A)
 
 - An approved AI **exit** that the broker did not complete now shows **FAILED** with the reason (the position is still

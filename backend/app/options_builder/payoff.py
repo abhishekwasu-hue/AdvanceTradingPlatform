@@ -38,7 +38,10 @@ def compute_combined_greeks(legs_with_greeks: Sequence[Mapping[str, Any]]) -> Di
 
 def find_breakeven_points(price_range: Sequence[float], payoff_curve: Sequence[float]) -> List[float]:
     """Prices where the payoff crosses zero, linearly interpolated between grid points (rounded to 2 decimals).
-    A grid point exactly at zero counts once (the next segment then starts from zero and is not counted again)."""
+
+    Kept exactly as the Trade source (golden parity), including its edges: every grid point where the payoff is
+    exactly 0 is listed (a flat zero run lists each point, and a touch without a sign change is listed too), except
+    the last grid point. P1-b's `model.profitable_intervals` gives exact intervals for the builder's numbers."""
     breakevens: List[float] = []
     for i in range(1, len(payoff_curve)):
         p1, p2 = payoff_curve[i - 1], payoff_curve[i]

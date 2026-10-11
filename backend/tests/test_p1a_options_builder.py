@@ -9,7 +9,6 @@
 import gzip
 import inspect
 import json
-import math
 from pathlib import Path
 
 import pytest
@@ -21,10 +20,13 @@ CHAINS = {name: c["rows"] for name, c in GOLDEN["chains"].items()}
 
 
 def _same(a, b, path="result"):
-    """Equal values; floats equal to the last bit except for summation order (1e-9 relative)."""
-    if isinstance(a, float) or isinstance(b, float):
-        assert a is not None and b is not None and math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9), (path, a, b)
-    elif isinstance(a, dict):
+    """Bit-for-bit: the same type (int stays int, bool stays bool) and the same value - no summation is reordered in
+    the port, so floats must be exactly equal too. Tuples and lists are the same thing in JSON."""
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        pass
+    else:
+        assert type(a) is type(b), (path, type(a), type(b), a, b)
+    if isinstance(a, dict):
         assert isinstance(b, dict) and set(a) == set(b), (path, a, b)
         for k in a:
             _same(a[k], b[k], f"{path}.{k}")
@@ -190,16 +192,19 @@ def test_hedge_first_reorders_a_basket_stably():
 
 @pytest.mark.parametrize("name", [n for group in ob.READY_MADE_CATEGORIES.values() for n in group])
 def test_breakevens_are_where_the_expiry_payoff_crosses_zero(name):
-    """Every template, priced with a simple premium model: each breakeven really has a zero payoff, and the payoff
-    changes sign across it."""
+    """Every template, priced with a simple premium model: each reported breakeven really has a zero payoff, and the
+    payoff has opposite signs just either side of it (none of these templates has a flat zero run or a touch)."""
     atm, w = 1000.0, 50.0
     legs = [{**leg, "premium": max(5.0, 40.0 - abs(leg["strike"] - atm) * 0.3), "lot_size": 10} for leg in ob.build_ready_made_strategy(name, atm, w)]
     rng = ob.build_default_price_range(atm, num_points=401, range_pct=30.0)
     curve = ob.compute_strategy_payoff_curve(legs, rng)
     bes = ob.find_breakeven_points(rng, curve)
     assert bes, name
+    def pay(x):
+        return sum(ob.compute_leg_payoff(x, **leg) for leg in legs)
     for be in bes:
-        assert abs(sum(ob.compute_leg_payoff(be, **leg) for leg in legs)) < 10 * 0.01 * 2 + 1e-6, (name, be)   # rounding to 0.01 of price
+        assert abs(pay(be)) < 10 * 0.01 * 2 + 1e-6, (name, be)                   # rounding to 0.01 of price
+        assert pay(be - 1.0) * pay(be + 1.0) < 0, (name, be)                     # a real crossing
 
 
 def test_no_instrument_specific_defaults_remain():
@@ -255,3 +260,25 @@ def test_a_condor_or_butterfly_whose_credit_covers_the_wings_is_refused():
     ok = ob.select_iron_butterfly(fly_chain(5, 1), 100, 10, 0)
     assert ok is not None and ok["net_credit"] == 8 and ok["max_loss"] == 2
     assert ob.select_iron_butterfly(fly_chain(30, 1), 100, 10, 0) is None                             # credit 58 > width 10
+
+
+def test_inherited_breakeven_edges_are_kept_and_documented():
+    """Parity with the source, edges included (docs/design/OPTIONS_BUILDER.md, OB-5): a flat zero run lists every
+    point, a touch is listed, the last grid point is not."""
+    assert ob.find_breakeven_points([90, 95, 100, 105, 110], [-1, 0, 0, 0, 1]) == [95, 100, 105]
+    assert ob.find_breakeven_points([90, 95, 100, 105, 110], [-1, -0.5, 0, -0.5, -1]) == [100]
+    assert ob.find_breakeven_points([90, 95, 100], [-2, -1, 0]) == []
+
+
+def test_model_greeks_take_the_legs_own_iv_and_refuse_percent():
+    from datetime import date
+
+    from app.options_builder.greeks import leg_with_model_greeks
+    leg = {"direction": "BUY", "option_type": "CE", "strike": 22200.0, "premium": 80.0, "lots": 1, "lot_size": 50}
+    kw = {"underlying_price": 22000.0, "expiry": date(2026, 3, 26), "as_of": date(2026, 3, 12)}
+    assert leg_with_model_greeks({**leg, "iv": 0.14}, **kw)["iv"] == 0.14                    # the leg's own IV is used
+    assert leg_with_model_greeks({**leg, "iv": 0.14}, iv=0.2, **kw)["iv"] == 0.2              # an explicit one wins
+    with pytest.raises(ValueError, match="decimal"):
+        leg_with_model_greeks({**leg, "iv": 14.5}, **kw)                                      # percent is refused
+    with pytest.raises(ValueError, match="no premium"):
+        leg_with_model_greeks({**leg, "premium": None}, **kw)

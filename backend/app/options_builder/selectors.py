@@ -113,8 +113,13 @@ def select_iron_butterfly(raw_chain: Chain, atm_strike: float, hedge_width_point
 
 
 def select_credit_spread(raw_chain: Chain, direction: str, hedge_width_points: float, pop_threshold_pct: float) -> Optional[Dict[str, Any]]:
-    """A credit spread by the broker's PoP: BULLISH -> bull put spread (sell the nearest put whose PoP reaches the
-    threshold, buy one at least hedge_width_points further out); BEARISH -> bear call spread (the mirror)."""
+    """A credit spread by the broker's PoP: BULLISH -> bull put spread, BEARISH -> bear call spread; the hedge is the
+    nearest strike at least hedge_width_points further out.
+
+    As in the source, the short-leg search starts at the far end of the chain on the money side - for BULLISH the
+    HIGHEST put strike (deepest in the money) downwards, for BEARISH the lowest call strike upwards - and takes the
+    first whose PoP reaches the threshold. With a PoP that rises monotonically away from the money that is the strike
+    nearest the money that qualifies; with other PoP shapes it can be an ITM strike (documented, OB-4)."""
     if direction not in DIRECTIONS:
         return None
     side = "put_options" if direction == "BULLISH" else "call_options"
@@ -131,7 +136,7 @@ def select_credit_spread(raw_chain: Chain, direction: str, hedge_width_points: f
         candidates.append({"strike": strike, "instrument_key": instrument_key, "pop": pop, "ltp": ltp})
     if not candidates:
         return None
-    # the short leg: from the strike nearest the money outwards, the first whose PoP reaches the threshold
+    # the short leg: from the far money-side end of the chain, the first whose PoP reaches the threshold (see above)
     if direction == "BULLISH":
         candidates_sorted = sorted(candidates, key=lambda c: -c["strike"])
     else:

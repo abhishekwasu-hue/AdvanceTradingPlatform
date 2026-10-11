@@ -52,6 +52,39 @@ CHAINS = {
                                 no_ltp={(51700, "CE"), (50500, "PE")})),
     "sparse": (24500, 50, chain(24500, 50, 400, lambda k, t, s: 0.8, gaps={24600, 24350})),
 }
+
+
+def dirty_chain():
+    """Broker data as it really arrives: zero and missing LTPs, a missing instrument key, null greeks, PoP of 0 and
+    None, a duplicated strike row - every refusal branch of the selectors gets exercised."""
+    import copy
+    rows = copy.deepcopy(CHAINS["logistic"][2])
+    by = {r["strike_price"]: r for r in rows}
+    by[24600]["call_options"]["market_data"]["ltp"] = 0
+    by[24400]["put_options"]["market_data"]["ltp"] = 0
+    by[24650]["call_options"].pop("instrument_key")
+    by[24350]["put_options"]["option_greeks"] = None
+    by[24700]["call_options"]["option_greeks"]["pop"] = None
+    by[24300]["put_options"]["option_greeks"]["pop"] = 0.0
+    by[24550]["call_options"]["option_greeks"]["pop"] = 0.0
+    by[24750]["call_options"]["market_data"] = None
+    by[24450]["put_options"]["market_data"]["ltp"] = None
+    rows.insert(5, copy.deepcopy(by[24800]))                                   # a duplicated strike row
+    return rows
+
+
+def inverted_chain():
+    """Premiums that rise away from the money (a crossed / stale chain): credits and debits come out <= 0."""
+    rows = chain(24500, 50, 600, lambda k, t, s: 0.9)
+    for r in rows:
+        for side in ("call_options", "put_options"):
+            r[side]["market_data"]["ltp"] = round(10 + abs(r["strike_price"] - 24500) * 0.3, 2)
+    return rows
+
+
+CHAINS["dirty"] = (24500, 50, dirty_chain())
+CHAINS["inverted"] = (24500, 50, inverted_chain())
+CHAINS["empty"] = (24500, 50, [])
 cases = []
 
 
@@ -77,7 +110,14 @@ for name, (spot, step, _) in CHAINS.items():
                 add("select_credit_spread_itm", {"direction": d, "atm_strike": spot, "itm_depth_points": depth, "hedge_width_points": w, "step": step}, name)
                 for hedge in (False, True):
                     add("select_naked_option_itm", {"direction": d, "atm_strike": spot, "itm_depth_points": depth, "hedge_enabled": hedge, "hedge_width_points": w, "step": step}, name)
-    add("select_credit_spread_fixed_strikes", {"direction": "BULLISH", "atm_strike": 99999, "strikes_otm": 2, "hedge_width_points": step, "step": step}, name)
+    # a hedge wider than the chain: the short is found, no hedge is
+    for d in ("BULLISH", "BEARISH"):
+        add("select_credit_spread", {"direction": d, "hedge_width_points": 100 * step, "pop_threshold_pct": 10}, name)
+    # an ATM that is not a listed strike (off the grid) and one far outside the chain
+    for atm in (spot + 7, 99999):
+        add("select_credit_spread_fixed_strikes", {"direction": "BULLISH", "atm_strike": atm, "strikes_otm": 2, "hedge_width_points": step, "step": step}, name)
+        add("select_iron_condor", {"atm_strike": atm, "step": step, "hedge_width_points": step, "pop_threshold_pct": 10}, name)
+        add("select_naked_option_itm", {"direction": "BULLISH", "atm_strike": atm, "itm_depth_points": 0, "hedge_enabled": True, "hedge_width_points": step, "step": step}, name)
 
 for m, r, lm, ls in ((100000, 2, 50, 75), (0, 2, 50, 75), (500000, 1.5, 37.5, 15), (250000, 2, 0, 50), (300000, 3, 12, 0), (1e6, 0.5, 80.25, 30)):
     add("compute_position_size", {"available_margin": m, "risk_pct": r, "max_loss_per_unit": lm, "lot_size": ls})

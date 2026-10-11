@@ -8,6 +8,7 @@ size) are parameters the caller takes from the instrument master instead of NIFT
 
 Nothing here places an order: the builder computes; execution goes through the platform's execution and risk layers.
 """
+from app.options_builder.greeks import leg_with_model_greeks
 from app.options_builder.payoff import (
     build_default_price_range, compute_combined_greeks, compute_leg_payoff, compute_max_profit_loss,
     compute_strategy_payoff_curve, find_breakeven_points,
@@ -25,4 +26,5 @@ __all__ = [
     "compute_max_profit_loss", "build_default_price_range", "build_ready_made_strategy", "build_strategy_result_from_legs",
     "hedge_first", "READY_MADE_CATEGORIES", "select_iron_condor", "select_iron_butterfly", "select_credit_spread",
     "select_credit_spread_fixed_strikes", "select_credit_spread_itm", "select_naked_option_itm", "compute_position_size",
+    "leg_with_model_greeks",
 ]

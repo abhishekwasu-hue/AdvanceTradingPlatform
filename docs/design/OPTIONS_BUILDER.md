@@ -3,7 +3,7 @@
 Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order:
 - P1-a: the core port (this);
 - P1-b: T+0 / IV / time, PoP, templates, selectors UI;
-- P1-c: builder UI and basket.
+- P1-c: builder API (P1-c1) and builder UI (P1-c2); the basket to the order ticket is P1-d.
 
 ## P1-a (built): the core port
 - **Where.** `backend/app/options_builder/`, ported from Trade@73f652c:
@@ -55,12 +55,118 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
   && gzip -9 golden.json`. A changed result means a behaviour change; it is either deliberate (and recorded in
   ADR-0025) or a bug.
 
+## P1-b (built): the model before expiry, the gallery, any broker's chain
+- **`model.py`** (the platform's Black-Scholes, `app/option_chain/greeks.py`; no new pricing code).
+  - **Time.** A leg is expired from 15:30 IST on its expiry day. `as_of` may be an aware datetime (exact: an
+    expiry-day option at 10:00 still has 5.5 hours, so 0DTE works), today's date (now), or another plain date (that
+    day's close).
+  - `value_curve`: the strategy's P&L at every price on any date (`days_forward`), with every leg's IV shifted
+    (`iv_shift`). The curve on the last expiry is the expiry payoff, and today's curve is flat at zero at spot for
+    model-priced legs (both tested for every template). A FUT leg is worth spot x e^(r t) to its expiry (the carry),
+    so a future bought at its fair price shows no loss today.
+  - IV is required per leg - from the chain or solved from the premium (`leg_with_model_greeks`); never invented.
+  - When every leg expires together:
+    - `profitable_intervals`: where the expiry payoff is above zero, solved exactly between strikes (no grid);
+    - `pop_at_expiry`: the lognormal probability of those intervals;
+    - `expected_pnl_at_expiry`: the probability-weighted expiry P&L in closed form (a FUT leg earns the carry; with
+      no volatility, the payoff at the forward);
+    - `payoff_extremes`: the true best and worst expiry P&L over every price from 0 up, with `unbounded_loss` /
+      `unbounded_profit` (OB-4: the grid number moves with the chart's range; this one does not). Sizing must refuse
+      a structure with unbounded loss rather than use a grid stand-in.
+
+    Values within a small tolerance of zero count as zero (a mathematically flat payoff does not flip PoP). These
+    functions refuse legs that expire on different dates.
+  - **Calendars and diagonals.** `summary` (and `horizon_stats`) integrate numerically over the lognormal price at
+    the near expiry, with the later legs valued by Black-Scholes. The closed forms would value the far leg at its
+    intrinsic value there, which is nonsense. `method` says which way a number was computed.
+  - `net_greeks` (delta, gamma, theta per day, vega per IV point, rho per rate point at the shifted IV; FUT delta and
+    rho with carry), `expected_move` (spot x IV x sqrt(t)), and `summary` for the metrics card on the nearest expiry,
+    labelled "an estimate, not a forecast".
+- **`catalog.py`: the gallery.** 38 templates in five families (Bullish, Bearish, Neutral, Volatility, Stock):
+  - verticals, straddles, strangles, butterflies, condors;
+  - ratios and back spreads, ladders, jade lizards;
+  - calendars and diagonals (two expiries);
+  - covered call, protective put, collar, synthetics.
+
+  Every template lists the hedge first, and undefined-risk ones say so. Strikes are offsets of a width the caller
+  takes from the instrument master; no instrument numbers are in the catalog. A FUT leg carries the ATM strike as a
+  reference entry until the caller fills the real futures price.
+- **`chain.py`: any broker's chain.** `raw_chain(OptionChain)` turns `BrokerInterface.get_option_chain` output into
+  the selectors' input, so the P1-a selectors work with every broker, not only Upstox:
+  - the contract is named by a builder key (`NIFTY|<expiry>|<strike>|CE`, every strike digit kept); resolving it to
+    the broker's instrument through the instrument master is P1-d's job (not built yet), and it is never sent to a
+    broker;
+  - PoP is the model's seller PoP (OB-1) at the option's own volatility (`option_iv`). A quoted IV is read as a
+    fraction or as a percentage, whichever reprices the LTP (2.5 on a deep-ITM strike is 2.5 %, not 250 %); otherwise
+    the IV is solved from the LTP. Without an LTP, the same cutoff as `strike_selection` is used. None when nothing
+    usable exists;
+  - an expiry-day chain with a datetime `as_of` has PoPs; a plain past date on the expiry date has none.
+- **Tests** (`tests/test_p1b_options_model.py`, 115):
+  - Hull's textbook values.
+  - Expiry curve = payoff and flat at spot, for every template in both sets.
+  - IV and time scenarios move the right way.
+  - **PoP and expected P&L against a 400,000-path Monte Carlo:** the 13 P1-a templates and every single-expiry
+    catalog template (FUT legs included).
+  - A calendar's PoP and P&L against a Monte Carlo with the far leg priced by Black-Scholes.
+  - Greeks and rho against finite differences (rho also at a shifted IV).
+  - The gallery: families, hedge first, shapes, and the calendar's value at the near expiry against a direct
+    Black-Scholes price.
+  - Exact extremes against a dense grid, ratios included.
+  - Expiry day: the hours until 15:30, intrinsic at 15:30, PoPs and a condor from an expiry-day chain.
+  - FUT carry by hand; no volatility; the zero tolerance; key precision; IV read both ways against the LTP.
+  - The adapter's PoP for a short leg, and the selectors on an adapted chain.
+  - Mutation checks: 20 / 20 killed.
+
+## P1-c1 (built): the builder API
+`app/options_builder/routes.py`, under the `options_builder` flag. It is a kill flag, on by default, because the
+builder is research only. Every endpoint needs a login, and none places, stages or sizes an order. A test walks every
+module's syntax tree: the package imports only an allowlist of `app.*` modules (the option-chain maths, the broker
+`OptionChain` data shape, config, rate limit, auth, the session and the flag), uses no dynamic import, and never names
+an order call. A second test imports the routes in a fresh interpreter and checks that no execution, trading, risk,
+deployment, kill-switch or broker-adapter module was loaded, even indirectly.
+- **Limits** (from the P1-c reviews). The flag is checked before the body is validated, so a switched-off builder
+  answers 503 to any well-formed JSON (malformed JSON is still a 422 from the framework's parser). Template, evaluate
+  and suggest share a limit of 300 calls a minute per user. The model work runs
+  in the thread pool, not on the event loop. Prices, strikes and the spot must be finite, positive and below 10^7. A
+  template whose width puts a strike at or below zero is a 422. A chain is read up to 1,000 strikes.
+- `GET /api/options-builder/catalog`: the 38 templates by family, with their legs as offsets and whether a template
+  needs two expiries.
+- `POST /api/options-builder/template`: the legs of a template at an ATM strike, width, expiries and lot count, all
+  given by the caller (the instrument master on the page). A calendar without its next expiry is a 422.
+- `POST /api/options-builder/evaluate` takes legs (direction, type, strike, premium, lots, lot size, expiry, IV
+  optional) plus spot, `as_of`, `days_forward`, `iv_shift`, the range and the number of points. It returns:
+  - the price grid, today's curve, the curve on the chosen date, and the expiry payoff;
+  - exact extremes, with `null` plus a flag for unbounded (JSON has no infinity);
+  - profitable intervals, breakevens, and the summary (PoP, expected move, probability-weighted P&L, `method`);
+  - net and per-leg Greeks;
+  - a disclaimer.
+
+  Details:
+  - A leg without an IV has it solved from its premium at the caller's `rate` (`iv_source` says so), so repricing at
+    that rate gives the premium back; with neither, it is a 422.
+  - `as_of` is a plain date (that day's close) or a datetime with its time zone. A naive datetime is refused, never
+    guessed.
+  - Legs with different expiries get no expiry payoff or extremes (`null`); their summary is numerical.
+- `POST /api/options-builder/suggest`: a ported selector rule (iron condor, iron butterfly, credit spread by PoP /
+  fixed / ITM, naked ITM) on a broker `OptionChain` through the adapter. It returns the rule, the ATM used, how PoP
+  was made, and the result or `found: false`. Rules that need a direction refuse to run without one.
+- Tests (`tests/test_p1c_options_builder_api.py`, 11): auth and the flag (also before the body); catalog and
+  template; model pricing; evaluate against the model functions; unbounded and calendar handling; IV solved or
+  refused, at the given rate, and the clock rules; suggest; bad numbers refused (negative wing, negative spot, zero
+  strike, Infinity, an oversized chain); the no-order-path check. Each new test was checked against a mutant of the
+  code it guards.
+
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not
-  supply it. Provisional: P1-b computes PoP from the platform's model (lognormal, chain IV) when the broker gives none,
-  and labels which one was used.
+  supply it. Provisional (built in P1-b): `chain.raw_chain` gives the model's seller PoP (lognormal, the option's own
+  IV) for every broker and marks it with `pop_source`. Owner question: should an Upstox user see Upstox's PoP or the
+  model's? Default: the model's, so every broker reads the same way.
 - **OB-2. The iron butterfly's PoP proxy** (from the wings' PoP) is kept as in the source, but it is an approximation.
   Provisional: kept for parity; P1-b shows a model PoP beside it.
+- **OB-3. Ratios and unequal lots.** The gallery has ratio and back spreads (1 x 2). The P1-a per-lot result
+  (`build_strategy_result_from_legs`) refuses unequal lots, as in the source. Provisional: the builder shows ratios
+  through the model (`value_curve`, `payoff_extremes`, which handle any lots), and execution of a ratio waits for
+  P1-d's basket, which sizes each leg by its own lots.
 - **OB-4. Inherited from the source, kept for parity** (found by the independent review; each is documented in the
   code and either fixed later in a deliberate, recorded change or handled by the newer model functions):
   - **Max loss over a bounded range.** `compute_max_profit_loss` and the strategy result read max loss from the price

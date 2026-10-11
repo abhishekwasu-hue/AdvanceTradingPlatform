@@ -47,6 +47,7 @@ from app.instruments.registry import get_contract_spec, list_contract_specs
 from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
+from app.options_builder.routes import router as options_builder_router
 from app.news_feed.routes import router as news_feed_router
 from app.telegram_inbound.routes import router as telegram_inbound_router
 from app.option_chain.analysis import analyze_option_chain
@@ -100,6 +101,8 @@ from app.portfolio.routes import router as portfolio_router
 from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
+from app.screener.routes import router as screener_router
+from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
@@ -157,6 +160,7 @@ app.include_router(broker_router)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
+app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
 app.include_router(risk_guardian_router)
@@ -201,6 +205,8 @@ app.include_router(tax_router)
 app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
+app.include_router(screener_router)
+app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
 
 _default_risk_config = RiskConfig()

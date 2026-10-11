@@ -132,7 +132,7 @@ import type {
   BrokerLoginUrl,
   AiAcknowledgement,
   AiPreferences,
-} from "../types";
+ StaticIp, StaticIpOverview } from "../types";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 
@@ -856,6 +856,10 @@ export const api = {
   fxRates: () => request<{ rates: FxRate[]; supported: string[] }>("/fx/rates"),
   adminSetFxRate: (base: string, quote: string, rate: number, source = "manual") =>
     request<FxRate>("/admin/fx-rates", { method: "PUT", body: JSON.stringify({ base, quote, rate, source }) }),
+
+  staticIps: () => request<StaticIpOverview>("/compliance/static-ips"),
+  setStaticIp: (body: { broker_name: string; role: "PRIMARY" | "BACKUP"; ip: string; registered_at?: string | null }) =>
+    request<StaticIp>("/compliance/static-ips", { method: "PUT", body: JSON.stringify(body) }),
 
   setTenantAlgoId: (algoId: string) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ algo_id: algoId }) }),

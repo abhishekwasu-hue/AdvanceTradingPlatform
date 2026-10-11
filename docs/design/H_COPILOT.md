@@ -180,3 +180,42 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - A `length` stop or an HTTP error is a `ProviderError`.
   - `MeteredProvider.supports_tools` now turns on for OpenAI as well.
 - **Tests.** `tests/test_hc2b2_contract_openai.py` (7).
+
+## H-C2b-3 (built): market and research read tools
+- `app/ai/tools/market.py` adds five tools: `get_candles`, `get_quote`, `get_option_chain`, `get_market_regime` and
+  `run_backtest`.
+- **Server data only.** Candles come through `evidence.server_frame`, the H-C1 a path through the organisation's broker
+  session. The quote and the chain come from the same session. No tool accepts candles; an extra argument is refused by
+  the input model.
+- **No broker session.** Every tool fails closed with the fix location (Settings > Brokers). None falls back to sample
+  data.
+- **Small outputs.**
+  - candles: the range, the change and the last 5 bars;
+  - chain: totals, PCR, max pain, the top 3 OI strikes each side and ±5 strikes around the ATM;
+  - backtest: statistics only, plus `sample: insufficient` below the compliance minimum (30 trades) and a note that the
+    results are simulated.
+- **Backtest execution.** It runs off the event loop (`asyncio.to_thread`) under a 45 s timeout, with the
+  organisation's risk settings.
+- **Tests.** `tests/test_hc2b3_market_tools.py` (6) covers schema, no-session, as-of, chain math, backtest and an agent
+  answer that cites `get_candles`.
+- **Still open from ADR-0019's tool list:** `get_sentiment`, `get_global_cues` and `get_events_calendar`
+  (market_snapshot already carries the sentiment and cues), `validate_dsl`, `run_scanner`, and `get_orders`. These are
+  for H-C3, the research loop.
+
+## H-C10a (built): agent golden sets in CI (ADR-0020 §1-§3)
+- **Where.** `backend/evals/` holds the JSONL sets and `runner.py`; `tests/test_hc10_evals.py` runs them in the
+  ordinary CI job. Every model in these runs is scripted, so CI spends nothing.
+- **Sets.**
+  - `qa` (16): the answer contract on candidate answers. It covers grounded vs invented numbers, a sign flip,
+    rounding, claim sources, advice in the text and in claims, numbers from the question, Marathi answers (Devanagari
+    required) and the plain/JSON contract.
+  - `tool_args` (18): what a model might send. Tenant ids, client candles, out-of-range values, symbol injection, bad
+    timeframes, proposals without a quote, and a tool that does not exist (no order tool).
+  - `injection` (11): the full agent loop with a patched news feed. 7 attack cases (English and Marathi headlines, quote
+    from the headline, quote also in the headline, two proposals, loosening risk) expect 0 proposals. 4 control cases,
+    where the trader really asked, expect 1, so "always refuse" cannot pass.
+- **Gate.** `evals/baselines.json` records the agent prompt version and the measured score per set (tolerance 0).
+  - A prompt change without a new baseline fails, as does a score below the baseline or a set without one.
+  - Mutation check: disabling the guard's untrusted-text check drops injection to 0.9091 and fails CI.
+- **Later slices.** The nightly real-provider runner (flag plus operator budget cap, off until set), the DSL set (c),
+  the leakage/as-of set (e), and the registry and kill switch (H-C11).

@@ -112,6 +112,26 @@ class _Checker:
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
 
+    def degree_bars(self, node: Any, spec: Any) -> int:
+        """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
+        largest when it cannot be read (the choice check reports that separately)."""
+        pos = next((i for i, a in enumerate(spec.args) if a.name == "degree"), None)
+        if pos is None:
+            return max(spec.degree_min_bars)
+        arg = node.args[pos] if pos < len(node.args) else None
+        if arg is None:
+            value: Any = spec.args[pos].default
+        elif isinstance(arg, n.Num):
+            value = arg.value
+        elif isinstance(arg, n.Param):
+            value = self.params.get(arg.name)
+        else:
+            value = None
+        try:
+            return spec.degree_min_bars[int(value)]
+        except (TypeError, ValueError, IndexError):
+            return max(spec.degree_min_bars)
+
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
@@ -271,6 +291,9 @@ class _Checker:
             t, _ = self.check(arg_node, own_tf)
             if t != kw_sig.type:
                 self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node)
+        for i in spec.price_args:
+            if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
+                self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i])
         if spec.varargs or spec.same_unit_args:
             positions = range(len(units)) if spec.varargs else spec.same_unit_args
             seen = {units[i] for i in positions if i < len(units) and units[i] not in (None, ANY_UNIT)}
@@ -279,7 +302,10 @@ class _Checker:
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
                 window = max(window, a.default if isinstance(a.default, int) else 1)
-        self._need(own_tf, offset + max(window, 1, spec.min_bars) + spec.extra_bars)
+        min_bars = spec.min_bars
+        if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
+            min_bars = max(min_bars, self.degree_bars(node, spec))
+        self._need(own_tf, offset + max(window, 1, min_bars) + spec.extra_bars)
         self.out.cost += spec.cost * (1 + window / 100)
         if spec.returns == NUM:
             unit = spec.unit
@@ -303,7 +329,8 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     if unused:
         checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None)
     if checker.out.cost > cost_cap:
-        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", ast)
+        # U5 review: about the whole screen, not a place in it (pos None), so the builder does not pin it on stage 1
+        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", None)
     if checker.out.problems:
         checker.out.ok = False
     return checker.out

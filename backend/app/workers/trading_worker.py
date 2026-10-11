@@ -126,6 +126,7 @@ class CycleReport:
     billing: Optional[Dict[str, int]] = None
     ai_proposals: int = 0
     master_synced: Optional[Dict[str, int]] = None
+    universe_synced: Optional[Dict[str, int]] = None      # U1-a
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
@@ -208,6 +209,7 @@ class TradingWorker:
         self._last_ai_expiry_day = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
+        self._last_universe_sync_day = None   # U1-a
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -409,6 +411,27 @@ class TradingWorker:
                         logger.exception("Instrument master sync failed")
                         report.errors.append(f"instrument master: {exc}")
                         self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
+                # Screener addendum U1-a: the NSE equity lists and symbol changes, once per IST day after
+                # UNIVERSE_SYNC_HOUR_IST, only when the operator has turned it on (files' terms recorded first).
+                if app_config.UNIVERSE_SYNC_ENABLED and not nse.is_open and self._last_universe_sync_day != ist_now.date() \
+                        and ist_now.hour >= app_config.UNIVERSE_SYNC_HOUR_IST:
+                    self._last_universe_sync_day = ist_now.date()      # success or failure: next try is tomorrow
+                    try:
+                        from app.universe.sources import NseArchiveSource
+                        from app.universe.sync import sync_equity_lists
+                        u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
+                        report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
+                        from app.universe import indices as universe_indices                     # U1-b: constituents after the list
+                        idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
+                        report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
+                                                      indices_refused=sum(1 for r in idx if r.refused))
+                        from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
+                        fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
+                        report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
+                                                      banned=len(fo.banned), fo_refused=len(fo.refused))
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Universe sync failed")
+                        report.errors.append(f"universe sync: {exc}")
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():

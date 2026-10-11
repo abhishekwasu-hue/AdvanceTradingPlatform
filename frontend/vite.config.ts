@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,6 +37,10 @@ export default defineConfig({
         manualChunks: { charts: ["lightweight-charts"] },
       },
     },
+  },
+  test: {
+    // U5: the token contrast test reads tokens.css as text; every other stylesheet stays out of the unit tests
+    css: { include: [/styles\/tokens\.css/] },
   },
   server: {
     port: 5173,

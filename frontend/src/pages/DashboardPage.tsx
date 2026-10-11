@@ -9,6 +9,7 @@ import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import MarketPulseCard from "../components/MarketPulseCard";
+import OiBannersCard from "../components/OiBannersCard";
 import type { Page } from "../components/Sidebar";
 import type {
   AnalyticsSummary, BrokerAccount, Deployment, NotificationEntry, PortfolioExposure, StrategyInfo, TradeRecord, WorkerStatus,
@@ -223,6 +224,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
       </div>
 
       {user && <MarketPulseCard onNavigate={onNavigate} />}
+      {user && <OiBannersCard />}
 
       {/* Charts row */}
       <div className="grid lg:grid-cols-3 gap-4">

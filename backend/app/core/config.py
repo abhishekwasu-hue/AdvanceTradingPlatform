@@ -316,3 +316,34 @@ STOP_LIMIT_BAND_PCT: Optional[float] = _band_pct(os.environ.get("STOP_LIMIT_BAND
 # Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")
+
+
+def _json_object(name: str) -> dict:
+    """An env var holding a JSON object; anything else is ignored with a warning."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return {}
+    try:
+        import json
+        value = json.loads(raw)
+    except ValueError:
+        value = None
+    if isinstance(value, dict):
+        return value
+    logging.getLogger(__name__).warning("%s is not a JSON object - ignored", name)
+    return {}
+
+
+def _bounded_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if low <= value <= high else default
+
+
+# OI Banner (O2): the collector's slot and the strikes kept either side of the money (wider than any banner window,
+# so each tenant's own ATM range applies on read), and the operator's default OIRegimeSettings fields (JSON).
+OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
+OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
+OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")

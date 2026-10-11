@@ -1713,6 +1713,80 @@ class OptionChainSnapshotRecord(Base):
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
 
+class OISnapshotRecord(Base):
+    """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
+    `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from
+    those rows with the reader's own settings (app/option_chain/oi_regime.py), so nothing tenant-specific is stored
+    here. One row per (underlying, slot): the collector is idempotent per slot."""
+
+    __tablename__ = "oi_snapshots"
+    __table_args__ = (
+        UniqueConstraint("underlying", "slot_start", name="uq_oi_snapshot_slot"),
+        Index("ix_oi_snapshots_day", "underlying", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)    # when the chain was read (data time)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+
+
+class StrikeOISnapshotRecord(Base):
+    """OI Banner O2: one strike of one slot - call/put OI and premium (the inputs of every banner number)."""
+
+    __tablename__ = "strike_oi_snapshots"
+    __table_args__ = (UniqueConstraint("snapshot_id", "strike", name="uq_strike_oi_snapshot"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("oi_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OIDayBaselineRecord(Base):
+    """OI Banner O2: the first OI the collector saw for a strike on a trading day - the baseline of the OI-wall check
+    (change in OI since the day began). Written once per (underlying, day, strike), never updated."""
+
+    __tablename__ = "oi_day_baselines"
+    __table_args__ = (UniqueConstraint("underlying", "trade_date", "strike", name="uq_oi_day_baseline"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+
+
+class OIBannerSettingRecord(Base):
+    """OI Banner O2: a tenant's banner settings for one underlying ("*" = the tenant's default for every underlying).
+    `enabled` asks the collector to follow the underlying; `overrides` is a JSON object of OIRegimeSettings fields
+    layered over the platform defaults."""
+
+    __tablename__ = "oi_banner_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", name="uq_oi_banner_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class ThesisRecord(Base):
     """Phase BD-lite: one market thesis of one symbol at one moment (direction, confidence, agreement,
     scenarios, inputs) with the *shadow* size multiplier the reduce-only overlay would have used - stored

@@ -67,7 +67,7 @@ from app.instruments.contracts import ContractResolutionError, ContractRules, re
 from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
-from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, session_family
+from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
@@ -130,6 +130,7 @@ class CycleReport:
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
@@ -215,6 +216,7 @@ class TradingWorker:
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
         self._last_memory: Dict[int, datetime] = {}
+        self._last_oi_slot: Dict[str, datetime] = {}      # OI Banner O2: underlying -> last slot attempted
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -306,6 +308,12 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Market memory failed")
                         report.errors.append(f"market memory: {exc}")
+                # OI Banner O2: one OI snapshot per enabled underlying per slot while its venue is open.
+                try:
+                    report.oi_snapshots = await self._oi_banner(session, now)
+                except Exception as exc:  # noqa: BLE001 - reference data; never blocks trading
+                    logger.exception("OI banner collection failed")
+                    report.errors.append(f"oi banner: {exc}")
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)
@@ -387,6 +395,58 @@ class TradingWorker:
                 return report
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
+
+    async def _first_usable_broker(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
+        """The tenant's first ACTIVE account with a usable session (read-only use), or None."""
+        await ensure_tenant_key(session, tenant_id)
+        user = await self._acting_user(session, tenant_id, [])
+        if user is None:
+            return None
+        for account in await list_accounts(session, tenant_id):
+            if account.status == "ACTIVE":
+                broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+                if broker is not None:
+                    return broker
+        return None
+
+    async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
+        """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
+        venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
+        reference data; a slot already stored (by another replica or cycle) is skipped. Never places an order."""
+        from app.option_chain import oi_regime, snapshots as oi_snapshots
+        wanted: Dict[str, List[Tuple[int, str]]] = {}
+        for tenant_id, underlying, exchange in await oi_snapshots.enabled_underlyings(session):
+            wanted.setdefault(underlying, []).append((tenant_id, exchange))
+        if not wanted:
+            return 0
+        slot = oi_regime.slot_start(now.astimezone(IST), app_config.OI_BANNER_SLOT_MINUTES)
+        open_by_family: Dict[str, bool] = {}
+        stored = 0
+        for underlying, tenants in sorted(wanted.items()):
+            family = session_family(tenants[0][1])
+            if family not in open_by_family:
+                open_by_family[family] = (await market_session_status(session, now, tenants[0][1])).is_open
+            if not open_by_family[family] or self._last_oi_slot.get(underlying) == slot:
+                continue
+            self._last_oi_slot[underlying] = slot            # once per slot whether or not the read works
+            for tenant_id, _ in sorted(tenants):
+                # Its own session: a failed read is rolled back without touching the cycle's session.
+                async with self.session_factory() as own:
+                    with bind_log_context(tenant_id=tenant_id):
+                        try:
+                            broker = await self._first_usable_broker(own, tenant_id, now)
+                            if broker is None:
+                                continue
+                            expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
+                            chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
+                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name)
+                            await own.commit()
+                            stored += 1 if result.status == "OK" else 0
+                            break
+                        except Exception as exc:  # noqa: BLE001 - try the next tenant's session
+                            await own.rollback()
+                            logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
+        return stored
 
     async def _market_memory(self, session: AsyncSession, now: datetime, broker_reads: bool = True) -> int:
         """Phase AR: snapshots for every tenant whose traders use the Copilot (a trader profile

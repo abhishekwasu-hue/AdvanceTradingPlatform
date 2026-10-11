@@ -60,6 +60,49 @@ Kept as in the source, and flagged for review:
   straight in).
 - The ATM rounds with Python's `round` (banker's rounding on an exact half).
 
+## O2: collector, tables, history API
+
+- **Tables** (migration `e2b4d6f8a0c1`, reversible; checked on Postgres 16 with `upgrade` → `check` → `downgrade` → `upgrade`):
+  - `oi_snapshots`: one row per (underlying, slot), platform-wide reference data like `option_chain_snapshots`;
+  - `strike_oi_snapshots`: call/put OI, premium and IV per strike;
+  - `oi_day_baselines`: the first OI seen per strike per day, never updated;
+  - `oi_banner_settings`: per tenant and underlying, `*` = the tenant default, with `enabled`, `exchange` and JSON
+    `overrides`.
+- **No verdict is stored.** The collector keeps `OI_BANNER_COLLECT_SPAN` strikes either side of the money, wider than
+  any banner window. Every reading (diff, stable signal, classes, PCR, max pain) is recomputed by replaying the day's
+  stored strikes through `evaluate_snapshot` with the reader's settings. Two tenants with different thresholds or ATM
+  ranges therefore see their own banner from the same data. Persisted per-tenant `banner_states` arrive with the
+  alert rules (O4), which need change detection.
+- **Worker** (`TradingWorker._oi_banner`):
+  - collects every underlying that some tenant enabled, once per slot (`OI_BANNER_SLOT_MINUTES`), and only while that
+    underlying's venue is open;
+  - reads through the first of those tenants with a usable broker session;
+  - skips a slot that is already stored (unique key plus savepoint);
+  - logs a failure and tries the next tenant; it never blocks the cycle and never places an order.
+- **API:** `GET /api/option-chain/{u}/banner`, `/history?date=&interval=5|10|15` (newest first, last value per
+  bucket), `/strikes?date=` (per-strike series with the day baselines), and `GET`/`PUT /settings` (PUT is owner only;
+  overrides are validated before they are stored). Every row carries `slot` and `data_as_of`. The response carries
+  `market_open`, `stale` (only while the venue is open; no data counts as stale) and `age_minutes`.
+- **Retention:** `RETENTION_OI_SNAPSHOTS_DAYS`, default 400.
+
+## O3: banner API and frontend
+
+- **`GET /api/option-chain/banners`:** the tenant's enabled underlyings, each with its current banner. The dashboard
+  uses it with one call.
+- **Components:**
+  - `OiBannerView` / `OiBanner` (refreshed every minute): left border coloured by direction from theme tokens
+    (`border-l-up/down/warn/border`), headline, "Put: {class} · Call: {class}", "PCR {value} — {band}", and chips for
+    DTE (or "Expiry today/tomorrow"), max pain, Stale (with its age) or Market closed, and the data time;
+  - `OiHistoryTable`: 5/10/15-minute views;
+  - `StrikeOiChart`: an SVG of CE/PE OI per strike in the ATM window, with the change since the day's first reading in
+    each bar's tooltip;
+  - `OiSettingsCard`: follow an underlying and set the main thresholds (owner only; the server validates);
+  - `OiBannersCard`: the dashboard card, hidden when the organisation follows no underlying.
+- **Placements:** Dashboard (`OiBannersCard`) and the Option Chain page (banner, history, strikes, settings). The
+  chart's options layer arrives with CH4 (CHARTING_SPEC); the banner component is reusable there.
+- **Presentation logic** is in `src/oi/format.ts` and tested in vitest: line layout, chips, tone tokens, Indian digit
+  grouping, per-strike change, and no order words (buy/sell/target/recommended) in any banner text.
+
 ## Golden fixtures
 
 `backend/tests/fixtures/oi_regime/golden.json` holds 1,300+ cases produced by running Trade's own functions on
@@ -84,5 +127,7 @@ suite fail.
 - **OI-2:** default psychological level = 10 × strike step (500 for a 50-point step). Override per underlying.
 - **OI-3:** the banner's "avoid shorting calls/puts" wording comes from the spec. Should it go through the SCREENER §6
   compliance filter, which bans buy/sell/target? Default: the spec's wording.
+- **OI-5:** the collector reads through the first enabling tenant's broker session (a platform-wide fact, read once).
+  Default: yes, like `option_chain_snapshots`. The alternative is a platform vendor feed, a later seam.
 - **OI-4:** should the PCR gate limits (`pcr_bullish_min` / `pcr_bearish_max`) and the IV gate limit default to "not
   configured"? Default: yes, so a strategy that opts in (O5) must set them.

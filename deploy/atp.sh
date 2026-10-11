@@ -59,7 +59,7 @@ ok()   { printf '    ok    %s\n' "$*"; }
 warn() { WARNS=$((WARNS + 1)); printf '    WARN  %s\n' "$*"; }
 bad()  { FAILS=$((FAILS + 1)); printf '    FAIL  %s\n' "$*"; }
 die()  { local code="${2:-1}"; printf '\nFAILED: %s\n' "$1" >&2; exit "$code"; }
-# shellcheck disable=SC2329  # invoked by the ERR trap below
+# shellcheck disable=SC2317,SC2329  # invoked by the ERR trap below (SC2317 on ShellCheck 0.9, SC2329 on 0.10+)
 on_err() { [ "$BASHPID" = "$$" ] || return 0; printf '\nFAILED: a command failed at line %s (exit %s) - stopped before the next step.\n' "$1" "$2" >&2; }
 trap 'on_err "$LINENO" "$?"' ERR
 
@@ -596,7 +596,7 @@ cmd_rollback() {
   [ -n "$line" ] || die "no deploy of ${cur:0:12} in $STATE_DIR/releases.log - name the target: rollback --to <sha>" 2
   read -r _ _ _ target backup rev_before rev_after <<<"$line"
   if [ -n "$to" ]; then target="$(git -C "$ATP_DIR" rev-parse --verify -q "$to^{commit}")" || die "unknown commit $to" 2; fi
-  [ -n "$target" ] && [ "$target" != "-" ] || die "${cur:0:12} was the first release deployed here - there is nothing before it" 2
+  if [ -z "$target" ] || [ "$target" = "-" ]; then die "${cur:0:12} was the first release deployed here - there is nothing before it" 2; fi
   [ "$target" != "$cur" ] || die "${cur:0:12} is already running" 2
   git -C "$ATP_DIR" cat-file -e "$target:deploy/atp.sh" 2>/dev/null || die "${target:0:12} predates deploy/atp.sh - roll back to a release deployed with this bundle" 2
 

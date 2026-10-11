@@ -211,7 +211,11 @@ job, never tuned against results.
   - Names and arity. Windows must be whole numbers from 1 to 500, as a literal or a parameter. Missing and unknown
     parameters are refused.
   - Timeframes: a field finer than the screen's base timeframe is refused.
-  - Look-ahead: a negative offset is refused, both in the text and in a builder tree.
+  - Look-ahead: a negative offset is refused, both in the text and in a builder tree. Z10-a: a function answered for
+    the last bar only (`LAST_BAR_ONLY`: structure / pattern / zone filters, option chain, reference data, ranks) is
+    refused inside a function that reads a history (`READS_HISTORY`: Count, CountStreak, CrossAbove / CrossBelow,
+    SMA, EMA, Max, Min, PctChange, ZScore, Lag) - it would repeat today's answer on the bars before. Every registry
+    function is also in the no-look-ahead harness (`app/quality/causal_cases.py`).
   - Offsets are capped at 500.
   - Cost: a per-tenant cap (default 200); cross-sectional functions cost more.
   - The validation also carries the plan inputs: the timeframes used and the bars needed per timeframe

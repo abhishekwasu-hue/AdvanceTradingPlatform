@@ -4,7 +4,7 @@ AUTO or USER, SUGGESTED / CONFIRMED / DISMISSED) and `journal_settings` (one tra
 All three are personal (user-scoped) and cascade with their trade / user / tenant.
 
 Revision ID: 039888cda9b1
-Revises: c5e7a9b1d3f4
+Revises: 5e356061be72
 Create Date: 2026-10-11 21:00:00
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = '039888cda9b1'
-down_revision: Union[str, Sequence[str], None] = 'c5e7a9b1d3f4'
+down_revision: Union[str, Sequence[str], None] = '5e356061be72'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

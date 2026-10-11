@@ -90,6 +90,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
     "options_builder": "Options Strategy Builder: payoff, T+0 model, PoP and strike suggestions (research only, places no orders)",
+    "options_builder_saved": "Options Builder: save strategies and load them again, shared within the organisation (research data only)",
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.
     "marketplace_ai_listings": "Allow AI-originated strategies (AI drafts, strategist adoptions) to be listed on the marketplace",
     "thesis_stock_targets": "Show price targets and a confidence % in the thesis of a single stock (indices always show them)",
@@ -127,7 +128,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill"})
+                               "history_backfill", "options_builder_saved"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

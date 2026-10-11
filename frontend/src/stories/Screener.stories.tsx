@@ -2,7 +2,8 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas } from "../screener/FunnelCanvas";
-import { newStage, runStamp, sameRun, stageText, type FunnelResult, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { newBlock, newStage, runStamp, sameRun, stageText, type FunnelResult, type Registry, type RunStamp, type Stage } from "../screener/model";
+import contract from "../screener/builderTexts.json";
 import { ResultBoard } from "../screener/ResultBoard";
 import { StageRow } from "../screener/StageRow";
 import { SurvivorTrail } from "../screener/SurvivorTrail";
@@ -134,4 +135,34 @@ export const Freshness: Story = {
       </div>
     );
   },
+};
+
+/** D2: every block form in one funnel - an indicator, a filter, a category, a rank and an ANY group. */
+const FULL = { ...REGISTRY, ...(contract.registry as unknown as Registry) };
+
+export const BlockForms: Story = {
+  render: function BlockForms() {
+    const [list, setList] = useState<Stage[]>(() => [
+      newStage(FULL, "RSI"), newBlock(FULL, "filter", "Pattern"), newBlock(FULL, "category", "Trend"), newBlock(FULL, "rank", "PctChange"),
+      newBlock(FULL, "group"),
+    ]);
+    return <FunnelCanvas stages={list} registry={FULL} scanTf="5m" universe={50} funnel={null} fresh={false} matched={null} problems={{}} onChange={setList} />;
+  },
+};
+
+export const LiveCounts: Story = {
+  render: function LiveCounts() {
+    const [list, setList] = useState<Stage[]>(stages);
+    const [{ funnel, ran }] = useState(() => funnelFor(list, [21, 9, 4]));
+    return <FunnelCanvas stages={list} registry={REGISTRY} scanTf="5m" universe={50} funnel={funnel} fresh={fresh(ran, list)} live matched={4} problems={{}} onChange={setList} />;
+  },
+};
+
+export const WhyMatched: Story = {
+  render: () => (
+    <div className="max-w-md">
+      <ResultBoard runKey={1} results={[{ symbol: "RELIANCE", matched: true, reason: null }, { symbol: "TCS", matched: false, reason: null }]}
+                   why={(s) => [{ id: "a", summary: "RSI(14) on 15m above 60", passed: true }, { id: "b", summary: "close above EMA(close, 20)", passed: s === "RELIANCE" }]} />
+    </div>
+  ),
 };

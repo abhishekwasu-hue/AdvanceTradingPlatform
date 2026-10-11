@@ -37,10 +37,12 @@ STAGE_PAPER = "PAPER"
 STAGE_LIVE = "LIVE_APPROVAL"
 
 
-def _utc(dt: Optional[datetime]) -> Optional[datetime]:
-    if dt is None:
-        return None
+def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    return _utc(dt).isoformat() if dt is not None else None
 
 
 async def enabled(session: AsyncSession, tenant_id: int) -> bool:
@@ -115,9 +117,9 @@ def _trade_row(t: TradeRecord) -> Dict:
     pnl = float(t.pnl) if t.pnl is not None else None
     charges = float(t.charges or 0.0)
     return {"id": t.id, "symbol": t.symbol, "direction": t.direction, "strategy_id": t.strategy_id, "quantity": float(t.quantity),
-            "entry_time": _utc(t.entry_time).isoformat() if t.entry_time else None, "entry_price": float(t.entry_price),
+            "entry_time": _iso(t.entry_time), "entry_price": float(t.entry_price),
             "stop_loss": float(t.stop_loss), "target1": float(t.target1) if t.target1 is not None else None,
-            "exit_time": _utc(t.exit_time).isoformat() if t.exit_time else None, "exit_price": float(t.exit_price) if t.exit_price is not None else None,
+            "exit_time": _iso(t.exit_time), "exit_price": float(t.exit_price) if t.exit_price is not None else None,
             "exit_reason": t.exit_reason, "gross_pnl": round(pnl + charges, 2) if pnl is not None else None, "charges": round(charges, 2),
             "net_pnl": pnl, "mark_price": float(t.mark_price) if t.mark_price is not None else None,
             "deployment_id": t.deployment_id, "charges_source": t.charges_source}
@@ -161,7 +163,7 @@ async def _not_taken(session: AsyncSession, user: User, limit: int = 20) -> List
         ev = json.loads(row.evidence_json or "{}")
         out.append({"proposal_id": row.id, "status": row.status, "symbol": ev.get("symbol"), "direction": ev.get("direction"),
                     "proposal_price": ev.get("proposal_price"), "stop_loss": ev.get("stop_loss"), "target1": ev.get("target1"),
-                    "source": ev.get("source"), "created_at": _utc(row.created_at).isoformat() if row.created_at else None,
+                    "source": ev.get("source"), "created_at": _iso(row.created_at),
                     "note": row.decision_note or row.result})
     return out
 
@@ -184,7 +186,7 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
     account = await get_account(session, user)
     every = await _paper_trades(session, user)
     trades = [t for t in every if _counted(t)]
-    closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (_utc(t.exit_time), t.id))
+    closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (_utc(t.exit_time or t.entry_time), t.id))
     open_ = [t for t in trades if t.exit_time is None]
     net = sum(float(t.pnl or 0.0) for t in closed)
     charges = sum(float(t.charges or 0.0) for t in closed)

@@ -95,6 +95,20 @@ def _shift_expiry(action_id, minutes=10):
     _run(go())
 
 
+def quiet_alerts(tenant_id: int) -> None:
+    """Remove a test organisation's alert channels and undelivered alerts, so a later worker cycle in the same test
+    process never tries to reach Telegram for it (no network in tests)."""
+    from sqlalchemy import delete
+    from app.db.models import AlertChannelRecord, AlertDeliveryRecord
+
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(delete(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == tenant_id))
+            await session.execute(delete(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id))
+            await session.commit()
+    _run(go())
+
+
 def _sig(entry=100.0, stop=98.0, target=104.0, direction=SignalDirection.LONG, symbol="RELIANCE") -> Signal:
     return Signal(symbol=symbol, strategy_id="ema_rsi_scalper_1m", strategy_name="EMA + RSI", direction=direction, timestamp=datetime.now(UTC),
                   entry=entry, stop_loss=stop, target1=target, target2=None, risk_reward=2.0, score=80, grade=SignalGrade.HIGH_QUALITY,
@@ -444,8 +458,16 @@ def _tg(monkeypatch):
 
 
 def test_telegram_approves_a_paper_entry_and_exit_command_closes_paper_only(monkeypatch, _tg):
-    from tests.test_phase_be_telegram_inbound import _callback, _dispatch, _message, _post, _setup
+    from tests.test_phase_be_telegram_inbound import _setup
     t = _setup(_email("tg"), monkeypatch, _tg)
+    try:
+        _telegram_entry_and_exit(t, monkeypatch, _tg)
+    finally:
+        quiet_alerts(t["tenant_id"])
+
+
+def _telegram_entry_and_exit(t, monkeypatch, _tg):
+    from tests.test_phase_be_telegram_inbound import _callback, _dispatch, _message, _post
     _flag_for(t["tenant_id"])
     action_id = _propose(t, entry=100.0)
     sent, failed = _dispatch(t, _tg)

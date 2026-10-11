@@ -1168,6 +1168,14 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
   when any API route or process entry point can reach a broker order method outside its allow-list, and no API route
   may reach an entry at all. The allow-listed routes are exits only (close a position, emergency exit, an approved
   exit proposal).
+- **Tenancy and scope sweep** (`tests/test_z10c_tenancy_sweep.py`): every `/api/*` route is classified in
+  `tests/tenancy_route_table.py`; a new route fails the build until it is. The sweep then checks, for every route,
+  that an anonymous call, a VIEWER, a member denied every scope, a member denied the route's catalogue scope and
+  another organisation are refused as the class says, and that another organisation never sees or changes this
+  organisation's rows. A member reporting 403 with `X-Missing-Scope: risk:write` (or another scope) after this
+  release was denied that scope on the Team page - since Z10-c the denial is enforced. STRATEGY_CREATOR members no
+  longer edit risk settings / limits or broker accounts (their role never had `risk:write` / `brokers:write`); an
+  owner who wants that grants the scope on the Team page.
 
 ### 1.7 Trading worker runbook
 

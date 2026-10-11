@@ -60,13 +60,21 @@ class NSEProvider(FundamentalDataProvider):
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, headers=_BROWSER_HEADERS, timeout=15.0)
         self._session_primed = False
 
+    async def _get(self, path: str, params: Optional[Dict[str, str]] = None) -> httpx.Response:
+        """Z10-c: a network failure (NSE unreachable, a timeout, a refused proxy) is a provider error like a 4xx -
+        the refresh reports it per symbol instead of failing the whole request with a 500."""
+        try:
+            return await self._client.get(path, params=params)
+        except httpx.HTTPError as exc:
+            raise FundamentalDataProviderError(f"NSE unreachable for {path}: {type(exc).__name__}") from exc
+
     async def _prime_session(self) -> None:
         """NSE only serves its /api/* JSON endpoints to a client carrying cookies set by a
         prior visit to the public site - a bare API call gets a 401/403.
         """
         if self._session_primed:
             return
-        response = await self._client.get("/get-quotes/equity", params={"symbol": "SBIN"})
+        response = await self._get("/get-quotes/equity", params={"symbol": "SBIN"})
         if response.status_code >= 400:
             raise FundamentalDataProviderError(
                 "Could not establish an NSE session (priming request failed)",
@@ -76,7 +84,7 @@ class NSEProvider(FundamentalDataProvider):
 
     async def _get_json(self, path: str, params: Optional[Dict[str, str]] = None) -> dict:
         await self._prime_session()
-        response = await self._client.get(path, params=params)
+        response = await self._get(path, params=params)
         if response.status_code >= 400:
             raise FundamentalDataProviderError(
                 f"NSE API call to {path} failed", status_code=response.status_code, raw=response.text[:500],

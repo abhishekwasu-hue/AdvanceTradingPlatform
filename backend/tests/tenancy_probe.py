@@ -36,7 +36,7 @@ PATH_VALUES: Dict[str, str] = {
     "channel_type": "telegram", "strategy_id": "ema_rsi_scalper_1m", "sector": "Energy", "token": "z10c-not-a-token",
     "webhook_token": "z10c-not-a-token", "action": "pause", "kind": "ema", "timeframe": "1day", "key": "z10c",
     "version_number": "1", "exchange": "NSE", "flag": "phase0_paper_only", "instrument_key": "NSE_EQ|RELIANCE",
-    "day": "2026-09-25", "week": "2026-W39", "study_id": "z10c-study", "dataset": "trades", "concept_id": "z10c-concept",
+    "day": "2026-09-25", "week": "2026-W39", "study_id": "z10c-study", "dataset": "trades", "concept_id": "z10c-concept", "source_id": "z10c-source",
 }
 
 
@@ -209,3 +209,15 @@ def path_for(path: str, int_params: Iterable[str] = (), probe_id: int = PROBE_ID
 
 def int_path_params(dependant) -> List[str]:
     return [p.name for p in dependant.path_params if getattr(p.field_info, "annotation", None) is int]
+
+
+def query_for(openapi: Dict, method: str, path: str) -> Dict[str, Any]:
+    """Values for the route's required query parameters (a missing one would stop the request at validation)."""
+    operation = openapi.get("paths", {}).get(path, {}).get(method.lower()) or {}
+    components = openapi.get("components", {}).get("schemas", {})
+    params: Dict[str, Any] = {}
+    for param in operation.get("parameters", []):
+        if param.get("in") == "query" and param.get("required"):
+            name = param["name"]
+            params[name] = PATH_VALUES.get(name) or instance(param.get("schema", {}), components)
+    return params

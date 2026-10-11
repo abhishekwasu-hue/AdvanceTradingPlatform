@@ -1,6 +1,7 @@
 /** U5: the screener endpoints the funnel page uses (S1d API). Same auth, refresh and error handling as every request. */
 import { request } from "../api/client";
 import type { FunnelResult, Registry } from "./model";
+import type { LegendsLibrary } from "./legends";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -25,6 +26,8 @@ export const screenerApi = {
     request<PreviewResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, preview: true }) }),
   /** U9 TX1: the screen library's taxonomy (flag `screener_gallery`; 503 while it is off - the page then shows no gallery). */
   taxonomy: () => request<Taxonomy>("/screener/taxonomy"),
+  /** U7 LG1: the Legends cards (flag `screener_legends`; 503 while it is off - the gallery then shows no card text). */
+  legends: () => request<LegendsLibrary>("/screener/legends"),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

@@ -18,6 +18,7 @@ import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
 import { ScreenGallery } from "../screener/ScreenGallery";
+import { isLegends, type LegendsLibrary } from "../screener/legends";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -56,10 +57,14 @@ export default function ScreenerPage(_props: PageProps) {
   // no gallery - it is then exactly as before.
   const [taxonomy, setTaxonomy] = useState<Taxonomy | null>(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
+  // the taxonomy hides the Legends screens and nothing changes.
+  const [legends, setLegends] = useState<LegendsLibrary | null>(null);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
+    screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -253,7 +258,7 @@ export default function ScreenerPage(_props: PageProps) {
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
-          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} />
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} />
         </Dialog>
       )}
 

@@ -1,6 +1,8 @@
 import pandas as pd
+from app.indicators.prefix_cache import prefix_cached
 
 
+@prefix_cached
 def session_vwap(df: pd.DataFrame) -> pd.Series:
     """Volume-weighted average price, resetting at the start of each calendar day/session."""
     typical_price = (df["high"] + df["low"] + df["close"]) / 3.0

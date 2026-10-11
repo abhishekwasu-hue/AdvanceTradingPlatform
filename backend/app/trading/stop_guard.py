@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.execution.products import product_for_trade
 from app.audit.log import write_audit_log
-from app.brokers.base import BrokerInterface
+from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import Tenant, TradeRecord
@@ -28,7 +28,8 @@ from app.market_data.calendar import market_session_status
 from app.notifications.service import notify
 from app.reconciliation.service import broker_uncertain_reason
 from app.core import config
-from app.trading.position_monitor import close_position, exchange_for_trade
+from app.trading import stop_state
+from app.trading.position_monitor import _find_order, close_position, exchange_for_trade
 
 logger = logging.getLogger(__name__)
 
@@ -36,21 +37,28 @@ logger = logging.getLogger(__name__)
 _STANDING = {"OPEN", "PENDING", "TRIGGER PENDING", "TRIGGER_PENDING", "PUT ORDER REQ RECEIVED", "VALIDATION PENDING", "OPEN PENDING",
              "MODIFY PENDING", "AFTER MARKET ORDER REQ RECEIVED"}
 _FILLED = {"COMPLETE", "COMPLETED", "FILLED", "TRADED", "EXECUTED"}
+_REJECTED = {"REJECTED"}
 ALERT_COOLDOWN_SECONDS = 1800
-
-_last_failure_alert: Dict[int, float] = {}   # trade id -> monotonic time of the last CRITICAL; absent = never alerted
-
-
 MAX_EXIT_ATTEMPTS = 3
-_exit_attempts: Dict[int, int] = {}          # trade id -> immediate exits tried (LIVE_EXIT_IF_NO_STOP)
 
 
-def _failure_alert_due(trade_id: int) -> bool:
-    last = _last_failure_alert.get(trade_id)
+def _failure_alert_due(trade_id: int, table: Optional[Dict[int, float]] = None) -> bool:
+    table = stop_state.last_failure_alert if table is None else table
+    last = table.get(trade_id)
     if last is not None and time.monotonic() - last <= ALERT_COOLDOWN_SECONDS:
         return False
-    _last_failure_alert[trade_id] = time.monotonic()
+    table[trade_id] = time.monotonic()
     return True
+
+
+def _note_rearm_rejected(trade_id: int, order_id: Optional[str]) -> int:
+    """A stop the guard re-armed was accepted and then REJECTED by the broker: one more in a row for this trade.
+    Only the guard's own latest stop counts (the entry stop's rejection is the first re-arm's reason, not a repeat)."""
+    if order_id is None or stop_state.rearmed_order.get(trade_id) != order_id:
+        return stop_state.rearm_rejects.get(trade_id, 0)
+    stop_state.rearmed_order.pop(trade_id, None)
+    stop_state.rearm_rejects[trade_id] = stop_state.rearm_rejects.get(trade_id, 0) + 1
+    return stop_state.rearm_rejects[trade_id]
 
 
 async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: BrokerInterface, why: str, *,
@@ -78,20 +86,17 @@ async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: Br
     if not market.is_open:
         logger.warning("No-stop exit skipped for trade %s: %s", trade.id, market.reason)
         return None
-    if _exit_attempts.get(trade.id, 0) >= MAX_EXIT_ATTEMPTS:
+    if stop_state.exit_attempts.get(trade.id, 0) >= MAX_EXIT_ATTEMPTS:
         return None
-    _exit_attempts[trade.id] = _exit_attempts.get(trade.id, 0) + 1
+    stop_state.exit_attempts[trade.id] = stop_state.exit_attempts.get(trade.id, 0) + 1
     try:
         price = float(await broker.get_ltp_for_symbol(trade.symbol, exchange))
     except Exception:  # noqa: BLE001 - the reference price only seeds the booking; the broker fill wins
         price = float(trade.entry_price)
     outcome = await close_position(session, trade, price, f"No protective stop - closed at once ({why})", broker=broker,
                                    stop_dead=True)
-    if outcome.closed:
-        _exit_attempts.pop(trade.id, None)
-        _last_failure_alert.pop(trade.id, None)
     if alert and (outcome.closed or _failure_alert_due(trade.id)):
-        left = MAX_EXIT_ATTEMPTS - _exit_attempts.get(trade.id, 0)
+        left = MAX_EXIT_ATTEMPTS - stop_state.exit_attempts.get(trade.id, 0)
         await notify(session, trade.tenant_id, NotificationType.SYSTEM_FAILURE,
                      title=f"{'Closed' if outcome.closed else 'Could NOT close'} {trade.symbol}: no broker-side stop",
                      message=(f"Position #{trade.id}: {why}. " + ("Closed with a market exit (LIVE_EXIT_IF_NO_STOP)." if outcome.closed
@@ -101,6 +106,33 @@ async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: Br
     if not outcome.closed:
         logger.error("No-stop exit failed for trade %s: %s", trade.id, "; ".join(outcome.warnings))
     return outcome.closed
+
+
+async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeRecord, broker: BrokerInterface, streak: int,
+                            counts: Dict[str, int]) -> bool:
+    """STOP_REARM_MAX_REJECTS re-armed stops in a row were accepted and then rejected: re-arming again would only repeat
+    it forever. With LIVE_EXIT_IF_NO_STOP the position is closed (a clear rejection); otherwise - or when that exit is
+    not tried - the guard stops re-arming, the software stop keeps watching (its exit skips the rejected stop) and the
+    user gets ONE CRITICAL for the position.
+    True = the exit path handled it (closed, or tried and alerted)."""
+    why = f"the broker rejected {streak} re-armed stops in a row (last {trade.sl_order_id})"
+    if config.LIVE_EXIT_IF_NO_STOP:
+        try:
+            done = await exit_unprotected(session, trade, broker, why, rejected=True)
+        except Exception as exit_exc:  # noqa: BLE001 - never lose the rest of the guard pass; the alert below follows
+            logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
+            done = None
+        if done:
+            counts["closed"] += 1
+        if done is not None:
+            return True
+    if trade.id not in stop_state.gave_up_alert:         # once per position: the guard will not try again
+        stop_state.gave_up_alert[trade.id] = time.monotonic()
+        await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"Stop keeps being rejected on {trade.symbol}",
+                     message=f"Position #{trade.id}: {why}. The guard has stopped re-arming it; the software stop still monitors "
+                             "it every cycle. Close it at the broker by hand or fix the rejection reason (margin, price band).",
+                     severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+    return False
 
 
 async def verify_protective_stops(
@@ -137,32 +169,39 @@ async def verify_protective_stops(
     for trade in trades:
         counts["checked"] += 1
         order = book.get(trade.sl_order_id) if trade.sl_order_id else None
-        if order is not None:
-            status = (order.status or "").upper()
-            if status in _STANDING:
-                counts["standing"] += 1
-                continue
-            if status in _FILLED:
-                counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
-                continue
-        # Missing, cancelled or rejected: re-arm.
+        status = (order.status or "").upper() if order is not None else ""
+        if status in _STANDING:
+            counts["standing"] += 1
+            if stop_state.rearmed_order.get(trade.id) == trade.sl_order_id:
+                # The guard's own stop survived a whole cycle: it was accepted, the streak is over.
+                stop_state.rearm_rejects.pop(trade.id, None)
+                stop_state.rearmed_order.pop(trade.id, None)
+            continue
+        if status in _FILLED:
+            counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
+            continue
+        # Missing, cancelled or rejected. A re-armed stop the broker accepted and then rejected counts against the trade;
+        # any other reason (cancelled by hand, lost across a session) breaks the streak.
+        if status in _REJECTED:
+            streak = _note_rearm_rejected(trade.id, trade.sl_order_id)
+        else:
+            stop_state.rearm_rejects.pop(trade.id, None)
+            stop_state.rearmed_order.pop(trade.id, None)
+            streak = 0
+        if streak >= config.STOP_REARM_MAX_REJECTS:
+            counts["failed"] += 1
+            await _give_up_rearming(session, tenant, trade, broker, streak, counts)
+            continue
+        # Re-arm.
         side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
         tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=tenant.algo_id)
         previous = trade.sl_order_id
+        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=exchange_for_trade(trade))   # on the tick, away from the market
         try:
             response = await broker.place_stop_loss_order(trade.symbol, exchange_for_trade(trade), side, trade.quantity,
-                                                          trigger_price=float(trade.stop_loss),
+                                                          trigger_price=trigger,
                                                           product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
                                                           tag=tag)
-            trade.sl_order_id = response.order_id
-            counts["rearmed"] += 1
-            reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"
-            await write_audit_log(session, tenant.id, user_id, "protective_stop_rearmed",
-                                  f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trade.stop_loss} ({source})")
-            await notify(session, tenant.id, NotificationType.RISK_REJECTION, title=f"Protective stop re-armed on {trade.symbol}",
-                         message=f"Position #{trade.id}: {reason}. A new SL-M at {trade.stop_loss:g} was placed ({response.order_id}).",
-                         severity=NotificationSeverity.WARNING, related_trade_id=trade.id)
-            logger.warning("Stop guard: re-armed stop for trade %s (%s)", trade.id, reason)
         except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
             counts["failed"] += 1
             logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
@@ -182,5 +221,32 @@ async def verify_protective_stops(
                              message=f"Position #{trade.id} has no standing protective stop and re-placing it failed: {exc}. "
                                      "The software stop still monitors it every cycle; consider closing it by hand.",
                              severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+            continue
+        trade.sl_order_id = response.order_id
+        stop_state.rearmed_order[trade.id] = response.order_id
+        reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"
+        await write_audit_log(session, tenant.id, user_id, "protective_stop_rearmed",
+                              f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trigger:g} ({source})")
+        # One look at the new stop: a broker can take it and reject it a moment later (RMS / margin).
+        placed = await _find_order(broker, response.order_id)
+        if placed is not None and (placed.status or "").upper() in _REJECTED:
+            counts["failed"] += 1
+            streak = _note_rearm_rejected(trade.id, response.order_id)
+            logger.error("Stop guard: re-armed stop %s for trade %s was rejected (%s in a row): %s", response.order_id, trade.id,
+                         streak, placed.status)
+            if streak >= config.STOP_REARM_MAX_REJECTS:
+                await _give_up_rearming(session, tenant, trade, broker, streak, counts)
+            elif _failure_alert_due(trade.id):
+                await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"Re-armed stop rejected on {trade.symbol}",
+                             message=f"Position #{trade.id}: the broker accepted the new stop {response.order_id} and then rejected it "
+                                     f"({placed.status}). Rejection {streak} of {config.STOP_REARM_MAX_REJECTS} before "
+                                     "the guard stops re-arming; the software stop still monitors it.",
+                             severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+            continue
+        counts["rearmed"] += 1
+        await notify(session, tenant.id, NotificationType.RISK_REJECTION, title=f"Protective stop re-armed on {trade.symbol}",
+                     message=f"Position #{trade.id}: {reason}. A new SL-M at {trigger:g} was placed ({response.order_id}).",
+                     severity=NotificationSeverity.WARNING, related_trade_id=trade.id)
+        logger.warning("Stop guard: re-armed stop for trade %s (%s)", trade.id, reason)
     await session.commit()
     return counts

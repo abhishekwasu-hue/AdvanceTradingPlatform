@@ -512,7 +512,7 @@ async def gap_report(session: AsyncSession, start: date, end: date, *, symbols: 
     missing_files = [d.isoformat() for d in trading if d not in held]
     usable = [d for d in trading if d in held]
     source = SOURCE["cm"]
-    keys_q = select(distinct(MdCandleRecord.instrument_key)).where(
+    keys_q = select(MdCandleRecord.instrument_key).distinct().where(
         MdCandleRecord.timeframe == TIMEFRAME, MdCandleRecord.source == source,
         MdCandleRecord.ts >= bar_end(start), MdCandleRecord.ts <= bar_end(end))
     if symbols:

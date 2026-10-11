@@ -51,8 +51,8 @@ T = Tuple[str, Optional[str]]          # (type, unit)
 
 
 class _Checker:
-    def __init__(self, base_tf: str, params: Dict[str, Any]) -> None:
-        self.base_tf, self.params = base_tf, params
+    def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True) -> None:
+        self.base_tf, self.params, self.strict_units = base_tf, params, strict_units
         self.out = Validated(True)
 
     def err(self, message: str, node: Any) -> None:
@@ -142,7 +142,7 @@ class _Checker:
                 self.err(f"'{node.op}' needs numbers on both sides", node)
                 return NUM, ANY_UNIT
             if node.op in "+-":
-                if lu != ru and ANY_UNIT not in (lu, ru):
+                if lu != ru and ANY_UNIT not in (lu, ru) and self.strict_units:
                     self.err(f"'{node.op}' mixes units {lu} and {ru}", node)
                 return NUM, ru if lu == ANY_UNIT else lu
             if lu == ANY_UNIT or ru == ANY_UNIT:
@@ -189,7 +189,7 @@ class _Checker:
         (lt, lu), (rt, ru) = left, right
         types = {lt, rt}
         if types <= {NUM}:
-            if lu != ru and ANY_UNIT not in (lu, ru):
+            if lu != ru and ANY_UNIT not in (lu, ru) and self.strict_units:
                 self.err(f"compares {lu} with {ru}", node)
             return
         if types <= {CAT, STR} and op in ("==", "!=", "IN"):
@@ -244,7 +244,7 @@ class _Checker:
         if spec.varargs or spec.same_unit_args:
             positions = range(len(units)) if spec.varargs else spec.same_unit_args
             seen = {units[i] for i in positions if i < len(units) and units[i] not in (None, ANY_UNIT)}
-            if len(seen) > 1:
+            if len(seen) > 1 and self.strict_units:
                 self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node)
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
@@ -259,11 +259,13 @@ class _Checker:
         return spec.returns, None
 
 
-def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP) -> Validated:
-    """Every check, all problems at once (not only the first)."""
+def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
+             strict_units: bool = True) -> Validated:
+    """Every check, all problems at once (not only the first). `strict_units=False` is only for screens translated from
+    the legacy scanner, whose filters never checked units (S1c parity); user-written screens are always strict."""
     if base_tf not in n.TF_MINUTES:
         return Validated(False, [Problem(f"unknown screen timeframe {base_tf!r}")])
-    checker = _Checker(base_tf, dict(params or {}))
+    checker = _Checker(base_tf, dict(params or {}), strict_units)
     kind, _ = checker.check(ast)
     if kind != BOOL:
         checker.err("a screen must be a condition (true/false), e.g. close > SMA(close, 20)", ast)

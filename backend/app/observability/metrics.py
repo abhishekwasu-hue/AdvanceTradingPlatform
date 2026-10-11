@@ -53,6 +53,9 @@ HTTP_LATENCY = _histogram("http_request_duration_seconds", "HTTP request latency
 ORDERS = _counter("orders", "Order attempts by mode and final status", ("mode", "status"))
 LOGIN_ATTEMPTS = _counter("login_attempts", "Login attempts by outcome", ("success", "reason"))
 ALERT_DELIVERIES = _counter("alert_deliveries", "Out-of-app alert deliveries by channel type and outcome", ("channel", "status"))
+# PW6: install/update events the installed app reports (POST /api/pwa/events). Both labels are closed enums; nothing
+# that identifies a user or a device is recorded.
+PWA_EVENTS = _counter("pwa_events", "PWA install/update events by event and platform family (android/ios/desktop/other)", ("event", "platform"))
 
 # --- AI and billing (Phase O4 / V4.11) --------------------------------------------------------
 AI_PROVIDER_CALLS = _counter("ai_provider_calls", "LLM provider calls by provider and outcome", ("provider", "outcome"))

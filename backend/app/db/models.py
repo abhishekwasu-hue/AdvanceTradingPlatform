@@ -2542,3 +2542,38 @@ class ChartDrawingRecord(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class BetaInviteCodeRecord(Base):
+    """PW6 (beta spec 4a): a closed-beta invite code, issued by a SUPER_ADMIN. Only the SHA-256 of the normalised code is
+    stored - the plain code is shown once, at creation. With the `beta_cohort_gate` flag on, each registration spends one
+    use; the cohort size is the sum of `used_count` over every code (app/beta/invites.py)."""
+
+    __tablename__ = "beta_invite_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class FeedbackRecord(Base):
+    """PW6: a "Send feedback" message from a logged-in user, with the app version and the screen path it was sent from
+    (query string stripped). No market data, request bodies, tokens or secrets - only what the user typed and those two
+    labels, plus a truncated User-Agent. A SUPER_ADMIN reads them in the admin console."""
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    app_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    screen: Mapped[str] = mapped_column(String(200), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)

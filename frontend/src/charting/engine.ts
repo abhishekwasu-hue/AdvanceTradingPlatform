@@ -17,8 +17,10 @@ export interface StudySpec { id: string; name: string; params?: Record<string, n
 
 export interface LayerLine { price: number; color?: string; title?: string; style?: "solid" | "dashed" | "dotted" }
 export interface LayerMarker { time: number; position: "aboveBar" | "belowBar" | "inBar"; shape: "arrowUp" | "arrowDown" | "circle" | "square"; color?: string; text?: string }
-/** A platform overlay (price-action levels, option walls, trade markers...), computed server-side with an as-of time. */
-export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[] }
+/** Z7a-3: a horizontal price band across the pane (low == high: a line), with its label at the right edge. */
+export interface LayerBand { low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
+/** A platform overlay (price-action levels, market-zone bands, option walls, trade markers...), computed server-side with an as-of time. */
+export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[] }
 
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 

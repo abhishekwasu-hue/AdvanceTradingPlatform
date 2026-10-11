@@ -1,0 +1,72 @@
+/**
+ * Z7a-3 (CH3 / U8 minimal style): market zones on a chart - at most six demand / supply bands near the price, each
+ * labelled "demand 512.30 (fresh)" with its touch count, and a one-line legend. The zones are the organisation's stored
+ * snapshot as of now (flag `market_zones`; while it is off the backend answers 503 and nothing is shown). When the price
+ * on screen moves the bands are re-picked from the same response (`selectBands`), never re-computed from pixels.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { ApiError } from "../api/client";
+import type { ChartEngine } from "./engine";
+import { LAYER_ID, ZONE_COLORS, bandsAt, bandsLayer, marketZonesApi, type MarketZonesLayerResponse, type ZoneBand } from "./marketZones";
+
+const IST = "Asia/Kolkata";
+
+function asOfText(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-IN", { timeZone: IST, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** The legend: one row per band, top to bottom (the same order as on the chart). Renders nothing without bands. */
+export function MarketZonesLegend({ bands, asOf, note }: { bands: readonly ZoneBand[]; asOf: string | null; note?: string }) {
+  if (bands.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted" data-testid="market-zones-legend" title={note}>
+      <span className="font-semibold text-fg">Zones</span>
+      {bands.map((b) => (
+        <span key={b.zone_key} className="inline-flex items-center gap-1" data-role={b.role}>
+          <span aria-hidden className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: ZONE_COLORS[b.role] }} />
+          <span>{b.label}</span>
+          <span className="opacity-70">· {b.touch_text}</span>
+        </span>
+      ))}
+      {asOf && <span className="opacity-70">as of {asOfText(asOf)} IST</span>}
+    </div>
+  );
+}
+
+/**
+ * Fetches the layer for `instrument` (lake key, "NSE:BANKNIFTY"), draws the bands on `engine` and shows the legend.
+ * `price` is the last close on screen (from the candles the backend served).
+ */
+export function MarketZonesLayer({ engine, instrument, price }: { engine: ChartEngine | null; instrument: string; price?: number | null }) {
+  const [layer, setLayer] = useState<MarketZonesLayerResponse | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setLayer(null);
+    setFailed(false);
+    if (!instrument) return () => { live = false; };
+    marketZonesApi.layer(instrument).then(
+      (r) => { if (live) setLayer(r); },
+      (e: unknown) => { if (live) setFailed(!(e instanceof ApiError && (e.status === 503 || e.status === 404))); },   // 503: flag off
+    );
+    return () => { live = false; };
+  }, [instrument]);
+
+  const bands = useMemo(() => (layer ? bandsAt(layer, price) : []), [layer, price]);
+
+  useEffect(() => {
+    if (!engine) return;
+    engine.setLayer(LAYER_ID, bands.length ? bandsLayer(bands, layer?.as_of) : null);
+    return () => engine.setLayer(LAYER_ID, null);
+  }, [engine, bands, layer?.as_of]);
+
+  if (failed) return <div className="text-xs text-fg-muted">Market zones could not be loaded.</div>;
+  if (!layer) return null;
+  return <MarketZonesLegend bands={bands} asOf={layer.as_of} note={layer.note} />;
+}
+
+export default MarketZonesLayer;

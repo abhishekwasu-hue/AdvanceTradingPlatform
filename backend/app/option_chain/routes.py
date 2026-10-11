@@ -1,5 +1,6 @@
 """OI Banner O2: the history API (read-only; numbers carry their data timestamps).
 
+* `GET /api/option-chain/banners`                the tenant's enabled underlyings with their current banner (dashboard)
 * `GET /api/option-chain/{underlying}/banner`   the latest slot's banner, with stale / market-closed flags
 * `GET /api/option-chain/{underlying}/history`  the day's banner timeline (`interval` 5, 10 or 15 minutes, newest first)
 * `GET /api/option-chain/{underlying}/strikes`  per-strike call/put OI through the day (the window of the latest slot)
@@ -50,15 +51,24 @@ async def _day_view(session: AsyncSession, user: User, underlying: str, day: Opt
     return settings, day, slots, flags
 
 
-@router.get("/{underlying}/banner")
-async def banner(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    underlying = _underlying(underlying)
+async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[str, Any]:
     settings, day, slots, flags = await _day_view(session, user, underlying, None)
     timeline = snapshots.replay(underlying, slots, settings, day)
     if not timeline:
         return {"underlying": underlying, "date": day.isoformat(), "banner": None, **flags,
                 "message": oi_regime.INSUFFICIENT_HISTORY_MESSAGE}
     return {"underlying": underlying, "date": day.isoformat(), "banner": snapshots.entry_json(timeline[-1]), **flags}
+
+
+@router.get("/banners")
+async def banners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session) if t == user.tenant_id)
+    return {"banners": [await _banner(session, user, u) for u in names]}
+
+
+@router.get("/{underlying}/banner")
+async def banner(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    return await _banner(session, user, _underlying(underlying))
 
 
 @router.get("/{underlying}/history")

@@ -2,6 +2,7 @@ import { Plus, X } from "lucide-react";
 import { Suspense, lazy, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { chartWindowUrl, useLiveLtp } from "./chartHelpers";
+import { SymbolTierBadge } from "./DataTierBadge";
 
 // P1.1: the chart engine loads after the dashboard has rendered (its own `charts` chunk).
 const ProChart = lazy(() => import("./ProChart"));
@@ -23,6 +24,7 @@ function PulseChart({ symbol, candles, broker, onRemove }: { symbol: string; can
   return (
     <div className="relative rounded-xl border border-border bg-surface-2 p-3">
       <button onClick={onRemove} title="Remove" className="absolute -right-2 -top-2 z-10 rounded-full border border-border bg-surface-1 p-0.5 text-fg-muted hover:text-down"><X size={12} /></button>
+      <div className="absolute bottom-1 left-2 z-10"><SymbolTierBadge symbol={symbol} live={live.ltp?.data_tier} /></div>
       <Suspense fallback={<div className="h-[160px] animate-pulse rounded-lg bg-surface-1" aria-label={`Loading ${symbol} chart`} />}>
         <ProChart candles={candles} symbol={symbol} timeframe="5min" live={live.ltp} liveError={live.error} compact height={160} defaultIndicators={["ema_fast", "vwap"]}
                   openUrl={chartWindowUrl(symbol, "5min", "NSE", broker)} deployable />

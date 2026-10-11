@@ -113,10 +113,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z6 / P1-e (ADR-0026): journal auto-capture, behaviour tags and the weekly discipline score. OFF: no capture, the
     # /api/journal routes answer 503 and the Journal page says it is not enabled. Numbers only; it never touches an order.
     "discipline_engine": "Discipline engine: auto-journal of every trade, behaviour tags, weekly discipline score and review (numbers only)",
+    # BT1 (beta spec §2/§4a, Phase 0): live data only through each user's own broker session at a broker whose data terms
+    # are confirmed (docs/BROKER_DATA_TERMS.md), never pooled or shown to another user; everything else EOD; every number
+    # carries its data tier. OFF: market data reads are exactly as before. Places no order.
+    "byob_data_tier": "Bring-your-own-broker data tier: live data only through each user's own confirmed broker session, EOD otherwise, data-tier badges",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

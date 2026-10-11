@@ -746,6 +746,39 @@ class RiskEventRecord(Base):
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class EgressIpRecord(Base):
+    """Part D4 (rule IN-SEBI.static_ip.registered): an IP the organisation registered with a broker for API orders -
+    one PRIMARY and optionally one BACKUP per broker. The platform's own egress IP (SERVER_EGRESS_IP) must be one of
+    them before a LIVE entry goes out (when STATIC_IP_REQUIRED_FOR_LIVE)."""
+
+    __tablename__ = "egress_ips"
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", "role", name="uq_egress_ip_role"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False, default="PRIMARY")      # PRIMARY / BACKUP
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    registered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)   # when the broker accepted it
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class EgressIpChangeRecord(Base):
+    """Part D4: every change of a registered IP (append-only) - the weekly-change rule counts these."""
+
+    __tablename__ = "egress_ip_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    new_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
 class BrokerAccountRecord(Base):
     """Phase I2 (V3.14 rule 3): one trading account at a broker - the credential it authenticates
     with, the broker's own identifier, and the last synced balance/margin/P&L. Deployments may
@@ -1688,6 +1721,120 @@ class OptionChainSnapshotRecord(Base):
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
 
+class AgentRunRecord(Base):
+    """H-C2 (ADR-0019): one Copilot agent request - who asked (the question only as a hash; its text is in llm_calls,
+    masked), the prompt version and model, the limits, and how it ended. Append-only; never deleted (like llm_calls)."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    question_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    limits_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    steps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class AgentStepRecord(Base):
+    """H-C2: one tool call inside an agent run - the arguments, a hash of the output (untrusted payloads by hash only),
+    success and duration."""
+
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(60), nullable=False)
+    arguments_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    untrusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class OISnapshotRecord(Base):
+    """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
+    `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from
+    those rows with the reader's own settings (app/option_chain/oi_regime.py), so nothing tenant-specific is stored
+    here. One row per (underlying, slot): the collector is idempotent per slot."""
+
+    __tablename__ = "oi_snapshots"
+    __table_args__ = (
+        UniqueConstraint("underlying", "slot_start", name="uq_oi_snapshot_slot"),
+        Index("ix_oi_snapshots_day", "underlying", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)    # when the chain was read (data time)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+
+
+class StrikeOISnapshotRecord(Base):
+    """OI Banner O2: one strike of one slot - call/put OI and premium (the inputs of every banner number)."""
+
+    __tablename__ = "strike_oi_snapshots"
+    __table_args__ = (UniqueConstraint("snapshot_id", "strike", name="uq_strike_oi_snapshot"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("oi_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OIDayBaselineRecord(Base):
+    """OI Banner O2: the first OI the collector saw for a strike on a trading day - the baseline of the OI-wall check
+    (change in OI since the day began). Written once per (underlying, day, strike), never updated."""
+
+    __tablename__ = "oi_day_baselines"
+    __table_args__ = (UniqueConstraint("underlying", "trade_date", "strike", name="uq_oi_day_baseline"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+
+
+class OIBannerSettingRecord(Base):
+    """OI Banner O2: a tenant's banner settings for one underlying ("*" = the tenant's default for every underlying).
+    `enabled` asks the collector to follow the underlying; `overrides` is a JSON object of OIRegimeSettings fields
+    layered over the platform defaults."""
+
+    __tablename__ = "oi_banner_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", name="uq_oi_banner_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class ThesisRecord(Base):
     """Phase BD-lite: one market thesis of one symbol at one moment (direction, confidence, agreement,
     scenarios, inputs) with the *shadow* size multiplier the reduce-only overlay would have used - stored
@@ -1919,4 +2066,26 @@ class NotificationPolicyRecord(Base):
     max_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     group_window_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     eod_digest_time: Mapped[str] = mapped_column(String(5), nullable=False, default="15:45")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class ChartDrawingRecord(Base):
+    """CH1 (ADR-0023): one user drawing on a symbol's chart, in our own engine-neutral JSON (`drawing/1`: time/price
+    anchors, so every timeframe and every chart engine shows the same drawing). Versioned for optimistic concurrency
+    (undo/redo is client-side over versions), lockable, soft-deleted."""
+
+    __tablename__ = "chart_drawings"
+    __table_args__ = (Index("ix_chart_drawings_user_symbol", "user_id", "symbol", "exchange"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    drawing_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

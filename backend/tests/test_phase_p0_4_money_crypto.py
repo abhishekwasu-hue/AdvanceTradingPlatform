@@ -57,13 +57,16 @@ def test_numeric_migration_is_the_head_and_covers_every_numeric_column():
     path = next(Path("alembic/versions").glob("c4d6e8f0a2b4_*.py"))
     source = path.read_text()
     assert "down_revision: Union[str, Sequence[str], None] = 'b3c5d7e9f1a3'" in source
-    # Every Numeric column is created or converted by some migration (P0.4's conversion, or a later migration that
-    # adds a Numeric column, e.g. P0.5's trades.mark_price).
+    # Every Numeric column is created or converted by some migration (P0.4's conversion, a later migration that
+    # adds a Numeric column, e.g. P0.5's trades.mark_price, or one that creates a new table with it, e.g. B1's lake).
     sources = [p.read_text() for p in Path("alembic/versions").glob("*.py")]
+
+    def creates(src: str, table: str) -> bool:
+        return f"batch_alter_table('{table}')" in src or ("create_table(" in src and f"'{table}'," in src)
     for table in Base.metadata.tables.values():
         for column in table.columns:
             if isinstance(column.type, Numeric) and column.type.__class__.__name__ != "Float":
-                assert any(f"'{column.name}'" in src and f"batch_alter_table('{table.name}')" in src for src in sources), (table.name, column.name)
+                assert any(f"'{column.name}'" in src and creates(src, table.name) for src in sources), (table.name, column.name)
     spec = importlib.util.spec_from_file_location("mig_p04", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

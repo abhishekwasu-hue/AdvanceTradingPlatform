@@ -19,8 +19,9 @@ Trade kills a zone (FILLED) the first time price comes back into it. ATP keeps i
   * FLIP: `flip_confirm_closes` closes in a row beyond the far edge (below a support, above a resistance) by more than
     `flip_buffer_pct` % - the zone now acts on the other side;
   * STRUCTURAL_BREAK: a close beyond the structural swing beyond the zone by more than `structure_buffer_pct` % - for a
-    support the latest confirmed swing low (fractal, `structure_swing_order`) below the band, for a resistance the latest
-    confirmed swing high above it - taken as known when tracking starts and again at each flip; when none exists yet,
+    support the latest confirmed swing low (fractal, `structure_swing_order`, at most `structure_lookback_bars` back)
+    below the band, for a resistance the latest confirmed swing high above it - taken as known when tracking starts and
+    again at each flip; when none exists yet,
     the first one confirmed later is adopted. It is checked before the flip on the same bar (a close through the zone
     AND the structure is the zone's death, not a flip). A touch, however deep, is never a death.
 No look-ahead: an event on bar k reads bars <= k only; a swing at bar i counts from bar i + order (when it is confirmed).
@@ -166,13 +167,15 @@ def _align(t: Any, ts: pd.Series, exchange_tz: str) -> pd.Timestamp:
 
 
 def _structure(side: str, lo: float, hi: float, swings: Swings, highs: np.ndarray, lows: np.ndarray, order: int,
-               known_by: int) -> Optional[int]:
-    """The latest swing beyond the band confirmed by bar `known_by` (index), or None."""
+               known_by: int, lookback: int) -> Optional[int]:
+    """The latest swing beyond the band confirmed by bar `known_by` (index) and no more than `lookback` bars before it,
+    or None (bounded, so the answer never depends on how far back the frame happens to start)."""
     hi_idx, lo_idx = swings
+    earliest = known_by - lookback
     if side == SUPPORT_SIDE:
-        cands = [i for i in lo_idx if i + order <= known_by and lows[i] < lo]
+        cands = [i for i in lo_idx if earliest <= i and i + order <= known_by and lows[i] < lo]
     else:
-        cands = [i for i in hi_idx if i + order <= known_by and highs[i] > hi]
+        cands = [i for i in hi_idx if earliest <= i and i + order <= known_by and highs[i] > hi]
     return max(cands) if cands else None
 
 
@@ -255,7 +258,7 @@ def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settin
 
     if not tracker.structure_checked:                       # the structure known on the bar tracking starts after
         tracker.structure_checked = True
-        set_structure(_structure(tracker.side, lo, hi, sw, h, low, order, first - 1))
+        set_structure(_structure(tracker.side, lo, hi, sw, h, low, order, first - 1, s.structure_lookback_bars))
     for k in range(first, n):
         if tracker.structure is None:                       # adopt the first swing beyond confirmed from now on
             for kind, i in confirmed_at.get(k, []):
@@ -284,6 +287,6 @@ def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settin
             tracker.flips += 1
             tracker.side = _opposite(tracker.side)
             tracker.beyond = 0
-            set_structure(_structure(tracker.side, lo, hi, sw, h, low, order, k))
+            set_structure(_structure(tracker.side, lo, hi, sw, h, low, order, k, s.structure_lookback_bars))
     tracker.last_bar_at = _iso(ts.iloc[n - 1])
     return tracker

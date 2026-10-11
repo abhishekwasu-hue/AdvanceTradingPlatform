@@ -487,3 +487,102 @@ def test_worker_hook_flag_off_and_failure_paths(monkeypatch):
             await w._market_zones_task
         return w._market_zones_task.cancelled()
     assert _run(stopped()) is True
+
+
+def test_the_event_loop_is_never_held_for_long_while_an_instrument_runs():
+    """ADR-0004: the job shares the worker's loop - its reads stream and every DataFrame / snapshot is built in a thread.
+    A 10 ms ticker runs alongside one intraday run; the worst gap between ticks stays small."""
+    s = resolve_settings(INTRA)
+
+    async def go():
+        gaps, stop = [], asyncio.Event()
+
+        async def ticker():
+            loop = asyncio.get_running_loop()
+            last = loop.time()
+            while not stop.is_set():
+                await asyncio.sleep(0.01)
+                now = loop.time()
+                gaps.append(now - last)
+                last = now
+        tick = asyncio.get_running_loop().create_task(ticker())
+        async with _session_factory() as session:
+            res = await job.run_instrument(session, KEY, settings=s, now=_night(10))
+            await session.rollback()
+        stop.set()
+        await tick
+        return res.status, max(gaps)
+    status, worst = _run(go())
+    assert status == "stored" and worst < 0.5, worst
+
+
+def test_a_resumed_pass_skips_finished_instruments_without_loading_them(monkeypatch):
+    s = resolve_settings(INTRA)
+    assert _run(_call(job.run_instrument, KEY, settings=s, now=_night(8))).status == "stored"
+
+    async def must_not_load(*a, **k):
+        raise AssertionError("frames loaded for an instrument already done tonight")
+    monkeypatch.setattr(job, "load_frames", must_not_load)
+    assert _run(_call(job.run_instrument, KEY, settings=s, now=_night(8) + timedelta(hours=1))).status == "exists"
+    other = resolve_settings({**INTRA, "impulse_mult": 1.9})                       # other settings: not the same snapshot
+    with pytest.raises(AssertionError):
+        _run(_call(job.run_instrument, KEY, settings=other, now=_night(8) + timedelta(hours=1)))
+    assert _run(_call(job.run_instrument, "NSE:ZNOBARS", settings=s, now=_night(8))).status == "no_data"
+
+
+def test_the_nightly_start_waits_for_hb1_to_finish_the_day(monkeypatch):
+    from app.db.models import HistoryBackfillFileRecord
+    from app.market_lake import bhavcopy_backfill
+    day = DAYS[4]
+    at = lambda h, m=0: pd.Timestamp(f"{day} {h:02d}:{m:02d}").tz_localize(IST).tz_convert("UTC").to_pydatetime()
+    ready = lambda when: _run(_call(job.eod_ready, day, when))
+    assert ready(at(20, 5)) is True                                                   # HB1 off: it does not feed the lake
+
+    async def hb1(on, status=None):
+        async with _session_factory() as session:
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": {bhavcopy_backfill.FLAG: {"on": on, "tenants": []}}}, None)
+            await session.execute(delete(HistoryBackfillFileRecord).where(HistoryBackfillFileRecord.trade_date == day))
+            if status:
+                session.add(HistoryBackfillFileRecord(segment="cm", trade_date=day, status=status))
+            await session.commit()
+    _run(hb1(True))
+    assert ready(at(20, 5)) is False                                                  # not attempted yet
+    _run(hb1(True, "running"))
+    assert ready(at(21, 30)) is False
+    _run(hb1(True, "done"))
+    assert ready(at(20, 5)) is True
+    _run(hb1(True, "running"))
+    assert ready(at(23, 1)) is True                                                   # a stuck archive never costs the night
+    _run(hb1(False))
+
+
+def test_reads_survive_a_settings_change_and_say_so(monkeypatch):
+    monkeypatch.setattr(config, "MARKET_ZONES_DEFAULTS", INTRA)
+    monkeypatch.setattr(config, "MARKET_ZONES_SYMBOLS", [KEY])
+    _run(_flag(True))
+    assert _nightly(_night(8))["runs"] == 1
+    before = _run(_call(store.zones_as_of, KEY, _night(9)))
+    assert before.run is not None and before.settings_match is True
+    monkeypatch.setattr(config, "MARKET_ZONES_DEFAULTS", {**INTRA, "impulse_mult": 1.6})      # the operator changes a default
+    after = _run(_call(store.zones_as_of, KEY, _night(9)))
+    assert after.run.id == before.run.id and after.settings_match is False and after.scope == "platform"
+
+
+def test_retention_never_drops_a_scope_that_is_still_planned(monkeypatch):
+    monkeypatch.setattr(config, "MARKET_ZONES_DEFAULTS", INTRA)
+    _, me = _owner("zones-retention-planned@example.com")
+    tid = me["tenant_id"]
+    _run(_call(store.save_settings, tid, KEY, {"impulse_mult": 1.2}, enabled=True))
+    _run(_flag(False, tenants=[tid]))
+    now = datetime(2026, 10, 11, 15, 0, tzinfo=timezone.utc)
+
+    async def seed():
+        async with _session_factory() as session:
+            for scope, tenant in ((store.tenant_scope(tid), tid), ("tenant:999", None)):
+                await store.write_run(session, scope=scope, tenant_id=tenant, key=KEY, as_of=now - timedelta(days=45),
+                                      settings=ZoneSettings(), rows=[], price=None, bars={})
+            await session.commit()
+    _run(seed())
+    ids = _run(_call(store.retention_run_ids, now, daily_days=90, weekly_days=730, tenant_idle_days=30))
+    runs = {r.id: r.scope for r in _run(_runs())}
+    assert {runs[i] for i in ids} == {"tenant:999"}                                   # the followed tenant's scope stays

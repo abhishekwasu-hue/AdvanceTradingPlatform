@@ -2442,6 +2442,8 @@ class MarketZoneRunRecord(Base):
     bars: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON {timeframe: bars read}
     zone_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     previous_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)                 # the run level memory merged with
+    source_last_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)        # newest bar END it read
+    source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
 
 
 class MarketZoneRecord(Base):

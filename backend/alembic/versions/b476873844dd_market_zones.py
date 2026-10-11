@@ -44,6 +44,8 @@ def upgrade() -> None:
         sa.Column('bars', sa.Text(), nullable=False),
         sa.Column('zone_count', sa.Integer(), nullable=False),
         sa.Column('previous_run_id', sa.Integer(), nullable=True),
+        sa.Column('source_last_ts', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('source_ingested_at', sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint('scope', 'instrument_key', 'as_of', name='uq_market_zone_run'),
     )
     op.create_index('ix_market_zone_runs_tenant_id', 'market_zone_runs', ['tenant_id'])

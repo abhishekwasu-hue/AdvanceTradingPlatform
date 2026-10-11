@@ -133,8 +133,10 @@ def test_every_registered_backend_template_source_is_fully_filed():
 
 
 def test_the_guard_catches_an_unfiled_template_an_orphan_and_an_unregistered_source():
+    import app.screener.legends  # noqa: F401 - U7 LG1: the sources already filed stay registered beside the fake one
     tax = tx.load()
-    fake = {"breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
+    base = {name: src for name, src in tx.sources().items() if name != "breakouts"}
+    fake = {**base, "breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
     problems = tx.coverage_problems(tax, fake)
     assert problems == ["template 'breakouts.daily_52w_high' from source 'breakouts' is not filed in the taxonomy "
                         "(add it to app/screener/data/taxonomy.json)"]
@@ -144,8 +146,8 @@ def test_the_guard_catches_an_unfiled_template_an_orphan_and_an_unregistered_sou
     data["screens"].append(entry)
     filed, lint = tx.parse(data)
     assert lint == [] and tx.coverage_problems(filed, fake) == []                          # filed: the guard is satisfied
-    assert tx.coverage_problems(filed, {}) == ["taxonomy source 'breakouts' is not registered (register_source) - its screens would never show"]
-    gone = {"breakouts": tx.Source("breakouts", lambda: [], None)}
+    assert tx.coverage_problems(filed, base) == ["taxonomy source 'breakouts' is not registered (register_source) - its screens would never show"]
+    gone = {**base, "breakouts": tx.Source("breakouts", lambda: [], None)}
     assert tx.coverage_problems(filed, gone) == ["taxonomy entry 'breakouts.daily_52w_high' names a template that source 'breakouts' does not have"]
 
 

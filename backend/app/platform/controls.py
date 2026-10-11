@@ -128,11 +128,15 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
+    # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
+    # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
+    # Educational only - never a recommendation, never an endorsement.
+    "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "screener_gallery"})
+                               "history_backfill", "options_builder_saved", "screener_gallery", "screener_legends"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

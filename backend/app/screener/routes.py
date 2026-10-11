@@ -28,6 +28,7 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
+from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.core.rate_limit import user_rate_limit
 from app.screener.registry import FUNCTIONS, describe
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 FLAG = "screener_v2"
 GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery on the Screener page
+LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens are hidden from the taxonomy while off)
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
 run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
 # Data the run path loads today: bars only. A screen using a function that needs more is refused with the reason
@@ -118,6 +120,28 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
         raise HTTPException(status_code=422, detail=f"unknown setup {setup!r}; one of {', '.join(s.id for s in tax.setups)}")
     hidden = [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
     return tx.payload(tax, hidden_sources=hidden, method=method, setup=setup)
+
+
+@router.get("/legends")
+async def legends(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U7 LG1: the Legends cards - the library header (the disclaimer), and per card its five lines with their cited
+    public sources, the disclaimer naming the person, what the screen approximates, the ScreenQL source with its
+    editable parameters (defaults and documented ranges) and where the screen is filed in the taxonomy."""
+    await _flag(session, user)
+    await require_flag(session, LEGENDS_FLAG, user.tenant_id)
+    return lg.payload(lg.load(), tx.load())
+
+
+@router.get("/legends/{card_id}")
+async def legend_card(card_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """One Legends card (the shape of an entry in `GET /legends`, with the library header)."""
+    await _flag(session, user)
+    await require_flag(session, LEGENDS_FLAG, user.tenant_id)
+    library = lg.load()
+    card = library.card(card_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="no such Legends card")
+    return {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
 
 
 @router.post("/validate")
@@ -298,4 +322,4 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
             "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None, "disclaimer": DISCLAIMER}
 
 
-__all__ = ["router", "FLAG", "GALLERY_FLAG", "fetch_frames"]
+__all__ = ["router", "FLAG", "GALLERY_FLAG", "LEGENDS_FLAG", "fetch_frames"]

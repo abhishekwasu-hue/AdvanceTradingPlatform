@@ -240,6 +240,177 @@
    },
    "evidence_ready": false,
    "fitness_available": false
+  },
+  {
+   "id": "legends.minervini_trend_template",
+   "source": "legends",
+   "name": "Minervini-style trend template",
+   "definition": "Price above the 50, 150 and 200-day averages in that order, a rising 200-day, near the 52-week high, well off the low, high relative strength.",
+   "method": "legends",
+   "setup": "momentum",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "positional"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "intermediate",
+    "universe_default": "nifty500"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.darvas_box_breakout",
+   "source": "legends",
+   "name": "Darvas-style box breakout",
+   "definition": "A close above a tight consolidation (the box) to a new high for the period, on volume above its recent average, near the 52-week high.",
+   "method": "legends",
+   "setup": "breakout",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "positional"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.weinstein_stage2_breakout",
+   "source": "legends",
+   "name": "Weinstein-style stage 2 breakout",
+   "definition": "A weekly close above the prior base high and above a flat or rising 30-week average, on volume well above its recent average.",
+   "method": "legends",
+   "setup": "breakout",
+   "tags": {
+    "timeframe_family": [
+     "positional"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "intermediate",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.turtle_channel_breakout",
+   "source": "legends",
+   "name": "Turtle-style 20-day channel breakout",
+   "definition": "The day's high above the highest high of the previous 20 days (System 1); System 2 used 55 days.",
+   "method": "legends",
+   "setup": "breakout",
+   "tags": {
+    "timeframe_family": [
+     "swing",
+     "positional"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.raschke_adx_pullback",
+   "source": "legends",
+   "name": "Raschke-style ADX pullback to the 20 EMA",
+   "definition": "ADX(14) above 30 and a pullback whose low touches the 20-period EMA after trading above it; the trigger is a move above the pullback bar's high.",
+   "method": "legends",
+   "setup": "pullback",
+   "tags": {
+    "timeframe_family": [
+     "swing"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "intermediate",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.crabel_nr7",
+   "source": "legends",
+   "name": "Crabel-style NR7 range contraction",
+   "definition": "An NR7 day: today's high-low range is narrower than that of each of the previous six days (range contraction).",
+   "method": "legends",
+   "setup": "breakout",
+   "tags": {
+    "timeframe_family": [
+     "swing"
+    ],
+    "direction": "both",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "intermediate",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.connors_rsi2_pullback",
+   "source": "legends",
+   "name": "Connors-style 2-period RSI pullback",
+   "definition": "Close above the 200-day simple moving average and a 2-period RSI below 10, a deep short-term oversold reading.",
+   "method": "legends",
+   "setup": "pullback",
+   "tags": {
+    "timeframe_family": [
+     "swing"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "beginner",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.williams_volatility_breakout",
+   "source": "legends",
+   "name": "Williams-style volatility breakout",
+   "definition": "The day's high reaching the open plus a fraction (default 0.5) of the previous day's high-low range.",
+   "method": "legends",
+   "setup": "breakout",
+   "tags": {
+    "timeframe_family": [
+     "swing"
+    ],
+    "direction": "long",
+    "data_tier": [
+     "eod"
+    ],
+    "difficulty": "advanced",
+    "universe_default": "your_list"
+   },
+   "evidence_ready": false,
+   "fitness_available": false
   }
  ],
  "matrix": {
@@ -284,11 +455,11 @@
    "internals": 0
   },
   "legends": {
-   "breakout": 0,
-   "pullback": 0,
+   "breakout": 5,
+   "pullback": 2,
    "reversal": 0,
    "mean_reversion": 0,
-   "momentum": 0,
+   "momentum": 1,
    "options_volatility": 0,
    "events_flow": 0,
    "internals": 0
@@ -304,6 +475,6 @@
    "internals": 0
   }
  },
- "total": 3,
+ "total": 11,
  "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice."
 }

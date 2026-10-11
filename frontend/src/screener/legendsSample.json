@@ -1,0 +1,693 @@
+{
+ "version": "lg1/1",
+ "header": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing the people named. Educational tool, not investment advice.",
+ "note": "Each card describes a published method and an approximation of it as a screen. It is not a ranking of the method, the screen or any symbol.",
+ "cards": [
+  {
+   "id": "legends.minervini_trend_template",
+   "legend": "Mark Minervini",
+   "name": "Minervini-style trend template",
+   "lines": {
+    "who": {
+     "text": "US stock trader who set out his approach in the 2013 book Trade Like a Stock Market Wizard.",
+     "cite": [
+      "minervini_2013"
+     ]
+    },
+    "style": {
+     "text": "Trend following in stocks: a stock qualifies only when a checklist of price and moving-average conditions shows a long-term uptrend.",
+     "cite": [
+      "minervini_2013"
+     ]
+    },
+    "looks_for": {
+     "text": "Price above the 50, 150 and 200-day averages in that order, a rising 200-day, near the 52-week high, well off the low, high relative strength.",
+     "cite": [
+      "minervini_2013"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; a trend filter applied before looking for a base and a breakout.",
+     "cite": [
+      "minervini_2013"
+     ]
+    }
+   },
+   "source_line": "Source: Trade Like a Stock Market Wizard: How to Achieve Super Performance in Stocks in Any Market (2013), Mark Minervini",
+   "sources": [
+    {
+     "id": "minervini_2013",
+     "kind": "book",
+     "title": "Trade Like a Stock Market Wizard: How to Achieve Super Performance in Stocks in Any Market",
+     "authors": [
+      "Mark Minervini"
+     ],
+     "year": 2013,
+     "publisher": "McGraw-Hill Education",
+     "covers": "The trend template: price and moving-average order (50, 150, 200-day), a rising 200-day average, distance from the 52-week high and low, and a relative-strength ranking.",
+     "review": "pending",
+     "citation": "Trade Like a Stock Market Wizard: How to Achieve Super Performance in Stocks in Any Market (2013), Mark Minervini"
+    }
+   ],
+   "approximation": "Relative strength here is the percentile of the 250-bar % change within the scanned list, not a published rating; 52 weeks = 250 bars; rising = above its value 21 bars ago.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Mark Minervini. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.minervini_trend_template",
+    "source": "close > SMA(close, 50) AND SMA(close, 50) > SMA(close, 150) AND SMA(close, 150) > SMA(close, 200) AND SMA(close, 200) > SMA(close, 200)[21] AND close >= $near_high * Max(high, 250) AND close >= $above_low * Min(low, 250) AND PercentileRank(PctChange(close, 250)) >= $rs_min",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "near_high",
+      "default": 0.75,
+      "min": 0.5,
+      "max": 1.0,
+      "doc": "Close at least this fraction of the 52-week high (0.75 = within 25% of it)."
+     },
+     {
+      "name": "above_low",
+      "default": 1.3,
+      "min": 1.0,
+      "max": 3.0,
+      "doc": "Close at least this multiple of the 52-week low (1.3 = 30% above it)."
+     },
+     {
+      "name": "rs_min",
+      "default": 70,
+      "min": 0,
+      "max": 100,
+      "doc": "Lowest relative-strength percentile within the scanned list."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "momentum",
+    "tags": {
+     "timeframe_family": [
+      "swing",
+      "positional"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "intermediate",
+     "universe_default": "nifty500"
+    }
+   }
+  },
+  {
+   "id": "legends.darvas_box_breakout",
+   "legend": "Nicolas Darvas",
+   "name": "Darvas-style box breakout",
+   "lines": {
+    "who": {
+     "text": "Professional dancer who described the stock-trading method he used in a 1960 book.",
+     "cite": [
+      "darvas_1960"
+     ]
+    },
+    "style": {
+     "text": "Box theory: a rising stock moves through a series of price boxes; he acted only when price rose out of the top of the latest box.",
+     "cite": [
+      "darvas_1960"
+     ]
+    },
+    "looks_for": {
+     "text": "A close above a tight consolidation (the box) to a new high for the period, on volume above its recent average, near the 52-week high.",
+     "cite": [
+      "darvas_1960"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; positions held while price keeps forming higher boxes.",
+     "cite": [
+      "darvas_1960"
+     ]
+    }
+   },
+   "source_line": "Source: How I Made $2,000,000 in the Stock Market (1960), Nicolas Darvas",
+   "sources": [
+    {
+     "id": "darvas_1960",
+     "kind": "book",
+     "title": "How I Made $2,000,000 in the Stock Market",
+     "authors": [
+      "Nicolas Darvas"
+     ],
+     "year": 1960,
+     "publisher": "",
+     "covers": "The box theory: rising stocks moving through a series of price boxes, action only when price leaves the top of the latest box, attention to volume, and the author's background as a professional dancer.",
+     "review": "pending",
+     "citation": "How I Made $2,000,000 in the Stock Market (1960), Nicolas Darvas"
+    }
+   ],
+   "approximation": "The box here is the high and low of the previous 20 bars, at most 15% deep; the book draws its boxes by eye from daily highs and lows.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Nicolas Darvas. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.darvas_box_breakout",
+    "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume > $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "box_bars",
+      "default": 20,
+      "min": 5,
+      "max": 60,
+      "doc": "Bars that make up the box before today."
+     },
+     {
+      "name": "box_floor",
+      "default": 0.85,
+      "min": 0.5,
+      "max": 0.99,
+      "doc": "Box low at least this fraction of the box high (0.85 = at most 15% deep)."
+     },
+     {
+      "name": "vol_mult",
+      "default": 1.5,
+      "min": 1.0,
+      "max": 5.0,
+      "doc": "Volume at least this multiple of its 50-bar average."
+     },
+     {
+      "name": "near_high",
+      "default": 0.9,
+      "min": 0.5,
+      "max": 1.0,
+      "doc": "Close at least this fraction of the 52-week high."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "breakout",
+    "tags": {
+     "timeframe_family": [
+      "swing",
+      "positional"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "beginner",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.weinstein_stage2_breakout",
+   "legend": "Stan Weinstein",
+   "name": "Weinstein-style stage 2 breakout",
+   "lines": {
+    "who": {
+     "text": "Technical analyst who described stage analysis in a 1988 book on bull and bear markets.",
+     "cite": [
+      "weinstein_1988"
+     ]
+    },
+    "style": {
+     "text": "Stage analysis: a stock moves through four stages (base, advance, top, decline), read on the weekly chart and its 30-week moving average.",
+     "cite": [
+      "weinstein_1988"
+     ]
+    },
+    "looks_for": {
+     "text": "A weekly close above the prior base high and above a flat or rising 30-week average, on volume well above its recent average.",
+     "cite": [
+      "weinstein_1988"
+     ]
+    },
+    "timeframe": {
+     "text": "Weekly bars; positional holding periods of months.",
+     "cite": [
+      "weinstein_1988"
+     ]
+    }
+   },
+   "source_line": "Source: Stan Weinstein's Secrets for Profiting in Bull and Bear Markets (1988), Stan Weinstein",
+   "sources": [
+    {
+     "id": "weinstein_1988",
+     "kind": "book",
+     "title": "Stan Weinstein's Secrets for Profiting in Bull and Bear Markets",
+     "authors": [
+      "Stan Weinstein"
+     ],
+     "year": 1988,
+     "publisher": "Dow Jones-Irwin",
+     "covers": "Stage analysis on weekly charts: four stages (basing, advancing, top, declining), the 30-week moving average, the stage 2 breakout above resistance with expanding volume, and relative strength.",
+     "review": "pending",
+     "citation": "Stan Weinstein's Secrets for Profiting in Bull and Bear Markets (1988), Stan Weinstein"
+    }
+   ],
+   "approximation": "The base here is the high of the previous 10 weeks and volume is compared with the 4 weeks before; the book's relative-strength check is not included yet.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Stan Weinstein. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.weinstein_stage2_breakout",
+    "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
+    "base_tf": "1w",
+    "params": [
+     {
+      "name": "base_weeks",
+      "default": 10,
+      "min": 4,
+      "max": 52,
+      "doc": "Weeks of base before this week."
+     },
+     {
+      "name": "vol_mult",
+      "default": 2.0,
+      "min": 1.0,
+      "max": 5.0,
+      "doc": "Weekly volume at least this multiple of the 4 weeks before."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "breakout",
+    "tags": {
+     "timeframe_family": [
+      "positional"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "intermediate",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.turtle_channel_breakout",
+   "legend": "Richard Dennis and the Turtle traders",
+   "name": "Turtle-style 20-day channel breakout",
+   "lines": {
+    "who": {
+     "text": "Traders trained in the 1980s by Richard Dennis and William Eckhardt; former Turtles later published the rules.",
+     "cite": [
+      "faith_2007",
+      "covel_2007"
+     ]
+    },
+    "style": {
+     "text": "Systematic trend following: entries on channel breakouts, with position size and stops set from volatility (N, an average true range).",
+     "cite": [
+      "faith_2007"
+     ]
+    },
+    "looks_for": {
+     "text": "The day's high above the highest high of the previous 20 days (System 1); System 2 used 55 days.",
+     "cite": [
+      "faith_2007"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; trades lasting days to months; the rules were written for futures markets.",
+     "cite": [
+      "faith_2007",
+      "covel_2007"
+     ]
+    }
+   },
+   "source_line": "Source: Way of the Turtle: The Secret Methods that Turned Ordinary People into Legendary Traders (2007), Curtis M. Faith; The Complete TurtleTrader: The Legend, the Lessons, the Results (2007), Michael W. Covel",
+   "sources": [
+    {
+     "id": "faith_2007",
+     "kind": "book",
+     "title": "Way of the Turtle: The Secret Methods that Turned Ordinary People into Legendary Traders",
+     "authors": [
+      "Curtis M. Faith"
+     ],
+     "year": 2007,
+     "publisher": "McGraw-Hill",
+     "covers": "The Turtle program run by Richard Dennis and William Eckhardt, and its rules: channel breakouts of 20 days (System 1) and 55 days (System 2), volatility (N, an average true range) for position size and stops, futures markets.",
+     "review": "pending",
+     "citation": "Way of the Turtle: The Secret Methods that Turned Ordinary People into Legendary Traders (2007), Curtis M. Faith"
+    },
+    {
+     "id": "covel_2007",
+     "kind": "book",
+     "title": "The Complete TurtleTrader: The Legend, the Lessons, the Results",
+     "authors": [
+      "Michael W. Covel"
+     ],
+     "year": 2007,
+     "publisher": "Collins",
+     "covers": "The history of the Turtle program (Richard Dennis, William Eckhardt, the traders they trained in the 1980s) and its breakout rules.",
+     "review": "pending",
+     "citation": "The Complete TurtleTrader: The Legend, the Lessons, the Results (2007), Michael W. Covel"
+    }
+   ],
+   "approximation": "Long side only here (the rules were symmetric); System 1's filter that skips a breakout after a winning one is not included.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Richard Dennis and the Turtle traders. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.turtle_channel_breakout",
+    "source": "high > Max(high, $entry_days)[1]",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "entry_days",
+      "default": 20,
+      "min": 10,
+      "max": 100,
+      "doc": "Channel length in days (20 = System 1, 55 = System 2)."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "breakout",
+    "tags": {
+     "timeframe_family": [
+      "swing",
+      "positional"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "beginner",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.raschke_adx_pullback",
+   "legend": "Linda Bradford Raschke",
+   "name": "Raschke-style ADX pullback to the 20 EMA",
+   "lines": {
+    "who": {
+     "text": "Futures trader; co-author with Laurence Connors of the 1995 book Street Smarts.",
+     "cite": [
+      "raschke_connors_1995"
+     ]
+    },
+    "style": {
+     "text": "Short-term pullbacks in strong trends, with the ADX used to judge trend strength.",
+     "cite": [
+      "raschke_connors_1995"
+     ]
+    },
+    "looks_for": {
+     "text": "ADX(14) above 30 and a pullback whose low touches the 20-period EMA after trading above it; the trigger is a move above the pullback bar's high.",
+     "cite": [
+      "raschke_connors_1995"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; a short-term setup lasting days.",
+     "cite": [
+      "raschke_connors_1995"
+     ]
+    }
+   },
+   "source_line": "Source: Street Smarts: High Probability Short-Term Trading Strategies (1995), Laurence A. Connors and Linda Bradford Raschke",
+   "sources": [
+    {
+     "id": "raschke_connors_1995",
+     "kind": "book",
+     "title": "Street Smarts: High Probability Short-Term Trading Strategies",
+     "authors": [
+      "Laurence A. Connors",
+      "Linda Bradford Raschke"
+     ],
+     "year": 1995,
+     "publisher": "M. Gordon Publishing Group",
+     "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
+     "review": "pending",
+     "citation": "Street Smarts: High Probability Short-Term Trading Strategies (1995), Laurence A. Connors and Linda Bradford Raschke"
+    }
+   ],
+   "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; the screen lists the touch, and the trigger bar is left for the trader to watch.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Linda Bradford Raschke. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.raschke_adx_pullback",
+    "source": "ADX(14) > $adx_min AND EMA(close, 20) > EMA(close, 20)[5] AND low <= EMA(close, 20) AND low[1] > EMA(close, 20)[1]",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "adx_min",
+      "default": 30,
+      "min": 15,
+      "max": 60,
+      "doc": "Lowest ADX(14) reading that counts as a strong trend."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "pullback",
+    "tags": {
+     "timeframe_family": [
+      "swing"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "intermediate",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.crabel_nr7",
+   "legend": "Toby Crabel",
+   "name": "Crabel-style NR7 range contraction",
+   "lines": {
+    "who": {
+     "text": "Trader and author of a 1990 statistical study of short-term price patterns and the opening-range breakout.",
+     "cite": [
+      "crabel_1990"
+     ]
+    },
+    "style": {
+     "text": "Short-term patterns studied statistically, such as range contraction and breakouts from the opening range.",
+     "cite": [
+      "crabel_1990"
+     ]
+    },
+    "looks_for": {
+     "text": "An NR7 day: today's high-low range is narrower than that of each of the previous six days (range contraction).",
+     "cite": [
+      "crabel_1990"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; the follow-through is studied over the next session.",
+     "cite": [
+      "crabel_1990"
+     ]
+    }
+   },
+   "source_line": "Source: Day Trading with Short Term Price Patterns and Opening Range Breakout (1990), Toby Crabel",
+   "sources": [
+    {
+     "id": "crabel_1990",
+     "kind": "book",
+     "title": "Day Trading with Short Term Price Patterns and Opening Range Breakout",
+     "authors": [
+      "Toby Crabel"
+     ],
+     "year": 1990,
+     "publisher": "Traders Press",
+     "covers": "Statistical study of short-term price patterns: range contraction (narrow-range days such as NR4 and NR7, inside days) and the opening-range breakout.",
+     "review": "pending",
+     "citation": "Day Trading with Short Term Price Patterns and Opening Range Breakout (1990), Toby Crabel"
+    }
+   ],
+   "approximation": "The screen lists NR7 days in either direction; the opening-range breakout that follows needs intraday bars and is not part of it.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Toby Crabel. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.crabel_nr7",
+    "source": "high - low < Min(high - low, $prior_days)[1]",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "prior_days",
+      "default": 6,
+      "min": 3,
+      "max": 20,
+      "doc": "Previous days today's range must be narrower than (6 = NR7, 3 = NR4)."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "breakout",
+    "tags": {
+     "timeframe_family": [
+      "swing"
+     ],
+     "direction": "both",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "intermediate",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.connors_rsi2_pullback",
+   "legend": "Larry Connors",
+   "name": "Connors-style 2-period RSI pullback",
+   "lines": {
+    "who": {
+     "text": "Author of books on short-term trading, including a 2008 study written with Cesar Alvarez.",
+     "cite": [
+      "connors_alvarez_2008"
+     ]
+    },
+    "style": {
+     "text": "Short-term mean reversion: brief pullbacks inside long-term uptrends, measured with a 2-period RSI.",
+     "cite": [
+      "connors_alvarez_2008"
+     ]
+    },
+    "looks_for": {
+     "text": "Close above the 200-day simple moving average and a 2-period RSI below 10, a deep short-term oversold reading.",
+     "cite": [
+      "connors_alvarez_2008"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; trades lasting a few days.",
+     "cite": [
+      "connors_alvarez_2008"
+     ]
+    }
+   },
+   "source_line": "Source: Short Term Trading Strategies That Work (2008), Larry Connors and Cesar Alvarez",
+   "sources": [
+    {
+     "id": "connors_alvarez_2008",
+     "kind": "book",
+     "title": "Short Term Trading Strategies That Work",
+     "authors": [
+      "Larry Connors",
+      "Cesar Alvarez"
+     ],
+     "year": 2008,
+     "publisher": "TradingMarkets Publishing Group",
+     "covers": "Short-term pullbacks within long-term uptrends: price above the 200-day moving average and the 2-period RSI at low (oversold) readings, with several thresholds examined.",
+     "review": "pending",
+     "citation": "Short Term Trading Strategies That Work (2008), Larry Connors and Cesar Alvarez"
+    }
+   ],
+   "approximation": "The book examines several RSI(2) thresholds and exits; the screen lists the setup only, with the threshold editable.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Connors. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.connors_rsi2_pullback",
+    "source": "close > SMA(close, 200) AND RSI(2) < $rsi_max",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "rsi_max",
+      "default": 10,
+      "min": 1,
+      "max": 30,
+      "doc": "2-period RSI below this reading."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "pullback",
+    "tags": {
+     "timeframe_family": [
+      "swing"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "beginner",
+     "universe_default": "your_list"
+    }
+   }
+  },
+  {
+   "id": "legends.williams_volatility_breakout",
+   "legend": "Larry Williams",
+   "name": "Williams-style volatility breakout",
+   "lines": {
+    "who": {
+     "text": "Futures trader and author of the 1999 book Long-Term Secrets to Short-Term Trading.",
+     "cite": [
+      "williams_1999"
+     ]
+    },
+    "style": {
+     "text": "Short-term volatility breakouts: a move away from the day's open by part of the previous day's range.",
+     "cite": [
+      "williams_1999"
+     ]
+    },
+    "looks_for": {
+     "text": "The day's high reaching the open plus a fraction (default 0.5) of the previous day's high-low range.",
+     "cite": [
+      "williams_1999"
+     ]
+    },
+    "timeframe": {
+     "text": "Daily bars; very short-term trades of one to a few days.",
+     "cite": [
+      "williams_1999"
+     ]
+    }
+   },
+   "source_line": "Source: Long-Term Secrets to Short-Term Trading (1999), Larry Williams",
+   "sources": [
+    {
+     "id": "williams_1999",
+     "kind": "book",
+     "title": "Long-Term Secrets to Short-Term Trading",
+     "authors": [
+      "Larry Williams"
+     ],
+     "year": 1999,
+     "publisher": "John Wiley & Sons",
+     "covers": "Short-term trading and volatility breakouts: a move from the open by a percentage of the previous day's range.",
+     "review": "pending",
+     "citation": "Long-Term Secrets to Short-Term Trading (1999), Larry Williams"
+    }
+   ],
+   "approximation": "On end-of-day bars the screen checks the day's high; the book examines several fractions and range measures (editable here).",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Williams. Educational tool, not investment advice.",
+   "screen": {
+    "id": "legends.williams_volatility_breakout",
+    "source": "high >= open + $k * (high[1] - low[1])",
+    "base_tf": "1d",
+    "params": [
+     {
+      "name": "k",
+      "default": 0.5,
+      "min": 0.1,
+      "max": 2.0,
+      "doc": "Fraction of the previous day's range added to the open."
+     }
+    ]
+   },
+   "filing": {
+    "method": "legends",
+    "setup": "breakout",
+    "tags": {
+     "timeframe_family": [
+      "swing"
+     ],
+     "direction": "long",
+     "data_tier": [
+      "eod"
+     ],
+     "difficulty": "advanced",
+     "universe_default": "your_list"
+    }
+   }
+  }
+ ]
+}

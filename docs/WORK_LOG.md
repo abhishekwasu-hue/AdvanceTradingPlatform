@@ -472,6 +472,30 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-10 - ATP review (PR #74, #75, #77, #81) - 13 fixes, draft PR, merge only on "Merge"
+- Stop path: accept-then-reject re-arm loop capped (STOP_REARM_MAX_REJECTS, then LIVE_EXIT_IF_NO_STOP exit or one
+  CRITICAL); stop triggers on the tick away from the market (place, re-arm, trailing modify); the guard's per-trade
+  memory dies with the position; an exit after a cancel no longer waits on the stop - a late stop fill is netted and
+  handed to reconciliation. All LIVE switches stay default off.
+- Expiry data: a day > coverage_end + 10 raises ExpiryDataStale (backtest skips + counts); a 403 refuses the build and
+  is never cached; check_against compares from the run's --start (older rows kept); the workflow starts CI before the
+  pull request, warns instead of failing when Actions may not open one, and caches the bhavcopies.
+- Copilot: AICore3D has its own error boundary (SVG core on failure); banned words checked on the server on every
+  model text (English + खात्रीशीर, हमखास ...; negated disclaimers pass); Marathi line only under the interview
+  questions; Ask Copilot sends language "en"; Playwright: Watchtower approve / reject / LIVE step-up, risk checkbox
+  gate, apply-risk confirm, 3D chunk failure, strict ai-core-3d; mockApi answers /ai/actions/* by method and state.
+- Two thesis tests seeded market reads at a fixed date and broke once the wall clock passed it (date bomb) - they now
+  seed a read as fresh as today's for the wall-clock paths.
+- data/nse-expiries is not merged; a fresh refresh pull request (with CI) comes from the fixed workflow after merge.
+
+### 2026-10-10 21:40 IST - Part B (backtest realism) started - branch claude/backtest-realism
+- Status table given (HTF lookahead: no; models: partial; speed: no; reproducibility: partial; trial ledger: partial;
+  report: partial). Part A (PR #82) waits on CI + self-review.
+- B1 done: `app/backtest/windows.py` WindowCursor - a timeframe shows only bars whose end <= the decision time (the
+  primary bar's close), one binary search per timeframe instead of a boolean mask per bar. Both engines use it;
+  ENGINE_VERSION 4 / 7-options. Truncation test over every multi-TF strategy (fails on the old slicing: 4 of 4).
+- Next: B3 speed benchmark + guard, then B4 reproducibility, B2 models, B5 trial ledger, B6 report.
+
 ### 2026-10-08 - Copilot UI redesign (7 tabs, i18n, 3D AI Core, compliance lint) -> G-UI
 - Seven tabs at `/copilot/<tab>` (Market Pulse, Strategy Lab, Idea Builder, Ask Copilot, Watchtower, News Radar,
   Coach & Scorecard); the old `/ai-copilot/<slug>` addresses and `?page=ai-copilot` forward to the tab that now
@@ -861,113 +885,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-11 00:15 IST - part S (Screener v2): spec received, design note, ADR-0021 / ADR-0022 drafts
-- Abhi's ATP_SCREENER_SPEC.md (v2) stored at docs/specs/. docs/design/SCREENER.md maps what exists to what each piece
-  becomes: scanner filters -> the first registry Filters (/api/scanner/run kept, parity test); the existing alert
-  outbox -> the Notification Service; the lake (part B) -> screen data, DuckDB/Parquet as a rebuildable cache.
-- Found: the scanner runs on browser-posted candles (the same G2 issue as the Copilot); screens run on server data only.
-- ADR-0021 (ScreenQL typed AST, hand-written parser, validator owns look-ahead and cost) and ADR-0022 (grow the existing
-  outbox) are provisional. Open questions SC-1..SC-6 with provisional answers (S1 and S3 after H-C1; S2 after part B).
-- Test: tests/test_s0_screener_docs.py (spec, note, ADRs present and indexed; every ADR file indexed).
-
-### 2026-10-11 00:17 IST - Screener addendum U1 (NSE universe): stored, planned inside S2
-- docs/specs/ATP_NSE_UNIVERSE_ADDENDUM.md stored; SCREENER.md section U1: as-of reference tables (securities, symbol
-  history, classifications, indices, membership ranges, AMFI buckets, F&O membership, ban/ASM/band history, index EOD),
-  joined to the broker master by ISIN; contract terms stay in part B's instrument_master_versions (reconciled by test).
-- Order U1-a..U1-e; U1-a..c start now, stacked on the part B chain so Alembic stays linear. U1-Q1 (ISIN identity),
-  U1-Q2 (missing industry levels stay empty, never inferred).
-
-### 2026-10-11 02:31 IST - S1a: ScreenQL grammar/AST/validator
-- `app/screener`:
-  - parser: recursive descent; positions on every error;
-  - AST: a JSON wire form for the builder and a canonical text;
-  - registry: 6 fields and 24 functions with units;
-  - validator: types/units, arity, windows, parameters, timeframes finer than the base, look-ahead, offsets ≤ 500,
-    cost cap.
-- Tests: `tests/test_s1a_screenql.py` (16), including a seeded fuzz (600 trees, 3,000 garbage strings).
-- mypy gate now includes `app/screener` (clean).
-- Next: S1b runtime.
-
-### 2026-10-11 02:35 IST - S1b: ScreenQL runtime
-- `app/screener/runtime.py`:
-  - every registry entry is implemented, using `app/indicators`;
-  - higher-timeframe values are aligned by close time (look-ahead guard, tested);
-  - incomplete resampled buckets are dropped;
-  - Rank/PercentileRank are cross-sectional;
-  - NaN never matches.
-- The parser accepts `@tf[n]` as well as `[n]@tf`.
-- Tests: `tests/test_s1b_screen_runtime.py` (10), with a coverage guard per registry entry.
-
-### 2026-10-11 02:43 IST - S1c: scanner on ScreenQL (parity) + H-C10a PR
-- 21 registry entries are added: Strategy Builder indicators (via `Operand`), structure filters and option filters.
-  The translator turns a `ScannerRequest` into one screen; `SCANNER_ENGINE` selects the engine (default legacy).
-- Parity:
-  - the legacy scanner tests re-run on the new engine;
-  - a seeded fuzz of 120 requests gives identical matches;
-  - the fuzz found the CHoCH/CHOCH difference, now normalised.
-- Open question SC-7 ("day" operand semantics) is in SCREENER.md.
-- H-C10a: full suite 1398 passed; pushed; draft PR #121.
-
-### 2026-10-11 02:46 IST - S1d: screener API + saved screens + runs
-- `/api/screener` (flag `screener_v2`, off): registry, validate, screens CRUD (validated, tenant-scoped, archived), and
-  run (server bars via the broker session; 409 without one; ≤ 50 symbols).
-- `screens` and `screen_runs` tables; migration `c5e7a9b1d3f5`, checked on Postgres.
-- Tests: `tests/test_s1d_screener_api.py` (5).
-- Open question SC-8 (run retention).
-
-### 2026-10-11 03:00 IST - S3a: Notification Service rules/events/throttle (+ container restart)
-- `alert_rules`, `alert_events` (idempotency key), `notification_policies`; `alert_deliveries` gains priority, group,
-  bucket and reason. Migration `e9a1c3d5f7b9`, checked on Postgres.
-- Engine: dedupe, cooldown, burst grouping, quiet hours (timezone-aware, across midnight, critical exempt), hourly
-  cap, digests. The worker flush runs separately from the outbox drain.
-- Rules and policy API behind `screener_v2`. Tests: 6, plus 2 mutation checks.
-- The container restarted during a test run (exit 137: two pytest processes at once). Nothing was lost: the worktrees
-  survived; only the S1d full suite was re-run.
-- Abhi re-sent the Charting and OI Banner specs. Both are byte-identical to the stored copies: OI O1-O5 are built and
-  Charting CH1 is in progress.
-
-### 2026-10-11 03:05 IST - S3b-1: webhook channel schema, Chartink shape, replay window, dead letters
-- The webhook body is versioned (`atp.notification/1`); screen alerts carry an `atp.alert/1` block (symbols, trigger
-  values, data timestamps). Optional Chartink-compatible body.
-- The receiver check `verify_webhook` enforces a 300 s replay window.
-- Dead-letter reason codes, plus a dead-letter list and a retry API.
-- Tests: 5, plus 2 mutation checks. The existing alert tests still pass (27 in the three files).
-
-### 2026-10-11 03:12 IST - S3b-2: per-user Telegram linking + email unsubscribe; SC renumbering; S1d PR
-- Telegram: a one-time `/start <code>` from a private chat links the user's own chat. Codes are stored as hashes,
-  expire after 15 minutes and work once. The linked chat gets the screen alerts of that user's rules as its own
-  outbox row, with no command rights.
-- Email: one mail per recipient with a signed unsubscribe page (POST to unsubscribe) and the RFC 8058 headers. Opting
-  out covers screen alerts only; risk mails always go. Traders can re-subscribe an address.
-- Migration `f1b3d5e7a9c1`, Postgres round-trip OK. Tests: 4, plus 4 mutation checks; 42 passed across the
-  alerts and Telegram files.
-- New setting `PUBLIC_BASE_URL` (empty = no unsubscribe link). It goes in the host `.env` by Abhi; `.env.example`
-  only documents it.
-- S1d full suite: 1351 passed. Pushed; draft PR #125.
-- Postgres had stopped with the container restart; I started it again.
-- Docs fix: S1c's open question SC-4 → SC-7 and S1d's SC-5 → SC-8 (both numbers were already in use). Fixed on each
-  branch and merged forward.
-- New open question SC-9 (unsubscribe scope, bounces).
-
-### 2026-10-11 03:19 IST - S3c: alert-management UI; CH1a PR
-- Notifications page gains a "Rules & delivery" tab: rules (pause/resume, delivery log), new instrument rule with the
-  server's validator problems, delivery policy, failed deliveries with retry, personal Telegram link code and email
-  opt-outs.
-- Helpers are unit-tested (5). tsc clean; vitest 57 passed; build and bundle budget OK.
-- CH1a full suite: 1307 passed. Pushed; draft PR #126.
-
-### 2026-10-11 03:24 IST - S4a: bar-close engine for alert rules
-- The worker evaluates active rules on the latest CLOSED bar of the NSE clock (short last bucket, 15:30 daily close,
-  holidays). It trims the forming bar, skips stale symbols, retries after 60 s and shows why on the rule.
-- One evaluation per bar. Matches are recorded with trigger values; S3 delivers them.
-- Screen rules carry their own symbols (≤ 50). Daily rules build today's bar from 15-minute bars after the close.
-- Migration `a3c5e7b9d1f3`, Postgres OK. Tests: 7, plus 3 mutation checks. Open question SC-10 (weekly/monthly).
-
-### 2026-10-11 03:32 IST - S4b-1: cycle cache; PRs for S3a/S3b/S3b-2/CH1b; S1d closed-bar fix
-- Within a worker cycle, rules on the same symbol, timeframe and bar fetch once, and the same screen over the same
-  symbols and bar is evaluated once. Tests: 2, plus 3 mutation checks.
-- S3b-2 full suite: 1369 passed. S3a #127, S3b-1 #128, S3b-2 #129 and CH1b #130 are pushed as draft PRs; CH1b build
-  and bundle budget OK.
-- S1d (#125) fix: a screener run no longer decides on the broker's forming intraday bar (`closed_only`), with a test
-  and a mutation check. Merged forward through the stack.
-- ROADMAP_STATUS updated (#86).
+### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
+- What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
+  `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per
+  container, Postgres tuned for ~2 GB with WAL archiving kept, Redis 384 MB `volatile-lru`, Caddyfile by `CADDYFILE`,
+  off-site target by `OFFSITE_REMOTE`); `deploy/Caddyfile.ip` (no domain yet: the IP with Caddy's internal certificate);
+  `scripts/deploy.sh` takes `COMPOSE_OVERLAYS`; Marathi runbook `docs/DEPLOY_HOSTINGER_MR.md` (backups + restore test,
+  SEBI static-IP checklist per broker, 8 GB budget, troubleshooting); OPERATIONS §1.2b budget table.
+- Secrets: none in the scripts - `.env` is made on the server from `.env.example` with `CHANGE_ME` placeholders (mode
+  600) and the deploy stops until the owner fills them. Deploy key read-only. The Trade repo droplet is not touched.
+- Tests: `tests/test_hostinger_deploy.py` (10) - bash syntax, one-liners = scripts, merged compose publishes only
+  Caddy 80/443 and keeps the limits within 7 GB, no secret literals, the IP Caddyfile routes like the domain one.
+- Questions: OPEN_QUESTIONS H-1 (Redis policy), H-2 (local off-site until a provider is chosen).
+- Next: owner runs the blocks once the server IP exists; then PR #82 / #83 CI, part C3/C4.
+### 2026-10-10 22:30 IST - part C3 + C4 on PR #83 (backtest realism)
+- C3: `backend/scripts/bench_backtest.py` (timings, growth, bars/s, indicator-cache counters); CI guard
+  `tests/test_realism_benchmark.py` - per run the indicator cache's whole computations and unserved calls must not grow
+  with the bars (deterministic; checked to fail on a simulated regression: 12/13 strategies). Table in docs/BENCHMARKS.md.
+- C4: `app/backtest/repro.py` - engine/code/data/config/result hashes + seed on every result (`reproducibility`), kept
+  in the run record; `tests/test_realism_repro.py` (same bytes in-process and across PYTHONHASHSEED; each hash moves only
+  with what it names; API + record). No schema change (stored in the run's metrics JSON). Engine version unchanged
+  (results are identical).
+- Next: C2 (pluggable models) design note, then C5/C6 per the spec order; ROADMAP_STATUS board.

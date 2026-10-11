@@ -1,10 +1,11 @@
 """P1-c: the Options Strategy Builder API - catalog, template, evaluate, suggest. Research only: checked against the
 model functions (themselves checked against textbook values and Monte Carlo in P1-b), the flag, auth, and that the
 package imports nothing that could place an order."""
+import ast
 import asyncio
+import json
 import math
 import pathlib
-import re
 from datetime import date, timedelta
 
 from app.brokers.models import OptionChain, OptionChainRow
@@ -139,12 +140,77 @@ def test_suggest_runs_a_ported_rule_on_a_chain_and_says_how_pop_was_made():
 
 
 def test_the_builder_package_cannot_place_an_order():
-    """Research only (ADR-0006 / P1-c): nothing in app/options_builder imports execution, brokers' order calls or risk."""
+    """Research only (ADR-0006 / P1-c): no module under app/options_builder imports the execution, broker, order or risk
+    layers in any form (absolute, `from app import x`, relative, importlib), and none names an order call."""
     pkg = pathlib.Path(__file__).resolve().parents[1] / "app" / "options_builder"
-    forbidden = re.compile(r"^\s*(from|import)\s+app\.(execution|trading|orders|risk|deployments|kill_switch)\b", re.M)
-    for f in pkg.glob("*.py"):
-        assert not forbidden.search(f.read_text()), f.name
-        assert "place_order" not in f.read_text(), f.name
+    forbidden = {"execution", "trading", "orders", "risk", "deployments", "kill_switch", "brokers"}
+    allowed = {"app.brokers.models"}                               # the OptionChain data shape only
+    order_calls = {"place_order", "modify_order", "cancel_order", "exit_position", "place_stop_loss_order"}
+    files = list(pkg.rglob("*.py"))
+    assert len(files) >= 6
+    def reaches_out(mod: str) -> bool:
+        parts = mod.split(".")
+        if parts[0] != "app" or len(parts) < 2 or parts[1] not in forbidden:
+            return False
+        return not any(mod == ok or mod.startswith(ok + ".") for ok in allowed)
+
+    for f in files:
+        for node in ast.walk(ast.parse(f.read_text())):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                assert node.level <= 1, f"{f.name}: a relative import leaves the package"
+                base = "app.options_builder" if node.level else (node.module or "")
+                base = f"{base}.{node.module}" if node.level and node.module else base
+                names = [f"{base}.{a.name}" for a in node.names]
+            else:
+                names = []
+            for mod in names:
+                assert not reaches_out(mod), f"{f.name} imports {mod}"
+            if isinstance(node, (ast.Name, ast.Attribute)):
+                name = node.id if isinstance(node, ast.Name) else node.attr
+                assert name not in order_calls and name != "importlib", f"{f.name} names {name}"
+
+
+def test_bad_numbers_are_refused_not_crashed_on():
+    """Review P1-c: a wing below zero, a negative spot, a zero strike, Infinity and an oversized chain are each a 422."""
+    h = _headers("p1c-bounds@example.com")
+    wide = {"atm_strike": 300, "width": 200}
+    assert _template(h, "Iron Condor", **wide).status_code == 422                                     # 300 - 2*200 < 0
+    assert _template(h, "Iron Condor", **wide, spot=300, iv=0.3, as_of=AS_OF.isoformat()).status_code == 422
+    assert _template(h, "Iron Condor", width=9_999_999).status_code == 422
+    leg = _priced([{"direction": "BUY", "option_type": "CE", "strike": SPOT, "lots": 1, "expiry": EXP.isoformat()}])[0]
+    raw = json.dumps({"legs": [leg], "spot": SPOT, "as_of": AS_OF.isoformat()}).replace(f'"premium": {leg["premium"]}', '"premium": Infinity')
+    assert "Infinity" in raw
+    r = client.post("/api/options-builder/evaluate", content=raw, headers={**h, "Content-Type": "application/json"})
+    assert r.status_code == 422
+    body = {"chain": _chain(), "rule": "iron_condor", "step": 100, "hedge_width_points": 200, "as_of": AS_OF.isoformat()}
+    neg = client.post("/api/options-builder/suggest", json={**body, "chain": {**body["chain"], "underlying_ltp": -5}}, headers=h)
+    assert neg.status_code == 422 and "underlying price" in neg.json()["detail"]
+    zero = {**body["chain"], "rows": [{**body["chain"]["rows"][0], "strike": 0}] + body["chain"]["rows"][1:]}
+    assert client.post("/api/options-builder/suggest", json={**body, "chain": zero}, headers=h).status_code == 422
+    many = {**body["chain"], "rows": body["chain"]["rows"] * 40}                                     # 31 * 40 > 1000
+    assert client.post("/api/options-builder/suggest", json={**body, "chain": many}, headers=h).status_code == 422
+
+
+def test_the_iv_is_solved_at_the_rate_the_caller_gave():
+    """Review P1-c: solving at the default rate and repricing at another moved a leg off its own premium."""
+    h = _headers("p1c-rate@example.com")
+    leg = {"direction": "BUY", "option_type": "CE", "strike": SPOT, "premium": 300.0, "lots": 1, "lot_size": 50, "expiry": EXP.isoformat()}
+    for rate in (0.0, RISK_FREE_RATE, 0.25):
+        out = _evaluate(h, [leg], rate=rate).json()
+        priced = {**leg, "iv": out["legs"][0]["iv"]}
+        assert abs(m.leg_theoretical(priced, SPOT, AS_OF, r=rate) - 300.0) < 0.01, rate
+    assert _evaluate(h, [leg], rate=0.25).json()["legs"][0]["iv"] < _evaluate(h, [leg], rate=0.0).json()["legs"][0]["iv"]
+
+
+def test_a_switched_off_builder_answers_503_before_reading_the_body():
+    h = _headers("p1c-flag-body@example.com")
+    _flag(False)
+    try:
+        assert client.post("/api/options-builder/evaluate", json={"legs": "not a list"}, headers=h).status_code == 503
+    finally:
+        _flag(True)
 
 
 def test_a_template_can_be_priced_by_the_model_as_a_labelled_starting_point():

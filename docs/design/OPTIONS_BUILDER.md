@@ -119,8 +119,13 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
 
 ## P1-c1 (built): the builder API
 `app/options_builder/routes.py`, under the `options_builder` flag. It is a kill flag, on by default, because the
-builder is research only. Every endpoint needs a login, and none places, stages or sizes an order. A test checks that
-the package imports nothing from execution, risk, deployments or the kill switch, and never calls `place_order`.
+builder is research only. Every endpoint needs a login, and none places, stages or sizes an order. A test walks every
+module's syntax tree and checks that the package imports nothing from execution, brokers (other than the
+`OptionChain` data shape), risk, deployments or the kill switch, in any import form, and never names an order call.
+- **Limits** (from the P1-c review). The flag is checked before the body is read, so a switched-off builder answers 503
+  whatever was sent. Template, evaluate and suggest share a limit of 120 calls a minute per user. The model work runs
+  in the thread pool, not on the event loop. Prices, strikes and the spot must be finite, positive and below 10^7. A
+  template whose width puts a strike at or below zero is a 422. A chain is read up to 1,000 strikes.
 - `GET /api/options-builder/catalog`: the 38 templates by family, with their legs as offsets and whether a template
   needs two expiries.
 - `POST /api/options-builder/template`: the legs of a template at an ATM strike, width, expiries and lot count, all
@@ -134,16 +139,19 @@ the package imports nothing from execution, risk, deployments or the kill switch
   - a disclaimer.
 
   Details:
-  - A leg without an IV has it solved from its premium (`iv_source` says so); with neither, it is a 422.
+  - A leg without an IV has it solved from its premium at the caller's `rate` (`iv_source` says so), so repricing at
+    that rate gives the premium back; with neither, it is a 422.
   - `as_of` is a plain date (that day's close) or a datetime with its time zone. A naive datetime is refused, never
     guessed.
   - Legs with different expiries get no expiry payoff or extremes (`null`); their summary is numerical.
 - `POST /api/options-builder/suggest`: a ported selector rule (iron condor, iron butterfly, credit spread by PoP /
   fixed / ITM, naked ITM) on a broker `OptionChain` through the adapter. It returns the rule, the ATM used, how PoP
   was made, and the result or `found: false`. Rules that need a direction refuse to run without one.
-- Tests (`tests/test_p1c_options_builder_api.py`, 7): auth and the flag; catalog and template; evaluate against the
-  model functions; unbounded and calendar handling; IV solved or refused and the clock rules; suggest; the
-  no-order-path check.
+- Tests (`tests/test_p1c_options_builder_api.py`, 11): auth and the flag (also before the body); catalog and
+  template; model pricing; evaluate against the model functions; unbounded and calendar handling; IV solved or
+  refused, at the given rate, and the clock rules; suggest; bad numbers refused (negative wing, negative spot, zero
+  strike, Infinity, an oversized chain); the no-order-path check. Each new test was checked against a mutant of the
+  code it guards.
 
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not

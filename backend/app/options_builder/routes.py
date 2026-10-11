@@ -18,12 +18,14 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.brokers.models import OptionChain
 from app.core.config import RISK_FREE_RATE
+from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.options_builder import catalog, chain, model, selectors
@@ -31,18 +33,30 @@ from app.options_builder.greeks import leg_with_model_greeks
 from app.options_builder.payoff import build_default_price_range, compute_strategy_payoff_curve
 from app.platform.controls import require_flag
 
-router = APIRouter(prefix="/api/options-builder", tags=["options-builder"])
 FLAG = "options_builder"
 MAX_LEGS = 12
 MAX_POINTS = 401
+MAX_CHAIN_ROWS = 1000           # strikes in one chain; real index chains are a few hundred
+MAX_PRICE = 1e7                 # above any listed price or strike; keeps the model's arithmetic finite
+
+
+async def _flag_on(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    """Runs before the body is read, so a switched-off builder answers 503 whatever was sent."""
+    await require_flag(session, FLAG, user.tenant_id)
+
+
+# The model work is CPU only and runs in the thread pool; the limit keeps one user from filling that pool. The page
+# evaluates after each pause in editing (200 ms) and once more to re-price model legs, so 2 a second is ample.
+compute_rate_limit = user_rate_limit("options_builder", limit=120, window_seconds=60)
+router = APIRouter(prefix="/api/options-builder", tags=["options-builder"], dependencies=[Depends(_flag_on)])
 DISCLAIMER = "Model estimates (Black-Scholes, one volatility) for research; not a forecast or a recommendation."
 
 
 class LegIn(BaseModel):
     direction: Literal["BUY", "SELL"]
     option_type: Literal["CE", "PE", "FUT"]
-    strike: float = Field(gt=0)
-    premium: float = Field(ge=0, description="entry price per unit (the futures price for FUT)")
+    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    premium: float = Field(ge=0, lt=MAX_PRICE, allow_inf_nan=False, description="entry price per unit (the futures price for FUT)")
     lots: int = Field(ge=1, le=1000)
     lot_size: int = Field(ge=1, le=100_000)
     expiry: date
@@ -51,7 +65,7 @@ class LegIn(BaseModel):
 
 class EvaluateBody(BaseModel):
     legs: List[LegIn] = Field(min_length=1, max_length=MAX_LEGS)
-    spot: float = Field(gt=0)
+    spot: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     as_of: Optional[Union[datetime, date]] = Field(default=None, description="an aware datetime (exact, intraday) or a date; default now")
     days_forward: float = Field(default=0, ge=0, le=400)
     iv_shift: float = Field(default=0.0, ge=-0.5, le=1.0)
@@ -67,15 +81,15 @@ class EvaluateBody(BaseModel):
 
 class TemplateBody(BaseModel):
     name: str
-    atm_strike: float = Field(gt=0)
-    width: float = Field(gt=0)
+    atm_strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    width: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     near_expiry: date
     next_expiry: Optional[date] = None
     lots: int = Field(default=1, ge=1, le=1000)
     lot_size: Optional[int] = Field(default=None, ge=1, le=100_000)
     # Optional model pricing (a starting point before real prices from the chain): every leg gets the model's price
     # at `iv`, marked premium_source "model". All three are needed together.
-    spot: Optional[float] = Field(default=None, gt=0)
+    spot: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     iv: Optional[float] = Field(default=None, gt=0, lt=5)
     as_of: Optional[Union[datetime, date]] = None
     rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
@@ -103,13 +117,13 @@ def _parse_when(v: Any) -> Any:
 class SuggestBody(BaseModel):
     chain: OptionChain
     rule: Literal["iron_condor", "iron_butterfly", "credit_spread", "credit_spread_fixed", "credit_spread_itm", "naked_itm"]
-    step: float = Field(gt=0, description="the strike step, from the instrument master")
-    hedge_width_points: float = Field(gt=0)
-    atm_strike: Optional[float] = Field(default=None, gt=0)
+    step: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False, description="the strike step, from the instrument master")
+    hedge_width_points: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    atm_strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     direction: Optional[Literal["BULLISH", "BEARISH"]] = None
     pop_threshold_pct: float = Field(default=70.0, ge=0, le=100)
     strikes_otm: int = Field(default=2, ge=0, le=50)
-    itm_depth_points: float = Field(default=0.0, ge=0)
+    itm_depth_points: float = Field(default=0.0, ge=0, lt=MAX_PRICE, allow_inf_nan=False)
     hedge_enabled: bool = False
     as_of: Optional[Union[datetime, date]] = None
 
@@ -133,7 +147,7 @@ def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, An
             if leg.premium <= 0:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: give an IV or a premium to solve it from")
             try:
-                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of)
+                d = leg_with_model_greeks(d, underlying_price=body.spot, expiry=leg.expiry, as_of=as_of, risk_free_rate=body.rate)
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=f"{leg.option_type} {leg.strike:g}: {exc}") from exc
             d["iv_source"] = "solved from the premium"
@@ -144,23 +158,24 @@ def _legs(body: EvaluateBody, as_of: Union[date, datetime]) -> List[Dict[str, An
 
 
 @router.get("/catalog")
-async def get_catalog(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await require_flag(session, FLAG, user.tenant_id)
+async def get_catalog() -> Dict[str, Any]:
     return {"families": catalog.families(),
             "templates": {name: {"family": t["family"], "what": t["what"], "two_expiries": any(leg[4] == 1 for leg in t["legs"]),
                                  "legs": [{"direction": d, "option_type": k, "offset": o, "lots": m, "expiry_slot": e} for d, k, o, m, e in t["legs"]]}
                           for name, t in catalog.CATALOG.items()}}
 
 
-@router.post("/template")
-async def build_template(body: TemplateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await require_flag(session, FLAG, user.tenant_id)
+@router.post("/template", dependencies=[Depends(compute_rate_limit)])
+async def build_template(body: TemplateBody) -> Dict[str, Any]:
     if body.name not in catalog.CATALOG:
         raise HTTPException(status_code=404, detail=f"no template named {body.name!r}")
     legs = catalog.build_template(body.name, body.atm_strike, body.width, body.near_expiry.isoformat(),
                                   body.next_expiry.isoformat() if body.next_expiry else None, lots=body.lots)
     if legs is None:
         raise HTTPException(status_code=422, detail=f"{body.name} needs the next expiry as well")
+    if not all(math.isfinite(leg["strike"]) and 0 < leg["strike"] < MAX_PRICE for leg in legs):
+        raise HTTPException(status_code=422, detail=f"a width of {body.width:g} around {body.atm_strike:g} puts a {body.name} strike at or below zero "
+                                                    "(or past any listed price); use a smaller width")
     priced = body.spot is not None and body.iv is not None
     if (body.spot is None) != (body.iv is None):
         raise HTTPException(status_code=422, detail="model pricing needs both spot and iv")
@@ -170,14 +185,20 @@ async def build_template(body: TemplateBody, user: User = Depends(get_current_us
         if priced and body.spot is not None:
             leg["iv"] = None if leg["option_type"] == "FUT" else body.iv
             when: Union[date, datetime] = body.as_of or datetime.now().astimezone()
-            leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+            try:
+                leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"{leg['option_type']} {leg['strike']:g}: {exc}") from exc
             leg["premium_source"] = "model"
     return {"name": body.name, "legs": legs, "priced_by_model": priced}
 
 
-@router.post("/evaluate")
-async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await require_flag(session, FLAG, user.tenant_id)
+@router.post("/evaluate", dependencies=[Depends(compute_rate_limit)])
+async def evaluate(body: EvaluateBody) -> Dict[str, Any]:
+    return await run_in_threadpool(_evaluate, body)
+
+
+def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
     as_of: Union[date, datetime] = body.as_of or datetime.now().astimezone()
     legs = _legs(body, as_of)
     prices = build_default_price_range(body.spot, num_points=body.points, range_pct=body.range_pct)
@@ -212,12 +233,25 @@ async def evaluate(body: EvaluateBody, user: User = Depends(get_current_user), s
     return out
 
 
-@router.post("/suggest")
-async def suggest(body: SuggestBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+@router.post("/suggest", dependencies=[Depends(compute_rate_limit)])
+async def suggest(body: SuggestBody) -> Dict[str, Any]:
     """A ported selector rule on the chain; the rule and its numbers come back with the result so the page can show
     them. None when the chain cannot give a complete structure - never a partial one."""
-    await require_flag(session, FLAG, user.tenant_id)
-    raw = chain.raw_chain(body.chain, as_of=body.as_of or datetime.now().astimezone())
+    spot = body.chain.underlying_ltp
+    if len(body.chain.rows) > MAX_CHAIN_ROWS:
+        raise HTTPException(status_code=422, detail=f"the chain has {len(body.chain.rows)} strikes; at most {MAX_CHAIN_ROWS} are read")
+    if spot is not None and not (math.isfinite(spot) and 0 < spot < MAX_PRICE):
+        raise HTTPException(status_code=422, detail="the chain's underlying price must be a positive number")
+    if not all(math.isfinite(r.strike) and 0 < r.strike < MAX_PRICE for r in body.chain.rows):
+        raise HTTPException(status_code=422, detail="every strike in the chain must be a positive number")
+    return await run_in_threadpool(_suggest, body)
+
+
+def _suggest(body: SuggestBody) -> Dict[str, Any]:
+    try:
+        raw = chain.raw_chain(body.chain, as_of=body.as_of or datetime.now().astimezone())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     spot = body.chain.underlying_ltp
     atm = body.atm_strike or (min((r.strike for r in body.chain.rows), key=lambda k: abs(k - spot)) if spot and body.chain.rows else None)
     needs_direction = body.rule in ("credit_spread", "credit_spread_fixed", "credit_spread_itm", "naked_itm")

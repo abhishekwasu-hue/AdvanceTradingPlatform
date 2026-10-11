@@ -1,7 +1,7 @@
 """CH1: chart_drawings - engine-neutral user drawings (time/price anchors), versioned, lockable, soft-deleted
 
 Revision ID: d7f9b1c3e5a7
-Revises: a1c3e5f7b9d2
+Revises: f1a2b3c4d5e6
 Create Date: 2026-10-11 04:30:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd7f9b1c3e5a7'
-down_revision: Union[str, Sequence[str], None] = 'a1c3e5f7b9d2'
+down_revision: Union[str, Sequence[str], None] = 'f1a2b3c4d5e6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

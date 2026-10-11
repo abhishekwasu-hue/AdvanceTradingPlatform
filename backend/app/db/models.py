@@ -1912,6 +1912,33 @@ class AiAcknowledgementRecord(Base):
     accepted_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class ResearchTrialRecord(Base):
+    """H-C3 (ADR-0019/0020): one trial of a strategy research study - the DSL tried, the in-sample window, its metrics and
+    its daily returns. Append-only and never deleted: the study report deflates the chosen result by EVERY trial tried,
+    so dropping a trial would make the search look better than it was."""
+
+    __tablename__ = "research_trials"
+    __table_args__ = (UniqueConstraint("study_id", "seq", name="uq_research_trials_study_seq"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    study_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    dsl_json: Mapped[str] = mapped_column(Text, nullable=False)
+    dsl_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    data_from: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    data_to: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)                 # ok / invalid / error; oos = the study's check
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    returns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")   # daily returns over the window
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class LlmCallRecord(Base):
     """P0.8-D: every LLM input and output - the system prompt, the user text, the answer (or the error), with hashes,
     the prompt version, provider, model, tokens, cost, tenant, user and feature. Append-only and never deleted

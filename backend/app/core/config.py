@@ -501,3 +501,7 @@ APPROVAL_EXIT_TTL_MINUTES = _bounded_int("APPROVAL_EXIT_TTL_MINUTES", 30, 1, 24 
 APPROVAL_REQUOTE_MAX_DRIFT_PCT = _bounded_float("APPROVAL_REQUOTE_MAX_DRIFT_PCT", 0.5, 0.0, 20.0)
 APPROVAL_REQUOTE_MAX_DRIFT_TICKS = _bounded_int("APPROVAL_REQUOTE_MAX_DRIFT_TICKS", 0, 0, 100_000)
 APPROVAL_MAX_REQUOTES = _bounded_int("APPROVAL_MAX_REQUOTES", 2, 0, 10)
+# Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
+# price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep
+# working on their own).
+EXIT_NOW_MAX_MARK_AGE_MINUTES = _bounded_int("EXIT_NOW_MAX_MARK_AGE_MINUTES", 5, 1, 60)

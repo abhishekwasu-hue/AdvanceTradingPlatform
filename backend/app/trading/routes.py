@@ -289,12 +289,19 @@ async def mark_price(
         raise HTTPException(status_code=404, detail="Unknown position")
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
+    from app.execution import approval
+    if await approval.exit_now_enabled(session, user.tenant_id):
+        # Z3 (review V3): with approval-only (or the PAPER account) on, a typed price never closes a position - the
+        # monitor's own quotes run the stop and target, and "Exit now" closes at a platform price.
+        raise HTTPException(status_code=409, detail="Closing on a typed price is off here - use Exit now (it prices from the platform's quotes)")
 
     hit = check_contract_exit(trade, request.current_price, request.underlying_price)
     if hit is None:
         return MarkPriceResponse(closed=False)
 
     reason, exit_price = hit
+    if trade.mode == "PAPER":
+        trade.price_source = "client"          # Z3 (review V3/H2): closed at a typed price - left out of the PAPER account and ladder
     # LIVE positions are squared off at the broker inside close_position (using the deployment's
     # broker session); a LIVE trade with no usable session stays open and the 409 says so.
     broker = await broker_for_trade(session, trade)

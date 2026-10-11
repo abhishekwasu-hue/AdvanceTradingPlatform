@@ -122,7 +122,9 @@ async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: 
         return None
     if approval_action_id is None:
         return "Approval-only mode: an entry needs an approved proposal - this one came without one"
-    action = await session.get(AiActionRecord, approval_action_id)
+    # Review V5: read the row from the database, never the session's cache - the orphan sweep may have settled it.
+    action = (await session.execute(select(AiActionRecord).where(AiActionRecord.id == approval_action_id)
+                                    .execution_options(populate_existing=True))).scalar_one_or_none()
     if action is None or action.tenant_id != tenant_id or action.action != ACTION_ENTRY or action.status != "APPROVED":
         return "Approval-only mode: the proposal given is not an approved entry proposal of this organisation"
     if action.deployment_id != deployment_id:
@@ -291,14 +293,22 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
-        action.trade_id = order.trade_id
-        action.result = f"PAPER order #{order.id} placed at the re-quoted price {price:g}" + (f"; position #{order.trade_id}" if order.trade_id else "")
-        action.status, action.executed_at = "EXECUTED", now
+        values = {"status": "EXECUTED", "executed_at": now, "trade_id": order.trade_id,
+                  "result": f"PAPER order #{order.id} placed at the re-quoted price {price:g}" + (f"; position #{order.trade_id}" if order.trade_id else "")}
     except Exception as exc:  # noqa: BLE001 - recorded on the row, shown to the person
-        action.status, action.result, action.executed_at = "FAILED", str(exc)[:300], now
+        values = {"status": "FAILED", "executed_at": now, "result": str(exc)[:300]}
+    await _settle(session, action, values)
+    return action
+
+
+async def _settle(session: AsyncSession, action: AiActionRecord, values: Dict) -> bool:
+    """Review V5: the final write of an approved entry is conditional on the row still being APPROVED - if the orphan
+    sweep (or anything else) settled it meanwhile, that outcome stands. Leaves `action` reloaded from the database."""
+    claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id, AiActionRecord.status == "APPROVED")
+                                    .values(**values).execution_options(synchronize_session=False))
     await session.commit()
     await session.refresh(action)
-    return action
+    return claimed.rowcount == 1
 
 
 async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: User, evidence: Dict, deployment: Optional[StrategyDeploymentRecord],
@@ -306,9 +316,11 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
     """The price moved: the approval places nothing. The row is closed as EXPIRED (it never filled) and, on a re-quote
     within the allowance, a fresh proposal at the current price is raised for a new decision."""
     requotes = int(evidence.get("requotes") or 0)
-    action.status, action.executed_at = "EXPIRED", now
-    action.result = f"Not placed: {why}"[:300]
-    await session.flush()                     # frees the deployment's open-proposal slot for the re-quote
+    # Review V5: conditional - frees the deployment's open-proposal slot for the re-quote unless already settled.
+    if not await _settle(session, action, {"status": "EXPIRED", "executed_at": now, "result": f"Not placed: {why}"[:300]}):
+        return action
+    result = f"Not placed: {why}"
+    owner_id = action.owner_user_id if action.owner_user_id is not None else user.id
     if verdict == "requote" and requotes < app_config.APPROVAL_MAX_REQUOTES:
         signal = Signal.model_validate(evidence["signal"])
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
@@ -317,13 +329,15 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                     strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), source="requote",
                                     idempotency_key=f"requote:{action.id}", deployment=deployment,
                                     requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
-                                    holding=str(evidence.get("holding") or "INTRADAY"), user_id=user.id, now=now,
-                                    requotes=requotes + 1, requoted_from=action.id)
+                                    holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
+                                    requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"))
         if fresh is not None:
-            action.result = f"Not placed: {why}. Re-quoted as proposal #{fresh.id}"[:300]
+            result = f"Not placed: {why}. Re-quoted as proposal #{fresh.id}"
     elif verdict == "requote":
-        action.result = f"Not placed: {why}. No re-quote left ({requotes} of {app_config.APPROVAL_MAX_REQUOTES} used)"[:300]
-    await write_audit_log(session, action.tenant_id, user.id, "entry_proposal_not_placed", f"#{action.id}: {action.result}")
+        result = f"Not placed: {why}. No re-quote left ({requotes} of {app_config.APPROVAL_MAX_REQUOTES} used)"
+    await session.execute(update(AiActionRecord).where(AiActionRecord.id == action.id).values(result=result[:300])
+                          .execution_options(synchronize_session=False))
+    await write_audit_log(session, action.tenant_id, user.id, "entry_proposal_not_placed", f"#{action.id}: {result}")
     await session.commit()
     await session.refresh(action)
     return action
@@ -349,6 +363,8 @@ async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
     than not at all (ADR-0004)."""
     del deployments                      # kept for the caller's signature; the trades themselves say how they entered
     try:
+        if not await flag_on(session, tenant_id):          # review V6: flag off - every target exit is automatic again
+            return None
         ids = set(await session.scalars(
             select(AiActionRecord.trade_id).join(TradeRecord, TradeRecord.id == AiActionRecord.trade_id)
             .where(AiActionRecord.tenant_id == tenant_id, AiActionRecord.action == ACTION_ENTRY, AiActionRecord.status == "EXECUTED",
@@ -441,9 +457,22 @@ async def execution_sources(session: AsyncSession, action: AiActionRecord, user:
     return lookup, broker
 
 
+def recent_mark(trade: TradeRecord, now: Optional[datetime] = None) -> bool:
+    """Review V2: the monitor's last price is good enough for "Exit now" only while it is fresh - at most
+    EXIT_NOW_MAX_MARK_AGE_MINUTES old and from today's session (IST). Pure; protective exits never call it."""
+    if trade.mark_price is None or trade.mark_time is None:
+        return False
+    now = _utc(now or datetime.now(timezone.utc))
+    seen = _utc(trade.mark_time)
+    if seen.astimezone(IST).date() != now.astimezone(IST).date():
+        return False
+    return timedelta(0) <= now - seen <= timedelta(minutes=app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES)
+
+
 async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via: str = "web"):
     """"Exit now": closes a PAPER position at once, whatever is pending or snoozed (ADR-0004). Priced at the live price of
-    the person's own entitlement, else the last price the monitor saw for it - never a typed price (review M2). LIVE is
+    the person's own entitlement, else the last price the monitor saw for it if recent (review V2) - never a typed price
+    (review M2). LIVE is
     refused: Phase 0 has no broker order path, LIVE positions are closed in the broker app (review M4). A leg of a
     structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
     Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
@@ -459,10 +488,11 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
                 return float(await lookup(leg.symbol, exchange_for_trade(leg))), "live price"
             except Exception as exc:  # noqa: BLE001 - fall back below
                 logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
-        if leg.mark_price:
+        if leg.mark_price and recent_mark(leg):
             return float(leg.mark_price), "last seen price"
-        raise ValueError(f"No price for {leg.symbol} yet: no live quote and the monitor has not priced this position - "
-                         "try again once a quote is available (the stop and time exits keep running)")
+        raise ValueError(f"No recent price for {leg.symbol}: no live quote, and the monitor's last price is missing or older than "
+                         f"{app_config.EXIT_NOW_MAX_MARK_AGE_MINUTES} min / not from today's session. Nothing was closed - the stop "
+                         "and target keep working; try again when a live price is available")
 
     legs = [trade]
     if trade.leg_group_id:

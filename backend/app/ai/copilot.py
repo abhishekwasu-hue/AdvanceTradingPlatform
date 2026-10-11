@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from app.ai import grounding, output_filter, prompt_versions
+from app.ai import grounding, output_filter, prompt_versions, wording
 from app.ai.interview import tr
 
 INTENT_WORDS = {
@@ -79,7 +79,8 @@ def facts_text(lines: List[str]) -> str:
 
 
 def grounded(text: str, facts: List[str], question: str) -> Tuple[bool, str]:
-    """P0.8 / B2: the reply may only carry numbers and symbols from the facts and the question."""
+    """P0.8 / B2: the reply may only carry numbers and symbols from the facts and the question - and none of the
+    banned words (recommend, best, guaranteed, खात्रीशीर, हमखास ...)."""
     trusted = facts_text(facts) + "\n" + (question or "")
     ok, bad = grounding.check_numbers(text, grounding.allowed_from_text(trusted))
     if not ok:
@@ -90,6 +91,9 @@ def grounded(text: str, facts: List[str], question: str) -> Tuple[bool, str]:
     ok, bad = grounding.check_direction(text, facts_text(facts))      # H-C1 d: the question cannot supply a direction
     if not ok:
         return False, f"a direction the facts do not support ({', '.join(bad)})"
+    ok, bad = wording.check_wording(text)          # ATP review 11: the UI's banned words, on the model's text too
+    if not ok:
+        return False, f"words that read as advice or a promise ({', '.join(bad[:5])})"
     return True, "ok"
 
 

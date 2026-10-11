@@ -47,6 +47,7 @@ from app.instruments.registry import get_contract_spec, list_contract_specs
 from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
+from app.options_builder.routes import router as options_builder_router
 from app.news_feed.routes import router as news_feed_router
 from app.telegram_inbound.routes import router as telegram_inbound_router
 from app.option_chain.analysis import analyze_option_chain
@@ -88,6 +89,7 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.option_chain.routes import router as oi_banner_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -102,6 +104,8 @@ from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
+from app.compliance.routes import router as compliance_router
+from app.charts.drawings import router as chart_drawings_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -158,6 +162,7 @@ app.include_router(broker_router)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
+app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
 app.include_router(risk_guardian_router)
@@ -192,6 +197,7 @@ app.include_router(ai_router)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
+app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
@@ -204,6 +210,8 @@ app.include_router(incidents_router)
 app.include_router(screener_router)
 app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
+app.include_router(compliance_router)
+app.include_router(chart_drawings_router)
 
 _default_risk_config = RiskConfig()
 
@@ -235,6 +243,7 @@ class BacktestRequest(BaseModel):
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
+    execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
 
 
 class PaperExecuteResponse(BaseModel):

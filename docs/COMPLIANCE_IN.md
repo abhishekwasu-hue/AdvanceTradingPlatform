@@ -2,8 +2,9 @@
 
 Rule-set `IN-SEBI` (`backend/app/compliance/rulesets/in_sebi.json`, version 1, in force from 2025-08-01). One row per rule:
 what it implements, where the code enforces it, the tests that prove it, and the flag that switches enforcement on.
-The JSON file is the source of truth (parameters live there, never in code); `tests/test_compliance_rules.py` keeps
-this table and the file in step and checks that every named test exists. Design: `docs/design/D_SEBI.md`.
+The JSON file is the source of truth (parameters live there, never in code); this page is generated from it
+(`python backend/scripts/compliance_doc.py`) and `tests/test_compliance_rules.py` fails when it is out of date or a
+named test does not exist. Design: `docs/design/D_SEBI.md`.
 
 Status: **enforced** (code + tests), **partial** (some of it), **planned** (design only, PR order in the design note).
 
@@ -12,7 +13,7 @@ Status: **enforced** (code + tests), **partial** (some of it), **planned** (desi
 | `IN-SEBI.algo_id.tag` | Every algo order carries the exchange-issued algo id | SEBI retail-algo circular; NSE implementation standards | enforced | `app/execution/tagging.py`<br>`app/execution/router.py`<br>`app/execution/multileg.py` | `test_live_router_tags_entry_and_stop_with_algo_id`<br>`test_exit_order_carries_algo_id`<br>`test_router_respects_broker_tag_limit` | - |
 | `IN-SEBI.algo_id.required_for_live` | No LIVE order without an algo id | SEBI retail-algo circular | enforced | `app/execution/router.py` | `test_live_refused_without_algo_id_when_required` | `ALGO_ID_REQUIRED_FOR_LIVE` |
 | `IN-SEBI.algo_id.registered_above_ops` | Above the OPS threshold the registered algo id is required (below it the broker's generic id) | SEBI retail-algo circular (OPS threshold set by the exchange) | planned | - | - | - |
-| `IN-SEBI.ops.throttle` | Orders per second per client, exchange and segment - modify, cancel and stop included; exits served first | SEBI retail-algo circular; ADR-0004 (exits never blocked) | planned | - | - | `OPS_THROTTLE_ENABLED` |
+| `IN-SEBI.ops.throttle` | Orders per second per client, exchange and segment - modify, cancel and stop included; exits served first | SEBI retail-algo circular; ADR-0004 (exits never blocked) | enforced | `app/execution/ops_throttle.py`<br>`app/brokers/rate_budget.py`<br>`app/workers/trading_worker.py` | `test_entries_beyond_the_rate_are_refused_before_the_broker_and_exits_are_never_refused`<br>`test_while_an_exit_waits_no_entry_takes_a_token`<br>`test_each_exchange_has_its_own_bucket`<br>`test_a_broker_429_pauses_that_exchange_and_a_success_resets_the_back_off` | `OPS_THROTTLE_ENABLED` |
 | `IN-SEBI.api.rate_budget` | Per-tenant broker API budget (requests per second and minute) on every call | broker API limits | enforced | `app/brokers/rate_budget.py` | `test_rate_limited_broker_delegates_every_call_through_the_budget`<br>`test_worker_wraps_each_tenant_adapter_in_its_own_budget` | - |
 | `IN-SEBI.order_type.market_protection` | Market and SL-M orders carry market protection where the broker requires it | exchange rule for algo orders; Kite / Upstox APIs | enforced | `app/execution/order_safety.py`<br>`app/brokers/zerodha.py`<br>`app/brokers/upstox.py` | `test_upstox_sends_market_protection_only_when_the_operator_sets_it` | `LIVE_MARKET_PROTECTION` |
 | `IN-SEBI.order_type.policy` | Per-broker order-type policy for algos: MARKET refused or mapped to LIMIT/MPP; IOC / AMO refused where barred | SEBI retail-algo circular; broker policies | planned | - | - | - |

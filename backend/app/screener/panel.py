@@ -32,6 +32,7 @@ from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
 
+FLAG = "screener_vectorized"      # operator flag (off by default): the routes and the bar-close engine opt in with it
 FUNCTIONS = frozenset({"SMA", "EMA", "RSI", "ATR", "ADX", "PlusDI", "MinusDI", "Max", "Min", "Greatest", "Least", "Count", "CountStreak",
                        "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag"})
 MIN_GROUP = 2                     # a symbol alone in its index group gains nothing from stacking: per-symbol path
@@ -535,4 +536,4 @@ def _has_bars(d: SymbolData, base_tf: str) -> bool:
     return frame is not None and not frame.empty
 
 
-__all__ = ["FUNCTIONS", "Panel", "supported", "run_panel"]
+__all__ = ["FLAG", "FUNCTIONS", "Panel", "supported", "run_panel"]

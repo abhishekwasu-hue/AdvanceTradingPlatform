@@ -211,6 +211,8 @@ class DeploymentCreateRequest(ContractRulesRequest):
     # Phase J1: dynamic exits.
     exit_rules: Optional[ExitRulesRequest] = None
     regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
+    # OI Banner O5: opt-in OI entry gates (OI_DIFF, OI_CONFIRM, PCR, IV_CHANGE, SWING_OI, OI_WALL); fail-closed; exits never gated.
+    oi_gates: Optional[List[str]] = Field(default=None, max_length=6)
     # Phase AS: SWING positions are held overnight (CNC / NRML) and never squared off at the close.
     holding: Literal["INTRADAY", "SWING"] = "INTRADAY"
     # P0.5 / T5: how LIVE entries are sent. MARKET (default) or PROTECTED_LIMIT - a marketable limit
@@ -265,6 +267,7 @@ class DeploymentResponse(BaseModel):
     last_route: Optional[str] = None
     exit_rules: Optional[dict] = None
     regime_filter: Optional[List[str]] = None
+    oi_gates: Optional[List[str]] = None
     contract_rules: str = "underlying"
     holding: str = "INTRADAY"
     order_style: str = "MARKET"
@@ -291,6 +294,7 @@ class DeploymentResponse(BaseModel):
             routing_policy=getattr(record, "routing_policy", None), route_across_brokers=bool(getattr(record, "route_across_brokers", False)),
             last_route=getattr(record, "last_route", None),
             regime_filter=parse_filter(record.regime_filter) or None, contract_rules=describe_deployment(record),
+            oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None) or "INTRADAY",
             order_style=getattr(record, "order_style", None) or "MARKET", market_protection_pct=getattr(record, "market_protection_pct", None),
         )
@@ -330,6 +334,15 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
     if regimes:
         text += f"; only in {', '.join(r.lower().replace('_', ' ') for r in regimes)} regimes"
     return text
+
+
+def _oi_gates(request) -> List[str]:
+    """OI Banner O5: the requested OI gates, validated (an unknown name is a 422, never silently dropped)."""
+    from app.option_chain.oi_gates import parse_gates
+    try:
+        return parse_gates(",".join(getattr(request, "oi_gates", None) or []))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _regime_filter(request) -> List[str]:
@@ -490,6 +503,7 @@ async def create_deployment(
         route_across_brokers=bool(request.route_across_brokers),
         exit_rules=request.exit_rules.to_rules().to_json() if request.exit_rules is not None else None,
         regime_filter=",".join(_regime_filter(request)) or None,
+        oi_gates=",".join(_oi_gates(request)) or None,
         holding=request.holding,
         order_style=request.order_style, market_protection_pct=request.market_protection_pct,
     )

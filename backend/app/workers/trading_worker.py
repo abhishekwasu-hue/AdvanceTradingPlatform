@@ -315,6 +315,15 @@ class TradingWorker:
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:
+                    # S4a: alert rules on closed bars -> events (flag screener_v2 per organisation), time-boxed so the
+                    # trading loop is never held up; a rule's own problem stays on the rule (last_problem).
+                    from app.alerts import barclose
+                    await barclose.run_due(session, now)
+                except Exception as exc:  # noqa: BLE001 - rule evaluation must never stop delivery of what already fired
+                    logger.exception("Alert rule evaluation failed")
+                    await session.rollback()
+                    report.errors.append(f"alert rules: {exc}")
+                try:
                     # S3a: alert-rule events -> grouped notifications (quiet hours, caps, digests) before the outbox drain.
                     from app.alerts import engine as alert_engine
                     await alert_engine.flush(session, now)
@@ -883,6 +892,18 @@ class TradingWorker:
             dep.last_error = None
             await session.commit()
             return False
+        # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
+        if getattr(dep, "oi_gates", None):
+            from app.option_chain import oi_gates
+            oi_direction = oi_gates.direction_of(signal.direction.value if hasattr(signal.direction, "value") else signal.direction)
+            if oi_direction is not None:
+                verdict = await oi_gates.check_entry(session, dep.tenant_id, master.underlying_of(dep.symbol), oi_direction,
+                                                     oi_gates.parse_gates(dep.oi_gates), now)
+                if not verdict.allowed:
+                    dep.last_signal_at = signal_ts                     # this signal is done; the next one is checked afresh
+                    dep.last_error = f"Signal at {signal_ts.isoformat()} skipped by OI gates: " + "; ".join(verdict.reasons)[:400]
+                    await session.commit()
+                    return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)

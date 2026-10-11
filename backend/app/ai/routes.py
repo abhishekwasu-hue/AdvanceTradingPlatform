@@ -228,7 +228,7 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         df, source = bars_to_dataframe(body.candles), evidence.client_source(body.data_source)
     else:
         df, source = await evidence.server_frame(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
-                                                 broker=body.broker, lookback_days=body.lookback_days)
+                                                 broker=body.broker, lookback_days=body.lookback_days, user=user)
     result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
@@ -329,7 +329,7 @@ async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
         return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
     symbol = body.symbol or body.answers.symbol
     df, source = await evidence.server_frame(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
-                                             lookback_days=body.lookback_days or 30)
+                                             lookback_days=body.lookback_days or 30, user=user)
     return df.tail(interview.MAX_BARS), source
 
 
@@ -507,9 +507,15 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(ge
     """Reads the market now through this tenant's broker session (the worker does the same on its own),
     and the global cues. Without a broker session the global cues alone are read; with neither, 409."""
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     try:
+        if await live_access.byob_on(session, user.tenant_id):
+            # BT1b: market memory and sentiment are stored for the whole organisation, so they are not fed from one
+            # user's own broker session while the bring-your-own-broker data tier is on: global cues only.
+            raise live_access.LiveDataRefused("Market memory is shared in your organisation, so it is not read through your own "
+                                              "broker session (bring-your-own-broker data tier): global cues only.")
         record = await _pick_record(session, user.tenant_id, body.broker, "primary")
     except HTTPException as exc:
         if exc.status_code != 409:
@@ -648,7 +654,7 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
     if row.action == "EXIT_POSITION":
         from app.ai.worker_bridge import price_lookup_for_tenant
         from app.trading.position_monitor import broker_for_trade
-        price_lookup = await price_lookup_for_tenant(session, user.tenant_id)
+        price_lookup = await price_lookup_for_tenant(session, user.tenant_id, user=user)
         trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
         broker = await broker_for_trade(session, trade)
     row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
@@ -975,20 +981,29 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
     if body.candles:
         return interview.frame_from_candles(body.candles[-6000:]), None, "candles"
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, user.tenant_id, body.broker, "primary")
-    adapter = build_adapter(record)
     symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
+    namespace = None
+    if await live_access.byob_on(session, user.tenant_id):
+        # BT1b: the user's own confirmed session, cached for that session only.
+        own = await live_access.user_source(session, user, [(symbol, exchange)], broker=body.broker)
+        if not own.allows(symbol, exchange):
+            raise live_access.LiveDataRefused(own.reason(symbol, exchange))
+        record, namespace = own.record, own.namespace
+    else:
+        record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    adapter = build_adapter(record)
     try:
-        bars = await MarketDataService(adapter, lookback_days=12).get_candles(symbol, exchange, "1min")
+        bars = await MarketDataService(adapter, lookback_days=12, cache_namespace=namespace).get_candles(symbol, exchange, "1min")
     except Exception as exc:  # noqa: BLE001 - say what the broker said
         raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
     if not bars:
         raise HTTPException(status_code=422, detail=f"{record.broker_name} returned no candles for {symbol}")
     day = None
     try:
-        day_bars = await MarketDataService(adapter, lookback_days=400).get_candles(symbol, exchange, "day")
+        day_bars = await MarketDataService(adapter, lookback_days=400, cache_namespace=namespace).get_candles(symbol, exchange, "day")
         day = bars_to_dataframe(day_bars) if day_bars else None
         if day is not None and day.index.tz is None:
             day.index = day.index.tz_localize("UTC")

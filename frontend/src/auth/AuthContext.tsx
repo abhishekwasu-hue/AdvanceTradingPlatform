@@ -9,8 +9,9 @@ interface AuthState {
    * calls `completeMfaLogin`. Resolves to null when the login is complete. */
   login: (email: string, password: string) => Promise<string | null>;
   completeMfaLogin: (mfaToken: string, code: string) => Promise<void>;
-  register: (email: string, password: string, inviteCode?: string) => Promise<void>;
-  acceptInvite: (token: string, password: string) => Promise<void>;
+  /** Z10-f: `legal` is {slug: version} of the legal documents accepted on the form. */
+  register: (email: string, password: string, inviteCode?: string, legal?: Record<string, string>) => Promise<void>;
+  acceptInvite: (token: string, password: string, legal?: Record<string, string>) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   logout: () => void;
   /** Re-reads /auth/me (after email verification, scope changes, ...). */
@@ -46,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
-  async function acceptInvite(token: string, password: string) {
-    const response = await api.acceptInvite(token, password);
+  async function acceptInvite(token: string, password: string, legal?: Record<string, string>) {
+    const response = await api.acceptInvite(token, password, legal);
     setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }
@@ -66,8 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
-  async function register(email: string, password: string, inviteCode?: string) {
-    const response = await api.register(email, password, inviteCode);
+  async function register(email: string, password: string, inviteCode?: string, legal?: Record<string, string>) {
+    const response = await api.register(email, password, inviteCode, legal);
     setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }

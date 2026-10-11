@@ -1361,3 +1361,38 @@ PBKDF2-derived key before they touch disk, and `restore.sh`/`verify_backup.sh` r
 passphrase (a wrong one fails the restore, it does not produce a plausible-looking database). The
 passphrase is the one secret that must survive losing the server - store it with the same care as
 `SECRETS_ENCRYPTION_KEY`, and rehearse a restore with it at least once a quarter.
+
+### 2.6 Legal pages, their acceptance and the support bot (Z10-f)
+
+**Legal pages.** The Privacy notice (DPDP Act 2023), Terms of use and Risk disclosure are versioned Markdown in
+`backend/app/legal/content/{privacy,terms,risk}.md`, each headed "Draft — to be reviewed by a lawyer before launch".
+They are public: `/legal/privacy`, `/legal/terms`, `/legal/risk` in the app (no sign-in, no app shell) and
+`GET /api/legal/documents[/{slug}]`. The privacy notice does not copy configuration: retention days come from the
+retention policy (section 2.3, `RETENTION_*`) and the breach-notice hours and log retention from `in_sebi.json`
+(`IN-SEBI.golive.checklist`), filled in when the page is served. Company facts that do not exist yet stay as
+`[SQUARE BRACKET]` placeholders (`open_placeholders` in the API response) until the company is registered.
+
+To change a document: edit its file, bump its `version` (a date), ship it. Everyone is asked again on their next
+sign-in - also when the text changes without a version bump (the acceptance is bound to the text's SHA-256).
+
+**Acceptance.** The sign-up form (and the team-join form) has a required box; the versions accepted go with the
+request and are recorded with the account. Anyone without a current acceptance (accounts created before Z10-f, API
+sign-ups that sent none, everyone after a change) sees a banner after signing in: "I have read and accept" records it,
+"Later" hides it until the next sign-in. It is a banner, never a modal or a route gate: positions, exits and every other
+screen keep working. Each acceptance is a row in `ai_acknowledgements` (`kind` = `legal_terms` / `legal_privacy` /
+`legal_risk`, `version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
+
+**Support bot** (flag `support_bot`, **off by default**; off = `POST /api/ai/support/ask` answers 404 and the help
+button is hidden). How-to answers from `backend/app/support/content/help.md` and the legal pages. It refuses advice
+questions (what to buy or sell, targets, tips, "will X go up" and the advice / guarantee words), questions about the
+user's own positions, orders or P&L (it reads none) and requests to place, change, cancel or exit orders (it has no
+tool that can). Below the confidence floor (`SUPPORT_BOT_MIN_CONFIDENCE`, default 0.5) it hands the question to the
+feedback form instead of guessing. With the organisation's own AI provider configured (Settings > AI provider, data
+consent accepted, the user has accepted the AI Copilot acknowledgement, `ai_copilot` on) the provider may reword the
+matching help passage; the reworded text is shown only if it passes the advice / guarantee filter, the banned-word and
+the numbers checks, else the help text is shown. There is no platform key: one organisation's key is never used for
+another. Limits: the AI endpoints' per-user / per-organisation units plus `SUPPORT_BOT_RATE_PER_MINUTE` (default 20)
+per user. Metric: `atp_support_bot_answers_total{outcome,source}`.
+
+To add or fix a help answer, edit `help.md` (one `## ` question per entry, `keywords:`, `page:` = an app path). The
+tests screen every entry through the advice filter.

@@ -147,6 +147,8 @@ import type {
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
+import type { LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
+import type { SupportReply } from "../support/support";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -397,10 +399,22 @@ export const api = {
   availableBrokers: () => request<{ brokers: string[] }>("/broker/available"),
 
   // PW6: `inviteCode` only matters while the closed-beta gate is on (the server ignores it otherwise).
-  register: (email: string, password: string, inviteCode?: string) =>
+  // Z10-f: `legal` is {slug: version} of the Terms, Privacy notice and Risk disclosure accepted on the form.
+  register: (email: string, password: string, inviteCode?: string, legal?: Record<string, string>) =>
     request<TokenResponse>("/auth/register", {
-      method: "POST", body: JSON.stringify(inviteCode ? { email, password, invite_code: inviteCode } : { email, password }),
+      method: "POST",
+      body: JSON.stringify({ email, password, ...(inviteCode ? { invite_code: inviteCode } : {}), ...(legal ? { legal_acceptance: legal } : {}) }),
     }),
+
+  // Z10-f: the legal pages (public) and the signed-in user's acceptance of their current versions.
+  legalDocuments: () => request<{ documents: LegalSummary[] }>("/legal/documents"),
+  legalDocument: (slug: LegalSlug) => request<LegalDocument>(`/legal/documents/${encodeURIComponent(slug)}`),
+  legalAcceptance: () => request<LegalAcceptanceStatus>("/legal/acceptance"),
+  acceptLegal: (documents: Record<string, string>) =>
+    request<LegalAcceptanceStatus>("/legal/acceptance", { method: "POST", body: JSON.stringify({ documents }) }),
+
+  // Z10-f: the how-to support bot (flag `support_bot`; 404 while it is off).
+  supportAsk: (question: string) => request<SupportReply>("/ai/support/ask", { method: "POST", body: JSON.stringify({ question }) }),
 
   // PW6: "Send feedback" - the message plus the app version and the screen path, nothing else.
   sendFeedback: (body: { message: string; app_version: string; screen: string }) =>
@@ -946,8 +960,10 @@ export const api = {
 
   inviteInfo: (token: string) => request<InviteInfo>(`/auth/invite/${encodeURIComponent(token)}`),
 
-  acceptInvite: (token: string, password: string) =>
-    request<TokenResponse>(`/auth/invite/${encodeURIComponent(token)}/accept`, { method: "POST", body: JSON.stringify({ password }) }),
+  acceptInvite: (token: string, password: string, legal?: Record<string, string>) =>
+    request<TokenResponse>(`/auth/invite/${encodeURIComponent(token)}/accept`, {
+      method: "POST", body: JSON.stringify({ password, ...(legal ? { legal_acceptance: legal } : {}) }),
+    }),
 
   // --- Platform admin ---
 

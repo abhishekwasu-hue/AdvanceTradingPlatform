@@ -1,4 +1,4 @@
-import { Bell, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
+import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
@@ -6,6 +6,7 @@ import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
 import ErrorBoundary from "./components/ErrorBoundary";
 import PwaBanners from "./pwa/PwaBanners";
+import LegalAcceptanceBanner from "./legal/LegalAcceptanceBanner";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
@@ -16,10 +17,16 @@ import type { SystemStatus } from "./types";
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
 // PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
 // renders nothing instead of taking the shell down.
-type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string };
+type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; initialText?: string };
 const FeedbackDialog = lazy<ComponentType<FeedbackDialogProps>>(
   () => import("./feedback/FeedbackDialog").catch(() => ({ default: () => null })),
 );
+// Z10-f: the help desk (flag `support_bot`) and the public legal pages, each its own chunk.
+type SupportDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; onFeedback: (draft: string) => void };
+const SupportDialog = lazy<ComponentType<SupportDialogProps>>(
+  () => import("./support/SupportDialog").catch(() => ({ default: () => null })),
+);
+const LegalPage = lazy(() => import("./legal/LegalPage"));
 
 /** The old Copilot addresses (/ai-copilot/study, /today, ...) open the redesigned tab that now holds that content. */
 function LegacyCopilot() {
@@ -35,6 +42,18 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
+  const [feedbackDraft, setFeedbackDraft] = useState<string | undefined>(undefined);
+  const [supportOn, setSupportOn] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportLoaded, setSupportLoaded] = useState(false);
+  useEffect(() => {
+    // Z10-f: the help button only while the operator has turned `support_bot` on for this organisation.
+    setSupportOn(false);
+    if (!user) return;
+    let live = true;
+    api.myFeatures().then((f) => { if (live) setSupportOn(f.support_bot === true); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [user]);
   useEffect(() => {
     const load = () => api.systemStatus().then(setStatus).catch(() => {});
     load();
@@ -66,10 +85,30 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
       </div>
       <div className="flex items-center gap-1.5">
         <ThemeToggle />
+        {user && supportOn && (
+          <button
+            type="button"
+            onClick={() => { setSupportLoaded(true); setSupportOpen(true); }}
+            title="Help"
+            aria-label="Help"
+            className="p-2 rounded-md text-muted transition-colors hover:text-slate-200 hover:bg-panel2"
+          >
+            <LifeBuoy size={18} />
+          </button>
+        )}
+        {user && supportOn && supportLoaded && (
+          <Suspense fallback={null}>
+            <SupportDialog
+              open={supportOpen}
+              onOpenChange={setSupportOpen}
+              onFeedback={(draft) => { setSupportOpen(false); setFeedbackDraft(draft); setFeedbackLoaded(true); setFeedbackOpen(true); }}
+            />
+          </Suspense>
+        )}
         {user && (
           <button
             type="button"
-            onClick={() => { setFeedbackLoaded(true); setFeedbackOpen(true); }}
+            onClick={() => { setFeedbackDraft(undefined); setFeedbackLoaded(true); setFeedbackOpen(true); }}
             title="Send feedback"
             aria-label="Send feedback"
             className="p-2 rounded-md text-muted transition-colors hover:text-slate-200 hover:bg-panel2"
@@ -79,7 +118,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
         )}
         {user && feedbackLoaded && (
           <Suspense fallback={null}>
-            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} />
+            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} initialText={feedbackDraft} />
           </Suspense>
         )}
         <Link
@@ -178,6 +217,7 @@ function AppShell() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar page={page} onMenu={() => setMenuOpen(true)} />
         <PwaBanners />
+        <LegalAcceptanceBanner />
         {/* The window scrolls, not <main>. Other pages keep overflow-y-auto (wide tables without their own wrapper
             scroll inside <main>); the Copilot uses overflow-x-clip, which is not a scroll container, so its sticky tab
             bar sticks to the viewport (its own wide content scrolls in its own wrappers). */}
@@ -218,7 +258,15 @@ export default function App() {
             <ErrorBoundary title="The chart">
               <Suspense fallback={null}><ChartWindow params={params} /></Suspense>
             </ErrorBoundary>
-          ) : <AppShell />}
+          ) : (
+            <Routes>
+              {/* Z10-f: the legal pages are public and stand alone (no shell, no sign-in) - the sign-up form links here. */}
+              <Route path="/legal/:slug" caseSensitive element={
+                <ErrorBoundary title="The legal page"><Suspense fallback={null}><LegalPage /></Suspense></ErrorBoundary>
+              } />
+              <Route path="*" element={<AppShell />} />
+            </Routes>
+          )}
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

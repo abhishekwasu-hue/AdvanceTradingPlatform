@@ -133,6 +133,15 @@ def test_legal_pages_carry_no_advice_or_guarantee_wording():
         assert not output_filter.is_specific_call(text), slug
 
 
+def test_legal_and_help_content_is_english_only():
+    """The Devanagari check for this item: the legal pages and the help pages are English (the app's UI language); a
+    Marathi question to the bot is still screened - see test_bot_refuses_advice."""
+    devanagari = re.compile(r"[\u0900-\u097F]")
+    for slug in documents.SLUGS:
+        assert not devanagari.search(documents.get(slug).source), slug
+    assert not devanagari.search(knowledge.HELP_FILE.read_text(encoding="utf-8"))
+
+
 def test_a_malformed_document_fails_loudly():
     with pytest.raises(documents.LegalContentError):
         documents._parse("terms", "no front matter")

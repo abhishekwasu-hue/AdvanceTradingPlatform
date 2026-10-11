@@ -38,6 +38,11 @@ _DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes
                              "1M": DateOffset(months=1)}
 
 
+# A value in an evaluation is a constant, one symbol's series, or (the vectorised path, app/screener/panel.py) a frame
+# with one column per symbol. The operators below treat the last two alike: pandas applies them column by column.
+_FRAMES = (pd.Series, pd.DataFrame)
+
+
 class ScreenRuntimeError(ValueError):
     """The screen cannot run as given (not validated, missing base data)."""
 
@@ -131,7 +136,7 @@ class _Eval:
                 return self.constants[id(node)]
             own = node.tf or tf
             value = self.call(node, own)
-            if node.offset and isinstance(value, pd.Series):
+            if node.offset and isinstance(value, _FRAMES):
                 value = value.shift(node.offset)
             return self.align(value, own, tf)
         if isinstance(node, n.Unary):
@@ -146,7 +151,7 @@ class _Eval:
                 return a * b
             with np.errstate(divide="ignore", invalid="ignore"):
                 out = a / b if not (np.isscalar(b) and b == 0) else a * np.nan
-            return out.replace([np.inf, -np.inf], np.nan) if isinstance(out, pd.Series) else (np.nan if out in (np.inf, -np.inf) else out)
+            return out.replace([np.inf, -np.inf], np.nan) if isinstance(out, _FRAMES) else (np.nan if out in (np.inf, -np.inf) else out)
         if isinstance(node, n.Compare):
             return _cmp(node.op, self.ev(node.left, tf), self.ev(node.right, tf))
         if isinstance(node, n.Between):
@@ -155,7 +160,7 @@ class _Eval:
         if isinstance(node, n.In):
             v = self.ev(node.value, tf)
             items = [self.ev(i, tf) for i in node.items]
-            if isinstance(v, pd.Series):
+            if isinstance(v, _FRAMES):
                 return v.isin(items)
             return v is not None and v in items
         if isinstance(node, n.Logic):
@@ -166,7 +171,7 @@ class _Eval:
             return out
         if isinstance(node, n.Not):
             v = self.ev(node.item, tf)
-            return ~_as_bool(v) if isinstance(v, pd.Series) else not bool(v)
+            return ~_as_bool(v) if isinstance(v, _FRAMES) else not bool(v)
         raise ScreenRuntimeError(f"cannot evaluate {type(node).__name__}")
 
     def series(self, node: Any, tf: str) -> pd.Series:
@@ -472,9 +477,16 @@ def _chain(chain: Any, what: str) -> Any:
     return abs(a.underlying_ltp - a.max_pain) / a.underlying_ltp * 100.0
 
 
+def bool_frame(v: pd.DataFrame) -> bool:
+    """Every column of `v` is boolean (the vectorised path's frames hold one dtype)."""
+    return all(pd.api.types.is_bool_dtype(t) for t in set(v.dtypes))
+
+
 def _as_bool(v: Any, index: Optional[pd.Index] = None) -> Any:
     if isinstance(v, pd.Series):
         return v.fillna(False).astype(bool) if v.dtype != bool else v
+    if isinstance(v, pd.DataFrame):                               # the vectorised path (app/screener/panel.py)
+        return v if bool_frame(v) else v.fillna(False).astype(bool)
     if index is not None:
         return pd.Series(bool(v), index=index)
     return bool(v)
@@ -483,13 +495,15 @@ def _as_bool(v: Any, index: Optional[pd.Index] = None) -> Any:
 def _cmp(op: str, a: Any, b: Any) -> Any:
     if a is None or b is None:
         return False
-    if isinstance(a, pd.Series) or isinstance(b, pd.Series):
+    if isinstance(a, _FRAMES) or isinstance(b, _FRAMES):
         ops = {">": "gt", ">=": "ge", "<": "lt", "<=": "le", "==": "eq", "!=": "ne"}
-        left, right = (a, b) if isinstance(a, pd.Series) else (b, a)
-        if not isinstance(a, pd.Series):
+        left, right = (a, b) if isinstance(a, _FRAMES) else (b, a)
+        if not isinstance(a, _FRAMES):
             ops = {">": "lt", ">=": "le", "<": "gt", "<=": "ge", "==": "eq", "!=": "ne"}
         out = getattr(left, ops[op])(right)
-        valid = left.notna() & (right.notna() if isinstance(right, pd.Series) else (right == right))
+        if isinstance(left, pd.DataFrame) and op != "!=":         # vectorised path (float frames): NaN already compares False
+            return out
+        valid = left.notna() & (right.notna() if isinstance(right, _FRAMES) else (right == right))
         return (out & valid).astype(bool)
     if isinstance(a, float) and np.isnan(a) or isinstance(b, float) and np.isnan(b):
         return False
@@ -497,14 +511,14 @@ def _cmp(op: str, a: Any, b: Any) -> Any:
 
 
 def _and(a: Any, b: Any) -> Any:
-    if isinstance(a, pd.Series) or isinstance(b, pd.Series):
-        return _as_bool(a) & _as_bool(b) if isinstance(a, pd.Series) else _as_bool(b) & bool(a)
+    if isinstance(a, _FRAMES) or isinstance(b, _FRAMES):
+        return _as_bool(a) & _as_bool(b) if isinstance(a, _FRAMES) else _as_bool(b) & bool(a)
     return bool(a) and bool(b)
 
 
 def _or(a: Any, b: Any) -> Any:
-    if isinstance(a, pd.Series) or isinstance(b, pd.Series):
-        return _as_bool(a) | _as_bool(b) if isinstance(a, pd.Series) else _as_bool(b) | bool(a)
+    if isinstance(a, _FRAMES) or isinstance(b, _FRAMES):
+        return _as_bool(a) | _as_bool(b) if isinstance(a, _FRAMES) else _as_bool(b) | bool(a)
     return bool(a) or bool(b)
 
 
@@ -526,7 +540,7 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
 
 
 def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
-                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None) -> Dict[str, Any]:
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None, vectorized: bool = False) -> Dict[str, Any]:
     """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
 
     Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
@@ -537,14 +551,15 @@ def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], 
 
     U5 D2: `passes` gives, per evaluated symbol, whether it passed each stage on its own (not only while it was still
     in) - the "why it matched / where it fell out" chips on a result row."""
-    full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params))}
+    full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params,
+                                                                                vectorized=vectorized))}
     usable = [d for d in universe if full[d.symbol].reason is None]
     items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
     alive = [d.symbol for d in usable]
     stages: List[Dict[str, Any]] = []
     passes: Dict[str, List[bool]] = {d.symbol: [] for d in usable}
     for item in items:
-        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params) if m.matched}
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params, vectorized=vectorized) if m.matched}
         removed = [s for s in alive if s not in passed]
         alive = [s for s in alive if s in passed]
         stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
@@ -586,12 +601,19 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
 
 
 def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,
-               check_history: bool = True) -> List[Match]:
+               check_history: bool = True, vectorized: bool = False) -> List[Match]:
     """Every symbol: does the screen hold on its last closed bar? Runs only a validated screen. With `check_history` a symbol
-    shorter than the validator's lookback is reported as such; without it, it is simply evaluated (NaN never matches)."""
+    shorter than the validator's lookback is reported as such; without it, it is simply evaluated (NaN never matches).
+    Z10-d: `vectorized` evaluates the symbols that share a bar index together (app/screener/panel.py) when every part of
+    the screen has a vectorised form; the matches are the same, only the time changes."""
     if not validated.ok:
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
+    if vectorized:
+        from app.screener import panel
+        if panel.supported(ast, validated, base_tf):
+            return panel.run_panel(ast, validated, universe, base_tf=base_tf, params=params, check_history=check_history,
+                                   per_symbol=lambda rest: run_screen(ast, validated, rest, base_tf=base_tf, params=params, check_history=check_history))
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
     out: List[Match] = []
     for d in universe:

@@ -301,13 +301,23 @@
       "id": "IN-SEBI.risk.futeq_mwpl",
       "title": "FutEq / OI (MWPL) limits, expiry-day margin, lot sizes as of the trade date",
       "source": "NSE F&O position limits; SEBI margin framework",
-      "status": "planned",
+      "status": "partial",
       "params": {
-        "expiry_day_margin_multiplier": 1.0
+        "expiry_day_margin_multiplier": 1.0,
+        "ban_threshold_pct": 95
       },
-      "code": [],
-      "tests": [],
-      "flag": null
+      "code": [
+        "app/compliance/fo_limits.py",
+        "app/market_lake/asof.py",
+        "app/execution/signal_execution.py",
+        "app/execution/multileg.py"
+      ],
+      "tests": [
+        "tests/test_d7_fo_ban.py::test_threshold_from_the_rule_set_missing_data_is_a_note_and_versions_count",
+        "tests/test_d7_fo_ban.py::test_flag_off_changes_nothing",
+        "tests/test_d7_fo_ban.py::test_paper_option_entry_refused_in_the_ban_period_and_fills_otherwise"
+      ],
+      "flag": "FO_BAN_CHECK_ENABLED"
     }
   ]
 }

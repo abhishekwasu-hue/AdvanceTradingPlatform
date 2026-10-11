@@ -11,7 +11,7 @@ live here already so the settings model does not change shape between the two PR
 """
 from typing import Any, Dict, List, Mapping, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ATP_TIMEFRAMES = ("1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w")
 # ATP timeframe -> the label Trade uses in its zone_type names (DYNAMIC_SR_SUPPORT_15M ...). Kept for exports and parity.
@@ -143,6 +143,17 @@ class ZoneSettings(BaseModel):
         if bad:
             raise ValueError(f"unknown timeframes {bad}; each one of {ATP_TIMEFRAMES}")
         return list(dict.fromkeys(v))
+
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "ZoneSettings":
+        if self.avg_min_periods > self.avg_window:
+            raise ValueError("avg_min_periods must not exceed avg_window")
+        if self.memory_tol_min_pct > self.memory_tol_max_pct or self.sr_v3.tol_min_pct > self.sr_v3.tol_max_pct:
+            raise ValueError("a tolerance minimum must not exceed its maximum")
+        if self.sr_v3.grade_b > self.sr_v3.grade_a:
+            raise ValueError("sr_v3.grade_b must not exceed sr_v3.grade_a")
+        return self
 
 
 def resolve_settings(*layers: Optional[Mapping[str, Any]]) -> ZoneSettings:

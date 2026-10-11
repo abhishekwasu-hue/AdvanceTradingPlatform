@@ -62,6 +62,9 @@ def test_settings_layer_platform_tenant_symbol_and_refuse_bad_input():
         resolve_settings({"zone_timeframe": "7m"})
     with pytest.raises(ValidationError):
         resolve_settings({"dynamic_sr_timeframes": ["15m", "2h"]})
+    for bad in ({"avg_window": 4}, {"memory_tol_min_pct": 0.5}, {"sr_v3": {"grade_b": 70}}):
+        with pytest.raises(ValidationError):
+            resolve_settings(bad)
 
 
 # --- role by price ----------------------------------------------------------------------------------------------------------

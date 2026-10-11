@@ -40,6 +40,7 @@ from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
+from app.journal import capture as journal_capture
 from app.trading import stop_state
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.trading.exit_logic import check_contract_exit
@@ -342,6 +343,7 @@ async def close_position(
     if outcome.broker_exit_order_id:
         trade.exit_order_id = outcome.broker_exit_order_id
     await session.commit()
+    await journal_capture.on_exit(session, trade)   # Z6: own session, flag-gated, never raises
     stop_state.forget(trade.id)   # the stop guard's counters and alert cooldowns die with the position
 
     outcome.closed = True
@@ -511,6 +513,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 logger.warning("Could not move broker stop %s for trade %s: %s", trade.sl_order_id, trade.id, exc)
     if changed:
         await session.commit()
+        if update.stop_changed:
+            await journal_capture.on_stop_change(session, trade, float(old_stop), float(update.stop_loss),
+                                                 source=f"exit rule: {update.stop_reason or 'stop moved'}")
     return update.time_exit_reason
 
 
@@ -584,6 +589,10 @@ async def monitor_open_positions(
         except Exception as exc:  # noqa: BLE001 - a failed mark write must not fail the sweep
             logger.warning("Could not persist position marks: %s", exc)
             await session.rollback()
+        else:
+            # Z6: the price range each open position has seen (MAE / MFE); own session, flag-gated, never raises.
+            await journal_capture.on_marks(session, tenant_id, {t.id: float(t.mark_price) for t in open_trades
+                                                                 if t.exit_time is None and t.mark_price is not None})
     return outcomes
 
 

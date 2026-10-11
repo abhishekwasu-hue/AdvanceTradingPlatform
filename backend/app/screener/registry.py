@@ -43,6 +43,7 @@ class Spec:
     min_bars: int = 0               # S5-A: a floor on the bars needed (swings need history before the first pivot)
     values: Tuple[str, ...] = ()    # S5-A: a classifier's only values (a literal outside them is refused); empty = open
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
+    degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -62,6 +63,10 @@ PATTERN_NAMES: Tuple[str, ...] = (
 )
 SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
 SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
+# S5-A4: history by swing degree. ZigZag pivots are path-dependent: with less history the last pivot can differ from the
+# one a longer history gives. Measured on session-shaped samples (left-truncated vs full): D0 agrees from 100 bars, D1
+# from 250, D2 from 600; D3 is given 1200 and is still documented as fetch-dependent (SC-14).
+SWING_DEGREE_MIN_BARS: Tuple[int, ...] = (100, 250, 600, 1200)
 REVERSAL_MIN_BARS = 25                            # the median range of 20 bars before a window of up to 4 candles
 BREAK_EXTRA_BARS = 21                             # RealBreak: the median range (20 bars) before the earliest candidate, plus one
 
@@ -119,12 +124,19 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # S5-A: price action as series (bar by bar, causal), so they work with offsets, @timeframe, Count and alerts
     Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES),), cost=2.0, min_bars=3,
          doc="the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it)"),
-    Spec("SwingHigh", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
+    Spec("SwingHigh", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
          doc="the last CONFIRMED swing high: known only once price has come back from it by the degree's threshold"),
-    Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS,
+    Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
          doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
-    Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, values=("UP", "DOWN"),
+    Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, values=("UP", "DOWN"),
          doc="UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"),
+    Spec("SwingZoneStrength", "factor", NUM, "index", (Arg("side", STR, choices=("low", "high")), _DEGREE), cost=4.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         doc="0-100 strength of the zone at the last confirmed swing low (support) or high (resistance): the trade-port"
+             " level_strength score (departure, short base, recency, role reversal) from bars up to this one"),
+    Spec("SwingZoneDistance", "factor", NUM, "ratio", (Arg("side", STR, choices=("low", "high")), _DEGREE), cost=4.0,
+         min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         doc="close minus the mid of that swing zone, in median ranges (positive above the zone)"),
     Spec("ReversalAt", "filter", BOOL, None, (Arg("level", NUM), Arg("direction", STR, choices=("bullish", "bearish"))), cost=4.0,
          min_bars=REVERSAL_MIN_BARS, price_args=(0,),
          doc="price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close"

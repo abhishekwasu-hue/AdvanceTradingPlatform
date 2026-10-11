@@ -7,7 +7,7 @@ delivers it).
 
 | Seam | Interface | Capabilities (examples) | Providers | Contract test | Status |
 |---|---|---|---|---|---|
-| Execution venue (orders, positions, fills) | `app/brokers/base.py::BrokerInterface` (ADR-0002) | native stop / OCO, max tag length, order types, fractional qty | Upstox, Zerodha, Shoonya, Fyers, Angel One, Dhan; next: CoinDCX (v1.3), Binance, Kraken, IBKR | broker adapter tests -> `tests/contracts/test_venue_contract.py` (part E) | exists; contract suite planned |
+| Execution venue (orders, positions, fills) | `app/brokers/base.py::BrokerInterface` (ADR-0002) | native stop / OCO, max tag length, order types, fractional qty | Upstox, Zerodha, Shoonya, Fyers, Angel One, Dhan, CoinDCX; next (v1.3 §3): Binance spot, Bybit / KuCoin / OKX, CoinSwitch PRO / ZebPay, Kraken later; IBKR (ADR-0018, TWS then Web API) | broker adapter tests -> `tests/contracts/test_venue_contract.py` (part E) | exists; contract suite planned |
 | Market data (history, ticks, chains) | `app/lake/provider.py` (part B) | history depth, tick depth (L1/L5), option chain, as-of | broker-backed; next: one vendor (TrueData / GlobalDataFeed) | `tests/contracts/test_market_data_contract.py` | planned (B2) |
 | Alt data (news, macro, sentiment) | `app/altdata/provider.py` | latency, coverage, licence | news feed (ADR-0012); next: macro calendar | `tests/contracts/test_altdata_contract.py` | partial (news feed exists) |
 | ML pipeline (offline features -> model -> predictions) | `app/ml/pipeline.py` | inputs, horizon, retrain cadence | none yet | `tests/contracts/test_ml_contract.py` | planned (part H) |
@@ -23,3 +23,22 @@ delivers it).
 2. Register it (`REGISTRY["<id>"] = ...`); settings or tenant configuration selects it.
 3. Run the seam's contract suite with the provider added to its parameter list; record any capability it lacks.
 4. Add the row above and, for a venue, the rule-set and cost-model rows it needs (ADR-0017).
+
+## Venue order and registry (v1.3 §3, ADR-0017, ADR-0018)
+- **Crypto venues, in order:**
+  1. CoinDCX spot (exists).
+  2. Binance spot.
+  3. Bybit / KuCoin / OKX. Perpetuals and options only for jurisdictions whose rule-set allows them.
+  4. CoinSwitch PRO / ZebPay.
+  5. Kraken, later.
+- **Exchange registry.** One data row per exchange with these fields:
+  - `fiu_registered: true/false`, plus `fiu_source` and `fiu_checked_on`;
+  - the products offered (spot, perpetual, option);
+  - the quote currencies.
+- **India resident rule-set.** It allows only `fiu_registered: true` exchanges and only spot. A block names the rule.
+  A registry row unchecked for longer than the rule-set's freshness window shows a warning (CR-1).
+- **Tax.** A seam for the 30 % + 1 % TDS report (P2), on the `TaxModel` (ADR-0017). It produces reports only.
+- **IBKR.**
+  - `IBKRBroker` with an `IBKRTransport` seam: the TWS API through IB Gateway (paper, operator account) first, and
+    the Web API (OAuth, per tenant) after vendor registration.
+  - Design and runbook: [ADR-0018](adr/0018-ibkr-transports.md), [BROKERS_IBKR.md](BROKERS_IBKR.md).

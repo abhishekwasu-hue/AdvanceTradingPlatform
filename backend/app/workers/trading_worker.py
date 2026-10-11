@@ -864,9 +864,9 @@ class TradingWorker:
         day = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
         if day is None or (self._history_eod_task is not None and not self._history_eod_task.done()):
             return False
-        self._last_history_eod_day = day                 # started or not: the next try is tomorrow
         if not await flag_enabled(session, bhavcopy_backfill.FLAG):
-            return False
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._last_history_eod_day = day                 # started: the next run is tomorrow
 
         async def run() -> None:
             from app.market_lake.nse_fetch import PoliteFetcher

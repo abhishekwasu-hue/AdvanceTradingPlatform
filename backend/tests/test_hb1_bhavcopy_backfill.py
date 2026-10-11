@@ -426,6 +426,7 @@ def test_quality_gates_short_file_invalid_rows_and_force():
     assert _count(DataQualityEventRecord, DataQualityEventRecord.instrument_key == "NSE:HBQG0", DataQualityEventRecord.kind == "invalid") == 1
     wrong_day = _run(hb1.ingest_upload(_session_factory, "cm", days[3], short.encode(), "x.csv", force=True))
     assert wrong_day["status"] == "refused" and "not 2009-02-05" in wrong_day["error"]
+    assert wrong_day["day_status"] == "done" and _state("cm", days[3]).rows_loaded == 10      # the loaded day is kept
 
 
 def test_rate_limit_backoff_pacing_and_a_blocked_file_uploaded_by_hand():
@@ -529,7 +530,7 @@ def test_nightly_job_fetches_today_and_catches_up_and_the_worker_gates_it(monkey
                 await worker._history_eod_task
             return ok, worker._last_history_eod_day
         return _run(go())
-    assert worker_turn(False, now) == (False, date(2012, 3, 7)) and started == []
+    assert worker_turn(False, now) == (False, None) and started == []
     assert worker_turn(True, now.replace(hour=17)) == (False, None)
     assert worker_turn(True, now) == (True, date(2012, 3, 7)) and len(started) == 1
     assert worker_turn(True, now, last=date(2012, 3, 7))[0] is False and len(started) == 1

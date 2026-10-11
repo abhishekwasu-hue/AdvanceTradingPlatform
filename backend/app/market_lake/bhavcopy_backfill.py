@@ -290,15 +290,17 @@ async def _set(session_factory, state_id: int, **values: Any) -> None:
 
 
 async def _start(session_factory, segment: str, day: date, *, skip_done: bool, retry_no_file: bool,
-                 today: date) -> Optional[int]:
-    """Claims (segment, day) as `running`; None when it should be skipped (already done, or a settled `no_file`)."""
+                 today: date) -> Tuple[Optional[int], Optional[str]]:
+    """Claims (segment, day) as `running` -> (state id, the status it had); (None, ...) when it should be skipped
+    (already done, or a settled `no_file`)."""
     async with session_factory() as session:
         state = await session.scalar(select(F).where(F.segment == segment, F.trade_date == day))
+        previous = state.status if state is not None else None
         if state is not None and skip_done:
             if state.status == "done":
-                return None
+                return None, previous
             if state.status == "no_file" and not retry_no_file and day < today - timedelta(days=RECHECK_NO_FILE_DAYS):
-                return None
+                return None, previous
         if state is None:
             state = F(segment=segment, trade_date=day, status="pending", attempts=0, inserted=0, corrected=0, skipped=0,
                       quality_events=0)
@@ -307,14 +309,14 @@ async def _start(session_factory, segment: str, day: date, *, skip_done: bool, r
         state.started_at = datetime.now(timezone.utc)
         state.attempts = (state.attempts or 0) + 1
         await session.commit()
-        return state.id
+        return state.id, previous
 
 
 async def attempt(session_factory, segment: str, day: date, obtain: ObtainFn, summary: BackfillSummary, *,
                   today: date, now: Optional[datetime] = None, skip_done: bool = True, retry_no_file: bool = False,
                   with_options: Optional[bool] = None, force: bool = False) -> str:
     """One (segment, day): obtain the file, load it, record the outcome. Returns the final status, or 'skipped'."""
-    state_id = await _start(session_factory, segment, day, skip_done=skip_done, retry_no_file=retry_no_file, today=today)
+    state_id, previous = await _start(session_factory, segment, day, skip_done=skip_done, retry_no_file=retry_no_file, today=today)
     if state_id is None:
         summary.skipped += 1
         return "skipped"
@@ -360,14 +362,22 @@ async def attempt(session_factory, segment: str, day: date, obtain: ObtainFn, su
             await session.commit()
         except BhavcopyRefused as exc:
             await session.rollback()
-            await _set(session_factory, state_id, status="refused", error=str(exc)[:2000], sha256=sha, size_bytes=len(got.content), **common)
+            if previous == "done":       # a refused re-upload leaves the day's loaded file as it was
+                await _set(session_factory, state_id, status="done", error=f"a later file was refused: {exc}"[:2000])
+            else:
+                await _set(session_factory, state_id, status="refused", error=str(exc)[:2000], sha256=sha,
+                           size_bytes=len(got.content), **common)
             summary.refused += 1
             summary.errors.append(f"{segment} {day}: refused - {exc}"[:500])
             return "refused"
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the run; it stays retryable
             await session.rollback()
             logger.exception("HB1 load of %s %s failed", segment, day)
-            await _set(session_factory, state_id, status="failed", error=f"{type(exc).__name__}: {exc}"[:2000], sha256=sha, **common)
+            why = f"{type(exc).__name__}: {exc}"
+            if previous == "done":
+                await _set(session_factory, state_id, status="done", error=f"a later file failed: {why}"[:2000])
+            else:
+                await _set(session_factory, state_id, status="failed", error=why[:2000], sha256=sha, **common)
             summary.failed += 1
             summary.errors.append(f"{segment} {day}: failed - {exc}"[:500])
             return "failed"
@@ -468,7 +478,8 @@ async def ingest_upload(session_factory, segment: str, day: date, content: bytes
                            skip_done=False, force=force)
     async with session_factory() as session:
         state = await session.scalar(select(F).where(F.segment == segment, F.trade_date == day))
-    return {"status": status, "segment": segment, "trade_date": day.isoformat(), **_state_dict(state)}
+    return {"segment": segment, "trade_date": day.isoformat(), **_state_dict(state), "status": status,
+            "day_status": state.status if state is not None else None}
 
 
 # --- reporting ------------------------------------------------------------------------------------------------------
@@ -517,7 +528,7 @@ async def gap_report(session: AsyncSession, start: date, end: date, *, symbols: 
         MdCandleRecord.ts >= bar_end(start), MdCandleRecord.ts <= bar_end(end))
     if symbols:
         keys_q = keys_q.where(MdCandleRecord.instrument_key.in_([f"NSE:{s.strip().upper()}" for s in symbols]))
-    keys = sorted(await session.scalars(keys_q))
+    keys = sorted(await session.scalars(keys_q)) if usable else []      # no calendar-checked day held: nothing to check
     events: List[quality.QualityEvent] = []
     for key in keys:
         stamps = sorted({quality._utc(ts) for ts in await session.scalars(select(MdCandleRecord.ts).where(

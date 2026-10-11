@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import { ThemeToggle } from "../components/AppearanceCard";
 import { LEGAL_SLUGS, LEGAL_TITLES, isLegalSlug, legalPath, type LegalDocument } from "./legal";
 import { Markdown } from "./markdown";
@@ -44,7 +44,8 @@ export default function LegalPage() {
     let live = true;
     api.legalDocument(slug)
       .then((d) => { if (live) setDoc(d); })
-      .catch((e) => { if (live) setError(String(e).replace(/^Error:\s*/, "")); });
+      // 404: the operator has not published the legal pages (flag `legal_pages` off) - the same message as an unknown page.
+      .catch((e) => { if (live) setError(e instanceof ApiError && e.status === 404 ? "This page does not exist." : String(e).replace(/^Error:\s*/, "")); });
     window.scrollTo(0, 0);
     return () => { live = false; };
   }, [slug]);

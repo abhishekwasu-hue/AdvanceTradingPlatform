@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import appSource from "../App.tsx?raw";
 import feedbackSource from "../feedback/FeedbackDialog.tsx?raw";
 import bannerSource from "../legal/LegalAcceptanceBanner.tsx?raw";
+import legalPageSource from "../legal/LegalPage.tsx?raw";
+import accountSource from "../pages/AccountPage.tsx?raw";
 import dialogSource from "./SupportDialog.tsx?raw";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion } from "./support";
 
@@ -68,6 +70,14 @@ describe("support bot wiring", () => {
     expect(app).toMatch(/<Route path="\/legal\/:slug"/);
     expect(app).toContain('import("./legal/LegalPage")');
     expect(app).toContain("<LegalAcceptanceBanner />");
+  });
+
+  it("flag legal_pages off (the server answers 404): no consent box, nothing required, no banner, no page", () => {
+    expect(accountSource).toContain("{needsLegal && legalDocs && <LegalConsentField");
+    expect(accountSource).toContain("(needsLegal && legalDocs !== null && !legalAccepted)");
+    expect(accountSource).toContain("legalDocs && legalAccepted ? versionsFor(legalDocs) : undefined");
+    expect(bannerSource).toMatch(/api\.legalAcceptance\(\)\.then\(\(s\) => \{ if \(live\) setStatus\(s\); \}\)\.catch/);
+    expect(legalPageSource).toContain('e.status === 404 ? "This page does not exist."');
   });
 
   it("the acceptance prompt is a banner, never a modal that could block exits", () => {

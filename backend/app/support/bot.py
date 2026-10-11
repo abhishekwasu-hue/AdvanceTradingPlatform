@@ -118,16 +118,18 @@ async def _ai_text(provider, question: str, matches: List[knowledge.Match]) -> t
     return shown, None
 
 
-async def reply(question: str, *, provider=None) -> dict:
-    """The bot's reply to `question`. `provider` is the organisation's own external AI provider, or None (help text)."""
+async def reply(question: str, *, provider=None, include_legal: bool = False) -> dict:
+    """The bot's reply to `question`. `provider` is the organisation's own external AI provider, or None (help text).
+    `include_legal`: the legal pages are published (flag `legal_pages`) - else they are neither searched nor linked."""
     q = clean_question(question)
     refusal = guard.check(q)
     if refusal is not None:
         text = _shown(refusal.text)
         if text is None:          # never: the refusals are fixed text the tests screen - but never show an unscreened one
             return handoff(q, None, note="refusal text failed the filter")
-        return _reply("refused", text, source="help", confidence=None, links=refusal.links(), refusal=refusal.kind)
-    matches = knowledge.search(q)
+        return _reply("refused", text, source="help", confidence=None, links=refusal.links(include_legal=include_legal),
+                      refusal=refusal.kind)
+    matches = knowledge.search(q, include_legal=include_legal)
     floor = knowledge.min_confidence()
     if not matches or matches[0].confidence < floor:
         return handoff(q, matches[0].confidence if matches else 0.0)

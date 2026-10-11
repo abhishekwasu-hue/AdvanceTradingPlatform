@@ -33,7 +33,8 @@ export default function AccountPage() {
   // PW6: the closed-beta invite code - the field opens when the server asks for one (or the visitor says they have one).
   const [betaCode, setBetaCode] = useState("");
   const [betaField, setBetaField] = useState(false);
-  // Z10-f: the legal documents' current versions, accepted with the account (the box is required on the form).
+  // Z10-f: the legal documents' current versions, accepted with the account. The box shows (and is required) only when
+  // the server publishes the documents - flag `legal_pages`; while it is off the list answers 404 and the form is as before.
   const [legalDocs, setLegalDocs] = useState<LegalSummary[] | null>(null);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const needsLegal = mode === "register" || mode === "invite";
@@ -323,11 +324,11 @@ export default function AccountPage() {
               Have a beta invite code?
             </button>
           ))}
-          {needsLegal && <LegalConsentField checked={legalAccepted} onChange={setLegalAccepted} />}
+          {needsLegal && legalDocs && <LegalConsentField checked={legalAccepted} onChange={setLegalAccepted} />}
           {error && <div className="text-xs text-down">{error}</div>}
           <button
             type="submit"
-            disabled={loading || (needsLegal && !legalAccepted) || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
+            disabled={loading || (needsLegal && legalDocs !== null && !legalAccepted) || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
             className="w-full rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
           >
             {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}

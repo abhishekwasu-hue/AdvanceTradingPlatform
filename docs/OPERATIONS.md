@@ -1364,9 +1364,15 @@ passphrase is the one secret that must survive losing the server - store it with
 
 ### 2.6 Legal pages, their acceptance and the support bot (Z10-f)
 
+**Flag `legal_pages` (off by default).** While it is off nothing below exists for users: `/api/legal/*` answers 404,
+sign-up ignores `legal_acceptance`, the form has no consent box, nobody sees the banner and the support bot leaves the
+legal pages out. The admin API (`PUT /api/admin/controls/flags/legal_pages`) refuses `on` - or an organisation
+allow-list - while any document still has an open `[PLACEHOLDER]`; send `"override_open_placeholders": true` to switch
+it on anyway (audited as `legal_pages_placeholder_override`). Fill the placeholders and have the text reviewed first.
+
 **Legal pages.** The Privacy notice (DPDP Act 2023), Terms of use and Risk disclosure are versioned Markdown in
 `backend/app/legal/content/{privacy,terms,risk}.md`, each headed "Draft — to be reviewed by a lawyer before launch".
-They are public: `/legal/privacy`, `/legal/terms`, `/legal/risk` in the app (no sign-in, no app shell) and
+With the flag on they are public: `/legal/privacy`, `/legal/terms`, `/legal/risk` in the app (no sign-in, no app shell) and
 `GET /api/legal/documents[/{slug}]`. The privacy notice does not copy configuration: retention days come from the
 retention policy (section 2.3, `RETENTION_*`) and the breach-notice hours and log retention from `in_sebi.json`
 (`IN-SEBI.golive.checklist`), filled in when the page is served. Company facts that do not exist yet stay as
@@ -1383,7 +1389,8 @@ screen keep working. Each acceptance is a row in `ai_acknowledgements` (`kind` =
 `legal_risk`, `version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
 
 **Support bot** (flag `support_bot`, **off by default**; off = `POST /api/ai/support/ask` answers 404 and the help
-button is hidden). How-to answers from `backend/app/support/content/help.md` and the legal pages. It refuses advice
+button is hidden). How-to answers from `backend/app/support/content/help.md` and, while `legal_pages` is on, the legal
+pages (help entries marked `requires: legal_pages` are left out while it is off). It refuses advice
 questions (what to buy or sell, targets, tips, "will X go up" and the advice / guarantee words), questions about the
 user's own positions, orders or P&L (it reads none) and requests to place, change, cancel or exit orders (it has no
 tool that can). Below the confidence floor (`SUPPORT_BOT_MIN_CONFIDENCE`, default 0.5) it hands the question to the

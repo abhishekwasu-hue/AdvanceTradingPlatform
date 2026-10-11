@@ -68,8 +68,7 @@ _ACCOUNT = [re.compile(p, re.I) for p in (
 REPLIES = {
     "advice": ("I can only help with how to use the platform. I can't say what to buy, sell or hold, or what a price will do: "
                "the platform gives no investment advice and is not a SEBI-registered adviser or research analyst. The "
-               "decision is always yours - the Risk disclosure explains more, and a SEBI-registered investment adviser can "
-               "advise you."),
+               "decision is always yours; a SEBI-registered investment adviser can advise you."),
     "orders": ("I can't place, change, cancel or exit orders - I have no access to trading. To close a paper position, open "
                "Positions and close it from its row; the platform's stop-loss and end-of-day square-off keep running on their "
                "own. A real order is only ever placed by you, in your own broker app."),
@@ -88,8 +87,8 @@ class Refusal:
     kind: str           # advice | orders | account
     text: str
 
-    def links(self) -> list:
-        return [dict(link) for link in LINKS[self.kind]]
+    def links(self, *, include_legal: bool = True) -> list:
+        return [dict(link) for link in LINKS[self.kind] if include_legal or not link["url"].startswith("/legal/")]
 
 
 def classify(question: str) -> Optional[str]:

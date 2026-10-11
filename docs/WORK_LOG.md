@@ -1645,3 +1645,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Support bot `POST /api/ai/support/ask` (404 while off): help + legal retrieval, refuses advice / account / order
   questions, hands low confidence to the feedback form, optional rewording only through the organisation's own
   provider and the advice filter; AI rate units + its own per-user limit. Questions Z10F-1..Z10F-6.
+- Follow-up (coordinator): legal pages, the sign-up/invite consent box and the acceptance banner behind the new flag
+  `legal_pages` (default off: 404, sign-up unchanged, bot leaves legal out); turning it on is refused while placeholders
+  are open unless `override_open_placeholders` (audited). Z10F-5 updated.

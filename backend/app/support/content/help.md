@@ -1,7 +1,8 @@
 # Help pages
 
 How-to answers the support bot searches (together with the legal pages). One entry per `## ` heading: the heading is
-the question, `keywords:` lists other words people use for it, `page:` is where in the app it happens. Keep every
+the question, `keywords:` lists other words people use for it, `page:` is where in the app it happens, and
+`requires: legal_pages` marks an entry that refers to the legal pages (left out while that flag is off). Keep every
 answer about how to use the platform - never about what to trade.
 
 ## What is paper trading, and does the platform place real orders?
@@ -14,7 +15,7 @@ During this phase every order and trade in the platform is paper (simulated): no
 keywords: sign up, signup, register, registration, new account, join, invite code, beta
 page: /account
 
-Open the Account page and choose "Need an account? Register". Enter your email and a password of at least 10 characters, read the Terms of use, Privacy notice and Risk disclosure, tick the box to accept them, and choose "Create account". During the closed beta you may also need an invite code ("Have a beta invite code?").
+Open the Account page and choose "Need an account? Register". Enter your email and a password of at least 10 characters, tick the box to accept the terms when the form shows one, and choose "Create account". During the closed beta you may also need an invite code ("Have a beta invite code?").
 
 ## How do I join my team's organisation?
 keywords: invite, invitation, teammate, team member, organisation, organization, join team
@@ -151,11 +152,12 @@ The organisation owner can download orders, trades, audit logs and login events 
 ## How do I ask for my personal data to be deleted?
 keywords: delete account, erase, erasure, remove my data, privacy request, dpdp, data rights, grievance
 page: /legal/privacy
+requires: legal_pages
 
 Write to the grievance officer named in the Privacy notice. For a teammate who has left, the organisation owner can also use "Erase personal data (irreversible)" on the Team page. Erasure replaces the email, password and two-factor data with inert values; trading records the law requires stay under an anonymous id.
 
 ## Does the platform give investment advice or tips?
 keywords: advice, tips, recommendations, adviser, advisor, research analyst, sebi registered, calls
-page: /legal/risk
+page: /
 
-No. The platform is a software tool, not a SEBI-registered investment adviser or research analyst. Signals, screens, backtests and AI answers describe rules and data; the decision to trade is always yours. See the Risk disclosure.
+No. The platform is a software tool, not a SEBI-registered investment adviser or research analyst. Signals, screens, backtests and AI answers describe rules and data; the decision to trade is always yours.

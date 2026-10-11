@@ -1,5 +1,5 @@
-"""Z10-f: the legal pages (public, versioned, draft-headed, advice-free), their acceptance (at sign-up, on the next
-sign-in, never a lock-out) and the support bot (flag `support_bot`, off: 404; how-to only; refuses advice, account and
+"""Z10-f: the legal pages (flag `legal_pages`, off: 404 and sign-up unchanged; public, versioned, draft-headed,
+advice-free), their acceptance (at sign-up, on the next sign-in, never a lock-out) and the support bot (flag `support_bot`, off: 404; how-to only; refuses advice, account and
 order questions; hands low confidence to the feedback form; the organisation's own AI provider only; rate-limited)."""
 import asyncio
 import re
@@ -42,6 +42,21 @@ def _set_flags(**flags: bool) -> None:
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
             await session.commit()
     _run(go())
+
+
+def legal_off(test):
+    """Runs `test` with `legal_pages` off (see the autouse `legal_on` fixture)."""
+    test.legal_off = True
+    return test
+
+
+@pytest.fixture(autouse=True)
+def legal_on(request):
+    """The legal tests run with `legal_pages` on (stored directly: the placeholders are still open); the tests decorated
+    with `legal_off` check the flag-off behaviour."""
+    _set_flags(legal_pages=not getattr(request.function, "legal_off", False))
+    yield
+    _set_flags(legal_pages=False)
 
 
 @pytest.fixture
@@ -270,6 +285,78 @@ def test_acceptances_are_kept_like_the_other_acknowledgements():
     assert "ai_acknowledgements" in NEVER_DELETED
 
 
+# --- the legal_pages flag ----------------------------------------------------------------------------------------------
+
+
+
+def test_legal_flag_is_registered_and_off_by_default():
+    assert "legal_pages" in controls.FEATURE_FLAGS and "legal_pages" in controls.DEFAULT_OFF_FLAGS
+
+
+@legal_off
+def test_flag_off_public_routes_and_acceptance_are_404():
+    assert client.get("/api/legal/documents").status_code == 404
+    r = client.get("/api/legal/documents/privacy")
+    assert r.status_code == 404 and r.headers.get("X-Feature-Disabled") == "legal_pages"
+    headers = _headers("z10f-off-banner@example.com")
+    assert client.get("/api/legal/acceptance", headers=headers).status_code == 404
+    assert client.post("/api/legal/acceptance", headers=headers, json={"documents": CURRENT}).status_code == 404
+
+
+@legal_off
+def test_flag_off_signup_ignores_the_acceptance_and_records_nothing():
+    for email, legal in (("z10f-off-ok@example.com", CURRENT), ("z10f-off-stale@example.com", {**CURRENT, "risk": "2020-01-01"}),
+                         ("z10f-off-partial@example.com", {"terms": "x"})):
+        r = client.post("/api/auth/register", json={"email": email, "password": PASSWORD, "legal_acceptance": legal})
+        assert r.status_code == 201, r.text
+        assert _rows(_me({"Authorization": f"Bearer {r.json()['access_token']}"})["id"]) == []
+
+
+def test_legal_flag_on_for_one_organisation_only():
+    _set_flags(legal_pages=False)
+    on = _headers("z10f-legal-tenant-on@example.com")
+    off = _headers("z10f-legal-tenant-off@example.com")
+
+    async def go():
+        async with _session_factory() as session:
+            stored = (await controls._get(session, controls.KEY_FEATURE_FLAGS)).get("flags") or {}
+            stored["legal_pages"] = {"on": False, "tenants": [_me(on)["tenant_id"]]}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
+            await session.commit()
+    _run(go())
+    assert client.get("/api/legal/acceptance", headers=on).status_code == 200
+    assert client.get("/api/legal/acceptance", headers=off).status_code == 404
+    assert client.get("/api/legal/documents/terms").status_code == 200        # the invitees' banner links must open
+
+
+@legal_off
+def test_switching_the_flag_on_is_refused_while_placeholders_are_open_unless_overridden():
+    from tests.test_admin_api import _admin
+    admin, _ = _admin("z10f-flag-admin@example.com")
+    assert controls.legal_open_placeholders()            # the drafts still have [COMPANY NAME] etc.
+    url = "/api/admin/controls/flags/legal_pages"
+    refused = client.put(url, headers=admin, json={"on": True})
+    assert refused.status_code == 400 and "open placeholders" in refused.json()["detail"] and "COMPANY NAME" in refused.json()["detail"]
+    assert client.put(url, headers=admin, json={"on": False, "tenants": [1]}).status_code == 400   # a staged rollout too
+    assert client.put(url, headers=admin, json={"on": False}).status_code == 200                    # turning it off is always fine
+    assert client.get("/api/legal/documents").status_code == 404
+    ok = client.put(url, headers=admin, json={"on": True, "override_open_placeholders": True})
+    assert ok.status_code == 200 and ok.json()["legal_pages"]["on"] is True
+    assert client.get("/api/legal/documents").status_code == 200
+
+    async def audit():
+        async with _session_factory() as session:
+            return await session.scalar(select(AuditLogRecord.detail).where(AuditLogRecord.event == "legal_pages_placeholder_override"))
+    assert "privacy" in _run(audit())
+
+
+def test_other_flags_are_not_affected_by_the_placeholder_check():
+    from tests.test_admin_api import _admin
+    admin, _ = _admin("z10f-flag-admin2@example.com")
+    assert client.put("/api/admin/controls/flags/support_bot", headers=admin, json={"on": True}).status_code == 200
+    _set_flags(support_bot=False)
+
+
 # --- the support bot: flag ----------------------------------------------------------------------------------------------
 
 def test_flag_is_registered_and_off_by_default():
@@ -346,7 +433,7 @@ def test_bot_refuses_advice(bot_on, question):
     headers = _headers(f"z10f-advice-{abs(hash(question)) % 10**8}@example.com")
     body = client.post(ASK, headers=headers, json={"question": question}).json()
     assert body["outcome"] == "refused" and body["refusal"] == "advice", question
-    assert "no investment advice" in body["answer"] and body["links"][0]["url"] == "/legal/risk"
+    assert "no investment advice" in body["answer"] and body["links"][0]["url"] == "/legal/risk"     # legal_pages on
 
 
 @pytest.mark.parametrize("question", [
@@ -380,6 +467,18 @@ def test_how_to_wording_about_orders_and_positions_is_not_refused():
         assert guard.classify(q) is None, q
 
 
+@legal_off
+def test_with_the_legal_pages_off_the_bot_neither_searches_nor_links_them(bot_on):
+    headers = _headers("z10f-bot-legal-off@example.com")
+    for q in ("who is the grievance officer?", "how long do you keep my login IP address data?", "should I buy TCS?",
+              "how do I delete my personal data?"):
+        body = client.post(ASK, headers=headers, json={"question": q}).json()
+        assert all(not link["url"].startswith("/legal/") for link in body["links"]), (q, body)
+        assert "Privacy notice" not in body["answer"] and "Risk disclosure" not in body["answer"], (q, body)
+    assert all(not p.requires_legal for p in knowledge.index(False).passages)
+    assert any(p.source == "legal" for p in knowledge.index(True).passages)
+
+
 def test_low_confidence_hands_off_to_the_feedback_form(bot_on):
     headers = _headers("z10f-handoff@example.com")
     for q in ("what is the weather in Pune", "my screen flickers when I rotate the tablet on Firefox nightly"):
@@ -406,6 +505,9 @@ def test_help_entries_are_well_formed_and_point_at_real_pages():
     assert {e.url for e in entries} <= pages
     with pytest.raises(ValueError):
         parse_help("## A question\npage: settings\n\nText.")
+    with pytest.raises(ValueError):
+        parse_help("## A question\npage: /legal/terms\n\nText.")          # a legal page needs requires: legal_pages
+    assert all(e.requires_legal for e in entries if e.url.startswith("/legal/"))
 
 
 # --- the support bot: AI wording (BYOK rule) -----------------------------------------------------------------------------

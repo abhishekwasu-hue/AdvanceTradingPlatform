@@ -31,6 +31,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.auth import verification
 from app.platform.controls import flag_enabled
 from app.legal import acceptance as legal_acceptance
+from app.legal import enabled as legal_enabled
 from app.legal.routes import version_conflict as legal_version_conflict
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -59,15 +60,22 @@ class RegisterRequest(BaseModel):
     # PW6: read only while the `beta_cohort_gate` flag is on (then required); ignored otherwise.
     invite_code: Optional[str] = Field(default=None, max_length=64)
     # Z10-f: {slug: version} of the Terms of use, Privacy notice and Risk disclosure the person read and accepted on the
-    # sign-up form (all three, current versions). Recorded with the account; without it the next sign-in asks.
+    # sign-up form (all three, current versions). Read only while the `legal_pages` flag is on (ignored otherwise);
+    # recorded with the account; without it the next sign-in asks.
     legal_acceptance: Optional[Dict[str, str]] = Field(default=None, max_length=3)
 
 
-def _check_legal(versions: Optional[Dict[str, str]]) -> None:
-    """Z10-f: an acceptance sent with a sign-up must name all three documents at their current versions - checked before
-    anything is written (a stale page gets 409 and reloads the text)."""
-    if versions is None:
-        return
+async def _legal_versions(session: AsyncSession, versions: Optional[Dict[str, str]], tenant_id: Optional[int] = None) -> Optional[Dict[str, str]]:
+    """Z10-f: the acceptance to record with a new account, or None. While the `legal_pages` flag is off it is ignored
+    (not checked, not recorded - sign-up is exactly as before). When on, it must name all three documents at their
+    current versions - checked before anything is written (a stale page gets 409 and reloads the text)."""
+    if versions is None or not await legal_enabled(session, tenant_id):
+        return None
+    _check_legal(versions)
+    return versions
+
+
+def _check_legal(versions: Dict[str, str]) -> None:
     try:
         legal_acceptance.check_versions(versions, require_all=True)
     except legal_acceptance.LegalVersionError as exc:
@@ -168,7 +176,7 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, request.email)
-    _check_legal(request.legal_acceptance)
+    legal_versions = await _legal_versions(session, request.legal_acceptance)
     # PW6: the closed beta. Off (the default): nothing changes. On: a valid invite code and a place in the cohort, spent
     # in this transaction - a sign-up that fails below does not use the code up. The operator's own configured
     # SUPER_ADMIN addresses (SUPER_ADMIN_EMAILS) are exempt: they issue the codes, so they cannot need one.
@@ -189,8 +197,8 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     session.add(user)
     await session.flush()
     await write_audit_log(session, tenant.id, user.id, "user_registered", request.email)
-    if request.legal_acceptance is not None:
-        await legal_acceptance.accept(session, user, request.legal_acceptance, source="signup", request=http_request, require_all=True)
+    if legal_versions is not None:
+        await legal_acceptance.accept(session, user, legal_versions, source="signup", request=http_request, require_all=True)
     if beta_code is not None:
         await write_audit_log(session, tenant.id, user.id, "beta_invite_redeemed", f"code #{beta_code.id}")
     await verification.send_link(session, user, http_request)  # Phase N3: best effort, logged when no mailer
@@ -352,7 +360,7 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     if await session.scalar(select(User).where(User.email == record.email)) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, record.email)
-    _check_legal(request.legal_acceptance)
+    legal_versions = await _legal_versions(session, request.legal_acceptance, record.tenant_id)
 
     user = User(
         tenant_id=record.tenant_id, email=record.email, hashed_password=hash_password(request.password), role=record.role,
@@ -363,8 +371,8 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
     record.accepted_at = datetime.now(timezone.utc)
     record.accepted_user_id = user.id
     await write_audit_log(session, record.tenant_id, user.id, "invite_accepted", f"{record.email} as {record.role}")
-    if request.legal_acceptance is not None:
-        await legal_acceptance.accept(session, user, request.legal_acceptance, source="invite", request=http_request, require_all=True)
+    if legal_versions is not None:
+        await legal_acceptance.accept(session, user, legal_versions, source="invite", request=http_request, require_all=True)
     issued = await start_session(session, user, http_request)
     await session.commit()
     return _token_response(issued, response)

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import legal
 from app.ai import compliance_terms as terms
 from app.ai import settings as ai_settings
 from app.ai.rate_limit import ai_rate_limit
@@ -69,7 +70,7 @@ async def organisation_provider(session: AsyncSession, user: User):
 @router.post("/ask", dependencies=[Depends(support_rate_limit)])
 async def ask(body: AskBody, user: User = Depends(support_user), session: AsyncSession = Depends(get_session)) -> dict:
     provider = await organisation_provider(session, user)
-    out = await bot.reply(body.question, provider=provider)
+    out = await bot.reply(body.question, provider=provider, include_legal=await legal.enabled(session, user.tenant_id))
     if provider is not None and (out.get("source") == "ai" or out.get("note")):      # the provider was called
         await ai_settings.mark_used(session, user.tenant_id, error=None if out.get("source") == "ai" else out.get("note"))
         await session.commit()

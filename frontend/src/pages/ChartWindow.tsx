@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
+import { SymbolTierBadge } from "../components/DataTierBadge";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -35,6 +36,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       <h1 className="sr-only">{symbol} chart</h1>
       <div className="mb-2 flex items-center gap-3 text-xs text-fg-muted">
         <span className="font-semibold text-fg">{exchange}</span>
+        <SymbolTierBadge symbol={symbol} exchange={exchange} live={live.ltp?.data_tier} />
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
         {error && <span className="text-down">{error}</span>}

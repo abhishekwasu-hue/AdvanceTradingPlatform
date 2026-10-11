@@ -110,6 +110,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
+    # BT1 (beta spec §2/§4a, Phase 0): live data only through each user's own broker session at a broker whose data terms
+    # are confirmed (docs/BROKER_DATA_TERMS.md), never pooled or shown to another user; everything else EOD; every number
+    # carries its data tier. OFF: market data reads are exactly as before. Places no order.
+    "byob_data_tier": "Bring-your-own-broker data tier: live data only through each user's own confirmed broker session, EOD otherwise, data-tier badges",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
@@ -117,7 +121,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "approval_only_entries"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier", "approval_only_entries"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

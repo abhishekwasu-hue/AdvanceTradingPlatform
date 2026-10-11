@@ -1,0 +1,42 @@
+{
+  "_comment": "BT1: the machine-readable copy of docs/BROKER_DATA_TERMS.md (data-terms status and per-connection caps). tests/test_bt1_byob_data_tier.py fails when the two disagree. Change a status only with the broker's written confirmation recorded in that document. symbol_cap null = to confirm (never guess a number).",
+  "brokers": {
+    "upstox": {
+      "display_name": "Upstox",
+      "status": "confirmed",
+      "symbol_cap": null,
+      "requires_user_data_subscription": false,
+      "note": "Official community reply: market data may be distributed to Upstox users because each call needs that user's own access token."
+    },
+    "dhan": {
+      "display_name": "Dhan",
+      "status": "confirmed",
+      "symbol_cap": null,
+      "requires_user_data_subscription": true,
+      "note": "Live data needs the user's own Dhan Data API subscription; without it Dhan refuses the market-data call and ATP shows EOD."
+    },
+    "zerodha": {
+      "display_name": "Zerodha",
+      "status": "execution-only",
+      "symbol_cap": null,
+      "requires_user_data_subscription": false,
+      "note": "Kite Connect terms forbid displaying its market data on third-party platforms: EOD data in ATP, live prices in the Kite app."
+    },
+    "angel_one": {"display_name": "Angel One", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                  "note": "Second wave: written confirmation pending."},
+    "fyers": {"display_name": "Fyers", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+              "note": "Second wave: written consent needed before charts/screeners run on Fyers data."},
+    "groww": {"display_name": "Groww", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+              "note": "Second wave: written confirmation pending."},
+    "kotak_neo": {"display_name": "Kotak Neo", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                  "note": "Second wave: written confirmation pending."},
+    "icici_breeze": {"display_name": "ICICI Breeze", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                     "note": "Second wave: written confirmation pending."},
+    "five_paisa": {"display_name": "5paisa", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                   "note": "Second wave: written confirmation pending."},
+    "shoonya": {"display_name": "Shoonya / Finvasia", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                "note": "Second wave: written confirmation pending."},
+    "alice_blue": {"display_name": "Alice Blue", "status": "pending", "symbol_cap": null, "requires_user_data_subscription": false,
+                   "note": "Second wave: written confirmation pending."}
+  }
+}

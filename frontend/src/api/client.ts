@@ -58,6 +58,7 @@ import type {
   ScanPlan,
   ScanRead,
   CandleSourcesResponse,
+  DataTierResponse,
   MarketHoliday,
   OptionChainsResponse,
   ReadinessChecklist,
@@ -575,6 +576,9 @@ export const api = {
   adminReadiness: () => request<ReadinessChecklist>("/admin/readiness"),
   // Phase AA: broker candles for the research pages.
   marketDataSources: () => request<CandleSourcesResponse>("/market-data/sources"),
+  // BT1: the data-tier badge for a symbol, or the market-wide one without (`enabled: false` while the flag is off).
+  marketDataTier: (symbol?: string, exchange = "NSE") =>
+    request<DataTierResponse>(`/market-data/data-tier${symbol ? `?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}` : ""}`),
   // Phase AN: the live chart's last price (tick > quote with staleness > bare LTP).
   marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
     request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),

@@ -13,9 +13,10 @@ As-of and versioning follow the shared lake exactly (B1): `as_of` hides rows ing
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import config
 from app.db.models import MdTenantCandleRecord
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, session_family
 from app.market_lake import adjust as adjust_mod
@@ -105,6 +106,13 @@ async def candles(session: AsyncSession, tenant_id: Optional[int], instrument_ke
     tenant = _require_tenant(tenant_id)
     minutes = resample_minutes(timeframe)
     raw_start = start - timedelta(minutes=minutes)        # the first bucket ending after `start` may begin before it
+    stored = int(await session.scalar(select(func.count()).select_from(MdTenantCandleRecord).where(
+        MdTenantCandleRecord.tenant_id == tenant, MdTenantCandleRecord.instrument_key == instrument_key,
+        MdTenantCandleRecord.timeframe == BASE_TIMEFRAME, MdTenantCandleRecord.ts > raw_start,
+        MdTenantCandleRecord.ts <= end)) or 0)
+    if stored > config.LAKE_TENANT_MAX_BASE_ROWS:         # counted BEFORE anything is read into memory
+        raise ValueError(f"{stored} one-minute rows in the window; at most {config.LAKE_TENANT_MAX_BASE_ROWS} are read per "
+                         "request - narrow the window")
     rows = await rows_as_of(session, tenant, instrument_key, BASE_TIMEFRAME, raw_start, end, as_of=as_of, sources=sources)
     base = [LakeBar(r.instrument_key, r.timeframe, _utc(r.ts), float(r.open), float(r.high), float(r.low), float(r.close),
                     int(r.volume), r.oi) for r in rows]

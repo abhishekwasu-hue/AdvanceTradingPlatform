@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import config
 from app.db.models import DataQualityEventRecord, MdCandleRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
-from app.market_lake.ingest import LakeBar, timeframe_minutes
+from app.market_lake.ingest import LakeBar, timeframe_minutes, trade_date
 
 
 @dataclass(frozen=True)
@@ -70,11 +70,11 @@ def find_gaps(bars: Sequence[LakeBar], day: date, source: str, *, until: Optiona
 def find_daily_gaps(bars: Sequence[LakeBar], trading_days: Sequence[date], source: str) -> List[QualityEvent]:
     """Trading days between the first and last daily bar that have no bar (one event per contiguous run). The caller
     supplies the trading days (weekdays minus the exchange's holidays) - without a holiday calendar it should not call
-    this, or every holiday becomes a gap. A daily bar belongs to the UTC date of (END - 1 microsecond)."""
+    this, or every holiday becomes a gap. A daily bar belongs to `ingest.trade_date` (IST date of END - 1 microsecond)."""
     if not bars:
         return []
     key, tf = bars[0].instrument_key, bars[0].timeframe
-    have = {(_utc(b.ts) - timedelta(microseconds=1)).date() for b in bars}
+    have = {trade_date(_utc(b.ts)) for b in bars}
     first, last = min(have), max(have)
     events: List[QualityEvent] = []
     run: List[date] = []

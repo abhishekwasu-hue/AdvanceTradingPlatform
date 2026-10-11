@@ -50,7 +50,7 @@ from app.db.models import HistoryBackfillFileRecord, MdCandleRecord, MdIsinSymbo
 from app.market_data.calendar import IST, load_holidays
 from app.market_lake import bhavcopy, quality
 from app.market_lake.bhavcopy import BhavcopyRefused, DailyRow, ParsedFile
-from app.market_lake.ingest import LakeBar, write_candles_bulk
+from app.market_lake.ingest import DAILY_END_IST, LakeBar, write_candles_bulk
 from app.market_lake.nse_fetch import Fetcher, PoliteFetcher
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ FLAG = "history_backfill"
 SEGMENTS = bhavcopy.SEGMENTS                      # processing order within a day: cash, indices, F&O
 SOURCE = {"cm": "nse_bhav:cm", "index": "nse_bhav:index", "fo": "nse_bhav:fo"}
 TIMEFRAME = "day"
-CLOSE_IST = time(15, 30)
+CLOSE_IST = time(*DAILY_END_IST)                  # the daily END shared with HB0 (15:30 IST = 10:00 UTC)
 LOCK_KEY = 0x48420002                             # pg advisory lock id ("HB" 0002); the R2 importer uses 0001
 RECHECK_NO_FILE_DAYS = 3                          # a `no_file` this recent is asked again (NSE may publish late)
 GATED_SEGMENTS = ("cm", "index")                  # the short-file gate (F&O size depends on --with-options)

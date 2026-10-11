@@ -873,3 +873,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   and OB-2 (the butterfly's PoP proxy).
 - Based on `main`: the builder does not depend on the screener or Copilot stacks. Other work this hour: U5 D1 (screener
   funnel page), S5-A4 (#145), H-C3c (#142), S5-A2/A3 (#143, #144).
+
+### 2026-10-11 06:42 IST - P1-b: the model before expiry, the 38-template gallery, any broker's chain
+- `options_builder/model.py`: T+0 / any-date curves with IV shift, exact profitable intervals, lognormal PoP,
+  closed-form expected P&L, exact payoff extremes with unbounded-risk flags (OB-4), net Greeks with rho, summary.
+- `catalog.py` (38 templates, five families, hedge first) and `chain.py` (any broker's `OptionChain` -> the selectors'
+  chain, model seller PoP, builder keys; OB-1). FUT legs in `compute_leg_payoff`.
+- 107 tests (textbook, Monte Carlo, finite differences, dense-grid extremes, adapter), 13 / 13 mutations killed.
+- Also today: `test_phase_bd_thesis` turned red on every branch (fixed 2026-10-06 in the test, wall clock in the API);
+  fixed test-only in #147 and carried in the open PRs.

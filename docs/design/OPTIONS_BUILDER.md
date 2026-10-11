@@ -55,12 +55,52 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
   && gzip -9 golden.json`. A changed result means a behaviour change; it is either deliberate (and recorded in
   ADR-0025) or a bug.
 
+## P1-b (built): the model before expiry, the gallery, any broker's chain
+- **`model.py`** (the platform's Black-Scholes, `app/option_chain/greeks.py`; no new pricing code).
+  - `value_curve`: the strategy's P&L at every price on any date (`days_forward`), with every leg's IV shifted
+    (`iv_shift`). On or after a leg's expiry the leg is worth its intrinsic value, so the curve on the last expiry is
+    the expiry payoff and today's curve is flat at zero at spot for model-priced legs (both tested for every
+    template). A FUT leg is worth the spot.
+  - IV is required per leg - from the chain or solved from the premium (`leg_with_model_greeks`); never invented.
+  - `profitable_intervals`: where the expiry payoff is above zero, solved exactly between strikes (no grid).
+  - `pop_at_expiry`: the lognormal probability of those intervals. `expected_pnl_at_expiry`: the probability-weighted
+    expiry P&L in closed form (a FUT leg earns the carry to the forward). Both agree with a 400,000-path Monte Carlo
+    for every template.
+  - `payoff_extremes`: the true best and worst expiry P&L over every price from 0 up, with `unbounded_loss` /
+    `unbounded_profit` (OB-4: the grid number moves with the chart's range; this one does not). Sizing must refuse a
+    structure with unbounded loss rather than use a grid stand-in.
+  - `net_greeks` (delta, gamma, theta per day, vega per IV point, rho per rate point; checked against finite
+    differences), `expected_move` (spot x IV x sqrt(t)), and `summary` for the metrics card on the nearest expiry,
+    labelled "an estimate, not a forecast".
+- **`catalog.py`: the gallery.** 38 templates in five families (Bullish, Bearish, Neutral, Volatility, Stock):
+  verticals, straddles, strangles, butterflies, condors, ratios and back spreads, jade lizards, calendars and
+  diagonals (two expiries), covered call, protective put, collar, synthetics. Every template lists the hedge first.
+  Strikes are offsets of a width the caller takes from the instrument master; no instrument numbers in the catalog.
+- **`chain.py`: any broker's chain.** `raw_chain(OptionChain)` turns `BrokerInterface.get_option_chain` output into
+  the selectors' input, so the P1-a selectors work with every broker, not only Upstox:
+  - the contract is named by a builder key (`NIFTY|<expiry>|<strike>|CE`), resolved to the broker's instrument by the
+    instrument master when an order is prepared; it is never sent to a broker;
+  - PoP is the model's seller PoP (OB-1), from the option's quoted IV when it is a fraction in (0, 5), else solved
+    from its LTP, else None.
+- **Tests** (`tests/test_p1b_options_model.py`, 107): Hull's textbook values; expiry curve = payoff and flat at spot
+  for every template; IV and time scenarios move the right way; PoP and expected P&L against Monte Carlo; the long
+  call's PoP in closed form; intervals against the payoff's sign on a fine grid; Greeks and rho against finite
+  differences; the gallery (families, hedge first, shapes of known structures, a calendar keeping its far leg's time
+  value); exact extremes against a dense grid, including ratios; the adapter's PoP equals the model's PoP for that
+  short leg, IV solved when missing or in percent, no PoP without a spot or after expiry; the selectors run on an
+  adapted chain. Mutation checks: 13 / 13 killed.
+
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not
-  supply it. Provisional: P1-b computes PoP from the platform's model (lognormal, chain IV) when the broker gives none,
-  and labels which one was used.
+  supply it. Provisional (built in P1-b): `chain.raw_chain` gives the model's seller PoP (lognormal, the option's own
+  IV) for every broker and marks it with `pop_source`. Owner question: should an Upstox user see Upstox's PoP or the
+  model's? Default: the model's, so every broker reads the same way.
 - **OB-2. The iron butterfly's PoP proxy** (from the wings' PoP) is kept as in the source, but it is an approximation.
   Provisional: kept for parity; P1-b shows a model PoP beside it.
+- **OB-3. Ratios and unequal lots.** The gallery has ratio and back spreads (1 x 2). The P1-a per-lot result
+  (`build_strategy_result_from_legs`) refuses unequal lots, as in the source. Provisional: the builder shows ratios
+  through the model (`value_curve`, `payoff_extremes`, which handle any lots), and execution of a ratio waits for
+  P1-d's basket, which sizes each leg by its own lots.
 - **OB-4. Inherited from the source, kept for parity** (found by the independent review; each is documented in the
   code and either fixed later in a deliberate, recorded change or handled by the newer model functions):
   - **Max loss over a bounded range.** `compute_max_profit_loss` and the strategy result read max loss from the price

@@ -1,0 +1,8 @@
+{
+  "_comment": "U5 starter templates (the empty canvas's buttons), shared with the server: U9 TX1 files each id in backend/app/screener/data/taxonomy.json and backend/tests/test_z8_tx1_taxonomy.py fails CI when one is not filed or its name differs. A new starter needs a row here, a build function in FunnelCanvas.tsx (STARTER_BUILDS) and a taxonomy entry.",
+  "starters": [
+    { "id": "starter.momentum", "name": "Momentum", "summary": "RSI(14) above 60 and close above EMA(close, 20)" },
+    { "id": "starter.oversold", "name": "Oversold", "summary": "RSI(14) at or below 30" },
+    { "id": "starter.daily_trend", "name": "Trend on the daily", "summary": "close above EMA(close, 50) on 1d" }
+  ]
+}

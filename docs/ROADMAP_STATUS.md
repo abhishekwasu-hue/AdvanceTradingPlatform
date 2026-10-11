@@ -15,12 +15,12 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | merged (flag discipline_engine off) | #171, #172 | 100 |
 | Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection merged (6528/6528 identical to Trade); Z7a-2 lifecycle/memory/store reviewed, fixes in progress (job off the trading worker, daily defaults, retention, compressed golden fixture); Z7a-3 chart layer + ScreenQL zone functions next | #168 merged; #176 | 55 |
 | Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 reviewed, fixes in progress (template history depth, alert flag gates, IST anchoring); BK2 built, aligning with BK1 fixes; EV1 + EV2 after Z7a-3 | #178, #181 | 35 |
-| Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 in progress | #184 | 15 |
+| Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 merged (flag `screener_gallery` off): taxonomy data file + lint + CI guard (every pre-built screen filed), `GET /api/screener/taxonomy`, gallery rail / chips / matrix; breakouts register when #178 merges (OPEN_QUESTIONS TX1-6); LG1 next | #184 merged | 60 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
 | Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | next | - | 0 |
 | Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | next | - | 0 |
 
-Also open: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method.
+Also merged: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method (STT rows from 1 Apr 2026 still marked verify, OPEN_QUESTIONS TX-1).
 
 Data source note: the Trade-repo data collector was cancelled by the owner (2026-10-11), so HB0's R2 importer (#164) stays idle unless data arrives in that store. HB1 (NSE bhavcopy, run on the server) covers the daily history. The owner's intraday history comes from **HB2** (an intraday capture/backfill job on the server), kept in the plan right after Z11.
 

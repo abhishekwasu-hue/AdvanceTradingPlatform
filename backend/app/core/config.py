@@ -136,6 +136,8 @@ LAKE_TICK_WRITER_ENABLED = os.environ.get("LAKE_TICK_WRITER_ENABLED", "false").l
 LAKE_SPIKE_PCT = float(os.environ.get("LAKE_SPIKE_PCT", "10"))
 LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
 LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
+# Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
+LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

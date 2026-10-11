@@ -59,16 +59,16 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - A hit gets a neutral rewrite, or falls back to the rule text, and is flagged in the audit.
   - A specific buy/sell/strike call gets educational framing plus a disclaimer.
   - Tests in both languages.
-- **d. Grounding.**
+- **d. Grounding.** Status: **built** (copilot, thesis, generator explanation, scanner read; the guide is vocabulary and is exempt from the direction check).
   - Numbers in the user's question are tagged `user_provided`, never `verified`.
   - A directional claim (bullish/bearish) must match the regime/trend facts.
   - The number check is extended to the generator's explanation and the scanner's free text.
-- **e. llm_calls hygiene.**
+- **e. llm_calls hygiene.** Status: **built** (rows never deleted; text masked, scrubbed on erasure, retention off by default - H-6).
   - Retention in days (config) through the retention job.
   - PII redaction (emails, phones, account ids) before storage.
   - Profile erasure clears the user's rows.
   - The DPDP note goes in OPERATIONS.
-- **f. Housekeeping.** Fix the `monitor.py` docstring, and give every LLM call a `prompt_version`.
+- **f. Housekeeping.** Status: **built** (hash-based prompt versions; a CI scan keeps every caller stamped). Fix the `monitor.py` docstring, and give every LLM call a `prompt_version`.
 
 ## Acceptance (from the spec)
 - A low-VIX NIFTY question gives a cited answer.
@@ -89,3 +89,8 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **H-4. Naming.** Use H-C1..H-C12 to avoid clashing with part C. Provisional.
 - **H-5. Server data when the lake has no window and the broker session is down.** Provisional: the draft backtest
   answers 409 ("no server data for this window"). It never falls back to client data.
+- **H-6. llm_calls text retention.** P0.8-D keeps every LLM call forever for the audit, while the spec asks for a
+  retention in days.
+  - Provisional: rows, hashes and costs are never deleted. Personal data is masked at write time. The text is scrubbed
+    on the trader's erasure / "forget me". Age-based scrubbing exists (`RETENTION_LLM_TEXT_DAYS`) but is off by default.
+  - Deleting data is the owner's decision (§14), so the period is left to the owner.

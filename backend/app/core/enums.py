@@ -38,10 +38,16 @@ class NotificationType(str, Enum):
     MARKETPLACE = "MARKETPLACE"
     # Phase AX: the worker's end-of-day summary of the session (signals, trades, exits, errors).
     EOD_SUMMARY = "EOD_SUMMARY"
+    # S3a (ADR-0022): a screen or instrument alert rule fired (grouped per rule and bar, or a digest).
+    SCREEN_ALERT = "SCREEN_ALERT"
     # Phase BB: a high-severity item from the live news feed (unverified feed data).
     NEWS_ALERT = "NEWS_ALERT"
     # Phase BD-2: the weekly market-thesis scoreboard (shadow overlay evaluation, read-only).
     THESIS_REPORT = "THESIS_REPORT"
+    # OI Banner O4: a banner state change (direction, confirmed flip, strength, PCR band, max pain, OI wall, DTE) and
+    # the collector's own health (stale or failing). Read-only information - never an order (ADR-0006).
+    OI_BANNER = "OI_BANNER"
+    OI_COLLECTOR = "OI_COLLECTOR"
 
 
 class NotificationSeverity(str, Enum):

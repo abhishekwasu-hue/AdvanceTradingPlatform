@@ -1297,11 +1297,15 @@ Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits a
 |---|---|---|
 | `/status` (`GET /api/status`) | anyone, no login; flag `public_status_page`, off by default | API, trading engine, market data (EOD date, NSE open, number of live sessions through users' own brokers), alert delivery lag, maintenance and incident banner. States and short sentences only. |
 | `GET /api/system/health/deep`, `/health/dependencies` | operator (unauthenticated, no secrets) | database, migrations, worker heartbeat, Redis, broker circuits, broker-uncertain organisations |
-| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)) |
+| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)); `OWNER ACTION NEEDED` (exit 10) names a flag to set |
+| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags against the Phase 0 posture ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-owner-step-in-admin--controls)): `live_trading` off, `phase0_paper_only` on. Read-only. |
+| `backend/scripts/session_check.py` | owner (run by `atp.sh deploy` / `rollback`) | whether any exchange session is open with open positions; a deploy or restart stops with exit 3 while it is ([runbook section 8](deploy/HOSTINGER_RUNBOOK.md#8-what-deploy-does-step-by-step)) |
 | Prometheus rules `scripts/monitoring/prometheus-alerts.yml` | operator | each rule's `runbook` annotation points to a page below |
 | Admin console | SUPER_ADMIN | incidents, maintenance mode, flags, beta rollout stage |
 
-**The public status page.** Turn it on in Admin > Feature flags (`public_status_page`). It reads only the probes above
+**The public status page.** Turn it on in Admin > Feature flags (`public_status_page`), the same owner step as the
+other Phase 0 flags (runbook section 4a; `atp.sh` never changes a flag). The page and `atp.sh health` read the same
+probes (`/api/system/health/deep`). It reads only the probes above
 and `app/incidents`; it shows no error text, version, host, latency, user or organisation. Incidents scoped to one
 organisation are left out. A platform-wide incident shows as "Incident" (WARNING) or "Major incident" (CRITICAL,
 EMERGENCY), "investigating" (OPEN) or "monitoring" (MITIGATED), and its start time; its title and summary stay in the
@@ -1383,9 +1387,14 @@ links still open the broker's own app.
 *When:* a deploy made things worse (health checks fail after the deploy, error budget burning, a feature broke for
 users) and a fix forward is not minutes away.
 
+*Before:* `scripts/session_check.py` (the session gate) refuses a restart while an exchange session is open with
+open positions (exit 3); the migration guard refuses while NSE is open. Wait for the close unless the runbook's
+override is accepted for that one run.
+
 *Do:* follow the Z11 runbook, [section 9 "Rollback, and when a migration makes it unsafe"](deploy/HOSTINGER_RUNBOOK.md#9-rollback-and-when-a-migration-makes-it-unsafe):
 `deploy/atp.sh rollback --dry-run`, then `deploy/atp.sh rollback` (code only), or `rollback --restore-db` when the
-release's migration was not additive. Then `deploy/atp.sh health`. Open an incident (`/status` shows it), and resolve it
+release's migration was not additive (since Z11 every migration declares `ROLLBACK_SAFE`; `False` means a code-only
+rollback is unsafe). Then `deploy/atp.sh health`, which must end `health: OK`. Open an incident (`/status` shows it), and resolve it
 once the fixed release is deployed again. The rollback rehearsal (a Phase 0 exit criterion) is in the same section.
 
 #### 1.9.6 Staged beta rollout (50 -> 200 -> 500)
@@ -1394,7 +1403,8 @@ The beta cohort grows in stages. Sign-up through invite codes (flag `beta_cohort
 min(stage, `BETA_COHORT_CAP`). Admin > Beta rollout shows the stage, the effective cap, the places used and the
 headroom. **Moving up** is one stage at a time, needs a reason and is written to the audit trail
 (`beta_cohort_stage_raised`). Move up only after the current stage has run a full week of trading days with: no open
-incident, `/status` green, the runbooks above exercised at least once, and the rollback rehearsed. **Moving down**
+incident, `/status` green, `deploy/atp.sh health` ending `health: OK` (flag posture included, runbook section 4a),
+the runbooks above exercised at least once, and the rollback rehearsed. **Moving down**
 (`beta_cohort_stage_lowered`) closes sign-up sooner; existing accounts are never touched. The `BETA_COHORT_STAGE`
 setting (default 50) only applies until a stage has been set in the console. Details: `docs/BETA_COHORT.md`.
 

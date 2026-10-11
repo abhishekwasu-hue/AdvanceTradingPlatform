@@ -462,3 +462,5 @@ def test_every_alert_runbook_link_resolves_and_each_alert_has_a_page():
     # The Z11 deploy runbook is linked, not copied.
     assert "deploy/HOSTINGER_RUNBOOK.md#9-rollback-and-when-a-migration-makes-it-unsafe" in ops
     assert "deploy/atp.sh rollback" in ops and "--restore-db" in ops
+    assert "deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-owner-step-in-admin--controls" in ops
+    assert "backend/scripts/flag_posture.py" in ops and "backend/scripts/session_check.py" in ops and "deploy/atp.sh health" in ops

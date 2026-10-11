@@ -18,7 +18,9 @@ cause stay in the admin console), counts of users, positions or orders.
 The flag `public_status_page` is off by default: while it is off the endpoint answers 404. When the database does not
 answer the flag cannot be read, so the endpoint answers 503 with an outage body and nothing else - that is the moment a
 status page exists for. The body is computed at most once every `CACHE_SECONDS` per process, and each IP is rate-limited.
-Nothing here writes, and nothing here touches an order.
+Nothing here writes, and nothing here touches an order. The owner's server-side check, `deploy/atp.sh health` (Z11,
+docs/deploy/HOSTINGER_RUNBOOK.md section 10), reads the same `/api/system/health/deep` probe; the runbooks are
+docs/OPERATIONS.md 1.9.
 """
 from __future__ import annotations
 

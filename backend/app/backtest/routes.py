@@ -150,7 +150,7 @@ class BacktestRunner:
             raise HTTPException(status_code=422, detail="execution_models apply to single-leg backtests only for now")
 
     @classmethod
-    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession) -> "BacktestRunner":
+    async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
         if body.options is None:
             return cls(body, risk)
         opts = body.options
@@ -166,10 +166,15 @@ class BacktestRunner:
             else:
                 underlying, _ = underlying_name(body.symbol)
                 start, end = _span(body.candles)
-                rows = await chain_recorder.load_rows(session, underlying, start, end)
+                from app.market_data import live_access
+                # BT1b: recorded chains came through other organisations' broker sessions - not used with byob_data_tier on.
+                byob = tenant_id is not None and await live_access.byob_on(session, tenant_id)
+                rows = [] if byob else await chain_recorder.load_rows(session, underlying, start, end)
                 if not rows and fallback is None:
-                    raise HTTPException(status_code=400, detail=f"No recorded option-chain quotes for {underlying} in the candle span; "
-                                                                 "allow the synthetic fallback or upload rows")
+                    raise HTTPException(status_code=400, detail=(
+                        "Recorded option-chain quotes are not used while the bring-your-own-broker data tier is on; "
+                        "allow the synthetic fallback or upload rows") if byob else (
+                        f"No recorded option-chain quotes for {underlying} in the candle span; allow the synthetic fallback or upload rows"))
             pricer = SnapshotPricer(rows, max_age_minutes=opts.snapshot_max_age_minutes, fallback=fallback)
         return cls(body, risk, pricer=pricer, holidays=holidays)
 
@@ -269,7 +274,7 @@ async def backtest_monte_carlo(
 ) -> dict:
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
     result = await run_in_threadpool(runner.run, strategy, bars_to_dataframe(body.candles))        # P0.1 / S3
     mc = await run_in_threadpool(monte_carlo, result.trades, risk.capital, runs=max(100, min(runs, 5000)), seed=seed)
     return {"backtest": result.model_dump(exclude={"trades", "equity_curve", "analytics", "options"}), "monte_carlo": mc}
@@ -282,7 +287,7 @@ async def backtest_walk_forward(
 ) -> dict:
     strategy = await _strategy(body, user, session)
     risk = body.risk_config or RiskConfig()
-    runner = await BacktestRunner.build(body, risk, session)
+    runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
     return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
                                    runner=runner.run if body.options is not None else None)
 
@@ -293,12 +298,21 @@ async def backtest_walk_forward(
 async def option_chain_coverage(underlying: Optional[str] = None, user: User = Depends(get_current_user),
                                 session: AsyncSession = Depends(get_session)) -> List[dict]:
     """What the recorder has captured so far, per underlying (platform-wide reference data)."""
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        raise live_access.LiveDataRefused("Recorded option chains came through other sessions' broker feeds, so they are not shown while "
+                                          "the bring-your-own-broker data tier is on.")
     return await chain_recorder.coverage(session, underlying_name(underlying)[0] if underlying else None)
 
 
 @router.get("/api/backtest/option-chain/snapshots")
 async def option_chain_snapshots(underlying: str, start: datetime, end: datetime, limit: int = 20000,
                                  user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[dict]:
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        # BT1b: recorded chains came through other organisations' broker sessions.
+        raise live_access.LiveDataRefused("Recorded option chains came through other sessions' broker feeds, so they are not shown while "
+                                          "the bring-your-own-broker data tier is on; upload your own rows or use the synthetic pricer.")
     rows = await chain_recorder.load_rows(session, underlying_name(underlying)[0], start, end, limit=max(1, min(limit, 200_000)))
     return [r.model_dump(mode="json") for r in rows]
 

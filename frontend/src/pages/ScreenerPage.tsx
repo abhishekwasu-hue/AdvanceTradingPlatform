@@ -6,7 +6,7 @@
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
 import { LayoutGrid, Play, Save } from "lucide-react";
-import { MarketWideTierBadge } from "../components/DataTierBadge";
+import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
@@ -184,6 +184,8 @@ export default function ScreenerPage(_props: PageProps) {
                  className="w-full max-w-md rounded-control border border-transparent bg-transparent px-1 text-t24 font-semibold text-fg hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand" />
         </label>
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
+        {/* BT1b: the tier the last run actually read (only sent with byob_data_tier on). */}
+        <DataTierBadge badge={run?.data_tier} />
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
@@ -198,7 +200,7 @@ export default function ScreenerPage(_props: PageProps) {
       <div className="screener-grid">
         {/* Universe */}
         <aside aria-label="Universe" className="screener-universe rounded-panel border border-border bg-surface-1 p-4">
-          <h2 className="flex flex-wrap items-center gap-2 text-t15 font-semibold text-fg">Universe <MarketWideTierBadge /></h2>
+          <h2 className="text-t15 font-semibold text-fg">Universe</h2>
           <div className="screener-universe-body">
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-symbols">Symbols (up to 50)</label>

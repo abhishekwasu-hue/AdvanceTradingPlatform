@@ -181,6 +181,17 @@ async def test_alert_channel(
     return TestSendResponse(ok=True, detail=f"Test message sent via {kind}")
 
 
+async def _deliveries_visible(session: AsyncSession, user: User) -> list:
+    """BT1b: with `byob_data_tier` on, deliveries of another member's data-bearing notifications are theirs only."""
+    from sqlalchemy import not_, or_
+
+    from app.notifications.routes import private_to_addressee
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, "byob_data_tier", user.tenant_id):
+        return []
+    return [or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id, not_(private_to_addressee()))]
+
+
 @router.get("/deliveries", response_model=List[AlertDeliveryResponse])
 async def list_alert_deliveries(
     limit: int = 50, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
@@ -190,7 +201,7 @@ async def list_alert_deliveries(
         select(AlertDeliveryRecord, AlertChannelRecord.channel_type, NotificationRecord.title, NotificationRecord.severity)
         .join(AlertChannelRecord, AlertChannelRecord.id == AlertDeliveryRecord.channel_id)
         .join(NotificationRecord, NotificationRecord.id == AlertDeliveryRecord.notification_id)
-        .where(AlertDeliveryRecord.tenant_id == user.tenant_id)
+        .where(AlertDeliveryRecord.tenant_id == user.tenant_id, *(await _deliveries_visible(session, user)))
         .order_by(AlertDeliveryRecord.id.desc()).limit(limit)
     )
     return [

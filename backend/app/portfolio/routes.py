@@ -25,11 +25,24 @@ async def exposure(live_prices: bool = Query(default=True), user: User = Depends
     prices: Dict[str, float] = {}
     price_source = "entry"
     if live_prices and trades:
-        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
-        usable = [r for r in stored if token_is_usable(r)]
-        if usable:
-            adapter = build_adapter(usable[0])
-            for symbol in {t.symbol for t in trades}:
+        from app.market_data import live_access
+        exchange_of = {t.symbol: (t.exchange or "NSE") for t in trades}
+        if await live_access.byob_on(session, user.tenant_id):
+            # BT1b: prices only through this user's own confirmed session, for the symbols inside its budget; the rest
+            # (and everything without such a session) are valued at entry.
+            try:
+                own = await live_access.user_source(session, user, sorted(exchange_of.items()), priority=live_access.Priority.POSITION)
+                adapter = own.adapter()
+                symbols = [s for s in exchange_of if own.allows(s, exchange_of[s])]
+            except live_access.LiveDataRefused:
+                adapter, symbols = None, []
+        else:
+            stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+            usable = [r for r in stored if token_is_usable(r)]
+            adapter = build_adapter(usable[0]) if usable else None
+            symbols = list({t.symbol for t in trades})
+        if adapter is not None:
+            for symbol in symbols:
                 try:
                     prices[symbol] = float(await adapter.get_ltp_for_symbol(symbol, next(t.exchange or "NSE" for t in trades if t.symbol == symbol)))
                 except Exception:  # noqa: BLE001 - fall back to entry for that symbol

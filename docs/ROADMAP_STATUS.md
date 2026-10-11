@@ -13,8 +13,8 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | HB0 ready (#164), HB1 next | #164 | 30 |
 | Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | not started | - | 0 |
 | Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | not started | - | 0 |
-| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection + golden parity merged (#168); Z7a-2 lifecycle, level memory (golden parity) and nightly as-of zone store (flag `market_zones` off) in review (#176); Z7a-3 chart/ScreenQL next | #168, #176 | 60 |
-| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | after Z7a | - | 0 |
+| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection + golden parity merged (#168, 6528/6528 values identical to Trade); Z7a-2 lifecycle, level memory (golden parity 5336/5336) and nightly as-of zone store (flag `market_zones` off) in review (#176); Z7a-3 chart/ScreenQL next | #168 merged, #176 | 60 |
+| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 in progress (branch claude/z7-bk1-breakouts); BK2, EV1, EV2 next | - | 5 |
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | not started | - | 0 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
 | Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | not started | - | 0 |
@@ -30,10 +30,10 @@ Each port PR updates its row in the map and these counts.
 
 | Status | Rows (of 191) |
 |---|---|
-| ported | 7 |
-| partial | 16 |
+| ported | 9 |
+| partial | 18 |
 | partial (unverified) | 9 |
-| in progress (Z7a) | 10 |
+| in progress (Z7a) | 6 |
 | missing | 50 (25 are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 

@@ -40,11 +40,12 @@ def _iso(t: Any) -> str:
 
 
 def zone_key(row: Mapping[str, Any]) -> str:
-    """Identity across snapshots. A line level is its family + timeframe + price (memory keeps a remembered level's price
-    exactly); a zone is its type + timeframe + formation bar + bounds."""
+    """Identity across snapshots. A line level is its family + timeframe + price + first formation (memory keeps a
+    remembered level's price and formed time exactly, and its support / resistance name may change with the price; a
+    level found again after it was invalidated is a new one); a zone is its type + timeframe + formation bar + bounds."""
     zt, tf = str(row["zone_type"]), str(row["timeframe"])
     if is_line(zt):
-        return f"{family_of(zt)}|{tf}|{float(row['zone_low']):.6f}"
+        return f"{family_of(zt)}|{tf}|{float(row['zone_low']):.6f}|{_iso(row['formed_at'])}"
     return f"{zt}|{tf}|{_iso(row['formed_at'])}|{float(row['zone_low']):.6f}|{float(row['zone_high']):.6f}"
 
 

@@ -23,6 +23,8 @@ NEVER_DELETED = (
     "users", "tenants", "market_holidays",
     # P0.8-D: every LLM input/output and every accepted acknowledgement/consent (5+ years, like the audit trail).
     "llm_calls", "ai_acknowledgements",
+    # H-C2: the Copilot agent's audit trail (runs and tool calls), kept like llm_calls.
+    "agent_runs", "agent_steps",
 )
 
 

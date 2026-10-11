@@ -92,9 +92,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.
     "marketplace_ai_listings": "Allow AI-originated strategies (AI drafts, strategist adoptions) to be listed on the marketplace",
     "thesis_stock_targets": "Show price targets and a confidence % in the thesis of a single stock (indices always show them)",
+    # H-C2 (ADR-0019): the Copilot agent (typed read tools, bounded loop). OFF: the single-shot Copilot is unchanged.
+    "ai_agent": "Copilot agent: the AI reads typed, read-only tools (market memory, news, positions, P&L, risk limits) before answering",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets"})
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "ai_agent"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

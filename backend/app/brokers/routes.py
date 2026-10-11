@@ -125,6 +125,19 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
     return BrokerCredentials(**{**stored, **fresh})
 
 
+def _holder_error(record: BrokerCredentialRecord) -> str:
+    return (f"This {record.broker_name} connection ({record.account_label or 'primary'}) was linked by another member of your "
+            "organisation, and a broker session belongs to the person who logs in to it: only they can log in to it again. "
+            "To use your own account, add it under another account label.")
+
+
+def _ensure_holder(record: BrokerCredentialRecord, user: User) -> None:
+    """BT1b: a broker credential row is its account holder's (`user_id` = who linked it and logs in to it). Another
+    member may not log in to it (the new token would be theirs while the row stays the holder's) - 403."""
+    if record.user_id != user.id:
+        raise HTTPException(status_code=403, detail=_holder_error(record))
+
+
 @router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
@@ -145,7 +158,13 @@ async def store_broker_credentials(
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
     existing = await get_credential_record(session, user.tenant_id, name, account_label)
-    credentials = _merge_with_stored(credentials, existing)
+    taking_over = existing is not None and existing.user_id != user.id
+    # BT1b: storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret and above
+    # all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
+    credentials = _merge_with_stored(credentials, None if taking_over else existing)
+    if taking_over and not credentials.api_key:
+        raise HTTPException(status_code=400, detail=f"This {name} connection was linked by another member: enter all of your own "
+                                                    "credentials (at least the API key) to replace it - nothing of theirs is kept.")
     encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
     if existing:
@@ -265,6 +284,7 @@ async def authenticate_broker(
     record = await get_credential_record(session, user.tenant_id, name)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
+    _ensure_holder(record, user)
 
     credentials = load_credentials(record)
     adapter = get_broker_adapter(name, credentials)
@@ -383,6 +403,7 @@ async def broker_login_code(
     record = await get_credential_record(session, user.tenant_id, name, label)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
+    _ensure_holder(record, user)
     code = _code_from_paste(body.code, spec["code_param"])
     if not code or len(code) > 4096:
         raise HTTPException(status_code=400, detail="Paste the code (or the whole redirected address)")
@@ -410,7 +431,6 @@ async def broker_login_code(
     # Persist the exchanged token on the stored row (re-encrypted; the one-time code is dropped).
     record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     store_access_token(record, new_token)
-    record.user_id = user.id
     await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label} (pasted code)")
     await session.commit()
     return _token_status_response(record, request)
@@ -439,6 +459,7 @@ async def upstox_oauth_start(
     record = await get_credential_record(session, user.tenant_id, "upstox")
     if record is None:
         raise HTTPException(status_code=404, detail="Store your Upstox API key/secret in Settings first")
+    _ensure_holder(record, user)
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
@@ -484,6 +505,12 @@ async def upstox_oauth_callback(
     record = await get_credential_record(session, tenant_id, "upstox")
     if record is None:
         return _frontend_redirect(broker="upstox", error="credentials_missing")
+    if record.user_id != user_id:
+        # BT1b: the row changed hands after the login started (or the state is another member's) - the token would be
+        # this user's while the row is someone else's.
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", "upstox: not the connection's holder")
+        await session.commit()
+        return _frontend_redirect(broker="upstox", error="not_holder")
 
     credentials = load_credentials(record)
     credentials.access_token = None

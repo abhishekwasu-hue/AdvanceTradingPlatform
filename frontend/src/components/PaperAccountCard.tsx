@@ -49,7 +49,7 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
           {" "}proposals: {account.proposals.approved_by_you} approved, {account.proposals.rejected_by_you} rejected, {account.proposals.pending} waiting ·
           {" "}{account.not_taken.length} not taken (would-have records)
         </p>
-        <p className="text-[11px] text-fg-muted">{account.note}</p>
+        <p className="text-[11px] text-fg-muted">{account.note}{account.excluded_trades > 0 ? ` (${account.excluded_trades} left out.)` : ""}</p>
 
         {canTrade && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -63,10 +63,12 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               <button disabled={busy} onClick={() => void run(() => api.paperPause(), "New PAPER entries paused; exits keep running.")}
                       className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Pause new PAPER entries</button>
             )}
+            {account.closed_trades + account.open_positions + account.excluded_trades === 0 && <>
             <input type="number" min={10000} placeholder="Starting capital" value={capital} onChange={(e) => setCapital(e.target.value)}
                    className="min-h-[44px] w-36 rounded border border-border bg-surface-2 px-2 py-1 sm:min-h-0" aria-label="Starting capital" />
             <button disabled={busy || !capital} onClick={() => void run(() => api.setPaperCapital(Number(capital)), "Starting capital saved.")}
                     className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Set</button>
+            </>}
             {message && <span className="text-fg-muted" role="status">{message}</span>}
           </div>
         )}

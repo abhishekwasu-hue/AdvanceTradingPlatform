@@ -111,8 +111,11 @@ def may_act_on_trade(user: User, trade: TradeRecord) -> bool:
 
 
 async def exit_now_enabled(session: AsyncSession, tenant_id: int) -> bool:
-    """Review M4: "Exit now" (API, Telegram /exit, the Positions button) exists with approval-only on."""
-    return await flag_on(session, tenant_id)
+    """Review M4: "Exit now" (API, Telegram /exit, the Positions button) exists with approval-only or the PAPER account on."""
+    if await flag_on(session, tenant_id):
+        return True
+    from app.paper.service import enabled as paper_enabled
+    return await paper_enabled(session, tenant_id)
 
 
 async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: Optional[int], origin: str,

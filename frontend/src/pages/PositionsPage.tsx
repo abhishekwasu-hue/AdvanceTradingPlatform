@@ -19,7 +19,7 @@ export default function PositionsPage() {
   const [greeks, setGreeks] = useState<PositionGreeks | null>(null);
   const [greeksError, setGreeksError] = useState<string | null>(null);
   const [greeksBusy, setGreeksBusy] = useState(false);
-  // Z3: "Exit now" exists only with approval-only entries on (otherwise exits run automatically).
+  // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const [exitNowOn, setExitNowOn] = useState(false);
 
   async function loadGreeks() {
@@ -47,7 +47,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries))).catch(() => setExitNowOn(false));
+    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries || f.paper_account))).catch(() => setExitNowOn(false));
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {

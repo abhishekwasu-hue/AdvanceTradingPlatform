@@ -514,10 +514,13 @@ async def _status_text(session: AsyncSession, tenant: Tenant, user: User) -> str
         return "approval-only (every entry is a proposal)" if await approval.flag_on(session, tenant.id) else "automatic for deployments"
 
     async def counts() -> str:
-        open_n = await session.scalar(select(func.count()).select_from(TradeRecord).where(TradeRecord.tenant_id == tenant.id, TradeRecord.exit_time.is_(None)))
+        # Review L7: the sender's own positions and the proposals that are theirs to decide.
+        open_n = await session.scalar(select(func.count()).select_from(TradeRecord).where(TradeRecord.tenant_id == tenant.id, TradeRecord.user_id == user.id,
+                                                                                         TradeRecord.exit_time.is_(None)))
         pending = await session.scalar(select(func.count()).select_from(AiActionRecord).where(AiActionRecord.tenant_id == tenant.id,
+                                                                                                 AiActionRecord.owner_user_id == user.id,
                                                                                                  AiActionRecord.status == "PROPOSED"))
-        return f"{int(open_n or 0)} open position(s), {int(pending or 0)} proposal(s) waiting"
+        return f"{int(open_n or 0)} open position(s) of yours, {int(pending or 0)} proposal(s) waiting for you"
 
     lines = ["Status", await line("Market (NSE)", market), await line("Kill switch", kill), await line("PAPER entries (/pause /resume)", pause),
              await line("Entries", mode), await line("Now", counts),

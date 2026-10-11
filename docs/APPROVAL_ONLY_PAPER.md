@@ -116,16 +116,20 @@ to "that user's own Telegram". A team member's practice results are not the owne
 **The account** (`GET /api/paper/account`):
 
 - **Starting capital.** `PAPER_STARTING_CAPITAL`, default 10 lakh. The user can change it within 10,000 to 10 crore
-  with `PUT /api/paper/account`.
+  with `PUT /api/paper/account` **only before the first PAPER trade** (review M7; 409 afterwards) - it is what the
+  balance, the drawdown and the ladder are measured from.
 - **Balance** = start + net realised P&L. **Equity** = balance + the marked P&L of open positions.
 - **Realised P&L** comes as gross, charges and net. Charges are ATP's dated India cost model on each trade (a contract
   note replaces the estimate).
+- **Only platform-priced trades count (review H2).** A trade whose prices came from the user's own inputs
+  (`trades.price_source`, e.g. "client" for a console paper-execute priced from browser candles) is left out of every
+  figure and the ladder; the account says how many (`excluded_trades`). "Exit now" never books a typed price (Z3-a).
 - **Counts**: wins/losses, sessions (IST days with a PAPER trade), and the largest drawdown of the closed-trade equity
   curve.
 - **Open positions** and a **journal** of the last 50 closed trades.
-- **Would-have records** ("not taken"): entry proposals the user rejected, or that expired unanswered. They show their
-  levels; nothing was placed.
-- **Proposal counts**: approved, rejected, waiting, expired.
+- **Would-have records** ("not taken"): the user's own entry proposals (review L7) that were rejected or expired
+  unanswered. They show their levels; nothing was placed.
+- **Proposal counts**: the user's own proposals - approved, rejected, waiting, expired.
 - Nothing is stored except the starting capital and the pause. Everything else is summed from the trades, so the
   account cannot drift from them.
 
@@ -138,6 +142,7 @@ default to PAPER, and the ladder's only open stage is PAPER.
   raised; the deployment says why).
 - It never stops an exit. A test closes a paused user's position at its stop.
 - It never touches LIVE or another user.
+- It lasts only while the flag is on (review L6): with `paper_account` off, a stored pause is ignored.
 
 **Progression ladder card** (`GET /api/paper/ladder`, on the Positions page; P1 §1.4, Phase 0 = PAPER only):
 
@@ -153,8 +158,8 @@ It states facts only: no advice wording, which a test checks, and no switch.
 
 **Telegram** (the existing bot, with the existing whitelist and approver mapping; `paper_account` flag):
 
-- `/status`: market, kill switch, your PAPER pause, approval-only on/off, open positions and waiting proposals. Each
-  line says NA on its own failure, as in the Trade bot.
+- `/status`: market, kill switch, your PAPER pause, approval-only on/off, your open positions and the proposals waiting
+  for you (review L7). Each line says NA on its own failure, as in the Trade bot.
 - `/pause [reason]` and `/resume`: your own PAPER-scope pause.
 - `/paper`: your account (balance, gross − charges = net, counts).
 - `/paper <symbol> long|short SL <price> T <price>`: the manual trigger.

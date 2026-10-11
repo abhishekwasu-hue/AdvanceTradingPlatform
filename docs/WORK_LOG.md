@@ -917,6 +917,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
   thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
 - Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.
+### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
+- What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
+  `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per
+  container, Postgres tuned for ~2 GB with WAL archiving kept, Redis 384 MB `volatile-lru`, Caddyfile by `CADDYFILE`,
+  off-site target by `OFFSITE_REMOTE`); `deploy/Caddyfile.ip` (no domain yet: the IP with Caddy's internal certificate);
+  `scripts/deploy.sh` takes `COMPOSE_OVERLAYS`; Marathi runbook `docs/DEPLOY_HOSTINGER_MR.md` (backups + restore test,
+  SEBI static-IP checklist per broker, 8 GB budget, troubleshooting); OPERATIONS §1.2b budget table.
+- Secrets: none in the scripts - `.env` is made on the server from `.env.example` with `CHANGE_ME` placeholders (mode
+  600) and the deploy stops until the owner fills them. Deploy key read-only. The Trade repo droplet is not touched.
+- Tests: `tests/test_hostinger_deploy.py` (10) - bash syntax, one-liners = scripts, merged compose publishes only
+  Caddy 80/443 and keeps the limits within 7 GB, no secret literals, the IP Caddyfile routes like the domain one.
+- Questions: OPEN_QUESTIONS H-1 (Redis policy), H-2 (local off-site until a provider is chosen).
+- Next: owner runs the blocks once the server IP exists; then PR #82 / #83 CI, part C3/C4.
 ### 2026-10-10 22:30 IST - part C3 + C4 on PR #83 (backtest realism)
 - C3: `backend/scripts/bench_backtest.py` (timings, growth, bars/s, indicator-cache counters); CI guard
   `tests/test_realism_benchmark.py` - per run the indicator cache's whole computations and unserved calls must not grow

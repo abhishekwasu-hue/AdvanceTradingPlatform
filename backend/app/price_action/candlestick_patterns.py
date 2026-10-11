@@ -1,5 +1,6 @@
 from typing import Callable, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from app.price_action.models import PatternMatch
@@ -183,6 +184,49 @@ def detect_patterns_at(df: pd.DataFrame, i: int) -> List[PatternMatch]:
         if match is not None:
             matches.append(match)
     return matches
+
+
+def pattern_masks(df: pd.DataFrame) -> Dict[str, np.ndarray]:
+    """S5-A: every detector above on every bar at once (numpy over shifted columns), as booleans by screen name, with the
+    direction split where a detector has two. Same rules as the detectors bar by bar (parity-tested); the first two bars
+    are False, since the multi-bar patterns need the bars before them."""
+    o, h, lo_, c = (df[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+
+    def shift(a: np.ndarray, k: int) -> np.ndarray:
+        out = np.full_like(a, np.nan)
+        out[k:] = a[:-k] if k < len(a) else out[k:]
+        return out
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        body, rng = np.abs(c - o), h - lo_
+        upper, lower = h - np.maximum(o, c), np.minimum(o, c) - lo_
+        ok = rng > 0
+        po, pc, ph, pl = shift(o, 1), shift(c, 1), shift(h, 1), shift(lo_, 1)
+        ao, ac = shift(o, 2), shift(c, 2)
+        a_body, b_body, mid = np.abs(ac - ao), np.abs(pc - po), (ao + ac) / 2
+        pin_bull = ok & (lower >= 0.6 * rng) & (body <= 0.3 * rng)
+        pin_bear = ok & ~pin_bull & (upper >= 0.6 * rng) & (body <= 0.3 * rng)
+        rejection = ok & (np.maximum(upper, lower) / rng >= 0.6) & (body / rng <= 0.3)
+        outside = (ph - pl > 0) & (h >= ph) & (lo_ <= pl)
+        masks = {
+            "doji": ok & (body / rng <= 0.1),
+            "hammer": ok & (body > 0) & (lower >= 2 * body) & (upper <= 0.3 * body),
+            "shooting_star": ok & (body > 0) & (upper >= 2 * body) & (lower <= 0.3 * body),
+            "bullish_engulfing": (pc < po) & (c > o) & (o <= pc) & (c >= po),
+            "bearish_engulfing": (pc > po) & (c < o) & (o >= pc) & (c <= po),
+            "morning_star": (a_body > 0) & (ac < ao) & (b_body <= 0.4 * a_body) & (c > o) & (c >= mid),
+            "evening_star": (a_body > 0) & (ac > ao) & (b_body <= 0.4 * a_body) & (c < o) & (c <= mid),
+            "bullish_pin_bar": pin_bull,
+            "bearish_pin_bar": pin_bear,
+            "inside_bar": (ph - pl > 0) & (h <= ph) & (lo_ >= pl),
+            "bullish_outside_bar": outside & (c > o),
+            "bearish_outside_bar": outside & ~(c > o),
+            "bullish_rejection": rejection & ~(upper > lower),
+            "bearish_rejection": rejection & (upper > lower),
+        }
+    for m in masks.values():
+        m[:2] = False
+    return masks
 
 
 def detect_patterns(df: pd.DataFrame) -> List[PatternMatch]:

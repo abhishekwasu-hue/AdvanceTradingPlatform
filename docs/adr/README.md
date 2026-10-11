@@ -25,3 +25,5 @@ costs and what it buys), **Status**.
 | [0016](0016-provider-seams.md) | Provider seams: typed interfaces, registries, capabilities and contract tests for every external capability | provisional |
 | [0017](0017-global-first.md) | Global-first instrument, time, money, cost and rules model; India is the first configuration | provisional |
 | [0018](0018-ibkr-transports.md) | IBKR behind `BrokerInterface` with a transport seam: TWS API via IB Gateway (paper, operator account) now, Web API (OAuth, per tenant) after vendor registration | provisional |
+| [0021](0021-screener-engine.md) | Screener engine: one typed AST (ScreenQL) over Factor/Filter/Classifier primitives, server data only | provisional |
+| [0022](0022-notification-service.md) | Notification Service: grow the existing alert outbox, do not build a second one | provisional |

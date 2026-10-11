@@ -839,6 +839,23 @@ with the indicator block, and the result table.
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
 
+## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
+
+- Data: the stored market-zone snapshots (Z7a-2, `app/price_action/zones`), not the screen's bars. Each bar reads the
+  snapshot `zones_as_of` returns at the bar's CLOSE for the organisation (settings-hash scope rule), through
+  `read.timeline` (zones_as_of asked at every snapshot boundary in the window, so the two cannot disagree - tested bar by
+  bar). Appending or changing later bars or later snapshots leaves earlier values unchanged (tested).
+- Each reads the live zone (fresh / tested / flipped) nearest to the close within `tolerance_pct` % (default 0.5),
+  `chart.nearest_zone` - the chart layer's code: `NearZone(role="any", tolerance_pct=0.5, family="all")` (filter),
+  `ZoneRole(tolerance_pct, family)` (DEMAND / SUPPLY), `ZoneState(role, tolerance_pct, family)` (FRESH / TESTED /
+  FLIPPED), `ZoneStrength(role, tolerance_pct, family)` (0-100). Role by the close; missing (never matches) when no zone
+  is near; a symbol with no stored snapshot is reported with the reason.
+- `Spec.needs = ("zones",)`: the run path loads the timelines (`RUN_PROVIDES` has "zones"), the bar-close engine too.
+- Flag `market_zones` (off by default), the U6 BK1 pattern: hidden from the registry, refused in validate / save / run
+  and in alert rules while off; an active rule pauses with the reason and resumes when the flag is back; zone rules fire
+  on bar close only (intrabar refused at save and skipped by the engine). Research only - no order path.
+- Tests: `backend/tests/test_zones_chart_screenql.py`. Open questions Z7a3-3 .. Z7a3-7 (`docs/OPEN_QUESTIONS.md`).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

@@ -511,6 +511,12 @@ def test_chart_layer_reads_as_of_per_tenant_with_at_most_six_bands(screener_on):
     theirs = client.get(url, params={"instrument": KEY, "at": ist(D2, 12, 0).isoformat()}, headers=other_headers).json()
     assert [z["zone_key"] for z in theirs["zones"]] == ["mine"] and theirs["scope"] == "organisation"
     assert "tenant:" not in json.dumps(theirs)
+    # settings-hash rule: an organisation with its own settings but no snapshot built with them sees no zones (not the
+    # platform's, built with other settings)
+    third_headers, third = _owner("z7a3-layer-c@example.com")
+    _run(_tenant_settings(third["tenant_id"]))
+    none = client.get(url, params={"instrument": KEY, "at": ist(D2, 12, 0).isoformat()}, headers=third_headers).json()
+    assert none["bands"] == [] and none["as_of"] is None
     # input checks
     assert client.get(url, params={"instrument": KEY, "at": "2026-03-11T12:00:00"}, headers=headers).status_code == 422
     assert client.get(url, params={"instrument": "bad key!"}, headers=headers).status_code == 422

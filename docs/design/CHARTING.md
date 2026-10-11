@@ -305,6 +305,22 @@ chart's pointer events and a toolbar to it.
   - there are no page errors;
   - both drawings render where they were clicked.
 
+## Z7a-3 (built): the market-zones layer (CH3 / U8 minimal style)
+
+- Backend: `GET /api/charts/layers/market-zones?instrument=&at=&price=&family=&max_bands=` (flag `market_zones`, off ->
+  503): the organisation's stored zones as of `at` (timezone-aware; never a later snapshot, never another
+  organisation's), at most 6 bands, every number and text included (bounds, label prices, touches, strength, distance).
+- One rule, two places: `app/price_action/zones/chart.py` `select_bands` (also for the U8 evidence charts drawn
+  server-side, e.g. Telegram images) and its port `frontend/src/charting/marketZones.ts` `selectBands` (re-picks when the
+  price on screen moves); both are tested against `backend/tests/fixtures/zones/chart_bands_cases.json`.
+- Pick: role by price (demand at or below, supply above); per role the strongest of each overlapping cluster; the
+  nearest 3 per role, a short side's slots to the other; nothing beyond 10 %; top to bottom. Labels
+  "demand 512.30 (fresh)" / "supply 530.00 (tested)" + "2 touches".
+- Engine: `LayerData.bands` (generic `LayerBand`: low, high, colour, opacity, line style, label) drawn by the
+  lightweight engine as one `LayerPrimitive` under the drawings (`geometry.bandShapes`: a tinted band, a line when
+  low == high, the label at the right edge). `MarketZonesLayer` fetches, draws and shows a one-line legend; mounted on
+  the full-window chart. Open questions Z7a3-1, Z7a3-2, Z7a3-8 (`docs/OPEN_QUESTIONS.md`).
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

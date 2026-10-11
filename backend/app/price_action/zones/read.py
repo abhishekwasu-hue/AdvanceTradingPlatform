@@ -1,7 +1,8 @@
 """Reading stored market zones as of a time (Z7a-3) - for the chart layer and the ScreenQL zone functions.
 
-Every read goes through `store.zones_as_of` (the tenant's scope and settings rule, the latest snapshot with as_of <= the
-time, never another tenant's): `read_as_of` for one time (the chart), `timeline` for a run of bars (ScreenQL) - the
+Every read goes through `store.zones_as_of` (the tenant's settings-hash scope rule: the platform snapshot when its
+settings resolve to the platform's, else its own scope only; the latest snapshot with as_of <= the time; never another
+tenant's): `read_as_of` for one time (the chart), `timeline` for a run of bars (ScreenQL) - the
 snapshot each bar sees is the one zones_as_of returns at that bar's close, found by asking zones_as_of at every time the
 answer can change (the as_of of each snapshot in the window), so the two can never disagree (tested bar by bar).
 """
@@ -72,14 +73,10 @@ def _snapshot(run: Any, rows: List[Dict[str, Any]], scope: Optional[str]) -> Opt
 
 async def read_as_of(session: AsyncSession, key: str, at: Any, tenant_id: Optional[int]) -> Optional[Snapshot]:
     """The snapshot `store.zones_as_of` returns for the tenant at `at` (timezone-aware), live rows only; None when none.
-    Takes zones_as_of's tuple result or its (run, rows, scope) record alike."""
-    result: Any = await store.zones_as_of(session, key, _aware_utc(at), tenant_id)
-    if isinstance(result, tuple):
-        run, rows = result
-        scope = getattr(run, "scope", None)
-    else:
-        run, rows, scope = result.run, result.rows, result.scope
-    return _snapshot(run, rows, scope)
+    The settings-hash rule applies: a tenant whose settings differ from the platform's reads its own scope only (no
+    platform fallback - a zone built with other settings is not this tenant's zone)."""
+    result = await store.zones_as_of(session, key, _aware_utc(at), tenant_id)
+    return _snapshot(result.run, result.rows, result.scope)
 
 
 async def timeline(session: AsyncSession, key: str, tenant_id: Optional[int], start: Any, end: Any,

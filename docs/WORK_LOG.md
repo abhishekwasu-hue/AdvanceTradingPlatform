@@ -885,38 +885,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-10 23:50 IST - part H (Copilot v2): spec received, design note
-- Abhi's ATP_COPILOT_SPEC.md stored at docs/specs/. docs/design/H_COPILOT.md: the 13 review findings checked against
-  main (G2 confirmed: /api/ai/drafts/{id}/backtest runs client candles; G5: no /api/ai rate limit), order H-C1 -> H-C2
-  (+H-C10) -> ..., H-C1 plan (server-side evidence, rate limit, output filter, grounding, llm_calls hygiene,
-  prompt_version). Provisional: H-C1 jumps the queue as safety work (H-3); parts named H-C1..H-C12 (H-4); no client
-  fallback when the server has no data (H-5). Next: H-C1 a (server-side evidence).
-
-### 2026-10-11 00:02 IST - H-C1 a: approval evidence from server data only (G2)
-- `app/ai/evidence.py`: posted candles are recorded as `sample` whatever `data_source` the request claims;
-  `require_server` refuses approval/deploy unless the run's source is `broker:<name>` or `lake`
-  (`AI_EVIDENCE_SERVER_ONLY`, on by default). `server_frame` fetches through the tenant's broker session; no session or
-  no bars = 409, never a fallback to client data (H-5).
-- Draft backtest: `candles` optional - omitted means the server fetches (`symbol`, `exchange`, `lookback_days`,
-  `broker`). Approve checks the run's source. Interview plan/refine: same, and the source is stored on each candidate;
-  interview deploy refuses a sample candidate. The strategist already treated client candles as sample.
-- Frontend: `evidenceBody` - broker mode posts no candles (the server fetches); sample mode is unchanged.
-- Tests: `tests/test_hc1_server_evidence.py` (5: default on, labels not trusted, sample cannot approve, server path
-  approves, 409 without a broker, sample interview option cannot deploy) + `src/api/evidence.test.ts` (3). Existing AI
-  tests moved to the server path (`tests/server_evidence.py`). Lake (B5) as the first source lands once part B merges.
-
-### 2026-10-11 00:24 IST - H-C1 b: AI rate limit (G5); H-C1 c: server-side advice/guarantee filter (G3)
-- b: `app/ai/rate_limit.py` on the /api/ai and /api/scanner/ai routers: units per call (heavy jobs weigh more,
-  AI_RATE_WEIGHTS), per user and per organisation, plan-wise limits (AI_RATE_LIMITS), 60 s window, Redis when
-  configured else in-process; the organisation is checked first; 429 + Retry-After; atp_ai_rate_limited_total.
-  `app.core.rate_limit.allow` takes units (INCRBY). The suite disables the limit like the auth limiters; its own tests
-  re-enable it (8 tests). First run: 3 suite tests hit 429 (several heavy jobs per minute) - fixed by the override and
-  by raising the free default from 30 to 60 units.
-- c: `app/ai/output_filter.py` + `app/ai/data/advice_terms.json` (en + mr; negations allowed; AI_ADVICE_TERMS_FILE):
-  guarantee/advice words block the text (one retry naming them, then the rule text), a specific buy/sell call next to a
-  level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
-  thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
-- Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.
 ### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
 - What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
   `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per

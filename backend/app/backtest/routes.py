@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
+from app.backtest.repro import config_hash, fingerprint
 from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
 from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION, OptionBacktestConfig, OptionBacktestError, run_option_backtest
 from app.core.enums import ExpiryRule, OptionPosition, OptionStrategy, StrikeRule
@@ -164,12 +165,25 @@ class BacktestRunner:
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
-            return run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules)
-        try:
-            return run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
-                                       exit_rules=self.rules, pricer=self.pricer)
-        except OptionBacktestError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules)
+        else:
+            try:
+                result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
+                                             exit_rules=self.rules, pricer=self.pricer)
+            except OptionBacktestError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Realism C4: what produced this result, as hashes (recorded with the run).
+        result.reproducibility = fingerprint(
+            result, df, engine_version=self.body.engine_version, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
+            symbol=self.body.symbol.upper(), base_timeframe=self.body.base_timeframe, risk=self.risk,
+            exit_rules=self.body.exit_rules, options=self.body.options.model_dump(exclude={"option_chain"}) if self.body.options else None,
+            option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None)
+        return result
+
+
+def data_version_of_chain(rows) -> str:
+    """Uploaded option quotes are data too: hashed into the config so a different chain is a different run."""
+    return config_hash(rows=[r.model_dump(mode="json") for r in rows])
 
 
 def _span(candles: List[OHLCVBar]):
@@ -213,6 +227,7 @@ def _run_summary(r: BacktestRunRecord, full: bool = False) -> dict:
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "total_trades": metrics.get("total_trades"), "net_pnl": metrics.get("net_pnl"), "win_rate": metrics.get("win_rate"),
         "max_drawdown": metrics.get("max_drawdown"), "profit_factor": metrics.get("profit_factor"),
+        "reproducibility": metrics.get("reproducibility"),
     }
     if full:
         out["metrics"] = metrics

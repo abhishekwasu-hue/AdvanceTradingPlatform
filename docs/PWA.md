@@ -62,3 +62,21 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
   login, else `/notifications?n=<id>`. Paths only, so a payload cannot open another site. The service worker focuses
   an open app window and navigates it, or opens a new one; the Watchtower and the Notifications feed scroll to and
   outline the item.
+
+## Telegram <-> app (PW4)
+
+- **Open in app.** Every Telegram alert carries an "Open in app" button to the exact screen (the same paths as push,
+  made absolute with `PUBLIC_BASE_URL`, else an absolute `FRONTEND_URL`). A proposal keeps its Approve / Reject
+  buttons and gets "Open in app" underneath. Without an absolute app address the button is left out; a link is never
+  guessed. OI banner alerts keep their own Open option chain / Open chart buttons.
+- **Linking.** App -> Telegram uses the existing one-time code (Notifications -> Rules & delivery: "Link Telegram",
+  then `/start <code>` to the organisation's bot from a private chat).
+- **Both sides in step.** `GET /api/live/stream` (Server-Sent Events read with fetch, so the bearer token is a header)
+  tells an open app when its organisation's proposals or notifications changed. The server compares a tiny signature
+  once a second (open proposals, newest proposal, latest decision/execution; newest notification, unread count) and
+  sends only the topic name - the page reloads through the normal endpoints. A decision on Telegram therefore shows in
+  the Watchtower within about 2 s, and a decision in the app is already reflected on Telegram (the button answers
+  "already decided").
+- **Operations.** One stream per open app, closed by the server after 5 minutes (the app reconnects), a heartbeat
+  comment every 15 s, `X-Accel-Buffering: no` so nginx does not buffer it. One indexed query per second per open app is
+  fine for the Phase 0 cohort; a Redis feed can replace the polling later with the same wire format.

@@ -576,7 +576,8 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
 
 
 async def send_proposal_buttons(session: AsyncSession, channel: AlertChannelRecord, action: AiActionRecord, text_html: str,
-                                client: Optional[httpx.AsyncClient] = None, now: Optional[datetime] = None) -> bool:
+                                client: Optional[httpx.AsyncClient] = None, now: Optional[datetime] = None,
+                                extra_row: Optional[list] = None) -> bool:
     """Used by the alert dispatcher: an AI_PROPOSAL to a Telegram channel with inbound on gets the two
     buttons when Telegram may decide it. Returns True when the message was sent with buttons."""
     cfg: TelegramConfig = decrypt_config(channel)  # type: ignore[assignment]
@@ -585,6 +586,8 @@ async def send_proposal_buttons(session: AsyncSession, channel: AlertChannelReco
     keyboard = await keyboard_for(session, action, cfg.chat_id, now)
     if keyboard is None:
         return False
+    if extra_row:                                      # PW4: "Open in app" under Approve / Reject
+        keyboard = {**keyboard, "inline_keyboard": [*keyboard.get("inline_keyboard", []), extra_row]}
     answer = await reply(cfg, cfg.chat_id, text_html, client, reply_markup=keyboard)
     if not answer.get("ok", False):
         await session.rollback()                      # the nonce rows go with the failed send; the retry mints new ones

@@ -1,4 +1,4 @@
-import type { OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
+import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   StrategistResult,
   StrategistRequestParsed,
@@ -102,6 +102,8 @@ import type {
   AiProviderConfig,
   AiStrategyDraft,
   Regime,
+  ResearchStudy,
+  ResearchStudyDetail,
   DegradationReport,
   Incident,
   OptimizeResult,
@@ -371,6 +373,10 @@ export const api = {
     request<OiHistoryResponse>(`/option-chain/${encodeURIComponent(underlying)}/history?interval=${interval}${date ? `&date=${date}` : ""}`),
   oiStrikes: (underlying: string, date?: string) =>
     request<OiStrikesResponse>(`/option-chain/${encodeURIComponent(underlying)}/strikes${date ? `?date=${date}` : ""}`),
+  oiAlerts: (underlying: string) => request<OiAlertLogResponse>(`/option-chain/${encodeURIComponent(underlying)}/alerts`),
+  oiAlertAction: (underlying: string, action: "snooze" | "mute-today" | "resume" | "test") =>
+    request<{ snoozed_until?: string | null; notification_id?: number }>(`/option-chain/${encodeURIComponent(underlying)}/alerts/${action}`,
+      { method: "POST", body: JSON.stringify(action === "snooze" ? { minutes: 60 } : {}) }),
   oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
@@ -770,6 +776,10 @@ export const api = {
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
   aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
+  aiResearchList: () => request<{ studies: ResearchStudy[] }>("/ai/research"),
+  aiResearchCreate: (body: { idea: string; symbol: string; timeframe: string; max_drafts: number }) =>
+    request<ResearchStudy>("/ai/research", { method: "POST", body: JSON.stringify(body) }),
+  aiResearchGet: (studyId: string) => request<ResearchStudyDetail>(`/ai/research/${encodeURIComponent(studyId)}`),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),

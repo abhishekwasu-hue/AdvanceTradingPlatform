@@ -115,6 +115,8 @@ SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMA
 # Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
 # (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
 # keeps working; turn on once live trading is offered to customers.
+# Part D7: refuse new F&O entries on an underlying in the exchange's ban period (lake MWPL / OI data). Off by default.
+FO_BAN_CHECK_ENABLED = os.environ.get("FO_BAN_CHECK_ENABLED", "false").lower() in ("1", "true", "yes")
 # H-C1 a: AI approval evidence (draft backtests, interview options) must run on server-fetched candles; client-posted
 # candles are recorded as "sample" and cannot approve or deploy. On by default (a safety rule, not a feature).
 AI_EVIDENCE_SERVER_ONLY = os.environ.get("AI_EVIDENCE_SERVER_ONLY", "true").lower() in ("1", "true", "yes")
@@ -174,6 +176,14 @@ QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
 # symbols its deployments and open positions need; get_ltp uses a tick younger than
 # TICK_MAX_AGE_SECONDS (default: the quote staleness limit) and falls back to REST otherwise.
 STREAMING_QUOTES_ENABLED = os.environ.get("STREAMING_QUOTES_ENABLED", "false").lower() in ("1", "true", "yes")
+# Part B2: streamed ticks -> 1-minute bars in the market data lake (md_candles, source stream:<broker>). Needs the stream.
+LAKE_TICK_WRITER_ENABLED = os.environ.get("LAKE_TICK_WRITER_ENABLED", "false").lower() in ("1", "true", "yes")
+# Part B3: data-quality thresholds for lake bars (events only - nothing is deleted or blocked).
+LAKE_SPIKE_PCT = float(os.environ.get("LAKE_SPIKE_PCT", "10"))
+LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
+LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
+# Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
+LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

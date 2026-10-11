@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.custom_strategies import versioning
 from app.custom_strategies.resolver import CUSTOM_PREFIX
 from app.db.models import CustomStrategyRecord, StrategyVersionRecord, User
@@ -80,7 +81,7 @@ class StrategyVersionResponse(BaseModel):
         )
 
 
-@router.post("", response_model=CustomStrategyResponse, status_code=201)
+@router.post("", response_model=CustomStrategyResponse, status_code=201, dependencies=[Depends(require_scope("strategies:write"))])
 async def create_custom_strategy(
     config: CustomStrategyConfig,
     user: User = Depends(require_trader),
@@ -128,7 +129,7 @@ async def get_custom_strategy(
     return CustomStrategyResponse.from_record(record)
 
 
-@router.delete("/{strategy_id}", status_code=204)
+@router.delete("/{strategy_id}", status_code=204, dependencies=[Depends(require_scope("strategies:write"))])
 async def delete_custom_strategy(
     strategy_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -137,7 +138,7 @@ async def delete_custom_strategy(
     await session.commit()
 
 
-@router.put("/{strategy_id}", response_model=CustomStrategyResponse)
+@router.put("/{strategy_id}", response_model=CustomStrategyResponse, dependencies=[Depends(require_scope("strategies:write"))])
 async def update_custom_strategy(
     strategy_id: int, config: CustomStrategyConfig,
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
@@ -163,7 +164,7 @@ async def list_strategy_versions(
     return [StrategyVersionResponse.from_record(r) for r in rows]
 
 
-@router.post("/{strategy_id}/versions/{version_number}/rollback", response_model=CustomStrategyResponse)
+@router.post("/{strategy_id}/versions/{version_number}/rollback", response_model=CustomStrategyResponse, dependencies=[Depends(require_scope("strategies:write"))])
 async def rollback_strategy_version(
     strategy_id: int, version_number: int,
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),

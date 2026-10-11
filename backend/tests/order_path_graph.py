@@ -67,7 +67,9 @@ def _is_package(path: Path) -> bool:
 
 
 class CallGraph:
-    def __init__(self, roots: Iterable[str] = ("app", "scripts"), gated: Optional[Dict[str, str]] = None) -> None:
+    def __init__(self, roots: Iterable[str] = ("app", "scripts"), gated: Optional[Dict[str, str]] = None,
+                 sources: Optional[Dict[str, str]] = None) -> None:
+        """`sources` (module name -> code) adds in-memory modules - the tests use it for small worked examples."""
         self.gated: Dict[str, str] = dict(gated or {})
         self.functions: Dict[str, _Func] = {}
         self.classes: Dict[str, ast.ClassDef] = {}
@@ -76,18 +78,17 @@ class CallGraph:
         self.module_paths: Dict[str, Path] = {}
         self.main_modules: Set[str] = set()
         trees: Dict[str, ast.Module] = {}
-        for root in roots:
-            for path in sorted((BACKEND / root).rglob("*.py")):
-                if "__pycache__" in path.parts:
-                    continue
-                module = _module_name(path)
-                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-                trees[module] = tree
-                self.module_paths[module] = path
-                self.aliases[module] = self._collect_aliases(module, path, tree)
-                self._collect_defs(module, tree)
-                if any(isinstance(n, ast.If) and "__main__" in ast.dump(n.test) for n in tree.body):
-                    self.main_modules.add(module)
+        files = [(_module_name(path), path, path.read_text(encoding="utf-8"))
+                 for root in roots for path in sorted((BACKEND / root).rglob("*.py")) if "__pycache__" not in path.parts]
+        files += [(module, BACKEND / (module.replace(".", "/") + ".py"), code) for module, code in (sources or {}).items()]
+        for module, path, code in files:
+            tree = ast.parse(code, filename=str(path))
+            trees[module] = tree
+            self.module_paths[module] = path
+            self.aliases[module] = self._collect_aliases(module, path, tree)
+            self._collect_defs(module, tree)
+            if any(isinstance(n, ast.If) and "__main__" in ast.dump(n.test) for n in tree.body):
+                self.main_modules.add(module)
         self.class_attr_types: Dict[str, Dict[str, str]] = {}
         for module, tree in trees.items():
             self._collect_class_attr_types(module, tree)

@@ -26,26 +26,39 @@ export function DataTierBadge({ badge, className = "" }: { badge: DataTierBadgeI
 }
 
 /** The tier this user sees for one symbol. `live` (a fresher badge from the last price response) wins when present;
- * otherwise the badge API is asked once per symbol (a lookup that takes no slot in the user's session budget). */
+ * otherwise the badge API is asked once per symbol (a lookup that takes no slot in the user's session budget) - and
+ * only when the flag is on for the user's organisation (one shared check), so flag-off pages make no extra calls. */
 export function SymbolTierBadge({ symbol, exchange = "NSE", live, className }: {
   symbol: string | undefined; exchange?: string; live?: DataTierBadgeInfo | null; className?: string;
 }) {
   const { user } = useAuth();
   const [fetched, setFetched] = useState<DataTierResponse | null>(null);
+  const needLookup = !!user && !!symbol && !live;
   useEffect(() => {
     setFetched(null);
-    if (!user || !symbol || live) return;
+    if (!user || !symbol || !needLookup) return;
     let cancelled = false;
-    api.marketDataTier(symbol, exchange).then((r) => { if (!cancelled) setFetched(r); }).catch(() => { if (!cancelled) setFetched(null); });
+    marketWideFor(user.id)
+      .then((wide) => (wide.enabled ? api.marketDataTier(symbol, exchange) : wide))
+      .then((r) => { if (!cancelled) setFetched(r); })
+      .catch(() => { if (!cancelled) setFetched(null); });
     return () => { cancelled = true; };
-    // `live` only decides whether a lookup is needed at all; its every refresh must not re-fetch.
-  }, [user, symbol, exchange, !!live]);
+  }, [user, symbol, exchange, needLookup]);
   if (live) return <DataTierBadge badge={live} className={className} />;
   return fetched?.enabled ? <DataTierBadge badge={fetched.badge} className={className} /> : null;
 }
 
 // One lookup per signed-in user (the flag is per organisation), shared by every badge on the page.
 let marketWide: { userId: number; answer: Promise<DataTierResponse> } | null = null;
+
+function marketWideFor(userId: number): Promise<DataTierResponse> {
+  if (!marketWide || marketWide.userId !== userId) {
+    const answer = api.marketDataTier();
+    marketWide = { userId, answer };
+    answer.catch(() => { if (marketWide?.answer === answer) marketWide = null; });
+  }
+  return marketWide.answer;
+}
 
 /** "EOD · <date>" on market-wide pages (Phase 0 has no delayed-data tier); nothing while the flag is off. */
 export function MarketWideTierBadge({ className }: { className?: string }) {
@@ -54,8 +67,7 @@ export function MarketWideTierBadge({ className }: { className?: string }) {
   useEffect(() => {
     if (!user) { setInfo(null); return; }
     let cancelled = false;
-    if (!marketWide || marketWide.userId !== user.id) marketWide = { userId: user.id, answer: api.marketDataTier() };
-    marketWide.answer.then((r) => { if (!cancelled) setInfo(r); }).catch(() => { marketWide = null; if (!cancelled) setInfo(null); });
+    marketWideFor(user.id).then((r) => { if (!cancelled) setInfo(r); }).catch(() => { if (!cancelled) setInfo(null); });
     return () => { cancelled = true; };
   }, [user]);
   return info?.enabled ? <DataTierBadge badge={info.market_wide} className={className} /> : null;

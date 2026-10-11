@@ -273,13 +273,15 @@ _LAKE_TIMEFRAMES = {"1min": "1m", "3min": "3m", "5min": "5m", "10min": "10m", "1
                     "1h": "60m", "day": "1d", "1d": "1d", "1day": "1d"}
 
 
-async def lake_bars(session: AsyncSession, exchange: str, symbol: str, timeframe: str, now: datetime) -> List[chart_png.Bar]:
+async def lake_bars(session: AsyncSession, exchange: str, symbol: str, timeframe: str, now: datetime, *,
+                    daily_only: bool = False) -> List[chart_png.Bar]:
     """The platform's own recorded bars (market-data lake, `<EXCHANGE>:<SYMBOL>`): the deployment's timeframe, else
-    one-minute bars. Read-only, no network."""
+    one-minute bars. Read-only, no network. `daily_only` (BT1b, flag byob_data_tier on): daily (EOD) bars only - the
+    shared lake's intraday bars were recorded through other organisations' broker feeds."""
     from app.market_lake.asof import candles_as_of
     key = f"{(exchange or 'NSE').upper()}:{(symbol or '').upper()}"
     wanted = _LAKE_TIMEFRAMES.get((timeframe or "").lower(), (timeframe or "").lower())
-    for tf in dict.fromkeys([wanted, "1m"]):
+    for tf in (["1d"] if daily_only else dict.fromkeys([wanted, "1m"])):
         lookback = timedelta(days=400) if tf == "1d" else timedelta(days=5)
         rows = await candles_as_of(session, key, tf, now - lookback, now)
         bars = chart_png.bars_from_rows(rows[-chart_png.MAX_BARS:])
@@ -304,7 +306,11 @@ async def build_context(session: AsyncSession, action: AiActionRecord, *, now: d
                                                                TradeRecord.exit_time.is_(None)).order_by(TradeRecord.id.desc()).limit(1))
     if trade is not None and trade.tenant_id != action.tenant_id:
         trade = None
-    bars = await (loader or lake_bars)(session, dep.exchange, dep.symbol, dep.timeframe, now)
+    if loader is None:
+        from app.market_data import live_access
+        bars = await lake_bars(session, dep.exchange, dep.symbol, dep.timeframe, now, daily_only=await live_access.byob_on(session, action.tenant_id))
+    else:
+        bars = await loader(session, dep.exchange, dep.symbol, dep.timeframe, now)
     return Context(symbol=dep.symbol, exchange=dep.exchange, timeframe=dep.timeframe, action=action.action, rule=action.rule,
                    direction=trade.direction if trade is not None else None,
                    entry=float(trade.entry_price) if trade is not None else None,

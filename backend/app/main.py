@@ -486,7 +486,7 @@ async def backtest(
     risk_config = request.risk_config or _default_risk_config
 
     body = BacktestBody(**request.model_dump())
-    runner = await BacktestRunner.build(body, risk_config, session)
+    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
     result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)

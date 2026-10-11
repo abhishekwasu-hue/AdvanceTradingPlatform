@@ -86,6 +86,9 @@ from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
 
+# BT1b: what a deployment says while its organisation (flag byob_data_tier on) has no confirmed-data broker session.
+WAITING_FOR_CONFIRMED_DATA = "Waiting for Upstox/Dhan data: no new entries; exits continue"
+
 WORKER_NAME = "trading_worker"
 LOCK_KEY = "atp:trading_worker:lock"
 
@@ -315,14 +318,16 @@ class TradingWorker:
                 else:
                     logger.debug("Market closed: %s", reason)
                 # BT1: open / refresh / close each user's own broker session (flag byob_data_tier; market closed = day end).
-                try:
-                    byob = await self.byob.sync(session, now, market_open="NSE" in self._open_families)
-                    report.byob_sessions = byob.active
-                    report.errors.extend(byob.errors)
-                except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
-                    logger.exception("BYOB session sync failed")
-                    report.errors.append(f"byob sessions: {exc}")
-                    await session.rollback()
+                # BT1b: its own DB session, so a failure here never rolls back the cycle's session.
+                async with self.session_factory() as byob_session:
+                    try:
+                        byob = await self.byob.sync(byob_session, now, market_open="NSE" in self._open_families)
+                        report.byob_sessions = byob.active
+                        report.errors.extend(byob.errors)
+                    except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
+                        logger.exception("BYOB session sync failed")
+                        report.errors.append(f"byob sessions: {exc}")
+                        await byob_session.rollback()
                 # Z5 / P1-d: the daily loss lockout is recorded when a user's PAPER day reaches the limit through open marks,
                 # not only when something reads it (closes record it themselves). After the exits; never blocks one.
                 try:
@@ -542,6 +547,11 @@ class TradingWorker:
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
 
+    async def _byob_on(self, session: AsyncSession, tenant_id: int) -> bool:
+        """BT1b: the bring-your-own-broker data tier is on for this organisation (flag byob_data_tier, off by default)."""
+        from app.platform.controls import flag_enabled
+        return await flag_enabled(session, "byob_data_tier", tenant_id)
+
     async def _first_usable_broker(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
         """The tenant's first ACTIVE account with a usable session (read-only use), or None."""
         await ensure_tenant_key(session, tenant_id)
@@ -580,6 +590,8 @@ class TradingWorker:
                 async with self.session_factory() as own:
                     with bind_log_context(tenant_id=tenant_id):
                         try:
+                            if await self._byob_on(own, tenant_id):
+                                continue   # BT1b: platform-wide OI rows are never read through a per-user (BYOB) session
                             broker = await self._first_usable_broker(own, tenant_id, now)
                             if broker is None:
                                 continue
@@ -618,7 +630,8 @@ class TradingWorker:
             self._last_memory[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
-                    if not broker_reads:
+                    if not broker_reads or await self._byob_on(session, tenant_id):
+                        # BT1b: organisation-wide memory / sentiment are not fed from a per-user (BYOB) session.
                         written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     await ensure_tenant_key(session, tenant_id)
@@ -771,6 +784,17 @@ class TradingWorker:
             if adapter is not None:
                 adapters[_adapter_key(account.broker_name, account.account_label)] = adapter
 
+        # BT1b (flag byob_data_tier): prefer a broker whose data terms allow display in ATP (Upstox, Dhan) as the
+        # organisation's data source; its cache is kept to this organisation (below) and it is never streamed into the
+        # platform-wide tick keys or the lake (each user's own session streams through the fan-in instead).
+        byob = await self._byob_on(session, tenant_id)
+        from app.market_data.data_terms import confirmed_brokers
+        confirmed = confirmed_brokers()
+        if byob:
+            adapters = dict(sorted(adapters.items(), key=lambda kv: 0 if kv[0].split("@")[0] in confirmed else 1))
+            # Every org-wide stream of this organisation stops (whatever broker it was on, also on the early return
+            # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
+            await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again from Settings"
@@ -780,6 +804,10 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        if byob and hasattr(market_data, "cache_namespace"):
+            # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
+            # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
+            market_data.cache_namespace = f"org.t{tenant_id}"
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
@@ -800,7 +828,9 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if app_config.STREAMING_QUOTES_ENABLED:
+        if app_config.STREAMING_QUOTES_ENABLED and not byob:
+            # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
+            # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
 
         # Exits before entries.
@@ -860,6 +890,14 @@ class TradingWorker:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
             await session.commit()
             return
+        data_key = next((k for k, a in adapters.items() if a is data_broker), getattr(data_broker, "name", ""))
+        if byob and data_key.split("@")[0] not in confirmed:
+            # BT1b / BT1-4: with the bring-your-own-broker data tier on, no new evaluation on a broker whose terms do not
+            # allow its data in ATP (execution-only / pending). Exits, square-off and the stop guard above still ran.
+            for dep in deployments:
+                dep.last_error = WAITING_FOR_CONFIRMED_DATA
+            await session.commit()
+            return
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
         # Round-robin start so a tenant whose turn ran out of time last cycle resumes where it
         # stopped rather than re-evaluating the same first few deployments forever.
@@ -913,7 +951,8 @@ class TradingWorker:
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
         # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
         try:
-            report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+            if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
+                report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 

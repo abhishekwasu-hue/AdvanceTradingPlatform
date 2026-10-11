@@ -1649,3 +1649,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - risk check and breach lines on the proposal card.
 - Migration `612f572d7ad2` (revises `a7d3e9f1c5b8`): upgrade, downgrade, upgrade and `alembic check` on local Postgres.
 - Open questions Z5D-1 to Z5D-6.
+### 2026-10-12 - Z5 P1-d review fixes (#179)
+- H1: the India VIX gate now reads its own live reading: the LTP plus the close of the last completed session before
+  today, stamped today. The trading worker takes it from 09:20 IST every 15 minutes, through the entitled data path
+  (the user's own Tier A session under BT1). Trade timing applies: the gate is open before 09:20, and no valid reading
+  after a 10-minute grace pauses bullish index entries. An end-to-end test goes from the worker's capture to the gate.
+- M2: a loosening of the user's limits takes effect the next IST day; a tightening at once. The lockout is recorded
+  after each PAPER close and by a worker sweep (open marks).
+- M3: a time stop must be at least 5 minutes after now.
+- L1: entries per day are atomic slots on the PAPER account row, given back if the order is refused later.
+- L2: the proposal card's risk check is computed for the proposal's owner only.
+- L3: a ticket proposal's plan becomes PLACED (counted as an override) or FAILED when its approval runs.
+- L4: every plan row carries a reason (a duplicate proposal, an exception = FAILED).
+- L6: the strike breach docstring now says where the structure input comes from.
+- L7: the ticket takes cash underlyings only; the cost line reads the paper broker's own brokerage and slippage.
+- L8: `.coverage` is untracked and ignored.
+- L9: the ticket card says "Sent for approval: proposal #N" for a proposed plan.
+- M1: already fixed in Z3 (merged).
+- The reviewer's adversarial cases are ported into `tests/test_z5_p1d_review.py`.
+- The migration `612f572d7ad2` gains `paper_accounts.entries_day` / `entries_count` and `trade_plans.proposal_id`, and
+  still revises `a7d3e9f1c5b8`.

@@ -33,15 +33,29 @@ breach block) and `vix_gate`. With both off nothing changes. PAPER only: nothing
 | Cap per trade | `RISK_DEFAULT_RISK_PER_TRADE_PCT` (1 % of the capital basis), `RISK_DEFAULT_RISK_PER_TRADE_AMOUNT` (0 = none) | Stricter of the two. Capital basis = PAPER starting capital + realised net P&L before today. The organisation's own risk per trade (after the platform ceilings) also applies, strictest wins (ADR-0003); then the guardian's cuts (drawdown ladder, event day, VIX gate). |
 | Override | `RISK_OVERRIDE_MAX_MULTIPLE` (2x), `RISK_OVERRIDE_MIN_REASON_CHARS` (10) | Logged (`risk_cap_override` audit event), stored on the plan, counted (placed only). Never past the organisation's limit. |
 | Daily loss lockout | `RISK_DEFAULT_DAILY_LOSS_PCT` (2 %) | Worst point of the day's PAPER net P&L (closes in order, plus today's open marks). Recorded once (`risk_lockouts`, a notification) and kept for the IST day. New PAPER entries and entry proposals of that user only. |
-| Entries per day | `RISK_DEFAULT_MAX_TRADES_PER_DAY` (10; 0 = none) | The user's own new PAPER entries (a structure counts once). |
+| Entries per day | `RISK_DEFAULT_MAX_TRADES_PER_DAY` (10; 0 = none) | The user's own new PAPER entries, as atomic slots on the PAPER account row (given back when the pipeline refuses the entry later). |
 | Minimum reward:risk | `RISK_DEFAULT_MIN_RR` (1.5) | A plan below it is refused. |
-| Cost line | `TICKET_BROKERAGE_PER_ORDER` (20), `TICKET_SLIPPAGE_PCT` (0.02 % per side) | ATP's dated India cost model (`india_costs`), the paper broker's own numbers. |
-| VIX spike pause | `VIX_GATE_SPIKE_PCT` (5 %, `>=`), `VIX_GATE_UNDERLYINGS` (NIFTY, BANKNIFTY, SENSEX) | Trade parity: bullish entries only, PAPER and LIVE, for the rest of the day. |
+| Cost line | the paper broker's own brokerage (20 per order) and slippage (0.02 % per side) | ATP's dated India cost model (`india_costs`); the line reads `PaperBroker` so it cannot drift from what a PAPER fill is charged. Cash underlyings only in Phase 0. |
+| VIX spike pause | `VIX_GATE_SPIKE_PCT` (5 %, `>=`), `VIX_GATE_UNDERLYINGS` (NIFTY, BANKNIFTY, SENSEX), `VIX_GATE_CHECK_AT` (09:20), `VIX_GATE_GRACE_MINUTES` (10), `VIX_GATE_CAPTURE_MINUTES` (15) | Trade parity: bullish entries only, PAPER and LIVE, for the rest of the day. |
 | VIX level cut | `VIX_GATE_HIGH_LEVEL` (20), `VIX_GATE_SIZE_CUT_PCT` (50), `VIX_GATE_MAX_AGE_MINUTES` (45) | ATP addition: the latest fresh reading at or above the level cuts the risk per trade. |
+
+**Settings changes.** A tightening applies at once. A loosening (higher risk per trade or daily loss limit, more or
+unlimited entries per day, a lower minimum reward:risk) is stored as pending and takes effect the next IST day, so a
+limit cannot be widened during the day it protects; the status strip shows it. A recorded lockout stays for the day
+whatever the settings say.
+
+**The India VIX reading.** The trading worker takes one per organisation with `vix_gate` on, from 09:20 IST every 15
+minutes while NSE is open: the live LTP and the close of the last completed session before today (Trade's two
+numbers), stamped with today's IST date. With `byob_data_tier` on it reads only through the acting user's own Tier A
+session; else through the organisation's usable session. A failed read is stored with its reason. Before 09:20 the
+gate is open; after 09:20 + 10 minutes, on a weekday, no valid reading pauses bullish index entries (Trade's
+fail-safe). The Copilot's market-memory CUE row (completed daily bars) is not used.
 
 ## Where it runs
 
-- `entry_refusals` (both order pipelines): the lockout and the entries-per-day limit for a user's PAPER entry.
+- `entry_refusals` (both order pipelines): the lockout and the entries-per-day slot for a user's PAPER entry.
+- After every PAPER close (`position_monitor.close_position`, after the close is booked; never raises) and in the
+  worker's sweep (open marks): the lockout is recorded as soon as the day reaches the limit, not only when read.
 - `execute_signal_for_user` and `execute_structure`: the user's cap (or the ticket's checked cap) before the guardian.
   So an approved proposal, a console entry and a ticket are sized the same way.
 - `guardian.guard_entry` (both pipelines and the ticket preview): the VIX gate, with the entry's direction.
@@ -51,6 +65,11 @@ breach block) and `vix_gate`. With both off nothing changes. PAPER only: nothing
   active too). "Exit now" itself is Z3's (its flags, the user's own live price, PAPER only).
 
 ## The ticket's placement
+
+The ticket takes NSE/BSE cash underlyings only in Phase 0 (no futures, options, commodities or crypto). A time stop must
+be later than now + 5 minutes IST (`TICKET_TIME_STOP_MIN_LEAD_MINUTES`); one already past would close the position at
+once. Every stored plan carries a reason: PLACED, PROPOSED ("Sent for approval: proposal #N"; it becomes PLACED or
+FAILED when the approval runs), REFUSED or FAILED.
 
 The plan is checked again on the server and stored (`trade_plans`). The entry is re-priced at the user's own live
 price (their BT1 entitlement, never a teammate's session); outside the re-quote limit (`APPROVAL_REQUOTE_MAX_DRIFT_*`)

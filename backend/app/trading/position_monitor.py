@@ -385,8 +385,12 @@ async def close_position(
     # Z3: an "Exit now?" question still open on this position is void now (best effort, after the close is booked).
     await approval_policy.retire_proposals_for_closed(session, trade, reason)
     # Z5 / P1-d: a PAPER close that reaches the user's daily loss limit records the lockout now (after the exit, never raises).
-    from app.risk_engine import by_default
-    await by_default.after_close(session, trade)
+    try:
+        from app.risk_engine import by_default
+        await by_default.after_close(session, trade)
+    except Exception:  # noqa: BLE001 - belt and braces: the exit is booked; nothing after it may turn it into an error
+        logger.exception("Daily loss check after closing trade %s failed", trade.id)
+        await session.rollback()
     return outcome
 
 

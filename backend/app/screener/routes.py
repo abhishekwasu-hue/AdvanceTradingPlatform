@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -35,6 +36,9 @@ router = APIRouter(prefix="/api/screener", tags=["screener"])
 FLAG = "screener_v2"
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
+SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
+HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
+MAX_INTRADAY_FETCH_DAYS = 60
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -152,6 +156,15 @@ async def archive_screen(screen_id: int, user: User = Depends(require_trader), s
     return _screen_dict(row)
 
 
+def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
+    """Calendar days of intraday bars to fetch for a screen's lookback. S5-A review: each timeframe's bars count in its
+    own minutes (100 daily bars are 100 sessions, not 100 base bars); sessions become calendar days (weekends) with room
+    for holidays; capped at the broker's intraday window (a longer need is then reported as "not enough history")."""
+    sessions = max([math.ceil(bars * nodes.TF_MINUTES.get(tf, nodes.TF_MINUTES[base_tf]) / SESSION_MINUTES)
+                    for tf, bars in lookback.items()] or [1])
+    return min(MAX_INTRADAY_FETCH_DAYS, max(5, math.ceil(sessions * 7 / 5) + HOLIDAY_PAD_DAYS))
+
+
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
@@ -162,9 +175,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.market_data.service import MarketDataService
     record = await _pick_record(session, tenant_id, None, "primary")
     interval = _FETCH[base_tf]
-    bars_needed = max([*lookback.values(), 1])
-    minutes = nodes.TF_MINUTES[base_tf]
-    days = min(60, max(5, int(bars_needed * minutes / 375) + 3)) if interval != "day" else 5
+    days = fetch_days(lookback, base_tf) if interval != "day" else 5
     service = MarketDataService(build_adapter(record), lookback_days=days)
     universe: List[SymbolData] = []
     problems: Dict[str, str] = {}

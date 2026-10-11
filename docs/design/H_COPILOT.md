@@ -104,6 +104,11 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **H-8. Plain-text agent answers.** Provisional: they are accepted without claims (grounding and the filter still
   apply), and the evals measure the rate. Strict JSON-only can follow once the rate is known.
 
+- **H-10. Where research runs.** Provisional: a separate process, `research-worker` (compose profile `research`, not
+  started by default), one study at a time platform-wide and one per organisation. It is separate so that model calls
+  and backtests never share a loop with trading (exits, ADR-0004) or with API requests.
+  - Owner question: should it start by default on the VPS? Should several studies run in parallel, which multiplies
+    model spend?
 - **H-9. Research loop limits.** Provisional:
   - at most 8 drafts per study and a 30% out-of-sample tail of the window;
   - the study stops early when the cost cap is reached;
@@ -327,3 +332,71 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - `seq` is count + 1 without a lock. That is safe while `study_id` is server-made and trials run one at a time.
   - "Append-only" is a convention in code; the database does not enforce it.
   - The study runs inside one request (up to 8 model calls and 9 backtests). The background job is H-C3c.
+
+## H-C3c-1 (built): research studies as background jobs
+- **Queue.** `POST /api/ai/research` now **queues** the study and returns 202 with its `study_id` and `progress`.
+  - The flags and the AI provider are checked at once: 503 when a flag is off, 409 for the rule-based provider.
+  - One study at a time per organisation: a second one gets 409 while the first is queued or running.
+- **Worker.** `app/workers/research_worker.py` is a separate process (compose service `research-worker`, profile
+  `research`):
+  ```
+  docker compose --profile research up -d research-worker
+  ```
+  - It claims the oldest queued study atomically: `queued -> running` only if still queued, so two workers never run
+    the same study.
+  - It runs the study as before:
+    - server bars;
+    - the holdout cut off;
+    - fewer than 50 bars fails with that reason;
+    - every draft a trial;
+    - one out-of-sample check.
+  - The study ends `done` or `failed` (with the reason), and the worker goes on.
+  - It places no orders and saves no strategies (ADR-0006).
+- **Progress and heartbeat.**
+  - Progress is the ledger: drafts tried / max drafts. The OOS check is not a draft.
+  - Each draft is a heartbeat. A running study with no heartbeat for 20 minutes (the worker stopped) becomes
+    `interrupted`, and the drafts it tried stay in the ledger and still count against later studies.
+- **Reading.**
+  - `GET /api/ai/research` lists the organisation's 20 most recent studies.
+  - `GET /api/ai/research/{id}` gives the job state, progress, trials and, once there are trials, the deflated report.
+  - Studies from before H-C3c (ledger only) still read.
+- **Storage.** `research_studies` (migration `c6e8a0b2d4f6`; on Postgres, upgrade, check, downgrade and upgrade all ran
+  OK). Trials stay in the append-only `research_trials`.
+- **Tests.**
+  - `tests/test_hc3c_research_jobs.py` (6):
+    - one at a time per organisation, oldest first;
+    - progress and heartbeat;
+    - an atomic claim and a late claim refused;
+    - stale -> interrupted;
+    - failures with reasons (provider changed, a crash) and the worker goes on;
+    - the worker loop drains the queue and stops on request;
+    - the list and detail are scoped;
+    - a legacy study reads.
+  - `tests/test_hc3b_research_api.py` updated for 202 + a worker step.
+  - 7 mutation checks, all killed:
+    - no one-at-a-time;
+    - claim not conditional;
+    - stale without grace;
+    - no heartbeat;
+    - holdout not cut;
+    - OOS counted as a draft;
+    - newest first.
+
+## H-C3c-2 (built): research studies in the Strategy Lab
+- **`ResearchPanel`** (Copilot > Strategy Lab, below the AI drafts):
+  - the form: idea, timeframe, at most N drafts; the symbol comes from the Lab's symbol;
+  - the organisation's studies with status chips and a progress bar of drafts tried; polled every 10 s while any study
+    is queued or running, and only then;
+  - a hint when a study has waited over 3 minutes: the research worker may not be running;
+  - "Open" shows the deflated summary ("Chosen from N backtested trials (M drafts)"), the deflated Sharpe and PBO;
+  - the check on unseen sessions;
+  - every draft tried with its metrics and reason;
+  - what is not simulated, and the disclaimer;
+  - a flag off (503) shows that research is off for the organisation.
+- **Numbers.** Shown as the API gives them; a missing probability is "n/a", never made up.
+- **Tests.**
+  - `research.test.ts` (4): polling only while active, the worker hint, progress, number formatting.
+  - The Copilot compliance lint caught "best" in the first draft of the intro; it was reworded.
+  - 59 frontend tests pass and `tsc` is clean.
+- **Headless check.** Against a mocked API: the list renders; "Open" shows the report (DSR 0.31, PBO "n/a" with its
+  note); queueing sends one POST with the Lab's symbol; the worker hint shows for an old queued study; no page errors.

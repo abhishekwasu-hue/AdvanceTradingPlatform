@@ -127,6 +127,13 @@ async def record_event(session: AsyncSession, rule: AlertRuleRecord, symbol: str
     return event
 
 
+def _is_intrabar(event: AlertEventRecord) -> bool:
+    try:
+        return bool(json.loads(event.values_json or "{}").get("intrabar"))
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def _message(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: Optional[str]) -> Tuple[str, str]:
     symbols = sorted({e.symbol for e in events})
     shown = ", ".join(symbols[:MAX_SYMBOLS_IN_MESSAGE]) + (f" and {len(symbols) - MAX_SYMBOLS_IN_MESSAGE} more" if len(symbols) > MAX_SYMBOLS_IN_MESSAGE else "")
@@ -136,7 +143,10 @@ def _message(rule: AlertRuleRecord, events: Sequence[AlertEventRecord], bucket: 
         title = f"{rule.name}: {len(symbols)} match(es) in this digest"
     else:
         title = f"{rule.name}: {len(symbols)} symbol(s) matched"
-    body = f"Matched on the bar closing {when}: {shown}. Matches passed the rule's filters; they are not recommendations."
+    on = f"the bar closing {when}"
+    if any(_is_intrabar(e) for e in events):
+        on = f"the bar still forming at {when} (intrabar: it may not hold at the close)"
+    body = f"Matched on {on}: {shown}. Matches passed the rule's filters; they are not recommendations."
     return title[:200], body
 
 

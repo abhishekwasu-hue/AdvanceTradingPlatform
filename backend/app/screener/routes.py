@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -35,6 +36,9 @@ router = APIRouter(prefix="/api/screener", tags=["screener"])
 FLAG = "screener_v2"
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
+SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
+HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
+MAX_INTRADAY_FETCH_DAYS = 60
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -152,24 +156,33 @@ async def archive_screen(screen_id: int, user: User = Depends(require_trader), s
     return _screen_dict(row)
 
 
+def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
+    """Calendar days of intraday bars to fetch for a screen's lookback. S5-A review: each timeframe's bars count in its
+    own minutes (100 daily bars are 100 sessions, not 100 base bars); sessions become calendar days (weekends) with room
+    for holidays; capped at the broker's intraday window (a longer need is then reported as "not enough history")."""
+    sessions = max([math.ceil(bars * nodes.TF_MINUTES.get(tf, nodes.TF_MINUTES[base_tf]) / SESSION_MINUTES)
+                    for tf, bars in lookback.items()] or [1])
+    return min(MAX_INTRADAY_FETCH_DAYS, max(5, math.ceil(sessions * 7 / 5) + HOLIDAY_PAD_DAYS))
+
+
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int], now: Optional[datetime] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
-    A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data."""
+    A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
+    `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     record = await _pick_record(session, tenant_id, None, "primary")
     interval = _FETCH[base_tf]
-    bars_needed = max([*lookback.values(), 1])
-    minutes = nodes.TF_MINUTES[base_tf]
-    days = min(60, max(5, int(bars_needed * minutes / 375) + 3)) if interval != "day" else 5
+    days = fetch_days(lookback, base_tf) if interval != "day" else 5
     service = MarketDataService(build_adapter(record), lookback_days=days)
     universe: List[SymbolData] = []
     problems: Dict[str, str] = {}
     for symbol in symbols:
         try:
-            bars = await service.get_candles(symbol, exchange, interval)
+            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                          else service.get_candles(symbol, exchange, interval))
         except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
             problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
             continue
@@ -180,11 +193,12 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
         fetched_tf = _FETCH_TF[interval]
-        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))      # never the bar still forming
+        if not include_forming:
+            df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
         if df.empty:
             problems[symbol] = "no closed bars from the broker"
             continue
-        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf)}
+        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames))
     return universe, problems, f"broker:{record.broker_name}"
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -15,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, ScreenRecord, User
 from app.db.session import get_session
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 FLAG = "screener_v2"
+INTRABAR_FLAG = "screener_intrabar"
 HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
+SYMBOL = re.compile(r"^[A-Z0-9&._:-]{1,40}$")
 
 
 class RuleBody(BaseModel):
@@ -34,6 +37,9 @@ class RuleBody(BaseModel):
     mode: Literal["instant", "digest"] = "instant"
     digest_every: Literal["hourly", "eod"] = "hourly"
     expires_at: Optional[datetime] = None
+    symbols: List[str] = Field(default_factory=list, max_length=50, description="screen rules: the symbols the screen runs on")
+    exchange: str = Field(default="NSE", pattern=r"^[A-Z]{2,10}$")
+    fire_on: Literal["bar_close", "intrabar"] = Field(default="bar_close", description="intrabar needs the screener_intrabar flag")
 
 
 class PolicyBody(BaseModel):
@@ -57,7 +63,10 @@ class PolicyBody(BaseModel):
 def _rule_dict(r: AlertRuleRecord) -> Dict[str, Any]:
     return {"id": r.id, "name": r.name, "kind": r.kind, "screen_id": r.screen_id, "symbol": r.symbol, "condition": r.condition_text,
             "base_tf": r.base_tf, "priority": r.priority, "cooldown_minutes": r.cooldown_minutes, "mode": r.mode, "digest_every": r.digest_every,
-            "status": r.status, "expires_at": r.expires_at.isoformat() if r.expires_at else None}
+            "status": r.status, "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+            "symbols": json.loads(r.universe_json) if r.universe_json else ([r.symbol] if r.symbol else []), "exchange": r.exchange,
+            "fire_on": r.fire_on,
+            "last_bar_at": r.last_bar_at.isoformat() if r.last_bar_at else None, "last_problem": r.last_problem}
 
 
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
@@ -68,7 +77,11 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
                                                                  ScreenRecord.archived.is_(False)))
         if screen is None:
             raise HTTPException(status_code=404, detail="Screen not found")
-        return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf}
+        symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+        if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
+            raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
+        return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
+                "exchange": body.exchange}
     if not body.symbol or not body.condition:
         raise HTTPException(status_code=422, detail="an instrument rule needs a symbol and a condition")
     from app.screener import compile_screen, nodes
@@ -77,7 +90,8 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail={"message": "the condition did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
-    return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf}
+    return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
+            "universe_json": None, "exchange": body.exchange}
 
 
 async def _owned(session: AsyncSession, user: User, rule_id: int) -> AlertRuleRecord:
@@ -97,11 +111,13 @@ async def list_rules(user: User = Depends(get_current_user), session: AsyncSessi
 @router.post("/rules", status_code=201)
 async def create_rule(body: RuleBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
+    if body.fire_on == "intrabar" and not await flag_enabled(session, INTRABAR_FLAG, user.tenant_id):
+        raise HTTPException(status_code=409, detail="Intrabar alerts are off for this organisation; bar-close rules work as before")
     target = await _checked(session, user, body)
     now = datetime.now(timezone.utc)
     row = AlertRuleRecord(tenant_id=user.tenant_id, created_by=user.id, name=body.name.strip(), kind=body.kind, priority=body.priority,
                           cooldown_minutes=body.cooldown_minutes, mode=body.mode, digest_every=body.digest_every, status="active",
-                          expires_at=body.expires_at, created_at=now, updated_at=now, **target)
+                          expires_at=body.expires_at, created_at=now, updated_at=now, fire_on=body.fire_on, **target)
     session.add(row)
     await session.commit()
     return _rule_dict(row)

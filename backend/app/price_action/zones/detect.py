@@ -7,7 +7,7 @@ oldest first. Nothing here reads the database or the network.
 
 Deliberate change (owner spec): Trade marks a zone FILLED (dead) the first time price comes back into it. ATP does not:
 `first_touch_event` reports that same first contact as an event - TOUCH (a bar overlapped the zone) or GAP_THROUGH (price
-jumped across a zone edge between one close and the next open without a bar overlapping it) - and the lifecycle
+jumped across a zone edge between one close and the next open), whichever came first - and the lifecycle
 (`lifecycle.py`) turns it into fresh -> tested. A zone dies only on a structural break (Z7a-2).
 
 No look-ahead: an order block / base is known on its impulse bar (`confirmed_at`), never earlier; the average range at a
@@ -113,25 +113,29 @@ def role_by_price(zone_low: float, zone_high: float, price: float) -> str:
 
 
 def first_touch_event(zone_low: float, zone_high: float, bars_after: pd.DataFrame) -> Optional[Dict[str, Any]]:
-    """The first contact with the zone in `bars_after` (bars after the zone formed, oldest first), or None.
-    TOUCH: a bar's [low, high] overlaps [zone_low, zone_high]. GAP_THROUGH: no bar overlapped, but price jumped from one
-    bar's close to the next bar's open across zone_low or zone_high. Where Trade's is_zone_mitigated returns True this
-    returns an event (and vice versa) - Trade then kills the zone, ATP only moves it fresh -> tested."""
+    """The first contact with the zone in `bars_after` (bars after the zone formed, oldest first), or None - whichever
+    of these happens first:
+      TOUCH        a bar's [low, high] overlaps [zone_low, zone_high];
+      GAP_THROUGH  price jumped from one bar's close to the next bar's open across zone_low or zone_high.
+    On the same bar a TOUCH wins (the bar itself traded in the zone). An event exists exactly where Trade's
+    is_zone_mitigated returns True - Trade then kills the zone, ATP only moves it fresh -> tested. Without open / close
+    columns only overlaps are checked (as in Trade)."""
     if bars_after is None or bars_after.empty:
         return None
     h, l = bars_after["high"].to_numpy(float), bars_after["low"].to_numpy(float)
     ts = bars_after["timestamp"] if "timestamp" in bars_after.columns else pd.Series(bars_after.index)
     hits = np.flatnonzero((h >= zone_low) & (l <= zone_high))
-    if len(hits):
-        k = int(hits[0])
-        return {"event": TOUCH, "bar": k, "time": ts.iloc[k]}
-    if "open" not in bars_after.columns or "close" not in bars_after.columns:
-        return None
-    o, c = bars_after["open"].to_numpy(float), bars_after["close"].to_numpy(float)
-    for k in range(1, len(o)):
-        lo, hi = min(c[k - 1], o[k]), max(c[k - 1], o[k])
-        if lo <= zone_low <= hi or lo <= zone_high <= hi:
-            return {"event": GAP_THROUGH, "bar": k, "time": ts.iloc[k]}
+    touch = int(hits[0]) if len(hits) else None
+    gap = None
+    if "open" in bars_after.columns and "close" in bars_after.columns:
+        o, c = bars_after["open"].to_numpy(float), bars_after["close"].to_numpy(float)
+        lo, hi = np.minimum(c[:-1], o[1:]), np.maximum(c[:-1], o[1:])
+        crossed = np.flatnonzero(((lo <= zone_low) & (zone_low <= hi)) | ((lo <= zone_high) & (zone_high <= hi)))
+        gap = int(crossed[0]) + 1 if len(crossed) else None
+    if touch is not None and (gap is None or touch <= gap):
+        return {"event": TOUCH, "bar": touch, "time": ts.iloc[touch]}
+    if gap is not None:
+        return {"event": GAP_THROUGH, "bar": gap, "time": ts.iloc[gap]}
     return None
 
 

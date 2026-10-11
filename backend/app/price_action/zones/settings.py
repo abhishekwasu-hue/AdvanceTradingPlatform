@@ -10,16 +10,35 @@ The memory fields (zone tolerance, retire days, max distance, max count) are use
 live here already so the settings model does not change shape between the two PRs.
 """
 from typing import Any, Dict, List, Mapping, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 ATP_TIMEFRAMES = ("1m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w")
+# Bar length in minutes - a bar stamped t (its open) is complete at t + length (used by every as_of cut).
+TF_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440, "1w": 10080}
+KEY_LEVEL_NAMES = ("PDH", "PDL", "PDC", "PWH", "PWL")
+
+
+def _check_tf_keys(name: str, value: Mapping[str, Any]) -> None:
+    bad = [k for k in value if k not in ATP_TIMEFRAMES]
+    if bad:
+        raise ValueError(f"{name}: unknown timeframes {bad}; each one of {ATP_TIMEFRAMES}")
+
+
+def _check_hhmm(v: str) -> str:
+    parts = v.split(":")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts) or not (0 <= int(parts[0]) <= 23 and 0 <= int(parts[1]) <= 59):
+        raise ValueError(f"{v!r} is not a valid HH:MM time")
+    return v
 # ATP timeframe -> the label Trade uses in its zone_type names (DYNAMIC_SR_SUPPORT_15M ...). Kept for exports and parity.
 TRADE_TF_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "1h": "60M"}
 
 
 class SRV3Settings(BaseModel):
     """Scored, multi-timeframe S/R levels (Trade sr_levels_v3.SRConfig) - field for field, Trade defaults."""
+    model_config = ConfigDict(extra="forbid")
+
     prd: Dict[str, int] = Field(default_factory=lambda: {"5m": 10, "15m": 10, "30m": 10, "1h": 10, "4h": 5, "1d": 5, "1w": 3})
     lookback_days: Dict[str, float] = Field(default_factory=lambda: {"5m": 3.0, "15m": 5.0, "30m": 8.0, "1h": 10.0, "4h": 45.0, "1d": 250.0,
                                                                      "1w": 1100.0})
@@ -74,9 +93,42 @@ class SRV3Settings(BaseModel):
     flip_min_break_atr: float = Field(default=0.0, ge=0)
     min_base_points: float = Field(default=0.0, ge=0)
 
+    @field_validator("prd", "lookback_days", "tf_factor", "tf_confluence_points", "recency_half_life_by_tf")
+    @classmethod
+    def _tf_dicts(cls, v: Dict[str, Any], info: ValidationInfo) -> Dict[str, Any]:
+        name = info.field_name or "per-timeframe setting"
+        _check_tf_keys(name, v)
+        if any(x < 0 for x in v.values()):
+            raise ValueError(f"{name}: values must not be negative")
+        if name == "prd" and any(x < 1 for x in v.values()):
+            raise ValueError("prd: every pivot window must be >= 1")
+        return v
+
+    @field_validator("key_level_points")
+    @classmethod
+    def _key_names(cls, v: Dict[str, float]) -> Dict[str, float]:
+        bad = [k for k in v if k not in KEY_LEVEL_NAMES]
+        if bad or any(x < 0 for x in v.values()):
+            raise ValueError(f"key_level_points: names must be among {KEY_LEVEL_NAMES} and points >= 0 (got {bad})")
+        return v
+
+    @field_validator("flip_frame")
+    @classmethod
+    def _flip_tf(cls, v: str) -> str:
+        if v not in ATP_TIMEFRAMES:
+            raise ValueError(f"unknown timeframe {v!r}; one of {ATP_TIMEFRAMES}")
+        return v
+
+    @field_validator("session_end")
+    @classmethod
+    def _session_end(cls, v: str) -> str:
+        return _check_hhmm(v)
+
 
 class ZoneSettings(BaseModel):
     """Detection knobs for one tenant (or one tenant + symbol). Defaults = the Trade values the owner checked on charts."""
+    model_config = ConfigDict(extra="forbid")
+
     # --- impulse / order block / demand-supply (market_zones.detect_order_blocks / detect_demand_supply_zones) -------------
     impulse_mult: float = Field(default=1.5, gt=0)          # impulsive candle: body >= this x average range
     avg_window: int = Field(default=20, ge=2, le=500)       # average range over this many bars (current bar included)
@@ -136,6 +188,23 @@ class ZoneSettings(BaseModel):
             raise ValueError(f"unknown timeframe {v!r}; one of {ATP_TIMEFRAMES}")
         return v
 
+    @field_validator("session_timezone")
+    @classmethod
+    def _tz(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"{v!r} is not an IANA time zone") from exc
+        return v
+
+    @field_validator("memory_retire_days_by_tf")
+    @classmethod
+    def _retire_tfs(cls, v: Dict[str, int]) -> Dict[str, int]:
+        _check_tf_keys("memory_retire_days_by_tf", v)
+        if any(x < 0 for x in v.values()):
+            raise ValueError("memory_retire_days_by_tf: days must not be negative")
+        return v
+
     @field_validator("dynamic_sr_timeframes", "intraday_sr_timeframes", "confluence_timeframes")
     @classmethod
     def _known_tfs(cls, v: List[str]) -> List[str]:
@@ -156,18 +225,32 @@ class ZoneSettings(BaseModel):
         return self
 
 
+def _merge_layer(merged: Dict[str, Any], layer: Mapping[str, Any], model: Any, where: str) -> None:
+    """Fold one override layer into `merged`: unknown keys refused; a dict-valued setting (per-timeframe maps) merges key
+    by key over the value so far (the default first), so overriding one timeframe keeps the others."""
+    defaults = model()
+    for key, value in layer.items():
+        if key not in model.model_fields:
+            raise ValueError(f"unknown {where} setting {key!r}")
+        current = getattr(defaults, key)
+        if isinstance(current, dict) and isinstance(value, Mapping):
+            value = {**merged.get(key, current), **value}
+        merged[key] = value
+
+
 def resolve_settings(*layers: Optional[Mapping[str, Any]]) -> ZoneSettings:
     """Platform defaults, then each override layer in order (tenant, then symbol). Unknown keys are refused; the nested
-    `sr_v3` section merges key by key."""
+    `sr_v3` section and every per-timeframe map merge key by key (e.g. {"sr_v3": {"prd": {"5m": 3}}} changes only 5m)."""
     merged: Dict[str, Any] = {}
+    v3: Dict[str, Any] = {}
     for layer in layers:
-        for key, value in (layer or {}).items():
-            if key not in ZoneSettings.model_fields:
-                raise ValueError(f"unknown zone setting {key!r}")
-            if key == "sr_v3" and isinstance(value, Mapping):
-                unknown = [k for k in value if k not in SRV3Settings.model_fields]
-                if unknown:
-                    raise ValueError(f"unknown sr_v3 setting(s) {unknown}")
-                value = {**merged.get(key, {}), **value}
-            merged[key] = value
+        layer = dict(layer or {})
+        if "sr_v3" in layer:
+            sub = layer.pop("sr_v3")
+            if not isinstance(sub, Mapping):
+                raise ValueError("sr_v3 must be a mapping of settings")
+            _merge_layer(v3, sub, SRV3Settings, "sr_v3")
+        _merge_layer(merged, layer, ZoneSettings, "zone")
+    if v3:
+        merged["sr_v3"] = v3
     return ZoneSettings.model_validate(merged)

@@ -130,6 +130,39 @@ instead.
 Revisit these once the PAPER cohort has enough weeks of data. Any change should go through a reviewed PR that updates
 this table, not a tuning run (open question Z6-1).
 
+## Weekly review (Z6-b)
+
+`GET /api/journal/review?week=&history=4&narrate=false` (`app/journal/review.py`, pure) builds the review from the
+same journal, tags and score. Every number comes from the trader's own trades:
+- **totals**: trades, decisions, closed and open, wins and losses, win rate, net and gross P&L, charges, average R,
+  expectancy, profit factor, largest win and loss, average holding time;
+- **setups**: the same per setup, with what worked (net > 0) and what lost (net < 0);
+- **behaviours**: per counted tag, the trades and the net P&L and average R of the closed tagged trades;
+- **costliest behaviour**: the tag whose trades lost the most. This answers the spec's "one habit to fix next week" as
+  a fact; the trader decides what to do with it;
+- **discipline score** with its components;
+- **comparison with the trader's own previous weeks only**: no leaderboard, nobody else's numbers.
+
+Every review also carries `lines`: the same facts as short sentences that describe and never instruct. A test checks
+them against the Copilot's banned-word list, the advice filter and instruction words ("should", "must", ...).
+
+With `narrate=true`, the Copilot (the organisation's provider, `copilot.narrate`) explains the lines in plain language.
+It is held to the same checks as every Copilot answer:
+- every number must come from the facts;
+- no advice or guarantee words;
+- one retry, after which the rule lines are the explanation.
+
+It needs the AI Copilot acknowledgement and the `ai_copilot` flag. Without them the review is still complete; only the
+explanation comes from the rules.
+
+UI: **Journal & Discipline** (Portfolio group in the sidebar) has three tabs:
+- **Week**: the score card with its components, and each trade's plan vs execution, fills, MAE / MFE, costs, stop
+  history, Greeks and chart reference, with its tags (confirm / dismiss);
+- **Weekly review**;
+- **Settings**: thresholds, event kinds, weights, and "back to defaults".
+
+While the flag is off, the page says the feature is not enabled.
+
 ## API (all behind the flag; the logged-in trader's own data only)
 
 | Method | Path | What it does |
@@ -139,6 +172,7 @@ this table, not a tuning run (open question Z6-1).
 | POST | `/api/journal/trades/{id}/tags` | `{tag, note?}`: the trader's own tag, stored as CONFIRMED. |
 | PATCH | `/api/journal/tags/{id}` | `{status: CONFIRMED / DISMISSED / SUGGESTED}`. |
 | GET, PUT | `/api/journal/settings` | Thresholds and weights, the defaults, and each number's range. |
+| GET | `/api/journal/review?week=&history=&narrate=` | The weekly review (Z6-b). |
 
 ## Tests
 
@@ -155,3 +189,15 @@ this table, not a tuning run (open question Z6-1).
 - per-user isolation (same tenant and other tenant);
 - events-calendar integration;
 - the migration chain.
+
+`backend/tests/test_z6b_weekly_review.py` covers:
+- the review numbers against the seeded journal (net, charges, win rate, average R, behaviour cost, score, own
+  previous weeks);
+- a dismissed tag leaving the review;
+- teammate isolation;
+- the wording checks;
+- the Copilot explanation: rules without a provider, a grounded model text accepted, advice and invented numbers
+  rejected.
+
+`frontend/src/journal/format.test.ts` covers the week arithmetic and formats, and checks every string in the page
+against the banned-word list.

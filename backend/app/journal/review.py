@@ -121,7 +121,7 @@ def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterabl
     losing = [b for b in behaviours if b["closed"] and b["net_pnl"] < 0]
     costliest = losing[0] if losing else None
 
-    review = {"week": week, "totals": totals, "by_setup": by_setup, "what_worked": what_worked, "what_lost": what_lost,
+    review: Dict[str, Any] = {"week": week, "totals": totals, "by_setup": by_setup, "what_worked": what_worked, "what_lost": what_lost,
               "behaviours": behaviours, "costliest": costliest, "discipline": score, "history": list(history),
               "count_unconfirmed": settings.count_unconfirmed, "disclaimer": DISCLAIMER}
     review["lines"] = lines(review)

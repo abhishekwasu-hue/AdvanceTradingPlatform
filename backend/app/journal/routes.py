@@ -110,6 +110,8 @@ async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[
     if not await flag_enabled(session, "ai_copilot", user.tenant_id):
         return {"note": "The AI Copilot is turned off; the numbers are explained from the rules"}
     tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is None:
+        return {"note": "No organisation record; the numbers are explained from the rules"}
     provider = await ai_settings.provider_for(session, tenant, task="knowledge", user_id=user.id)
     if provider.name == "rule_based":
         reason = getattr(provider, "reason", "") or "no AI provider configured"

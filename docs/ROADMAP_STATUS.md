@@ -44,7 +44,7 @@ Last update: 2026-10-11 06:19 IST.
 | I | Options analytics | not started | - | 0 |
 | CH0 | Advanced charting: spec, design note, ADR-0023 ChartEngine | done (design) | #107 | 100 |
 | CH1.. | ChartEngine interface, drawings storage, v5 upgrade, layers, option-contract charts | CH1a drawings storage, CH1b ChartEngine + B-lite adapter, CH2a lightweight-charts v5 (render parity), CH2b primitives drawing core (all 12 drawing/1 kinds; second-pass ray fix) done; CH2c-1 tool controller (place, drag, undo/redo, conflicts) + CH2c-2 wiring and toolbar on ProChart (draft PRs); CH3 layers next | #126, #130, #133, #136, #139, #141 | 60 |
-| P1 | Profitability mission, manual trading, Options Strategy Builder (P1 spec) | P1-a builder core ported from the Trade repo (golden parity 1,451 cases, mutations 13/13; ADR-0025 proposed); P1-b T+0 / IV / PoP / templates next | P1-a PR | 8 |
+| P1 | Profitability mission, manual trading, Options Strategy Builder (P1 spec) | P1-a builder core ported from the Trade repo (golden parity ~2,500 cases, mutations 13/13; ADR-0025 proposed) in #148; P1-b model (T+0 / IV / time curves, exact PoP and extremes, 38-template gallery, any broker's chain) built, PR next; P1-c builder UI next | #148, P1-b PR | 8 |
 | OI | OI banner (Trade port): O1 oi_regime + golden fixtures, O2 collector/tables/history API, O3 banner frontend, O4a alerts, O4b Telegram buttons/digest/settings UI, O5 opt-in deployment gates | all built; each suite green; waiting for the owner's merge | #109, #111-#114, #116 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |

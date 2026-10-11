@@ -813,8 +813,9 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
     from app.ai import metering
     return {"answer": answer.text, "source": answer.source, "language": lang, "note": answer.note, "numbers": answer.numbers,
             "proposals": answer.proposals,                                   # PROPOSED - decided under AI Copilot, never auto-run
-            "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped,
-                      "tools": [{k: c[k] for k in ("name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
+            "claims": answer.claims, "disclaimers": answer.disclaimers,      # each claim cites a tool call id below
+            "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped, "contract": answer.contract,
+                      "tools": [{k: c[k] for k in ("id", "name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
             "usage": metering.spent_by(provider)}
 
 

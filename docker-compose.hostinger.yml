@@ -1,0 +1,94 @@
+# Production host: Hostinger KVM 2 (2 vCPU / 8 GB RAM / 100 GB NVMe, Ubuntu 24.04, Mumbai, static IPv4).
+# Layered on top of the production overlay:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml ...
+#   (deploy/hostinger/deploy.sh and scripts/deploy.sh with COMPOSE_OVERLAYS do this for you)
+#
+# What it adds - the 8 GB budget (docs/OPERATIONS.md "Resource budget - 8 GB host"):
+#   * a memory limit per container, so one runaway process is killed instead of the whole host swapping;
+#   * Postgres sized for ~2 GB (shared_buffers 512 MB, work_mem 8 MB, 60 connections) - the WAL archiving of the
+#     base file is repeated here because `command` replaces the whole list;
+#   * Redis capped at 384 MB, evicting only keys that expire (caches, rate windows) - never a key without a TTL;
+#   * the Caddyfile chosen by CADDYFILE: `Caddyfile` (a domain, Let's Encrypt) or `Caddyfile.ip` (no domain yet:
+#     the server's IP with Caddy's own internal certificate - the browser warns once);
+#   * the off-site copy target from OFFSITE_REMOTE: any rclone remote (S3-compatible provider via OFFSITE_S3_*), or
+#     a local directory (/offsite_local, the host's /var/backups/atp-offsite) until a provider is chosen.
+#
+# Numbers live here and in .env, not in code (MEM_* / PG_* / REDIS_MAXMEMORY override every limit).
+x-limits: &small
+  deploy:
+    resources:
+      limits:
+        memory: 256m
+
+services:
+  postgres:
+    command: ["postgres",
+              "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f",
+              "-c", "shared_buffers=${PG_SHARED_BUFFERS:-512MB}",
+              "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
+              "-c", "work_mem=${PG_WORK_MEM:-8MB}",
+              "-c", "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}",
+              "-c", "max_connections=${PG_MAX_CONNECTIONS:-60}",
+              "-c", "random_page_cost=1.1",
+              "-c", "effective_io_concurrency=200"]
+    shm_size: 256m
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_POSTGRES:-2g}
+    restart: unless-stopped
+
+  redis:
+    command: ["redis-server", "--maxmemory", "${REDIS_MAXMEMORY:-384mb}", "--maxmemory-policy", "volatile-lru",
+              "--appendonly", "no"]
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_REDIS:-512m}
+    restart: unless-stopped
+
+  backend:
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_BACKEND:-1536m}
+    restart: unless-stopped
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_WORKER:-1536m}
+
+  frontend:
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_FRONTEND:-128m}
+    restart: unless-stopped
+
+  caddy:
+    <<: *small
+    volumes: !override
+      - ./deploy/${CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  backup:
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_BACKUP:-512m}
+
+  offsite:
+    <<: *small
+    environment:
+      OFFSITE_REMOTE: ${OFFSITE_REMOTE:-/offsite_local}
+      RCLONE_CONFIG_SPACES_PROVIDER: ${OFFSITE_S3_PROVIDER:-Other}
+    volumes:
+      - ./scripts/backup:/scripts:ro
+      - backups:/backups:ro
+      - wal_archive:/wal_archive:ro
+      - ${OFFSITE_LOCAL_DIR:-/var/backups/atp-offsite}:/offsite_local

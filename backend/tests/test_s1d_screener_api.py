@@ -129,6 +129,10 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
         async with _session_factory() as session:
             return list(await session.scalars(select(ScreenRunRecord).where(ScreenRunRecord.tenant_id == me["tenant_id"])))
     assert len(_run(rows())) == 1
+    assert funnel["passes"] == {"UP": [True, True], "DOWN": [False, False]}                     # U5 D2: per-symbol, per-stage
+    preview = client.post("/api/screener/run", json={"screen_id": made["id"], "symbols": ["UP", "DOWN"], "preview": True}, headers=headers).json()
+    assert preview["run_id"] is None and preview["preview"] is True and preview["funnel"]["stages"] == funnel["stages"]
+    assert len(_run(rows())) == 1                                                                 # a live count while editing is not stored
     weekly = client.post("/api/screener/run", json={"source": "close > close[1]", "base_tf": "1w", "symbols": ["UP"]}, headers=headers).json()
     assert weekly["matched"] == ["UP"]                                                            # weekly bars resampled from server daily bars
     assert parse(body["text"]) == parse(made["text"]) and n.VERSION == stored["version"]

@@ -65,6 +65,7 @@ class RunBody(BaseModel):
     params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
+    preview: bool = Field(default=False, description="U5 D2 live counts while editing: the same evaluation, not stored as a run")
 
 
 def _compiled(source: Union[str, Dict[str, Any]], base_tf: str, params: Dict[str, Any]) -> Tuple[Any, Any]:
@@ -226,6 +227,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
     results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
+    payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
+               "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
+               "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+    if body.preview:
+        return {"run_id": None, "preview": True, **payload}
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),
                               ast_version=nodes.VERSION, base_tf=base_tf, universe_json=json.dumps(symbols), data_source=data_source,
@@ -233,9 +239,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                               duration_ms=int((time.monotonic() - started) * 1000))
     session.add(run_row)
     await session.commit()
-    return {"run_id": run_row.id, "text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
-            "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
-            "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+    return {"run_id": run_row.id, "preview": False, **payload}
 
 
 @router.get("/runs/{run_id}")

@@ -459,18 +459,24 @@ def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], 
     same universe as in the full screen) and the results are ANDed cumulatively: the count after a stage is the
     symbols that passed it and every stage before it, and the last count equals the screen's match count.
     Symbols the screen cannot evaluate at all (not enough history, a runtime problem) are left out of the funnel
-    (`with_data`) instead of being "removed" by the first stage."""
+    (`with_data`) instead of being "removed" by the first stage.
+
+    U5 D2: `passes` gives, per evaluated symbol, whether it passed each stage on its own (not only while it was still
+    in) - the "why it matched / where it fell out" chips on a result row."""
     full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params))}
     usable = [d for d in universe if full[d.symbol].reason is None]
     items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
     alive = [d.symbol for d in usable]
     stages: List[Dict[str, Any]] = []
+    passes: Dict[str, List[bool]] = {d.symbol: [] for d in usable}
     for item in items:
         passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params) if m.matched}
         removed = [s for s in alive if s not in passed]
         alive = [s for s in alive if s in passed]
         stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
-    return {"with_data": len(usable), "stages": stages}
+        for symbol, row in passes.items():
+            row.append(symbol in passed)
+    return {"with_data": len(usable), "stages": stages, "passes": passes}
 
 
 def _last(value: Any) -> Any:

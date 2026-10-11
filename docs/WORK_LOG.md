@@ -907,3 +907,638 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   with what it names; API + record). No schema change (stored in the run's metrics JSON). Engine version unchanged
   (results are identical).
 - Next: C2 (pluggable models) design note, then C5/C6 per the spec order; ROADMAP_STATUS board.
+
+### 2026-10-10 22:20 IST - H-1 / H-2 answered by the owner, implemented (PR on claude/redis-guard-r2)
+- H-1 (Redis `volatile-lru`, with conditions): the worker lock has a TTL, so eviction can take it. `_keep_lock` at every
+  renewal: renewed -> carry on; Redis down -> the S2 degraded mode; key gone -> taken back, no new entries for the rest
+  of the cycle (exits continue); held by another worker -> the cycle stops there (no entries, no exits). One CRITICAL to
+  the operators per 30 min (`app/workers/redis_guard.py`), metric `atp_worker_lock_lost_total`, rule `WorkerLockLost`.
+  Redis memory read every 300 s into `atp_redis_memory_used_ratio`, one WARNING an hour at 70 % (rule `RedisMemoryHigh`).
+  `cache_set` caps TTLs at 1 h; outbox + idempotency keys verified to be Postgres rows; `deploy.replicas: 1` for the worker.
+- H-2 (Cloudflare R2): `offsite:` S3 remote defaults to provider Cloudflare (bucket-scoped token, no bucket checks), `b2:`
+  remote for Backblaze B2; the deploy block stops until the R2 endpoint/keys are in the server .env; restore test from R2
+  (`scripts/backup/offsite_fetch.sh` -> `verify_backup.sh`), R2 lifecycle rule (35 days on `backups/`) in the runbook.
+- Tests: `tests/test_h1_redis_guard.py` (11), `tests/test_hostinger_deploy.py` (+2, fake rclone for the fetch).
+- Next: CI, then part C3/C4 on claude/backtest-realism.
+
+### 2026-10-10 22:40 IST - part D (SEBI) design PR
+- `docs/design/D_SEBI.md`: D1-D8 against what exists (algo tag, rate budget, market protection, daily-login pieces,
+  readiness) and the gaps; rules-engine design shared with v1.2 (SEBI = one rule-set); PR order and test plan.
+- `app/compliance/rules.py` + `rulesets/in_sebi.json` (11 rules, parameters as data, status enforced/partial/planned);
+  `docs/COMPLIANCE_IN.md` (rule -> code -> test -> flag); `tests/test_compliance_rules.py` keeps file, doc, code and
+  named tests in step. No behaviour change. OPEN_QUESTIONS D-1..D-3.
+- In parallel: part B ADR drafts (ADR-0013/0016/0017) on claude/data-lake-adr.
+
+### 2026-10-10 22:42 IST - part B design: ADR-0013 / 0016 / 0017 (provisional)
+- ADR-0013 data lake: TimescaleDB hot tier in the existing Postgres + Parquet/DuckDB cold tier on R2, one as-of query
+  interface; ADR-0016 provider seams (interface + registry + capabilities + contract tests); ADR-0017 global-first
+  (instrument / time / money / costs / rules / tax; India first, crypto next). docs/PROVIDERS.md, docs/design/B_DATA_LAKE.md,
+  tests/test_adr_index.py. OPEN_QUESTIONS B-1 (Timescale after go-live), B-2 (vendor needs the owner, cost).
+
+### 2026-10-10 22:46 IST - part D2: OPS throttle (exits first), flag off
+- `app/execution/ops_throttle.py`: per (tenant, broker account) and exchange, orders/s from the IN-SEBI rule-set; entry lane
+  refused immediately (REJECTED, reason ops_throttle, never sent), exit lane (exits, stops, modify, cancel, untagged) waits
+  and is never refused; no entry while an exit waits; broker 429 pauses the exchange (back-off from the rule-set), success
+  resets. Wired through RateLimitedBroker when OPS_THROTTLE_ENABLED (default off). Metrics + 2 alert rules.
+- Rule IN-SEBI.ops.throttle -> enforced; docs/COMPLIANCE_IN.md now generated (scripts/compliance_doc.py, CI checks it).
+- Tests: tests/test_d2_ops_throttle.py (6); worker/rate-budget/tagging/G-LIVE suites 64 passed.
+
+### 2026-10-10 22:48 IST - part D3: per-broker order-type policy for algo entries
+- `app/compliance/order_policy.py`: rule-set default + per-broker overrides; MARKET allow / map_to_limit (PROTECTED_LIMIT
+  price) / refuse; allowed validities. Router applies it to entries only (exits and stops untouched, ADR-0004); a refusal
+  is a clean refusal before the broker. Default policy = today's behaviour. Rule IN-SEBI.order_type.policy enforced.
+- Tests: tests/test_d3_order_policy.py (6); router/tagging/order-safety/G-LIVE suites green (63).
+
+### 2026-10-10 22:53 IST - part D4 (backend): registered static egress IPs
+- Tables egress_ips (PRIMARY/BACKUP per broker) + egress_ip_changes (append-only); migration d4e1f2a3b4c5 verified on a
+  local Postgres: upgrade, alembic check (no drift), downgrade, upgrade. Service app/compliance/static_ip.py: public IPs only,
+  max_changes_per_week from the rule-set (the first registration is not a change), shared-IP + server-IP warnings.
+  API GET/PUT /api/compliance/static-ips (owner writes, audited). Worker: LIVE entries refused when
+  STATIC_IP_REQUIRED_FOR_LIVE (off) and SERVER_EGRESS_IP is not registered for the broker; PAPER/exits untouched.
+  Readiness item static_ip (LIVE). Rule IN-SEBI.static_ip.registered enforced. Tests: 6. Frontend card next.
+
+### 2026-10-10 22:55 IST - part D4 (UI): Settings > Static IP card
+- StaticIpCard on Settings (after broker accounts): this server's egress IP, a table per broker (primary / backup /
+  server IP registered), warnings from the API, a form to register an IP (owner; server enforces). Helper staticIpRows
+  with vitest (2). tsc, vitest 54, build, devanagari and bundle checks green.
+
+### 2026-10-10 23:02 IST - part D5: daily broker login + pre-open reminder
+- app/brokers/login_reminder.py: login method per broker (oauth / login_code / api_key / manual) from token_lifecycle's
+  sets; on NSE trading days from `reminder_minutes_before_open` (rule-set data) before the open until the close, one
+  WARNING per organisation whose ACTIVE deployment's broker session will not last to the close (once per IST day, also
+  across restarts). Worker housekeeping hook + CycleReport.login_reminders. Rule IN-SEBI.login.daily -> enforced;
+  COMPLIANCE_IN.md regenerated; OPERATIONS step 1 updated. Tests: 7 (crafted past-weekday clock). Next: D1 format/threshold.
+
+### 2026-10-10 23:07 IST - part D1: algo id format, generic vs registered, audit rows
+- app/compliance/algo_id.py: per-broker tag format from the rule-set (`brokers`: length + `alnum`/`alnum_dash`; brokers
+  without an entry keep today's tag byte for byte); the registered id always wins, the broker's generic id
+  (`generic_ids`, empty until brokers publish theirs - OPEN_QUESTIONS D-2 provisional) only while the D2 OPS throttle is on
+  and capped at or below `ops_threshold`. ALGO_ID_REQUIRED_FOR_LIVE (off) refuses a LIVE entry without a usable id.
+  Every LIVE entry and exit writes an `algo_order` audit row with the tag; the stop re-arm row carries it too.
+  Router, multi-leg, position monitor and stop guard all go through the same resolution. Rule
+  IN-SEBI.algo_id.registered_above_ops -> enforced. Tests: 5 new; tagging/worker/monitor/multileg suites green.
+
+### 2026-10-10 23:11 IST - part D6: go-live checklist evidence
+- Table compliance_evidence (append-only; migration e6a1b2c3d4f5 verified on local Postgres: upgrade, check, downgrade,
+  upgrade). app/compliance/golive.py: the item list is rule-set data (vendor ISO 27001/SOC 2, CERT-In VAPT, incident
+  register; strategy white-box/black-box filing; AI disclosure; DPO, breach runbook) with validity periods, plus two
+  automatic checks (login history >= log_retention_days; AI trade ideas unpublished unless RA registration on record).
+  SUPER_ADMIN API GET /api/compliance/golive, PUT /api/compliance/golive/evidence (audited). Platform readiness shows them
+  as LIVE-scope items, `warn` at most (PAPER never blocked). Strategy class kept as evidence (OPEN_QUESTIONS D-4,
+  provisional). Rule IN-SEBI.golive.checklist -> enforced. Tests: 8. Next: D7 waits for part B data -> part B build.
+
+### 2026-10-10 23:16 IST - part B1: market data lake schema + as-of reads
+- Tables md_candles (bar END, source, version), md_ticks, md_option_chain_snapshots, md_position_limits (MWPL / OI for
+  D7), instrument_master_versions (valid_from), md_corporate_actions (the fundamentals `corporate_actions` table is a
+  different thing and stays), data_quality_events; every row carries ingested_at. Migration b1c2d3e4f5a6: hypertables
+  only when the timescaledb extension is installable (plain Postgres go-live unaffected, B-1 provisional); verified on
+  local plain Postgres 16: upgrade, alembic check, downgrade, upgrade. The Timescale branch is not exercised here (no
+  extension in this sandbox). app/market_lake/asof.py: candles / instrument terms / position limits as of T (late rows
+  and corrections invisible before ingestion). Tests: 4 (crafted instants). Next: B2 ingest (candle builder from ticks,
+  vendor seam with a mocked adapter, broker backfill).
+
+### 2026-10-10 23:19 IST - part B2: lake ingest (candle builder, writer, broker backfill, vendor seam, tick writer)
+- app/market_lake/ingest.py: CandleBuilder (bars labelled by END, published only after close; late ticks dropped and
+  counted), write_candles (idempotent; a changed bar becomes the next version), backfill_from_broker (START labels ->
+  END), HistoryVendor seam + MockVendor (no paid vendor until the owner picks one, B-2). app/market_lake/recorder.py:
+  stream ticks -> 1-minute bars (source stream:<broker>), bounded backlog, never raises into the stream; worker drains
+  it each cycle. Flag LAKE_TICK_WRITER_ENABLED (off). Tests: 9; stream + worker suites green. Next: B3 quality detectors.
+
+### 2026-10-10 23:21 IST - part D7 (first slice): F&O ban period from lake MWPL / OI
+- app/compliance/fo_limits.py: open interest at or above ban_threshold_pct (rule-set, 95) of MWPL on the signal's IST
+  day -> new F&O entry refused (single contract and multi-leg; PAPER too, so paper never takes trades the market would
+  refuse); exits untouched. No lake row -> no refusal, a note on the order instead. Flag FO_BAN_CHECK_ENABLED (off).
+  Rule IN-SEBI.risk.futeq_mwpl stays partial: client-level FutEq limit, expiry-day margin multiplier and lot-size as-of
+  are next. Tests: 3 (incl. a PAPER option entry refused, then filled on a non-banned day); contract/multileg suites green.
+
+### 2026-10-10 23:23 IST - part B3: lake data-quality detectors
+- app/market_lake/quality.py: gap (missing bar ends inside the session, one event per run), spike (close move above
+  LAKE_SPIKE_PCT), invalid OHLC, late (ingested more than LAKE_LATE_SECONDS after close), duplicate (same bar twice in a
+  batch), cross-source mismatch (above LAKE_MISMATCH_PCT); scan_day reads the latest version per source and records new
+  events once. Thresholds are config. Tests: 3 (a clean session raises none; each crafted problem exactly one; re-scan
+  writes nothing new). Next: B4 corporate-action adjustment; worker scan job with B6 metrics/alerts.
+
+### 2026-10-10 23:25 IST - part C2: design note (pluggable fill / slippage / latency / margin / pricing / settlement)
+- docs/design/C2_MODELS.md on a new branch stacked on the realism PR (#83): six protocols with a registry each, a
+  ModelSet whose defaults reproduce today's results byte for byte (golden test on the C4 result_hash), model names and
+  parameters in the reproducibility fingerprint, no-look-ahead guard per model, costs stay in india_costs.py.
+  Open questions C2-1 / C2-2 provisional. Check-in: #83, #85, #86 green; #96 (B1) red on the numeric-migration guard -
+  fixed (guard now also accepts create_table), full suite running before the push.
+
+### 2026-10-10 23:27 IST - part B4: corporate-action adjusted view
+- app/market_lake/adjust.py: adjusted candles as a read-time view - splits/bonuses multiply prices before the ex-date
+  by ratio_old/ratio_new and divide volume by it (factors compound); dividends only with LAKE_ADJUST_DIVIDENDS, from
+  the cum-dividend close, volume untouched; only actions known at as_of apply; derivatives never adjusted; incomplete
+  ratios ignored. Stored data never changes. Tests: 5. Next: B5 history API + backtests reading the lake.
+
+### 2026-10-10 23:31 IST - part C2 PR 1: models package, defaults, golden test
+- app/backtest/models: SlippageModel / FillModel protocols, FixedPctSlippage + TouchFill defaults, ModelSet (unknown or
+  not-yet-available models refused). run_backtest(models=...) uses the fill model for exits and the slippage model for
+  entries/exits; the default set is the pre-C2 engine (golden result_hash for all 13 strategies recorded from the pre-C2
+  engine before wiring: tests/golden/c2_default_models.json). API field execution_models (422 on bad input, 422 on an
+  option backtest for now); non-default sets enter the fingerprint's config_hash, default runs keep their hash.
+  Tests: 18 (13 golden). The test caught /api/backtest dropping the field (main.py's request model) - fixed.
+
+### 2026-10-10 23:33 IST - part B5 (API): GET /api/market-data/history
+- app/market_lake/routes.py: authenticated point-in-time history (as_of hides later rows and corrections), adjusted
+  for splits/bonuses known at as_of (equity only), bar_label "end", count of data-quality events in the window,
+  LAKE_HISTORY_MAX_BARS cap (422 beyond). Test: 1 end-to-end (401, as_of, adjusted/raw, FUT, bad window, cap).
+  Next: backtests read the lake (data_source=lake), B6 retention/compression/metrics.
+
+### 2026-10-10 23:50 IST - part H (Copilot v2): spec received, design note
+- Abhi's ATP_COPILOT_SPEC.md stored at docs/specs/. docs/design/H_COPILOT.md: the 13 review findings checked against
+  main (G2 confirmed: /api/ai/drafts/{id}/backtest runs client candles; G5: no /api/ai rate limit), order H-C1 -> H-C2
+  (+H-C10) -> ..., H-C1 plan (server-side evidence, rate limit, output filter, grounding, llm_calls hygiene,
+  prompt_version). Provisional: H-C1 jumps the queue as safety work (H-3); parts named H-C1..H-C12 (H-4); no client
+  fallback when the server has no data (H-5). Next: H-C1 a (server-side evidence).
+
+### 2026-10-11 00:02 IST - H-C1 a: approval evidence from server data only (G2)
+- `app/ai/evidence.py`: posted candles are recorded as `sample` whatever `data_source` the request claims;
+  `require_server` refuses approval/deploy unless the run's source is `broker:<name>` or `lake`
+  (`AI_EVIDENCE_SERVER_ONLY`, on by default). `server_frame` fetches through the tenant's broker session; no session or
+  no bars = 409, never a fallback to client data (H-5).
+- Draft backtest: `candles` optional - omitted means the server fetches (`symbol`, `exchange`, `lookback_days`,
+  `broker`). Approve checks the run's source. Interview plan/refine: same, and the source is stored on each candidate;
+  interview deploy refuses a sample candidate. The strategist already treated client candles as sample.
+- Frontend: `evidenceBody` - broker mode posts no candles (the server fetches); sample mode is unchanged.
+- Tests: `tests/test_hc1_server_evidence.py` (5: default on, labels not trusted, sample cannot approve, server path
+  approves, 409 without a broker, sample interview option cannot deploy) + `src/api/evidence.test.ts` (3). Existing AI
+  tests moved to the server path (`tests/server_evidence.py`). Lake (B5) as the first source lands once part B merges.
+
+### 2026-10-11 00:15 IST - part S (Screener v2): spec received, design note, ADR-0021 / ADR-0022 drafts
+- Abhi's ATP_SCREENER_SPEC.md (v2) stored at docs/specs/. docs/design/SCREENER.md maps what exists to what each piece
+  becomes: scanner filters -> the first registry Filters (/api/scanner/run kept, parity test); the existing alert
+  outbox -> the Notification Service; the lake (part B) -> screen data, DuckDB/Parquet as a rebuildable cache.
+- Found: the scanner runs on browser-posted candles (the same G2 issue as the Copilot); screens run on server data only.
+- ADR-0021 (ScreenQL typed AST, hand-written parser, validator owns look-ahead and cost) and ADR-0022 (grow the existing
+  outbox) are provisional. Open questions SC-1..SC-6 with provisional answers (S1 and S3 after H-C1; S2 after part B).
+- Test: tests/test_s0_screener_docs.py (spec, note, ADRs present and indexed; every ADR file indexed).
+
+### 2026-10-11 00:17 IST - Screener addendum U1 (NSE universe): stored, planned inside S2
+- docs/specs/ATP_NSE_UNIVERSE_ADDENDUM.md stored; SCREENER.md section U1: as-of reference tables (securities, symbol
+  history, classifications, indices, membership ranges, AMFI buckets, F&O membership, ban/ASM/band history, index EOD),
+  joined to the broker master by ISIN; contract terms stay in part B's instrument_master_versions (reconciled by test).
+- Order U1-a..U1-e; U1-a..c start now, stacked on the part B chain so Alembic stays linear. U1-Q1 (ISIN identity),
+  U1-Q2 (missing industry levels stay empty, never inferred).
+
+### 2026-10-11 00:24 IST - H-C1 b: AI rate limit (G5); H-C1 c: server-side advice/guarantee filter (G3)
+- b: `app/ai/rate_limit.py` on the /api/ai and /api/scanner/ai routers: units per call (heavy jobs weigh more,
+  AI_RATE_WEIGHTS), per user and per organisation, plan-wise limits (AI_RATE_LIMITS), 60 s window, Redis when
+  configured else in-process; the organisation is checked first; 429 + Retry-After; atp_ai_rate_limited_total.
+  `app.core.rate_limit.allow` takes units (INCRBY). The suite disables the limit like the auth limiters; its own tests
+  re-enable it (8 tests). First run: 3 suite tests hit 429 (several heavy jobs per minute) - fixed by the override and
+  by raising the free default from 30 to 60 units.
+- c: `app/ai/output_filter.py` + `app/ai/data/advice_terms.json` (en + mr; negations allowed; AI_ADVICE_TERMS_FILE):
+  guarantee/advice words block the text (one retry naming them, then the rule text), a specific buy/sell call next to a
+  level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
+  thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
+- Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.
+
+### 2026-10-11 00:24 IST - Screener U1-a: securities and symbol history (NSE universe)
+- Tables `securities` (ISIN key, series, listing/delisting, SME/ETF flags, last_seen_on, source/fetched_at/checksum) and
+  `symbol_history` (half-open ranges), migration c7a1d2e3f4b5 (stacked on the part B chain, down-migration drops both).
+- app/universe: `ReferenceSource` seam (NSE archive files from config URLs, polite; static/manual upload), tolerant
+  parsers that refuse an unknown layout, idempotent `sync_equity_lists` (row checksums; a short equity list is refused
+  with a quality event; a name missing from a file is not delisted; symbol history derived from the cumulative
+  symbol-change file and never shrunk; a rename without a record is dated at the run with a RENAME_NOREC event),
+  as-of reads `symbol_on`, `isin_for`, `listed_on` (delisted names kept for historical days).
+- Worker: once a day after UNIVERSE_SYNC_HOUR_IST when UNIVERSE_SYNC_ENABLED (off; NSE terms to be checked first).
+- Tests: tests/test_u1a_universe_securities.py (7) with fixture CSVs.
+
+### 2026-10-11 00:30 IST - Screener U1-b: index catalogue, membership as-of, NSE classification
+- Tables indices / index_membership / classifications (migration c7a1d2e3f4b6, down-migration drops them).
+- Catalogue as data (app/universe/data/indices.json: 25 broad and sectoral indices, provider file URL, broker symbol,
+  derivatives flag; no index sizes stored). Constituent files are diffed against open ranges: entries open a range
+  from the run's day, exits close it; a first file marks start_observed (inclusion date unknown; reads before it
+  return nothing and coverage_from says from when). Gates: empty file, short file (UNIVERSE_MIN_ROWS_RATIO),
+  churn above UNIVERSE_MAX_CHURN_RATIO (0.2) - refused with a CONSTITUENTS event. Unknown ISINs reported.
+- The files' Industry column fills the NSE sector level (U1-Q3, provisional); other levels stay empty.
+- Reads: members_on, indices_of, classification_on, coverage_from. Worker runs it after the equity lists (flag off).
+- Tests: tests/test_u1b_universe_indices.py (6).
+
+### 2026-10-11 00:33 IST - H-C1 d: grounding (G8)
+- grounding.directions_in / check_direction (en + mr; "bull case", "bearish divergence" and negations are not claims):
+  a direction the answer asserts must be in the facts. Wired into copilot.grounded (the question cannot supply a
+  direction) and thesis.narrate (the thesis's own direction; one retry naming it). The knowledge guide is left out:
+  its answers explain vocabulary, not the market.
+- grounding.provenance: numbers in an answer are verified (facts), user_provided (only in the trader's question) or
+  unsupported. The Copilot API returns `numbers` with the split; the UI tag comes with H-C8 citations.
+- generator.text_problem: the draft's explanation and warnings may only carry numbers from the config, the deployment
+  suggestion, the risk context or the request, and no advice words - one retry, then the explanation is withheld.
+- scanner read_problem: the read's free text is checked against the scan payload; a failed read falls back to the
+  deterministic read with a warning.
+- Tests: tests/test_hc1_grounding.py (16).
+
+### 2026-10-11 00:36 IST - H-C1 e: llm_calls hygiene (G11)
+- app/ai/pii.py masks e-mails, PAN, spaced Aadhaar and labelled account/client ids everywhere, and mobile numbers and
+  bare 12-digit runs in the trader's text and the answer (the system prompt keeps its market figures). metering.log_call
+  stores the masked copy; hashes stay of the original.
+- retention.scrub_llm_text: erase_user and the Copilot "forget me" clear that person's call text ([erased]); the daily
+  retention scrubs text older than RETENTION_LLM_TEXT_DAYS ([expired]) - off by default (H-6: deleting data is the
+  owner's call). Rows, hashes, model, cost are never deleted (llm_calls stays in NEVER_DELETED).
+- Tests: tests/test_hc1_llm_hygiene.py (4). OPERATIONS DPDP note, .env.example.
+
+### 2026-10-11 00:37 IST - H-C1 f: prompt_version on every LLM call; monitor.py docstring (G4, G12)
+- app/ai/prompt_versions.py: version = prompt name + 8 hex of the template's SHA-256 (an edit changes it without a
+  manual bump); `stamp(provider, version)` before each call in copilot, guide, thesis, strategist, scanner plan/read,
+  news classification (the generator already stamped the guardian prompt). The meter logs `unversioned:<feature>`
+  instead of NULL; a test scans app/ so a new caller without a version fails CI.
+- monitor.py: the docstring said an optional LLM phrased the reason - no model is called there; corrected.
+- Tests: tests/test_hc1_prompt_versions.py (5). H-C1 complete: a-f built; ADR-0019 (agent tools and loop) next.
+
+### 2026-10-11 00:43 IST - Part CH (advanced charting): spec received, design note, ADR-0023
+- docs/specs/ATP_CHARTING_SPEC.md stored; docs/design/CHARTING.md maps ProChart (483 lines, lw-charts 4, 5 users) onto
+  one ChartEngine interface; ADR-0023 (provisional): engines are adapters, drawings/layers/actions live above them,
+  drawings in our own schema so an engine switch loses nothing; numbers from data, never pixels; actions = proposals.
+- Order CH0..CH7; open questions CH-1..CH-5 (TradingView access is Abhi's application; the v5 drawing plugin is not
+  vendored until its licence is confirmed).
+
+### 2026-10-11 00:46 IST - Screener U1-c: index EOD, F&O membership with lots, F&O ban-list history
+- Tables index_eod / fo_membership / fo_ban_history (migration c7a1d2e3f4b7, reversible). app/universe/fo_eod.py:
+  all-indices close file (a non-catalogue index is added as family OTHER - discovery; a changed close is a counted
+  correction), lots (first month with a lot = current lot; new/changed/missing underlyings append ranges; empty, short or
+  high-churn files refused with an FO_LOTS event), ban list (the file's own trade date; idempotent per day).
+- Worker runs it after the constituents (flag off). Tests: tests/test_u1c_universe_fo_eod.py (5).
+
+### 2026-10-11 00:56 IST - OI Banner O1: oi_regime.py (port from Trade)
+- Spec stored at `docs/specs/ATP_OI_BANNER_SPEC.md`; design note at `docs/design/OI_BANNER.md`.
+- `app/option_chain/oi_regime.py` holds the pure functions and `OIRegimeSettings` (every threshold, the PCR band
+  edges and the hysteresis counts are settings). Strike step: from settings, or inferred from the chain. Max pain
+  reuses ATP's `compute_max_pain`.
+- Golden fixtures were captured from Trade's own functions, and Trade's named tests were ported in English. 30 tests.
+- Deliberate differences: gates fail closed on missing data; strict confirmation mode works (Trade's could never
+  pass); untimed data counts as stale. Open questions OI-1..OI-4 are in the design note.
+
+### 2026-10-11 01:10 IST - OI Banner O2: collector, tables, history API
+- Four tables (migration `e2b4d6f8a0c1`, reversible; checked on Postgres 16 with upgrade, check, downgrade and
+  upgrade): `oi_snapshots`, `strike_oi_snapshots`, `oi_day_baselines`, `oi_banner_settings`.
+- **Collector:** idempotent per slot, keeps a wide strike window, and writes day baselines once. The worker runs it
+  only for underlyings a tenant enabled, only while the venue is open, and through the first usable session.
+  A failed read is rolled back in its own session and the next tenant is tried.
+- **Reading:** stored strikes are replayed through `oi_regime` with each tenant's own settings, so no verdict is
+  stored.
+- **API:** banner, history (5/10/15), strikes, and settings (PUT is owner only and validated). Responses carry
+  `data_as_of`, `market_open` and `stale`.
+- **Retention:** `RETENTION_OI_SNAPSHOTS_DAYS` (default 400).
+- **Decisions:** persisted per-tenant banner states move to O4 (alerts need change detection). Open question OI-5
+  covers the read path.
+- **U1-c (#110)** is pushed after a green suite (1390 passed) and a Postgres migration check.
+- **Ported date-bomb fix:** #104, #107 and #109 now carry the thesis date-bomb test fix (the same change as
+  e167b2a). Their red CI came from `main`, not from those PRs.
+
+### 2026-10-11 01:20 IST - OI Banner O3: banner API and frontend
+- `GET /api/option-chain/banners` (the tenant's followed underlyings) for the dashboard.
+- **Components:** `OiBanner`, `OiHistoryTable` (5/10/15), `StrikeOiChart`, `OiSettingsCard` and `OiBannersCard`,
+  placed on the Dashboard and the Option Chain page. The chart options layer is deferred to CH4.
+- **Tests:** `src/oi/format.test.ts` (6 vitest tests) and one backend test for `/banners` (tenant-scoped).
+
+### 2026-10-11 01:25 IST - OI Banner O4a: alerts on banner state changes
+- New tables: `oi_banner_states` (per tenant and slot) and `oi_alert_log` (unique dedupe key; status SENT, COOLDOWN,
+  QUIET or SNOOZED). Also `oi_banner_settings.snoozed_until` and `notifications.metadata_json`. Migration
+  `e2b4d6f8a0c2` is reversible and passed upgrade, check, downgrade and upgrade on Postgres 16.
+- Alert types: direction change, confirmed flip, strength change, PCR band, max pain move, OI wall, DTE, collector
+  stale. They go through the existing `notify()` and dispatcher, and webhooks get versioned JSON. Snooze, mute-today
+  and resume are available through the API.
+- Deferred to O4b: Telegram buttons, the digest and the settings UI. Rollover-flip alerts need next-expiry collection.
+
+### 2026-10-11 01:36 IST - OI Banner O4b: Telegram buttons, digest, alert settings UI
+- **Telegram buttons:** OI alerts carry read-only buttons — chain and chart links, and snooze/mute callbacks. A
+  callback is accepted only from a whitelisted chat and an authorised sender.
+- **Digest and test alert:** the daily digest is sent after each tenant's digest time. The test alert has its own
+  endpoint.
+- **UI:** `OiAlertsCard` (types, cooldown, quiet hours, digest, snooze/mute/resume, log), and the
+  `/option-chain?underlying=` deep link.
+
+### 2026-10-11 01:46 IST - OI Banner O5: OI gates on deployments
+- `strategy_deployments.oi_gates` (migration `e2b4d6f8a0c3`) is set through the API (validated) and the Autopilot
+  form.
+- `app/option_chain/oi_gates.check_entry`: the worker checks the gates before new entries only, never exits, and
+  fails closed on missing or stale data and on unset limits.
+- O4b is pushed as #114 after a green suite (1359 passed).
+
+### 2026-10-11 01:47 IST - ADR-0019 / ADR-0020 (before H-C2 / H-C10)
+- ADR-0019, the Copilot agent: typed read-only tools in a registry; a bounded loop run by our code (steps, tokens,
+  time); an answer contract (numbers only from tool output, `as_of`); proposals only (ADR-0006); every step
+  audited. Option B, provider-native tool use behind our own loop, provisional per spec 0.6.
+- ADR-0020, evals and governance: golden sets per prompt version in CI with fake providers; a nightly live eval
+  capped by the operator and off until set; a model registry with shadow mode; a kill switch per tenant and
+  globally; disclosure.
+- Next: H-C2 build (tool registry and loop), with H-C10 evals alongside.
+
+### 2026-10-11 02:00 IST - H-C2a: Copilot agent core (read tools, bounded loop, audit)
+- `app/ai/tools`: 5 read tools; `app/ai/agent.py`: bounded loop, grounded answer, one rewrite, then the summary.
+- `AnthropicProvider.complete_tools`; `agent_runs` and `agent_steps` (migration `f1a2b3c4d5e6`, checked on
+  Postgres).
+- `POST /api/ai/agent/ask` behind the `ai_agent` flag, off by default.
+- **Decision:** tools run sequentially on one DB session (not in parallel as in ADR-0019 §2), because an AsyncSession
+  is not safe for concurrent use.
+
+### 2026-10-11 02:16 IST - H-C2b-1: agent proposal tools + injection guard
+- `app/ai/tools/proposals.py` adds three proposal tools: `propose_pause_deployment`, `propose_risk_reduction` (tighter
+  values only) and `propose_strategy_review`.
+  - Each files one PROPOSED `ai_actions` row through `monitor.raise_proposals`, so the same notification, dedupe,
+    expiry and approve/reject flow apply.
+  - Nothing places, modifies or cancels an order, and nothing changes a setting on approval.
+- The guard has three checks:
+  - (a) Intent allow-list: a proposal tool is offered only when the trader's message asks for that action.
+  - (b) The quote must be the trader's own words, containing the asking words, and must not appear in untrusted data
+    read in this request.
+  - (c) At most one proposal per request.
+- A refused call is audited on `agent_steps` ("guard: ...") and in the audit log.
+- `run_tool` will not run a proposal tool the loop has not cleared.
+- Tests: `tests/test_hc2b_proposals.py` (7). An injected headline produces zero proposals in three variants. The H-C2a
+  registry test is updated.
+- Open: H-7 (draft/deployment proposals; late-news gap), in H_COPILOT.
+- Next: the JSON answer contract, the OpenAI tools adapter, and the candles/quote/chain/backtest tools (H-C2b-2/3).
+
+### 2026-10-11 02:19 IST - H-C2b-2: JSON answer contract + OpenAI tools adapter
+- Agent answers are JSON: `{text, claims[{statement, source}], disclaimers[]}`.
+  - Each claim must cite a successful tool call of the request, and its numbers must come from that call's result.
+  - The filter runs on the claims and the disclaimers too.
+  - One rewrite, then the summary.
+  - A plain-text answer is accepted without claims (H-8).
+- `OpenAIProvider.complete_tools` uses Chat Completions function tools, translating the loop's messages both ways.
+  The agent now runs on OpenAI as well as Anthropic.
+- Tests: `tests/test_hc2b2_contract_openai.py` (7). A mutation check confirmed the claim-source test fails when the
+  check is removed.
+
+### 2026-10-11 02:22 IST - H-C2b-3: market/research tools for the agent
+- `get_candles`, `get_quote`, `get_option_chain`, `get_market_regime` and `run_backtest` read server data through the
+  broker session (the H-C1 a path). They fail closed without a session, never use sample data, and keep their outputs
+  small.
+- The backtest returns statistics only, with an "insufficient" flag below 30 trades.
+- Tests: `tests/test_hc2b3_market_tools.py` (6). The agent suites pass together (28).
+- Next: H-C10 evals (ADR-0020) - golden sets with fake providers in CI, including the injection set.
+
+### 2026-10-11 02:25 IST - H-C10a: agent golden sets + CI gate
+- `backend/evals`: qa (16), tool_args (18) and injection (11: 7 attacks expect 0 proposals, 4 controls expect 1).
+  All are deterministic with scripted models, so there is no spend.
+- `evals/baselines.json` holds the prompt version plus the score per set. The gate fails on an unbaselined prompt
+  change or a regression.
+- Mutation check: removing the guard's untrusted check drops injection to 0.9091 and CI fails.
+- CI's ruff step now covers `evals/` too.
+- Tests: `tests/test_hc10_evals.py` (3).
+
+### 2026-10-11 02:31 IST - S1a: ScreenQL grammar/AST/validator
+- `app/screener`:
+  - parser: recursive descent; positions on every error;
+  - AST: a JSON wire form for the builder and a canonical text;
+  - registry: 6 fields and 24 functions with units;
+  - validator: types/units, arity, windows, parameters, timeframes finer than the base, look-ahead, offsets ≤ 500,
+    cost cap.
+- Tests: `tests/test_s1a_screenql.py` (16), including a seeded fuzz (600 trees, 3,000 garbage strings).
+- mypy gate now includes `app/screener` (clean).
+- Next: S1b runtime.
+
+### 2026-10-11 02:35 IST - S1b: ScreenQL runtime
+- `app/screener/runtime.py`:
+  - every registry entry is implemented, using `app/indicators`;
+  - higher-timeframe values are aligned by close time (look-ahead guard, tested);
+  - incomplete resampled buckets are dropped;
+  - Rank/PercentileRank are cross-sectional;
+  - NaN never matches.
+- The parser accepts `@tf[n]` as well as `[n]@tf`.
+- Tests: `tests/test_s1b_screen_runtime.py` (10), with a coverage guard per registry entry.
+
+### 2026-10-11 02:43 IST - S1c: scanner on ScreenQL (parity) + H-C10a PR
+- 21 registry entries are added: Strategy Builder indicators (via `Operand`), structure filters and option filters.
+  The translator turns a `ScannerRequest` into one screen; `SCANNER_ENGINE` selects the engine (default legacy).
+- Parity:
+  - the legacy scanner tests re-run on the new engine;
+  - a seeded fuzz of 120 requests gives identical matches;
+  - the fuzz found the CHoCH/CHOCH difference, now normalised.
+- Open question SC-7 ("day" operand semantics) is in SCREENER.md.
+- H-C10a: full suite 1398 passed; pushed; draft PR #121.
+
+### 2026-10-11 02:46 IST - S1d: screener API + saved screens + runs
+- `/api/screener` (flag `screener_v2`, off): registry, validate, screens CRUD (validated, tenant-scoped, archived), and
+  run (server bars via the broker session; 409 without one; ≤ 50 symbols).
+- `screens` and `screen_runs` tables; migration `c5e7a9b1d3f5`, checked on Postgres.
+- Tests: `tests/test_s1d_screener_api.py` (5).
+- Open question SC-8 (run retention).
+
+### 2026-10-11 02:49 IST - CH1a: chart drawings storage
+- `drawing/1` schema with time/price anchors and per-kind rules.
+- `chart_drawings` table: per user and symbol, versioned (409 on a stale edit), lock (423), soft delete, cap 500.
+  Migration `d7f9b1c3e5a7`, checked on Postgres.
+- Export/import `atp-drawings/1`: all or nothing, lossless.
+- Tests: `tests/test_ch1_chart_drawings.py` (3), plus a mutation check.
+
+### 2026-10-11 02:53 IST - CH1b: ChartEngine interface + ProChart behind it
+- `src/charting`: `engine.ts` (the interface), `drawings.ts` (`drawing/1`, rules, API client with `DrawingConflict`),
+  `lightweight.ts` (the B-lite adapter: hline, trendline, ray, measure; the rest kept; layers; events; dispose).
+- ProChart: `onEngine` prop, no visible change.
+- Tests: 7 new, 59 frontend tests in total; `tsc` clean.
+
+### 2026-10-11 03:00 IST - S3a: Notification Service rules/events/throttle (+ container restart)
+- `alert_rules`, `alert_events` (idempotency key), `notification_policies`; `alert_deliveries` gains priority, group,
+  bucket and reason. Migration `e9a1c3d5f7b9`, checked on Postgres.
+- Engine: dedupe, cooldown, burst grouping, quiet hours (timezone-aware, across midnight, critical exempt), hourly
+  cap, digests. The worker flush runs separately from the outbox drain.
+- Rules and policy API behind `screener_v2`. Tests: 6, plus 2 mutation checks.
+- The container restarted during a test run (exit 137: two pytest processes at once). Nothing was lost: the worktrees
+  survived; only the S1d full suite was re-run.
+- Abhi re-sent the Charting and OI Banner specs. Both are byte-identical to the stored copies: OI O1-O5 are built and
+  Charting CH1 is in progress.
+
+### 2026-10-11 03:05 IST - S3b-1: webhook channel schema, Chartink shape, replay window, dead letters
+- The webhook body is versioned (`atp.notification/1`); screen alerts carry an `atp.alert/1` block (symbols, trigger
+  values, data timestamps). Optional Chartink-compatible body.
+- The receiver check `verify_webhook` enforces a 300 s replay window.
+- Dead-letter reason codes, plus a dead-letter list and a retry API.
+- Tests: 5, plus 2 mutation checks. The existing alert tests still pass (27 in the three files).
+
+### 2026-10-11 03:12 IST - S3b-2: per-user Telegram linking + email unsubscribe; SC renumbering; S1d PR
+- Telegram: a one-time `/start <code>` from a private chat links the user's own chat. Codes are stored as hashes,
+  expire after 15 minutes and work once. The linked chat gets the screen alerts of that user's rules as its own
+  outbox row, with no command rights.
+- Email: one mail per recipient with a signed unsubscribe page (POST to unsubscribe) and the RFC 8058 headers. Opting
+  out covers screen alerts only; risk mails always go. Traders can re-subscribe an address.
+- Migration `f1b3d5e7a9c1`, Postgres round-trip OK. Tests: 4, plus 4 mutation checks; 42 passed across the
+  alerts and Telegram files.
+- New setting `PUBLIC_BASE_URL` (empty = no unsubscribe link). It goes in the host `.env` by Abhi; `.env.example`
+  only documents it.
+- S1d full suite: 1351 passed. Pushed; draft PR #125.
+- Postgres had stopped with the container restart; I started it again.
+- Docs fix: S1c's open question SC-4 → SC-7 and S1d's SC-5 → SC-8 (both numbers were already in use). Fixed on each
+  branch and merged forward.
+- New open question SC-9 (unsubscribe scope, bounces).
+
+### 2026-10-11 03:19 IST - S3c: alert-management UI; CH1a PR
+- Notifications page gains a "Rules & delivery" tab: rules (pause/resume, delivery log), new instrument rule with the
+  server's validator problems, delivery policy, failed deliveries with retry, personal Telegram link code and email
+  opt-outs.
+- Helpers are unit-tested (5). tsc clean; vitest 57 passed; build and bundle budget OK.
+- CH1a full suite: 1307 passed. Pushed; draft PR #126.
+
+### 2026-10-11 03:24 IST - S4a: bar-close engine for alert rules
+- The worker evaluates active rules on the latest CLOSED bar of the NSE clock (short last bucket, 15:30 daily close,
+  holidays). It trims the forming bar, skips stale symbols, retries after 60 s and shows why on the rule.
+- One evaluation per bar. Matches are recorded with trigger values; S3 delivers them.
+- Screen rules carry their own symbols (≤ 50). Daily rules build today's bar from 15-minute bars after the close.
+- Migration `a3c5e7b9d1f3`, Postgres OK. Tests: 7, plus 3 mutation checks. Open question SC-10 (weekly/monthly).
+
+### 2026-10-11 03:32 IST - S4b-1: cycle cache; PRs for S3a/S3b/S3b-2/CH1b; S1d closed-bar fix
+- Within a worker cycle, rules on the same symbol, timeframe and bar fetch once, and the same screen over the same
+  symbols and bar is evaluated once. Tests: 2, plus 3 mutation checks.
+- S3b-2 full suite: 1369 passed. S3a #127, S3b-1 #128, S3b-2 #129 and CH1b #130 are pushed as draft PRs; CH1b build
+  and bundle budget OK.
+- S1d (#125) fix: a screener run no longer decides on the broker's forming intraday bar (`closed_only`), with a test
+  and a mutation check. Merged forward through the stack.
+- ROADMAP_STATUS updated (#86).
+
+### 2026-10-11 03:42 IST - H-C3a research ledger; CH2a v5; S3c/S4a PRs
+- H-C3a: append-only `research_trials` plus a study report with Deflated Sharpe (by every trial), PBO by CSCV, the
+  out-of-sample check (or "not run"), the holdout refused, and "chosen from N trials" wording. Tests: 6, plus 4 mutation
+  checks. Migration `b4d6f8a0c2e4`, Postgres OK. Open question H-9 (limits).
+- CH2a: lightweight-charts 5.2.1. A headless render of v4 vs v5 differs in 11 pixels; tsc, vitest, build and bundle
+  pass; the chart chunk is +7 KB gzip (lazy). Draft PR #133.
+- S4a full suite: 1377 passed. S3c #131 and S4a #132 are draft PRs. S4b-1 cycle-cache suite is running.
+- Merge note: the screener and copilot stacks both branch from migration `a1c3e5f7b9d2`, so an empty merge revision is
+  needed when the second stack lands.
+
+### 2026-10-11 03:53 IST - H-C3b research loop driver + API; S4b-1 PR
+- Loop: draft -> validate -> in-sample backtest (server bars), at most 8 drafts, every draft in the ledger, then ONE
+  out-of-sample run of the chosen draft (stored as its check). The LLM proposer accepts only JSON objects.
+- `POST`/`GET /api/ai/research` behind the new `ai_research` flag (off by default); the rule-based provider gets 409;
+  a holdout window gets 422. Tests: 7 new, plus 2 mutation checks.
+- S4b-1 full suite: 1379 passed; draft PR #134.
+
+### 2026-10-11 04:35 IST - H-C3 review follow-up; S4b-2 review follow-up; S5-A started
+- H-C3 (PR #135), from the fresh-eyes review:
+  - The out-of-sample cut snaps to a session start.
+  - The OOS run warms up on `min_history` bars before the cut and counts only trades entered from the cut.
+  - A failed OOS run is stored as an error check, and the report says the check failed.
+  - Flat returns give "no evidence" rather than a deflated Sharpe.
+  - The report counts studies of the same symbol and timeframe in the last 30 days.
+  - The default window is 120 days, the holdout is trimmed, and fewer than 50 bars left gives 422.
+  - GET needs the AI acknowledgement and the `ai_copilot` flag.
+  - Full suite: 1416 passed, 1 skipped.
+- S4b-2 (PR #138), from the fresh-eyes review:
+  - Intrabar fetches skip the cached candle copy (`fresh=True`).
+  - The notification says "still forming".
+  - Outside the session, the old problem is cleared.
+  - 3 tests added; 95 targeted tests pass.
+- S5-A (price action in ScreenQL), next PR: `Pattern(name)`, `SwingHigh` / `SwingLow` / `SwingDirection(degree)` and
+  `MedianRange(n)`, all series and causal.
+
+### 2026-10-11 05:15 IST - CH2c-1/2 (#139, #141), S5-A1 (#140) and its review follow-up, H-C3c-1 (research jobs)
+- **CH2c-1 (#139).**
+  - The drawing-tools controller: place, hit-test, drag, lock, undo/redo.
+  - Review follow-up 8056314:
+    - queued edits read the current state;
+    - 404 counts as a conflict;
+    - a conflict "epoch" stops a stale queued drag;
+    - "nothing changed" compares by meaning.
+- **CH2c-2 (#141).** Pointer binding and the ProChart toolbar. Headless Chromium check: 2 POSTs, a drag gives a PUT,
+  Ctrl+Z gives a PUT back, and there are no page errors.
+- **S5-A1 (#140).** `Pattern`, `SwingHigh`/`SwingLow`/`SwingDirection` and `MedianRange` in ScreenQL.
+  - Review follow-up cf91615:
+    - vectorised patterns (about 0.2 s per name per symbol before);
+    - a missing swing direction never matches;
+    - classifier values are checked;
+    - history is checked on higher timeframes;
+    - fetch days are counted per timeframe.
+  - A stale `.pyc` from a same-size mutation caused 2 false failures in the full suite. The mutation scripts now keep
+    mtimes and run without bytecode, and every mutation set was re-run cleanly.
+- **H-C3c-1 (this branch).**
+  - `POST /api/ai/research` queues the study (202).
+  - A separate `research-worker` process (compose profile `research`, off by default) runs one study at a time.
+  - Progress and a heartbeat per draft; a study with no heartbeat becomes `interrupted`.
+  - The flags are re-checked when the study runs.
+  - Migration `c6e8a0b2d4f6` (Postgres round-trip OK). New open question H-10.
+
+### 2026-10-11 06:04 IST - S5-A2/A3 PRs, S5-A4 + review, H-C3c PR, U5 D1 (screener funnel page)
+- H-C3c (research jobs + Lab panel): full suite 1422 passed; draft PR #142.
+- S5-A2 / S5-A3: an independent review found two real RealBreak bugs, and both are fixed with tests:
+  - tick-price rounding dropped a break;
+  - the lookback was too short.
+
+  It also found a doc/code mismatch on the scan start, a dead guard, and the reversal prefilter under the addendum
+  follow-through. Full suite 1422 passed. Draft PRs #143 (S5-A2) and #144 (S5-A3).
+- S5-A4 (`SwingZoneStrength` / `SwingZoneDistance`), with its review follow-up:
+  - flat bars no longer crash;
+  - one bad symbol no longer stops a run;
+  - history is set per swing degree (100 / 250 / 600 / 1200; measured);
+  - origin lookup by bar number;
+  - one pass for both functions.
+
+  Mutations 9/9 killed. Full suite running.
+- U5 D1 (screener design addendum):
+  - tokens (signal, armed, inset; AA-checked in four modes);
+  - the funnel canvas with the indicator block (inline editing, keyboard reorder, survivor trail, "see what this
+    removes");
+  - the result table and freshness pill;
+  - `/run` returns per-stage survivors;
+  - stories and headless screenshots.
+
+  New open questions SC-16 (U2/U4 not received) and SC-17 (three columns inside the app shell).
+- P1 spec received (profitability, manual trading, Options Strategy Builder). It starts after U5 D1 with P1-a, the
+  options builder core port.
+
+### 2026-10-11 06:17 IST - P1-a: Options Strategy Builder core, ported from the Trade repo
+- The P1 spec (profitability mission, manual trading, Options Strategy Builder) is copied to `docs/specs/`.
+  `docs/MISSION.md` holds the mission statement.
+- `backend/app/options_builder/` holds Trade@73f652c `strategy_payoff.py` and `strategy.py` as pure, typed functions,
+  with English docstrings. The strike step, hedge width and ITM depth are now parameters (no NIFTY defaults). Leg
+  Greeks come from the platform's Black-Scholes.
+- Golden parity: 1,451 cases generated by the Trade functions themselves, all equal. The Trade unit tests are ported.
+  Hedge-first, equal-lots, breakeven and zero-risk refusal rules are tested. Mutations: 13/13 killed.
+- ADR-0025 (proposed) and `docs/design/OPTIONS_BUILDER.md`. New open questions OB-1 (PoP when the broker gives none)
+  and OB-2 (the butterfly's PoP proxy).
+- Based on `main`: the builder does not depend on the screener or Copilot stacks. Other work this hour: U5 D1 (screener
+  funnel page), S5-A4 (#145), H-C3c (#142), S5-A2/A3 (#143, #144).
+
+### 2026-10-11 06:42 IST - P1-b: the model before expiry, the 38-template gallery, any broker's chain
+- `options_builder/model.py`: T+0 / any-date curves with IV shift, exact profitable intervals, lognormal PoP,
+  closed-form expected P&L, exact payoff extremes with unbounded-risk flags (OB-4), net Greeks with rho, summary.
+- `catalog.py` (38 templates, five families, hedge first) and `chain.py` (any broker's `OptionChain` -> the selectors'
+  chain, model seller PoP, builder keys; OB-1). FUT legs in `compute_leg_payoff`.
+- 115 tests (textbook, Monte Carlo, finite differences, dense-grid extremes, adapter, expiry day), 20 / 20 mutations
+  killed after the independent review (0DTE, calendars, FUT carry, IV units, zero tolerance).
+- Also today: `test_phase_bd_thesis` turned red on every branch (fixed 2026-10-06 in the test, wall clock in the API);
+  fixed test-only in #147 and carried in the open PRs.
+
+### 2026-10-11 07:10 IST - U5 D2: block forms, ANY / NOT groups, live counts, why-matched chips
+- Filter, category and rank blocks and ANY / NOT groups (nested blocks inside their own bracket); "Add a condition"
+  takes the kind picked beside it. Problems land on the innermost block.
+- Live counts: a preview run (not stored) after the check passes and editing pauses; "live" mark; can be turned off.
+- Why it matched: the run's funnel carries each symbol's pass per stage; dots in the result table.
+- Contract fixture now covers every kind (23 cases). vitest 88, headless checks for D1 and D2 pass.
+
+### 2026-10-11 07:32 IST - P1-c: the builder API (P1-c1) and the builder page (P1-c2)
+- API: catalog, template (optionally priced by the model, labelled), evaluate (curves, exact extremes, PoP, Greeks,
+  per-leg theoretical), suggest (a ported selector on any broker's chain). Kill flag `options_builder`, research
+  only (a test fails if the package imports an order path).
+- Page: payoff canvas with the cone and draggable strikes, template gallery, leg table, metrics card, date and IV
+  sliders; model premiums re-priced when a strike moves. Browser-checked against the real API.
+- Open: OB-6 (instrument numbers typed until P1-d), OB-7 (main tokens until U5 merges).
+
+### 2026-10-11 07:53 IST - P1-c review follow-up; U5 D2 CI fix
+- An independent review of P1-c found 500s (a wing below zero, a negative spot or zero strike), CPU work on the event
+  loop with no limit, the IV solved at the wrong rate, Infinity accepted, a weak no-order-path test (all fixed in
+  P1-c1, #151), and on the page: futures counted as premium, Greeks matched by position (wrong after a removal), a
+  stale evaluation kept after an error, cleared number cells sent as 0, strikes off a fixed ±8 % chart, sliders hidden
+  from screen readers (all fixed in P1-c2). Each fix has a test; the page was re-checked in the browser.
+- #150 (U5 D2): CI's lint pins mypy 2.4.0, which rejected one `len()` on an object-typed dict value; fixed, green.
+
+### 2026-10-11 09:38 IST - merge train under MERGE_NOW (owner's authorisation): B1, B2 (#84) merged; every branch prepared
+- Merged so far (squash, title + description kept): #82, #147, #86, #83 (B1), #153 (`.gitattributes` union for the two
+  logs - helps local merges only: GitHub's merge check ignores it), #84 (B2). Backend suite on main after B1: 1406
+  passed, 4 skipped.
+- Why the logs moved: every PR appended to WORK_LOG.md / OPEN_QUESTIONS.md, so each squash merge left all other PRs
+  in conflict on the last lines. Each train branch got one commit restoring the two files to main's version; their
+  entries (64 WORK_LOG entries, 12 new OPEN_QUESTIONS rows, H-1 / H-2 marked answered) are kept verbatim and land in
+  this docs PR (claude/train-logs), merged last.
+- Every chain was brought up to date in one pass: each branch merged its (already updated) parent, then main, then the
+  log restore; pushed so CI runs on the exact head that will be merged. After a parent is squash-merged the child is
+  retargeted to main; its head already contains main + the parent, so the merge is clean and the CI result on that head
+  stands. Full backend + frontend suites on main after about every 8 merges catch anything between chains.
+- Conflicts resolved by hand (each with its own commit message): #103 / #108 (main's banned-word check + H-C1 output
+  filter and direction check, both kept in sequence; generator's withheld note appended after the H-C1 check), #94 (D1
+  broker-aware stop tag + main's tick-rounded trigger), #100 (C2 model set over the realism code: C2's side is a
+  superset), .env.example (both settings kept). #85 replayed onto main as one commit after #84's squash (own branch).
+- Migrations: five chains each start from main's head a1c3e5f7b9d2 (SEBI/lake/U1, Copilot H-C2/C3, screener S1-S4,
+  charting CH2, OI banner). The first to merge keeps it; each later chain's first migration is re-pointed at main's
+  head just before that PR merges (one extra CI run per chain), so main never has two heads.
+- Not done, by the rules: nothing deployed, no flag turned on, no LIVE, no secrets touched.

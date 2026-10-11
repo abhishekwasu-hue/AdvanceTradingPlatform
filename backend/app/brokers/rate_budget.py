@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import observe_call
+from app.brokers.exceptions import BrokerAPIError
 from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
 from app.core.enums import OrderSide
 
@@ -93,10 +94,12 @@ class RateLimitedBroker(BrokerInterface):
     tenant's budget. Order placement/cancellation is *not* exempt on purpose - an exit order
     that provokes a 429 is worse than one delayed by 200ms."""
 
-    def __init__(self, inner: BrokerInterface, budget: RateBudget) -> None:
+    def __init__(self, inner: BrokerInterface, budget: RateBudget, ops=None) -> None:
         self.inner = inner
         self.budget = budget
         self.name = inner.name
+        # Part D2: the SEBI orders-per-second throttle (app/execution/ops_throttle.py), when OPS_THROTTLE_ENABLED.
+        self.ops = ops
 
     @property
     def access_token(self) -> Optional[str]:
@@ -124,10 +127,42 @@ class RateLimitedBroker(BrokerInterface):
     async def get_historical_data(self, symbol, exchange, interval, from_date, to_date):
         return await self._call("get_historical_data", symbol, exchange, interval, from_date, to_date)
     async def get_option_chain(self, underlying, expiry=None): return await self._call("get_option_chain", underlying, expiry)
-    async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse: return await self._call("place_order", order)
+    async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
+        if self.ops is None:
+            return await self._call("place_order", order)
+        from app.execution.ops_throttle import is_entry, refused_response
+        if is_entry(order):
+            if not self.ops.try_entry(order.exchange):
+                return refused_response()          # never sent: the router records a refusal, not a failure
+        else:
+            await self.ops.exit(order.exchange)    # exits wait for a token, never refused (ADR-0004)
+        response = await self._ops_call(order.exchange, "place_order", order)
+        self.ops.remember(response, order.exchange)
+        return response
+
     async def modify_order(self, order_id, quantity=None, price=None, trigger_price=None, order_type=None):
-        return await self._call("modify_order", order_id, quantity, price, trigger_price, order_type)
-    async def cancel_order(self, order_id): return await self._call("cancel_order", order_id)
+        if self.ops is None:
+            return await self._call("modify_order", order_id, quantity, price, trigger_price, order_type)
+        exchange = self.ops.exchange_of(order_id)
+        await self.ops.exit(exchange)
+        return await self._ops_call(exchange, "modify_order", order_id, quantity, price, trigger_price, order_type)
+
+    async def cancel_order(self, order_id):
+        if self.ops is None:
+            return await self._call("cancel_order", order_id)
+        exchange = self.ops.exchange_of(order_id)
+        await self.ops.exit(exchange)
+        return await self._ops_call(exchange, "cancel_order", order_id)
+
+    async def _ops_call(self, exchange, method: str, *args):
+        try:
+            result = await self._call(method, *args)
+        except BrokerAPIError as exc:
+            if exc.status_code == 429:
+                self.ops.rate_limited(exchange)
+            raise
+        self.ops.accepted(exchange)
+        return result
     async def get_order_book(self): return await self._call("get_order_book")
     async def get_trade_book(self): return await self._call("get_trade_book")
     async def get_positions(self): return await self._call("get_positions")

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from sqlalchemy.sql import false, true
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -467,6 +467,9 @@ class StrategyDeploymentRecord(Base):
     # Phase L3: comma-separated regimes (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, QUIET) the
     # deployment may enter in; NULL = any. Judged on the base frame before the strategy runs.
     regime_filter: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # OI Banner O5: opt-in OI gates checked before a NEW entry (comma-separated names, app/option_chain/oi_gates.py);
+    # fail-closed on missing/stale data; exits never consult them (ADR-0004). None = no OI gate.
+    oi_gates: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Phase AS: INTRADAY (MIS, squared off at the close) or SWING (CNC / NRML, held overnight).
     holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
     # P0.5 / T5: how LIVE entries are sent. MARKET (default, unchanged behaviour) or PROTECTED_LIMIT - a marketable
@@ -744,6 +747,53 @@ class RiskEventRecord(Base):
     reason: Mapped[str] = mapped_column(String(300), nullable=False)
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class EgressIpRecord(Base):
+    """Part D4 (rule IN-SEBI.static_ip.registered): an IP the organisation registered with a broker for API orders -
+    one PRIMARY and optionally one BACKUP per broker. The platform's own egress IP (SERVER_EGRESS_IP) must be one of
+    them before a LIVE entry goes out (when STATIC_IP_REQUIRED_FOR_LIVE)."""
+
+    __tablename__ = "egress_ips"
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", "role", name="uq_egress_ip_role"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False, default="PRIMARY")      # PRIMARY / BACKUP
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    registered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)   # when the broker accepted it
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class EgressIpChangeRecord(Base):
+    """Part D4: every change of a registered IP (append-only) - the weekly-change rule counts these."""
+
+    __tablename__ = "egress_ip_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    new_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
+class ComplianceEvidenceRecord(Base):
+    """Part D6: evidence recorded for one go-live checklist item (append-only; the latest row per item counts).
+    `reference` is where the evidence lives (document id, register page, URL) - never the document or a secret."""
+
+    __tablename__ = "compliance_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class BrokerAccountRecord(Base):
@@ -1321,6 +1371,8 @@ class NotificationRecord(Base):
     read_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Phase BE: the monitoring-agent proposal this notification announces (approve/reject buttons on Telegram).
     ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
+    # OI Banner O4: a structured payload for webhook receivers (versioned JSON); None for every older event type.
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
@@ -1368,6 +1420,14 @@ class AlertDeliveryRecord(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # S3a (ADR-0022): the Notification Service grows this outbox - priority routing, the burst group or digest bucket a
+    # delivery belongs to, and a reason code next to every non-sent status.
+    priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    digest_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # S3b-2: a per-user destination on the channel (a linked Telegram chat); NULL = the channel's own address.
+    address: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class CompanyRecord(Base):
@@ -1680,6 +1740,161 @@ class OptionChainSnapshotRecord(Base):
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
 
+class AgentRunRecord(Base):
+    """H-C2 (ADR-0019): one Copilot agent request - who asked (the question only as a hash; its text is in llm_calls,
+    masked), the prompt version and model, the limits, and how it ended. Append-only; never deleted (like llm_calls)."""
+
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    question_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    limits_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    steps: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class AgentStepRecord(Base):
+    """H-C2: one tool call inside an agent run - the arguments, a hash of the output (untrusted payloads by hash only),
+    success and duration."""
+
+    __tablename__ = "agent_steps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(60), nullable=False)
+    arguments_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    untrusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class OISnapshotRecord(Base):
+    """OI Banner O2: one collector slot of one underlying's option chain (platform-wide reference data, like
+    `option_chain_snapshots`). The per-strike OI lives in `strike_oi_snapshots`; every banner reading is computed from
+    those rows with the reader's own settings (app/option_chain/oi_regime.py), so nothing tenant-specific is stored
+    here. One row per (underlying, slot): the collector is idempotent per slot."""
+
+    __tablename__ = "oi_snapshots"
+    __table_args__ = (
+        UniqueConstraint("underlying", "slot_start", name="uq_oi_snapshot_slot"),
+        Index("ix_oi_snapshots_day", "underlying", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)                 # the exchange's (IST) trading day
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)    # when the chain was read (data time)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    underlying_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    strikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")
+
+
+class StrikeOISnapshotRecord(Base):
+    """OI Banner O2: one strike of one slot - call/put OI and premium (the inputs of every banner number)."""
+
+    __tablename__ = "strike_oi_snapshots"
+    __table_args__ = (UniqueConstraint("snapshot_id", "strike", name="uq_strike_oi_snapshot"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("oi_snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    call_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class OIDayBaselineRecord(Base):
+    """OI Banner O2: the first OI the collector saw for a strike on a trading day - the baseline of the OI-wall check
+    (change in OI since the day began). Written once per (underlying, day, strike), never updated."""
+
+    __tablename__ = "oi_day_baselines"
+    __table_args__ = (UniqueConstraint("underlying", "trade_date", "strike", name="uq_oi_day_baseline"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    call_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    put_oi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+
+
+class OIBannerSettingRecord(Base):
+    """OI Banner O2: a tenant's banner settings for one underlying ("*" = the tenant's default for every underlying).
+    `enabled` asks the collector to follow the underlying; `overrides` is a JSON object of OIRegimeSettings fields
+    layered over the platform defaults."""
+
+    __tablename__ = "oi_banner_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", name="uq_oi_banner_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    snoozed_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)     # O4: alerts paused until
+
+
+class OIBannerStateRecord(Base):
+    """OI Banner O4: a tenant's banner state per slot (its own settings), kept so changes are detectable and auditable."""
+
+    __tablename__ = "oi_banner_states"
+    __table_args__ = (UniqueConstraint("tenant_id", "underlying", "slot_start", name="uq_oi_banner_state"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    stable_direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    stable_strength: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    pcr_band: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    max_pain: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_pain_ref: Mapped[float | None] = mapped_column(Float, nullable=True)       # max pain at the last move alert
+    dte: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wall: Mapped[str | None] = mapped_column(String(40), nullable=True)            # e.g. "CE@25000" or None
+    message: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class OIAlertLogRecord(Base):
+    """OI Banner O4: every alert decision - sent, or held back (cooldown, quiet hours, snoozed) - with its dedupe key."""
+
+    __tablename__ = "oi_alert_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    underlying: Mapped[str] = mapped_column(String(30), nullable=False)
+    alert_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    old_state: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    slot_start: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)               # SENT / COOLDOWN / QUIET / SNOOZED
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class ThesisRecord(Base):
     """Phase BD-lite: one market thesis of one symbol at one moment (direction, confidence, agreement,
     scenarios, inputs) with the *shadow* size multiplier the reduce-only overlay would have used - stored
@@ -1745,6 +1960,60 @@ class AiAcknowledgementRecord(Base):
     accepted_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class ResearchStudyRecord(Base):
+    """H-C3c: one strategy research study as a job - queued by the API, run by the research worker (a separate process,
+    so a study's model calls and backtests never share a loop with trading or the API). Its trials live in
+    `research_trials`; this row carries the request and the job state."""
+
+    __tablename__ = "research_studies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    idea: Mapped[str] = mapped_column(Text, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_drafts: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)   # queued / running / done / failed / interrupted
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    data_source: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    usage_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class ResearchTrialRecord(Base):
+    """H-C3 (ADR-0019/0020): one trial of a strategy research study - the DSL tried, the in-sample window, its metrics and
+    its daily returns. Append-only and never deleted: the study report deflates the chosen result by EVERY trial tried,
+    so dropping a trial would make the search look better than it was."""
+
+    __tablename__ = "research_trials"
+    __table_args__ = (UniqueConstraint("study_id", "seq", name="uq_research_trials_study_seq"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    study_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    dsl_json: Mapped[str] = mapped_column(Text, nullable=False)
+    dsl_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    data_from: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    data_to: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)                 # ok / invalid / error; oos = the study's check
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    returns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")   # daily returns over the window
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class LlmCallRecord(Base):
     """P0.8-D: every LLM input and output - the system prompt, the user text, the answer (or the error), with hashes,
     the prompt version, provider, model, tokens, cost, tenant, user and feature. Append-only and never deleted
@@ -1770,3 +2039,457 @@ class LlmCallRecord(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+# --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a
+# source can correct itself, a `version`: a query "as of T" sees only rows ingested at or before T and, per key, the
+# highest such version. Times are bar END / event time in UTC. On TimescaleDB the four time-series tables become
+# hypertables (migration b1c2d3e4f5a6, only when the extension is available); on plain Postgres/SQLite they are tables.
+
+class MdCandleRecord(Base):
+    __tablename__ = "md_candles"
+
+    instrument_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    timeframe: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)          # bar END (realism C1)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    open: Mapped[float] = mapped_column(Price, nullable=False)
+    high: Mapped[float] = mapped_column(Price, nullable=False)
+    low: Mapped[float] = mapped_column(Price, nullable=False)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    volume: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdTickRecord(Base):
+    __tablename__ = "md_ticks"
+
+    instrument_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)
+    seq: Mapped[int] = mapped_column(BigInteger, primary_key=True, default=0)       # order within the same timestamp
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    ltp: Mapped[float] = mapped_column(Price, nullable=False)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdOptionChainRecord(Base):
+    __tablename__ = "md_option_chain_snapshots"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    expiry: Mapped[date] = mapped_column(Date, primary_key=True)
+    strike: Mapped[float] = mapped_column(Price, primary_key=True)
+    option_type: Mapped[str] = mapped_column(String(2), primary_key=True)          # CE / PE
+    ts: Mapped[datetime] = mapped_column(_TZ_DATETIME, primary_key=True)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    ltp: Mapped[float | None] = mapped_column(Price, nullable=True)
+    oi: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    volume: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    iv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdPositionLimitRecord(Base):
+    """Market-wide position limit and open interest per underlying per day (NSE F&O) - the data D7 (FutEq / MWPL) needs."""
+
+    __tablename__ = "md_position_limits"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[str] = mapped_column(String(30), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    mwpl: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    open_interest: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class InstrumentMasterVersionRecord(Base):
+    """An instrument's contract terms over time (lot size, tick size, ...): valid from `valid_from` until the next version."""
+
+    __tablename__ = "instrument_master_versions"
+    __table_args__ = (UniqueConstraint("instrument_key", "valid_from", "source", name="uq_instrument_master_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    tradingsymbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)                  # EQ / FUT / CE / PE / INDEX ...
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tick_size: Mapped[float] = mapped_column(Price, nullable=False)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    strike: Mapped[float | None] = mapped_column(Price, nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class MdCorporateActionRecord(Base):
+    """Market-data lake (not the fundamentals `corporate_actions` announcements table): splits, bonuses and dividends with their ex-date; `ratio_new / ratio_old` is the share multiplier (1:2 split -> 2/1)."""
+
+    __tablename__ = "md_corporate_actions"
+    __table_args__ = (UniqueConstraint("symbol", "exchange", "ex_date", "action", "version", name="uq_md_corporate_action_version"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    ex_date: Mapped[date] = mapped_column(Date, nullable=False)
+    action: Mapped[str] = mapped_column(String(12), nullable=False)                # SPLIT / BONUS / DIVIDEND
+    ratio_new: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ratio_old: Mapped[float | None] = mapped_column(Float, nullable=True)
+    amount: Mapped[float | None] = mapped_column(Money, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class DataQualityEventRecord(Base):
+    """One detected problem in the lake (gap / spike / duplicate / late / mismatch) - B3 writes these, nothing deletes them."""
+
+    __tablename__ = "data_quality_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    timeframe: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+# --- Screener addendum U1: NSE universe reference data (as-of) ------------------------------------------------------------
+class SecurityRecord(Base):
+    """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the
+    tradability layer and joins on ISIN/symbol. `last_seen_on` is the last equity-list file that carried it; a security
+    missing from today's file is not marked delisted on that alone (delisting comes from the exchange's own list)."""
+
+    __tablename__ = "securities"
+
+    isin: Mapped[str] = mapped_column(String(12), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    series: Mapped[str] = mapped_column(String(4), nullable=False)
+    listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delisting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    face_value: Mapped[float | None] = mapped_column(Money, nullable=True)
+    market_lot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exchanges: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")          # "NSE", "NSE,BSE"
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ACTIVE")         # ACTIVE / SUSPENDED / DELISTED
+    is_sme: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_etf: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    underlying: Mapped[str | None] = mapped_column(String(100), nullable=True)                 # ETFs: the tracked index/asset
+    last_seen_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class SymbolHistoryRecord(Base):
+    """U1-a: which symbol an ISIN traded under, as half-open ranges [valid_from, valid_to); valid_to NULL = still current.
+    valid_from NULL = since before the first record we hold (never invented). A change closes the open range and opens
+    a new one; nothing is overwritten."""
+
+    __tablename__ = "symbol_history"
+    __table_args__ = (UniqueConstraint("isin", "symbol", "valid_from", name="uq_symbol_history_range"),
+                      Index("ix_symbol_history_symbol", "symbol", "valid_from"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexRecord(Base):
+    """U1-b: one index (broad / sectoral / thematic / strategy). The catalogue is data (app/universe/data/indices.json);
+    `broker_symbols` maps the index to each broker's spelling (JSON object)."""
+
+    __tablename__ = "indices"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    family: Mapped[str] = mapped_column(String(20), nullable=False)          # BROAD / SECTORAL / THEMATIC / STRATEGY / FIXED_INCOME
+    base_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    method: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    broker_symbols: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    has_derivatives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexMembershipRecord(Base):
+    """U1-b: an ISIN's membership of an index as a half-open range [valid_from, valid_to). A rebalance closes ranges and
+    opens new ones; nothing is overwritten. `start_observed` = the start is only the first file we saw it in (the real
+    inclusion may be earlier - backfill U1-e extends it from older files, never by guessing). `weight` is the latest
+    published weight, not a history."""
+
+    __tablename__ = "index_membership"
+    __table_args__ = (UniqueConstraint("index_code", "isin", "valid_from", name="uq_index_membership_range"),
+                      Index("ix_index_membership_lookup", "index_code", "valid_from", "valid_to"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    index_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ClassificationRecord(Base):
+    """U1-b: an ISIN's industry classification over time (scheme NSE: macro-economic sector -> sector -> industry ->
+    basic industry). A level the source does not give stays NULL - never inferred."""
+
+    __tablename__ = "classifications"
+    __table_args__ = (UniqueConstraint("isin", "scheme", "valid_from", name="uq_classification_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    scheme: Mapped[str] = mapped_column(String(12), nullable=False, default="NSE")
+    macro_sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    basic_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexEodRecord(Base):
+    """U1-c: one index's daily close from the exchange's all-indices file, with the valuation ratios it publishes."""
+
+    __tablename__ = "index_eod"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[float | None] = mapped_column(Price, nullable=True)
+    high: Mapped[float | None] = mapped_column(Price, nullable=True)
+    low: Mapped[float | None] = mapped_column(Price, nullable=True)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    pe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    div_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoMembershipRecord(Base):
+    """U1-c: an underlying's F&O eligibility and market lot over time, half-open [valid_from, valid_to). Index
+    underlyings have no ISIN. A lot-size change closes the range and opens a new one."""
+
+    __tablename__ = "fo_membership"
+    __table_args__ = (UniqueConstraint("underlying", "valid_from", name="uq_fo_membership_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
+    is_index: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoBanRecord(Base):
+    """U1-c: the exchange's own F&O ban list, one row per (underlying, trade date). D7's computed ban status is checked
+    against it."""
+
+    __tablename__ = "fo_ban_history"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ScreenRecord(Base):
+    """S1d (ADR-0021): a saved ScreenQL screen - the canonical text and the AST the validator accepted, its base timeframe
+    and default parameters. Tenant-scoped; archived, never hard-deleted (a run may point at it)."""
+
+    __tablename__ = "screens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)              # canonical ScreenQL text
+    ast_json: Mapped[str] = mapped_column(Text, nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False, default="screenql/1")
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class ScreenRunRecord(Base):
+    """S1d (ADR-0021 §6): one screen run - what ran (AST hash and version), on which universe and data source, and what
+    matched. Append-only: a match list someone acted on can be reproduced."""
+
+    __tablename__ = "screen_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    screen_id: Mapped[int | None] = mapped_column(ForeignKey("screens.id", ondelete="SET NULL"), nullable=True, index=True)
+    ast_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ast_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False)
+    universe_json: Mapped[str] = mapped_column(Text, nullable=False)            # the symbols asked for
+    data_source: Mapped[str] = mapped_column(String(60), nullable=False)        # broker:<name> / lake (S2)
+    scanned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # [{symbol, matched, reason}]
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
+class AlertRuleRecord(Base):
+    """S3a (ADR-0022): a screen or instrument alert rule - what fires (a saved screen, or a ScreenQL condition on one
+    symbol), how loud (priority), how often (cooldown), and instant or digest delivery. Rules produce `alert_events`;
+    events produce notifications and outbox deliveries. A rule never places or changes an order."""
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)                 # screen / instrument
+    screen_id: Mapped[int | None] = mapped_column(ForeignKey("screens.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    condition_text: Mapped[str | None] = mapped_column(Text, nullable=True)        # canonical ScreenQL (instrument rules)
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")   # critical / normal / low
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="instant")      # instant / digest
+    digest_every: Mapped[str] = mapped_column(String(10), nullable=False, default="hourly")  # hourly / eod
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="active")     # active / paused
+    expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    # S4a: the bar-close engine - a screen rule's own symbols (JSON list, at most 50), the exchange, the last closed bar
+    # this rule was evaluated on, when the engine last looked (data not in yet -> retried after a pause), and why it
+    # last could not evaluate.
+    universe_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE", server_default="NSE")
+    last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_problem: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # S4b-2: when the rule fires - "bar_close" (closed bars only, the default) or "intrabar" (on the forming bar, at most
+    # once per bar and symbol; needs the `screener_intrabar` flag, off by default).
+    fire_on: Mapped[str] = mapped_column(String(10), nullable=False, default="bar_close", server_default="bar_close")
+
+
+class AlertEventRecord(Base):
+    """S3a (ADR-0022): one firing of a rule for one symbol on one bar. `idem_key` (rule, symbol, condition hash, bar
+    time) is unique, so a re-run of the same bar never fires twice. Status: pending -> sent / suppressed / held (quiet
+    hours, hourly cap, digest), always with a reason code."""
+
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    condition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    idem_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    priority: Mapped[str] = mapped_column(String(10), nullable=False)
+    values_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")     # the trigger values, with their timestamps
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class NotificationLinkRecord(Base):
+    """S3b-2 (ADR-0022): a user's own Telegram chat, linked by a one-time code sent to the organisation's bot as
+    `/start <code>`. Only the code's hash is stored; a code expires and works once. A linked chat receives the screen
+    alerts of rules that user created - it gains no command rights (those stay on the channel's approver list)."""
+
+    __tablename__ = "notification_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False, default="telegram")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")          # pending | linked | revoked
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    code_expires_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    linked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class EmailOptOutRecord(Base):
+    """S3b-2: an address that unsubscribed (signed link in the mail, or List-Unsubscribe one-click) from an
+    organisation's screen-alert emails. Risk and system emails are not affected. A trader can remove the row."""
+
+    __tablename__ = "email_opt_outs"
+    __table_args__ = (UniqueConstraint("tenant_id", "address", "scope", name="uq_email_opt_outs_tenant_address_scope"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    address: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), nullable=False, default="screen_alerts")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class NotificationPolicyRecord(Base):
+    """S3a (ADR-0022): an organisation's delivery policy - its timezone and quiet hours, the hourly cap, and the burst
+    grouping window. One row per tenant; missing = the defaults in app/alerts/engine.py."""
+
+    __tablename__ = "notification_policies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True)
+    timezone: Mapped[str] = mapped_column(String(40), nullable=False, default="Asia/Kolkata")
+    quiet_start: Mapped[str | None] = mapped_column(String(5), nullable=True)      # HH:MM in `timezone`
+    quiet_end: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    max_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    group_window_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    eod_digest_time: Mapped[str] = mapped_column(String(5), nullable=False, default="15:45")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class ChartDrawingRecord(Base):
+    """CH1 (ADR-0023): one user drawing on a symbol's chart, in our own engine-neutral JSON (`drawing/1`: time/price
+    anchors, so every timeframe and every chart engine shows the same drawing). Versioned for optimistic concurrency
+    (undo/redo is client-side over versions), lockable, soft-deleted."""
+
+    __tablename__ = "chart_drawings"
+    __table_args__ = (Index("ix_chart_drawings_user_symbol", "user_id", "symbol", "exchange"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(10), nullable=False, default="NSE")
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    drawing_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

@@ -943,6 +943,7 @@ export type ExecutionMode = "PAPER" | "LIVE";
 export interface Deployment {
   id: number;
   regime_filter?: string[] | null;
+  oi_gates?: string[] | null;
   holding?: string;
   order_style?: string;
   market_protection_pct?: number | null;
@@ -1092,6 +1093,8 @@ export interface PositionGreeks {
 
 export interface DeploymentCreateRequest extends ContractRules {
   regime_filter?: string[] | null;
+  /** OI Banner O5: opt-in OI entry gates (fail-closed; exits never gated). */
+  oi_gates?: string[] | null;
   /** Phase AS: SWING = daily candles, held overnight. */
   holding?: "INTRADAY" | "SWING";
   /** P0.5 / T5: LIVE entry style. PROTECTED_LIMIT sends a marketable limit `market_protection_pct` past the signal price. */
@@ -2155,3 +2158,59 @@ export interface StrategistRequestParsed {
 
 /** P0.9: the language of the AI's written answers; the dashboard is English only. */
 export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }
+
+/** H-C3c: a research study (a queued job) and, once drafts were tried, its deflated report. */
+export type ResearchStatus = "queued" | "running" | "done" | "failed" | "interrupted";
+export interface ResearchProgress { drafts_tried: number; max_drafts: number }
+export interface ResearchStudy {
+  study_id: string;
+  status: ResearchStatus;
+  error: string | null;
+  idea: string;
+  symbol: string;
+  exchange: string;
+  timeframe: string;
+  days: number;
+  data_source: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  progress: ResearchProgress;
+}
+export interface ResearchReport {
+  trials: number;
+  backtested: number;
+  invalid: number;
+  errors: number;
+  summary?: string;
+  disclaimer: string;
+  not_simulated: string[];
+  deflated: { dsr?: number | null; note?: string } | null;
+  pbo: { pbo?: number | null; note?: string } | null;
+  out_of_sample: { run: boolean; note?: string; [k: string]: unknown };
+  earlier_studies?: number;
+}
+export interface ResearchTrial { seq: number; status: string; reason: string | null; metrics: Record<string, unknown>; created_at: string }
+export interface ResearchStudyDetail extends Partial<ResearchStudy> {
+  study_id: string;
+  status: ResearchStatus;
+  report: ResearchReport | null;
+  trials: ResearchTrial[];
+}
+
+/** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
+export interface StaticIp {
+  broker_name: string;
+  role: "PRIMARY" | "BACKUP";
+  ip: string;
+  registered_at: string | null;
+  updated_at: string | null;
+}
+
+export interface StaticIpOverview {
+  server_egress_ip: string | null;
+  required_for_live: boolean;
+  max_changes_per_week: number;
+  ips: StaticIp[];
+  warnings: string[];
+}

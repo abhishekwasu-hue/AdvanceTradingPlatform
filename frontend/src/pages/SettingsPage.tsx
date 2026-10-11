@@ -7,6 +7,7 @@ import ApiKeysCard from "../components/ApiKeysCard";
 import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
+import StaticIpCard from "../components/StaticIpCard";
 import { Card } from "../components/ui";
 import AppearanceCard from "../components/AppearanceCard";
 import { PageHeader } from "../components/primitives";
@@ -250,6 +251,7 @@ export default function SettingsPage() {
       </Card>
 
       <BrokerAccountsCard refreshKey={stored.length} />
+      <StaticIpCard />
 
       <BillingCard />
 

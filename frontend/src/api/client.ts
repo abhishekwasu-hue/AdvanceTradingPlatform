@@ -1,3 +1,4 @@
+import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   StrategistResult,
   StrategistRequestParsed,
@@ -101,6 +102,8 @@ import type {
   AiProviderConfig,
   AiStrategyDraft,
   Regime,
+  ResearchStudy,
+  ResearchStudyDetail,
   DegradationReport,
   Incident,
   OptimizeResult,
@@ -131,7 +134,10 @@ import type {
   BrokerLoginUrl,
   AiAcknowledgement,
   AiPreferences,
+  StaticIp,
+  StaticIpOverview,
 } from "../types";
+import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 
@@ -283,6 +289,15 @@ async function downloadExport(
   };
 }
 
+/** H-C1 a: AI approval evidence comes from server data. In broker mode no candles are posted - the server fetches them
+ * through the tenant's broker session. Posted candles are always recorded as a sample and can never approve. */
+export function evidenceBody(candles: OHLCVBar[], dataSource: string, lookbackDays?: number): Record<string, unknown> {
+  if (dataSource.startsWith("broker:")) {
+    return { broker: dataSource.slice("broker:".length) || null, ...(lookbackDays ? { lookback_days: lookbackDays } : {}) };
+  }
+  return { candles, data_source: dataSource };
+}
+
 export const api = {
   downloadExport,
 
@@ -350,6 +365,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ symbol, candles }),
     }),
+
+  // OI Banner (O3): read-only banner, history, per-strike OI; settings are saved by the organisation owner.
+  oiBanners: () => request<{ banners: OiBannerResponse[] }>("/option-chain/banners"),
+  oiBanner: (underlying: string) => request<OiBannerResponse>(`/option-chain/${encodeURIComponent(underlying)}/banner`),
+  oiHistory: (underlying: string, interval: number, date?: string) =>
+    request<OiHistoryResponse>(`/option-chain/${encodeURIComponent(underlying)}/history?interval=${interval}${date ? `&date=${date}` : ""}`),
+  oiStrikes: (underlying: string, date?: string) =>
+    request<OiStrikesResponse>(`/option-chain/${encodeURIComponent(underlying)}/strikes${date ? `?date=${date}` : ""}`),
+  oiAlerts: (underlying: string) => request<OiAlertLogResponse>(`/option-chain/${encodeURIComponent(underlying)}/alerts`),
+  oiAlertAction: (underlying: string, action: "snooze" | "mute-today" | "resume" | "test") =>
+    request<{ snoozed_until?: string | null; notification_id?: number }>(`/option-chain/${encodeURIComponent(underlying)}/alerts/${action}`,
+      { method: "POST", body: JSON.stringify(action === "snooze" ? { minutes: 60 } : {}) }),
+  oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
+  saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
+    request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {
@@ -696,7 +726,7 @@ export const api = {
   aiDraft: (id: number) => request<AiStrategyDraft>(`/ai/drafts/${id}`),
   aiBacktestDraft: (id: number, symbol: string, base_timeframe: string, candles: OHLCVBar[], data_source = "sample", signal?: AbortSignal) =>
     request<{ draft: AiStrategyDraft; run: BacktestRunSummary; result: BacktestResult }>(`/ai/drafts/${id}/backtest`, {
-      method: "POST", body: JSON.stringify({ symbol, base_timeframe, candles, data_source }), signal,
+      method: "POST", body: JSON.stringify({ symbol, base_timeframe, ...evidenceBody(candles, data_source) }), signal,
     }),
   aiApproveDraft: (id: number, name?: string, acceptRisk = false) =>
     request<{ draft: AiStrategyDraft; custom_strategy_id: number; strategy_id: string; origin: string }>(`/ai/drafts/${id}/approve`, { method: "POST", body: JSON.stringify({ name, accept_risk: acceptRisk }) }),
@@ -704,12 +734,13 @@ export const api = {
   // Phase AP: the strategy interview.
   aiInterviewStart: (prompt: string) =>
     request<InterviewStart>("/ai/interview/start", { method: "POST", body: JSON.stringify({ prompt }) }),
-  aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string, signal?: AbortSignal) =>
-    request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({ answers, base_timeframe: baseTimeframe, candles, data_source: dataSource }), signal }),
+  aiInterviewPlan: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string, signal?: AbortSignal, lookbackDays?: number) =>
+    request<InterviewPlan>("/ai/interview/plan", { method: "POST", body: JSON.stringify({
+      answers, base_timeframe: baseTimeframe, ...evidenceBody(candles, dataSource, lookbackDays) }), signal }),
   aiInterviewRefine: (answers: Record<string, string | number>, baseTimeframe: string, candles: OHLCVBar[], dataSource: string,
-                      feedback: string[], optionId: string, strategyId: string | null, signal?: AbortSignal) =>
+                      feedback: string[], optionId: string, strategyId: string | null, signal?: AbortSignal, lookbackDays?: number) =>
     request<InterviewPlan>("/ai/interview/refine", { method: "POST", body: JSON.stringify({
-      answers, base_timeframe: baseTimeframe, candles, data_source: dataSource, feedback, option_id: optionId, strategy_id: strategyId }), signal }),
+      answers, base_timeframe: baseTimeframe, ...evidenceBody(candles, dataSource, lookbackDays), feedback, option_id: optionId, strategy_id: strategyId }), signal }),
   aiInterviewChoose: (answers: Record<string, string | number>, optionId: string, strategyId: string | null) =>
     request<{ preferences: unknown }>("/ai/interview/choose", { method: "POST", body: JSON.stringify({ answers, option_id: optionId, strategy_id: strategyId }) }),
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
@@ -745,6 +776,10 @@ export const api = {
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
   aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
+  aiResearchList: () => request<{ studies: ResearchStudy[] }>("/ai/research"),
+  aiResearchCreate: (body: { idea: string; symbol: string; timeframe: string; max_drafts: number }) =>
+    request<ResearchStudy>("/ai/research", { method: "POST", body: JSON.stringify(body) }),
+  aiResearchGet: (studyId: string) => request<ResearchStudyDetail>(`/ai/research/${encodeURIComponent(studyId)}`),
   aiRegime: (candles: OHLCVBar[]) => request<Regime>("/ai/regime", { method: "POST", body: JSON.stringify({ candles }) }),
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
@@ -808,6 +843,21 @@ export const api = {
 
   listAlertDeliveries: (limit = 20) => request<AlertDelivery[]>(`/alert-channels/deliveries?limit=${limit}`),
 
+  // S3c (ADR-0022): alert rules, delivery policy, dead letters, personal Telegram link and email opt-outs.
+  listAlertRules: () => request<AlertRule[]>("/alerts/rules"),
+  createAlertRule: (body: AlertRuleInput) => request<AlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
+  setAlertRuleStatus: (id: number, action: "pause" | "resume") => request<AlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
+  alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
+  getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
+  putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),
+  listDeadLetters: () => request<DeadLetter[]>("/alerts/dead-letters"),
+  retryDelivery: (id: number) => request<{ id: number; status: string }>(`/alerts/deliveries/${id}/retry`, { method: "POST" }),
+  telegramLinkStatus: () => request<{ linked: boolean; linked_at: string | null }>("/alerts/telegram/link"),
+  telegramLinkCode: () => request<TelegramLinkCode>("/alerts/telegram/link-code", { method: "POST" }),
+  telegramUnlink: () => request<{ linked: boolean }>("/alerts/telegram/link", { method: "DELETE" }),
+  listEmailOptOuts: () => request<EmailOptOut[]>("/alerts/email-opt-outs"),
+  removeEmailOptOut: (id: number) => request<{ removed: number }>(`/alerts/email-opt-outs/${id}`, { method: "DELETE" }),
+
   // Phase BE: Telegram inbound (commands + PAPER approval buttons) - owner-only settings.
   telegramInboundStatus: () => request<TelegramInboundStatus>("/telegram/inbound/status"),
   telegramInboundConfigure: (body: { enabled: boolean; allowed_chat_ids: string[]; approvers?: { telegram_user_id: string; email: string }[] }) =>
@@ -834,6 +884,10 @@ export const api = {
   fxRates: () => request<{ rates: FxRate[]; supported: string[] }>("/fx/rates"),
   adminSetFxRate: (base: string, quote: string, rate: number, source = "manual") =>
     request<FxRate>("/admin/fx-rates", { method: "PUT", body: JSON.stringify({ base, quote, rate, source }) }),
+
+  staticIps: () => request<StaticIpOverview>("/compliance/static-ips"),
+  setStaticIp: (body: { broker_name: string; role: "PRIMARY" | "BACKUP"; ip: string; registered_at?: string | null }) =>
+    request<StaticIp>("/compliance/static-ips", { method: "PUT", body: JSON.stringify(body) }),
 
   setTenantAlgoId: (algoId: string) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ algo_id: algoId }) }),

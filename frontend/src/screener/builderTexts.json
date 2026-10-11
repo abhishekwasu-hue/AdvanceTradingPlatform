@@ -1,0 +1,957 @@
+{
+ "_doc": "U5: the contract between the builder and the server. model.ts must write `text` from `stage` with `registry`; the server must accept every text and describe these functions exactly as `registry` says (tests/test_u5_funnel.py). Change both sides together.",
+ "registry": {
+  "BBUpper": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "n",
+    "k"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 20,
+    "k": 2.0
+   },
+   "types": {
+    "n": "window",
+    "k": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "upper Bollinger band"
+  },
+  "ChainBias": {
+   "kind": "classifier",
+   "returns": "cat",
+   "unit": null,
+   "args": [],
+   "choices": {},
+   "values": [
+    "BULLISH",
+    "BEARISH",
+    "NEUTRAL",
+    "CONFLICTING"
+   ],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [
+    "option_chain"
+   ],
+   "doc": "option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"
+  },
+  "EMA": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "same",
+   "args": [
+    "x",
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num",
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "exponential moving average"
+  },
+  "IndexMember": {
+   "kind": "filter",
+   "returns": "bool",
+   "unit": null,
+   "args": [
+    "index"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "index": "str"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [
+    "reference"
+   ],
+   "doc": "member of the index on the run date"
+  },
+  "IsFnO": {
+   "kind": "filter",
+   "returns": "bool",
+   "unit": null,
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [
+    "reference"
+   ],
+   "doc": "in the F&O segment on the run date"
+  },
+  "NearSupport": {
+   "kind": "filter",
+   "returns": "bool",
+   "unit": null,
+   "args": [
+    "tolerance_pct",
+    "swing"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "swing": 3
+   },
+   "types": {
+    "tolerance_pct": "num",
+    "swing": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [],
+   "doc": "the close is within tolerance_pct of a support zone edge"
+  },
+  "ORHigh": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "minutes"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "minutes": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "opening-range high, visible once the range is complete"
+  },
+  "PDH": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "previous session high"
+  },
+  "Pattern": {
+   "kind": "filter",
+   "returns": "bool",
+   "unit": null,
+   "args": [
+    "name"
+   ],
+   "choices": {
+    "name": [
+     "doji",
+     "hammer",
+     "shooting_star",
+     "bullish_engulfing",
+     "bearish_engulfing",
+     "morning_star",
+     "evening_star",
+     "bullish_pin_bar",
+     "bearish_pin_bar",
+     "inside_bar",
+     "bullish_outside_bar",
+     "bearish_outside_bar",
+     "bullish_rejection",
+     "bearish_rejection"
+    ]
+   },
+   "values": [],
+   "defaults": {},
+   "types": {
+    "name": "str"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it)"
+  },
+  "PctChange": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "pct",
+   "args": [
+    "x",
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num",
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "% change of x over n bars"
+  },
+  "PercentileRank": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "pct",
+   "args": [
+    "x"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num"
+   },
+   "cross_sectional": true,
+   "kwargs": [
+    "by"
+   ],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [],
+   "doc": "percentile of x across the universe, optionally within each group of a classifier"
+  },
+  "RSI": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "index",
+   "args": [
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 14
+   },
+   "types": {
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "RSI of close (0-100)"
+  },
+  "Rank": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "count",
+   "args": [
+    "x"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num"
+   },
+   "cross_sectional": true,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [],
+   "doc": "rank of x across the universe (1 = highest)"
+  },
+  "ReversalAt": {
+   "kind": "filter",
+   "returns": "bool",
+   "unit": null,
+   "args": [
+    "level",
+    "direction"
+   ],
+   "choices": {
+    "direction": [
+     "bullish",
+     "bearish"
+    ]
+   },
+   "values": [],
+   "defaults": {},
+   "types": {
+    "level": "num",
+    "direction": "str"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close location; hammer / engulfing / star are one rule) - bullish at support, bearish at resistance"
+  },
+  "Supertrend": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "n",
+    "k"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 10,
+    "k": 3.0
+   },
+   "types": {
+    "n": "window",
+    "k": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "Supertrend line"
+  },
+  "SwingDirection": {
+   "kind": "classifier",
+   "returns": "cat",
+   "unit": null,
+   "args": [
+    "degree"
+   ],
+   "choices": {
+    "degree": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "values": [
+    "UP",
+    "DOWN"
+   ],
+   "defaults": {
+    "degree": 0
+   },
+   "types": {
+    "degree": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"
+  },
+  "SwingLow": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "degree"
+   ],
+   "choices": {
+    "degree": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "values": [],
+   "defaults": {
+    "degree": 0
+   },
+   "types": {
+    "degree": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"
+  },
+  "Trend": {
+   "kind": "classifier",
+   "returns": "cat",
+   "unit": null,
+   "args": [
+    "swing"
+   ],
+   "choices": {},
+   "values": [
+    "UPTREND",
+    "DOWNTREND",
+    "RANGE"
+   ],
+   "defaults": {
+    "swing": 3
+   },
+   "types": {
+    "swing": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": false,
+   "field": false,
+   "needs": [],
+   "doc": "market-structure trend: UPTREND / DOWNTREND / RANGE"
+  },
+  "VWAP": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "needs": [],
+   "doc": "session VWAP"
+  },
+  "close": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": true,
+   "needs": [],
+   "doc": "bar close"
+  },
+  "volume": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "volume",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": true,
+   "needs": [],
+   "doc": "bar volume"
+  }
+ },
+ "cases": [
+  {
+   "stage": {
+    "left": {
+     "fn": "RSI",
+     "params": {
+      "n": 14
+     },
+     "tf": "15m"
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 60
+    },
+    "kind": "indicator"
+   },
+   "text": "RSI(14)@15m > 60"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "close",
+     "params": {},
+     "tf": null
+    },
+    "op": "crosses above",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "EMA",
+      "params": {
+       "x": "close",
+       "n": 20
+      },
+      "tf": null
+     }
+    },
+    "kind": "indicator"
+   },
+   "text": "CrossAbove(close, EMA(close, 20))"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "close",
+     "params": {},
+     "tf": null
+    },
+    "op": "crosses below",
+    "right": {
+     "kind": "value",
+     "value": 60
+    },
+    "kind": "indicator"
+   },
+   "text": "CrossBelow(close, 60)"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "Supertrend",
+     "params": {
+      "n": 10,
+      "k": 2.5
+     },
+     "tf": "1h"
+    },
+    "op": "<=",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "close",
+      "params": {},
+      "tf": null
+     }
+    },
+    "kind": "indicator"
+   },
+   "text": "Supertrend(10, 2.5)@1h <= close"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "BBUpper",
+     "params": {
+      "n": 20,
+      "k": -1
+     },
+     "tf": null
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": -5
+    },
+    "kind": "indicator"
+   },
+   "text": "BBUpper(20, -1) > -5"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "VWAP",
+     "params": {},
+     "tf": "5m"
+    },
+    "op": "<",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "close",
+      "params": {},
+      "tf": "5m"
+     }
+    },
+    "kind": "indicator"
+   },
+   "text": "VWAP()@5m < close@5m"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "SwingLow",
+     "params": {
+      "degree": 1
+     },
+     "tf": null
+    },
+    "op": ">=",
+    "right": {
+     "kind": "value",
+     "value": 0.3
+    },
+    "kind": "indicator"
+   },
+   "text": "SwingLow(1) >= 0.3"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "volume",
+     "params": {},
+     "tf": "1d"
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 1500000
+    },
+    "kind": "indicator"
+   },
+   "text": "volume@1d > 1500000"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "PctChange",
+     "params": {
+      "x": "high",
+      "n": 5
+     },
+     "tf": null
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 1e-06
+    },
+    "kind": "indicator"
+   },
+   "text": "PctChange(high, 5) > 0.000001"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "ORHigh",
+     "params": {
+      "minutes": 15
+     },
+     "tf": null
+    },
+    "op": "<",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "PDH",
+      "params": {},
+      "tf": null
+     }
+    },
+    "kind": "indicator"
+   },
+   "text": "ORHigh(15) < PDH()"
+  },
+  {
+   "stage": {
+    "kind": "filter",
+    "call": {
+     "fn": "Pattern",
+     "params": {
+      "name": "doji"
+     },
+     "tf": "15m"
+    }
+   },
+   "text": "Pattern(\"doji\")@15m"
+  },
+  {
+   "stage": {
+    "kind": "filter",
+    "call": {
+     "fn": "NearSupport",
+     "params": {
+      "tolerance_pct": 0.5,
+      "swing": 3
+     },
+     "tf": null
+    }
+   },
+   "text": "NearSupport(0.5, 3)"
+  },
+  {
+   "stage": {
+    "kind": "filter",
+    "call": {
+     "fn": "IsFnO",
+     "params": {},
+     "tf": null
+    }
+   },
+   "text": "IsFnO()"
+  },
+  {
+   "stage": {
+    "kind": "filter",
+    "call": {
+     "fn": "IndexMember",
+     "params": {
+      "index": "NIFTY 50"
+     },
+     "tf": null
+    }
+   },
+   "text": "IndexMember(\"NIFTY 50\")"
+  },
+  {
+   "stage": {
+    "kind": "filter",
+    "call": {
+     "fn": "ReversalAt",
+     "params": {
+      "level": "PDH()",
+      "direction": "bearish"
+     },
+     "tf": null
+    }
+   },
+   "text": "ReversalAt(PDH(), \"bearish\")"
+  },
+  {
+   "stage": {
+    "kind": "category",
+    "call": {
+     "fn": "Trend",
+     "params": {
+      "swing": 3
+     },
+     "tf": null
+    },
+    "values": [
+     "UPTREND"
+    ],
+    "negate": false
+   },
+   "text": "Trend(3) == \"UPTREND\""
+  },
+  {
+   "stage": {
+    "kind": "category",
+    "call": {
+     "fn": "SwingDirection",
+     "params": {
+      "degree": 1
+     },
+     "tf": "1h"
+    },
+    "values": [
+     "UP",
+     "DOWN"
+    ],
+    "negate": false
+   },
+   "text": "SwingDirection(1)@1h IN (\"UP\", \"DOWN\")"
+  },
+  {
+   "stage": {
+    "kind": "category",
+    "call": {
+     "fn": "ChainBias",
+     "params": {},
+     "tf": null
+    },
+    "values": [
+     "BEARISH"
+    ],
+    "negate": true
+   },
+   "text": "ChainBias() != \"BEARISH\""
+  },
+  {
+   "stage": {
+    "kind": "category",
+    "call": {
+     "fn": "Trend",
+     "params": {
+      "swing": 3
+     },
+     "tf": null
+    },
+    "values": [
+     "DOWNTREND",
+     "RANGE"
+    ],
+    "negate": true
+   },
+   "text": "NOT (Trend(3) IN (\"DOWNTREND\", \"RANGE\"))"
+  },
+  {
+   "stage": {
+    "kind": "rank",
+    "fn": "Rank",
+    "of": {
+     "fn": "PctChange",
+     "params": {
+      "x": "close",
+      "n": 5
+     },
+     "tf": null
+    },
+    "op": "<=",
+    "value": 10
+   },
+   "text": "Rank(PctChange(close, 5)) <= 10"
+  },
+  {
+   "stage": {
+    "kind": "rank",
+    "fn": "PercentileRank",
+    "of": {
+     "fn": "RSI",
+     "params": {
+      "n": 14
+     },
+     "tf": "1d"
+    },
+    "op": ">=",
+    "value": 90
+   },
+   "text": "PercentileRank(RSI(14)@1d) >= 90"
+  },
+  {
+   "stage": {
+    "kind": "group",
+    "op": "ANY",
+    "children": [
+     {
+      "id": "c1",
+      "enabled": true,
+      "kind": "indicator",
+      "left": {
+       "fn": "RSI",
+       "params": {
+        "n": 14
+       },
+       "tf": null
+      },
+      "op": ">",
+      "right": {
+       "kind": "value",
+       "value": 60
+      }
+     },
+     {
+      "id": "c2",
+      "enabled": false,
+      "kind": "filter",
+      "call": {
+       "fn": "IsFnO",
+       "params": {},
+       "tf": null
+      }
+     },
+     {
+      "id": "c3",
+      "enabled": true,
+      "kind": "filter",
+      "call": {
+       "fn": "Pattern",
+       "params": {
+        "name": "doji"
+       },
+       "tf": null
+      }
+     }
+    ]
+   },
+   "text": "(RSI(14) > 60 OR Pattern(\"doji\"))"
+  },
+  {
+   "stage": {
+    "kind": "group",
+    "op": "NOT",
+    "children": [
+     {
+      "id": "c4",
+      "enabled": true,
+      "kind": "indicator",
+      "left": {
+       "fn": "close",
+       "params": {},
+       "tf": null
+      },
+      "op": "<",
+      "right": {
+       "kind": "series",
+       "ref": {
+        "fn": "EMA",
+        "params": {
+         "x": "close",
+         "n": 20
+        },
+        "tf": null
+       }
+      }
+     },
+     {
+      "id": "c5",
+      "enabled": true,
+      "kind": "filter",
+      "call": {
+       "fn": "IsFnO",
+       "params": {},
+       "tf": null
+      }
+     }
+    ]
+   },
+   "text": "NOT (close < EMA(close, 20) AND IsFnO())"
+  }
+ ]
+}

@@ -17,7 +17,6 @@ from sqlalchemy import select
 
 from app.brokers import token_lifecycle
 from app.brokers.models import OptionChain, Quote
-from app.core.enums import BrokerTokenStatus
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, TradeRecord, User
 from app.market_data import candles_routes, entitlement, live_access

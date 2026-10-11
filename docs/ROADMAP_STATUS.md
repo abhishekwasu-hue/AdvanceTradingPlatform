@@ -8,7 +8,7 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z | What | Status | PR | % |
 |---|---|---|---|---|
 | Z1 | PW5 proposal card + PW6 invite gate / feedback | merged | #162, #159 | 100 |
-| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | in review (flag byob_data_tier off); BT1b follow-ups in docs/design/BT_BETA_DATA_TIERS.md | #167 | 80 |
+| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | BT1 merged (#167); BT1b (guard every live read, credential holder, staleness) in review - flag byob_data_tier stays off until BT1b merges | #167, BT1b | 90 |
 | Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | next | - | 0 |
 | Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | HB0 ready (#164), HB1 next | #164 | 30 |
 | Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | not started | - | 0 |

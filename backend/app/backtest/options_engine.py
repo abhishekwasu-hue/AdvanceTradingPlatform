@@ -45,7 +45,7 @@ from app.instruments.contracts import (
     DEFAULT_PREMIUM_STOP_PCT, ContractResolutionError, ContractRules, ResolvedContract, option_right, select_strike,
 )
 from app.instruments import expiry_data
-from app.instruments.expiry_data import ExpiryDataMissing
+from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
 from app.market_data.calendar import IST
@@ -378,6 +378,10 @@ def run_option_backtest(
             ladder = strike_ladder(spot, step)
             try:
                 expiry = calendar.select(config.expiry_rule, bar_day)
+            except ExpiryDataStale:
+                # The file is out of date for this bar: no trade, counted, said in the result - never a guessed expiry.
+                skipped[f"stale expiry data (read through {expiry_data.stale_after()})"] += 1
+                continue
             except ExpiryDataMissing as exc:
                 raise OptionBacktestError(str(exc)) from exc
             if expiry is None:

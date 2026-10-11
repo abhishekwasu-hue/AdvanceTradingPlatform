@@ -46,8 +46,10 @@ async def _flag_on(user: User = Depends(get_current_user), session: AsyncSession
 
 
 # The model work is CPU only and runs in the thread pool; the limit keeps one user from filling that pool. The page
-# evaluates after each pause in editing (200 ms) and once more to re-price model legs, so 2 a second is ample.
-compute_rate_limit = user_rate_limit("options_builder", limit=120, window_seconds=60)
+# evaluates after each pause in editing (200 ms debounce, so at most about 5 a second while a trader works quickly)
+# and once more when a model-priced leg moves to another contract; 300 a minute leaves that rhythm alone while a
+# script calling in a loop is still cut off within a minute.
+compute_rate_limit = user_rate_limit("options_builder", limit=300, window_seconds=60)
 router = APIRouter(prefix="/api/options-builder", tags=["options-builder"], dependencies=[Depends(_flag_on)])
 DISCLAIMER = "Model estimates (Black-Scholes, one volatility) for research; not a forecast or a recommendation."
 

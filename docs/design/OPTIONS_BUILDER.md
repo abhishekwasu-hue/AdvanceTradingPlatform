@@ -120,10 +120,13 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
 ## P1-c1 (built): the builder API
 `app/options_builder/routes.py`, under the `options_builder` flag. It is a kill flag, on by default, because the
 builder is research only. Every endpoint needs a login, and none places, stages or sizes an order. A test walks every
-module's syntax tree and checks that the package imports nothing from execution, brokers (other than the
-`OptionChain` data shape), risk, deployments or the kill switch, in any import form, and never names an order call.
-- **Limits** (from the P1-c review). The flag is checked before the body is read, so a switched-off builder answers 503
-  whatever was sent. Template, evaluate and suggest share a limit of 120 calls a minute per user. The model work runs
+module's syntax tree: the package imports only an allowlist of `app.*` modules (the option-chain maths, the broker
+`OptionChain` data shape, config, rate limit, auth, the session and the flag), uses no dynamic import, and never names
+an order call. A second test imports the routes in a fresh interpreter and checks that no execution, trading, risk,
+deployment, kill-switch or broker-adapter module was loaded, even indirectly.
+- **Limits** (from the P1-c reviews). The flag is checked before the body is validated, so a switched-off builder
+  answers 503 to any well-formed JSON (malformed JSON is still a 422 from the framework's parser). Template, evaluate
+  and suggest share a limit of 300 calls a minute per user. The model work runs
   in the thread pool, not on the event loop. Prices, strikes and the spot must be finite, positive and below 10^7. A
   template whose width puts a strike at or below zero is a 422. A chain is read up to 1,000 strikes.
 - `GET /api/options-builder/catalog`: the 38 templates by family, with their legs as offsets and whether a template

@@ -6,6 +6,8 @@ import asyncio
 import json
 import math
 import pathlib
+import subprocess
+import sys
 from datetime import date, timedelta
 
 from app.brokers.models import OptionChain, OptionChainRow
@@ -139,37 +141,56 @@ def test_suggest_runs_a_ported_rule_on_a_chain_and_says_how_pop_was_made():
     assert found["found"] and found["result"]["short_pop_pct"] >= 80
 
 
+# Every `app.*` module the builder may import (second review P1-c: an allowlist, because a denylist misses real paths
+# such as app.risk_engine or app.public_api). Anything else under app is refused.
+ALLOWED_APP_IMPORTS = ("app.options_builder", "app.option_chain", "app.brokers.models", "app.core.config", "app.core.rate_limit",
+                       "app.auth.dependencies", "app.db.models", "app.db.session", "app.platform.controls")
+ORDER_LAYERS = ("app.execution", "app.trading", "app.risk_engine", "app.deployments", "app.kill_switch", "app.public_api", "app.workers")
+
+
+def _allowed(mod: str) -> bool:
+    return not mod.startswith("app.") or any(mod == ok or mod.startswith(ok + ".") for ok in ALLOWED_APP_IMPORTS)
+
+
 def test_the_builder_package_cannot_place_an_order():
-    """Research only (ADR-0006 / P1-c): no module under app/options_builder imports the execution, broker, order or risk
-    layers in any form (absolute, `from app import x`, relative, importlib), and none names an order call."""
+    """Research only (ADR-0006 / P1-c): every module under app/options_builder imports only allowlisted `app.*` modules
+    (absolute, `from app import x`, relative), uses no dynamic import, and never names an order call."""
     pkg = pathlib.Path(__file__).resolve().parents[1] / "app" / "options_builder"
-    forbidden = {"execution", "trading", "orders", "risk", "deployments", "kill_switch", "brokers"}
-    allowed = {"app.brokers.models"}                               # the OptionChain data shape only
     order_calls = {"place_order", "modify_order", "cancel_order", "exit_position", "place_stop_loss_order"}
     files = list(pkg.rglob("*.py"))
     assert len(files) >= 6
-    def reaches_out(mod: str) -> bool:
-        parts = mod.split(".")
-        if parts[0] != "app" or len(parts) < 2 or parts[1] not in forbidden:
-            return False
-        return not any(mod == ok or mod.startswith(ok + ".") for ok in allowed)
-
     for f in files:
         for node in ast.walk(ast.parse(f.read_text())):
             if isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
             elif isinstance(node, ast.ImportFrom):
                 assert node.level <= 1, f"{f.name}: a relative import leaves the package"
-                base = "app.options_builder" if node.level else (node.module or "")
-                base = f"{base}.{node.module}" if node.level and node.module else base
-                names = [f"{base}.{a.name}" for a in node.names]
+                if node.level:
+                    names = [f"app.options_builder.{node.module}" if node.module else "app.options_builder"]
+                elif node.module == "app":
+                    names = [f"app.{a.name}" for a in node.names]
+                else:
+                    names = [node.module or ""]
             else:
                 names = []
             for mod in names:
-                assert not reaches_out(mod), f"{f.name} imports {mod}"
+                assert _allowed(mod), f"{f.name} imports {mod}"
+                assert mod.split(".")[0] != "importlib", f"{f.name} imports importlib (dynamic imports bypass this check)"
             if isinstance(node, (ast.Name, ast.Attribute)):
                 name = node.id if isinstance(node, ast.Name) else node.attr
-                assert name not in order_calls and name != "importlib", f"{f.name} names {name}"
+                assert name not in order_calls | {"importlib", "import_module", "__import__"}, f"{f.name} names {name}"
+
+
+def test_importing_the_builder_loads_no_order_layer():
+    """The same rule at runtime, transitively: a fresh interpreter imports the builder's routes, and nothing from the
+    execution, trading, risk, deployment or kill-switch layers (nor a broker adapter) ends up loaded."""
+    code = ("import sys, json; import app.options_builder.routes; "
+            "print(json.dumps(sorted(m for m in sys.modules if m.startswith('app.'))))")
+    out = subprocess.run([sys.executable, "-c", code], cwd=pathlib.Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True)
+    loaded = json.loads(out.stdout.strip().splitlines()[-1])
+    assert "app.options_builder.routes" in loaded
+    assert not [m for m in loaded if m.startswith(ORDER_LAYERS)], loaded
+    assert not [m for m in loaded if m.startswith("app.brokers.") and m != "app.brokers.models" and not m.startswith("app.brokers.models.")], loaded
 
 
 def test_bad_numbers_are_refused_not_crashed_on():

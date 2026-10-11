@@ -389,8 +389,15 @@ export const api = {
 
   availableBrokers: () => request<{ brokers: string[] }>("/broker/available"),
 
-  register: (email: string, password: string) =>
-    request<TokenResponse>("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
+  // PW6: `inviteCode` only matters while the closed-beta gate is on (the server ignores it otherwise).
+  register: (email: string, password: string, inviteCode?: string) =>
+    request<TokenResponse>("/auth/register", {
+      method: "POST", body: JSON.stringify(inviteCode ? { email, password, invite_code: inviteCode } : { email, password }),
+    }),
+
+  // PW6: "Send feedback" - the message plus the app version and the screen path, nothing else.
+  sendFeedback: (body: { message: string; app_version: string; screen: string }) =>
+    request<{ id: number; created_at: string | null }>("/feedback", { method: "POST", body: JSON.stringify(body) }),
 
   login: (email: string, password: string) =>
     request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),

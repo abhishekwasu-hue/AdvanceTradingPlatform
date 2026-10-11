@@ -1,5 +1,5 @@
-import { Bell, Menu, UserCircle2 } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Bell, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
@@ -12,6 +12,12 @@ import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+// PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
+// renders nothing instead of taking the shell down.
+type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string };
+const FeedbackDialog = lazy<ComponentType<FeedbackDialogProps>>(
+  () => import("./feedback/FeedbackDialog").catch(() => ({ default: () => null })),
+);
 
 /** The old Copilot addresses (/ai-copilot/study, /today, ...) open the redesigned tab that now holds that content. */
 function LegacyCopilot() {
@@ -22,8 +28,11 @@ function LegacyCopilot() {
 }
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
+  const location = useLocation();
   const title = page === null ? "Page not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   useEffect(() => {
     const load = () => api.systemStatus().then(setStatus).catch(() => {});
     load();
@@ -54,6 +63,22 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
       </div>
       <div className="flex items-center gap-1.5">
         <ThemeToggle />
+        {user && (
+          <button
+            type="button"
+            onClick={() => { setFeedbackLoaded(true); setFeedbackOpen(true); }}
+            title="Send feedback"
+            aria-label="Send feedback"
+            className="p-2 rounded-md text-muted transition-colors hover:text-slate-200 hover:bg-panel2"
+          >
+            <MessageSquarePlus size={18} />
+          </button>
+        )}
+        {user && feedbackLoaded && (
+          <Suspense fallback={null}>
+            <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} pathname={location.pathname} />
+          </Suspense>
+        )}
         <Link
           to={pathFor("notifications")}
           title="Notifications"

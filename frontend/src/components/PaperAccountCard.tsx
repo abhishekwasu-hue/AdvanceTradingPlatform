@@ -57,16 +57,16 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
               <>
                 <span className="rounded bg-warn/15 px-2 py-1 text-warn" data-testid="paper-paused">New PAPER entries paused{account.paused_reason ? ` (${account.paused_reason})` : ""}</span>
                 <button disabled={busy} onClick={() => void run(() => api.paperResume(), "New PAPER entries are on again.")}
-                        className="rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50">Resume</button>
+                        className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Resume</button>
               </>
             ) : (
               <button disabled={busy} onClick={() => void run(() => api.paperPause(), "New PAPER entries paused; exits keep running.")}
-                      className="rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50">Pause new PAPER entries</button>
+                      className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Pause new PAPER entries</button>
             )}
             <input type="number" min={10000} placeholder="Starting capital" value={capital} onChange={(e) => setCapital(e.target.value)}
-                   className="w-36 rounded border border-border bg-surface-2 px-2 py-1" aria-label="Starting capital" />
+                   className="min-h-[44px] w-36 rounded border border-border bg-surface-2 px-2 py-1 sm:min-h-0" aria-label="Starting capital" />
             <button disabled={busy || !capital} onClick={() => void run(() => api.setPaperCapital(Number(capital)), "Starting capital saved.")}
-                    className="rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50">Set</button>
+                    className="min-h-[44px] rounded border border-border px-2 py-1 text-fg hover:bg-surface-2 disabled:opacity-50 sm:min-h-0">Set</button>
             {message && <span className="text-fg-muted" role="status">{message}</span>}
           </div>
         )}

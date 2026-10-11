@@ -1616,3 +1616,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
   on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
 - BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.
+### 2026-10-11 - Z8 U7 LG1: the first eight Legends cards (prepared; PR held until Z1-Z7 are done)
+- Content as reviewed data: `backend/app/screener/data/legends.json` (8 cards: Minervini, Darvas, Weinstein, Turtles,
+  Raschke, Crabel, Connors, Williams) and `legends_sources.json` (9 published books, each with what it covers and a
+  `review: pending` mark). Graham and Greenblatt wait for fundamentals (OPEN_QUESTIONS LG1-1).
+- `app/screener/legends.py`: lint on load - every line cites a listed source, five lines at most, no advice /
+  performance / endorsement wording, no first person or quotation, no trademarked title, English only, the screen
+  compiles, every parameter used with its default inside its documented range, no uncited source. The spec's
+  disclaimer is fixed in code and added to the header and every card.
+- Each card is a filed taxonomy screen (source and method `legends`, registered with flag `screener_legends`): the TX1
+  guard and `legends.link_problems()` fail CI when a card and its screen drift apart.
+- `GET /api/screener/legends[/{id}]` (flags `screener_v2` + new `screener_legends`, default OFF); the taxonomy hides
+  the Legends screens while the flag is off. Gallery: library header, a disclaimer and "About" on each Legends card,
+  the full card (lines, approximation, ScreenQL with defaults, parameter table, sources) in place of the grid.
+- Tests: backend content lint (39 broken-library cases), positive / negative fixtures per screen, parameter ranges,
+  taxonomy link, API; frontend render and accessibility (article / heading focus, description list, table headers,
+  notes), Playwright flow, stories. Questions LG1-1..LG1-12.

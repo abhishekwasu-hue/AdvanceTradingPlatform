@@ -1542,3 +1542,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   charting CH2, OI banner). The first to merge keeps it; each later chain's first migration is re-pointed at main's
   head just before that PR merges (one extra CI run per chain), so main never has two heads.
 - Not done, by the rules: nothing deployed, no flag turned on, no LIVE, no secrets touched.
+
+### 2026-10-11 10:05 IST - merge train finished; PWA work running in parallel
+- Train done 09:52 IST: every PR #82-#155 merged - 72 squash merges to main and #106 merged into its own chain (its
+  content reached main with #105 / #155, so #155 superseded #106 for main). Branch deletion is refused by the proxy
+  (403), so merged head branches stay; nothing else was left behind.
+- Conflicts in the last stretch, each resolved in its own commit and checked before pushing: #138 controls.py (flag
+  union: screener_intrabar and ai_research both kept, all default-OFF), #146 docs/design/SCREENER.md (both sections
+  kept), #150 screener/registry.py (both Spec fields `needs` and `degree_min_bars` kept; screener backend tests 122
+  passed, frontend 167 passed before pushing).
+- Livelock between the two chains (#105 vs the screener chain) avoided with a priority hold: the other chain waits
+  while the held PR is open.
+- Main after the last merge (2cb833d): frontend tsc, vitest 167 passed, build, bundle budgets (initial 82.5 KB gzip),
+  English-only check - all green; backend full suite and GitHub CI on that commit reported with the final summary.
+- Feature flags on main (all default OFF): news_feed, telegram_inbound, market_thesis, marketplace_ai_listings,
+  thesis_stock_targets, screener_v2, screener_intrabar, ai_agent, ai_research (plus the earlier kill flags, which
+  default ON as kill switches).
+- In parallel (owner: "multitask"): PW1 #156 (PWA shell), PW3 #157 (web push), PW4 #158 (Telegram <-> app, live
+  stream), PW2 (mobile layout, on its branch), BYOK-V1 #160 (flag vision_byok off), PW6 in progress. All draft, all
+  flags off, nothing deployed.

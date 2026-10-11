@@ -488,6 +488,14 @@ default and G-LIVE gate before any LIVE wiring.
   seed a read as fresh as today's for the wall-clock paths.
 - data/nse-expiries is not merged; a fresh refresh pull request (with CI) comes from the fixed workflow after merge.
 
+### 2026-10-10 21:40 IST - Part B (backtest realism) started - branch claude/backtest-realism
+- Status table given (HTF lookahead: no; models: partial; speed: no; reproducibility: partial; trial ledger: partial;
+  report: partial). Part A (PR #82) waits on CI + self-review.
+- B1 done: `app/backtest/windows.py` WindowCursor - a timeframe shows only bars whose end <= the decision time (the
+  primary bar's close), one binary search per timeframe instead of a boolean mask per bar. Both engines use it;
+  ENGINE_VERSION 4 / 7-options. Truncation test over every multi-TF strategy (fails on the old slicing: 4 of 4).
+- Next: B3 speed benchmark + guard, then B4 reproducibility, B2 models, B5 trial ledger, B6 report.
+
 ### 2026-10-08 - Copilot UI redesign (7 tabs, i18n, 3D AI Core, compliance lint) -> G-UI
 - Seven tabs at `/copilot/<tab>` (Market Pulse, Strategy Lab, Idea Builder, Ask Copilot, Watchtower, News Radar,
   Coach & Scorecard); the old `/ai-copilot/<slug>` addresses and `?page=ai-copilot` forward to the tab that now
@@ -909,3 +917,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   level gets an educational line in the answer's language. Wired into copilot.narrate, knowledge.ai_answer,
   thesis.narrate. atp_ai_output_filtered_total. Tests: 22 (both languages, negations, framing, data file, retries).
 - Open: the generator explanation and the scanner's free text get the same filter with the H-C1 d number checks.
+### 2026-10-10 22:30 IST - part C3 + C4 on PR #83 (backtest realism)
+- C3: `backend/scripts/bench_backtest.py` (timings, growth, bars/s, indicator-cache counters); CI guard
+  `tests/test_realism_benchmark.py` - per run the indicator cache's whole computations and unserved calls must not grow
+  with the bars (deterministic; checked to fail on a simulated regression: 12/13 strategies). Table in docs/BENCHMARKS.md.
+- C4: `app/backtest/repro.py` - engine/code/data/config/result hashes + seed on every result (`reproducibility`), kept
+  in the run record; `tests/test_realism_repro.py` (same bytes in-process and across PYTHONHASHSEED; each hash moves only
+  with what it names; API + record). No schema change (stored in the run's metrics JSON). Engine version unchanged
+  (results are identical).
+- Next: C2 (pluggable models) design note, then C5/C6 per the spec order; ROADMAP_STATUS board.

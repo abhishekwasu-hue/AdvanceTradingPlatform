@@ -294,6 +294,9 @@ class TradeRecord(Base):
         ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
     # Phase T: the broker account the LIVE position sits in (routing + FEWEST_POSITIONS + reconciliation).
+    # Z3 (review M1/H2): where the trade's prices came from when not from the platform's own quotes - "client" for a
+    # console paper-execute priced from candles the browser sent. The PAPER account and the ladder leave such trades out.
+    price_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
@@ -1189,6 +1192,10 @@ class AiActionRecord(Base):
     # Z3 / BT2: the signal an ENTRY proposal was raised for ("deployment:<id>:<bar>", "tv:<alert id>", "requote:<id>");
     # NULL for the monitoring agent's own proposals.
     idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Z3 (review L7/L8): the person a proposal is for - an entry proposal's deployment creator / alert owner / sender, an
+    # "Exit now?" question's position holder. Only they (or the organisation OWNER) decide it; NULL = the monitoring
+    # agent's organisation-wide proposals, decided as before.
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class AiCandidateRecord(Base):

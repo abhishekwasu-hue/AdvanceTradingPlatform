@@ -172,25 +172,50 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
     return created
 
 
+ORPHAN_MINUTES = 10      # Z3 (review M6): an APPROVED row not carried out by then was interrupted (decide -> execute)
+
+
 async def expire_stale(session: AsyncSession, now: datetime, *, tenant_id: Optional[int] = None) -> int:
-    """PROPOSED rows past their expiry -> EXPIRED. Z3: the worker runs this every cycle per organisation (entry
-    proposals expire in minutes); without `tenant_id` every organisation's rows are swept."""
-    query = select(AiActionRecord).where(AiActionRecord.status == "PROPOSED")
+    """PROPOSED rows past their expiry -> EXPIRED, each by a conditional UPDATE (a decision taken at the same instant
+    wins). Z3: the worker runs this for every organisation every cycle (entry proposals live minutes). An APPROVED row
+    older than ORPHAN_MINUTES was interrupted between the decision and its execution: an entry whose PAPER order did go
+    through is recorded EXECUTED with its trade, anything else FAILED - so it never holds a deployment's open slot."""
+    now = _utc(now)
+    query = select(AiActionRecord).where(AiActionRecord.status.in_(("PROPOSED", "APPROVED")))
     if tenant_id is not None:
         query = query.where(AiActionRecord.tenant_id == tenant_id)
-    rows = await session.scalars(query)
     expired: List[AiActionRecord] = []
-    for row in rows:
-        if _utc(row.expires_at) <= now:
-            row.status, row.result = "EXPIRED", "No decision within the time window"
+    for row in list(await session.scalars(query.order_by(AiActionRecord.id).limit(2000))):
+        if row.status == "PROPOSED":
+            if _utc(row.expires_at) > now:
+                continue
+            values = {"status": "EXPIRED", "result": "No decision within the time window"}
+        else:
+            if row.decided_at is None or (now - _utc(row.decided_at)).total_seconds() < ORPHAN_MINUTES * 60:
+                continue
+            values = await _orphan_outcome(session, row, now)
+        claimed = await session.execute(update(AiActionRecord).where(AiActionRecord.id == row.id, AiActionRecord.status == row.status)
+                                        .values(**values).execution_options(synchronize_session=False))
+        if claimed.rowcount == 1:
             expired.append(row)
     if expired:
         await session.commit()
         # PW4: an expired proposal's Telegram buttons come off too (best effort, after the commit).
         from app.telegram_inbound.service import sync_proposal_message
         for row in expired:
+            await session.refresh(row)
             await sync_proposal_message(session, row, now=now)
     return len(expired)
+
+
+async def _orphan_outcome(session: AsyncSession, row: AiActionRecord, now: datetime) -> dict:
+    if row.action == "ENTRY":
+        from app.db.models import OrderRecord
+        order = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == row.tenant_id, OrderRecord.idempotency_key == f"approval:{row.id}"))
+        if order is not None and order.trade_id is not None:
+            return {"status": "EXECUTED", "executed_at": now, "trade_id": order.trade_id,
+                    "result": f"PAPER order #{order.id} was placed (recorded after an interrupted approval); position #{order.trade_id}"}
+    return {"status": "FAILED", "executed_at": now, "result": "Approved but not carried out (interrupted) - nothing was placed; it may be proposed again"}
 
 
 async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, approve: bool, note: Optional[str], now: Optional[datetime] = None) -> AiActionRecord:
@@ -317,7 +342,8 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
             else:
                 if price_lookup is None:
                     raise ValueError("No price source available to exit the position - use the Positions page")
-                price = await price_lookup(trade.symbol) if callable(price_lookup) else None
+                from app.trading.position_monitor import exchange_for_trade
+                price = await price_lookup(trade.symbol, exchange_for_trade(trade)) if callable(price_lookup) else None
                 if price is None:
                     raise ValueError("No live price for the position")
                 if trade.mode == "LIVE" and broker is None:

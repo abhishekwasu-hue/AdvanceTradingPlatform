@@ -2,7 +2,7 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -304,11 +304,6 @@ async def mark_price(
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)
 
 
-class ExitNowRequest(BaseModel):
-    """Z3 / BT2: the price to book a PAPER exit at when no broker session can quote the position (else ignored)."""
-    price: Optional[float] = Field(default=None, gt=0)
-
-
 class ExitNowResponse(BaseModel):
     closed: List[MarkPriceResponse]
     warnings: List[str] = []
@@ -316,19 +311,24 @@ class ExitNowResponse(BaseModel):
 
 @router.post("/positions/{trade_id}/exit-now", response_model=ExitNowResponse)
 async def exit_now(
-    trade_id: int, request: ExitNowRequest, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    trade_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> ExitNowResponse:
-    """Z3 / BT2 "Exit now": close this position at once, whatever proposal is pending or snoozed (ADR-0004 - an exit is
-    never held back). PAPER books it at the live price (else the price given, else the last price seen); LIVE squares
-    off at the broker the trade went through. A leg of a structure closes the whole structure."""
+    """Z3 / BT2 "Exit now", with approval-only on (404 otherwise - exits then run automatically, review M4): close this
+    PAPER position at once, whatever proposal is pending or snoozed (ADR-0004). Priced at the live price of the caller's
+    own entitlement, else the last price the monitor saw - never a typed price (review M2). LIVE positions are closed in
+    the broker app (409). The position's holder or the organisation owner only (review L8). A leg closes its structure."""
     from app.execution import approval
+    if not await approval.exit_now_enabled(session, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": approval.FLAG})
     trade = await session.get(TradeRecord, trade_id)
     if trade is None or trade.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="Unknown position")
+    if not approval.may_act_on_trade(user, trade):
+        raise HTTPException(status_code=403, detail="This position belongs to another member; only they or the organisation owner can close it")
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
     try:
-        outcomes = await approval.exit_now(session, trade, user, price=request.price, via="web")
+        outcomes = await approval.exit_now(session, trade, user, via="web")
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     closed = [MarkPriceResponse(closed=True, exit_reason=o.exit_reason, exit_price=o.exit_price, pnl=o.pnl) for o in outcomes if o.closed]

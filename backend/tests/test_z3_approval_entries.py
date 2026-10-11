@@ -50,16 +50,20 @@ def _flag_for(tenant_id: int, on: bool = True) -> None:
     _run(go())
 
 
-def _price(monkeypatch, value):
-    """The live price an approval re-quotes at (the worker bridge's broker session in production)."""
-    async def factory(session, tenant_id):
+def _price(monkeypatch, value, seen=None):
+    """The live price an approval re-quotes at (the deciding user's own broker session in production). `seen` collects
+    the (symbol, exchange) pairs asked for."""
+    async def factory(session, who):
         if value is None:
             return None
 
-        async def lookup(symbol):
+        async def lookup(symbol, exchange="NSE"):
+            if seen is not None:
+                seen.append((symbol, exchange))
             return float(value() if callable(value) else value)
         return lookup
     monkeypatch.setattr(worker_bridge, "price_lookup_for_tenant", factory)
+    monkeypatch.setattr(worker_bridge, "price_lookup_for_user", factory)
 
 
 def _actions(tenant_id, action=None):
@@ -252,9 +256,9 @@ def test_the_order_pipeline_refuses_an_automatic_entry_without_an_approved_propo
             await monitor.decide(session, row, other_user, approve=True, note=None)
     _run(approve_foreign())
     assert "not an approved entry" in _run(go(origin="approval", approval_action_id=foreign))[2][0]
-    # A person's own console entry is their approval.
-    result, status, _ = _run(go(origin="manual"))
-    assert result.executed and status == "POSITION_OPEN"
+    # No origin bypasses the gate (review M1): a caller calling itself "manual" is refused like any other.
+    result, status, reasons = _run(go(origin="manual"))
+    assert not result.executed and status == "REJECTED" and "Approval-only mode" in reasons[0]
 
 
 def test_structures_are_refused_under_approval_only():
@@ -287,9 +291,7 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     assert _pipeline_callers() == {"app/main.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"}}
-    main = (BACKEND / "app" / "main.py").read_text()
-    assert 'origin="manual"' in main                                           # the console: a person's own entry
-    for rel in ("app/webhooks/routes.py", "app/public_api/routes.py"):
+    for rel in ("app/main.py", "app/webhooks/routes.py", "app/public_api/routes.py"):
         text = (BACKEND / rel).read_text()
         assert text.index("approval.required(") < text.index("execute_signal_for_user("), rel   # proposes first
     worker = (BACKEND / "app" / "workers" / "trading_worker.py").read_text()
@@ -353,7 +355,7 @@ def test_no_price_means_no_order_and_expired_proposals_cannot_be_approved(monkey
     refused = client.post(f"/api/ai/actions/{late}/approve", headers=t["headers"], json={})
     assert refused.status_code == 409 and "expired" in refused.text
 
-    # The worker's per-cycle sweep expires due rows of its organisation only.
+    # The sweep expires due rows (here for one organisation; the worker's housekeeping runs it for all, every cycle).
     stale = _propose(t, now=datetime.now(UTC) - timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES + 1))
     other = _tenant(_email("expiry-other"))
     other_stale = _propose(other, now=datetime.now(UTC) - timedelta(hours=30))
@@ -368,13 +370,19 @@ def test_no_price_means_no_order_and_expired_proposals_cannot_be_approved(monkey
 
 # --- exits policy ------------------------------------------------------------------------------------------------------
 
-def _open_trade(t, *, dep_id=None, entry=100.0, stop=98.0, target=104.0, mode="PAPER"):
+def _open_trade(t, *, dep_id=None, entry=100.0, stop=98.0, target=104.0, mode="PAPER", approved=False, mark=None):
+    """An open position; `approved` links it to an EXECUTED entry proposal (it was entered by approval)."""
     async def go():
         async with _session_factory() as session:
             trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode=mode, symbol="RELIANCE", strategy_id="ema_rsi_scalper_1m",
                                 direction="LONG", entry_time=datetime.now(UTC) - timedelta(minutes=20), entry_price=entry, quantity=10.0,
-                                stop_loss=stop, target1=target, exchange="NSE", deployment_id=dep_id)
+                                stop_loss=stop, target1=target, exchange="NSE", deployment_id=dep_id, mark_price=mark)
             session.add(trade)
+            await session.flush()
+            if approved:
+                session.add(AiActionRecord(tenant_id=t["tenant_id"], deployment_id=dep_id, trade_id=trade.id, action="ENTRY", rule="ENTRY_SIGNAL",
+                                           reason="test", status="EXECUTED", expires_at=datetime.now(UTC), owner_user_id=t["user_id"],
+                                           idempotency_key=f"test:{uuid.uuid4().hex}"))
             await session.commit()
             return trade.id
     return _run(go())
@@ -384,15 +392,18 @@ def test_target_asks_exit_now_while_the_stop_closes_at_once_even_with_a_snoozed_
     t = _tenant(_email("exits"))
     _flag_for(t["tenant_id"])
     dep_id = _deploy(t)
-    trade_id = _open_trade(t, dep_id=dep_id)
+    trade_id = _open_trade(t, dep_id=dep_id, approved=True)
+    other_id = _open_trade(t, dep_id=None)                             # entered another way: its target stays automatic (L2)
     broker = _FakeBroker(ltp=104.5)                                    # through target 1
     worker = _worker(monkeypatch, broker)
     _force_signal(monkeypatch, lambda: _signal(direction=SignalDirection.NO_TRADE))
 
     report = _run(worker.run_cycle(now=OPEN_NOW))
-    assert report.positions_closed == 0 and _get(TradeRecord, trade_id).exit_time is None
+    assert report.positions_closed == 1 and _get(TradeRecord, trade_id).exit_time is None
+    assert _get(TradeRecord, other_id).exit_reason == "Target 1"
     asks = _actions(t["tenant_id"], "EXIT_POSITION")
     assert len(asks) == 1 and asks[0].rule == "TARGET_1_REACHED" and asks[0].trade_id == trade_id and asks[0].reason.startswith("Exit now?")
+    assert asks[0].owner_user_id == t["user_id"]
     _run(worker.run_cycle(now=OPEN_NOW + timedelta(minutes=1)))
     assert len(_actions(t["tenant_id"], "EXIT_POSITION")) == 1                                  # asked once per level
 
@@ -406,13 +417,15 @@ def test_target_asks_exit_now_while_the_stop_closes_at_once_even_with_a_snoozed_
     assert retired.status == "EXPIRED" and retired.result == "Position closed: Stop Loss"     # the stale question is void
 
 
-def test_flag_off_keeps_target_exits_automatic(monkeypatch):
+def test_flag_off_keeps_target_exits_automatic_and_hides_exit_now(monkeypatch):
     t = _tenant(_email("exits-off"))
     trade_id = _open_trade(t, dep_id=_deploy(t))
     worker = _worker(monkeypatch, _FakeBroker(ltp=104.5))
     _force_signal(monkeypatch, lambda: _signal(direction=SignalDirection.NO_TRADE))
     _run(worker.run_cycle(now=OPEN_NOW))
     assert _get(TradeRecord, trade_id).exit_reason == "Target 1" and _actions(t["tenant_id"], "EXIT_POSITION") == []
+    # Review M4: "Exit now" does not exist with the flag off (exits run automatically).
+    assert client.post(f"/api/positions/{_open_trade(t)}/exit-now", headers=t["headers"]).status_code == 404
 
 
 def test_protective_reasons_are_everything_but_targets():
@@ -423,25 +436,177 @@ def test_protective_reasons_are_everything_but_targets():
         assert not approval.is_protective(reason), reason
 
 
-def test_exit_now_api_closes_at_once_with_the_given_price_when_no_quote(monkeypatch):
+def test_exit_now_never_takes_a_typed_price_refuses_live_and_is_the_holders(monkeypatch):
+    from tests.test_z3_members import member
     t = _tenant(_email("exitnow"))
+    _flag_for(t["tenant_id"])
+    mate = member(t)
     other = _tenant(_email("exitnow-other"))
     _price(monkeypatch, None)
     trade_id = _open_trade(t)
-    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=other["headers"], json={"price": 101}).status_code == 404
-    no_price = client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={})
-    assert no_price.status_code == 409 and "give the exit price" in no_price.text
-    out = client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 101.0})
+    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=other["headers"]).status_code == 404
+    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=mate["headers"]).status_code == 403       # L8
+    # No quote and never priced by the monitor: refused, whatever price is sent along (review M2).
+    no_price = client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 100000})
+    assert no_price.status_code == 409 and "No price" in no_price.text and _get(TradeRecord, trade_id).exit_time is None
+    # With the monitor's last price it closes there.
+    marked = _open_trade(t, mark=101.0)
+    out = client.post(f"/api/positions/{marked}/exit-now", headers=t["headers"], json={"price": 100000})
     assert out.status_code == 200, out.text
     closed = out.json()["closed"][0]
-    assert closed["exit_reason"] == "Exit now (web)" and closed["exit_price"] == 101.0 and closed["pnl"] < 10.0   # charges come off
-    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"], json={"price": 101.0}).status_code == 409
-
-    # With a quote the live price wins over the one typed.
+    assert closed["exit_reason"] == "Exit now (web, last seen price)" and closed["exit_price"] == 101.0 and closed["pnl"] < 10.0
+    assert client.post(f"/api/positions/{marked}/exit-now", headers=t["headers"]).status_code == 409
+    # The live price of the holder's own entitlement wins.
     _price(monkeypatch, 102.5)
-    second = _open_trade(t)
-    out = client.post(f"/api/positions/{second}/exit-now", headers=t["headers"], json={"price": 90.0})
-    assert out.json()["closed"][0]["exit_price"] == 102.5
+    second = _open_trade(t, mark=90.0)
+    out = client.post(f"/api/positions/{second}/exit-now", headers=t["headers"])
+    assert out.json()["closed"][0]["exit_price"] == 102.5 and out.json()["closed"][0]["exit_reason"] == "Exit now (web, live price)"
+    # LIVE: Phase 0 has no broker order path (review M4).
+    live = _open_trade(t, mode="LIVE", mark=101.0)
+    refused = client.post(f"/api/positions/{live}/exit-now", headers=t["headers"])
+    assert refused.status_code == 409 and "broker app" in refused.text and _get(TradeRecord, live).exit_time is None
+
+
+def test_two_closes_of_one_position_book_once():
+    """Review M3: "Exit now" and the worker reach the same position at once - each with its own (stale) view. Only the
+    conditional claim that lands books the exit: one P&L, one EXIT notification."""
+    from app.db.models import NotificationRecord
+    from app.trading.position_monitor import close_position
+    t = _tenant(_email("race"))
+    trade_id = _open_trade(t)
+
+    async def go():
+        async with _session_factory() as first, _session_factory() as second:
+            a = await first.get(TradeRecord, trade_id)
+            b = await second.get(TradeRecord, trade_id)
+            assert a.exit_time is None and b.exit_time is None
+            won = await close_position(first, a, 103.0, "Target 1")
+            lost = await close_position(second, b, 97.0, "Exit now (web, live price)")
+            return won, lost
+    won, lost = _run(go())
+    assert won.closed and not lost.closed and "closed at the same moment" in lost.warnings[0]
+    row = _get(TradeRecord, trade_id)
+    assert row.exit_reason == "Target 1" and row.exit_price == 103.0
+
+    async def exits():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(NotificationRecord).where(NotificationRecord.related_trade_id == trade_id,
+                                                                                NotificationRecord.event_type == "EXIT")))
+    assert len(_run(exits())) == 1
+
+
+def test_overdue_and_interrupted_proposals_free_the_deployment_slot():
+    """Review M6: an overdue PROPOSED row, or an APPROVED row interrupted before execution, never swallows the next signal."""
+    t = _tenant(_email("slot"))
+    _flag_for(t["tenant_id"])
+    dep_id = _deploy(t)
+    overdue = _propose(t, dep_id=dep_id, now=datetime.now(UTC) - timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES + 5))
+    fresh = _propose(t, dep_id=dep_id)
+    assert fresh is not None and fresh != overdue
+    statuses = {a.id: a.status for a in _actions(t["tenant_id"], "ENTRY")}
+    assert statuses[overdue] == "EXPIRED" and statuses[fresh] == "PROPOSED"
+
+    async def interrupt():                    # decided, then the process died before execute()
+        async with _session_factory() as session:
+            row = await session.get(AiActionRecord, fresh)
+            row.status, row.decided_by = "APPROVED", t["user_id"]
+            row.decided_at = datetime.now(UTC) - timedelta(minutes=monitor.ORPHAN_MINUTES + 1)
+            await session.commit()
+    _run(interrupt())
+    third = _propose(t, dep_id=dep_id)
+    statuses = {a.id: (a.status, a.result) for a in _actions(t["tenant_id"], "ENTRY")}
+    assert statuses[fresh][0] == "FAILED" and "interrupted" in statuses[fresh][1] and statuses[third][0] == "PROPOSED"
+
+    # The global sweep (worker housekeeping) does the same for every organisation, conditionally.
+    async def orphan_and_sweep():
+        async with _session_factory() as session:
+            row = await session.get(AiActionRecord, third)
+            row.status, row.decided_by = "APPROVED", t["user_id"]
+            row.decided_at = datetime.now(UTC) - timedelta(minutes=monitor.ORPHAN_MINUTES + 1)
+            await session.commit()
+            return await monitor.expire_stale(session, datetime.now(UTC))
+    assert _run(orphan_and_sweep()) >= 1
+    assert {a.id: a.status for a in _actions(t["tenant_id"], "ENTRY")}[third] == "FAILED"
+
+
+def test_console_paper_execute_needs_a_trader_and_becomes_a_proposal_under_approval_only(monkeypatch):
+    """Review M1: the console path is not a bypass - a VIEWER is refused, and with approval-only on the signal (priced
+    from candles the browser sent) becomes an entry proposal; nothing is placed. Flag off, the fill is marked "client"."""
+    from app.strategy_engine.registry import registry
+    from tests.test_trading_api import _fake_long_signal, _sample_candles_payload
+    from tests.test_z3_members import member
+    monkeypatch.setattr(registry.get("ema_rsi_scalper_1m"), "analyze", lambda data, symbol: _fake_long_signal())
+    t = _tenant(_email("console"))
+    viewer = member(t, role="VIEWER")
+    body = {"symbol": "TESTSYM", "candles": {"1min": _sample_candles_payload()}}
+    url = "/api/strategies/ema_rsi_scalper_1m/paper-execute"
+    assert client.post(url, headers=viewer["headers"], json=body).status_code == 403
+
+    flag_off = client.post(url, headers=t["headers"], json=body).json()
+    assert flag_off["executed"] is True
+    assert _get(TradeRecord, _orders(t["tenant_id"])[0].trade_id).price_source == "client"
+
+    _flag_for(t["tenant_id"])
+    out = client.post(url, headers=t["headers"], json=body)
+    assert out.status_code == 200 and out.json()["executed"] is False and "entry proposal #" in out.json()["reasons"][0]
+    assert len(_orders(t["tenant_id"])) == 1                                        # nothing new placed
+    entries = _actions(t["tenant_id"], "ENTRY")
+    assert len(entries) == 1 and json.loads(entries[0].evidence_json)["source"] == "console" and entries[0].owner_user_id == t["user_id"]
+
+
+def test_proposals_are_decided_by_their_owner_or_the_organisation_owner_and_requote_uses_the_exchange(monkeypatch):
+    """Review L8 / L3: a member's entry proposal is not another member's to decide; the owner (or the organisation OWNER)
+    decides, the PAPER order lands in the proposal owner's account, and the re-quote asks for the proposal's exchange."""
+    from tests.test_z3_members import member
+    t = _tenant(_email("owner"))
+    _flag_for(t["tenant_id"])
+    mate = member(t)
+    third = member(t)
+
+    async def propose_for_mate():
+        async with _session_factory() as session:
+            row = await approval.propose_entry(session, t["tenant_id"], signal=_sig(symbol="SENSEX"), strategy_id="x", source="tradingview",
+                                               idempotency_key=f"o:{uuid.uuid4().hex}", user_id=mate["user_id"], exchange="BSE")
+            return row.id
+    pid = _run(propose_for_mate())
+    assert client.post(f"/api/ai/actions/{pid}/approve", headers=third["headers"], json={}).status_code == 403
+    assert client.post(f"/api/ai/actions/{pid}/reject", headers=third["headers"], json={}).status_code == 403
+    assert client.post(f"/api/ai/actions/{pid}/snooze", headers=third["headers"], json={"minutes": 15}).status_code == 403
+    seen: list = []
+    _price(monkeypatch, 100.1, seen)
+    out = client.post(f"/api/ai/actions/{pid}/approve", headers=t["headers"], json={})          # the organisation OWNER may
+    assert out.status_code == 200 and out.json()["status"] == "EXECUTED", out.text
+    assert seen == [("SENSEX", "BSE")]
+    assert _get(TradeRecord, out.json()["trade_id"]).user_id == mate["user_id"]               # the proposal owner's position
+
+
+def test_requote_with_byob_on_uses_only_the_approvers_own_entitlement():
+    """Review M5: with byob_data_tier on, a member without their own confirmed broker session has no live price - the
+    organisation's (the owner's) credential is never borrowed - so the approval places nothing."""
+    from tests.test_z3_members import member
+    t = _tenant(_email("byob"))                 # the owner holds the organisation's broker credential
+    _flag_for(t["tenant_id"])
+    mate = member(t)
+
+    async def byob(on):
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            flags = dict(current.get("flags") or {})
+            flags["byob_data_tier"] = {"on": False, "tenants": [t["tenant_id"]] if on else []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(byob(True))
+    try:
+        async def propose_for_mate():
+            async with _session_factory() as session:
+                row = await approval.propose_entry(session, t["tenant_id"], signal=_sig(), strategy_id="x", source="tradingview",
+                                                   idempotency_key=f"b:{uuid.uuid4().hex}", user_id=mate["user_id"])
+                return row.id
+        pid = _run(propose_for_mate())
+        body = client.post(f"/api/ai/actions/{pid}/approve", headers=mate["headers"], json={}).json()
+        assert body["status"] == "FAILED" and "own broker session" in body["result"] and _orders(t["tenant_id"]) == []
+    finally:
+        _run(byob(False))
 
 
 # --- Telegram ----------------------------------------------------------------------------------------------------------
@@ -480,10 +645,12 @@ def _telegram_entry_and_exit(t, monkeypatch, _tg):
     row = next(a for a in _actions(t["tenant_id"], "ENTRY") if a.id == action_id)
     assert row.status == "EXECUTED" and row.trade_id is not None
 
-    # /exit closes that PAPER position at once; a LIVE one is refused over Telegram.
-    reply = _post(t, _message("987654", f"/exit {row.trade_id}")).json()["reply"]
-    assert reply.startswith(f"Closed #{row.trade_id} at 100.10") and _get(TradeRecord, row.trade_id).exit_reason == "Exit now (telegram)"
+    # /exit asks first (L4), then the confirmed command closes that PAPER position at once; a LIVE one is refused.
+    ask = _post(t, _message("987654", f"/exit {row.trade_id}")).json()["reply"]
+    assert ask.startswith(f"Exit #{row.trade_id} LONG RELIANCE") and "confirm" in ask and _get(TradeRecord, row.trade_id).exit_time is None
+    reply = _post(t, _message("987654", f"/exit {row.trade_id} confirm")).json()["reply"]
+    assert reply.startswith(f"Closed #{row.trade_id} at 100.10") and _get(TradeRecord, row.trade_id).exit_reason == "Exit now (telegram, live price)"
     live = _open_trade(t, mode="LIVE")
-    assert "never over Telegram" in _post(t, _message("987654", f"/exit {live}")).json()["reply"]
+    assert "broker app" in _post(t, _message("987654", f"/exit {live} confirm")).json()["reply"]
     assert _get(TradeRecord, live).exit_time is None
     assert "Usage" in _post(t, _message("987654", "/exit abc")).json()["reply"]

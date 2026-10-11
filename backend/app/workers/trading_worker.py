@@ -356,6 +356,15 @@ class TradingWorker:
                     logger.exception("Waking snoozed proposals failed")
                     await session.rollback()
                     report.errors.append(f"ai snooze wake: {exc}")
+                # Z3 (review M6): proposal expiry for every organisation, every cycle, market open or not - also for an
+                # organisation with no deployment or a lapsed token (entry proposals live minutes; an approval interrupted
+                # between decide and execute is failed after ORPHAN_MINUTES so it never holds a deployment's slot).
+                try:
+                    await ai_monitor.expire_stale(session, now)
+                except Exception as exc:  # noqa: BLE001 - housekeeping; never breaks trading or delivery
+                    logger.exception("Expiring proposals failed")
+                    await session.rollback()
+                    report.errors.append(f"ai expiry: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
@@ -854,8 +863,6 @@ class TradingWorker:
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
-            # Z3: every cycle, this organisation's rows only - an entry proposal lives for minutes, not a day.
-            await ai_monitor.expire_stale(session, now, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
@@ -1039,7 +1046,7 @@ class TradingWorker:
         row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                            idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
                                            requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                           user_id=dep.created_by, now=now)
+                                           user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
         dep.last_error = (f"Waiting for approval: entry proposal #{row.id}" if row is not None
                           else f"Signal at {signal_ts.isoformat()} not proposed: an earlier entry proposal of this deployment is still open")
         await session.commit()

@@ -81,9 +81,9 @@ async def execute_signal_for_user(
     caller. A LIVE request without a broker is REJECTED on the order trail rather than raised:
     the worker's token gate normally prevents it, but if it ever happens it must be visible.
 
-    Z3 / BT2: `origin` says who asks - "manual" (a person's own console entry), "approval" (an APPROVED entry proposal,
-    whose id is `approval_action_id`) or "automatic" (the default: worker, webhook, public API). Under approval-only
-    mode an automatic entry without an approved proposal is REJECTED here (app/execution/approval.py::gate_refusal).
+    Z3 / BT2: `origin` says who asks - "approval" (an APPROVED entry proposal, whose id is `approval_action_id`) or
+    "automatic" (the default: worker, webhook, public API, console). Under approval-only mode any entry without an
+    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal) - there is no bypass.
     """
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
     # (premium/future price levels) while the strategy's levels stay on the underlying. The order

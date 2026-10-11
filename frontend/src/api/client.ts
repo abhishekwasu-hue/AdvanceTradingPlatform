@@ -1,3 +1,4 @@
+import type { OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   StrategistResult,
   StrategistRequestParsed,
@@ -133,7 +134,7 @@ import type {
   BrokerLoginUrl,
   AiAcknowledgement,
   AiPreferences,
-} from "../types";
+ StaticIp, StaticIpOverview } from "../types";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 
@@ -361,6 +362,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ symbol, candles }),
     }),
+
+  // OI Banner (O3): read-only banner, history, per-strike OI; settings are saved by the organisation owner.
+  oiBanners: () => request<{ banners: OiBannerResponse[] }>("/option-chain/banners"),
+  oiBanner: (underlying: string) => request<OiBannerResponse>(`/option-chain/${encodeURIComponent(underlying)}/banner`),
+  oiHistory: (underlying: string, interval: number, date?: string) =>
+    request<OiHistoryResponse>(`/option-chain/${encodeURIComponent(underlying)}/history?interval=${interval}${date ? `&date=${date}` : ""}`),
+  oiStrikes: (underlying: string, date?: string) =>
+    request<OiStrikesResponse>(`/option-chain/${encodeURIComponent(underlying)}/strikes${date ? `?date=${date}` : ""}`),
+  oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
+  saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
+    request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {
@@ -850,6 +862,10 @@ export const api = {
   fxRates: () => request<{ rates: FxRate[]; supported: string[] }>("/fx/rates"),
   adminSetFxRate: (base: string, quote: string, rate: number, source = "manual") =>
     request<FxRate>("/admin/fx-rates", { method: "PUT", body: JSON.stringify({ base, quote, rate, source }) }),
+
+  staticIps: () => request<StaticIpOverview>("/compliance/static-ips"),
+  setStaticIp: (body: { broker_name: string; role: "PRIMARY" | "BACKUP"; ip: string; registered_at?: string | null }) =>
+    request<StaticIp>("/compliance/static-ips", { method: "PUT", body: JSON.stringify(body) }),
 
   setTenantAlgoId: (algoId: string) =>
     request<TenantInfo>("/team/tenant", { method: "PATCH", body: JSON.stringify({ algo_id: algoId }) }),

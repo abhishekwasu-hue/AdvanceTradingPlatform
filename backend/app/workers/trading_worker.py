@@ -125,6 +125,7 @@ class CycleReport:
     chain_rows_recorded: int = 0   # Phase W
     billing: Optional[Dict[str, int]] = None
     ai_proposals: int = 0
+    ai_snoozes_woken: int = 0     # PW5: snoozed proposals announced again this cycle
     master_synced: Optional[Dict[str, int]] = None
     universe_synced: Optional[Dict[str, int]] = None      # U1-a
     stale_skips: int = 0
@@ -333,6 +334,14 @@ class TradingWorker:
                     logger.exception("Alert rule flush failed")
                     await session.rollback()
                     report.errors.append(f"alert flush: {exc}")
+                # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
+                # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
+                try:
+                    report.ai_snoozes_woken = await ai_monitor.wake_snoozed(session, now)
+                except Exception as exc:  # noqa: BLE001 - a reminder must never break trading or delivery
+                    logger.exception("Waking snoozed proposals failed")
+                    await session.rollback()
+                    report.errors.append(f"ai snooze wake: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading

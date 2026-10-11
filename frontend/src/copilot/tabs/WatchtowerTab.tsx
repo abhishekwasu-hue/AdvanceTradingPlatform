@@ -1,81 +1,28 @@
-import { Bell, CheckCircle2, Clock, MessageCircle, Satellite, ShieldAlert, XCircle } from "lucide-react";
+import { AlarmClock, Bell, CheckCircle2, Clock, MessageCircle, Satellite } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import { Badge, Button, Dialog, EmptyState, fieldClass, type Tone } from "../../components/primitives";
-import StepUpDialog, { isStepUpError } from "../../components/StepUpDialog";
-import VisionReportPanel from "../../components/VisionReportPanel";
+import { Badge, EmptyState, type Tone } from "../../components/primitives";
+import { isSnoozed } from "../../proposals/snooze";
 import type { AiAction, NotificationEntry, TelegramInboundStatus } from "../../types";
-import { friendlyError } from "../aiTask";
-import TiltCard from "../components/TiltCard";
 import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
 import { useDeepLinkTarget } from "../../utils/useDeepLinkTarget";
 import { useLiveEvents } from "../../live/useLiveEvents";
+import ProposalCard from "./ProposalCard";
 import { Panel } from "./shared";
 
 /**
  * Watchtower: what the monitoring agent proposed (pause a deployment, exit a position, reduce risk, review) as a
- * timeline - the trader approves or rejects each one; a LIVE deployment or position asks for the authenticator code
- * first (server-enforced; the step-up dialog retries the approval). The agent never acts on its own (ADR-0006).
- * Below: the latest alerts and whether Telegram approvals are linked.
+ * timeline - the trader approves, rejects or snoozes each one (PW5 card); a LIVE deployment or position asks for the
+ * authenticator code first (server-enforced; the step-up dialog retries the approval). The agent never acts on its own
+ * (ADR-0006). Snoozed proposals wait in their own folded list until they wake. Below: the latest alerts and whether
+ * Telegram approvals are linked.
  */
 const STATUS_TONE: Record<string, Tone> = { PROPOSED: "warn", APPROVED: "info", EXECUTED: "up", REJECTED: "neutral", EXPIRED: "neutral", FAILED: "down" };
 const SEVERITY_TONE: Record<string, Tone> = { INFO: "info", WARNING: "warn", CRITICAL: "down", EMERGENCY: "down" };
 
 function when(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "-";
-}
-
-function ProposalCard({ a, onDecided }: { a: AiAction; onDecided: (msg: string) => void }) {
-  const t = useCopilotT();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [stepUp, setStepUp] = useState<string | null>(null);
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [note, setNote] = useState("");
-
-  async function approve() {
-    setBusy(true); setError(null);
-    try { await api.aiApproveAction(a.id); onDecided(t("watch.approved")); }
-    catch (e) { if (isStepUpError(e)) setStepUp(String(e)); else setError(friendlyError(e, t)); }
-    finally { setBusy(false); }
-  }
-  async function reject() {
-    setBusy(true); setError(null);
-    try { await api.aiRejectAction(a.id, note.trim() || undefined); setRejectOpen(false); onDecided(t("watch.rejected")); }
-    catch (e) { setError(friendlyError(e, t)); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <TiltCard tilt={false} glow="ai" className="space-y-2" data-testid="watch-proposal">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <ShieldAlert size={15} className="text-warn" aria-hidden />
-        <b className="text-fg">{t(`watch.action.${a.action}`)}</b>
-        <span className="text-xs text-fg-muted">{t("watch.meta", { rule: a.rule, deployment: a.deployment_id ?? "-" })}{a.trade_id ? ` · ${t("watch.position", { id: a.trade_id })}` : ""}</span>
-        <Badge className="ml-auto" tone="warn">{t("watch.status.PROPOSED")}</Badge>
-      </div>
-      <p className="whitespace-pre-wrap text-sm text-fg">{a.reason}</p>
-      <details className="text-xs text-fg-muted">
-        <summary className="cursor-pointer hover:text-fg">{t("watch.evidence")}</summary>
-        <pre className="mt-1 overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-[11px] text-fg">{JSON.stringify(a.evidence, null, 2)}</pre>
-      </details>
-      <VisionReportPanel actionId={a.id} />
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="primary" icon={<CheckCircle2 size={13} />} loading={busy && !rejectOpen} disabled={busy} onClick={() => void approve()}>{t("watch.approve")}</Button>
-        <Button size="sm" variant="danger" icon={<XCircle size={13} />} disabled={busy} onClick={() => setRejectOpen(true)}>{t("watch.reject")}</Button>
-        <span className="text-[11px] text-fg-muted"><Clock size={11} className="mr-1 inline" />{t("watch.expires", { at: when(a.expires_at) })}</span>
-      </div>
-      <p className="text-[11px] text-fg-muted">{t("watch.liveNote")}</p>
-      {error && <p className="text-xs text-down" role="alert">{error}</p>}
-      {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen} title={t("watch.rejectTitle")} description={t("watch.rejectHint")}
-              footer={<><Button onClick={() => setRejectOpen(false)}>{t("states.cancel")}</Button><Button variant="danger" loading={busy} onClick={() => void reject()}>{t("watch.reject")}</Button></>}>
-        <label htmlFor={`reject-${a.id}`} className="mb-1 block text-xs text-fg-muted">{t("watch.rejectNote")}</label>
-        <textarea id={`reject-${a.id}`} rows={3} className={`${fieldClass} py-2`} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-      </Dialog>
-    </TiltCard>
-  );
 }
 
 export default function WatchtowerTab() {
@@ -85,19 +32,32 @@ export default function WatchtowerTab() {
   const [alerts, setAlerts] = useState<NotificationEntry[] | null>(null);
   const [telegram, setTelegram] = useState<TelegramInboundStatus | null | "unavailable">(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [snoozed, setSnoozed] = useState<AiAction[]>([]);
+  const [now, setNow] = useState(() => new Date());
 
-  const loadHistory = () => { api.aiActions().then((all) => setHistory(all.filter((a) => a.status !== "PROPOSED").slice(0, 20))).catch(() => setHistory([])); };
+  // One read serves the timeline (decided proposals) and the snoozed list (PW5: hidden from the pending list).
+  const loadHistory = () => {
+    api.aiActions().then((all) => {
+      const at = new Date();
+      setHistory(all.filter((a) => a.status !== "PROPOSED").slice(0, 20));
+      setSnoozed(all.filter((a) => isSnoozed(a, at)));
+    }).catch(() => { setHistory([]); setSnoozed([]); });
+  };
   useEffect(() => {
     loadHistory();
     api.listNotifications().then((n) => setAlerts(n.slice(0, 8))).catch(() => setAlerts([]));
     api.telegramInboundStatus().then(setTelegram).catch(() => setTelegram("unavailable"));
+    const tick = window.setInterval(() => setNow(new Date()), 30_000);      // the "time left" line stays current
+    return () => window.clearInterval(tick);
   }, []);
 
   const decided = (msg: string) => { setMessage(msg); reloadActions(); loadHistory(); };
-  // PW4: approved or rejected on Telegram (or in another tab) -> this list follows within about 2 s.
+  // PW4: approved or rejected on Telegram (or in another tab) -> this list follows within about 2 s (PW5: snoozes too).
   useLiveEvents(["ai_actions"], () => { reloadActions(); loadHistory(); });
-  // PW3: a push or Telegram link opens /copilot/watchtower?action=<id> - that proposal is scrolled to and outlined.
-  const target = useDeepLinkTarget("action", "proposal", pending.length > 0);
+  // PW3: a push or Telegram link opens /copilot/watchtower?action=<id> - that proposal is scrolled to and outlined
+  // (a snoozed one opens the folded snoozed list).
+  const target = useDeepLinkTarget("action", "proposal", pending.length + snoozed.length > 0);
+  const targetSnoozed = target != null && snoozed.some((a) => a.id === target);
 
   return (
     <div className="space-y-4" data-testid="tab-panel-watchtower">
@@ -108,9 +68,21 @@ export default function WatchtowerTab() {
           <EmptyState icon={<CheckCircle2 size={22} />} title={t("watch.emptyTitle")} body={t("watch.emptyBody")} />
         ) : <div className="space-y-3">{pending.map((a) => (
           <div key={a.id} id={`proposal-${a.id}`} className={target === a.id ? "rounded-2xl ring-2 ring-brand" : undefined}>
-            <ProposalCard a={a} onDecided={decided} />
+            <ProposalCard a={a} onDecided={decided} now={now} />
           </div>
         ))}</div>}
+        {snoozed.length > 0 && (
+          <details className="mt-3 rounded-xl border border-border px-3 py-2" open={targetSnoozed || undefined} data-testid="watch-snoozed">
+            <summary className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-fg-muted hover:text-fg">
+              <AlarmClock size={15} aria-hidden />{t("watch.snoozedList", { count: snoozed.length })}
+            </summary>
+            <div className="mt-2 space-y-3">{snoozed.map((a) => (
+              <div key={a.id} id={`proposal-${a.id}`} className={target === a.id ? "rounded-2xl ring-2 ring-brand" : undefined}>
+                <ProposalCard a={a} onDecided={decided} snoozed now={now} />
+              </div>
+            ))}</div>
+          </details>
+        )}
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-3">

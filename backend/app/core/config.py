@@ -403,6 +403,10 @@ SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
 # S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
 # screen-alert emails. Empty = no link is added (the mails still go).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
+# public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
+# no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.
+KITE_PUBLISHER_API_KEY = os.environ.get("KITE_PUBLISHER_API_KEY", "").strip()
 
 def _json_object(name: str) -> dict:
     """An env var holding a JSON object; anything else is ignored with a warning."""

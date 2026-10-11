@@ -807,6 +807,8 @@ export const api = {
   aiActions: (status?: string) => request<AiAction[]>(`/ai/actions${status ? `?status=${status}` : ""}`),
   aiApproveAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/approve`, { method: "POST", body: JSON.stringify({ note }) }),
   aiRejectAction: (id: number, note?: string) => request<AiAction>(`/ai/actions/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  aiSnoozeAction: (id: number, snooze: { minutes: number } | { until: string }) =>
+    request<AiAction>(`/ai/actions/${id}/snooze`, { method: "POST", body: JSON.stringify(snooze) }),
   // ---- Phase K: billing, API keys, marketplace
   billingPlans: () => request<PlanCatalogueEntry[]>("/billing/plans"),
   billingOverview: () => request<BillingOverview>("/billing"),

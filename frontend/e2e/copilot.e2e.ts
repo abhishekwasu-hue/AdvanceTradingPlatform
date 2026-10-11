@@ -195,6 +195,37 @@ test.describe("Watchtower decisions", () => {
     const flow = calls.posts.map((c) => c.url.replace(/\d+/, "N")).filter((u) => /actions\/N\/approve|mfa\/step-up/.test(u));
     expect(flow).toEqual(["/ai/actions/N/approve", "/auth/mfa/step-up", "/ai/actions/N/approve"]);
   });
+
+  test("snooze: the proposal leaves the pending list and the badge, and waits in the snoozed list", async ({ page }) => {
+    const calls = await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);
+    await page.getByTestId("watch-proposal").first().getByRole("button", { name: "Snooze" }).click();
+    const menu = page.getByTestId("watch-snooze-menu");
+    await expect(menu).toBeVisible();
+    await menu.getByRole("button", { name: "1 hour" }).click();
+    await expect(page.getByText(/^Snoozed until .* IST\. It will come back once\.$/)).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    await expect(page.getByTestId("tab-watchtower")).toContainText("1");
+    await page.getByTestId("watch-snoozed").getByText("1 snoozed proposal").click();
+    await expect(page.getByTestId("watch-snoozed-proposal")).toHaveCount(1);
+    const sent = calls.posts.filter((c) => /\/ai\/actions\/\d+\/snooze$/.test(c.url));
+    expect(sent.map((c) => c.body)).toEqual([{ minutes: 60 }]);
+  });
+
+  test("the proposal card fits a 360 px phone with 44 px actions", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    const card = page.getByTestId("watch-proposal").first();
+    await expect(card).toBeVisible();
+    for (const name of ["Approve", "Reject", "Snooze"]) {
+      const box = await card.getByRole("button", { name }).boundingBox();
+      expect(box && box.height >= 44 && box.x >= 0 && box.x + box.width <= 360).toBeTruthy();
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
 });
 
 async function chooseTemplate(page: import("@playwright/test").Page) {

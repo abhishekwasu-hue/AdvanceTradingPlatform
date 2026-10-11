@@ -80,7 +80,8 @@ referenced here.
   candles and the session's symbol set. The shared, platform-wide caches are not read or written for Tier A reads.
 - A per-user websocket stream never feeds platform-wide consumers (the lake recorder); nothing is pooled.
 - Symbols per session: open positions > open charts > watchlist > screener universe, up to the cap; beyond it the
-  symbol is EOD for that user (a symbol already held keeps its slot), with a slower refresh hint.
+  symbol is EOD for that user (a symbol already held keeps its slot; the latest scan wins among screener symbols), with
+  a slower refresh hint.
 
 ## Zerodha Kite Publisher (basket)
 

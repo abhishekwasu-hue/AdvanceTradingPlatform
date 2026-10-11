@@ -79,11 +79,12 @@ the session budget). Wired into the user-facing live reads, flag on:
 `app/market_data/fanin.py`.
 - **Symbol set per session** (`SessionSymbols`): demands with priority **open positions > open charts > watchlist >
   screener universe**. The API registers what the user opens (one symbol = chart priority, a batch = screener
-  priority); the worker registers the user's open positions every cycle. Chart / watchlist demands lapse when not
-  re-asserted (10 / 30 min); positions are replaced wholesale. In-process plus a Redis mirror, so the API process and
+  priority); the worker registers the user's open positions every cycle. Chart / screener / watchlist demands lapse
+  when not re-asserted (10 / 15 / 30 min); positions are replaced wholesale. In-process plus a Redis mirror, so the API process and
   the worker plan from the same set (without Redis each process plans from what it saw).
-- **Plan** (`plan_symbols`): the `cap` symbols with the lowest priority number, then the longest held - a held symbol
-  keeps its slot, a new one waits (no flapping). **Graceful degradation**: beyond the cap symbols are EOD for that user,
+- **Plan** (`plan_symbols`): the `cap` symbols with the lowest priority number, then the longest held - a held position,
+  chart or watchlist symbol keeps its slot and a new one waits (no flapping); in the screener universe the latest scan
+  wins. **Graceful degradation**: beyond the cap symbols are EOD for that user,
   and the refresh hint slows (5 s normal, 10 s over half the cap, 15 s over the cap).
 - **Worker side** (`UserSessionFanIn.sync`, every worker cycle): when the flag is on for the tenant and the market is
   open, one live session per user credential at a confirmed broker with a usable token (i.e. after the user's daily

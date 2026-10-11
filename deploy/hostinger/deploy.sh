@@ -63,6 +63,10 @@ if [ ! -f .env ]; then
       -e 's/^METRICS_TOKEN=.*/METRICS_TOKEN=CHANGE_ME/' \
       -e 's/^DOMAIN=.*/DOMAIN=CHANGE_ME/' \
       -e 's/^ACME_EMAIL=.*/ACME_EMAIL=CHANGE_ME/' \
+      -e 's/^OFFSITE_REMOTE=.*/OFFSITE_REMOTE=offsite:atp-backups/' \
+      -e 's/^OFFSITE_S3_ENDPOINT=.*/OFFSITE_S3_ENDPOINT=CHANGE_ME/' \
+      -e 's/^OFFSITE_S3_ACCESS_KEY=.*/OFFSITE_S3_ACCESS_KEY=CHANGE_ME/' \
+      -e 's/^OFFSITE_S3_SECRET_KEY=.*/OFFSITE_S3_SECRET_KEY=CHANGE_ME/' \
       .env.example > .env
   cat >> .env <<'ENV'
 
@@ -70,9 +74,11 @@ if [ ! -f .env ]; then
 ENVIRONMENT=production
 # CADDYFILE=Caddyfile with a domain (Let's Encrypt), Caddyfile.ip with DOMAIN=<server IP> until DNS exists
 CADDYFILE=Caddyfile.ip
-# off-site copy: a local directory until an S3-compatible provider is chosen (then e.g. spaces:atp-backups + OFFSITE_S3_*)
-OFFSITE_REMOTE=/offsite_local
-OFFSITE_S3_PROVIDER=Other
+# off-site copy (H-2): Cloudflare R2 - OFFSITE_S3_ENDPOINT=https://<account id>.r2.cloudflarestorage.com and a
+# bucket-scoped "Object Read & Write" token above. Backblaze B2 instead: OFFSITE_REMOTE=b2:<bucket> + the two lines below.
+OFFSITE_S3_PROVIDER=Cloudflare
+OFFSITE_B2_KEY_ID=
+OFFSITE_B2_APPLICATION_KEY=
 BACKUP_ENCRYPTION_PASSPHRASE=CHANGE_ME
 ENV
   chmod 600 .env
@@ -85,6 +91,7 @@ if grep -q 'CHANGE_ME' .env; then
   echo "  JWT_SECRET_KEY / METRICS_TOKEN / passwords: python3 -c \"import secrets;print(secrets.token_urlsafe(48))\""
   echo "  SECRETS_ENCRYPTION_KEY: the SAME 44-character key the PAPER PC uses (never a new one - stored broker keys depend on it)"
   echo "  DOMAIN: your domain, or this server's IP with CADDYFILE=Caddyfile.ip"
+  echo "  OFFSITE_S3_*: the Cloudflare R2 bucket's endpoint and token (docs/DEPLOY_HOSTINGER_MR.md section 5)"
   exit 10
 fi
 

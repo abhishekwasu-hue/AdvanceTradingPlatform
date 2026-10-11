@@ -15,7 +15,9 @@ echo "== deep";     curl -s -m 10 http://127.0.0.1:8000/api/system/health/deep |
 echo "== worker heartbeat / market"; curl -s -m 5 http://127.0.0.1:8000/api/system/status | head -c 400; echo
 echo "== migrations"; $COMPOSE exec -T backend alembic current 2>/dev/null | tail -1
 echo "== last backup"; $COMPOSE exec -T backup sh -c 'ls -l /backups/latest 2>/dev/null; ls /backups | tail -3' 2>/dev/null
-echo "== off-site";   ls -1t /var/backups/atp-offsite/backups 2>/dev/null | head -3 || true
+echo "== off-site";   REMOTE="$(grep -E '^OFFSITE_REMOTE=' .env 2>/dev/null | cut -d= -f2-)"; echo "remote: ${REMOTE:-?}"
+$COMPOSE logs --no-color --tail 200 offsite 2>/dev/null | grep -E 'synced|FAILED' | tail -1 || true
+$COMPOSE exec -T offsite sh -c 'rclone lsf "$OFFSITE_REMOTE/backups" --files-only | sort | tail -2; rclone size "$OFFSITE_REMOTE" 2>/dev/null | tail -1' 2>/dev/null || true
 echo "== public ports (only 22, 80, 443 expected)"; ss -tlnH | awk '{print $4}' | grep -vE '^(127\.0\.0\.1|\[::1\]|127\.0\.0\.53)' | sort -u
 echo "== firewall";   sudo -n ufw status 2>/dev/null | head -8 || echo "(sudo needed)"
 echo "== certificate"; DOMAIN="$(grep -E '^DOMAIN=' .env | cut -d= -f2-)"; echo | timeout 5 openssl s_client -connect "$DOMAIN:443" -servername "$DOMAIN" 2>/dev/null | openssl x509 -noout -issuer -enddate 2>/dev/null || echo "no TLS answer on $DOMAIN:443"

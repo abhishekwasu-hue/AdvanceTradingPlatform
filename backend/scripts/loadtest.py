@@ -20,8 +20,10 @@ X-Feature-Disabled), no broker session (409) and rate limiting (429).
 Safety: read paths plus login and a preview screen - it places, changes and approves nothing, and it never sends an
 order. `--base` must be localhost or a staging host (its name contains "staging", or it is listed in
 LOADTEST_ALLOWED_HOSTS): the script refuses anything else, so it is never pointed at the production VPS by mistake.
-Accounts: `--accounts FILE` (one `email,password` per line; user i logs in as account i mod n), `--token` (one shared
-access token, no login step), or neither: it registers `--register` throwaway accounts (needs self sign-up on).
+Accounts: `--accounts FILE` (one `email,password` per line; user i uses account i mod n, and the first user of each
+account logs in for it - so keep the file to about 8 accounts: the login limit is 10 a minute per IP), `--token` (one
+shared access token, no login step), or neither: it registers `--register` throwaway accounts (needs self sign-up on).
+Access tokens live 15 minutes: keep `--ramp` + `--seconds` under 14 minutes, or late requests answer 401.
 `--in-process` runs the test app (scripts/loadtest_app.py: in-memory SQLite, synthetic broker bars, the test suite's
 rate-limit overrides) with no server and no network. Results go into docs/PERFORMANCE.md.
 """
@@ -104,6 +106,7 @@ class Account:
     email: Optional[str] = None
     password: Optional[str] = None
     token: Optional[str] = None
+    ready: asyncio.Event = field(default_factory=asyncio.Event)   # set once the account's first user has logged in
 
 
 async def _timed(stats: Stats, scenario: str, call: Callable[[], Any]) -> Optional[httpx.Response]:
@@ -126,12 +129,19 @@ async def _login(client: httpx.AsyncClient, account: Account, stats: Stats) -> O
     return account.token                                       # throttled or refused: the setup token keeps the session going
 
 
-async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account: Account, stats: Stats, start_delay: float, deadline: float,
-                   think: float, seed: int) -> None:
+async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account: Account, leader: bool, stats: Stats, start_delay: float,
+                   deadline: float, think: float, seed: int) -> None:
+    """One user. The first user of each account logs in; the others open more sessions on that login (the per-IP login
+    limit - 10 a minute - would refuse 500 logins from one load generator, and logins are rare next to polling)."""
     rng = random.Random(seed * 1_000 + i)
     await asyncio.sleep(start_delay)
     async with make_client() as client:
-        token = await _login(client, account, stats)
+        if leader:
+            account.token = await _login(client, account, stats)
+            account.ready.set()
+        else:
+            await account.ready.wait()
+        token = account.token
         if not token:
             return
         client.headers["Authorization"] = f"Bearer {token}"
@@ -230,8 +240,8 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     stats = Stats()
     started = time.monotonic()
     deadline = started + args.ramp + args.seconds
-    await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], stats, args.ramp * i / max(1, args.users), deadline, args.think, args.seed)
-                           for i in range(args.users)))
+    await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats, args.ramp * i / max(1, args.users), deadline,
+                                    args.think, args.seed) for i in range(args.users)))
     return report(stats, args.users, time.monotonic() - started)
 
 

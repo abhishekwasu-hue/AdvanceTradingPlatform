@@ -57,6 +57,13 @@ def test_eod_screen_and_its_cached_rerun_meet_the_targets(factor):
     cached_budget = bench.TARGETS["eod_cached"] * factor
     _say("eod_cached (key: universe + as_of)", result["eod_cached"]["median"], cached_budget, result["eod_cached"]["runs"][:5], factor)
     _say("eod_cached (key: bar fingerprints)", result["eod_cached_by_bars"]["median"], cached_budget, result["eod_cached_by_bars"]["runs"], factor)
+    sample = bench.with_tf(bench.universe(50, bench.daily_index()), "1d")          # the per-symbol runtime (flag off), for the record
+    ast, validated = bench.compile_screen(bench.eod_text(), base_tf="1d", cost_cap=1e9)
+    started = time.perf_counter()
+    bench.run_screen(ast, validated, sample, base_tf="1d")
+    per_symbol = (time.perf_counter() - started) / len(sample)
+    _say(f"eod_per_symbol (one run over 50 symbols, not gated; x {bench.EOD_SYMBOLS} = {per_symbol * bench.EOD_SYMBOLS:.0f} s)", per_symbol * bench.EOD_SYMBOLS,
+         budget, [round(per_symbol, 4)], factor)
     assert result["with_reason"] == 0 and 0 < result["matched"] <= SYMBOLS        # the screen really ran on every symbol
     assert result["eod_screen"]["median"] <= budget
     assert result["eod_cached"]["median"] <= cached_budget

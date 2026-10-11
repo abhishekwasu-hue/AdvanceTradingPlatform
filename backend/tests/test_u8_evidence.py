@@ -260,7 +260,7 @@ def test_the_image_is_deterministic_and_carries_the_layer():
     assert epng.pixels(pack, theme="dark") != epng.pixels(pack) and epng.pixels(pack, theme="dark")[:3] == bytes(epng.DARK.bg)
 
 
-PIXELS_SHA256 = "05f49e6477c861bdddb3ffb2a933693e1bad998c8fb0f1aa8d8bf47909d53b17"
+PIXELS_SHA256 = "23a9d0ccc1eeb868e52df37f57ef02dbf1d5f2f9a28b6451ab7a69edecd2fa49"
 
 
 def _rgb_set(px: bytes):

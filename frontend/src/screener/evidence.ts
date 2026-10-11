@@ -48,13 +48,15 @@ export const evidenceApi = {
   sendTelegram: (id: number) => request<{ sent: boolean; reason: string | null }>(`/screener/evidence/${id}/telegram`, { method: "POST" }),
 };
 
-/** Okabe-Ito (colour-blind safe), in drawable order; zone bands by role. The candles use info / armed. */
-export const EVIDENCE_PALETTE = ["#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#0072B2"] as const;
+/** Okabe-Ito (colour-blind safe): zone bands by role, the other drawables in order. Candles stay neutral. */
+export const EVIDENCE_PALETTE = ["#E69F00", "#56B4E9", "#0072B2", "#D55E00"] as const;
 export const ROLE_COLORS = { demand: "#009E73", supply: "#CC79A7" } as const;
 
-export function drawableColor(d: EvidenceDrawable, order: number): string {
-  if (d.kind === "band" && d.role) return ROLE_COLORS[d.role];
-  return EVIDENCE_PALETTE[order % EVIDENCE_PALETTE.length];
+/** A drawable's colour: its role for a zone band, else the palette by its place among the non-band drawables. */
+export function drawableColor(d: EvidenceDrawable, all: readonly EvidenceDrawable[]): string {
+  if (d.kind === "band") return ROLE_COLORS[d.role ?? "demand"];
+  const order = all.filter((x) => x.kind !== "band").indexOf(d);
+  return EVIDENCE_PALETTE[Math.max(0, order) % EVIDENCE_PALETTE.length];
 }
 
 const INTRADAY = new Set(["1m", "3m", "5m", "15m", "30m", "1h"]);
@@ -136,8 +138,8 @@ export function evidenceGeometry(pack: EvidencePack, drawables: readonly Evidenc
     });
     return d;
   };
-  drawables.forEach((d, order) => {
-    const color = drawableColor(d, order);
+  drawables.forEach((d) => {
+    const color = drawableColor(d, drawables);
     const base = { drawable: d.id, color };
     if (d.kind === "band" && finite(d.low) && finite(d.high)) {
       const x0 = xOf(d.from ?? 0) - slot / 2;
@@ -164,8 +166,7 @@ export function evidenceGeometry(pack: EvidencePack, drawables: readonly Evidenc
   let subInfo: Geometry["sub"] = null;
   if (sub) {
     const top = priceBottom + 12, bottom = height - 8;
-    const order = drawables.indexOf(sub);
-    const color = drawableColor(sub, order);
+    const color = drawableColor(sub, drawables);
     const vals: number[] = [];
     for (const s of sub.series ?? []) for (const v of s.values) if (finite(v)) vals.push(v);
     for (const lv of sub.levels ?? []) if (finite(lv.value)) vals.push(lv.value);

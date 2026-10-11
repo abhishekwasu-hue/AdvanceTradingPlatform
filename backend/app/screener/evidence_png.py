@@ -7,8 +7,8 @@ gives the same bytes (tested by hash), so a stored SHA-256 identifies exactly wh
 What is drawn is the pack and nothing else (owner rule 0): the bars, the matched bar, and the drawables of the blocks
 that define the signal - zone bands, breakout boxes and levels first, then highlighted candles, then price overlays, then
 at most one lower pane (volume or an oscillator with its threshold) - at most IMAGE_MAX_DRAWABLES; every other condition
-is in the caption (`evidence.caption_text`). Colours are the Okabe-Ito set (readable with colour-blind vision); rising
-candles are hollow and falling ones filled, so direction never depends on colour. Light and dark themes.
+is in the caption (`evidence.caption_text`). Colours are the Okabe-Ito set (readable with colour-blind vision) and only
+the drawables carry colour: candles are neutral, rising hollow and falling filled. Light and dark themes.
 """
 from __future__ import annotations
 
@@ -50,13 +50,14 @@ class Theme:
     marker: Color
 
 
+# Candles are neutral (rising hollow, falling filled), so the screen's drawables are the only colour on the chart.
 LIGHT = Theme(bg=(255, 255, 255), grid=(232, 234, 238), axis=(120, 126, 136), text=(31, 41, 55), muted=(107, 114, 128),
-              wick=(70, 74, 82), up=(0, 114, 178), down=(213, 94, 0), marker=(17, 24, 39))
+              wick=(75, 85, 99), up=(75, 85, 99), down=(75, 85, 99), marker=(17, 24, 39))
 DARK = Theme(bg=(17, 24, 39), grid=(40, 48, 63), axis=(107, 114, 128), text=(229, 231, 235), muted=(156, 163, 175),
-             wick=(156, 163, 175), up=(86, 180, 233), down=(230, 159, 0), marker=(243, 244, 246))
+             wick=(156, 163, 175), up=(156, 163, 175), down=(156, 163, 175), marker=(243, 244, 246))
 THEMES = {"light": LIGHT, "dark": DARK}
-# drawable colours (Okabe-Ito, minus the two the candles use)
-PALETTE: Tuple[Color, ...] = ((0, 158, 115), (204, 121, 167), (230, 159, 0), (86, 180, 233), (0, 114, 178), (240, 228, 66))
+# drawable colours (Okabe-Ito): zone bands by role (bluish green / reddish purple), the others in order
+PALETTE: Tuple[Color, ...] = ((230, 159, 0), (86, 180, 233), (0, 114, 178), (213, 94, 0))
 ROLE_COLORS: Dict[str, Color] = {"demand": (0, 158, 115), "supply": (204, 121, 167)}
 KIND_RANK = {"band": 0, "box": 0, "bars": 1, "overlay": 2, "pane": 3}
 
@@ -164,8 +165,9 @@ def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, heig
     if count == 0:
         raise ValueError("no bars to draw")
     shown = image_drawables(pack)
-    colors = {d["id"]: (ROLE_COLORS.get(d.get("role", ""), PALETTE[i % len(PALETTE)]) if d.get("kind") == "band" else PALETTE[i % len(PALETTE)])
-              for i, d in enumerate(shown)}
+    others = [d for d in shown if d.get("kind") != "band"]
+    colors = {d["id"]: ROLE_COLORS.get(str(d.get("role", "")), PALETTE[0]) if d.get("kind") == "band" else PALETTE[others.index(d) % len(PALETTE)]
+              for d in shown}
     sub = next((d for d in shown if d.get("pane") not in (None, "price")), None)
     canvas = Canvas(width, height, th.bg)
     left, right = 10, width - 112

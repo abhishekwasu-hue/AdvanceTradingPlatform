@@ -79,7 +79,8 @@ constants. Every number is the engine's number at the matched bar, not a re-comp
   on the zlib build.
 - Drawn: the bars, the matched bar (dashed line and marker), and the drawables that define the signal. Order: bands
   and boxes, then candles, then overlays, then at most ONE lower pane, at most 4 in all. The rest are in the caption.
-- Colours: Okabe-Ito. Rising candles are hollow and falling ones filled, so direction never depends on colour.
+- Colours: Okabe-Ito, on the drawables only (zone bands by role). Candles are neutral, rising hollow and falling
+  filled, so direction never depends on colour.
   Light and dark themes. The image is capped at 512 KB.
 - Caption: symbol, timeframe, bar time (IST), the screen, each shown condition's verify text with ✅ / ❌, and the
   informational note. Whole lines only, within Telegram's 1024 characters, with the note always last.

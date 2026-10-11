@@ -2,8 +2,8 @@
  * U8 EV1: the evidence chart - the matched symbol's closed candles up to the matched bar with ONLY the screen's own
  * conditions drawn (the pack's drawables), the matched bar marked, and at most one lower pane (volume or an oscillator
  * with the threshold it was tested against). An SVG, so it is crisp, themable (light / dark through the tokens) and
- * readable by screen readers (role img, a title and a one-line description). Rising candles are hollow and falling ones
- * filled, so direction never depends on colour; drawable colours are the Okabe-Ito set.
+ * readable by screen readers (role img, a title and a one-line description). Candles are neutral - rising hollow,
+ * falling filled - so direction never depends on colour and only the screen's drawables carry colour (Okabe-Ito).
  */
 import { useMemo } from "react";
 import { chartSummary, drawableColor, evidenceGeometry, type EvidenceDrawable, type EvidencePack } from "./evidence";
@@ -40,7 +40,7 @@ export function EvidenceChart({ pack, drawables, width = 720, height = 360, high
           <g key={c.index}>
             <line x1={c.x} x2={c.x} y1={c.high} y2={c.low} stroke="rgb(var(--chart-text))" strokeWidth={1} />
             <rect x={c.x - c.w / 2} y={Math.min(c.open, c.close)} width={c.w} height={Math.max(1, Math.abs(c.close - c.open))}
-                  fill={c.rising ? "rgb(var(--surface-1))" : "rgb(var(--armed))"} stroke={c.rising ? "rgb(var(--info))" : "rgb(var(--armed))"} strokeWidth={1} />
+                  fill={c.rising ? "rgb(var(--surface-1))" : "rgb(var(--chart-text))"} stroke="rgb(var(--chart-text))" strokeWidth={1} />
           </g>
         ))}
       </g>
@@ -78,9 +78,9 @@ export function EvidenceLegend({ drawables }: { drawables: readonly EvidenceDraw
   if (!drawables.length) return null;
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-t12 text-fg-muted" aria-label="What is drawn" data-testid="evidence-legend">
-      {drawables.map((d, i) => (
+      {drawables.map((d) => (
         <li key={d.id} className="inline-flex items-center gap-1.5">
-          <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm border" style={{ backgroundColor: drawableColor(d, i), borderColor: drawableColor(d, i) }} />
+          <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm border" style={{ backgroundColor: drawableColor(d, drawables), borderColor: drawableColor(d, drawables) }} />
           <span>{d.label}</span>
           {d.failed && <span className="text-warn">(did not pass)</span>}
         </li>

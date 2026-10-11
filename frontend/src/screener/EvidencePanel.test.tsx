@@ -32,11 +32,11 @@ describe("EvidenceChart (U8 EV1)", () => {
     expect(bare).not.toContain("evidence-sub-pane");
   });
 
-  it("uses theme tokens for the candles (light and dark) and hollow rising candles", () => {
+  it("uses theme tokens for neutral candles (light and dark): rising hollow, falling filled", () => {
     const html = renderToStaticMarkup(<EvidenceChart pack={pack} drawables={[]} />);
     expect(html).toContain("rgb(var(--chart-grid))");
-    expect(html).toContain('fill="rgb(var(--surface-1))" stroke="rgb(var(--info))"');      // rising: hollow
-    expect(html).toContain('fill="rgb(var(--armed))"');                                    // falling: filled
+    expect(html).toContain('fill="rgb(var(--surface-1))" stroke="rgb(var(--chart-text))"');   // rising: hollow
+    expect(html).toContain('fill="rgb(var(--chart-text))" stroke="rgb(var(--chart-text))"');  // falling: filled
   });
 });
 

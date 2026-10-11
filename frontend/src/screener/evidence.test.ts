@@ -50,8 +50,11 @@ describe("evidence pack helpers (U8 EV1)", () => {
     const shown = visibleDrawables(pack, new Set(), false);
     expect(JSON.stringify(evidenceGeometry(pack, shown))).toBe(JSON.stringify(evidenceGeometry(pack, shown)));
     const band = shown.find((d) => d.kind === "band")!;
-    expect(drawableColor(band, 0)).toBe("#009E73");
-    expect(new Set(shown.filter((d) => d.kind !== "band").map((d, i) => drawableColor(d, i))).size).toBe(shown.filter((d) => d.kind !== "band").length);
+    expect(drawableColor(band, shown)).toBe("#009E73");
+    const others = shown.filter((d) => d.kind !== "band");
+    const colours = others.map((d) => drawableColor(d, shown));
+    expect(new Set(colours).size).toBe(others.length);
+    expect(colours).not.toContain(drawableColor(band, shown));                              // a band never shares a colour
   });
 
   it("reads bar times in IST and summarises the chart for screen readers", () => {

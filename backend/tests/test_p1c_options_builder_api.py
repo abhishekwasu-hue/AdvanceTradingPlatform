@@ -93,6 +93,8 @@ def test_evaluate_gives_the_models_numbers():
     net = m.net_greeks(legs, SPOT, AS_OF)
     assert abs(sum(leg["greeks"]["delta"] for leg in body["legs"]) - net["delta"]) < 1e-9
     assert "not a forecast" in body["disclaimer"]
+    for leg, out_leg in zip(legs, body["legs"]):                                                # priced by the model: unchanged
+        assert abs(out_leg["theoretical"] - leg["premium"]) < 0.01
 
 
 def test_an_unbounded_loss_is_null_with_its_flag_and_a_calendar_has_no_single_payoff():

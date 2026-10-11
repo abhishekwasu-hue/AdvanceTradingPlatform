@@ -79,7 +79,7 @@ def test_regulatory_tables_are_never_in_the_rules():
     tables = {table for table, _, _ in service._rules(NOW, POLICY)}
     assert tables.isdisjoint(set(NEVER_DELETED))
     assert tables == {"login_events", "alert_deliveries", "notifications", "user_sessions", "password_resets", "tenant_invites", "option_chain_snapshots", "strike_oi_snapshots", "oi_snapshots", "oi_day_baselines", "oi_banner_states", "oi_alert_log",
-                      "market_snapshots", "news_events_feed", "ai_candidates_open"}
+                      "market_snapshots", "news_events_feed", "ai_candidates_open", "screen_evidence"}
 
 
 def test_run_deletes_only_old_finished_rows_and_audits():

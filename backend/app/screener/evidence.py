@@ -200,8 +200,9 @@ def _verify_text(node: Any, terms: List[Dict[str, Any]]) -> str:
         return f"{show(terms[0])} between {show(terms[1])} and {show(terms[2])}"
     if isinstance(node, n.In) and terms:
         return f"{show(terms[0])} in ({', '.join(n.to_text(i) for i in node.items)})"
-    if terms:
-        return f"{n.to_text(node)}: " + "; ".join(f"{t['text']} {t['value_text']}" for t in terms)
+    shown = [t for t in terms if not t["literal"]]
+    if shown:
+        return f"{n.to_text(node)}: " + "; ".join(f"{t['text']} {t['value_text']}" for t in shown)
     return n.to_text(node)
 
 
@@ -340,12 +341,21 @@ def _zone(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> None:
     if zone is None:
         row["note"] = "no live zone within the tolerance at the matched bar"
         return
-    row["terms"] = row["terms"] + [
-        {"text": "zone", "value": f"{zone['low_text']}-{zone['high_text']}", "value_text": f"{zone['low_text']}-{zone['high_text']}",
+    zone_terms = [
+        {"text": "close", "value": _num(close), "value_text": value_text(close, "price"), "unit": "price", "literal": False},
+        {"text": f"{zone['role']} zone", "value": f"{zone['low_text']}-{zone['high_text']}", "value_text": f"{zone['low_text']}-{zone['high_text']}",
          "unit": "price", "literal": False},
         {"text": "zone state", "value": zone["state"], "value_text": zone["state"], "unit": None, "literal": False},
         {"text": "distance", "value": _num(zone["distance_pct"]), "value_text": value_text(zone["distance_pct"], "pct"), "unit": "pct",
          "literal": False}]
+    words = (f"close {zone_terms[0]['value_text']}, {zone['role']} zone {zone_terms[1]['value_text']} ({zone['state']}), "
+             f"{zone_terms[3]['value_text']} away")
+    if row.get("is_call"):                                # the zone function is the condition: its own terms are the zone's
+        row["terms"] = zone_terms
+        row["verify"] = f"{n.to_text(call)}: {words}"
+    else:                                                 # a comparison on a zone value: its operands, then the zone read
+        row["terms"] = row["terms"] + zone_terms[1:]
+        row["verify"] = f"{row['verify']} ({words})"
     row["zone_as_of"] = snap.as_of.astimezone(timezone.utc).isoformat() if snap is not None else None
     ctx.zone_cands.append((row["id"], zone))
 
@@ -411,18 +421,21 @@ def _zone_bands(ctx: _Ctx, rows: Dict[str, Dict[str, Any]], drawables: List[Dict
     kept = {b["zone_key"]: b for b in bands}
     for key, row_ids in by_key.items():
         band = kept.get(key)
-        for row_id in row_ids:
-            row = rows[row_id]
-            if band is None:
-                row["note"] = f"zone not drawn: more than {MAX_ZONE_BANDS} zone bands"
-                continue
-            if not (row["passed"] or ctx.debug) or row.get("drawable"):
-                continue
-            d = {"id": f"d{len(drawables) + 1}", "row": row_id, "kind": "band", "pane": "price", "label": band["label"],
-                 "low": _num(band["low"]), "high": _num(band["high"]), "from": 0, "to": ctx.j, "role": band["role"], "state": band["state"],
-                 "touch_text": band["touch_text"], "failed": not row["passed"]}
-            drawables.append(d)
-            row["drawable"] = d["id"]
+        if band is None:
+            for row_id in row_ids:
+                rows[row_id]["note"] = f"zone not drawn: more than {MAX_ZONE_BANDS} zone bands"
+            continue
+        # one band per zone, however many conditions read it, owned by the first condition that passed
+        eligible = [r for r in row_ids if (rows[r]["passed"] or ctx.debug) and not rows[r].get("drawable")]
+        if not eligible:
+            continue
+        owner = next((r for r in eligible if rows[r]["passed"]), eligible[0])
+        d = {"id": f"d{len(drawables) + 1}", "row": owner, "kind": "band", "pane": "price", "label": band["label"],
+             "low": _num(band["low"]), "high": _num(band["high"]), "from": 0, "to": ctx.j, "role": band["role"], "state": band["state"],
+             "touch_text": band["touch_text"], "failed": not rows[owner]["passed"]}
+        drawables.append(d)
+        for row_id in eligible:
+            rows[row_id]["drawable"] = d["id"]
 
 
 def _trim(data: SymbolData, base_tf: str, as_of: Optional[datetime]) -> SymbolData:
@@ -502,7 +515,7 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
             if call is not None and not terms:
                 terms = [_term(ctx, a) for a in call.args if not isinstance(a, (n.Str, n.Bool))][:3]
             row = {"id": rid, "block": bid, "text": n.to_text(cond), "passed": passed, "terms": terms,
-                   "verify": _verify_text(cond, terms), "drawable": None}
+                   "verify": _verify_text(cond, terms), "drawable": None, "is_call": call is not None and not _operands(cond)}
             if isinstance(cond, n.Not):
                 row["negated"] = True
             d = _drawable(ctx, cond, row)
@@ -510,6 +523,7 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
                 d = {"id": f"d{len(drawables) + 1}", "row": rid, **d, "failed": not passed}
                 drawables.append(d)
                 row["drawable"] = d["id"]
+            row.pop("is_call", None)
             rows[rid] = row
             row_ids.append(rid)
             order.append(rid)

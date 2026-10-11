@@ -124,7 +124,9 @@ async def store_for_events(session: AsyncSession, rule: Any, events: List[Tuple[
             pack = packs.get(data.symbol)
             if pack is None:
                 continue
-            session.add(_record(pack, tenant_id=rule.tenant_id, user_id=rule.created_by, alert_event_id=event.id))
+            row = _record(pack, tenant_id=rule.tenant_id, user_id=rule.created_by, alert_event_id=event.id)
+            row.bar_time = event.bar_time                 # the alert's own bar label (the session open for a daily bar)
+            session.add(row)
             stored += 1
         if stored:
             await session.flush()

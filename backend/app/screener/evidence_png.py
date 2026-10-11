@@ -142,8 +142,21 @@ def _finite(values: Sequence[Any]) -> List[float]:
     return [float(v) for v in values if isinstance(v, (int, float)) and v == v]
 
 
-def render(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, height: int = HEIGHT) -> bytes:  # noqa: C901
+def render(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, height: int = HEIGHT) -> bytes:
     """The PNG bytes of one evidence pack. Raises ValueError without bars or when the image would exceed MAX_PNG_BYTES."""
+    png = draw(pack, theme=theme, width=width, height=height).png()
+    if len(png) > MAX_PNG_BYTES:
+        raise ValueError(f"evidence image is {len(png)} bytes, over the {MAX_PNG_BYTES} cap")
+    return png
+
+
+def pixels(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, height: int = HEIGHT) -> bytes:
+    """The raw RGB pixels (row by row) - what the determinism test pins, independent of the zlib build."""
+    return bytes(draw(pack, theme=theme, width=width, height=height).px)
+
+
+def draw(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, height: int = HEIGHT) -> Canvas:  # noqa: C901
+    """The canvas with the pack drawn on it."""
     th = THEMES.get(theme, LIGHT)
     bars = pack.get("bars") or {}
     o, h, l, c = bars.get("o") or [], bars.get("h") or [], bars.get("l") or [], bars.get("c") or []
@@ -235,19 +248,20 @@ def render(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, he
                     cx = x_of(int(i))
                     canvas.outline(cx - body // 2 - 3, y_of(h[int(i)]) - 3, cx - body // 2 + body + 2, y_of(l[int(i)]) + 3, col)
             if d.get("level") is not None:
-                labels.append((y_of(float(d["level"])), f"{d.get('label', '')}", col))
+                labels.append((y_of(float(d["level"])), f"{float(d['level']):.2f}", col))
         elif kind in ("box",) and d.get("level") is not None:
             y = y_of(float(d["level"]))
             canvas.hline(x_of(int(d.get("from", 0))), right - 1, y, col, dash=6)
-            labels.append((y, str(d.get("label", "")), col))
+            labels.append((y, f"{float(d['level']):.2f}", col))
         elif kind == "band":
-            labels.append((y_of((float(d["high"]) + float(d["low"])) / 2), str(d.get("label", "")), col))
+            edge = float(d["high"]) if d.get("role") == "demand" else float(d["low"])
+            labels.append((y_of(edge), f"{edge:.2f}", col))
         elif kind == "overlay":
             _series(canvas, d, x_of, y_of, count, col)
             for lv in d.get("levels") or []:
                 y = y_of(float(lv["value"]))
                 canvas.hline(left, right - 1, y, col, dash=6)
-                labels.append((y, f"{lv.get('label', '')} {lv.get('value_text', '')}".strip(), col))
+                labels.append((y, str(lv.get("value_text", "")), col))
             if d.get("marker"):
                 _marker(canvas, x_of(int(d["marker"]["index"])), bottom - 2, col)
 
@@ -320,10 +334,7 @@ def render(pack: Dict[str, Any], *, theme: str = "light", width: int = WIDTH, he
         x += 12
         x += canvas.text(x, ly, label, th.text) + 12
 
-    png = canvas.png()
-    if len(png) > MAX_PNG_BYTES:
-        raise ValueError(f"evidence image is {len(png)} bytes, over the {MAX_PNG_BYTES} cap")
-    return png
+    return canvas
 
 
 def _bar_text(pack: Dict[str, Any]) -> str:
@@ -359,4 +370,4 @@ def _series(canvas: Canvas, d: Dict[str, Any], x_of: Any, y_of: Any, count: int,
         _polyline(canvas, s.get("values") or [], x_of, y_of, count, scol)  # type: ignore[arg-type]
 
 
-__all__ = ["render", "image_drawables", "IMAGE_MAX_DRAWABLES", "MAX_PNG_BYTES", "THEMES", "PALETTE", "GLYPHS", "WIDTH", "HEIGHT"]
+__all__ = ["render", "pixels", "draw", "Canvas", "image_drawables", "IMAGE_MAX_DRAWABLES", "MAX_PNG_BYTES", "THEMES", "PALETTE", "GLYPHS", "WIDTH", "HEIGHT"]

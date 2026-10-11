@@ -885,11 +885,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-10 22:42 IST - part B design: ADR-0013 / 0016 / 0017 (provisional)
-- ADR-0013 data lake: TimescaleDB hot tier in the existing Postgres + Parquet/DuckDB cold tier on R2, one as-of query
-  interface; ADR-0016 provider seams (interface + registry + capabilities + contract tests); ADR-0017 global-first
-  (instrument / time / money / costs / rules / tax; India first, crypto next). docs/PROVIDERS.md, docs/design/B_DATA_LAKE.md,
-  tests/test_adr_index.py. OPEN_QUESTIONS B-1 (Timescale after go-live), B-2 (vendor needs the owner, cost).
 ### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
 - What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
   `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per

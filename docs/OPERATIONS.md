@@ -87,11 +87,24 @@ instead of pushing the host into swap. All values are `.env` overrides (`MEM_*`,
 | postgres | 2 GB | `shared_buffers` 512 MB, `effective_cache_size` 1.5 GB, `work_mem` 8 MB (x `max_connections` 60 worst case 480 MB, real use far lower), `maintenance_work_mem` 128 MB, WAL archiving on |
 | backend (API) | 1.5 GB | one uvicorn process (2 vCPU: the event loop + the threadpool for backtests); a 2-year 1-min backtest peaks near 600 MB |
 | worker | 1.5 GB | one replica (the Redis lock forbids two); per-cycle candles + indicator caches per deployment |
-| redis | 512 MB | `maxmemory` 384 MB, `volatile-lru`: only keys with a TTL (caches, rate windows) are evicted - never the worker lock or a key without expiry (H-1) |
+| redis | 512 MB | `maxmemory` 384 MB, `volatile-lru`: at the cap only keys with a TTL are evicted - caches, quote ticks, rate windows, and also the worker lock (see below) (H-1) |
 | backup | 512 MB | `pg_dump` custom format + encryption |
 | caddy, offsite | 256 MB each | TLS edge; rclone copy |
 | frontend | 128 MB | nginx serving static files |
 | **sum of limits** | **≈ 6.6 GB** | leaves ≈ 1.4 GB for the OS, Docker and page cache; 2 GB swap (swappiness 10) is a safety net, not working memory |
+
+**Redis at its cap (H-1, answered 2026-10-10).** `volatile-lru` evicts only keys with a TTL, and the worker's replica
+lock has one (ADR-0010). What can and cannot be lost:
+
+| Key | Where | At the cap |
+|---|---|---|
+| worker replica lock | Redis, TTL = 2 x cycle | can be evicted: the worker notices at the next renewal and **fails closed** - no new entries for the rest of the cycle (exits continue); if another worker has taken it, this one stops the cycle. One CRITICAL "Worker lock lost - failed closed" to the operators (SUPER_ADMIN organisations; none yet: the organisations with an ACTIVE deployment), metric `atp_worker_lock_lost_total`, alert `WorkerLockLost` |
+| alert outbox, order idempotency keys | Postgres (`alert_deliveries`, `orders.idempotency_key`) | not in Redis - eviction cannot touch them |
+| caches, quote ticks, rate windows | Redis, TTL ≤ 1 h (`cache_set` caps at `CACHE_MAX_TTL_SECONDS`) | evicted first; recomputed |
+
+The worker reads `used_memory / maxmemory` every `REDIS_MEMORY_CHECK_SECONDS` (300) into `atp_redis_memory_used_ratio`
+and sends one WARNING an hour at `REDIS_MEMORY_WARN_RATIO` (0.70) - before eviction starts (alert `RedisMemoryHigh`).
+Exactly one worker replica runs (`deploy.replicas: 1` in `docker-compose.hostinger.yml`); never `--scale worker=2`.
 
 Concurrency: one API process and one worker on 2 vCPU. `WORKER_CYCLE_SECONDS` stays 60. Heavy research (long
 backtests, optimisation) shares the API's threadpool - more than two at once slows the API; the job queue (spec part

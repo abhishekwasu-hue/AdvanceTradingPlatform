@@ -15,6 +15,9 @@ LIVE या checklist च्या बाहेर आहे (GO_LIVE.md §3).
 > नाहीत. Operator secrets फक्त host वरच्या `.env` मध्ये; broker/AI keys फक्त **Settings** पानातून (encrypted साठवले
 > जातात). `.env` कधीही commit होत नाही (`.gitignore`).
 
+> **Production host (2026-10): Hostinger KVM 2** - तीन एक-ओळीचे blocks (bootstrap, deploy, rollback) आणि status:
+> **`docs/DEPLOY_HOSTINGER_MR.md`**. खालचा §0 (DigitalOcean) संदर्भासाठी.
+
 ## 0. Host तयार करणे (platform operator) - एकदाच
 
 निर्णय ADR-0011 मध्ये: DigitalOcean Basic **2 vCPU / 4 GB** (≈ $24/मह), compose मधलाच Postgres, backups ची off-site

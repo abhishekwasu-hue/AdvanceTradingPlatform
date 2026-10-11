@@ -5,6 +5,8 @@ import pandas as pd
 from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
+from app.backtest.windows import WindowCursor, decision_time
+from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
@@ -17,9 +19,10 @@ from app.backtest.options import IST, to_utc
 __all__ = ["resample_ohlc", "run_backtest"]
 
 
-ENGINE_VERSION = "3"   # P0.6: daily counters reset per IST day, gap fills at the open
+ENGINE_VERSION = "4"   # realism 1: a higher-timeframe bar is seen only once it has closed (3: P0.6 daily counters, gap fills)
 
 
+@with_prefix_cache
 def run_backtest(
     strategy: BaseStrategy,
     base_df: pd.DataFrame,
@@ -40,6 +43,8 @@ def run_backtest(
 
     primary_tf = strategy.timeframes[0]
     primary_df = frames[primary_tf]
+    cursor = WindowCursor(frames, strategy.timeframes)
+    register_frames(frames.values())   # causal indicators on the windows: computed once per run (realism 3)
     min_hist = strategy.min_history()[primary_tf]
 
     broker = PaperBroker()
@@ -104,7 +109,7 @@ def run_backtest(
                 open_trade = None
 
         if open_trade is None:
-            window = {tf: frames[tf][frames[tf].index <= current_time] for tf in strategy.timeframes}
+            window = cursor.at(decision_time(current_time, primary_tf))   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)
             if signal.is_tradeable:
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)

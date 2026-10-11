@@ -23,6 +23,17 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).
 
+### After Phase 0 (N-list, docs/specs/ATP_PHASE0_FREEZE.md §3)
+
+Starts as soon as Z11 merges, in this order. A Phase 0 bug, beta feedback or a security issue pre-empts N-work.
+
+| N | What | Status |
+|---|---|---|
+| N1 | E execution core (ADR-0014) -> U4 X1-X2 -> F portfolio risk | after Z11 |
+| N2 | P1-f/g/h: progression ladder, decision tools, context panel, manual-trading workspace polish, education pages | after Z11 |
+| N2-J | **Journal module (owner spec, after Phase 0)**: `docs/specs/ATP_JOURNAL_MODULE_SPEC.md` (v1 + v1.1). Extends the Z6 journal package (`backend/app/journal`, #171/#172): broker API sync (read-only) and file import, fills -> positions -> trade groups, charges on `india_costs`, auto charts, rulesets and checklist, AI text review and BYOK vision review, trade plan and alert-only guardrails, Telegram/email reports, analytics, plans on the existing Razorpay billing, tax, mentor mode. English UI only for now. Plan: `docs/journal/PLAN.md` (PRs J1-a..J8-c); questions JM-1..JM-34 in `docs/journal/OPEN_QUESTIONS.md` | plan done (milestone 0); build after Z11, next to N2 |
+| N3-N9 | Remaining screener, charting CH3-CH7, Copilot H-C4+ / BYOK-V3, G trade engine port, backtest C2-C6 / I, Phase 1 items behind flags, crypto / IBKR / K | after Z11, in that order |
+
 ### Trade port map
 
 docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872) to ATP, with status and parity tests.

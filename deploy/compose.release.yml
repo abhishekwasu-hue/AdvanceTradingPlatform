@@ -1,0 +1,34 @@
+# Z11: pins the application images to one release - the git commit they were built from - so a rollback starts the
+# previous release's images again instead of rebuilding them. deploy/atp.sh layers it last:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
+#                  -f deploy/compose.release.yml -p atp ...          (ATP_RELEASE = the first 12 characters of the commit)
+#
+# The images are built on the server from that commit (no registry): atp-backend:<release>, atp-worker:<release>, ...
+# A service added later with its own build (the journal worker, profile `journal`) gets its line here in the same PR.
+# The infrastructure images (postgres, redis, caddy, rclone) stay on the tags in the compose files; deploy/atp.sh
+# records their digests in .deploy/images.log for each release.
+#
+# MIGRATION_ALLOW_DB_AHEAD: set to 1 by `deploy/atp.sh rollback` when the release being undone migrated the schema and
+# the database is kept (migrations are additive): the older image then starts without migrating
+# (backend/scripts/migrate_guard.py). Empty otherwise - an older image on a newer database refuses to start.
+#
+# pull_policy never: `atp-backend` is not a registry name; a missing image fails the start instead of a pull.
+services:
+  backend:
+    image: atp-backend:${ATP_RELEASE:-latest}
+    pull_policy: never     # built here from the commit, never fetched from a registry
+    environment:
+      MIGRATION_ALLOW_DB_AHEAD: ${MIGRATION_ALLOW_DB_AHEAD:-}
+
+  worker:
+    image: atp-worker:${ATP_RELEASE:-latest}
+    pull_policy: never     # built here from the commit, never fetched from a registry
+
+  research-worker:
+    image: atp-research-worker:${ATP_RELEASE:-latest}
+    pull_policy: never     # built here from the commit, never fetched from a registry
+
+  frontend:
+    image: atp-frontend:${ATP_RELEASE:-latest}
+    pull_policy: never     # built here from the commit, never fetched from a registry

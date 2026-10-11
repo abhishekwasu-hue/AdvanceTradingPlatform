@@ -15,3 +15,6 @@ dist/
 
 # Redis dump files (a local redis-server writes these into the cwd)
 *.rdb
+
+# Z11: deploy/atp.sh state on the server (releases, key fingerprint, logs - no secrets)
+.deploy/

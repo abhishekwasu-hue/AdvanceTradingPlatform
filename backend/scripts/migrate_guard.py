@@ -6,6 +6,10 @@
 * No pending migration -> exits 0 immediately (a plain restart during market hours is fine).
 * Pending migration, market closed (or --force / MIGRATION_FORCE=1) -> runs `alembic upgrade head`.
 * Pending migration, market open -> exits 3 with the next allowed window, and nothing runs.
+* Database AHEAD of this code (it carries a revision this image does not know: a newer release migrated it and this
+  older image was rolled back onto it) -> exits 4, unless MIGRATION_ALLOW_DB_AHEAD=1 (set by `deploy/atp.sh rollback`),
+  which starts without migrating: every migration is additive, so the older image reads the newer schema. Without
+  this, `alembic upgrade head` fails on the unknown revision and the API never starts (Z11).
 
 The Dockerfile CMD calls this before uvicorn, so a new image rolled out at 11:00 IST with a schema
 change refuses to start rather than altering tables under a live worker. Deploy after 15:30 IST or
@@ -24,15 +28,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.market_data.calendar import IST, session_status  # noqa: E402
 
 
+_last_error = ""
+
+
 def pending_migrations() -> bool:
+    global _last_error
     current = subprocess.run([sys.executable, "-m", "alembic", "current"], capture_output=True, text=True)
     heads = subprocess.run([sys.executable, "-m", "alembic", "heads"], capture_output=True, text=True)
     if current.returncode != 0 or heads.returncode != 0:
+        _last_error = (current.stderr or "") + (heads.stderr or "")
         print(current.stderr or heads.stderr, file=sys.stderr)
         return True  # cannot tell -> treat as pending so the guard applies
+    _last_error = ""
     current_revs = {line.split()[0] for line in current.stdout.splitlines() if line.strip() and not line.startswith("INFO")}
     head_revs = {line.split()[0] for line in heads.stdout.splitlines() if line.strip() and not line.startswith("INFO")}
     return not head_revs or current_revs != head_revs
+
+
+def database_ahead() -> bool:
+    """The database's revision is unknown to this code: a newer release migrated it (Z11 rollback case)."""
+    return "Can't locate revision" in _last_error
 
 
 async def load_holidays():
@@ -56,6 +71,15 @@ def main() -> int:
     if not pending_migrations():
         print("guard: schema already at head - nothing to migrate")
         return 0
+    if database_ahead():
+        if os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "").lower() in {"1", "true", "yes"}:
+            print("guard: the database is AHEAD of this code (rollback onto a newer schema) - starting without migrating; "
+                  "migrations are additive, so this image reads it")
+            return 0
+        print("guard: REFUSING to start - the database carries a revision this code does not know (a newer release "
+              "migrated it). Roll back with deploy/atp.sh rollback (it sets MIGRATION_ALLOW_DB_AHEAD=1) or deploy the "
+              "newer release.", file=sys.stderr)
+        return 4
     now = datetime.now(timezone.utc)
     status = session_status(now, asyncio.run(load_holidays()))
     if status.is_open and not force:

@@ -886,6 +886,42 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-7 a
 
   The fitness statistics by grade, timeframe and regime come in BK5.
 
+## U6 BK2 (built): intraday breakouts, session VWAP, relative volume by time of day (flag `screener_breakouts`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (B16 / B17 / B18 and the series they need). Code:
+`app/screener/breakouts/intraday.py` and `session.py`. Research notes and defaults: `docs/research/breakouts.md`. Open
+questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
+- **Session clock.** The open, close and no-new-entries time come from the exchange calendar
+  (`app/market_data/calendar.EXCHANGE_SESSIONS`; NSE 09:15 / 15:30 / 15:00). Bars are placed by their start in exchange
+  time. Half days need nothing special: a session is the bars its date has, and an unreached time slot is averaged
+  over the sessions that had it. An exchange circular can override a date's window. An evening-only date (Muhurat) is
+  recognised from its first bar. A session with another open time stays out of the time-of-day averages and is not the
+  next session's "previous day".
+- **Series.** Session VWAP from the open (pre-open bars left out; equal to `VWAP()` on regular-session bars).
+  Relative volume by time of day: the bar's volume (or the session's volume so far) over the same slot's mean in the
+  previous `tod_sessions` regular sessions. It uses prior sessions only, and a session never enters its own average.
+- **Screens** (Intraday style: 1m / 3m / 5m / 15m):
+  - B16 opening range (`or_minutes` 15 / 30 / 60);
+  - B17 first hour, previous day (PDH / PDL), first candle, pre-market (where the data has pre-open bars);
+  - B18 new high / low of day.
+
+  Each needs a close beyond the level by `min_break_atr` ATR, with time-of-day relative volume of at least
+  `tod_vol_mult` and the close on the breakout side of VWAP. Nothing signals in the first `skip_first_min` minutes, or
+  from a bar that closes after the no-new-entries time.
+- **One signal per leg.** B16 / B17 levels are fixed for the session, so the event is the cross: a close beyond after a
+  close that was not. It is capped at `intraday_max_per_session` per side (default 1, the first break). B18 uses the BK1
+  swing-leg rule, re-armed at each session start. An instrument alert on `ORBreakout("up")` fires once per leg through
+  the bar-close engine (tested).
+- **Overlay.** It is BK1's checklist. Volume expansion and base dry-up read the time-of-day relative volume. The
+  time-of-day window is a hard filter, not a grade point. ORB templates take the stop reference at the range midpoint
+  (`stop_mode` = midpoint; `base` = the opposite side). Rows add `vwap`, `clock` and `minutes_from_open`.
+- **ScreenQL.** `ORBreakout(side, minutes, v, vwap, skip, k)`, `DayLevelBreak(side, level, v, vwap, skip, k)`,
+  `DayExtremeBreak(side, v, vwap, skip, k)`, `RelVolumeTOD(sessions, mode)` and `SessionVWAP()`. They are flagged with
+  the family and limited to intraday timeframes (the validator says so). Their lookback is whole sessions (20 prior +
+  today), counted in the screen's own bars. Five intraday templates are added; their text is checked against the engine
+  bar by bar and on the last bar.
+- **API.** The breakout run fetches whole sessions for an intraday screen and uses the request's exchange clock. A
+  screen asked for on a timeframe it does not run on gets a 422.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

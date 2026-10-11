@@ -1585,3 +1585,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Catalog and run API. The flag gate also covers the registry, validate, saved screens, `/run` and alert rules.
 - Every threshold is a parameter with a default and a research note (`docs/research/breakouts.md`).
 - Open questions: BK1-1..BK1-7.
+
+### 2026-10-11 - Z7 / U6 BK2 intraday breakouts (flag screener_breakouts, off)
+- `app/screener/breakouts/session.py`: the exchange session clock from `market_data/calendar` (half days, circular
+  overrides, evening sessions), session VWAP, relative volume by time of day (prior sessions only).
+- `app/screener/breakouts/intraday.py`: B16 opening range (15 / 30 / 60), B17 first hour / previous day / first candle /
+  pre-market, B18 new high / low of day. Closes beyond by an ATR buffer, time-of-day volume, VWAP agreement, skip-first-N
+  and the no-new-entries window. One signal per leg: the cross for fixed levels (capped per session), the swing-leg rule
+  for B18.
+- Overlay: time-of-day volume for the volume and dry-up checks; the ORB templates' stop at the range midpoint.
+- ScreenQL `ORBreakout`, `DayLevelBreak`, `DayExtremeBreak`, `RelVolumeTOD`, `SessionVWAP` (flagged, intraday timeframes
+  only, lookback in whole sessions). Five intraday templates; parity with the engine bar by bar.
+- Open questions: BK2-1..BK2-7.

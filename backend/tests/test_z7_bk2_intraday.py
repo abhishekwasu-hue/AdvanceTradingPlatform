@@ -479,3 +479,43 @@ def test_intraday_templates_are_in_the_catalog_with_their_text():
     ast, validated = compile_screen(templates.screenql(t.screen, t.signal_tf, p)[0], base_tf="5m")
     series = evaluate(ast, SymbolData("S", {"5m": f}), base_tf="5m").fillna(False).astype(bool).to_numpy()
     assert [r["bar"] for r in rows] == list(np.flatnonzero(series)) == [ORB_BAR] and rows[0]["stop_ref"] == pytest.approx(100.45)
+
+
+# ------------------------------------------------------------------------------------------------------------------ API
+def test_intraday_run_api_fetches_whole_sessions_and_uses_the_exchange_clock(monkeypatch):
+    from app.screener.breakouts import routes as bk_routes
+    from tests.test_auth_api import client
+    from tests.test_phase_l_ai import _owner
+    from tests.test_z7_bk1_api import _set
+
+    _set(screener_v2=True, screener_breakouts=True)
+    try:
+        headers, _ = _owner("bk2-api@example.com")
+        reg = client.get("/api/screener/registry", headers=headers).json()["entries"]
+        assert reg["ORBreakout"]["timeframes"] == ["1m", "3m", "5m", "15m"] and reg["DayLevelBreak"]["choices"]["level"][1] == "prev_day"
+        f = sessions_frame(history() + [orb_day()])
+        asked = []
+
+        async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False):
+            asked.append((base_tf, dict(lookback), exchange))
+            return [SymbolData(s, {base_tf: f}) for s in symbols], {}, "broker:fake"
+        monkeypatch.setattr(bk_routes, "fetch_frames", fake_fetch)
+        out = client.post("/api/screener/breakouts/run", json={"template_id": "intraday_5m_orb15", "symbols": ["tcs"], "within": 500,
+                                                               "params": {"htf_filter": "off"}}, headers=headers)
+        assert out.status_code == 200, out.text
+        body = out.json()
+        assert asked == [("5m", {"5m": 21 * 75}, "NSE")]                      # 20 prior sessions + today, in 5m bars
+        assert body["style"] == "intraday" and body["context_tfs"] == ["15m", "1h"] and "vwap" in body["columns"]
+        row = body["rows"][0]
+        assert (row["symbol"], row["side"], row["event"], row["clock"], row["level"]) == ("TCS", "up", "OR15", "09:45", 101.0)
+        assert row["stop_ref"] == pytest.approx(100.45) and row["vwap"] < row["close"]
+        bad = client.post("/api/screener/breakouts/run", json={"screen": "B16", "signal_tf": "1h", "symbols": ["TCS"]}, headers=headers)
+        assert bad.status_code == 422 and "1m / 3m / 5m / 15m" in bad.text
+        v = client.post("/api/screener/validate", json={"source": 'ORBreakout("up") AND SessionVWAP() < close', "base_tf": "5m"},
+                        headers=headers).json()
+        assert v["ok"], v
+        _set(screener_breakouts=False)
+        v = client.post("/api/screener/validate", json={"source": 'DayExtremeBreak("up")', "base_tf": "5m"}, headers=headers).json()
+        assert not v["ok"] and "DayExtremeBreak()" in v["problems"][-1]["message"]
+    finally:
+        _set(screener_v2=False, screener_breakouts=False)

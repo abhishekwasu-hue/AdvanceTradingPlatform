@@ -78,6 +78,9 @@ def test_validation():
     assert "must be a price" in ok('RealBreak(RSI(14), "above")').problems[0].message
     assert "is not one of" in ok('RealBreak(close, "up")').problems[0].message
     assert ok('RealBreak(close, "above", 40)').lookback["5m"] >= 40
+    s = pa_settings.settings()
+    for n_ in (5, 20, 40):                                                       # the window, the bar before it, the warm-up
+        assert ok(f'RealBreak(close, "above", {n_})').lookback["5m"] >= n_ + 1 + s["median_range_n"]
 
 
 def test_a_break_is_a_crossing_from_the_near_side():
@@ -108,3 +111,40 @@ def test_a_failed_retest_also_confirms_a_break(monkeypatch):
     monkeypatch.setattr(pa_settings, "settings", lambda **kw: original(break_retest_confirm=False) if not kw else original(**kw))
     without = _ev(text, f, "1m")
     assert int((with_retest != without).sum()) >= 1
+
+
+def test_a_close_exactly_at_level_minus_buffer_on_tick_prices_is_not_dropped_by_the_prefilter():
+    """Tick prices can put a close exactly at level - buffer, where close + buffer < level and close < level - buffer
+    round differently; the break must still be found (the rule decides, the prefilter only skips)."""
+    base = [(64.5, 65.0, 63.24, 64.5)] * 30                                     # median range 1.76, buffer 0.44
+    f = _frame(base + [(65.0, 65.5, 63.2, 63.68)])
+    plain = f[["open", "high", "low", "close"]].reset_index(drop=True)
+    s = pa_settings.settings()
+    mr = median_range(plain, s["median_range_n"])
+    assert first_real_break(plain, 30, 64.12, "below", s, mr=mr, end=30) == 30   # the rule: a displacement break
+    assert _ev('RealBreak(64.12, "below")', f).iloc[-1]
+
+
+def test_a_confirmed_break_reads_true_for_the_window_even_after_a_reclaim():
+    """RealBreak is an event in the window (like Count): a break confirmed and then reclaimed stays true until it is
+    older than n bars. AND it with the close for "still beyond"."""
+    strong = (100, 100.5, 80, 81)                                                # displacement below 90
+    f = _frame(BASE + [strong, (81, 96, 80, 95), (95, 97, 94, 96)])              # reclaimed on the next bar
+    s = _ev('RealBreak(90, "below", 5)', f)
+    assert s.tolist()[-3:] == [True, True, True]
+    assert not _ev('RealBreak(90, "below", 5) AND close < 90', f).iloc[-1]
+    later = _frame(BASE + [strong] + [(95, 97, 94, 96)] * 6)
+    assert not _ev('RealBreak(90, "below", 5)', later).iloc[-1]                  # older than the window: gone
+
+
+def test_the_answer_does_not_depend_on_history_beyond_the_lookback():
+    """Evaluated on exactly the validator's lookback, the last bar gives the same answer as on the whole frame."""
+    f = generate(500, 100.0, 56)
+    level = float(f["close"].median())
+    for side, n_ in (("below", 10), ("above", 20)):
+        text = f'RealBreak({level:.2f}, "{side}", {n_})'
+        lb = compile_screen(text, base_tf="1m")[1].lookback["1m"]
+        full = _ev(text, f, "1m")
+        assert full.any(), side
+        for j in range(lb, len(f), 7):
+            assert _ev(text, f.iloc[j + 1 - lb: j + 1], "1m").iloc[-1] == full.iloc[j], (side, j)

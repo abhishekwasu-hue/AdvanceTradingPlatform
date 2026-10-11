@@ -467,6 +467,9 @@ class StrategyDeploymentRecord(Base):
     # Phase L3: comma-separated regimes (TRENDING_UP, TRENDING_DOWN, RANGING, VOLATILE, QUIET) the
     # deployment may enter in; NULL = any. Judged on the base frame before the strategy runs.
     regime_filter: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # OI Banner O5: opt-in OI gates checked before a NEW entry (comma-separated names, app/option_chain/oi_gates.py);
+    # fail-closed on missing/stale data; exits never consult them (ADR-0004). None = no OI gate.
+    oi_gates: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Phase AS: INTRADAY (MIS, squared off at the close) or SWING (CNC / NRML, held overnight).
     holding: Mapped[str] = mapped_column(String(10), nullable=False, default="INTRADAY", server_default="INTRADAY")
     # P0.5 / T5: how LIVE entries are sent. MARKET (default, unchanged behaviour) or PROTECTED_LIMIT - a marketable

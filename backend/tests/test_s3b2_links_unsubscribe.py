@@ -131,7 +131,8 @@ def test_email_unsubscribe_link_stops_screen_alerts_for_that_address_only(monkey
     page = client.get(f"/api/alerts/unsubscribe?t={token}")
     assert page.status_code == 200 and "<form method='post'" in page.text and "a@example.com" in page.text
     assert client.get("/api/alerts/email-opt-outs", headers=t["headers"]).json() == []    # opening the link changes nothing
-    assert client.post(f"/api/alerts/unsubscribe?t={token[:-1]}0").status_code == 400
+    tampered = token[:-1] + ("1" if token[-1] == "0" else "0")                       # always differs from the real token
+    assert client.post(f"/api/alerts/unsubscribe?t={tampered}").status_code == 400
     assert "not valid" in client.get("/api/alerts/unsubscribe?t=x.y").text
     assert client.post(f"/api/alerts/unsubscribe?t={token}").status_code == 200
     outs = client.get("/api/alerts/email-opt-outs", headers=t["headers"]).json()

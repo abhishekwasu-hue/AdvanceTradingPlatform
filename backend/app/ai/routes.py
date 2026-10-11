@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import evidence
 from app.ai.rate_limit import ai_rate_limit
-from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
+from app.ai import advisor, briefing, proposal_card, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai import compliance_terms as terms
 from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
 from app.ai.providers import ProviderError
@@ -593,12 +593,20 @@ async def regime(body: RegimeBody, user: User = Depends(get_current_user)) -> di
 
 @router.get("/actions")
 async def list_actions(status: Optional[str] = Query(default=None, max_length=10), limit: int = Query(default=100, ge=1, le=500),
+                       snoozed: Optional[str] = Query(default=None, pattern=r"^(hide|show|only)$",
+                                                      description="PW5: snoozed proposals - hidden by default when status=PROPOSED (the pending list and badge)"),
                        user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[dict]:
     query = select(AiActionRecord).where(AiActionRecord.tenant_id == user.tenant_id)
     if status:
         query = query.where(AiActionRecord.status == status.upper())
+    mode = snoozed or ("hide" if (status or "").upper() == "PROPOSED" else "show")
+    now = datetime.now(timezone.utc)
+    if mode == "hide":
+        query = query.where((AiActionRecord.snoozed_until.is_(None)) | (AiActionRecord.snoozed_until <= now) | (AiActionRecord.status != "PROPOSED"))
+    elif mode == "only":
+        query = query.where(AiActionRecord.status == "PROPOSED", AiActionRecord.snoozed_until.is_not(None), AiActionRecord.snoozed_until > now)
     rows = await session.scalars(query.order_by(AiActionRecord.id.desc()).limit(limit))
-    return [monitor.as_dict(r) for r in rows]
+    return await proposal_card.enrich(session, user.tenant_id, rows)
 
 
 async def _action(session: AsyncSession, action_id: int, user: User) -> AiActionRecord:
@@ -654,6 +662,33 @@ async def reject_action(action_id: int, body: NoteBody, user: User = Depends(req
         return monitor.as_dict(await monitor.decide(session, row, user, approve=False, note=body.note))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+class SnoozeBody(BaseModel):
+    """PW5: either `minutes` (15 / 60 / ...) or an absolute `until` (e.g. the next 09:00 IST); never past the expiry."""
+    minutes: Optional[int] = Field(default=None, ge=1, le=24 * 60)
+    until: Optional[datetime] = None
+
+
+@router.post("/actions/{action_id}/snooze")
+async def snooze_action(action_id: int, body: SnoozeBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    """PW5: hide a PROPOSED proposal of the caller's organisation until later; it is announced once more when it wakes.
+    Not a decision and not an order: the expiry stays as it was, exits are never held by it, LIVE needs no step-up."""
+    now = datetime.now(timezone.utc)
+    if (body.minutes is None) == (body.until is None):
+        raise HTTPException(status_code=422, detail="Give either minutes or until")
+    if body.until is not None:
+        until = body.until if body.until.tzinfo else body.until.replace(tzinfo=timezone.utc)
+        if until <= now or until > now + timedelta(days=7):
+            raise HTTPException(status_code=422, detail="until must be in the next 7 days")
+    else:
+        until = now + timedelta(minutes=int(body.minutes or 0))
+    row = await _action(session, action_id, user)
+    try:
+        row = await monitor.snooze(session, row, user, until=until, via="web", now=now)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return monitor.as_dict(row)
 
 
 # --- Phase AV the Copilot home: briefing, coach, ask-anything ----------------------------------------------

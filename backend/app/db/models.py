@@ -1173,6 +1173,9 @@ class AiActionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+    # PW5: a PROPOSED row hidden from the pending list until this time, then announced once more (the worker clears it
+    # when it wakes). Never later than expires_at - a snooze never extends the expiry - and never consulted by an exit.
+    snoozed_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
 class AiCandidateRecord(Base):

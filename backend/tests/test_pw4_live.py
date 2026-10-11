@@ -160,3 +160,126 @@ def test_a_new_notification_is_announced():
 
 def test_the_stream_needs_a_login():
     assert client.get("/api/live/stream").status_code == 401
+
+
+# --- Telegram message follows the app (ported from the Trade bot's vision/tg.py) ------------------------------------
+
+def _action_row(tenant_id: int, **kw) -> int:
+    async def go():
+        async with _session_factory() as session:
+            row = AiActionRecord(tenant_id=tenant_id, action="REVIEW_STRATEGY", rule="WIN_RATE_DRIFT", reason="x", status="PROPOSED",
+                                 expires_at=datetime.now(timezone.utc) + timedelta(hours=1), **kw)
+            session.add(row)
+            await session.commit()
+            return row.id
+    return asyncio.run(go())
+
+
+def _telegram_calls(seen: List[httpx.Request]) -> List[tuple]:
+    out = []
+    for r in seen:
+        method = r.url.path.rsplit("/", 1)[-1]
+        try:
+            body = json.loads(r.content)
+        except ValueError:
+            body = {}
+        out.append((method, body))
+    return out
+
+
+def test_proposal_buttons_remember_the_telegram_message(monkeypatch):
+    from app.telegram_inbound import service as inbound
+
+    async def fake_keyboard(session, action, chat_id, now):
+        return {"inline_keyboard": [[{"text": "Approve", "callback_data": "a"}]]}
+
+    async def fake_reply(cfg, chat_id, text, client=None, reply_markup=None, parse_mode="HTML"):
+        return {"ok": True, "result": {"message_id": 4242}}
+
+    monkeypatch.setattr(inbound, "keyboard_for", fake_keyboard)
+    monkeypatch.setattr(inbound, "reply", fake_reply)
+    monkeypatch.setattr(inbound, "decrypt_config", lambda channel: SimpleNamespace(inbound_enabled=True, chat_id="-100777"))
+    _, me = _auth("pw4-msgid@example.com")
+    action_id = _action_row(me["tenant_id"])
+
+    async def go():
+        async with _session_factory() as session:
+            action = await session.get(AiActionRecord, action_id)
+            assert await inbound.send_proposal_buttons(session, SimpleNamespace(), action, "<b>x</b>")
+            await session.commit()
+            await session.refresh(action)
+            return action.telegram_chat_id, action.telegram_message_id
+    assert asyncio.run(go()) == ("-100777", 4242)
+
+
+def test_an_app_decision_takes_the_buttons_off_and_says_so(monkeypatch):
+    from app.telegram_inbound import service as inbound
+    headers, me = _auth("pw4-sync@example.com")
+    assert _put(headers, "telegram", TELEGRAM, min_severity="INFO").status_code == 200
+    action_id = _action_row(me["tenant_id"], telegram_chat_id="987654", telegram_message_id=31)
+    seen: List[httpx.Request] = []
+    monkeypatch.setattr(inbound, "http_client", lambda: _telegram_mock([httpx.Response(200, json={"ok": True})], seen))
+
+    r = client.post(f"/api/ai/actions/{action_id}/reject", headers=headers, json={"note": "not now"})
+    assert r.status_code == 200 and r.json()["status"] == "REJECTED"
+    calls = _telegram_calls(seen)
+    assert calls[0] == ("editMessageReplyMarkup", {"chat_id": "987654", "message_id": 31, "reply_markup": {"inline_keyboard": []}})
+    assert calls[1][0] == "sendMessage" and calls[1][1]["reply_to_message_id"] == 31 and calls[1][1]["text"].startswith("❌ Rejected in the app")
+
+
+def test_no_telegram_message_no_call_and_telegram_down_never_fails_the_decision(monkeypatch):
+    from app.telegram_inbound import service as inbound
+    headers, me = _auth("pw4-sync-down@example.com")
+    assert _put(headers, "telegram", TELEGRAM, min_severity="INFO").status_code == 200
+    seen: List[httpx.Request] = []
+    monkeypatch.setattr(inbound, "http_client", lambda: _telegram_mock([httpx.Response(200, json={"ok": True})], seen))
+    plain = _action_row(me["tenant_id"])
+    assert client.post(f"/api/ai/actions/{plain}/reject", headers=headers, json={}).status_code == 200
+    assert seen == []                                                   # never sent to Telegram: nothing to update
+
+    def broken():
+        def handler(request):
+            raise httpx.ConnectError("down")
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(inbound, "http_client", broken)
+    linked = _action_row(me["tenant_id"], telegram_chat_id="987654", telegram_message_id=32)
+    assert client.post(f"/api/ai/actions/{linked}/reject", headers=headers, json={}).json()["status"] == "REJECTED"
+
+
+def test_expiry_takes_the_buttons_off_too(monkeypatch):
+    from app.ai import monitor
+    from app.telegram_inbound import service as inbound
+    synced = []
+
+    async def fake_sync(session, action, client=None, now=None):
+        synced.append((action.id, action.status))
+        return True
+    monkeypatch.setattr(inbound, "sync_proposal_message", fake_sync)
+    _, me = _auth("pw4-expire@example.com")
+    action_id = _action_row(me["tenant_id"], telegram_chat_id="1", telegram_message_id=9)
+
+    async def go():
+        async with _session_factory() as session:
+            return await monitor.expire_stale(session, datetime.now(timezone.utc) + timedelta(hours=2))
+    assert asyncio.run(go()) >= 1 and (action_id, "EXPIRED") in synced
+
+
+def test_photo_falls_back_to_plain_text_when_telegram_cannot_parse_the_caption():
+    from app.telegram_inbound import service as inbound
+    seen: List[httpx.Request] = []
+    replies = [httpx.Response(400, json={"ok": False, "description": "Bad Request: can't parse entities"}),
+               httpx.Response(200, json={"ok": True, "result": {"message_id": 77}})]
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: (seen.append(req), replies.pop(0))[1]))
+    cfg = SimpleNamespace(bot_token="123:abc")
+    got = asyncio.run(inbound.send_photo(cfg, "42", b"\x89PNG fake", "<b>NIFTY</b> <i>broken", client=mock))
+    assert got == 77 and len(seen) == 2 and seen[0].url.path.endswith("/sendPhoto")
+    assert b'name="parse_mode"' in seen[0].content and b'name="parse_mode"' not in seen[1].content
+    assert b"NIFTY broken" in seen[1].content
+
+
+def test_photo_without_an_image_is_a_text_message():
+    from app.telegram_inbound import service as inbound
+    seen: List[httpx.Request] = []
+    mock = httpx.AsyncClient(transport=httpx.MockTransport(lambda req: (seen.append(req), httpx.Response(200, json={"ok": True, "result": {"message_id": 5}}))[1]))
+    assert asyncio.run(inbound.send_photo(SimpleNamespace(bot_token="t"), "42", None, "hello", client=mock)) == 5
+    assert seen[0].url.path.endswith("/sendMessage")

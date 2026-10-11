@@ -80,3 +80,14 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
 - **Operations.** One stream per open app, closed by the server after 5 minutes (the app reconnects), a heartbeat
   comment every 15 s, `X-Accel-Buffering: no` so nginx does not buffer it. One indexed query per second per open app is
   fine for the Phase 0 cohort; a Redis feed can replace the polling later with the same wire format.
+- **The Telegram message follows the app** (ported from the owner's Trade bot, `vision/tg.py` / `vision/telegram_bot.py`).
+  When a proposal is sent with Approve / Reject, its Telegram chat and message id are kept on the proposal
+  (`ai_actions.telegram_chat_id` / `telegram_message_id`). A decision taken in the app, or the proposal expiring, takes
+  the buttons off that message (`editMessageReplyMarkup`) and replies under it ("✅ Approved in the app · 10:31 IST",
+  "❌ Rejected in the app", "⌛ Expired - no decision in time") so a stale button is never pressed; a Telegram decision
+  already edits its own message. Best effort: Telegram being down never fails a decision.
+- **Charts on Telegram** (`send_photo`, for the Vision reports of BYOK-V2/V3): a PNG with a caption up to 1024
+  characters and optional buttons; as in the Trade bot, a caption Telegram cannot parse as HTML is re-sent once as plain
+  text, and no image means a text message. Never raises; the bot token never appears in logs.
+- Not ported: the Trade bot's long-polling service (`getUpdates`) - ATP uses the webhook with a secret token; the Trade
+  bot's per-approver env lists - ATP has per-organisation chat allowlists and approvers in Settings.

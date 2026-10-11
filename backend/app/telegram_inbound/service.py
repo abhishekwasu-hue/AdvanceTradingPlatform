@@ -25,12 +25,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import json
 import logging
 import re
 import secrets
 import time
 from collections import defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Deque, Dict, List, Optional, Tuple
 
 import httpx
@@ -592,4 +593,87 @@ async def send_proposal_buttons(session: AsyncSession, channel: AlertChannelReco
     if not answer.get("ok", False):
         await session.rollback()                      # the nonce rows go with the failed send; the retry mints new ones
         raise RuntimeError(f"Telegram API: {answer.get('description') or 'send failed'}")
+    message_id = (answer.get("result") or {}).get("message_id")
+    if message_id:                                     # PW4: remembered so an app decision / expiry can update this message
+        action.telegram_chat_id, action.telegram_message_id = str(cfg.chat_id), int(message_id)
+        await session.flush()
     return True
+
+
+# --- PW4: Telegram <-> app, ported from the Trade bot (vision/tg.py: edit_caption / send_photo) -------------------
+
+_OUTCOME = {
+    "APPROVED": "✅ Approved in the app", "EXECUTED": "✅ Approved in the app", "REJECTED": "❌ Rejected in the app",
+    "EXPIRED": "⌛ Expired - no decision in time", "FAILED": "⚠️ Approved in the app; it could not be carried out",
+}
+
+
+def outcome_text(action: AiActionRecord, now: Optional[datetime] = None) -> str:
+    when = (action.decided_at or now or datetime.now(timezone.utc))
+    when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+    stamp = when.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime("%H:%M IST")
+    return f"{_OUTCOME.get(action.status, action.status)} · {stamp}"
+
+
+async def sync_proposal_message(session: AsyncSession, action: AiActionRecord, *, client: Optional[httpx.AsyncClient] = None,
+                                now: Optional[datetime] = None) -> bool:
+    """A proposal decided in the app (or expired) whose Telegram message still shows Approve / Reject: take the buttons
+    off and reply under it with what happened, so a stale button is never pressed. Like the Trade bot's tg helpers it
+    never raises - Telegram being down must not fail the decision. True when Telegram accepted both calls."""
+    if not action.telegram_message_id or not action.telegram_chat_id or action.status == "PROPOSED":
+        return False
+    try:
+        channel = await telegram_channel(session, action.tenant_id)
+        if channel is None:
+            return False
+        cfg: TelegramConfig = decrypt_config(channel)  # type: ignore[assignment]
+        chat_id, message_id = action.telegram_chat_id, int(action.telegram_message_id)
+        cleared = await _call(cfg, "editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
+                                                              "reply_markup": {"inline_keyboard": []}}, client)
+        said = await _call(cfg, "sendMessage", {"chat_id": chat_id, "text": outcome_text(action, now), "reply_to_message_id": message_id,
+                                                "disable_notification": True}, client)
+        return bool(cleared.get("ok")) and bool(said.get("ok"))
+    except Exception as exc:  # noqa: BLE001 - best effort by design
+        logger.warning("Telegram proposal message not updated for action %s: %s", action.id, type(exc).__name__)
+        return False
+
+
+def _plain(caption_html: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", caption_html))
+
+
+async def send_photo(cfg: TelegramConfig, chat_id: str, png: Optional[bytes], caption_html: str, *,
+                     reply_markup: Optional[dict] = None, client: Optional[httpx.AsyncClient] = None) -> Optional[int]:
+    """A chart with its caption (Telegram allows 1024 characters), optional buttons; the message id or None. As in the
+    Trade bot: a caption Telegram cannot parse as HTML is sent once more as plain text, and no image means a text
+    message. Never raises; the token never appears in what it logs or returns."""
+    own = client is None
+    client = client or http_client()
+    try:
+        for parse_html in (True, False):
+            text = caption_html if parse_html else _plain(caption_html)
+            data: dict = {"chat_id": str(chat_id)}
+            if parse_html:
+                data["parse_mode"] = "HTML"
+            if reply_markup:
+                data["reply_markup"] = json.dumps(reply_markup)
+            try:
+                if png:
+                    data["caption"] = text[:1024]
+                    response = await client.post(f"{TELEGRAM_API}/bot{cfg.bot_token}/sendPhoto", data=data,
+                                                 files={"photo": ("chart.png", png, "image/png")})
+                else:
+                    data["text"] = text[:4096]
+                    response = await client.post(f"{TELEGRAM_API}/bot{cfg.bot_token}/sendMessage", data=data)
+                answer = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                logger.warning("Telegram photo not sent: %s", type(exc).__name__)
+                return None
+            if answer.get("ok"):
+                return (answer.get("result") or {}).get("message_id")
+            if response.status_code != 400:            # only a parse error is worth the plain-text retry
+                break
+        return None
+    finally:
+        if own:
+            await client.aclose()

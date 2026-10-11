@@ -17,6 +17,7 @@ from app.db.models import JournalTagRecord, User
 from app.db.session import get_session
 from app.journal import FLAG, capture, service
 from app.journal import settings as journal_settings
+from app.journal.review import advice_in as review_advice_in
 from app.journal.settings import COMPONENT_TAGS, RANGES, TAGS, DisciplineSettings, SettingsError
 from app.platform.controls import require_flag
 
@@ -117,6 +118,12 @@ async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[
         reason = getattr(provider, "reason", "") or "no AI provider configured"
         return {"note": f"AI not used ({reason}); the numbers are explained from the rules"}
     text, why = await copilot.narrate(provider, "en", "weekly review of the trader's own journal", REVIEW_QUESTION, facts)
+    if text:
+        # Stricter than the Copilot's own filter: a review only describes a finished week. A "framed" reply (a specific
+        # call kept with a disclaimer elsewhere) or any instruction / forward-looking / buy-sell wording is not shown.
+        advice = review_advice_in(text)
+        if why == "framed" or advice:
+            text, why = None, "it gave advice: " + (", ".join(f'"{a}"' for a in advice[:3]) if advice else "a specific trade call")
     await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"weekly review explanation not used ({why})")
     await session.commit()
     if not text:

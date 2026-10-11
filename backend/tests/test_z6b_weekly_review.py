@@ -2,6 +2,7 @@
 Copilot explanation (grounded and advice-filtered, else the rule lines), and per-user isolation."""
 import asyncio
 import itertools
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -9,7 +10,7 @@ import pytest
 from app.ai import output_filter, wording
 from app.db.models import TradeRecord, User
 from app.journal import review as rv
-from app.journal import service
+from app.journal import capture, service
 from app.journal.settings import DisciplineSettings
 from app.market_data.calendar import IST
 from app.platform import controls
@@ -36,6 +37,7 @@ def _flag(name: str, on: bool) -> None:
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
             await session.commit()
     _run(go())
+    capture.reset_flag_cache()   # the capture hooks cache the flag
 
 
 @pytest.fixture
@@ -68,6 +70,8 @@ def test_review_numbers_from_the_trades():
     assert out["behaviours"] == [{"tag": "no_stop", "label": "no stop", "trades": 1, "closed": 1, "net_pnl": -30.0, "avg_r": None}]
     assert out["costliest"]["tag"] == "no_stop"
     assert "Compared with 2026-W39 (score 100), the score is down by 6." in out["lines"]
+    assert "Setup breakout lost ₹30.00 over 1 closed trade." in out["lines"]          # no "lost -₹30.00"
+    assert not any("-₹" in line and " lost " in line for line in out["lines"])
     assert any("lowest component was stop discipline at 75%" in line for line in out["lines"])
 
 
@@ -221,3 +225,76 @@ def test_weekly_review_service_is_deterministic(flag_on, journal):
             return first, second
     first, second = _run(go())
     assert first == second
+
+
+# --- review fixes: a structure is one trade; a narrated review never advises -----------------------------------------
+
+def _leg(id_, pnl, *, group="ic1", meta=None, charges=40.0, **kw):
+    at = ist(10, 6, 10)
+    base = dict(id=id_, tenant_id=1, user_id=1, mode="PAPER", strategy_id="iron_condor", symbol=f"NIFTY {24000 + id_ * 100} CE",
+                direction="SHORT", entry_time=at, entry_price=50.0, quantity=75, stop_loss=0.0, initial_stop_loss=None,
+                exit_time=at + timedelta(minutes=90), exit_price=40.0, exit_reason="Structure target", pnl=pnl, charges=charges,
+                leg_group_id=group, group_meta=json.dumps(meta if meta is not None else {"risk_per_unit": 40.0, "max_loss": 40.0, "quantity": 75}))
+    base.update(kw)
+    return TradeRecord(**base)
+
+
+def test_a_multi_leg_structure_is_one_trade_in_the_review():
+    legs = [_leg(1, 600.0), _leg(2, 500.0), _leg(3, -200.0), _leg(4, -150.0)]
+    units = service.review_trades(legs)
+    assert len(units) == 1
+    u = units[0]
+    assert u.pnl == 750.0 and u.charges == 160.0 and u.risk == 3000.0 and u.r == 0.25 and u.rows == (1, 2, 3, 4)
+    out = rv.build_review("2026-W41", units, [(3, "overtrading"), (4, "overtrading")], {"score": 90, "components": []}, [], S)
+    t = out["totals"]
+    assert (t["trades"], t["legs"], t["closed"], t["wins"], t["losses"]) == (1, 4, 1, 1, 0)
+    assert t["net_pnl"] == 750.0 and t["avg_r"] == 0.25 and t["win_rate"] == 100.0 and t["largest_loss"] is None
+    assert out["behaviours"] == [{"tag": "overtrading", "label": "overtrading", "trades": 1, "closed": 1, "net_pnl": 750.0, "avg_r": 0.25}]
+    assert out["lines"][0] == "2026-W41: 1 trade (4 order legs), 1 closed and 0 still open."
+
+    # one leg still open: the decision is open; a single trade next to it stays its own decision
+    still_open = [_leg(1, 600.0), _leg(2, None, exit_time=None, exit_price=None, exit_reason=None)]
+    single = TradeRecord(id=9, tenant_id=1, user_id=1, mode="PAPER", strategy_id="s", symbol="NIFTY", direction="LONG", entry_time=ist(10, 6, 11),
+                         entry_price=100.0, quantity=10, stop_loss=98.0, exit_time=ist(10, 6, 12), exit_price=101.0, pnl=10.0, charges=0.0)
+    mixed = rv.build_review("2026-W41", service.review_trades(still_open + [single]), [], {"score": None, "components": []}, [], S)["totals"]
+    assert (mixed["trades"], mixed["legs"], mixed["closed"], mixed["open"], mixed["net_pnl"], mixed["avg_r"]) == (2, 3, 1, 1, 10.0, 0.5)
+    # no group meta: no R for that decision rather than a leg's meaningless stop
+    assert service.review_trades([_leg(1, 100.0, meta={}), _leg(2, -50.0, meta={})])[0].risk == 0.0
+
+
+_ADVICE = ["You should stop revenge trading next week.", "Next week, buy only on pullbacks.", "Consider skipping trades after a loss."]
+
+
+def test_advice_check_is_strict_and_the_rule_lines_pass_it():
+    for sentence in _ADVICE + ["Stop revenge trading.", "Try to wait for the plan price.", "It would be better to size down.",
+                               "Avoid trading the open.", "Tomorrow the setup may work again."]:
+        assert rv.advice_in(sentence), sentence
+    trades = [_rt(i, f"setup{i % 3}", p) for i, p in enumerate([50.0, -10.0, -40.0, 0.0, 12.5, None], start=1)]
+    tags = [(i, tag) for i, tag in enumerate(rv.TAG_LABELS, start=1)]
+    score = {"score": 61, "components": [{"name": n, "clean_pct": 50.0, "max_points": 20.0} for n in rv.COMPONENT_LABELS]}
+    out = rv.build_review("2026-W40", trades, tags, score, [{"week": "2026-W39", "score": 55}], S)
+    for line in out["lines"] + ["Stop discipline was the lowest component at 75%.", "Plan adherence was 80% of decisions."]:
+        assert rv.advice_in(line) == [], line
+
+
+@pytest.mark.parametrize("sentence", _ADVICE)
+def test_narrated_advice_falls_back_to_the_rule_lines(flag_on, journal, monkeypatch, sentence):
+    token_a, _, _ = journal
+    provider = _FakeProvider(f"This week closed at a net P&L of -₹20.00 after ₹15.00 in charges. {sentence}")
+    _with_provider(monkeypatch, provider)
+    out = client.get("/api/journal/review?week=2026-W40&history=0&narrate=true", headers=_h(token_a)).json()
+    assert out["explanation"]["source"] == "rules", out["explanation"]
+    assert "not used" in out["explanation"]["note"] and "advice" in out["explanation"]["note"]
+    assert out["explanation"]["text"] == "\n".join(out["lines"]) and sentence not in out["explanation"]["text"]
+
+
+def test_a_framed_narration_is_not_shown(flag_on, journal, monkeypatch):
+    from app.ai import copilot
+    token_a, _, _ = journal
+
+    async def framed(*a, **k):
+        return "This week closed at a net P&L of -₹20.00.", "framed"
+    monkeypatch.setattr(copilot, "narrate", framed)
+    _with_provider(monkeypatch, _FakeProvider("unused"))
+    out = client.get("/api/journal/review?week=2026-W40&history=0&narrate=true", headers=_h(token_a)).json()
+    assert out["explanation"]["source"] == "rules" and "specific trade call" in out["explanation"]["note"]

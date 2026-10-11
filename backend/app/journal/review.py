@@ -3,7 +3,9 @@ describe those numbers.
 
 `build_review()` is pure: it takes the week's trades, their tags (as counted by the score rules), the week's discipline
 score and the trader's own previous weeks, and returns:
-* totals      - trades, decisions, closed / open, wins / losses, win rate, net and gross P&L, charges, average R,
+A "trade" here is one decision: the legs of a multi-leg structure are summed into one trade (P&L, charges, the group's
+risk from its max loss), exactly as the discipline score counts them; `legs` says how many order legs that was.
+* totals      - trades, legs, closed / open, wins / losses, win rate, net and gross P&L, charges, average R,
                 expectancy per closed trade (rupees and R), profit factor, largest win / loss, average holding time;
 * by_setup    - the same per setup, with `what_worked` (setups with a positive net) and `what_lost` (negative net);
 * behaviours  - per behaviour tag: trades, net P&L and average R of the closed tagged trades;
@@ -13,13 +15,17 @@ score and the trader's own previous weeks, and returns:
 * lines       - the facts above as short English sentences. They describe; they never tell the trader what to do.
 
 The Copilot may narrate `lines` (`copilot.narrate`: numbers checked against the facts, advice words filtered); when it
-cannot, the lines are the explanation.
+cannot, the lines are the explanation. On top of the Copilot's own filter, a narration of the review must pass
+`advice_in()`: a review describes a week that is over, so any instruction (you should / must / need to, consider,
+avoid, try...), a sentence that opens with a command, anything about next week or tomorrow, or a buy / sell / size word
+sends the explanation back to the rule lines. So does a reply the Copilot's filter "framed" (a specific call).
 """
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.journal.settings import DisciplineSettings
 
@@ -38,13 +44,19 @@ DISCLAIMER = ("Numbers from your own journal for this week. This review describe
 
 @dataclass(frozen=True)
 class ReviewTrade:
+    """One decision: a single trade, or every leg of one multi-leg structure summed (`service.review_trades`)."""
     id: int
     setup: str
     unit: str
-    pnl: Optional[float]           # net of charges; None while open
+    pnl: Optional[float]           # net of charges; None while open (a structure: while any leg is open)
     charges: float
-    risk: float                    # initial stop distance x quantity (0 = no valid stop)
+    risk: float                    # initial stop distance x quantity, a structure's max loss (0 = no valid stop)
     holding_minutes: Optional[float]
+    trade_ids: Tuple[int, ...] = ()   # the trade rows (legs) in this decision; empty = just `id`
+
+    @property
+    def rows(self) -> Tuple[int, ...]:
+        return self.trade_ids or (self.id,)
 
     @property
     def closed(self) -> bool:
@@ -53,6 +65,43 @@ class ReviewTrade:
     @property
     def r(self) -> Optional[float]:
         return self.pnl / self.risk if self.pnl is not None and self.risk > 0 else None
+
+
+# --- the strict advice check for a narrated review --------------------------------------------------------------------
+
+_ADVICE_ANYWHERE = [re.compile(p, re.IGNORECASE) for p in (
+    r"\byou(?:'d| would| will)? (?:should|must|need to|have to|ought to|could|might want to|may want to|want to)\b",
+    r"\b(?:should|must|ought to|needs? to|had better)\b",
+    r"\b(?:consider(?:ing)?|avoid(?:ing)?|try(?:ing)? to|recommend\w*|suggest\w*|advis\w*|make sure|be sure to|remember to)\b",
+    r"\b(?:it (?:would|might|may) be (?:better|wise|best|good)|better to|best to|let's|let us|please)\b",
+    r"\b(?:next week|next session|tomorrow|going forward|from now on|in (?:the )?future|next time|in the coming)\b",
+    r"\b(?:buy|sell|go long|go short|short (?:it|more|again|the)|size (?:up|down)|increase (?:your |the )?size|reduce (?:your |the )?size|"
+    r"cut (?:your |the )?size|add to (?:your |the )?position|average down)\b",
+)]
+# A sentence that opens with a command ("Stop revenge trading.", "Keep your stops.", "Next week, ...").
+_IMPERATIVE_START = re.compile(
+    r"^(?:(?:so|then|now|also|and|but|instead|overall),?\s+)?(?:consider|avoid|try|start|keep|focus|make|remember|don't|do|never|always|"
+    r"buy|sell|short|size|cut|reduce|increase|add|enter|take|wait|skip|use|move|hold|go|aim|stick|follow|be|stay|let|think|"
+    r"reconsider|practice|practise|treat|honour|honor|respect|lower|raise|tighten|widen|trail|protect|scale|ensure|check|"
+    # "Stop revenge trading." is a command; "Stop discipline was ..." / "Stop loss hit ..." describe.
+    r"stop(?!\s+(?:discipline|loss|losses|level|levels|distance|moved|was|were|hit|order|orders)\b))\b", re.IGNORECASE)
+
+
+def advice_in(text: str) -> List[str]:
+    """What in a narrated review reads as advice (empty = descriptive). Strict on purpose: when in doubt the rule lines,
+    which never advise, are the explanation."""
+    found: List[str] = []
+    for pattern in _ADVICE_ANYWHERE:
+        found.extend(m.group(0) for m in pattern.finditer(text))
+    for sentence in re.split(r"(?<=[.!?;:])\s+|\n+", text):
+        m = _IMPERATIVE_START.match(sentence.strip().lstrip("-*•0123456789. )"))
+        if m:
+            found.append(m.group(0))
+    seen: List[str] = []
+    for item in found:
+        if item.lower() not in [s.lower() for s in seen]:
+            seen.append(item)
+    return seen
 
 
 def _round(value: Optional[float], places: int = 2) -> Optional[float]:
@@ -72,7 +121,8 @@ def _stats(trades: Sequence[ReviewTrade]) -> Dict[str, Any]:
     holds = [t.holding_minutes for t in closed if t.holding_minutes is not None]
     gross_win, gross_loss = sum(wins), -sum(losses)
     return {
-        "trades": len(trades), "decisions": len({t.unit for t in trades}), "closed": len(closed), "open": len(trades) - len(closed),
+        "trades": len(trades), "decisions": len({t.unit for t in trades}), "legs": sum(len(t.rows) for t in trades),
+        "closed": len(closed), "open": len(trades) - len(closed),
         "wins": len(wins), "losses": len(losses), "flat": len(pnls) - len(wins) - len(losses),
         "win_rate": _round(100.0 * len(wins) / len(pnls), 1) if pnls else None,
         "net_pnl": round(sum(pnls), 2), "charges": round(sum(t.charges for t in closed), 2),
@@ -97,6 +147,7 @@ def _money(value: Optional[float]) -> str:
 def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterable[tuple], score: Dict[str, Any],
                  history: Sequence[Dict[str, Any]], settings: DisciplineSettings) -> Dict[str, Any]:
     """`counted_tags`: (trade_id, tag) pairs that count under the trader's settings (dismissed ones left out)."""
+    by_row = {row: t for t in trades for row in t.rows}     # a tag sits on a trade row; it counts once for its decision
     by_id = {t.id: t for t in trades}
     totals = _stats(trades)
 
@@ -109,8 +160,8 @@ def build_review(week: str, trades: Sequence[ReviewTrade], counted_tags: Iterabl
 
     tagged: Dict[str, set] = defaultdict(set)
     for trade_id, tag in counted_tags:
-        if trade_id in by_id:
-            tagged[tag].add(trade_id)
+        if trade_id in by_row:
+            tagged[tag].add(by_row[trade_id].id)
     behaviours = []
     for tag in sorted(tagged):
         group = [by_id[i] for i in sorted(tagged[tag])]
@@ -135,7 +186,8 @@ def lines(review: Dict[str, Any]) -> List[str]:
     if not t["trades"]:
         out.append(f"No trades were journaled in {review['week']}.")
         return out
-    out.append(f"{review['week']}: {_n(t['trades'], 'trade')} ({_n(t['decisions'], 'decision')}), {t['closed']} closed and {t['open']} still open.")
+    legs = f" ({t['legs']} order legs)" if t.get("legs", t["trades"]) > t["trades"] else ""
+    out.append(f"{review['week']}: {_n(t['trades'], 'trade')}{legs}, {t['closed']} closed and {t['open']} still open.")
     if t["closed"]:
         win_rate = f"{t['win_rate']:g}%" if t["win_rate"] is not None else "n/a"
         out.append(f"Closed trades: {t['wins']} won, {t['losses']} lost, win rate {win_rate}; net P&L {_money(t['net_pnl'])} "
@@ -145,12 +197,12 @@ def lines(review: Dict[str, Any]) -> List[str]:
     for g in review["what_worked"]:
         out.append(f"Setup {g['setup']} made {_money(g['net_pnl'])} over {_n(g['closed'], 'closed trade')}.")
     for g in review["what_lost"]:
-        out.append(f"Setup {g['setup']} lost {_money(g['net_pnl'])} over {_n(g['closed'], 'closed trade')}.")
+        out.append(f"Setup {g['setup']} lost {_money(abs(g['net_pnl']))} over {_n(g['closed'], 'closed trade')}.")
     for b in review["behaviours"]:
         out.append(f"Tagged {b['label']}: {_n(b['trades'], 'trade')}, net {_money(b['net_pnl'])} on the closed ones.")
     if review["costliest"]:
         c = review["costliest"]
-        out.append(f"The behaviour with the largest loss this week was {c['label']} ({_money(c['net_pnl'])} over {_n(c['closed'], 'closed trade')}).")
+        out.append(f"The behaviour with the largest loss this week was {c['label']} ({_money(abs(c['net_pnl']))} lost over {_n(c['closed'], 'closed trade')}).")
     score = review["discipline"].get("score")
     if score is not None:
         weakest = sorted((c for c in review["discipline"]["components"] if c["clean_pct"] is not None and c["max_points"] > 0),

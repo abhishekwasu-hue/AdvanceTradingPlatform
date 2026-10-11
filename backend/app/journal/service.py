@@ -307,18 +307,51 @@ async def add_user_tag(session: AsyncSession, user: User, trade: TradeRecord, ta
 
 # --- Z6-b: the weekly review ------------------------------------------------------------------------------------------
 
+def _group_risk(legs: Sequence[TradeRecord]) -> float:
+    """A structure's risk in rupees: its max loss per unit (`risk_per_unit`, else `max_loss`) times the 1x quantity, from
+    the group meta the structure was sized on. 0 when the meta does not say (no R for that decision)."""
+    for leg in legs:
+        meta = capture._loads(leg.group_meta, {})
+        per_unit = meta.get("risk_per_unit") or meta.get("max_loss")
+        quantity = meta.get("quantity") or leg.quantity
+        try:
+            risk = abs(float(per_unit)) * abs(float(quantity)) if per_unit else 0.0
+        except (TypeError, ValueError):
+            continue
+        if risk > 0:
+            return risk
+    return 0.0
+
+
 def review_trades(trades: Sequence[TradeRecord]) -> List[Any]:
+    """The week's decisions for the review: a single trade as it is, the legs of one structure summed into one (net P&L
+    and charges added up, closed only when every leg is, the group's risk from its max loss) - the unit the discipline
+    score counts, so a 4-leg iron condor is one trade, not four."""
     from app.journal.review import ReviewTrade
-    out = []
+    units: Dict[str, List[TradeRecord]] = {}
     for t in trades:
-        stop = t.initial_stop_loss if t.initial_stop_loss is not None else t.stop_loss
-        sign = 1 if t.direction == "LONG" else -1
-        per_unit = sign * (float(t.entry_price) - float(stop)) if stop else 0.0
-        entry_time, exit_time = _utc(t.entry_time), _utc(t.exit_time)
-        out.append(ReviewTrade(id=t.id, setup=t.strategy_id, unit=f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}",
-                               pnl=float(t.pnl) if t.pnl is not None and t.exit_time is not None else None,
-                               charges=float(t.charges or 0.0), risk=per_unit * abs(float(t.quantity)) if per_unit > 0 else 0.0,
-                               holding_minutes=(exit_time - entry_time).total_seconds() / 60.0 if exit_time and entry_time else None))
+        units.setdefault(f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}", []).append(t)
+    out = []
+    for unit, legs in units.items():
+        legs = sorted(legs, key=lambda leg: leg.id)
+        closed = all(leg.pnl is not None and leg.exit_time is not None for leg in legs)
+        entry_times = [x for x in (_utc(leg.entry_time) for leg in legs) if x is not None]
+        exit_times = [x for x in (_utc(leg.exit_time) for leg in legs) if x is not None]
+        if len(legs) == 1 and not legs[0].leg_group_id:
+            t = legs[0]
+            stop = t.initial_stop_loss if t.initial_stop_loss is not None else t.stop_loss
+            sign = 1 if t.direction == "LONG" else -1
+            per_unit = sign * (float(t.entry_price) - float(stop)) if stop else 0.0
+            risk = per_unit * abs(float(t.quantity)) if per_unit > 0 else 0.0
+        else:
+            risk = _group_risk(legs)
+        holding = None
+        if closed and entry_times and exit_times:
+            holding = (max(exit_times) - min(entry_times)).total_seconds() / 60.0
+        out.append(ReviewTrade(id=legs[0].id, setup=legs[0].strategy_id, unit=unit,
+                               pnl=round(sum(float(leg.pnl) for leg in legs if leg.pnl is not None), 2) if closed else None,
+                               charges=float(sum(float(leg.charges or 0.0) for leg in legs)), risk=risk, holding_minutes=holding,
+                               trade_ids=tuple(leg.id for leg in legs)))
     return out
 
 

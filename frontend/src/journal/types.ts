@@ -83,8 +83,11 @@ export interface JournalWeek {
 }
 
 export interface ReviewStats {
+  /** decisions: a multi-leg structure counts once (its legs summed) */
   trades: number;
   decisions: number;
+  /** order legs (trade rows) behind those decisions */
+  legs: number;
   closed: number;
   open: number;
   wins: number;

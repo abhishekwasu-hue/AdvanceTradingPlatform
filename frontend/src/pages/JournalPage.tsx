@@ -6,7 +6,8 @@ import { Badge, Button, EmptyState, Input, PageHeader, Signed, Skeleton, Tabs } 
 import { useToast } from "../components/Toast";
 import { journalApi } from "../journal/api";
 import {
-  COMPONENT_LABELS, EVENT_KINDS, SETTING_LABELS, TAG_HELP, chase, countsInScore, isoWeekOf, minutesText, money, rText, shiftWeek, tagLabel,
+  COMPONENT_LABELS, EVENT_KINDS, SETTING_LABELS, TAG_HELP, chase, countsInScore, isoWeekOf, minutesText, money, parseSettingNumber, rText,
+  settingsProblems, shiftWeek, tagLabel,
 } from "../journal/format";
 import type { DisciplineScore, DisciplineSettings, JournalEntry, JournalSettingsResponse, JournalTag, JournalWeek, TagStatus, WeeklyReview } from "../journal/types";
 import type { PageProps } from "../routes";
@@ -119,11 +120,13 @@ function WeekTab({ data, onDecide }: { data: JournalWeek; onDecide: (id: number,
   );
 }
 
-function ReviewTab({ week }: { week: string | undefined }) {
+/** `version` changes whenever a tag is confirmed or dismissed elsewhere on the page: the review is fetched again. */
+function ReviewTab({ week, version }: { week: string | undefined; version: number }) {
   const toast = useToast();
   const [review, setReview] = useState<WeeklyReview | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setReview(null); journalApi.review(week).then(setReview).catch((e) => toast.error(errorText(e))); }, [week, toast]);
+  useEffect(() => { journalApi.review(week).then(setReview).catch((e) => toast.error(errorText(e))); }, [week, version, toast]);
+  useEffect(() => { setReview(null); }, [week]);
   async function explain() {
     setBusy(true);
     try { setReview(await journalApi.review(week, true)); } catch (e) { toast.error(errorText(e)); } finally { setBusy(false); }
@@ -172,30 +175,51 @@ function ReviewTab({ week }: { week: string | undefined }) {
   );
 }
 
+const NUMBER_KEYS = Object.keys(SETTING_LABELS) as (keyof DisciplineSettings)[];
+
+/** The number fields as typed (so a cleared field stays blank instead of becoming 0): settings keys and `w:<component>`. */
+function numberTexts(s: DisciplineSettings): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of NUMBER_KEYS) out[k as string] = String(s[k]);
+  for (const [c, w] of Object.entries(s.weights)) out[`w:${c}`] = String(w);
+  return out;
+}
+
 function SettingsTab() {
   const toast = useToast();
   const [data, setData] = useState<JournalSettingsResponse | null>(null);
   const [draft, setDraft] = useState<DisciplineSettings | null>(null);
-  useEffect(() => { journalApi.settings().then((d) => { setData(d); setDraft(d.settings); }).catch((e) => toast.error(errorText(e))); }, [toast]);
+  const [texts, setTexts] = useState<Record<string, string>>({});
+  const reset = useCallback((s: DisciplineSettings) => { setDraft(s); setTexts(numberTexts(s)); }, []);
+  useEffect(() => { journalApi.settings().then((d) => { setData(d); reset(d.settings); }).catch((e) => toast.error(errorText(e))); }, [toast, reset]);
   if (!data || !draft) return <Skeleton className="h-40 w-full" />;
-  const numberKeys = Object.keys(SETTING_LABELS) as (keyof DisciplineSettings)[];
+  const settings = data;
+  const setText = (key: string, value: string) => setTexts({ ...texts, [key]: value });
   async function save() {
     if (!draft) return;
+    const labels: Record<string, string> = {};
+    for (const k of NUMBER_KEYS) labels[k as string] = SETTING_LABELS[k as string].label;
+    for (const c of Object.keys(settings.components)) labels[`w:${c}`] = `${COMPONENT_LABELS[c] ?? c} weight`;
+    const problems = settingsProblems(texts, labels, settings.ranges);
+    if (problems.length) { toast.error(`Not saved. ${problems.join("; ")}.`); return; }
+    const values: DisciplineSettings = { ...draft, weights: { ...draft.weights } };
+    for (const k of NUMBER_KEYS) (values as unknown as Record<string, number>)[k as string] = parseSettingNumber(texts[k as string]) as number;
+    for (const c of Object.keys(settings.components)) if (texts[`w:${c}`] !== undefined) values.weights[c] = parseSettingNumber(texts[`w:${c}`]) as number;
     try {
-      const d = await journalApi.saveSettings(draft);
-      setData(d); setDraft(d.settings); toast.success("Settings saved. The week's tags and score use them from now on.");
+      const d = await journalApi.saveSettings(values);
+      setData(d); reset(d.settings); toast.success("Settings saved. The week's tags and score use them from now on.");
     } catch (e) { toast.error(errorText(e)); }
   }
   return (
     <div className="space-y-4">
       <Card title="Behaviour thresholds">
         <div className="grid gap-3 sm:grid-cols-2">
-          {numberKeys.map((k) => {
+          {NUMBER_KEYS.map((k) => {
             const range = data.ranges[k as string];
             return (
               <Input key={k as string} type="number" step="any" label={SETTING_LABELS[k as string].label}
                 hint={`${SETTING_LABELS[k as string].unit ?? ""} · default ${String(data.defaults[k])}${range ? ` · ${range[0]}-${range[1]}` : ""}`}
-                value={String(draft[k])} onChange={(ev) => setDraft({ ...draft, [k]: Number(ev.target.value) })} />
+                value={texts[k as string] ?? ""} onChange={(ev) => setText(k as string, ev.target.value)} />
             );
           })}
         </div>
@@ -220,14 +244,14 @@ function SettingsTab() {
         <div className="grid gap-3 sm:grid-cols-3">
           {Object.keys(data.components).map((c) => (
             <Input key={c} type="number" step="any" label={COMPONENT_LABELS[c] ?? c} hint={`default ${data.defaults.weights[c]}`}
-              value={String(draft.weights[c] ?? 0)} onChange={(ev) => setDraft({ ...draft, weights: { ...draft.weights, [c]: Number(ev.target.value) } })} />
+              value={texts[`w:${c}`] ?? ""} onChange={(ev) => setText(`w:${c}`, ev.target.value)} />
           ))}
         </div>
         <p className="mt-2 text-[11px] text-fg-muted">Only the proportions matter. The defaults and the reasoning behind each one are in the discipline engine's design note.</p>
       </Card>
       <div className="flex gap-2">
         <Button variant="primary" onClick={save}>Save settings</Button>
-        <Button onClick={() => setDraft(data.defaults)}>Back to defaults</Button>
+        <Button onClick={() => reset(data.defaults)}>Back to defaults</Button>
       </div>
     </div>
   );
@@ -239,6 +263,7 @@ export default function JournalPage(_props: PageProps) {
   const [data, setData] = useState<JournalWeek | null>(null);
   const [off, setOff] = useState(false);
   const [tab, setTab] = useState("week");
+  const [version, setVersion] = useState(0);
   const load = useCallback(() => {
     journalApi.week(week).then((d) => { setData(d); setOff(false); }).catch((e) => {
       if (e instanceof ApiError && e.status === 503) setOff(true); else toast.error(errorText(e));
@@ -246,7 +271,7 @@ export default function JournalPage(_props: PageProps) {
   }, [week, toast]);
   useEffect(() => { load(); }, [load]);
   async function decide(id: number, status: TagStatus) {
-    try { await journalApi.decideTag(id, status); load(); } catch (e) { toast.error(errorText(e)); }
+    try { await journalApi.decideTag(id, status); load(); setVersion((v) => v + 1); } catch (e) { toast.error(errorText(e)); }
   }
   const label = data?.week ?? week ?? isoWeekOf(new Date());
   const nav = (
@@ -264,7 +289,7 @@ export default function JournalPage(_props: PageProps) {
       {off ? <EmptyState icon={<NotebookPen size={20} />} title="Not enabled" body={OFF_TEXT} /> : !data ? <Skeleton className="h-40 w-full" /> : (
         <Tabs value={tab} onChange={setTab} items={[
           { value: "week", label: "Week", content: <WeekTab data={data} onDecide={decide} /> },
-          { value: "review", label: "Weekly review", content: <ReviewTab week={data.week} /> },
+          { value: "review", label: "Weekly review", content: <ReviewTab week={data.week} version={version} /> },
           { value: "settings", label: "Settings", content: <SettingsTab /> },
         ]} />
       )}

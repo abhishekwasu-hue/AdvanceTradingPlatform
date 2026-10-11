@@ -147,8 +147,11 @@ this table, not a tuning run (open question Z6-1).
 ## Weekly review (Z6-b)
 
 `GET /api/journal/review?week=&history=4&narrate=false` (`app/journal/review.py`, pure) builds the review from the
-same journal, tags and score. Every number comes from the trader's own trades:
-- **totals**: trades, decisions, closed and open, wins and losses, win rate, net and gross P&L, charges, average R,
+same journal, tags and score. Every number comes from the trader's own trades. A "trade" in the review is one
+decision, as in the score: the legs of a multi-leg structure are summed into one trade (net P&L and charges added up,
+closed only when every leg is, risk = the group's `risk_per_unit` (else `max_loss`) x its 1x quantity from the group
+meta), so an iron condor of +600, +500, -200, -150 is one winning trade of +750, not two wins and two losses.
+- **totals**: trades (decisions), order legs, closed and open, wins and losses, win rate, net and gross P&L, charges, average R,
   expectancy, profit factor, largest win and loss, average holding time;
 - **setups**: the same per setup, with what worked (net > 0) and what lost (net < 0);
 - **behaviours**: per counted tag, the trades and the net P&L and average R of the closed tagged trades;
@@ -165,6 +168,12 @@ It is held to the same checks as every Copilot answer:
 - every number must come from the facts;
 - no advice or guarantee words;
 - one retry, after which the rule lines are the explanation.
+
+The review adds a stricter check of its own (`review.advice_in`), because a review only describes a week that is over:
+any instruction ("you should / must / need to", "consider", "avoid", "try to", "make sure"...), a sentence that opens
+with a command ("Stop revenge trading.", "Keep ..."), anything about next week, tomorrow or "going forward", and any
+buy / sell / sizing word send the explanation back to the rule lines, as does a reply the Copilot filter marked
+"framed" (a specific call). The note says which words were found.
 
 It needs the AI Copilot acknowledgement and the `ai_copilot` flag. Without them the review is still complete; only the
 explanation comes from the rules.

@@ -1,6 +1,9 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { COMPONENT_LABELS, SETTING_LABELS, TAG_HELP, TAG_LABELS, chase, countsInScore, isoWeekOf, minutesText, money, rText, shiftWeek, tagLabel } from "./format";
+import {
+  COMPONENT_LABELS, SETTING_LABELS, TAG_HELP, TAG_LABELS, chase, countsInScore, isoWeekOf, minutesText, money, parseSettingNumber, rText, settingsProblems,
+  shiftWeek, tagLabel,
+} from "./format";
 
 describe("journal format helpers", () => {
   it("names IST weeks the ISO way", () => {
@@ -21,6 +24,20 @@ describe("journal format helpers", () => {
     expect(minutesText(25)).toBe("25 min");
     expect(minutesText(125)).toBe("2 h 5 min");
     expect(minutesText(60 * 50)).toBe("2 d 2 h");
+  });
+
+  it("keeps a cleared settings field blank instead of sending 0", () => {
+    expect(parseSettingNumber("")).toBeNull();
+    expect(parseSettingNumber("  ")).toBeNull();
+    expect(parseSettingNumber("abc")).toBeNull();
+    expect(parseSettingNumber("0")).toBe(0);
+    expect(parseSettingNumber("1.5")).toBe(1.5);
+    const labels = { fomo_chase_r: "FOMO chase", "w:plan_adherence": "Plan adherence weight" };
+    const ranges: Record<string, [number, number]> = { fomo_chase_r: [0.05, 2] };
+    expect(settingsProblems({ fomo_chase_r: "0.25", "w:plan_adherence": "20" }, labels, ranges)).toEqual([]);
+    expect(settingsProblems({ fomo_chase_r: "", "w:plan_adherence": "" }, labels, ranges)).toEqual([
+      "FOMO chase: enter a number from 0.05 to 2", "Plan adherence weight: enter a number"]);
+    expect(settingsProblems({ fomo_chase_r: "5" }, labels, ranges)).toEqual(["FOMO chase: 5 is outside 0.05-2"]);
   });
 
   it("measures the chase in the trade's own direction", () => {

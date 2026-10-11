@@ -100,3 +100,25 @@ export function chase(direction: string, planned: number | undefined, fill: numb
 export function countsInScore(status: string, countUnconfirmed: boolean): boolean {
   return status === "CONFIRMED" || (countUnconfirmed && status === "SUGGESTED");
 }
+
+/** A settings field as typed: blank or not a number is null (a cleared field is never sent as 0). */
+export function parseSettingNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** What keeps the settings form from saving: a blank or non-numeric field, or a value outside its range. Empty = ready. */
+export function settingsProblems(texts: Record<string, string>, labels: Record<string, string>,
+  ranges: Record<string, [number, number]> = {}): string[] {
+  const out: string[] = [];
+  for (const [key, raw] of Object.entries(texts)) {
+    const label = labels[key] ?? key;
+    const value = parseSettingNumber(raw);
+    const range = ranges[key];
+    if (value == null) out.push(`${label}: enter a number${range ? ` from ${range[0]} to ${range[1]}` : ""}`);
+    else if (range && (value < range[0] || value > range[1])) out.push(`${label}: ${value} is outside ${range[0]}-${range[1]}`);
+  }
+  return out;
+}

@@ -76,6 +76,7 @@ from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
+from app.paper.routes import router as paper_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -231,6 +232,7 @@ app.include_router(live_router)  # PW4: live updates across Telegram, push and o
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
+app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 
 _default_risk_config = RiskConfig()
 
@@ -422,8 +424,11 @@ async def paper_execute(
             if not signal.is_tradeable or signal.entry is None:
                 return PaperExecuteResponse(signal=signal, executed=False, reasons=list(signal.reasons) or ["No trade signal"])
             key = f"console:{user.id}:{request.idempotency_key}" if request.idempotency_key else f"console:{user.id}:{uuid.uuid4().hex}"
-            row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
-                                               idempotency_key=key, user_id=user.id)
+            try:
+                row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
+                                                   idempotency_key=key, user_id=user.id)
+            except approval.EntriesPaused as exc:          # Z3-b (review V4): the user's PAPER pause - an answer, not a 500
+                return PaperExecuteResponse(signal=signal, executed=False, reasons=[str(exc)])
             return PaperExecuteResponse(signal=signal, executed=False, reasons=[
                 f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order at the live price"
                 if row is not None else "Approval-only mode: this signal was already proposed"])
@@ -479,7 +484,7 @@ async def backtest(
     risk_config = request.risk_config or _default_risk_config
 
     body = BacktestBody(**request.model_dump())
-    runner = await BacktestRunner.build(body, risk_config, session)
+    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
     result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)

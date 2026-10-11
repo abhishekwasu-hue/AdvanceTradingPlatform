@@ -8,7 +8,7 @@ def serve_candles(monkeypatch, candles, source: str = "broker:testbroker"):
     bars = [c if isinstance(c, OHLCVBar) else OHLCVBar(**c) for c in candles]
     calls = []
 
-    async def fake(session, tenant_id, symbol, exchange, timeframe, *, broker=None, lookback_days=30):
+    async def fake(session, tenant_id, symbol, exchange, timeframe, *, broker=None, lookback_days=30, user=None):
         calls.append({"tenant_id": tenant_id, "symbol": symbol, "timeframe": timeframe})
         return interview.frame_from_candles(bars), source
     monkeypatch.setattr(evidence, "server_frame", fake)

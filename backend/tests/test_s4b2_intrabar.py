@@ -159,6 +159,11 @@ def test_fetch_frames_keeps_the_forming_bar_and_skips_the_cache_only_for_intraba
     monkeypatch.setattr(candles_routes, "_pick_record", pick)
     monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
     monkeypatch.setattr(MarketDataService, "get_candles", get_candles)
+    from app.market_data import live_access
+
+    async def byob_off(session, tenant_id):              # BT1b: no DB session here, so no flag store to read
+        return False
+    monkeypatch.setattr(live_access, "byob_on", byob_off)
     now = ist(TUE, 9, 18) + timedelta(seconds=30)
     closed, problems, _ = _run(fetch_frames(None, 1, ["TCS"], "NSE", "1m", {"1m": 5}, now=now))
     assert problems == {}

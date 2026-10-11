@@ -394,6 +394,8 @@ def test_one_alert_per_leg_through_the_bar_close_engine():
                 states.append(await barclose.evaluate_rule(session, rule, now.to_pydatetime(), fetch))
                 await session.commit()
             events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.rule_id == rule.id)))
+            rule.status = "paused"                                       # leave nothing active for other modules' run_due tests
+            await session.commit()
             return day, states, events
     day, states, events = asyncio.run(go())
     assert all(s[0] == "done" for s in states), states

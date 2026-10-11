@@ -245,8 +245,9 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "defaults": {a.name: a.default for a in spec.args if a.default is not None},
                           "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
-                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc,
-                          "timeframes": list(getattr(spec, "timeframes", ()))}
+                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
+        if spec.timeframes:                                          # U6 BK2: only the entries limited to some timeframes
+            out[spec.name]["timeframes"] = list(spec.timeframes)
     return out
 
 

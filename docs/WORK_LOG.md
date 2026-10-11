@@ -885,21 +885,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-10 22:40 IST - part D (SEBI) design PR
-- `docs/design/D_SEBI.md`: D1-D8 against what exists (algo tag, rate budget, market protection, daily-login pieces,
-  readiness) and the gaps; rules-engine design shared with v1.2 (SEBI = one rule-set); PR order and test plan.
-- `app/compliance/rules.py` + `rulesets/in_sebi.json` (11 rules, parameters as data, status enforced/partial/planned);
-  `docs/COMPLIANCE_IN.md` (rule -> code -> test -> flag); `tests/test_compliance_rules.py` keeps file, doc, code and
-  named tests in step. No behaviour change. OPEN_QUESTIONS D-1..D-3.
-- In parallel: part B ADR drafts (ADR-0013/0016/0017) on claude/data-lake-adr.
-
-### 2026-10-10 22:46 IST - part D2: OPS throttle (exits first), flag off
-- `app/execution/ops_throttle.py`: per (tenant, broker account) and exchange, orders/s from the IN-SEBI rule-set; entry lane
-  refused immediately (REJECTED, reason ops_throttle, never sent), exit lane (exits, stops, modify, cancel, untagged) waits
-  and is never refused; no entry while an exit waits; broker 429 pauses the exchange (back-off from the rule-set), success
-  resets. Wired through RateLimitedBroker when OPS_THROTTLE_ENABLED (default off). Metrics + 2 alert rules.
-- Rule IN-SEBI.ops.throttle -> enforced; docs/COMPLIANCE_IN.md now generated (scripts/compliance_doc.py, CI checks it).
-- Tests: tests/test_d2_ops_throttle.py (6); worker/rate-budget/tagging/G-LIVE suites 64 passed.
 ### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
 - What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
   `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per

@@ -78,6 +78,25 @@ SECRETS_WRITE_FORMAT = os.environ.get("SECRETS_WRITE_FORMAT", "fernet").strip().
 # The app runs fine without Redis reachable - every cache call is wrapped to fail open.
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+
+def _ratio(name: str, default: float) -> float:
+    """A fraction in (0, 1]; anything else (typo, 70 instead of 0.70) falls back to the default."""
+    try:
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return value if 0 < value <= 1 else default
+
+
+# H-1 (OPEN_QUESTIONS): Redis runs with a memory cap and `volatile-lru` - at the cap it evicts keys that carry a TTL,
+# and the worker's replica lock is one of them. The worker warns the operators at this share of `maxmemory`
+# (checked every REDIS_MEMORY_CHECK_SECONDS) and a lost lock makes it fail closed (app/workers/redis_guard.py).
+REDIS_MEMORY_WARN_RATIO = _ratio("REDIS_MEMORY_WARN_RATIO", 0.70)
+REDIS_MEMORY_CHECK_SECONDS = max(30, int(float(os.environ.get("REDIS_MEMORY_CHECK_SECONDS", "300") or 300)))
+# Every cache entry is short-lived: cache_set refuses a TTL longer than this (an hour), so a cache can never crowd
+# out the lock under memory pressure with keys that outlive their use.
+CACHE_MAX_TTL_SECONDS = 3600
+
 # Comma-separated list of allowed frontend origins for CORS, e.g. "https://app.example.com".
 # Defaults to "*" (any origin) so the dev server and API docs "try it out" work with zero
 # config - see validate_production_config(), which refuses to start with this default set in

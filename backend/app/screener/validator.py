@@ -271,6 +271,9 @@ class _Checker:
             t, _ = self.check(arg_node, own_tf)
             if t != kw_sig.type:
                 self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node)
+        for i in spec.price_args:
+            if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
+                self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i])
         if spec.varargs or spec.same_unit_args:
             positions = range(len(units)) if spec.varargs else spec.same_unit_args
             seen = {units[i] for i in positions if i < len(units) and units[i] not in (None, ANY_UNIT)}

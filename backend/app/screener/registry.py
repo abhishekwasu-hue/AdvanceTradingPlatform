@@ -42,6 +42,7 @@ class Spec:
     extra_bars: int = 0             # bars needed beyond the window (CrossAbove compares with the bar before)
     min_bars: int = 0               # S5-A: a floor on the bars needed (swings need history before the first pivot)
     values: Tuple[str, ...] = ()    # S5-A: a classifier's only values (a literal outside them is refused); empty = open
+    price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -61,6 +62,7 @@ PATTERN_NAMES: Tuple[str, ...] = (
 )
 SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
 SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
+REVERSAL_MIN_BARS = 25                            # the median range of 20 bars before a window of up to 4 candles
 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _X = Arg("x", NUM)
@@ -122,6 +124,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
     Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, values=("UP", "DOWN"),
          doc="UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"),
+    Spec("ReversalAt", "filter", BOOL, None, (Arg("level", NUM), Arg("direction", STR, choices=("bullish", "bearish"))), cost=4.0,
+         min_bars=REVERSAL_MIN_BARS, price_args=(0,),
+         doc="price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close"
+             " location; hammer / engulfing / star are one rule) - bullish at support, bearish at resistance"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),

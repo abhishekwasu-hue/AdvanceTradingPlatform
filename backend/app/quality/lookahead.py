@@ -195,8 +195,10 @@ def first_difference(full: Any, other: Any, upto: int) -> Optional[str]:
         return f"different shape: {[n for n, _ in fp]} vs {[n for n, _ in op]}"
     for (name, a), (_, b) in zip(fp, op):
         va, vb = _values(a), _values(b)
-        if va.ndim == 0 or vb.ndim == 0:
-            if not _same(va.item() if va.ndim == 0 else va, vb.item() if vb.ndim == 0 else vb):
+        if va.ndim != vb.ndim:
+            return f"{name or 'value'}: a single value on one side, one per bar on the other"
+        if va.ndim == 0:
+            if not _same(va.item(), vb.item()):
                 return f"{name or 'value'}: {va!r} vs {vb!r}"
             continue
         if len(va) <= upto or len(vb) <= upto:

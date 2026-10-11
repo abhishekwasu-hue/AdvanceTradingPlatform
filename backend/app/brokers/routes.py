@@ -165,9 +165,10 @@ async def _write_if_unchanged(session: AsyncSession, record: BrokerCredentialRec
     values = {"encrypted_payload": record.encrypted_payload, "token_status": record.token_status,
               "token_expires_at": record.token_expires_at, "last_verified_at": record.last_verified_at,
               "user_id": expected_user_id if new_user_id is None else new_user_id}
+    record_id = record.id
     session.expire(record)
     result = await session.execute(update(BrokerCredentialRecord).where(
-        BrokerCredentialRecord.id == record.id, BrokerCredentialRecord.user_id == expected_user_id,
+        BrokerCredentialRecord.id == record_id, BrokerCredentialRecord.user_id == expected_user_id,
         BrokerCredentialRecord.encrypted_payload == expected_payload).values(**values).execution_options(synchronize_session=False))
     return int(getattr(result, "rowcount", 0) or 0) == 1
 

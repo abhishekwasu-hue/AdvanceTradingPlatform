@@ -243,6 +243,9 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
         as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
+        if as_of is None:
+            # BT1b: no broker timestamp = age unknown = stale, in the body as on the badge.
+            body["stale"], body["stale_reason"] = True, body["data_tier"]["stale_reason"]
         return body
     record = await _pick_record(session, user.tenant_id, broker, account_label)
     return await _ltp_body(record, tick_cache, symbol, exchange, now)

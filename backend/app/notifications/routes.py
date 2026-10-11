@@ -3,7 +3,7 @@ from typing import List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -34,6 +34,15 @@ class NotificationResponse(BaseModel):
         )
 
 
+async def _visible(session: AsyncSession, user: User, query):
+    """BT1b: with `byob_data_tier` on, a notification addressed to one member (`user_id`) is theirs only - it may carry
+    values from their own broker feed. Flag off: the organisation-wide feed, as before."""
+    from app.platform.controls import flag_enabled
+    if await flag_enabled(session, "byob_data_tier", user.tenant_id):
+        return query.where(or_(NotificationRecord.user_id.is_(None), NotificationRecord.user_id == user.id))
+    return query
+
+
 async def _read_ids(session: AsyncSession, user_id: int) -> Set[int]:
     rows = await session.scalars(select(NotificationReadRecord.notification_id).where(NotificationReadRecord.user_id == user_id))
     return set(rows)
@@ -47,7 +56,7 @@ async def list_notifications(
     """This tenant's full notification feed, most recent first. Read state is per user: one
     teammate reading an alert does not clear it for the others."""
     read_ids = await _read_ids(session, user.id)
-    query = select(NotificationRecord).where(NotificationRecord.tenant_id == user.tenant_id)
+    query = await _visible(session, user, select(NotificationRecord).where(NotificationRecord.tenant_id == user.tenant_id))
     if unread_only and read_ids:
         query = query.where(NotificationRecord.id.notin_(read_ids))
     rows = await session.scalars(query.order_by(NotificationRecord.created_at.desc()).limit(limit))
@@ -58,8 +67,9 @@ async def list_notifications(
 async def mark_notification_read(
     notification_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> NotificationResponse:
-    record = await session.get(NotificationRecord, notification_id)
-    if record is None or record.tenant_id != user.tenant_id:
+    record = await session.scalar(await _visible(session, user, select(NotificationRecord).where(
+        NotificationRecord.id == notification_id, NotificationRecord.tenant_id == user.tenant_id)))
+    if record is None:
         raise HTTPException(status_code=404, detail="Unknown notification")
     existing = await session.scalar(select(NotificationReadRecord).where(
         NotificationReadRecord.notification_id == record.id, NotificationReadRecord.user_id == user.id,
@@ -79,7 +89,7 @@ async def mark_all_notifications_read(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> MarkAllReadResponse:
     read_ids = await _read_ids(session, user.id)
-    query = select(NotificationRecord.id).where(NotificationRecord.tenant_id == user.tenant_id)
+    query = await _visible(session, user, select(NotificationRecord.id).where(NotificationRecord.tenant_id == user.tenant_id))
     if read_ids:
         query = query.where(NotificationRecord.id.notin_(read_ids))
     unread_ids = list(await session.scalars(query))

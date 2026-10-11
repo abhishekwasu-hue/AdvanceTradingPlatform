@@ -565,7 +565,10 @@ async def preview_contract(
                 out["structures"][direction.value] = {"error": str(exc)}
                 continue
             entry = structure.as_dict()
-            if adapter is not None:
+            refusal = await _legs_refusal(session, user, [leg.contract.tradingsymbol for leg in structure.legs]) if adapter is not None else None
+            if refusal is not None:
+                entry["metrics_error"] = refusal
+            elif adapter is not None:
                 try:
                     premiums = {leg.contract.tradingsymbol: await contract_ltp(adapter, leg.contract) for leg in structure.legs}
                     entry["metrics"] = structure_metrics(structure, premiums, target_credit_pct=rules.target_credit_pct,
@@ -584,6 +587,19 @@ async def preview_contract(
         except ContractResolutionError as exc:
             out["contracts"][direction.value] = {"error": str(exc)}
     return out
+
+
+async def _legs_refusal(session: AsyncSession, user: User, symbols: List[str]) -> Optional[str]:
+    """BT1b (flag `byob_data_tier`): why the legs may not be quoted through the user's own session (None = they may)."""
+    from app.market_data import live_access
+    if not await live_access.byob_on(session, user.tenant_id):
+        return None
+    try:
+        own = await live_access.user_source(session, user, [(s, "NFO") for s in symbols])
+    except live_access.LiveDataRefused as exc:
+        return str(exc.detail)
+    blocked = [s for s in symbols if not own.allows(s, "NFO")]
+    return own.reason(blocked[0], "NFO") if blocked else None
 
 
 async def _own_adapter(session: AsyncSession, user: Optional[User], symbol: str, exchange: str):

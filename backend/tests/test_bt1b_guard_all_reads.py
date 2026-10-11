@@ -424,12 +424,13 @@ def test_a_teammate_cannot_take_over_or_log_in_to_another_members_credential(mon
     owner_headers, owner = _owner(_email("cred-own"))
     _store_credentials(owner)                        # owner's row, with an access token on file
     member_headers, member = _member(owner_headers)
+    _byob(owner["tenant_id"])                        # the holder rule applies with the data tier on (flag off: as before)
     # Pasting only a token over the owner's row: refused - nothing of theirs (secrets, session) is reused.
     res = client.post("/api/broker/upstox/credentials", headers=member_headers, json={"access_token": "member-token"})
     assert res.status_code == 400 and "nothing of theirs is kept" in res.json()["detail"]
     for path in ("/api/broker/upstox/authenticate", "/api/broker/upstox/oauth/start"):
         r = client.post(path, headers=member_headers) if path.endswith("authenticate") else client.get(path, headers=member_headers)
-        assert r.status_code == 403 and "only they can log in" in r.json()["detail"], path
+        assert r.status_code == 403 and "only they can use it" in r.json()["detail"] and "account label" not in r.json()["detail"], path
     # A forged / stale OAuth state of the member on the owner's row: back to the UI with an error, no token stored.
     state = token_lifecycle.create_oauth_state(owner["tenant_id"], member["id"], "upstox")
     r = client.get(f"/api/broker/upstox/oauth/callback?code=abc&state={state}", follow_redirects=False)

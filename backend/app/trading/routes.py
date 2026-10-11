@@ -146,7 +146,9 @@ async def open_position_greeks(
     if await live_access.byob_on(session, user.tenant_id):
         # BT1b: premiums and spots only through this user's own confirmed session (409 with the reason otherwise).
         if rows:
-            wanted = [(t.symbol, t.exchange or "NFO") for t in rows] + [(t.underlying_symbol, "NSE") for t in rows if t.underlying_symbol]
+            wanted = [(t.symbol, t.exchange or "NFO") for t in rows] + [
+                (t.underlying_symbol, instrument_master.INDEX_EXCHANGE.get(instrument_master.underlying_of(t.underlying_symbol), "NSE"))
+                for t in rows if t.underlying_symbol]
             own = await live_access.user_source(session, user, wanted, priority=live_access.Priority.POSITION)
         adapter = own.adapter() if own is not None else None
     else:
@@ -176,6 +178,8 @@ async def open_position_greeks(
             if trade.underlying_symbol not in spots:
                 underlying = instrument_master.underlying_of(trade.underlying_symbol)
                 exchange = instrument_master.INDEX_EXCHANGE.get(underlying, "NSE")
+                if own is not None and not own.allows(trade.underlying_symbol, exchange):
+                    raise ContractExecutionError(own.reason(trade.underlying_symbol, exchange))   # BT1b: spot outside the budget
                 spots[trade.underlying_symbol] = float(await adapter.get_ltp_for_symbol(trade.underlying_symbol, exchange))
             attempts = [trade.instrument_key] if trade.instrument_key and "|" in trade.instrument_key else []
             attempts.append(trade.symbol)

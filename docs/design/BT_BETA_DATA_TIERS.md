@@ -135,21 +135,31 @@ user behind it gets no live data).
 | Copilot evidence (`ai/evidence.server_frame`), tools (`get_candles`, `get_quote`, `get_option_chain`, regime), strategist frames | The asking user's own session, namespaced cache; an organisation-level caller or another organisation's user -> 409. |
 | Market-memory refresh, worker market memory and sentiment | Organisation-wide stores: not fed from a per-user session; global cues only. |
 | Portfolio exposure, open-position Greeks, deployment preview (spot, chain, leg quotes), PAPER exit price on an approved proposal | The user's own session; without one: entry prices / 409 / no quotes / no lookup, as when no broker session existed. |
-| Worker (`trading_worker`) | No org-wide `StreamManager` for the organisation (a user's credential streams only through the fan-in, into its own keys, never the lake - also no second websocket on the same token); the organisation's market data keeps its own cache keys (`md:byob:org.t<id>:...`, never `md:candles:*` / `md:tick:*`); no platform-wide option-chain recording; the OI-banner collector never reads through it; a confirmed broker is preferred as its data source; the fan-in sync runs in its own DB session. |
+| Worker (`trading_worker`) | Every org-wide stream of the organisation is stopped (all `<tenant>:` keys, also on the "no usable session" return; a user's credential streams only through the fan-in, into its own keys, never the lake - also no second websocket on the same token); the organisation's market data keeps its own cache keys (`md:byob:org.t<id>:...`, never `md:candles:*` / `md:tick:*`); no platform-wide option-chain recording; the OI-banner collector never reads through it; a confirmed broker is preferred as its data source; **without a confirmed-data broker no new evaluation** ("Waiting for Upstox/Dhan data: no new entries; exits continue" - square-off, the position monitor's exits and the stop guard run first); the fan-in sync runs in its own DB session. |
+| Alert rules, their events and last problem; screener runs; notifications | The creator's / runner's only: rules list and events (`/api/alerts/rules...`) and `/api/screener/runs/{id}` are scoped to the member; SCREEN_ALERT notifications are addressed to the rule's creator and the in-app feed (list, read, read-all) shows a member only the notifications addressed to them or to nobody. |
+| OI banner (`/api/option-chain/banners`, `/{u}/banner`, `/history`, `/strikes`) and OI alerts | Off (409, Tier C) - the banner is built by a platform-wide collector through other organisations' sessions; OI alerts are not evaluated for the organisation. |
+| Shared market-data lake (`/api/market-data/history?store=shared`), recorded option chains (`/api/backtest/option-chain/snapshots`, recorded pricing in option backtests), Vision chart bars | Intraday shared-lake bars (recorded from other sessions' streams / backfills) -> 409; daily (EOD) bars are served. Recorded chains -> 409 / not used (synthetic fallback or uploaded rows instead). Vision audit charts use daily lake bars only. |
+| Broker smoke test, login URL, delete / disconnect | Smoke test and login URL are the holder's (403 otherwise); a broker whose terms are not confirmed has its smoke-test prices hidden. Delete / disconnect: the holder or an owner. |
 
-Broker credential holder (`app/brokers/routes.py`; applies with the flag off too): `broker_credentials.user_id` is the
-account holder - the person who linked the connection and logs in to it. Another member storing over the row starts
-from nothing of the holder's (no merged secrets, no stored access token; the API key is required) and becomes the
-holder; another member may not log in to it (`/authenticate`, `/login-code`, Upstox OAuth start -> 403; an OAuth callback
-whose state names someone else -> back to the UI with `error=not_holder`). The holder's own updates merge as before.
+Broker credential holder (`app/brokers/routes.py`, **flag on only**): `broker_credentials.user_id` is the account holder -
+the person who linked the connection and logs in to it. Another member storing over the row starts from nothing of the
+holder's (no merged secrets, no stored access token; the API key is required) and becomes the holder; another member may
+not log in to it (`/authenticate`, `/login-code`, Upstox OAuth start -> 403; an OAuth callback whose state names someone
+else -> back to the UI with `error=not_holder`). The holder's own updates merge as before. Flag off: unchanged - any
+trader may do the daily login on keys the owner stored (LIVE exits the next day depend on that token).
+
+Race-safe writes (both flag states): the store route and the three login flows (`/authenticate`, `/login-code`, the
+Upstox OAuth callback) persist with a conditional UPDATE on (id, user_id, payload) and a rowcount check - a member who
+stores over the row during the broker round-trip can never end up holding this login's fresh token or the holder's
+secrets (409 / `error=changed_during_login`; the UI explains both codes).
 
 `/api/market-data/sources` with the flag on: `usable` = usable for data in ATP (valid token **and** confirmed terms);
 `token_usable` keeps the token state.
 
-Not changed (recorded): the worker's own deployment evaluation is organisation-level (one data session per
-organisation, as before; in the beta an organisation is one user). With only an execution-only broker linked it still
-evaluates on it - see open question BT1-4. Notifications (the per-user login reminder) are an organisation-wide feed
-in the current model; the reminder is addressed to the user (`user_id`) but visible to teammates - BT1-5.
+Recorded: the worker's deployment evaluation stays organisation-level (one data session per organisation; in the beta
+an organisation is one user), now only on a confirmed-data broker (BT1-4). Outbound alert channels (webhook / email /
+push) are organisation-level in the current model; a member's own linked Telegram chat already gets their rules' alerts
+(BT1-5).
 
 ## Follow-ups (not in this PR)
 
@@ -168,8 +178,8 @@ in the current model; the reminder is addressed to the user (`user_id`) but visi
 - BT1-2 Per-connection caps for Upstox / Dhan: to confirm in writing (the ATP budget of 50 applies until then).
 - BT1-3 Team tenants: a teammate never uses another member's broker data. Confirm this is the intended beta rule (it is
   the strict reading of "shown only to that user").
-- BT1-4 The worker's deployment evaluation (PAPER automation) is organisation-level: with the flag on it prefers a
-  confirmed broker but still evaluates on an execution-only one when that is all the organisation has. Refuse instead
-  (deployments wait with "link Upstox or Dhan")? Not changed here because the same early return also stops exits.
-- BT1-5 Per-user notifications: the notification feed is organisation-wide; make user-addressed ones (the data login
-  reminder) visible only to that user?
+- BT1-4 Answered by the review: with the flag on, no new evaluation on a broker whose terms do not allow its data in
+  ATP; deployments say "Waiting for Upstox/Dhan data: no new entries; exits continue" (exits, square-off and the stop
+  guard run first).
+- BT1-5 In-app feed: done (flag on: a member sees notifications addressed to them or to nobody). Open: organisation-level
+  outbound channels (webhook / email / push) still receive a member's addressed alerts in a multi-member organisation.

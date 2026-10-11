@@ -305,7 +305,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
 @router.get("/runs/{run_id}")
 async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
-    row = await session.scalar(select(ScreenRunRecord).where(ScreenRunRecord.id == run_id, ScreenRunRecord.tenant_id == user.tenant_id))
+    query = select(ScreenRunRecord).where(ScreenRunRecord.id == run_id, ScreenRunRecord.tenant_id == user.tenant_id)
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        query = query.where(ScreenRunRecord.user_id == user.id)       # BT1b: a run read the runner's own broker feed
+    row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return {"run_id": row.id, "screen_id": row.screen_id, "ast_sha256": row.ast_sha256, "version": row.ast_version, "base_tf": row.base_tf,

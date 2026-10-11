@@ -55,6 +55,15 @@ async def _day_view(session: AsyncSession, user: User, underlying: str, day: Opt
     return settings, day, slots, flags
 
 
+async def _no_byob(session: AsyncSession, user: User) -> None:
+    """BT1b: the OI banner is built from platform-wide option-chain reads made through other organisations' broker
+    sessions, so with `byob_data_tier` on it is off (409, Tier C) until it runs on the user's own session."""
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        raise live_access.LiveDataRefused("The OI banner is read from a shared option-chain collector, not from your own broker session, "
+                                          "so it is off while the bring-your-own-broker data tier is on.")
+
+
 async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[str, Any]:
     settings, day, slots, flags = await _day_view(session, user, underlying, None)
     timeline = snapshots.replay(underlying, slots, settings, day)
@@ -66,12 +75,14 @@ async def _banner(session: AsyncSession, user: User, underlying: str) -> Dict[st
 
 @router.get("/banners")
 async def banners(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     names = sorted(u for t, u, _ in await snapshots.enabled_underlyings(session) if t == user.tenant_id)
     return {"banners": [await _banner(session, user, u) for u in names]}
 
 
 @router.get("/{underlying}/banner")
 async def banner(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     return await _banner(session, user, _underlying(underlying))
 
 
@@ -80,6 +91,7 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     if interval not in (5, 10, 15):
         raise HTTPException(status_code=422, detail="interval must be 5, 10 or 15")
+    await _no_byob(session, user)
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
     timeline = snapshots.replay(underlying, slots, settings, day)
@@ -90,6 +102,7 @@ async def history(underlying: str, day: Optional[date] = Query(default=None, ali
 @router.get("/{underlying}/strikes")
 async def strikes(underlying: str, day: Optional[date] = Query(default=None, alias="date"),
                   user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _no_byob(session, user)
     underlying = _underlying(underlying)
     settings, day, slots, flags = await _day_view(session, user, underlying, day)
     base = await snapshots.baselines(session, underlying, day)

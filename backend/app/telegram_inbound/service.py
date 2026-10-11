@@ -499,7 +499,14 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
             else:
                 logger.warning("Telegram callback from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
-        text = await decide_from_callback(session, tenant, cfg, str(callback.get("data") or ""), chat_id, now=now, from_id=from_id)
+        data = str(callback.get("data") or "")
+        if data.startswith("oi:"):                   # OI Banner O4b: snooze / mute - an authorised sender only, never an order
+            from app.option_chain import oi_alerts
+            actor = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)
+            text = (await oi_alerts.snooze_from_telegram(session, tenant.id, data, actor.id, now) if actor is not None
+                    else "Only an authorised user of this bot can snooze alerts.")
+        else:
+            text = await decide_from_callback(session, tenant, cfg, data, chat_id, now=now, from_id=from_id)
         await meter(session, tenant.id, METRIC, 1, source="telegram", metadata={"kind": "callback"})
         await session.commit()
         await _call(cfg, "answerCallbackQuery", {"callback_query_id": callback.get("id"), "text": text[:190]}, client)

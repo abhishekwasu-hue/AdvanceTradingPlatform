@@ -68,3 +68,22 @@ export interface OiSettingsResponse {
   effective: Record<string, unknown>;
   updated_at: string | null;
 }
+
+export const OI_ALERT_TYPES = ["DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND", "MAX_PAIN_MOVE", "OI_WALL", "DTE", "COLLECTOR_STALE"] as const;
+
+export interface OiAlertSettings {
+  enabled: boolean;
+  types: string[];
+  cooldown_minutes: number;
+  max_pain_strikes: number;
+  dte_milestones: number[];
+  quiet_start: string | null;
+  quiet_end: string | null;
+  digest_time: string | null;
+}
+
+export interface OiAlertLogResponse {
+  underlying: string;
+  snoozed_until: string | null;
+  alerts: { alert_type: string; old_state: string | null; new_state: string; status: string; slot: string; at: string; notification_id: number | null }[];
+}

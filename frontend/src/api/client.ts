@@ -1,4 +1,4 @@
-import type { OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
+import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   StrategistResult,
   StrategistRequestParsed,
@@ -359,6 +359,10 @@ export const api = {
     request<OiHistoryResponse>(`/option-chain/${encodeURIComponent(underlying)}/history?interval=${interval}${date ? `&date=${date}` : ""}`),
   oiStrikes: (underlying: string, date?: string) =>
     request<OiStrikesResponse>(`/option-chain/${encodeURIComponent(underlying)}/strikes${date ? `?date=${date}` : ""}`),
+  oiAlerts: (underlying: string) => request<OiAlertLogResponse>(`/option-chain/${encodeURIComponent(underlying)}/alerts`),
+  oiAlertAction: (underlying: string, action: "snooze" | "mute-today" | "resume" | "test") =>
+    request<{ snoozed_until?: string | null; notification_id?: number }>(`/option-chain/${encodeURIComponent(underlying)}/alerts/${action}`,
+      { method: "POST", body: JSON.stringify(action === "snooze" ? { minutes: 60 } : {}) }),
   oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),

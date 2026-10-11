@@ -88,6 +88,7 @@ class OIAlertSettings(BaseModel):
     dte_milestones: List[int] = Field(default_factory=lambda: [1, 0])   # expiry tomorrow / today
     quiet_start: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")   # IST, e.g. "12:00"
     quiet_end: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    digest_time: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")    # IST; the day's banner timeline
 
     @model_validator(mode="after")
     def _known(self) -> "OIAlertSettings":

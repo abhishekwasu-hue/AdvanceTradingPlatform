@@ -8,6 +8,7 @@ import re
 from datetime import date, timedelta
 
 from app.brokers.models import OptionChain, OptionChainRow
+from app.core.config import RISK_FREE_RATE
 from app.options_builder import model as m
 from app.platform import controls
 from tests.test_auth_api import _register, _session_factory, client
@@ -144,3 +145,16 @@ def test_the_builder_package_cannot_place_an_order():
     for f in pkg.glob("*.py"):
         assert not forbidden.search(f.read_text()), f.name
         assert "place_order" not in f.read_text(), f.name
+
+
+def test_a_template_can_be_priced_by_the_model_as_a_labelled_starting_point():
+    h = _headers("p1c-price@example.com")
+    out = _template(h, "Covered Call", lot_size=75, spot=SPOT, iv=0.15, as_of=AS_OF.isoformat()).json()
+    assert out["priced_by_model"] is True and all(leg["premium_source"] == "model" and leg["lot_size"] == 75 for leg in out["legs"])
+    fut = next(leg for leg in out["legs"] if leg["option_type"] == "FUT")
+    assert fut["premium"] == round(SPOT * math.exp(RISK_FREE_RATE * 14 / 365), 2) and fut["iv"] is None       # the fair forward
+    call = next(leg for leg in out["legs"] if leg["option_type"] == "CE")
+    assert call["iv"] == 0.15 and call["premium"] > 0
+    assert _template(h, "Covered Call", spot=SPOT).status_code == 422                                 # spot without iv
+    plain = _template(h, "Iron Condor").json()
+    assert plain["priced_by_model"] is False and "premium" not in plain["legs"][0]

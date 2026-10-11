@@ -72,6 +72,18 @@ class TemplateBody(BaseModel):
     near_expiry: date
     next_expiry: Optional[date] = None
     lots: int = Field(default=1, ge=1, le=1000)
+    lot_size: Optional[int] = Field(default=None, ge=1, le=100_000)
+    # Optional model pricing (a starting point before real prices from the chain): every leg gets the model's price
+    # at `iv`, marked premium_source "model". All three are needed together.
+    spot: Optional[float] = Field(default=None, gt=0)
+    iv: Optional[float] = Field(default=None, gt=0, lt=5)
+    as_of: Optional[Union[datetime, date]] = None
+    rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+
+    @field_validator("as_of", mode="before")
+    @classmethod
+    def _when(cls, v: Any) -> Any:
+        return _parse_when(v)
 
 
 def _parse_when(v: Any) -> Any:
@@ -149,7 +161,18 @@ async def build_template(body: TemplateBody, user: User = Depends(get_current_us
                                   body.next_expiry.isoformat() if body.next_expiry else None, lots=body.lots)
     if legs is None:
         raise HTTPException(status_code=422, detail=f"{body.name} needs the next expiry as well")
-    return {"name": body.name, "legs": legs}
+    priced = body.spot is not None and body.iv is not None
+    if (body.spot is None) != (body.iv is None):
+        raise HTTPException(status_code=422, detail="model pricing needs both spot and iv")
+    for leg in legs:
+        if body.lot_size is not None:
+            leg["lot_size"] = body.lot_size
+        if priced and body.spot is not None:
+            leg["iv"] = None if leg["option_type"] == "FUT" else body.iv
+            when: Union[date, datetime] = body.as_of or datetime.now().astimezone()
+            leg["premium"] = round(model.leg_theoretical({**leg, "premium": 0.0}, body.spot, when, r=body.rate), 2)
+            leg["premium_source"] = "model"
+    return {"name": body.name, "legs": legs, "priced_by_model": priced}
 
 
 @router.post("/evaluate")

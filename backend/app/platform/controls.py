@@ -92,6 +92,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.
     "marketplace_ai_listings": "Allow AI-originated strategies (AI drafts, strategist adoptions) to be listed on the marketplace",
     "thesis_stock_targets": "Show price targets and a confidence % in the thesis of a single stock (indices always show them)",
+    # S1d (ADR-0021): the ScreenQL screener API (validate, saved screens, runs on server data). OFF: the scanner is unchanged.
+    "screener_v2": "Screener v2: ScreenQL validation, saved screens and runs on the organisation's broker data",
     # H-C2 (ADR-0019): the Copilot agent (typed read tools, bounded loop). OFF: the single-shot Copilot is unchanged.
     "ai_agent": "Copilot agent: the AI reads typed, read-only tools (market memory, news, positions, P&L, risk limits) before answering",
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
@@ -99,7 +101,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "ai_research": "Strategy research loop: AI drafts are backtested in-sample on server bars, recorded as trials, and reported deflated",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "ai_agent", "ai_research"})
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "ai_agent", "ai_research", "screener_v2"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

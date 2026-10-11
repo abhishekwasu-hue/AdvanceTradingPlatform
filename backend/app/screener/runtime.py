@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,6 @@ from app.indicators.directional import adx as _adx
 from app.indicators.momentum import rsi as _rsi
 from app.indicators.trend import ema as _ema
 from app.indicators.volatility import atr as _atr
-from app.indicators.vwap import session_vwap
 from app.screener import nodes as n
 from app.screener.registry import FUNCTIONS
 from app.screener.validator import Validated
@@ -48,6 +47,7 @@ class SymbolData:
     mcap_bucket: Optional[str] = None
     is_fno: Optional[bool] = None
     indices: Set[str] = field(default_factory=set)
+    option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
 
 
 @dataclass
@@ -62,11 +62,16 @@ def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
 
 
 def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
-    """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed."""
+    """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed. Intraday buckets
+    start at the exchange open, like the broker's charts and the Strategy Builder (`declarative._IST_OPEN_UTC`)."""
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     if "oi" in base.columns:
         agg["oi"] = "last"
-    out = base.resample(_RESAMPLE[tf], label="left", closed="left").agg(agg).dropna(subset=["close"])
+    kwargs: Dict[str, Any] = {"label": "left", "closed": "left"}
+    if n.TF_MINUTES[tf] < n.TF_MINUTES["1d"] and len(base):
+        from app.strategy_engine.declarative import _IST_OPEN_UTC
+        kwargs["origin"] = base.index[0].normalize() + _IST_OPEN_UTC
+    out = base.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
     if len(out) and len(base):
         last_base_close = base.index[-1] + _DURATION[base_tf]
         if out.index[-1] + _DURATION[tf] > last_base_close:
@@ -164,13 +169,37 @@ class _Eval:
         def win(i: int, default: int = 0) -> int:
             return int(self.ev(args[i], tf)) if len(args) > i else default
 
+        def num(i: int, default: float) -> float:
+            return float(_last(self.ev(args[i], tf))) if len(args) > i else default
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
-            "EMA": lambda: _ema(self.series(args[0], tf), win(1)).where(self.series(args[0], tf).expanding().count() >= win(1)),
+            "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
             "RSI": lambda: _rsi(f["close"].astype(float), win(0, 14)),
             "ADX": lambda: _adx(f, win(0, 14))["adx"],
             "ATR": lambda: _atr(f, win(0, 14)),
-            "VWAP": lambda: session_vwap(f),
+            "VWAP": lambda: _operand(f, "VWAP"),
+            "PlusDI": lambda: _adx(f, win(0, 14))["plus_di"],
+            "MinusDI": lambda: _adx(f, win(0, 14))["minus_di"],
+            "Supertrend": lambda: _operand(f, "SUPERTREND", win(0, 10), num(1, 3.0)),
+            "BBUpper": lambda: _operand(f, "BB_UPPER", win(0, 20), num(1, 2.0)),
+            "BBMid": lambda: _operand(f, "BB_MID", win(0, 20), num(1, 2.0)),
+            "BBLower": lambda: _operand(f, "BB_LOWER", win(0, 20), num(1, 2.0)),
+            "DayOpen": lambda: _operand(f, "DAY_OPEN"),
+            "PDH": lambda: _operand(f, "PDH"),
+            "PDL": lambda: _operand(f, "PDL"),
+            "PDC": lambda: _operand(f, "PDC"),
+            "ORHigh": lambda: _operand(f, "OR_HIGH", win(0)),
+            "ORLow": lambda: _operand(f, "OR_LOW", win(0)),
+            "Trend": lambda: _structure(f, win(0, 3))[0],
+            "StructureEvent": lambda: _structure(f, win(0, 3))[1],
+            "PatternBullish": lambda: _pattern(f, "BULLISH"),
+            "PatternBearish": lambda: _pattern(f, "BEARISH"),
+            "NearSupport": lambda: _near_zone(f, "NEAR_SUPPORT", num(0, 0.5), win(1, 3)),
+            "NearResistance": lambda: _near_zone(f, "NEAR_RESISTANCE", num(0, 0.5), win(1, 3)),
+            "PCR": lambda: _chain(self.data.option_chain, "pcr"),
+            "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
+            "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
             "Max": lambda: self.series(args[0], tf).rolling(win(1)).max(),
             "Min": lambda: self.series(args[0], tf).rolling(win(1)).min(),
             "Greatest": lambda: pd.concat([self.series(a, tf) for a in args], axis=1).max(axis=1, skipna=False),
@@ -191,6 +220,46 @@ class _Eval:
         if name not in impl:
             raise ScreenRuntimeError(f"{name} has no runtime implementation (cross-sectional functions run through run_screen)")
         return impl[name]()
+
+
+def _operand(f: pd.DataFrame, indicator: str, period: int = 14, mult: float = 3.0) -> pd.Series:
+    """The Strategy Builder's own indicator code (S1c parity with the scanner and the strategies)."""
+    from app.strategy_engine.declarative import Operand
+    return Operand(type="indicator", indicator=indicator, period=max(1, period), multiplier=mult).series(f).astype(float)  # type: ignore[arg-type]
+
+
+def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:
+    from app.price_action.market_structure import analyze_market_structure
+    result = analyze_market_structure(f, window=window)
+    latest = result.events[-1] if result.events else None
+    return result.trend.value, (f"{latest.event}_{latest.direction}".upper() if latest else "")
+
+
+def _pattern(f: pd.DataFrame, direction: str) -> bool:
+    from app.price_action.candlestick_patterns import detect_patterns_at
+    return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+
+
+def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) -> bool:
+    from app.scanner.engine import _check_structure_filter
+    from app.scanner.models import StructureFilter, StructureFilterType
+    if not tolerance_pct > 0:
+        return False
+    return _check_structure_filter(StructureFilter(filter_type=StructureFilterType(kind), tolerance_pct=tolerance_pct), f, window)[0]
+
+
+def _chain(chain: Any, what: str) -> Any:
+    if chain is None:
+        return None if what == "bias" else np.nan
+    from app.option_chain.analysis import analyze_option_chain
+    a = analyze_option_chain(chain)
+    if what == "pcr":
+        return np.nan if a.pcr is None else float(a.pcr)
+    if what == "bias":
+        return a.bias.value
+    if a.max_pain is None or not a.underlying_ltp:
+        return np.nan
+    return abs(a.underlying_ltp - a.max_pain) / a.underlying_ltp * 100.0
 
 
 def _as_bool(v: Any, index: Optional[pd.Index] = None) -> Any:
@@ -278,15 +347,17 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
     return constants
 
 
-def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None) -> List[Match]:
-    """Every symbol: does the screen hold on its last closed bar? Runs only a validated screen."""
+def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,
+               check_history: bool = True) -> List[Match]:
+    """Every symbol: does the screen hold on its last closed bar? Runs only a validated screen. With `check_history` a symbol
+    shorter than the validator's lookback is reported as such; without it, it is simply evaluated (NaN never matches)."""
     if not validated.ok:
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
     out: List[Match] = []
     for d in universe:
-        short = [tf for tf, bars in validated.lookback.items() if tf in d.frames and len(d.frames[tf]) < bars]
+        short = [tf for tf, bars in validated.lookback.items() if tf in d.frames and len(d.frames[tf]) < bars] if check_history else []
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
             out.append(Match(d.symbol, False, f"no {base_tf} bars"))
             continue

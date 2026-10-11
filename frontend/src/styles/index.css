@@ -46,3 +46,33 @@ textarea::placeholder {
   color: rgb(var(--fg-muted) / 0.75);
   opacity: 1;
 }
+
+/* PW2: phones and tablets (a coarse pointer - a finger). Desktop with a mouse is unchanged.
+   - Every button, tab, switch and top-bar link gets a hit area of at least 44 x 44 px. Small ones keep their look: an invisible
+     ::after grows the target around them (top/bottom % refer to the button's own height, so a 20 px chip gets
+     -12 px above and below). Inline-flex/-block buttons already taller and wider than 44 px are left alone.
+   - Text fields and selects are 44 px tall and at least 16 px text, so iOS does not zoom the page on focus.
+   - A focused field scrolls clear of the bottom navigation, and the navigation steps aside while typing. */
+@media (pointer: coarse) {
+  button, [role="button"], [role="tab"], [role="switch"], summary, header a {
+    position: relative;
+  }
+  button::after, [role="button"]::after, [role="tab"]::after, [role="switch"]::after, summary::after, header a::after {
+    content: "";
+    position: absolute;
+    top: min(0px, calc((100% - 44px) / 2));
+    bottom: min(0px, calc((100% - 44px) / 2));
+    left: min(0px, calc((100% - 44px) / 2));
+    right: min(0px, calc((100% - 44px) / 2));
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="color"]),
+  select, textarea {
+    min-height: 44px;
+    font-size: max(16px, 1em);
+    scroll-margin-bottom: 96px;
+  }
+  /* Check boxes and radios: bigger boxes, and the label around them is the 44 px target. */
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+  label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }
+  body:has(input:focus, textarea:focus, select:focus) .bottom-nav { display: none; }
+}

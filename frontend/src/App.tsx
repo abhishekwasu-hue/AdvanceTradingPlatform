@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
+import BottomNav from "./components/BottomNav";
 import ErrorBoundary from "./components/ErrorBoundary";
 import PwaBanners from "./pwa/PwaBanners";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
@@ -33,10 +34,11 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   }, []);
 
   return (
-    <header className="h-14 shrink-0 border-b border-border bg-panel/80 backdrop-blur flex items-center justify-between px-3 md:px-6">
+    <header className="shrink-0 border-b border-border bg-panel/80 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <div className="flex h-14 items-center justify-between pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] md:px-6">
       <div className="flex items-center gap-3 min-w-0">
-        <button onClick={onMenu} aria-label="Open navigation menu" aria-controls="app-navigation" className="rounded-md p-1.5 text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
-        <span className="text-[15px] font-semibold text-fg">{title}</span>
+        <button onClick={onMenu} aria-label="Open navigation menu" aria-controls="app-navigation" className="-ml-2 flex h-11 w-11 items-center justify-center rounded-md text-slate-200 hover:bg-panel2 md:hidden"><Menu size={18} /></button>
+        <span className="min-w-0 shrink truncate text-[15px] font-semibold text-fg">{title}</span>
         {status?.maintenance_mode && (
           <span className="truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300" title={status.maintenance_message ?? ""}>
             MAINTENANCE: no new entries{status.maintenance_message ? ` - ${status.maintenance_message}` : ""}
@@ -44,7 +46,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
         )}
         {user && user.email_verified === false && (
           <Link to={pathFor("account")} className="truncate rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[11px] font-bold text-sky-300 hover:bg-sky-500/20" title="LIVE trading and broker credentials may require a verified address">
-            Verify your email
+            <span className="sm:hidden">Verify</span><span className="hidden sm:inline">Verify your email</span>
           </Link>
         )}
         {status && status.disabled_brokers.length > 0 && (
@@ -60,7 +62,7 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
           title="Notifications"
           aria-label="Notifications"
           aria-current={page === "notifications" ? "page" : undefined}
-          className={`p-2 rounded-md transition-colors ${
+          className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors md:h-9 md:w-9 ${
             page === "notifications" ? "text-brand bg-panel2" : "text-muted hover:text-slate-200 hover:bg-panel2"
           }`}
         >
@@ -71,12 +73,13 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
           title="Account"
           aria-label="Account"
           aria-current={page === "account" ? "page" : undefined}
-          className={`p-2 rounded-md transition-colors ${
+          className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors md:h-9 md:w-9 ${
             page === "account" ? "text-brand bg-panel2" : "text-muted hover:text-slate-200 hover:bg-panel2"
           }`}
         >
           <UserCircle2 size={18} className={user ? "text-accent" : ""} />
         </Link>
+      </div>
       </div>
     </header>
   );
@@ -153,7 +156,7 @@ function AppShell() {
         {/* The window scrolls, not <main>. Other pages keep overflow-y-auto (wide tables without their own wrapper
             scroll inside <main>); the Copilot uses overflow-x-clip, which is not a scroll container, so its sticky tab
             bar sticks to the viewport (its own wide content scrolls in its own wrappers). */}
-        <main ref={mainRef} tabIndex={-1} className={`flex-1 ${page === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} p-3 md:p-6 ${page === "screener" || page === "options-builder" ? "max-w-none" : "max-w-6xl"} outline-none`}>
+        <main ref={mainRef} tabIndex={-1} className={`flex-1 ${page === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} p-3 ${page === "screener" ? "pb-[calc(9rem+env(safe-area-inset-bottom))]" : "pb-[calc(5rem+env(safe-area-inset-bottom))]"} md:p-6 ${page === "screener" || page === "options-builder" ? "max-w-none" : "max-w-6xl"} outline-none`}>
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>
@@ -174,6 +177,7 @@ function AppShell() {
           </ErrorBoundary>
         </main>
       </div>
+      <BottomNav page={page} moreOpen={menuOpen} onMore={() => setMenuOpen((o) => !o)} />
     </div>
   );
 }

@@ -22,9 +22,12 @@ export default defineConfig({
     launchOptions: { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
                      ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}) },
   },
+  // PW2: phone layout and visual regression (e2e/mobile.e2e.ts) run once, in their own project with their own sizes.
+  snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
+    { name: "desktop", testIgnore: "**/mobile.e2e.ts", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "mobile", testIgnore: "**/mobile.e2e.ts", use: { ...devices["Pixel 7"] } },
+    { name: "phone", testMatch: "**/mobile.e2e.ts", use: { ...devices["Desktop Chrome"] } },
   ],
   // --host 127.0.0.1: on the CI runner "localhost" resolves to ::1 and the url below would never answer.
   webServer: { command: "npm run preview -- --host 127.0.0.1 --port 4173 --strictPort", url: "http://127.0.0.1:4173", reuseExistingServer: !process.env.CI, timeout: 60_000 },

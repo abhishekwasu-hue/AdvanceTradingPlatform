@@ -891,6 +891,38 @@ Never publish a listing without an attached backtest run; the API refuses the su
   budget and otherwise dropped with "cut off" in the note - you never see half a sentence presented as the answer.
   Long drafts get a longer timeout (`AI_TIMEOUT_PER_1K_SECONDS`, default 8 s per 1,000 tokens of budget, on top of
   `AI_PROVIDER_TIMEOUT_SECONDS`).
+- **Rate limit (H-C1 b)**: every `/api/ai/*` and `/api/scanner/ai/*` call costs units, by default 1. The heavy jobs cost
+  more: a strategist build costs 20, and an interview plan or market-memory refresh costs 10. Units are counted per
+  user and per organisation in a 60 s window (`AI_RATE_WINDOW_SECONDS`). The defaults per plan are:
+
+  | Plan | User | Organisation |
+  |---|---|---|
+  | free | 60 | 120 |
+  | pro | 180 | 600 |
+  | business | 360 | 3,000 |
+
+  - Change the limits with `AI_RATE_LIMITS='{"pro": {"user": 180, "tenant": 600}}'`; a value of 0 means no limit for
+    that scope.
+  - Change the costs with `AI_RATE_WEIGHTS='{"POST strategist/build": 20}'`.
+  - A refusal is 429 with `Retry-After`, and is counted in `atp_ai_rate_limited_total{scope}`.
+  - Counts live in Redis when it is configured; otherwise they live in the process.
+- **AI call log and personal data (H-C1 e, DPDP)**:
+  - Every LLM call stays in `llm_calls` for the audit; the rows are never deleted.
+  - The stored copy has personal data masked: e-mails, mobile numbers, PAN, Aadhaar, and account/client ids written
+    after a label. The SHA-256 hashes are of the original text, so a trader's own copy can still be matched against the
+    record.
+  - When a trader uses "Forget everything" (Copilot profile delete), or an account is erased, the text of that person's
+    calls is replaced with `[erased]`. The row, hashes, model, prompt version and cost stay.
+  - `RETENTION_LLM_TEXT_DAYS` scrubs older text to `[expired]` in the daily retention run. The default is 0, which
+    keeps the text: removing it is your data-retention decision. Write the period you choose into your privacy notice.
+- **Output filter (H-C1 c)**: every Copilot, guide and thesis text is checked on the server before it is shown.
+  - Guarantee and advice wording blocks the AI text: "guaranteed", "sure-shot", "risk-free", "I recommend", "you
+    should buy", खात्रीशीर, हमखास, "मी शिफारस करतो" and the like. The model gets one retry; after that the
+    rule-based answer is shown with a note.
+  - A text that names a specific buy/sell level is kept, with an educational line added in the answer's language.
+  - The word list is data, in `backend/app/ai/data/advice_terms.json`. To use your own list, point
+    `AI_ADVICE_TERMS_FILE` at a copy.
+  - Results are counted in `atp_ai_output_filtered_total{kind, where}`.
 - Prometheus: `atp_ai_tokens_total{provider,model,kind}` and `atp_ai_cost_usd_total{provider,model}`.
 
 ### 1.6ab-11 English dashboard and AI answer language (P0.9)

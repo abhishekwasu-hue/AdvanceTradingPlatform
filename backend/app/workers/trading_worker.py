@@ -378,6 +378,10 @@ class TradingWorker:
                         idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
                         report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
                                                       indices_refused=sum(1 for r in idx if r.refused))
+                        from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
+                        fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
+                        report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
+                                                      banned=len(fo.banned), fo_refused=len(fo.refused))
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")

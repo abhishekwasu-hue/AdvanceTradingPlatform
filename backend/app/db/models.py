@@ -2044,3 +2044,55 @@ class ClassificationRecord(Base):
     source: Mapped[str] = mapped_column(String(40), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexEodRecord(Base):
+    """U1-c: one index's daily close from the exchange's all-indices file, with the valuation ratios it publishes."""
+
+    __tablename__ = "index_eod"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open: Mapped[float | None] = mapped_column(Price, nullable=True)
+    high: Mapped[float | None] = mapped_column(Price, nullable=True)
+    low: Mapped[float | None] = mapped_column(Price, nullable=True)
+    close: Mapped[float] = mapped_column(Price, nullable=False)
+    pe: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pb: Mapped[float | None] = mapped_column(Float, nullable=True)
+    div_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoMembershipRecord(Base):
+    """U1-c: an underlying's F&O eligibility and market lot over time, half-open [valid_from, valid_to). Index
+    underlyings have no ISIN. A lot-size change closes the range and opens a new one."""
+
+    __tablename__ = "fo_membership"
+    __table_args__ = (UniqueConstraint("underlying", "valid_from", name="uq_fo_membership_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    underlying: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
+    is_index: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class FoBanRecord(Base):
+    """U1-c: the exchange's own F&O ban list, one row per (underlying, trade date). D7's computed ban status is checked
+    against it."""
+
+    __tablename__ = "fo_ban_history"
+
+    underlying: Mapped[str] = mapped_column(String(40), primary_key=True)
+    trade_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)

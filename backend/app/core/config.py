@@ -297,6 +297,10 @@ _UNIVERSE_FILE_URLS_DEFAULT = {
     "sme_equity_list": "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv",
     "etf_list": "https://nsearchives.nseindia.com/content/equities/eq_etfseclist.csv",
     "symbol_changes": "https://nsearchives.nseindia.com/content/equities/symbolchange.csv",
+    # U1-c: {ddmmyyyy} is filled with the trade date.
+    "index_close_all": "https://nsearchives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv",
+    "fo_lots": "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv",
+    "fo_ban": "https://nsearchives.nseindia.com/content/fo/fo_secban.csv",
 }
 
 

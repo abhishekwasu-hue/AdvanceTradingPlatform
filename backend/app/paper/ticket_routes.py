@@ -25,6 +25,7 @@ from app.risk_engine import by_default
 router = APIRouter(prefix="/api/paper", tags=["paper"])
 MAX_PRICE = 1e7
 place_rate_limit = user_rate_limit("paper_ticket", limit=30, window_seconds=60)
+preview_rate_limit = user_rate_limit("paper_ticket_preview", limit=120, window_seconds=60)
 
 
 async def _enabled(session: AsyncSession, user: User) -> None:
@@ -77,7 +78,7 @@ async def set_risk(body: RiskSettingsBody, user: User = Depends(require_trader),
     return await ticket.risk_status(session, user)
 
 
-@router.post("/ticket/preview")
+@router.post("/ticket/preview", dependencies=[Depends(preview_rate_limit)])
 async def preview(body: PlanBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     await _enabled(session, user)
     view = await ticket.assess(session, user, body.plan())

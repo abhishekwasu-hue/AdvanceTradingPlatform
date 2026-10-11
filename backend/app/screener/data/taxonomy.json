@@ -1,0 +1,96 @@
+{
+ "_comment": "U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library's two axes (method x setup type), the tag vocabulary and the filing of every pre-built screen. A reviewed data file - change it by PR; app/screener/taxonomy.py lints it (both axes, known tags, definition <= 2 lines, no advice wording) and tests/test_z8_tx1_taxonomy.py fails CI when a pre-built screen is not filed here. Labels and definitions describe what a screen looks for; they never say what to trade.",
+ "version": "tx1/1",
+ "methods": [
+  {"id": "price_action", "code": "A", "label": "Price action", "definition": "Structure, levels, candles and liquidity; no indicator required."},
+  {"id": "indicator", "code": "B", "label": "Indicator", "definition": "Moving averages, oscillators, bands, channels and volatility measures."},
+  {"id": "volume_flow", "code": "C", "label": "Volume and order flow", "definition": "Relative volume, delivery %, open interest, implied volatility and participant data."},
+  {"id": "fundamental", "code": "D", "label": "Fundamental and ownership", "definition": "Financial statements, ratios, shareholding and disclosures."},
+  {"id": "legends", "code": "E", "label": "Legends", "definition": "Screens named after published methods of well-known traders and investors."},
+  {"id": "my_screens", "code": "F", "label": "My screens", "definition": "Screens you or your team built. Pre-built screens are never filed here.", "user_built": true}
+ ],
+ "setups": [
+  {"id": "breakout", "code": "1", "label": "Breakout / breakdown", "definition": "Price leaving a range, level or base."},
+  {"id": "pullback", "code": "2", "label": "Pullback / continuation", "definition": "A trend, a correction against it and a trigger back in its direction."},
+  {"id": "reversal", "code": "3", "label": "Reversal", "definition": "Exhaustion, divergence, a failed break or a sweep at a level."},
+  {"id": "mean_reversion", "code": "4", "label": "Range / mean reversion", "definition": "Range edges, bands and squeezes before a move."},
+  {"id": "momentum", "code": "5", "label": "Momentum / relative strength", "definition": "Strength against the market or a sector, and leadership."},
+  {"id": "options_volatility", "code": "6", "label": "Options and volatility", "definition": "Futures and options buildups, IV rank, PCR, premium decay and spreads."},
+  {"id": "events_flow", "code": "7", "label": "Events and flow", "definition": "Results, ex-dates, disclosures, bulk deals, FII/DII flows and gaps on news."},
+  {"id": "internals", "code": "8", "label": "Market internals", "definition": "Breadth, regime and sector rotation."}
+ ],
+ "tags": {
+  "timeframe_family": [
+   {"id": "intraday", "label": "Intraday"},
+   {"id": "swing", "label": "Swing"},
+   {"id": "positional", "label": "Positional"}
+  ],
+  "direction": [
+   {"id": "long", "label": "Long side"},
+   {"id": "short", "label": "Short side"},
+   {"id": "both", "label": "Both sides"}
+  ],
+  "data_tier": [
+   {"id": "live_per_user", "label": "Your broker"},
+   {"id": "eod", "label": "End of day"}
+  ],
+  "difficulty": [
+   {"id": "beginner", "label": "Beginner"},
+   {"id": "intermediate", "label": "Intermediate"},
+   {"id": "advanced", "label": "Advanced"}
+  ],
+  "universe_default": [
+   {"id": "your_list", "label": "Your symbol list"},
+   {"id": "fo_stocks", "label": "F&O stocks"},
+   {"id": "nifty500", "label": "NIFTY 500"},
+   {"id": "indices", "label": "Indices"}
+  ]
+ },
+ "screens": [
+  {
+   "id": "starter.momentum",
+   "source": "starter",
+   "name": "Momentum",
+   "definition": "RSI(14) above 60 and close above EMA(close, 20) on the scan's timeframe.",
+   "method": "indicator",
+   "setup": "momentum",
+   "timeframe_family": ["swing", "intraday"],
+   "direction": "long",
+   "data_tier": ["live_per_user"],
+   "difficulty": "beginner",
+   "universe_default": "your_list",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "starter.oversold",
+   "source": "starter",
+   "name": "Oversold",
+   "definition": "RSI(14) at or below 30 on the scan's timeframe.",
+   "method": "indicator",
+   "setup": "reversal",
+   "timeframe_family": ["swing", "intraday"],
+   "direction": "long",
+   "data_tier": ["live_per_user"],
+   "difficulty": "beginner",
+   "universe_default": "your_list",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "starter.daily_trend",
+   "source": "starter",
+   "name": "Trend on the daily",
+   "definition": "Close above EMA(close, 50) on daily bars.",
+   "method": "indicator",
+   "setup": "pullback",
+   "timeframe_family": ["swing", "positional"],
+   "direction": "long",
+   "data_tier": ["live_per_user"],
+   "difficulty": "beginner",
+   "universe_default": "your_list",
+   "evidence_ready": false,
+   "fitness_available": false
+  }
+ ]
+}

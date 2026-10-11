@@ -84,6 +84,8 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         trade = trades.get(row.trade_id) if row.trade_id is not None else None
         live = (dep is not None and dep.mode == "LIVE") or (trade is not None and trade.mode == "LIVE")
         item["mode"] = "LIVE" if live else ("PAPER" if dep is not None or trade is not None else None)
+        if row.action == "ENTRY":
+            item["mode"] = "PAPER"           # Z3 / BT2: an approved entry proposal always places a PAPER order (Phase 0)
         item["ticket"] = None
         if links_on and row.action in TICKET_ACTIONS and row.status == "PROPOSED" and trade is not None:
             item["ticket"] = ticket_for(trade, await _broker_of(session, tenant_id, trade, dep), key)

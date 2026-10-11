@@ -843,6 +843,52 @@ with the indicator block, and the result table.
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
 
+## U9 TX1 (built): screen taxonomy (method x setup) and the gallery rail and chips
+
+Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1"); Phase 0 item Z8. Flag
+`screener_gallery` (default OFF) on top of `screener_v2`.
+
+- **Model (data, not code).** `backend/app/screener/data/taxonomy.json` holds both axes - methods A-F (price action,
+  indicator, volume and order flow, fundamental and ownership, Legends, My screens) and setup types 1-8 - the tag
+  vocabulary (timeframe family, direction, data tier, difficulty, universe default) and one entry per pre-built screen
+  (`id`, `source`, name, definition, method, setup, tags, `evidence_ready`, `fitness_available`). It changes by PR only.
+  `app/screener/taxonomy.py` loads it, refusing a file that fails the lint rules.
+- **Lint rules (spec §3 "lint rules for the library").** Every screen filed on both axes (a pre-built screen never under
+  "My screens"); tags only from the vocabulary; definition at most 160 characters on one line ("two lines");
+  name at most 60; ids `source.name`; no unknown fields; no advice wording in any label or definition - the Copilot's
+  advice / guarantee list (`app/ai/data/advice_terms.json`), its specific-call check, and the screener's own words
+  (buy, sell, recommend..., target, best, top pick; SCREENER_SPEC §6).
+- **Template sources and the CI guard.** Pre-built screens come from template sources. The frontend's U5 starters
+  (`frontend/src/screener/starters.json`, read by both sides) are the source `starter`. A backend template module
+  registers at import: `taxonomy.register_source(name, ids_fn, flag=...)`. `coverage_problems()` reports an unfiled
+  template, a filed id its source does not have and a filed source nobody registered; `tests/test_z8_tx1_taxonomy.py`
+  runs it after importing `app.main`, and checks the starters file against the taxonomy, so a new template cannot merge
+  untagged. A source registered with a flag is hidden (screens and counts) while its flag is off for the tenant.
+- **When U6 BK1 / BK2 merge (#178 and its follow-up):** `app/screener/breakouts/templates.py` registers
+  `register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES], flag="screener_breakouts")` and adds
+  one taxonomy entry per template (proposed filing in OPEN_QUESTIONS TX1-6). Nothing in TX1 depends on that code.
+- **API.** `GET /api/screener/taxonomy[?method=&setup=]` -> `{version, methods, setups, tags, screens, matrix, total,
+  note}`. `matrix` is every method x setup cell with its count (0 = an empty cell, kept); `method` / `setup` narrow
+  `screens` only. Unknown ids answer 422. Read-only; no tenant data.
+- **Gallery (U9 §2, U5 tokens).** "Browse screens" in the Screener header opens a wide sheet: left rail = method (with
+  counts), top chips = setup type (with counts, zeros included), search over names and definitions, cards (method ->
+  setup, name, one-line definition, timeframe family, direction, data tier, difficulty, default universe, "Open"), and
+  a method x setup matrix table where an empty cell reads "–" ("none" to a screen reader). An empty pick says which
+  cell is empty; "My screens" says saved screens are not listed yet. "Open" loads a starter into the funnel (asking
+  before replacing conditions); a source this page cannot build yet shows Open disabled. With the flag off the
+  taxonomy call fails and the page is exactly as before (the phone visual-regression shots are unchanged).
+- **Accessibility.** Rail in a `nav`, chips in a labelled group, both toggle buttons with `aria-pressed`; counts read
+  "(3 screens)" / "(none)"; a polite live region with the count and the place ("Indicator -> Reversal"); every Open
+  names its screen; the matrix has a caption and row / column headers. 44 px touch targets come from the global
+  coarse-pointer rule.
+- **Not in TX1 (later steps of U9 or other items):** fitness sparkline (S6), evidence chart on first result and
+  "Show on chart" (U8 EV1 / EV2), Alert from a card, "Recently run" / "Pinned", compare view, live preview thumbnails
+  (U5 D3), filing of user-built screens (TX1-4). Cards do not show buttons for any of these until they work.
+- **Tests.** Backend: lint rules (20 broken-file cases), every screen filed, the starter and source guards, flag
+  hiding, API shape and filters, flags off by default. Frontend: taxonomy filtering and counts, the starters contract,
+  gallery render (rail, chips, cards, empty cell, matrix, disabled Open, no advice wording, no Devanagari), a Playwright
+  spec (flag off: no button; rail -> chip -> empty cell -> card -> Open loads the starter), Storybook stories.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

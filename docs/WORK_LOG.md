@@ -1562,6 +1562,24 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   stream), PW2 (mobile layout, on its branch), BYOK-V1 #160 (flag vision_byok off), PW6 in progress. All draft, all
   flags off, nothing deployed.
 
+### 2026-10-11 18:30 IST - Z3 (BT2/BT3, Phase 0): approval-only entries, re-quote, exits policy; per-user PAPER account
+- Z3-a (`claude/z3-paper-approval`, flag `approval_only_entries`, off):
+  - Deployment signals, TradingView alerts and public-API signals become ENTRY proposals on the monitor state machine.
+  - A gate in both order pipelines refuses any automatic entry that comes without an approved proposal. An AST census
+    test lists every caller of the pipelines.
+  - Approve re-quotes the price (0.5 % / ticks, stricter wins; re-proposed at most 2 times) and places one PAPER order.
+  - Entry proposals expire every cycle (15 min).
+  - Target exits ask "Exit now?"; protective exits stay automatic and are never held by a question or a snooze.
+  - "Exit now" via the API, the Positions button and Telegram `/exit`.
+  - Migration `f3a9c1e7b2d4`.
+- Z3-b (`claude/z3b-paper-account`, stacked on Z3-a, flag `paper_account`, off):
+  - One PAPER account per user: starting capital, balance, P&L after charges, positions, journal, would-have records.
+  - The PAPER-scope pause.
+  - The progression ladder card (PAPER stage, criteria from data).
+  - Telegram `/status /pause /resume /paper`, with the manual trigger ported from the Trade repo with parity cases.
+  - Migration `a7d3e9f1c5b8`.
+- Open questions Z3-1 to Z3-9. Not done, by the rules: nothing deployed, no flag turned on, no LIVE path, no broker API
+  order.
 ### 2026-10-11 - Z6 (P1-e): journal auto-capture, behaviour tags, discipline score, weekly review (flag off)
 - Split in two stacked draft PRs: Z6-a = auto-capture hooks, detectors, score, settings, `/api/journal` (backend);
   Z6-b = weekly review (backend) and the Journal & Discipline page. Flag `discipline_engine`, default OFF.
@@ -1630,3 +1648,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   * a Wilder-seed convergence check;
   * chart parity (vitest against a backend-generated fixture).
 - Open: OPEN_QUESTIONS Z10-1..Z10-5.
+### 2026-10-11 - Z8 U9 TX1: screen taxonomy (method x setup) + gallery rail and chips
+- Taxonomy as a reviewed data file (`backend/app/screener/data/taxonomy.json`: methods A-F, setups 1-8, tag vocabulary,
+  the three U5 starters filed), linted on load (both axes, vocabulary, definition <= 160 characters, no advice wording).
+- CI guard: template sources register (`taxonomy.register_source`, optional flag); the starters file
+  (`frontend/src/screener/starters.json`) is read by both sides; an unfiled template fails `tests/test_z8_tx1_taxonomy.py`.
+- `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
+  on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
+- BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.

@@ -575,6 +575,12 @@ export interface MarkPriceResponse {
   pnl: number | null;
 }
 
+/** Z3 "Exit now": every leg closed (a structure closes whole), with what the close said. */
+export interface ExitNowResponse {
+  closed: MarkPriceResponse[];
+  warnings: string[];
+}
+
 export interface StoredBrokerInfo {
   broker_name: string;
   updated_at: string;
@@ -1800,7 +1806,8 @@ export interface AiAction {
   id: number;
   deployment_id: number | null;
   trade_id: number | null;
-  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY";
+  /** ENTRY (Z3): an approval-only entry signal; Approve places a PAPER order at a re-quoted price. */
+  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY" | "ENTRY";
   rule: string;
   reason: string;
   evidence: Record<string, unknown>;
@@ -1910,9 +1917,15 @@ export interface TaxClassTotals {
   stt_estimate: number; ctt_estimate: number; tds_estimate: number; taxable_gains: number; tax_estimate: number; disallowed_losses: number;
   top_symbols: { symbol: string; net_pnl: number }[]; income_head: string;
 }
+export type TaxTurnoverMethod = "ABS_PNL" | "ABS_PNL_PLUS_PREMIUM";
+export interface TaxRateChange { from: string; class: string; rate: string; before_pct: number; pct: number }
 export interface TaxReport {
   financial_year: string; mode: string; generated_at: string; trades: number; net_pnl: number;
-  classes: Record<"EQUITY_INTRADAY" | "FNO" | "CRYPTO", TaxClassTotals>; notes: string[]; rates: Record<string, Record<string, number>>;
+  classes: Record<"EQUITY_INTRADAY" | "FNO" | "CRYPTO", TaxClassTotals>; notes: string[];
+  // F&O turnover method used (server setting TAX_FNO_TURNOVER_METHOD unless the request named one) and its description.
+  turnover_method: TaxTurnoverMethod; turnover_method_label: string;
+  // Statutory rates (percent) on the FY's first day, from the platform's dated charges table; changes inside the FY.
+  rates: Record<string, Record<string, number>>; rates_as_of: string; rate_changes: TaxRateChange[];
 }
 export interface FxRate { base: string; quote: string; rate: number; source: string; as_of: string | null }
 
@@ -2337,4 +2350,45 @@ export interface StaticIpOverview {
   max_changes_per_week: number;
   ips: StaticIp[];
   warnings: string[];
+}
+
+/** Z3-b: one row of the user's PAPER journal (net = gross - charges). */
+export interface PaperTradeRow {
+  id: number; symbol: string; direction: string; strategy_id: string; quantity: number;
+  entry_time: string | null; entry_price: number; stop_loss: number; target1: number | null;
+  exit_time: string | null; exit_price: number | null; exit_reason: string | null;
+  gross_pnl: number | null; charges: number; net_pnl: number | null; mark_price: number | null;
+  deployment_id: number | null; charges_source: string;
+}
+
+/** Z3-b: an entry proposal that was rejected or expired - a would-have record, nothing placed. */
+export interface PaperNotTaken {
+  proposal_id: number; status: string; symbol: string | null; direction: string | null; proposal_price: number | null;
+  stop_loss: number | null; target1: number | null; source: string | null; created_at: string | null; note: string | null;
+}
+
+/** Z3-b: the caller's own PAPER account (GET /api/paper/account; 404 while the `paper_account` flag is off). */
+export interface PaperAccount {
+  user_id: number; mode: "PAPER"; starting_capital: number; balance: number; equity: number;
+  realised: { gross: number; charges: number; net: number }; unrealised: number;
+  closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
+  max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
+  excluded_trades: number;
+  positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
+  proposals: { approved_by_you: number; rejected_by_you: number; pending: number; expired_unanswered: number };
+  as_of: string; note: string;
+}
+
+export interface LadderCriterion {
+  key: string; label: string; value: number | null; target: number | null;
+  comparison: "at_least" | "at_most" | null; met: boolean | null; note?: string;
+}
+
+/** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
+export interface PaperLadder {
+  stage: string;
+  stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
+  criteria: LadderCriterion[]; met: number; measured: number;
+  summary: Record<string, number | null>; as_of: string;
 }

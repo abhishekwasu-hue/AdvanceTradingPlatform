@@ -2731,8 +2731,10 @@ are skipped: their legs are protected as a group by the monitor.
 `app/tax/report.py` aggregates closed trades of an Indian financial year (1 April to 31 March,
 IST) into the three income heads the Income Tax Act uses: equity intraday (speculative business),
 F&O including MCX (non-speculative business) and crypto/VDA (section 115BBH: 30% on gains, no loss
-set-off, 1% TDS under 194S). Turnover follows the ICAI guidance note (absolute profit/loss, plus
-premium on options sold). STT/CTT/TDS are independent estimates at the rates in `RATES` for
+set-off, 1% TDS under 194S). F&O turnover is a setting, `TAX_FNO_TURNOVER_METHOD`: `ABS_PNL`
+(default, absolute profit/loss per trade) or `ABS_PNL_PLUS_PREMIUM` (the older method, which adds
+premium on options sold); the report names the method. STT/CTT/TDS are independent estimates at the
+rates `app.execution.india_costs` holds for each trade's sell date (one table for the platform) for
 reconciliation with the broker's annual statement; the per-trade `charges` already recorded are
 reported alongside. `GET /api/tax/years|report|report.csv` (LIVE by default, PAPER or ALL on
 request); the Analytics page has the card and the CSV download. FIU-IND reporting is an

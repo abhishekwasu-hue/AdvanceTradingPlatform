@@ -2,3 +2,9 @@
 # checkout with core.autocrlf would otherwise turn them CRLF and `sh` fails on `set -eu\r`
 # ("illegal option -", exit 2), leaving the backup container in a restart loop.
 *.sh text eol=lf
+
+# Append-only logs: many stacked PRs each add an entry at the end, so every merge into main left the rest
+# conflicting on the same last lines. `union` keeps both sides' lines (both entries) instead of conflicting.
+# Tables in OPEN_QUESTIONS.md are one row per line, so a union keeps every row.
+docs/WORK_LOG.md merge=union
+docs/OPEN_QUESTIONS.md merge=union

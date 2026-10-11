@@ -2,10 +2,13 @@ name: NSE expiry data
 
 # Rebuilds backend/app/instruments/data/nse_index_expiries.csv from NSE's daily F&O bhavcopies (expiry dates as the
 # exchange printed them - no weekday rule). The archive is not reachable from every network, so this runs on a
-# GitHub runner. From main the result is committed to `data/nse-expiries`, CI is started on it and a pull request
-# to main is opened (or the open one updated) - never straight to main; the merge is a person's. Run it from the Actions tab (optional start / end dates) or let the weekly schedule refresh it.
-# The build refuses (exit 2, nothing committed) on a week with no file, an unexplained NIFTY / BANKNIFTY expiry, or a
-# result that knows less than the committed file.
+# GitHub runner. From main the result is committed to `data/nse-expiries`, CI is started on it, then a pull request
+# to main is opened (or the open one updated) - never straight to main; the merge is a person's. When the repository
+# does not let Actions open pull requests, the run still succeeds (data branch pushed, CI started) and says so in a
+# warning and the run summary - open the pull request from `data/nse-expiries` by hand. Run it from the Actions tab (optional start / end dates) or let the weekly schedule refresh it.
+# The build refuses (exit 2, nothing committed) on a week with no file, an unexplained NIFTY / BANKNIFTY expiry, any
+# 403 from the archive, or a result that knows less than the committed file. Downloaded bhavcopies are kept in the
+# Actions cache between runs (a past day's file never changes), so a weekly run reads only the new week.
 on:
   workflow_dispatch:
     inputs:
@@ -40,6 +43,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Restore the downloaded bhavcopies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/bhav
+          key: nse-bhav-${{ github.run_id }}
+          restore-keys: nse-bhav-
+
       - name: Read the bhavcopies and build the expiry file
         env:
           START: ${{ inputs.start || '2016-01-01' }}
@@ -68,18 +78,34 @@ jobs:
             git push origin HEAD:"refs/heads/$REF"
           fi
 
-      - name: Start CI and open the refresh pull request
+      - name: Start CI on the data branch
         if: steps.commit.outputs.pr == 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$(gh pr list --head data/nse-expiries --base main --state open --json number --jq length)" = "0" ]; then
-            meta=backend/app/instruments/data/nse_index_expiries.meta.json
-            body="Weekly rebuild of the NSE index expiry file from the F&O bhavcopies (coverage $(python -c "import json;m=json.load(open('$meta'));print(m['coverage_start'],'to',m['coverage_end'],'-',m['rows'],'expiries')")). CI runs on this branch; merge after it is green. Opened by the 'NSE expiry data' workflow."
-            gh pr create --base main --head data/nse-expiries --title "NSE expiry data: weekly refresh" --body "$body" || {
-              echo "::error::Could not open the pull request. Allow it under Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests', or open one from data/nse-expiries by hand."
-              exit 1; }
-          else
-            echo "the open refresh pull request now carries this rebuild"
+          # Before the pull request: a pull request opened with this token starts no workflow of its own. A refused
+          # dispatch (policy, permissions) never stops the pull request step - it is said instead.
+          if ! gh workflow run ci.yml --ref data/nse-expiries; then
+            echo "::warning title=CI not started on data/nse-expiries::Start the CI workflow on data/nse-expiries by hand (Actions > CI > Run workflow)."
+            { echo "### NSE expiry data: CI not started"; echo; echo "Run CI on data/nse-expiries by hand."; } >> "$GITHUB_STEP_SUMMARY"
           fi
-          gh workflow run ci.yml --ref data/nse-expiries
+
+      - name: Open the refresh pull request
+        if: steps.commit.outputs.pr == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! open_prs=$(gh pr list --head data/nse-expiries --base main --state open --json number --jq length); then
+            echo "::warning title=Could not list pull requests::trying to open the refresh pull request anyway"
+            open_prs=0
+          fi
+          if [ "$open_prs" != "0" ]; then
+            echo "the open refresh pull request now carries this rebuild"; exit 0
+          fi
+          meta=backend/app/instruments/data/nse_index_expiries.meta.json
+          body="Weekly rebuild of the NSE index expiry file from the F&O bhavcopies (coverage $(python -c "import json;m=json.load(open('$meta'));print(m['coverage_start'],'to',m['coverage_end'],'-',m['rows'],'expiries')")). CI runs on this branch; merge after it is green. Opened by the 'NSE expiry data' workflow."
+          if ! gh pr create --base main --head data/nse-expiries --title "NSE expiry data: weekly refresh" --body "$body"; then
+            msg="The rebuild is on data/nse-expiries and CI was started on it, but Actions may not open pull requests here. Open one from data/nse-expiries to main by hand, or allow it under Settings > Actions > General > 'Allow GitHub Actions to create and approve pull requests'."
+            echo "::warning title=Refresh pull request not opened::$msg"
+            { echo "### NSE expiry data: pull request not opened"; echo; echo "$msg"; } >> "$GITHUB_STEP_SUMMARY"
+          fi

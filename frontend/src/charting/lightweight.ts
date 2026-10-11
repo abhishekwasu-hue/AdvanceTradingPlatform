@@ -9,7 +9,7 @@
  * - events: crosshair, click, visible range.
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
-import type { UTCTimestamp } from "lightweight-charts";
+import { LineSeries, type UTCTimestamp } from "lightweight-charts";
 import type { DrawingKind, DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
 
@@ -25,7 +25,7 @@ export interface CandleSeriesLike {
 export interface LineSeriesLike { setData(data: { time: UTCTimestamp; value: number }[]): void }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
 export interface ChartLike {
-  addLineSeries(options: Record<string, unknown>): LineSeriesLike;
+  addSeries(definition: typeof LineSeries, options: Record<string, unknown>): LineSeriesLike;
   removeSeries(series: LineSeriesLike): void;
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   unsubscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
@@ -115,7 +115,7 @@ export class LightweightEngine implements ChartEngine {
       const pts = d.anchors.map((a) => ({ time: toSec(a.t ?? "") as UTCTimestamp, value: a.p ?? NaN }))
         .filter((pt) => Number.isFinite(pt.time) && Number.isFinite(pt.value)).sort((x, y) => x.time - y.time);
       if (pts.length !== 2 || pts[0].time === pts[1].time) return { kind: "none" };
-      const series = this.chart.addLineSeries({ color, lineWidth: width, lineStyle, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      const series = this.chart.addSeries(LineSeries, { color, lineWidth: width, lineStyle, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       series.setData(pts);
       return { kind: "series", series };
     }

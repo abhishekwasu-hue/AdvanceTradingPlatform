@@ -27,6 +27,7 @@ from app.instruments.contracts import ContractRules, ResolvedContract
 from app.reconciliation.service import broker_uncertain_reason, mark_broker_uncertain
 from app.plans.limits import live_allowed, tenant_is_active
 from app.platform.controls import entry_blocks as platform_entry_blocks
+from app.risk_engine.by_default import releases_unused_entry_slot as by_default_releases_slot
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant_id: int, mode: str, strategy_id: str, *,
-                         user: Optional[User] = None, broker_name: Optional[str] = None) -> list:
+                         user: Optional[User] = None, broker_name: Optional[str] = None, reserve: bool = True) -> list:
     """Every reason a *new entry* must be refused before any sizing or routing: kill switches,
     platform controls (maintenance mode, disabled broker, per-user trading disable - Phase M),
     a suspended organisation, plan limits, the SEBI algo id and the broker-uncertain flag
@@ -55,7 +56,8 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         # only; exits never come here (ADR-0004).
         from app.risk_engine import by_default
         if await by_default.enabled(session, user.tenant_id):
-            reasons.extend(await by_default.entry_refusals(session, user))
+            # `reserve`: the order pipelines take the day's entry slot atomically (given back if the entry is not placed).
+            reasons.extend(await by_default.entry_refusals(session, user, reserve=reserve and not reasons))
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
@@ -74,6 +76,7 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
     return reasons
 
 
+@by_default_releases_slot
 async def execute_signal_for_user(
     session: AsyncSession, user: User, *, mode: str, strategy_id: str, signal: Signal,
     idempotency_key: Optional[str] = None, risk_config: Optional[RiskConfig] = None,

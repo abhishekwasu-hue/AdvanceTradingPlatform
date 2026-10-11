@@ -72,10 +72,10 @@ async def set_risk(body: RiskSettingsBody, user: User = Depends(require_trader),
     await _enabled(session, user)
     values = {k: v for k, v in body.model_dump().items() if v is not None}
     try:
-        await ticket.save_settings(session, user, values)
+        change = await ticket.save_settings(session, user, values)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await ticket.risk_status(session, user)
+    return {**await ticket.risk_status(session, user), "change": change}
 
 
 @router.post("/ticket/preview", dependencies=[Depends(preview_rate_limit)])

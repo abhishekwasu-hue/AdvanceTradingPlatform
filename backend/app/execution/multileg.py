@@ -83,6 +83,7 @@ async def _reject_all(session: AsyncSession, orders: List[OrderRecord], reasons:
         ORDERS.labels(mode=order.mode, status=order.status).inc()
 
 
+@by_default.releases_unused_entry_slot
 async def execute_structure(
     session: AsyncSession, user: User, *, mode: str, strategy_id: str, signal: Signal, structure: ResolvedStructure,
     rules: ContractRules, target_credit_pct: Optional[float], stop_credit_pct: Optional[float],

@@ -12,8 +12,9 @@ exactly as Trade builds them:
 * regime from ADX14 (Wilder) of the previous days: above 25 a trend - "with" when the +DI/-DI direction times the side
   is positive (an uptrend for a short put), "against" when negative; below 20 a range; else mid.
 * the entry weekday, the 0-DTE flag, the side (put / call) and the daily market structure (with / against / neutral).
-  ATP has no port of Trade's StructureTracker yet, so callers pass the structure when they know it and neutral (0)
-  otherwise - neutral is what Trade's own distance table uses.
+  ATP has no port of Trade's StructureTracker yet and nothing in ATP computes the structure today: the builder's
+  `evaluate` accepts it in the request (`structure`, default 0) and the proposal card shows what was stored when the
+  proposal was raised. Neutral (0) is what Trade's own distance table uses.
 * outcome "close": beyond the strike at the expiry close (expires in the money - the main one); "touch": beyond it at
   any time before expiry (for stop-based management).
 

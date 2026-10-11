@@ -319,7 +319,14 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
                   "result": f"PAPER order #{order.id} placed at the re-quoted price {price:g}" + (f"; position #{order.trade_id}" if order.trade_id else "")}
     except Exception as exc:  # noqa: BLE001 - recorded on the row, shown to the person
         values = {"status": "FAILED", "executed_at": now, "result": str(exc)[:300]}
+        order = None
     await _settle(session, action, values)
+    plan_id = (evidence.get("ticket") or {}).get("plan_id") if isinstance(evidence, dict) else None
+    if plan_id is not None:
+        # Z5 / P1-d: the ticket's plan follows its proposal (PLACED with the order, or FAILED with why), so an override
+        # placed through an approval is counted like a direct one.
+        from app.paper.ticket import settle_from_proposal
+        await settle_from_proposal(session, action.tenant_id, int(plan_id), values, order)
     return action
 
 

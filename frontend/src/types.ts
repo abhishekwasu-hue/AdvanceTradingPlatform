@@ -2427,11 +2427,13 @@ export interface TicketView {
 
 /** Z5 / P1-d: a stored plan and what became of it. */
 export interface TradePlanView {
-  id: number; status: "PENDING" | "PLACED" | "REFUSED"; symbol: string; direction: string; setup: string; setup_label: string;
+  id: number; status: "PENDING" | "PLACED" | "PROPOSED" | "REFUSED" | "FAILED"; symbol: string; direction: string; setup: string; setup_label: string;
   entry: number; stop_loss: number; target: number; reward_risk: number | null; time_stop: string | null; invalidation: string | null;
   checklist: Record<string, boolean>; checklist_complete: boolean; quantity: number; risk_amount: number; risk_cap: number;
   override: boolean; override_reason: string | null; costs: TicketCostLine | Record<string, never>; reasons: string[];
   order_id: number | null; trade_id: number | null; filled: { quantity: number; price: number; risk_amount: number } | null; created_at: string;
+  /** Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order. */
+  proposal: { id: number; status: string; result: string | null } | null;
 }
 
 export interface RiskByDefaultSettings {
@@ -2440,7 +2442,7 @@ export interface RiskByDefaultSettings {
 
 export interface VixGateStatus {
   enabled: boolean; state: string; underlyings: string[];
-  latest: { last: number | null; prev_close: number | null; change_pct: number | null; captured_at: string } | null;
+  latest: { last: number | null; prev_close: number | null; change_pct: number | null; error: string | null; captured_at: string } | null;
   bullish_paused: boolean; size_multiplier: number; messages: string[];
   settings: { spike_pct: number; high_level: number; size_cut_pct: number; max_age_minutes: number };
 }
@@ -2448,6 +2450,8 @@ export interface VixGateStatus {
 /** Z5 / P1-d: the caller's risk-by-default state (GET /api/paper/risk; 404 while the `risk_by_default` flag is off). */
 export interface PaperRiskStatus {
   mode: "PAPER"; settings: RiskByDefaultSettings; effective: RiskByDefaultSettings; defaults: RiskByDefaultSettings; notes: string[];
+  /** A loosening waits for the next IST day (a tightening applies at once). */
+  pending: { values: Partial<RiskByDefaultSettings>; from: string } | null;
   bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
   capital_basis: number; risk_cap: { amount: number; binding: string; by_pct: number };
   today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };

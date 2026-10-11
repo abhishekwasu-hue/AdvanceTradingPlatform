@@ -18,19 +18,24 @@ Behind the flag `risk_by_default` (off by default). With it off nothing here run
 * **Cost line.** Every ticket shows the round trip's estimated charges (brokerage, STT, exchange, SEBI, stamp duty, GST
   from ATP's dated India cost model), a slippage estimate, the break-even move and the reward:risk after costs.
 
-Every threshold has a platform default in `app/core/config.py` (RISK_DEFAULT_*, RISK_OVERRIDE_*, TICKET_*); the user may
-change their own within the bounds here and the platform's risk ceilings. Scope: every read filters on tenant and user.
-Nothing in this module places, changes or closes an order.
+Every threshold has a platform default in `app/core/config.py` (RISK_DEFAULT_*, RISK_OVERRIDE_*); the cost line uses the
+paper broker's own brokerage and slippage. The user may change their own settings within the bounds here and the
+platform's risk ceilings. A change that loosens a limit (a higher risk per trade or daily loss limit, more or unlimited
+entries per day, a lower minimum reward:risk) takes effect from the next IST day; a tightening applies at once - so a
+limit cannot be widened in the middle of the day it protects. Scope: every read filters on tenant and user. Nothing in
+this module places, changes or closes an order.
 """
 from __future__ import annotations
 
+import functools
 import json
 import math
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, ParamSpec, Sequence, Tuple, TypeVar
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,6 +100,69 @@ class RiskSettings:
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+PENDING_KEY = "_pending"
+NO_LIMIT_ZERO = ("risk_per_trade_amount", "max_trades_per_day")      # 0 means "no limit" for these
+
+
+def loosens(key: str, old: float, new: float) -> bool:
+    """Whether changing `key` from `old` to `new` relaxes the limit (0 = no limit for the rupee cap and entries per day)."""
+    if key in NO_LIMIT_ZERO:
+        if new == old:
+            return False
+        if new == 0:
+            return True
+        return old != 0 and new > old
+    if key == "min_rr":
+        return new < old
+    return new > old
+
+
+def _stored(text: Optional[str]) -> Dict[str, Any]:
+    try:
+        data = json.loads(text) if text else {}
+    except ValueError:
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def pending_of(text: Optional[str]) -> Optional[Dict[str, Any]]:
+    pending = _stored(text).get(PENDING_KEY)
+    if not isinstance(pending, dict) or not isinstance(pending.get("values"), dict) or not pending.get("from"):
+        return None
+    return pending
+
+
+def settings_on(text: Optional[str], day: date) -> RiskSettings:
+    """The settings in force on `day`: the stored ones, with a deferred loosening applied once its day has come."""
+    data = _stored(text)
+    pending = pending_of(text)
+    if pending is not None and str(pending["from"]) <= day.isoformat():
+        data = {**data, **pending["values"]}
+    return RiskSettings.from_json(json.dumps({k: v for k, v in data.items() if k != PENDING_KEY}))
+
+
+def plan_change(text: Optional[str], values: Dict[str, Any], today: date) -> Tuple[str, Dict[str, Any], Dict[str, Any], str]:
+    """(new stored text, applied now, deferred, the day the deferred ones start). Tightening applies at once; loosening
+    waits for the next IST day. A due deferred change is folded in first. Pure."""
+    current = settings_on(text, today).as_dict()
+    pending = pending_of(text)
+    deferred: Dict[str, Any] = dict(pending["values"]) if pending is not None and str(pending["from"]) > today.isoformat() else {}
+    applied: Dict[str, Any] = {}
+    for key, raw in values.items():
+        new = int(raw) if key == "max_trades_per_day" else float(raw)
+        if loosens(key, float(current[key]), float(new)):
+            deferred[key] = new
+        else:
+            current[key] = new
+            applied[key] = new
+            deferred.pop(key, None)                  # a tightening also cancels a loosening still waiting
+    start = (today + timedelta(days=1)).isoformat()
+    data: Dict[str, Any] = dict(current)
+    if deferred:
+        data[PENDING_KEY] = {"values": deferred, "from": start}
+    return json.dumps(data, sort_keys=True), applied, deferred, start
 
 
 def validate_settings(values: Dict[str, Any], ceilings: Dict[str, float]) -> List[str]:
@@ -177,8 +245,10 @@ def cost_line(*, direction: str, entry: float, stop: float, target: float, quant
     """Estimated costs of the round trip (ATP's dated India cost model, the rates of `day`) and what they do to the plan:
     the charges and slippage if it exits at the target (the line shown), the same at the stop, the break-even move
     (the price move that pays the round trip's costs), and the reward:risk after costs. Pure."""
-    slip_pct = app_config.TICKET_SLIPPAGE_PCT if slippage_pct is None else float(slippage_pct)
-    brokerage = app_config.TICKET_BROKERAGE_PER_ORDER if brokerage_per_order is None else float(brokerage_per_order)
+    from app.execution.paper_broker import PaperBroker
+    paper = PaperBroker()                         # the PAPER fill's own brokerage and slippage: the line cannot drift from it
+    slip_pct = float(paper.slippage_pct) if slippage_pct is None else float(slippage_pct)
+    brokerage = float(paper.brokerage_per_order) if brokerage_per_order is None else float(brokerage_per_order)
     qty = float(quantity)
     segment = india_costs.segment_for(instrument_kind, delivery=delivery)
     short = direction == "SHORT"
@@ -231,10 +301,11 @@ async def _account(session: AsyncSession, user: User) -> Optional[PaperAccountRe
     return await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id, PaperAccountRecord.user_id == user.id))
 
 
-async def user_settings(session: AsyncSession, user: User) -> RiskSettings:
-    """The user's own settings, the platform defaults where none are stored. Reads only (no account is created)."""
+async def user_settings(session: AsyncSession, user: User, now: Optional[datetime] = None) -> RiskSettings:
+    """The user's settings in force today (a loosening waits for the next IST day), the platform defaults where none
+    are stored. Reads only (no account is created)."""
     row = await _account(session, user)
-    return RiskSettings.from_json(row.risk_settings_json if row is not None else None)
+    return settings_on(row.risk_settings_json if row is not None else None, to_ist(now).date())
 
 
 async def capital_basis(session: AsyncSession, user: User, now: Optional[datetime] = None) -> float:
@@ -293,7 +364,7 @@ async def lockout(session: AsyncSession, user: User, now: Optional[datetime] = N
         return {"kind": KIND_DAILY_LOSS, "reason": row.reason, "pnl": float(row.pnl), "limit": float(row.limit_amount),
                 "locked_at": _utc(row.locked_at).isoformat(), "until": until.isoformat()}
     from app.platform.controls import risk_ceilings
-    settings, _ = effective_settings(await user_settings(session, user), await risk_ceilings(session))
+    settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session))
     basis = await capital_basis(session, user, now)
     act = await day_activity(session, user, now)
     check = daily_loss_breached(basis, settings, act["closed_pnls"], act["open_marks"])
@@ -319,19 +390,96 @@ async def lockout(session: AsyncSession, user: User, now: Optional[datetime] = N
             "locked_at": now.isoformat(), "until": until.isoformat()}
 
 
-async def entry_refusals(session: AsyncSession, user: User, now: Optional[datetime] = None) -> List[str]:
-    """Why this user's new PAPER entry is refused: the daily loss lockout, the trades-per-day limit. Entries only."""
+def _per_day_text(count: int, limit: int) -> str:
+    return f"PAPER entries per day: {count} of {limit} made today - no new PAPER entries today; exits stay available"
+
+
+async def entry_refusals(session: AsyncSession, user: User, now: Optional[datetime] = None, *, reserve: bool = False) -> List[str]:
+    """Why this user's new PAPER entry is refused: the daily loss lockout, the entries-per-day limit. Entries only.
+    `reserve` (the order pipelines): the entry takes one of the day's slots atomically (`reserve_entry`); a preview
+    only reads the count."""
     reasons = []
     locked = await lockout(session, user, now)
     if locked:
         reasons.append(locked["reason"])
-    settings = await user_settings(session, user)
+    settings = await user_settings(session, user, now)
     if settings.max_trades_per_day > 0:
-        act = await day_activity(session, user, now)
-        if act["entries_today"] >= settings.max_trades_per_day:
-            reasons.append(f"PAPER entries per day: {act['entries_today']} of {settings.max_trades_per_day} made today - "
-                           "no new PAPER entries today; exits stay available")
+        if reserve and not reasons:
+            refused = await reserve_entry(session, user, settings.max_trades_per_day, now)
+            if refused:
+                reasons.append(refused)
+        elif not reserve:
+            act = await day_activity(session, user, now)
+            used = max(act["entries_today"], await _slots_used(session, user, now))
+            if used >= settings.max_trades_per_day:
+                reasons.append(_per_day_text(used, settings.max_trades_per_day))
     return reasons
+
+
+# The entry slot reserved in this task (the order pipelines release it when the entry does not go through).
+RESERVED: ContextVar[Optional[int]] = ContextVar("risk_by_default_reserved_entry", default=None)
+
+
+async def _slots_used(session: AsyncSession, user: User, now: Optional[datetime]) -> int:
+    row = await _account(session, user)
+    if row is None or row.entries_day != to_ist(now).date():
+        return 0
+    return int(row.entries_count or 0)
+
+
+async def reserve_entry(session: AsyncSession, user: User, limit: int, now: Optional[datetime] = None) -> Optional[str]:
+    """Takes one of the user's PAPER entry slots for the IST day, atomically: a conditional UPDATE on the user's PAPER
+    account row (the row lock serialises concurrent entries of one user; the WHERE is re-checked after the wait), so two
+    entries at once cannot both take the last slot. Returns why not, or None (and marks the slot as this task's)."""
+    from app.paper.service import get_account
+    day = to_ist(now).date()
+    if await _account(session, user) is None:
+        await get_account(session, user)                      # created on first use, as the PAPER account always is
+    act = await day_activity(session, user, now)
+    base = PaperAccountRecord.tenant_id == user.tenant_id, PaperAccountRecord.user_id == user.id
+    # A new day starts from the entries already made today (e.g. before the flag was turned on).
+    await session.execute(update(PaperAccountRecord).where(*base, (PaperAccountRecord.entries_day.is_(None)) | (PaperAccountRecord.entries_day != day))
+                          .values(entries_day=day, entries_count=act["entries_today"]).execution_options(synchronize_session=False))
+    done = await session.execute(update(PaperAccountRecord).where(*base, PaperAccountRecord.entries_day == day, PaperAccountRecord.entries_count < limit)
+                                 .values(entries_count=PaperAccountRecord.entries_count + 1).execution_options(synchronize_session=False))
+    if int(getattr(done, "rowcount", 0) or 0) == 0:
+        used = int(await session.scalar(select(PaperAccountRecord.entries_count).where(*base)) or limit)
+        return _per_day_text(used, limit)
+    RESERVED.set(user.id)
+    return None
+
+
+async def release_entry(session: AsyncSession, user: User, now: Optional[datetime] = None) -> None:
+    """Gives back the slot of an entry that did not go through (refused later in the pipeline). Never raises."""
+    try:
+        await session.execute(update(PaperAccountRecord).where(
+            PaperAccountRecord.tenant_id == user.tenant_id, PaperAccountRecord.user_id == user.id,
+            PaperAccountRecord.entries_day == to_ist(now).date(), PaperAccountRecord.entries_count > 0)
+            .values(entries_count=PaperAccountRecord.entries_count - 1).execution_options(synchronize_session=False))
+        await session.commit()
+    except Exception:  # noqa: BLE001 - a slot not given back only makes the limit stricter
+        await session.rollback()
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def releases_unused_entry_slot(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+    """For the two order pipelines: an entry slot taken during the call is given back when the entry was not placed."""
+    @functools.wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        token = RESERVED.set(None)
+        try:
+            result = await func(*args, **kwargs)
+            outcome = result[0] if isinstance(result, tuple) else result
+            if RESERVED.get() is not None and not getattr(outcome, "executed", False):
+                session, user = (kwargs.get("session") or args[0]), (kwargs.get("user") or args[1])
+                await release_entry(session, user)  # type: ignore[arg-type]
+            return result
+        finally:
+            RESERVED.reset(token)
+    return wrapper
 
 
 async def proposal_refusal(session: AsyncSession, tenant_id: int, user_id: Optional[int], now: Optional[datetime] = None) -> Optional[str]:
@@ -364,7 +512,7 @@ async def apply_user_cap(session: AsyncSession, user: User, cfg: RiskConfig, *, 
     override included) as well as the organisation's limit, whichever is stricter."""
     if amount is None:
         from app.platform.controls import risk_ceilings
-        settings, _ = effective_settings(await user_settings(session, user), await risk_ceilings(session))
+        settings, _ = effective_settings(await user_settings(session, user, now), await risk_ceilings(session))
         amount = risk_cap(await capital_basis(session, user, now), settings)["amount"]
     capped, note = cap_config(cfg, float(amount))
     return capped, [note] if note else []
@@ -377,3 +525,46 @@ async def override_counts(session: AsyncSession, user: User, now: Optional[datet
             TradePlanRecord.tenant_id == user.tenant_id, TradePlanRecord.user_id == user.id, TradePlanRecord.override.is_(True),
             TradePlanRecord.status == "PLACED", *conditions)) or 0)
     return {"today": await count(TradePlanRecord.created_at >= trading_day_start(now)), "total": await count()}
+
+
+async def after_close(session: AsyncSession, trade: TradeRecord) -> None:
+    """Called after a PAPER close is booked (and committed): records the user's daily loss lockout at once if this close
+    reached the limit, so it holds even if nothing reads it before the P&L recovers. Never raises; the exit is done."""
+    try:
+        if trade.mode != MODE or trade.user_id is None or not await enabled(session, trade.tenant_id):
+            return
+        user = await session.get(User, trade.user_id)
+        if user is not None and user.tenant_id == trade.tenant_id:
+            await lockout(session, user)
+            await session.commit()
+    except Exception:  # noqa: BLE001 - bookkeeping after an exit; never in its way (ADR-0004)
+        import logging
+        logging.getLogger(__name__).exception("Daily loss check after closing trade %s failed", trade.id)
+        await session.rollback()
+
+
+async def sweep(session: AsyncSession, now: Optional[datetime] = None) -> int:
+    """The worker's pass: every user with PAPER activity today (a close today, or an open position) in an organisation
+    with the flag on is checked, so a breach through open marks is recorded too. Returns the lockouts recorded."""
+    now = now or datetime.now(timezone.utc)
+    start = trading_day_start(now)
+    pairs = list(await session.execute(select(TradeRecord.tenant_id, TradeRecord.user_id).where(
+        TradeRecord.mode == MODE, TradeRecord.user_id.is_not(None),
+        (TradeRecord.exit_time >= start) | TradeRecord.exit_time.is_(None)).distinct()))
+    flags: Dict[int, bool] = {}
+    recorded = 0
+    for tenant_id, user_id in pairs:
+        if tenant_id not in flags:
+            flags[tenant_id] = await enabled(session, tenant_id)
+        if not flags[tenant_id]:
+            continue
+        user = await session.get(User, user_id)
+        if user is None or user.tenant_id != tenant_id:
+            continue
+        before = await session.scalar(select(RiskLockoutRecord.id).where(
+            RiskLockoutRecord.user_id == user_id, RiskLockoutRecord.mode == MODE, RiskLockoutRecord.trading_day == to_ist(now).date(),
+            RiskLockoutRecord.kind == KIND_DAILY_LOSS))
+        if before is None and await lockout(session, user, now) is not None:
+            recorded += 1
+        await session.commit()
+    return recorded

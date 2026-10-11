@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PaperRiskStatus, TicketSetup, TicketView, TradePlanView } from "../types";
 import { Card, signClass } from "./ui";
-import { EMPTY_FORM, costRows, gauge, lockoutLine, money, planFromForm, type TicketForm } from "./paperTicket";
+import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm, type TicketForm } from "./paperTicket";
 
 /**
  * Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): the plan-before-trade PAPER ticket and the risk-by-default strip.
@@ -46,9 +46,7 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
     setBusy(true); setMessage(null);
     try {
       const out = await api.placeTicket(plan);
-      setMessage(out.status === "PLACED"
-        ? `Placed (PAPER): position #${out.trade_id}${out.filled ? `, ${out.filled.quantity} at ${money(out.filled.price)}` : ""}.`
-        : `Not placed: ${out.reasons.join("; ")}`);
+      setMessage(placedMessage(out));
       setView(null);
       load();
       onPlaced?.();
@@ -67,13 +65,14 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
           <span>Today <span className={signClass(status.today.pnl)}>{money(status.today.pnl)}</span> of limit −{money(status.today.limit)}</span>
           <span>Entries {status.today.entries}{status.today.max_entries ? ` / ${status.today.max_entries}` : ""}</span>
           <span>Overrides today {status.overrides.today} · total {status.overrides.total}</span>
-          {vix.enabled && <span data-testid="vix-gate">India VIX gate: {vix.bullish_paused ? "bullish index entries paused today" : vix.state === "high" ? "high VIX, size cut" : vix.state === "no_reading" ? "no reading today" : "normal"}</span>}
+          {vix.enabled && <span data-testid="vix-gate">India VIX gate: {vix.bullish_paused ? (vix.state === "no_reading" ? "no India VIX reading - bullish index entries paused" : "bullish index entries paused today") : vix.state === "high" ? "high VIX, size cut" : vix.state === "waiting" || vix.state === "before_check" ? "check from 09:20 IST" : "normal"}</span>}
         </div>
         {lock && (
           <p className="rounded bg-warn/15 px-2 py-1 text-xs text-warn" role="status" data-testid="paper-lockout">
             {status.lockout?.reason}. {lock}
           </p>
         )}
+        {pendingLine(status) && <p className="text-[11px] text-fg-muted" data-testid="risk-pending">{pendingLine(status)}</p>}
         <p className="text-[11px] text-fg-muted">{status.exits}</p>
 
         {canTrade && (
@@ -172,8 +171,8 @@ export default function PaperTicketCard({ canTrade, onPlaced }: { canTrade: bool
             <ul className="mt-1 space-y-1">
               {plans.slice(0, 10).map((p) => (
                 <li key={p.id} className="text-fg-muted">
-                  #{p.id} {p.status} · {p.direction} {p.symbol} {p.setup_label} · R:R {p.reward_risk ?? "-"}{p.override ? " · override" : ""}
-                  {!p.checklist_complete ? " · checklist skipped" : ""}{p.status === "REFUSED" && p.reasons[0] ? ` · ${p.reasons[0]}` : ""}
+                  #{p.id} {p.status === "PROPOSED" && p.proposal ? `sent for approval (proposal #${p.proposal.id}, ${p.proposal.status.toLowerCase()})` : p.status} · {p.direction} {p.symbol} {p.setup_label} · R:R {p.reward_risk ?? "-"}{p.override ? " · override" : ""}
+                  {!p.checklist_complete ? " · checklist skipped" : ""}{(p.status === "REFUSED" || p.status === "FAILED") && p.reasons[0] ? ` · ${p.reasons[0]}` : ""}
                 </li>
               ))}
             </ul>

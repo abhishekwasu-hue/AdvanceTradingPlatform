@@ -9,8 +9,8 @@
   format is documented in docs/BROKER_DATA_TERMS.md; the user confirms the order in the broker's own app. ATP sends
   nothing to any broker API here (Phase 0: no order from ATP through a broker API).
 
-* `risk_check` - Z5 / P1-d, only with the `risk_by_default` flag on and only for a waiting ENTRY proposal: what the
-  caller's own risk by default makes of it (`app/paper/ticket.py::assess`) - the quantity their cap allows at the
+* `risk_check` - Z5 / P1-d, only with the `risk_by_default` flag on, only for a waiting ENTRY proposal and only for its
+  owner (whose PAPER account the approved order goes to; others see none): what the owner's risk by default makes of it (`app/paper/ticket.py::assess`) - the quantity their cap allows at the
   proposal price, the risk at the stop, the cap that binds, the cost line (charges, slippage estimate, break-even move,
   reward:risk after costs), and why it would be refused now (daily loss lockout, entries per day, the guardian, the
   India VIX gate). Approve places the PAPER order sized the same way (the pipeline applies the same cap).
@@ -115,7 +115,9 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         item["strike_breach"] = None
         if risk_on and row.action == "ENTRY" and user is not None:
             item["strike_breach"] = item["evidence"].get("strike_breach")
-            if row.status == "PROPOSED":
+            owner_id = getattr(row, "owner_user_id", None)
+            if row.status == "PROPOSED" and (owner_id is None or owner_id == user.id):
+                # The owner's own limits: the approved order is placed for (and sized by) the proposal's owner.
                 item["risk_check"] = await _risk_check(session, user, item["evidence"])
         out.append(item)
     if risk_on:

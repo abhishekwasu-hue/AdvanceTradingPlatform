@@ -2220,6 +2220,9 @@ class PaperAccountRecord(Base):
     # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
     # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
     risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
+    entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entries_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
@@ -2254,7 +2257,7 @@ class TradePlanRecord(Base):
     override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     costs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | PROPOSED | REFUSED
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | PROPOSED | REFUSED | FAILED
     reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     # Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order (Z3-a).
     proposal_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)

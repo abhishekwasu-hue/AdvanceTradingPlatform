@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TicketCostLine } from "../types";
-import { EMPTY_FORM, costRows, gauge, lockoutLine, money, planFromForm } from "./paperTicket";
+import { EMPTY_FORM, costRows, gauge, lockoutLine, money, pendingLine, placedMessage, planFromForm } from "./paperTicket";
 
 describe("plan-before-trade ticket helpers (Z5 / P1-d)", () => {
   it("builds the plan from the form, or says what is missing", () => {
@@ -37,5 +37,19 @@ describe("plan-before-trade ticket helpers (Z5 / P1-d)", () => {
     const line = lockoutLine({ lockout: { kind: "DAILY_LOSS", reason: "r", pnl: -1, limit: 1, locked_at: "2026-10-12T05:00:00Z", until: "2026-10-12T18:30:00Z" } });
     expect(line).toContain("13 Oct");
     expect(line).toContain("Exits stay available");
+  });
+
+  it("words the plan's outcome, including a proposal under approval-only", () => {
+    expect(placedMessage({ status: "PROPOSED", trade_id: null, filled: null, proposal: { id: 42, status: "PROPOSED", result: null }, reasons: [] }))
+      .toBe("Sent for approval: proposal #42. Approve it to place the PAPER order at the live price.");
+    expect(placedMessage({ status: "PLACED", trade_id: 7, filled: { quantity: 50, price: 100.2, risk_amount: 110 }, proposal: null, reasons: [] }))
+      .toBe("Placed (PAPER): position #7, 50 at 100.20.");
+    expect(placedMessage({ status: "FAILED", trade_id: null, filled: null, proposal: null, reasons: ["Not placed: boom"] })).toBe("Not placed: Not placed: boom");
+  });
+
+  it("says when a looser limit starts", () => {
+    expect(pendingLine({ pending: null, labels: {} as never })).toBeNull();
+    const line = pendingLine({ pending: { values: { daily_loss_pct: 5 }, from: "2026-10-13" }, labels: { daily_loss_pct: "Daily loss limit, % of capital" } as never });
+    expect(line).toBe("Looser limits take effect on 13 Oct (not during the day they protect): Daily loss limit, % of capital 5");
   });
 });

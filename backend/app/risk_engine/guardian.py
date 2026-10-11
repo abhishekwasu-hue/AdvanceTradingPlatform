@@ -197,6 +197,7 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
     flag on - the India VIX gate (Z5: a spike pauses new bullish index entries, a high level cuts the size; `direction`
     is the entry's direction on the underlying). Reasons refuse the entry; the multiplier scales the risk per trade of
     an allowed one. Entries only: no exit is ever asked here (ADR-0004)."""
+    asked_at = now                      # the VIX gate keeps its own clock unless a time was given
     now = now or datetime.now(timezone.utc)
     now_ist = now.astimezone(IST)
     verdict = GuardianVerdict()
@@ -238,7 +239,7 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
                 verdict.notes.append(f"Event risk: {label} today{_window(event)} - risk per trade cut {cut:g}% (rule M8)")
 
     from app.risk_engine import vix_gate
-    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=now)
+    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=asked_at)
     verdict.reasons.extend(vix.reasons)
     verdict.notes.extend(vix.notes)
     verdict.size_multiplier *= vix.size_multiplier

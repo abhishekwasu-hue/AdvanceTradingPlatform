@@ -124,14 +124,23 @@ def _enter(user_id, symbol="RELIANCE", direction=SignalDirection.LONG, entry=100
     return _run(go())
 
 
-def _vix(t: dict, last: float, prev_close: float, *, minutes_ago=5, day=None) -> None:
+VIX_NOW = datetime(2026, 10, 9, 11, 0, tzinfo=IST)            # a Friday, after the 09:20 check: the gate's clock in these tests
+
+
+def _vix_clock(monkeypatch, now=VIX_NOW) -> None:
+    monkeypatch.setattr(vix_gate, "_now", lambda: now.astimezone(UTC))
+
+
+def _vix(t: dict, last, prev_close, *, minutes_ago=5, day=None, error=None) -> None:
+    """A stored live India VIX reading (as `vix_gate.capture` writes it), `minutes_ago` before VIX_NOW."""
     async def go():
         async with _session_factory() as session:
-            now = datetime.now(UTC) - timedelta(minutes=minutes_ago)
-            payload = {"last": last, "prev_close": prev_close, "change_pct": round((last / prev_close - 1) * 100, 2) if prev_close else 0.0,
-                       "date": (day or now.astimezone(IST).date()).isoformat()}
-            session.add(MarketSnapshotRecord(tenant_id=t["tenant_id"], kind="CUE", symbol="INDIA VIX", exchange="NSE", timeframe="day", source="upstox",
-                                             last_price=last, change_pct=payload["change_pct"], payload_json=json.dumps(payload), captured_at=now))
+            at = (VIX_NOW - timedelta(minutes=minutes_ago)).astimezone(UTC)
+            payload = {"last": last, "prev_close": prev_close, "change_pct": round((last / prev_close - 1) * 100, 2) if last and prev_close else None,
+                       "date": (day or VIX_NOW.date()).isoformat(), "error": error}
+            session.add(MarketSnapshotRecord(tenant_id=t["tenant_id"], kind=vix_gate.KIND, symbol="INDIA VIX", exchange="NSE", timeframe="live",
+                                             source="upstox", last_price=last, change_pct=payload["change_pct"], payload_json=json.dumps(payload),
+                                             captured_at=at))
             await session.commit()
     _run(go())
 
@@ -289,8 +298,10 @@ def test_ticket_places_one_paper_order_at_the_live_price_and_stores_the_plan(mon
     out = _place(t)
     assert out["status"] == "REFUSED" and any("update the plan" in r for r in out["reasons"])
     _price(monkeypatch, 100.2)
+    from app.paper import ticket as ticket_module
+    monkeypatch.setattr(ticket_module, "wall_clock", lambda: datetime(2026, 10, 9, 10, 0, tzinfo=IST))
     out = _place(t, time_stop="15:00")
-    assert out["status"] == "PLACED", out
+    assert out["status"] == "PLACED", out["reasons"]
     trade = _get(TradeRecord, out["trade_id"])
     # Re-priced at 100.2 (plus the paper fill's slippage): 2.2 per unit to the stop, so 4545 keeps the risk within 10,000.
     assert trade.mode == "PAPER" and trade.user_id == t["user_id"] and trade.quantity == 4545
@@ -388,6 +399,7 @@ def test_a_locked_users_stop_still_closes_the_position(monkeypatch):
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
     _flag(vix_gate.FLAG, t["tenant_id"])
+    _vix_clock(monkeypatch)
     _vix(t, 30.0, 20.0)                                           # a VIX spike too: still no exit is held
     _closed(t, -25_000.0)
     assert _preview(t)["can_place"] is False
@@ -473,10 +485,28 @@ def test_vix_spike_decision_parity_with_trade(current, prev, halted):
     assert vix_gate.spike_decision(current, prev, 5.0)[0] is halted
 
 
-def _evaluate(readings, symbol="NIFTY", direction="LONG", **kw):
-    params = {"spike_pct": 5.0, "high_level": 20.0, "size_cut_pct": 50.0, "max_age_minutes": 45, "underlyings": ("NIFTY", "BANKNIFTY", "SENSEX")}
+def _evaluate(readings, symbol="NIFTY", direction="LONG", now=None, **kw):
+    params = {"spike_pct": 5.0, "high_level": 20.0, "size_cut_pct": 50.0, "max_age_minutes": 45, "underlyings": ("NIFTY", "BANKNIFTY", "SENSEX"),
+              "grace_minutes": 10}
     params.update(kw)
-    return vix_gate.evaluate(readings, symbol=symbol, direction=direction, now=datetime(2026, 10, 9, 11, 0, tzinfo=UTC), **params)
+    return vix_gate.evaluate(readings, symbol=symbol, direction=direction, now=now or datetime(2026, 10, 9, 11, 0, tzinfo=UTC), **params)
+
+
+def test_vix_gate_timing_parity_with_trade():
+    """Trade: before the 09:20 check nothing is halted; a VIX that could not be read halts the day (fail-safe). ATP: open
+    until 09:20, open (waiting) for the grace period, then no valid reading pauses bullish index entries; never exits."""
+    friday = lambda hh, mm: datetime(2026, 10, 9, hh, mm, tzinfo=IST)   # noqa: E731
+    assert _evaluate([], now=friday(9, 19)).state == "before_check" and _evaluate([], now=friday(9, 19)).reasons == []
+    spike_early = [{"last": 30.0, "prev_close": 13.0, "captured_at": friday(9, 16)}]
+    assert _evaluate(spike_early, now=friday(9, 19)).reasons == []                    # the check has not run yet
+    assert _evaluate(spike_early, now=friday(9, 21)).reasons                          # from 09:20 it counts
+    waiting = _evaluate([], now=friday(9, 25))
+    assert waiting.state == "waiting" and waiting.reasons == []
+    failed = [{"last": None, "prev_close": 13.0, "error": "ConnectError: timeout", "captured_at": friday(9, 21)}]
+    late = _evaluate(failed, now=friday(9, 31))
+    assert late.state == "no_reading" and late.reasons and "ConnectError" in late.reasons[0]
+    assert _evaluate(failed, now=friday(9, 31), direction="SHORT").reasons == []      # bearish entries are not touched
+    assert _evaluate([], now=datetime(2026, 10, 10, 11, 0, tzinfo=IST)).reasons == []  # a Saturday: no session, no fail-safe
 
 
 def test_vix_gate_rules():
@@ -490,8 +520,8 @@ def test_vix_gate_rules():
     # A spike earlier in the day keeps the pause for the rest of it.
     later = spike + [{"last": 13.1, "prev_close": 13.0, "captured_at": now - timedelta(minutes=1)}]
     assert _evaluate(later).reasons
-    none = _evaluate([])
-    assert none.reasons == [] and none.state == "no_reading" and "open" in none.notes[0]
+    none = _evaluate([])                                                              # after 09:20 + grace, a weekday
+    assert none.reasons and none.state == "no_reading"
     high = _evaluate([{"last": 22.0, "prev_close": 21.5, "captured_at": now - timedelta(minutes=5)}], direction="SHORT")
     assert high.reasons == [] and high.size_multiplier == 0.5 and high.state == "high"
     stale = _evaluate([{"last": 22.0, "prev_close": 21.5, "captured_at": now - timedelta(minutes=90)}])
@@ -504,17 +534,18 @@ def test_vix_gate_in_the_ticket_and_pipeline_entries_only(monkeypatch):
     t = _tenant_t("vix")
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
-    _vix(t, 14.0, 13.0, day=date(2020, 1, 1))                     # yesterday's bar: says nothing about today
-    assert vix_gate.spike_decision(14.0, 13.0, 5.0)[0]
+    _vix_clock(monkeypatch)
+    _vix(t, 13.1, 13.0)
+    _vix(t, 14.0, 13.0, day=date(2020, 1, 1))                     # another day's reading: says nothing about today
     assert not any("India VIX" in r for r in _preview(t, symbol="NIFTY")["refusals"])          # flag off
     _flag(vix_gate.FLAG, t["tenant_id"])
-    assert not any("India VIX" in r for r in _preview(t, symbol="NIFTY")["refusals"])          # no reading of today
-    _vix(t, 14.0, 13.0)
+    assert not any("India VIX" in r for r in _preview(t, symbol="NIFTY")["refusals"])          # today's reading is calm
+    _vix(t, 14.0, 13.0, minutes_ago=2)
     assert any("India VIX gate" in r for r in _preview(t, symbol="NIFTY")["refusals"])
     assert _preview(t, symbol="NIFTY", direction="SHORT", stop_loss=102.0, target=96.0)["can_place"]
     assert _preview(t, symbol="RELIANCE")["can_place"]
     executed, reasons, _ = _enter(t["user_id"], symbol="NIFTY")
-    assert not executed and any("India VIX gate" in r for r in reasons)
+    assert not executed and any("India VIX gate" in r for r in reasons), reasons
     status = client.get("/api/paper/risk", headers=t["headers"]).json()["vix_gate"]
     assert status["enabled"] and status["bullish_paused"] and status["latest"]["last"] == 14.0
     # Exits are never gated.
@@ -524,8 +555,9 @@ def test_vix_gate_in_the_ticket_and_pipeline_entries_only(monkeypatch):
     assert client.post(f"/api/positions/{trade_id}/exit-now", headers=t["headers"]).status_code == 200
 
 
-def test_vix_high_level_cuts_the_size():
+def test_vix_high_level_cuts_the_size(monkeypatch):
     t = _tenant_t("vix-high")
+    _vix_clock(monkeypatch)
     _org(t)
     _flag(by_default.FLAG, t["tenant_id"])
     _flag(vix_gate.FLAG, t["tenant_id"])

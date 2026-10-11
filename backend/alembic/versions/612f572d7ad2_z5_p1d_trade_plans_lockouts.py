@@ -1,6 +1,6 @@
 """Z5 / P1-d: `trade_plans` (the plan behind each PAPER ticket, with its sizing, override and cost line), `risk_lockouts`
 (a user's daily loss lockout, kept for the rest of the IST day) and `paper_accounts.risk_settings_json` (the user's own
-risk-by-default settings; NULL = platform defaults). All personal (tenant + user) and cascade with them.
+risk-by-default settings; NULL = platform defaults) with `entries_day` / `entries_count` (the day's entry slots). All personal (tenant + user) and cascade with them.
 
 Revision ID: 612f572d7ad2
 Revises: a7d3e9f1c5b8
@@ -19,6 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column('paper_accounts', sa.Column('risk_settings_json', sa.Text(), nullable=True))
+    op.add_column('paper_accounts', sa.Column('entries_day', sa.Date(), nullable=True))
+    op.add_column('paper_accounts', sa.Column('entries_count', sa.Integer(), nullable=False, server_default='0'))
 
     op.create_table(
         'trade_plans',
@@ -76,4 +78,6 @@ def downgrade() -> None:
     op.drop_index('ix_trade_plans_user_created', table_name='trade_plans')
     op.drop_index('ix_trade_plans_tenant_id', table_name='trade_plans')
     op.drop_table('trade_plans')
+    op.drop_column('paper_accounts', 'entries_count')
+    op.drop_column('paper_accounts', 'entries_day')
     op.drop_column('paper_accounts', 'risk_settings_json')

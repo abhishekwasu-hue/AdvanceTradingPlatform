@@ -531,8 +531,8 @@ EXIT_NOW_MAX_MARK_AGE_MINUTES = _bounded_int("EXIT_NOW_MAX_MARK_AGE_MINUTES", 5,
 #   capital basis locks new PAPER entries for the rest of the IST day. Exits are never locked (ADR-0004).
 # - RISK_DEFAULT_MAX_TRADES_PER_DAY: new PAPER entries per IST day (0 = no limit).
 # - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this.
-# - TICKET_SLIPPAGE_PCT: the slippage estimate on the ticket's cost line, % of the price per side (the paper broker's own
-#   fill slippage); TICKET_BROKERAGE_PER_ORDER: the brokerage per executed order on the cost line.
+# - The cost line's brokerage per order and slippage estimate are the paper broker's own (`PaperBroker`), so the ticket
+#   shows what a PAPER fill is charged.
 RISK_DEFAULT_RISK_PER_TRADE_PCT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_PCT", 1.0, 0.05, 5.0)
 RISK_DEFAULT_RISK_PER_TRADE_AMOUNT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_AMOUNT", 0.0, 0.0, 10_000_000.0)
 RISK_OVERRIDE_MAX_MULTIPLE = _bounded_float("RISK_OVERRIDE_MAX_MULTIPLE", 2.0, 1.0, 5.0)
@@ -540,8 +540,6 @@ RISK_OVERRIDE_MIN_REASON_CHARS = _bounded_int("RISK_OVERRIDE_MIN_REASON_CHARS", 
 RISK_DEFAULT_DAILY_LOSS_PCT = _bounded_float("RISK_DEFAULT_DAILY_LOSS_PCT", 2.0, 0.1, 20.0)
 RISK_DEFAULT_MAX_TRADES_PER_DAY = _bounded_int("RISK_DEFAULT_MAX_TRADES_PER_DAY", 10, 0, 500)
 RISK_DEFAULT_MIN_RR = _bounded_float("RISK_DEFAULT_MIN_RR", 1.5, 0.0, 10.0)
-TICKET_SLIPPAGE_PCT = _bounded_float("TICKET_SLIPPAGE_PCT", 0.02, 0.0, 5.0)
-TICKET_BROKERAGE_PER_ORDER = _bounded_float("TICKET_BROKERAGE_PER_ORDER", 20.0, 0.0, 1000.0)
 
 # Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate (flag `vix_gate`,
 # off by default). It reads the organisation's India VIX readings of the day (market memory, captured through its own
@@ -554,4 +552,13 @@ VIX_GATE_SPIKE_PCT = _bounded_float("VIX_GATE_SPIKE_PCT", 5.0, 0.5, 100.0)
 VIX_GATE_HIGH_LEVEL = _bounded_float("VIX_GATE_HIGH_LEVEL", 20.0, 0.0, 200.0)
 VIX_GATE_SIZE_CUT_PCT = _bounded_float("VIX_GATE_SIZE_CUT_PCT", 50.0, 0.0, 100.0)
 VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 60)
+# VIX_GATE_CHECK_AT: the gate is open before this IST time (Trade's 09:20 check, five minutes after the open); readings
+# are captured from then on every VIX_GATE_CAPTURE_MINUTES while NSE is open. After VIX_GATE_GRACE_MINUTES more, on a
+# weekday, no valid reading today counts as a spike (Trade's fail-safe).
+VIX_GATE_CHECK_AT = os.environ.get("VIX_GATE_CHECK_AT", "09:20").strip() or "09:20"
+VIX_GATE_GRACE_MINUTES = _bounded_int("VIX_GATE_GRACE_MINUTES", 10, 0, 240)
+VIX_GATE_CAPTURE_MINUTES = _bounded_int("VIX_GATE_CAPTURE_MINUTES", 15, 1, 240)
+# A ticket's time stop must be later than the current IST time plus this many minutes (a time already past would close
+# the position at once).
+TICKET_TIME_STOP_MIN_LEAD_MINUTES = _bounded_int("TICKET_TIME_STOP_MIN_LEAD_MINUTES", 5, 0, 120)
 VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if s.strip())

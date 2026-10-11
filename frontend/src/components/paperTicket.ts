@@ -1,6 +1,6 @@
 // Z5 / P1-d: pure helpers for the plan-before-trade PAPER ticket. The server computes every number (size, risk, cap,
 // gauge fraction, costs, break-even); these only turn the form into a plan and the answer into rows, text and an arc.
-import type { PaperRiskStatus, TicketCostLine, TicketPlan, TicketSetup } from "../types";
+import type { PaperRiskStatus, TicketCostLine, TicketPlan, TicketSetup, TradePlanView } from "../types";
 
 export interface TicketForm {
   symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; entry: string; stop_loss: string; target: string;
@@ -72,4 +72,23 @@ export function lockoutLine(status: Pick<PaperRiskStatus, "lockout">): string | 
   if (!status.lockout) return null;
   const until = new Date(status.lockout.until).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   return `New PAPER entries locked until ${until} IST. Exits stay available.`;
+}
+
+/** What the ticket says after "Place": the server's status of the stored plan, in words. */
+export function placedMessage(plan: Pick<TradePlanView, "status" | "trade_id" | "filled" | "proposal" | "reasons">): string {
+  if (plan.status === "PLACED") {
+    return `Placed (PAPER): position #${plan.trade_id}${plan.filled ? `, ${plan.filled.quantity} at ${money(plan.filled.price)}` : ""}.`;
+  }
+  if (plan.status === "PROPOSED" && plan.proposal) {
+    return `Sent for approval: proposal #${plan.proposal.id}. Approve it to place the PAPER order at the live price.`;
+  }
+  return `Not placed: ${plan.reasons.join("; ") || plan.status}`;
+}
+
+/** "Takes effect on 13 Oct: daily loss 5%" for a loosening that waits for the next IST day, or null. */
+export function pendingLine(status: Pick<PaperRiskStatus, "pending" | "labels">): string | null {
+  if (!status.pending) return null;
+  const parts = Object.entries(status.pending.values).map(([k, v]) => `${status.labels[k as keyof typeof status.labels] ?? k} ${v}`);
+  const day = new Date(`${status.pending.from}T00:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+  return `Looser limits take effect on ${day} (not during the day they protect): ${parts.join(", ")}`;
 }

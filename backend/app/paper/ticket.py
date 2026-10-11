@@ -29,7 +29,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from sqlalchemy import select
@@ -45,7 +46,8 @@ from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
 from app.risk_engine import by_default
 
-PriceLookup = Callable[[str], Awaitable[float]]
+logger = logging.getLogger(__name__)
+PriceLookup = Callable[..., Awaitable[float]]
 
 SETUPS: Dict[str, str] = {
     "PULLBACK_AT_LEVEL": "Pullback at a level", "SR_FLIP": "Support/resistance flip", "BREAKOUT_RETEST": "Breakout retest",
@@ -57,7 +59,13 @@ CHECKLIST: Dict[str, str] = {
 }
 AUTO_CHECKS: Dict[str, str] = {"rr_ok": "Reward:risk at or above your minimum", "size_within_cap": "Size within your risk cap"}
 TIME_STOP = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+DERIVATIVE = re.compile(r"(\d(CE|PE)|FUT)$")          # an option or future trading symbol (NIFTY24OCT25000CE, ...FUT)
 SESSION_OPEN, SESSION_CLOSE = "09:15", "15:30"
+
+
+def wall_clock() -> datetime:
+    """The time a time stop is checked against (one place, so a test can hold it)."""
+    return datetime.now(timezone.utc)
 
 
 @dataclass
@@ -94,6 +102,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     from app.execution.signal_execution import entry_refusals
     from app.platform.controls import risk_ceilings
     from app.risk_engine.guardian import guard_entry
+    asked_at = now
     now = now or datetime.now(timezone.utc)
     symbol, direction = plan.symbol.strip().upper(), plan.direction.upper()
     errors: List[str] = []
@@ -106,15 +115,21 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     errors.extend(by_default.level_errors(direction, plan.entry, plan.stop_loss, plan.target))
     if plan.time_stop and (not TIME_STOP.match(plan.time_stop) or not SESSION_OPEN < plan.time_stop <= SESSION_CLOSE):
         errors.append(f"Time stop must be a time between {SESSION_OPEN} and {SESSION_CLOSE} IST (HH:MM)")
+    elif plan.time_stop:
+        earliest = (to_ist(asked_at or wall_clock()) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
+        if plan.time_stop <= earliest:
+            errors.append(f"Time stop {plan.time_stop} IST is already past (it must be after {earliest} IST): the position would close at once")
+    if get_contract_spec(symbol) is not None or DERIVATIVE.search(symbol):
+        errors.append("The PAPER ticket covers NSE/BSE cash underlyings in Phase 0 (no futures, options, commodities or crypto)")
 
     ceilings = await risk_ceilings(session)
-    settings, setting_notes = by_default.effective_settings(await by_default.user_settings(session, user), ceilings)
+    settings, setting_notes = by_default.effective_settings(await by_default.user_settings(session, user, now), ceilings)
     warnings.extend(setting_notes)
     basis = await by_default.capital_basis(session, user, now)
     cap_info = by_default.risk_cap(basis, settings)
     cfg = await _org_config(session, user.tenant_id)
     org_cap = round(cfg.capital * cfg.risk_per_trade_pct / 100.0, 2)
-    guard = await guard_entry(session, user.tenant_id, mode=by_default.MODE, underlying=symbol, cfg=cfg, now=now, direction=direction)
+    guard = await guard_entry(session, user.tenant_id, mode=by_default.MODE, underlying=symbol, cfg=cfg, now=asked_at, direction=direction)
     refusals.extend(guard.reasons)
     warnings.extend(guard.notes)
     multiplier = max(0.0, float(guard.size_multiplier))
@@ -125,8 +140,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     override_base = min(user_cap * app_config.RISK_OVERRIDE_MAX_MULTIPLE, org_cap)
     override_cap = round(override_base * multiplier, 2)
 
-    spec = get_contract_spec(symbol)
-    lot = float(spec.lot_size) if spec is not None else float(cfg.lot_size or 1)
+    lot = float(cfg.lot_size or 1)            # cash underlyings only (checked above): the organisation's unit
     suggested = by_default.size(plan.entry, plan.stop_loss, cap, lot)
     quantity = float(plan.quantity) if plan.quantity is not None else float(suggested["quantity"])
     per_unit = abs(float(plan.entry) - float(plan.stop_loss))
@@ -156,7 +170,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
             else:
                 warnings.append(f"Override: {quantity:g} risks {risk_amount:,.2f}, above your cap {cap:,.2f}. It is logged and counted")
     refusals.extend(await entry_refusals(session, await session.get(Tenant, user.tenant_id), user.tenant_id, by_default.MODE,
-                                         f"plan_{plan.setup.lower()}", user=user))
+                                         f"plan_{plan.setup.lower()}", user=user, reserve=False))
 
     ticks = {key: bool(plan.checklist.get(key)) for key in CHECKLIST}
     auto = {"rr_ok": rr_ok, "size_within_cap": within and quantity > 0}
@@ -207,8 +221,9 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
     Returns the stored plan: PLACED (order and position), PROPOSED (the proposal) or REFUSED (the reasons)."""
     from app.execution.signal_execution import execute_signal_for_user
     from app.trading.exit_rules import ExitRules
+    asked_at = now
     now = now or datetime.now(timezone.utc)
-    view = await assess(session, user, plan, now)
+    view = await assess(session, user, plan, asked_at)
     row = _plan_row(user, plan, view)
     session.add(row)
     await session.flush()
@@ -249,29 +264,58 @@ async def place(session: AsyncSession, user: User, plan: Plan, *, price_lookup: 
         await write_audit_log(session, user.tenant_id, user.id, "risk_cap_override",
                               f"plan #{row.id} {view['symbol']} qty {s['quantity']:g} risks {s['risk_amount']:,.2f} > cap {s['cap']:,.2f}: {row.override_reason}"[:500])
     await session.commit()
-    if await approval.required(session, user.tenant_id):
-        try:
-            action = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=signal.strategy_id, source="ticket",
-                                                  idempotency_key=f"ticket:{row.id}", exit_rules=exit_rules, user_id=user.id, now=now,
-                                                  ticket={"plan_id": row.id, "max_quantity": s["quantity"], "risk_cap_amount": cap_amount})
-        except approval.EntriesPaused as exc:
-            action, row.reasons_json = None, json.dumps([str(exc)])
-        row = await session.get(TradePlanRecord, row.id) or row
-        row.proposal_id = action.id if action is not None else None
-        row.status = "PROPOSED" if action is not None else "REFUSED"
-        if action is not None:
-            row.reasons_json = json.dumps([f"Approval-only mode: entry proposal #{action.id} raised - approve it to place the PAPER order"])
+    plan_id = row.id
+    try:
+        if await approval.required(session, user.tenant_id):
+            problems: List[str] = []
+            try:
+                action = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=signal.strategy_id, source="ticket",
+                                                      idempotency_key=f"ticket:{plan_id}", exit_rules=exit_rules, user_id=user.id, now=now,
+                                                      ticket={"plan_id": plan_id, "max_quantity": s["quantity"], "risk_cap_amount": cap_amount})
+            except approval.EntriesPaused as exc:
+                action, problems = None, [str(exc)]
+            if action is None and not problems:
+                problems = ["This plan was already proposed - nothing new was raised"]
+            row = await session.get(TradePlanRecord, plan_id) or row
+            row.proposal_id = action.id if action is not None else None
+            row.status = "PROPOSED" if action is not None else "REFUSED"
+            row.reasons_json = json.dumps([f"Sent for approval: proposal #{action.id} - Approve places the PAPER order"] if action is not None else problems)
+            await session.commit()
+            return await plan_view(session, row)
+        result, order = await execute_signal_for_user(
+            session, user, mode=by_default.MODE, strategy_id=signal.strategy_id, signal=signal, idempotency_key=f"ticket:{plan_id}",
+            exit_rules=exit_rules, holding="INTRADAY", max_quantity=s["quantity"], risk_cap_amount=cap_amount)
+        row = await session.get(TradePlanRecord, plan_id) or row
+        row.order_id, row.trade_id = order.id, order.trade_id
+        row.status = "PLACED" if result.executed else "REFUSED"
+        row.reasons_json = json.dumps(list(result.reasons) or ([] if result.executed else [f"Order {order.status}"]))
         await session.commit()
-        return await plan_view(session, row)
-    result, order = await execute_signal_for_user(
-        session, user, mode=by_default.MODE, strategy_id=signal.strategy_id, signal=signal, idempotency_key=f"ticket:{row.id}",
-        exit_rules=exit_rules, holding="INTRADAY", max_quantity=s["quantity"], risk_cap_amount=cap_amount)
-    row = await session.get(TradePlanRecord, row.id) or row
-    row.order_id, row.trade_id = order.id, order.trade_id
-    row.status = "PLACED" if result.executed else "REFUSED"
-    row.reasons_json = json.dumps(list(result.reasons))
-    await session.commit()
+    except Exception as exc:  # noqa: BLE001 - the plan never stays PENDING without a reason
+        logger.exception("PAPER ticket plan %s failed", plan_id)
+        await session.rollback()
+        row = await session.get(TradePlanRecord, plan_id) or row
+        row.status, row.reasons_json = "FAILED", json.dumps([f"Not placed: {type(exc).__name__}: {exc}"[:300]])
+        await session.commit()
     return await plan_view(session, row)
+
+
+async def settle_from_proposal(session: AsyncSession, tenant_id: int, plan_id: int, values: Dict[str, Any], order: Any) -> None:
+    """The ticket's plan after its proposal was executed (Z3-a): PLACED with the order and position, or FAILED with
+    why. Called by `approval.execute_entry`; never raises (the approval's own outcome is already recorded)."""
+    try:
+        row = await session.get(TradePlanRecord, plan_id)
+        if row is None or row.tenant_id != tenant_id:
+            return
+        if values.get("status") == "EXECUTED":
+            row.status, row.trade_id = "PLACED", values.get("trade_id")
+            row.order_id = getattr(order, "id", None)
+            row.reasons_json = json.dumps([str(values.get("result") or "Placed after approval")])
+        else:
+            row.status, row.reasons_json = "FAILED", json.dumps([str(values.get("result") or "The approved proposal failed")])
+        await session.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("Settling plan %s from its proposal failed", plan_id)
+        await session.rollback()
 
 
 async def plan_view(session: AsyncSession, row: TradePlanRecord) -> Dict[str, Any]:
@@ -315,9 +359,14 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
     against the daily limit, the lockout (why and until when), entries today, overrides, and the India VIX gate."""
     from app.platform.controls import risk_ceilings
     from app.risk_engine import vix_gate
+    asked_at = now
     now = now or datetime.now(timezone.utc)
     ceilings = await risk_ceilings(session)
-    stored = await by_default.user_settings(session, user)
+    stored = await by_default.user_settings(session, user, now)
+    account_row = await by_default._account(session, user)
+    pending = by_default.pending_of(account_row.risk_settings_json if account_row is not None else None)
+    if pending is not None and str(pending["from"]) <= to_ist(now).date().isoformat():
+        pending = None
     settings, notes = by_default.effective_settings(stored, ceilings)
     basis = await by_default.capital_basis(session, user, now)
     act = await by_default.day_activity(session, user, now)
@@ -325,7 +374,7 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
     locked = await by_default.lockout(session, user, now)
     await session.commit()
     return {
-        "mode": by_default.MODE, "settings": stored.as_dict(), "effective": settings.as_dict(), "notes": notes,
+        "mode": by_default.MODE, "settings": stored.as_dict(), "effective": settings.as_dict(), "notes": notes, "pending": pending,
         "defaults": by_default.RiskSettings.defaults().as_dict(), "bounds": {k: list(v) for k, v in by_default.BOUNDS.items()},
         "labels": by_default.LABELS, "ceilings": {"risk_per_trade_pct": ceilings.get("risk_per_trade_pct"), "daily_loss_pct": ceilings.get("max_daily_loss_pct")},
         "capital_basis": basis, "risk_cap": by_default.risk_cap(basis, settings),
@@ -334,24 +383,26 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
                   "entries": act["entries_today"], "max_entries": settings.max_trades_per_day},
         "lockout": locked, "overrides": await by_default.override_counts(session, user, now),
         "override_max_multiple": app_config.RISK_OVERRIDE_MAX_MULTIPLE, "override_min_reason_chars": app_config.RISK_OVERRIDE_MIN_REASON_CHARS,
-        "vix_gate": await vix_gate.status(session, user.tenant_id, now),
+        "vix_gate": await vix_gate.status(session, user.tenant_id, asked_at),
         "setups": SETUPS, "checklist": CHECKLIST, "exits": "Exits are never locked: stops, targets, time stops and Exit now always work.",
         "as_of": now.isoformat(),
     }
 
 
-async def save_settings(session: AsyncSession, user: User, values: Dict[str, Any]) -> by_default.RiskSettings:
+async def save_settings(session: AsyncSession, user: User, values: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Saves the user's own settings: a tightening applies at once, a loosening from the next IST day (so a limit
+    cannot be widened in the middle of the day it protects). Returns what was applied and what waits."""
     from app.paper.service import get_account
     from app.platform.controls import risk_ceilings
+    now = now or datetime.now(timezone.utc)
     errors = by_default.validate_settings(values, await risk_ceilings(session))
     if errors:
         raise ValueError("; ".join(errors))
     account = await get_account(session, user)
-    current = by_default.RiskSettings.from_json(account.risk_settings_json).as_dict()
-    old = dict(current)
-    current.update({k: (int(v) if k == "max_trades_per_day" else float(v)) for k, v in values.items()})
-    account.risk_settings_json = json.dumps(current, sort_keys=True)
-    changed = ", ".join(f"{k} {old[k]:g} -> {current[k]:g}" for k in values if old.get(k) != current[k]) or "no change"
-    await write_audit_log(session, user.tenant_id, user.id, "paper_risk_settings_set", changed[:500])
+    text, applied, deferred, start = by_default.plan_change(account.risk_settings_json, values, to_ist(now).date())
+    account.risk_settings_json = text
+    detail = (", ".join(f"{k} -> {v:g} now" for k, v in applied.items()) + ("; " if applied and deferred else "")
+              + ", ".join(f"{k} -> {v:g} from {start}" for k, v in deferred.items())) or "no change"
+    await write_audit_log(session, user.tenant_id, user.id, "paper_risk_settings_set", detail[:500])
     await session.commit()
-    return by_default.RiskSettings.from_json(account.risk_settings_json)
+    return {"applied": applied, "deferred": deferred, "from": start if deferred else None}

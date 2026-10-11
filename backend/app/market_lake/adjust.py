@@ -7,6 +7,9 @@ or after the ex-date are untouched, and so is the stored data - adjustment is a 
 - Only actions known at `as_of` apply (B1), so a backtest replayed before an announcement sees unadjusted history.
 - Derivatives are never adjusted (the exchange re-strikes contracts itself): `kind` other than equity -> unadjusted.
 - Dividends are not adjusted unless LAKE_ADJUST_DIVIDENDS is on (price minus amount ratio before the ex-date).
+- HB1: rights issues (action RIGHTS: `ratio_new` new shares for every `ratio_old` held at issue price `amount`) are
+  adjusted by the theoretical ex-rights factor (ratio_old * P + ratio_new * amount) / ((ratio_old + ratio_new) * P), P the
+  last close before the ex-date; prices only, and no adjustment when the issue price is not below P.
 """
 from dataclasses import replace
 from datetime import date, datetime, timezone
@@ -59,10 +62,25 @@ def dividend_factors(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActio
     return out
 
 
+def rights_factors(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActionRecord]) -> List[tuple]:
+    """(ex_date, factor) per rights issue with a known ratio and issue price, from the last close before the ex-date."""
+    out = []
+    for a in actions:
+        if a.action != "RIGHTS" or not a.ratio_new or not a.ratio_old or a.amount is None:
+            continue
+        before = [b for b in bars if trade_date(b.ts) < a.ex_date]
+        if not before or before[-1].close <= 0:
+            continue
+        cum, new, old, price = before[-1].close, float(a.ratio_new), float(a.ratio_old), float(a.amount)
+        if price < cum:
+            out.append((a.ex_date, (old * cum + new * price) / ((old + new) * cum)))
+    return out
+
+
 def adjust(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActionRecord], *, dividends: Optional[bool] = None) -> List[LakeBar]:
     use_div = config.LAKE_ADJUST_DIVIDENDS if dividends is None else dividends
     bars = sorted(bars, key=lambda b: b.ts)
-    divs = dividend_factors(bars, actions) if use_div else []
+    divs = (dividend_factors(bars, actions) if use_div else []) + rights_factors(bars, actions)
     out: List[LakeBar] = []
     for bar in bars:
         day = trade_date(bar.ts)
@@ -75,7 +93,7 @@ def adjust(bars: Sequence[LakeBar], actions: Sequence[MdCorporateActionRecord], 
             out.append(bar)
             continue
         out.append(replace(bar, open=bar.open * f, high=bar.high * f, low=bar.low * f, close=bar.close * f,
-                           volume=int(round(bar.volume / shares)) if shares else bar.volume))   # dividends leave volume alone
+                           volume=int(round(bar.volume / shares)) if shares else bar.volume))   # dividends / rights leave volume alone
     return out
 
 

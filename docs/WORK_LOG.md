@@ -1562,6 +1562,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   stream), PW2 (mobile layout, on its branch), BYOK-V1 #160 (flag vision_byok off), PW6 in progress. All draft, all
   flags off, nothing deployed.
 
+### 2026-10-11 13:20 IST - Z5 part 1 (P1-c): Options Strategy Builder page completed to spec §3.3
+- Existed (P1-c1 #151, P1-c2 #152): builder API (catalog, template, evaluate, suggest) and the page (canvas with cone and
+  draggable strikes, gallery, leg table, metrics).
+- Added: T+0 curve beside the dated one, hatched loss area and a max-loss line, shape-coded buy / sell handles with
+  44 px hit areas and a phone-sized viewBox, gamma / vega per leg and leg cards on phones, payoff-first phone layout;
+  metrics from the engine (net premium, R:R, labelled margin estimate, cost to open from the India cost table, gauge);
+  "Place as basket" (hedge-first basket from a new review-only route; PAPER placing waits for P1-d, button disabled
+  with a note); "Save strategy" (tenant-scoped, flag `options_builder_saved` off, migration `option_strategies`);
+  adjustments / compare drawer placeholder.
+- Tests: backend new 9 (+1 guard), full suite 4652 passed; vitest 233; Playwright builder spec 12 (desktop + mobile).
+- Open: OB-8 (margin), OB-9 (saving flag), OB-10 (PAPER basket). Nothing deployed, no flag turned on, no LIVE path.
 ### 2026-10-11 18:15 IST - Trade port map (docs only)
 - `docs/TRADE_PORT_MAP.md`: every Trade module and folder (Trade@eafc872, read-only) with its purpose, ATP equivalent,
   status and parity test, grouped as Phase 0 / N-list / G / already ported / unscheduled / not needed. 191 rows:

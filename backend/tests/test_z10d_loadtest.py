@@ -90,3 +90,45 @@ def test_the_event_loop_keeps_serving_while_a_password_is_checked():
         return ticks, check.result()
     ticks, ok = asyncio.run(go())
     assert ok and ticks > 5                                          # inline, the loop would not have ticked at all
+
+
+def test_the_paper_account_proposal_counts_in_one_query_match_the_four_counts():
+    """Z10-d: `/api/paper/account` counts the user's entry proposals in one query; same numbers as one count per bucket."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func, select
+
+    from app.db.models import AiActionRecord, User
+    from app.paper import service
+    from tests.test_auth_api import _session_factory
+    from tests.test_phase_l_ai import _owner
+
+    _, me = _owner("z10d-counts@example.com")
+    _, other = _owner("z10d-counts-other@example.com")
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, me["id"])
+            rows = [("PROPOSED", None, "ENTRY", user.id), ("PROPOSED", None, "ENTRY", user.id), ("REJECTED", user.id, "ENTRY", user.id),
+                    ("EXPIRED", None, "ENTRY", user.id), ("EXPIRED", user.id, "ENTRY", user.id), ("APPROVED", user.id, "ENTRY", user.id),
+                    ("EXECUTED", user.id, "ENTRY", user.id), ("FAILED", None, "ENTRY", user.id), ("PROPOSED", None, "EXIT_POSITION", user.id),
+                    ("REJECTED", user.id, "ENTRY", None)]
+            for status, decided, action, owner in rows:
+                session.add(AiActionRecord(tenant_id=user.tenant_id, action=action, rule="t", reason="t", status=status, decided_by=decided,
+                                           owner_user_id=owner, expires_at=later))
+            session.add(AiActionRecord(tenant_id=other["tenant_id"], action="ENTRY", rule="t", reason="t", status="PROPOSED", owner_user_id=other["id"],
+                                       expires_at=later))
+            await session.commit()
+
+            async def count(*conditions):
+                return int(await session.scalar(select(func.count()).select_from(AiActionRecord).where(
+                    AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", AiActionRecord.owner_user_id == user.id, *conditions)) or 0)
+            want = {"approved_by_you": await count(AiActionRecord.decided_by.is_not(None),
+                                                   AiActionRecord.status.in_(("APPROVED", "EXECUTED", "FAILED", "EXPIRED"))),
+                    "rejected_by_you": await count(AiActionRecord.status == "REJECTED"),
+                    "pending": await count(AiActionRecord.status == "PROPOSED"),
+                    "expired_unanswered": await count(AiActionRecord.status == "EXPIRED", AiActionRecord.decided_by.is_(None))}
+            return want, await service._proposal_counts(session, user)
+    want, got = asyncio.run(go())
+    assert got == want == {"approved_by_you": 3, "rejected_by_you": 1, "pending": 2, "expired_unanswered": 1}

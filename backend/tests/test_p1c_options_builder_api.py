@@ -147,11 +147,16 @@ def test_suggest_runs_a_ported_rule_on_a_chain_and_says_how_pop_was_made():
 # such as app.risk_engine or app.public_api). Anything else under app is refused.
 ALLOWED_APP_IMPORTS = ("app.options_builder", "app.option_chain", "app.brokers.models", "app.core.config", "app.core.rate_limit",
                        "app.auth.dependencies", "app.db.models", "app.db.session", "app.platform.controls")
+# Z5: the cost line reads the platform's one table of Indian charges. It is a pure module of rates (its only imports are
+# the standard library and pandas - checked below), so it is allowed by its exact name; the rest of app.execution is not.
+EXACT_APP_IMPORTS = ("app.execution.india_costs",)
 ORDER_LAYERS = ("app.execution", "app.trading", "app.risk_engine", "app.deployments", "app.kill_switch", "app.public_api", "app.workers")
+PURE_ORDER_LAYER_MODULES = ("app.execution", "app.execution.india_costs")          # the empty package and the rates table
 
 
 def _allowed(mod: str) -> bool:
-    return not mod.startswith("app.") or any(mod == ok or mod.startswith(ok + ".") for ok in ALLOWED_APP_IMPORTS)
+    return (not mod.startswith("app.") or mod in EXACT_APP_IMPORTS
+            or any(mod == ok or mod.startswith(ok + ".") for ok in ALLOWED_APP_IMPORTS))
 
 
 def test_the_builder_package_cannot_place_an_order():
@@ -186,12 +191,12 @@ def test_the_builder_package_cannot_place_an_order():
 def test_importing_the_builder_loads_no_order_layer():
     """The same rule at runtime, transitively: a fresh interpreter imports the builder's routes, and nothing from the
     execution, trading, risk, deployment or kill-switch layers (nor a broker adapter) ends up loaded."""
-    code = ("import sys, json; import app.options_builder.routes; "
+    code = ("import sys, json; import app.options_builder.routes, app.options_builder.saved; "
             "print(json.dumps(sorted(m for m in sys.modules if m.startswith('app.'))))")
     out = subprocess.run([sys.executable, "-c", code], cwd=pathlib.Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True)
     loaded = json.loads(out.stdout.strip().splitlines()[-1])
-    assert "app.options_builder.routes" in loaded
-    assert not [m for m in loaded if m.startswith(ORDER_LAYERS)], loaded
+    assert "app.options_builder.routes" in loaded and "app.options_builder.saved" in loaded
+    assert not [m for m in loaded if m.startswith(ORDER_LAYERS) and m not in PURE_ORDER_LAYER_MODULES], loaded
     assert not [m for m in loaded if m.startswith("app.brokers.") and m != "app.brokers.models" and not m.startswith("app.brokers.models.")], loaded
 
 
@@ -247,3 +252,18 @@ def test_a_template_can_be_priced_by_the_model_as_a_labelled_starting_point():
     assert _template(h, "Covered Call", spot=SPOT).status_code == 422                                 # spot without iv
     plain = _template(h, "Iron Condor").json()
     assert plain["priced_by_model"] is False and "premium" not in plain["legs"][0]
+
+
+def test_the_cost_table_the_builder_reads_is_pure():
+    """Z5: `app.execution.india_costs` is allowed by name because it is only rates; it must stay that way (no app import,
+    no I/O module), and the execution package it lives in must stay empty."""
+    root = pathlib.Path(__file__).resolve().parents[1] / "app" / "execution"
+    assert (root / "__init__.py").read_text().strip() == ""
+    imported = set()
+    for node in ast.walk(ast.parse((root / "india_costs.py").read_text())):
+        if isinstance(node, ast.Import):
+            imported |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0
+            imported.add((node.module or "").split(".")[0])
+    assert imported <= {"datetime", "typing", "pandas"}, imported

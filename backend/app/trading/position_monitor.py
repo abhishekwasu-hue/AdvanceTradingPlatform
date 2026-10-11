@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Awaitable, Callable, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.execution import approval as approval_policy
@@ -328,6 +328,24 @@ async def close_position(
         realised_price = realised
         reason = outcome.exit_reason or reason
 
+    # Z3 (review M3): claim the close atomically - "Exit now" (web / Telegram), an approved exit and the worker's own sweep
+    # can reach the same open position at the same moment; only the one whose conditional UPDATE lands books it (one
+    # P&L, one EXIT notification). On Postgres the UPDATE row-locks until commit, so a concurrent claim re-checks and finds
+    # the position closed. The loser books nothing (a LIVE loser had already sent an exit: the books are flagged).
+    exit_time = now or datetime.now(timezone.utc)
+    claimed = await session.execute(update(TradeRecord).where(TradeRecord.id == trade.id, TradeRecord.exit_time.is_(None))
+                                    .values(exit_time=exit_time).execution_options(synchronize_session=False))
+    if claimed.rowcount != 1:
+        await session.refresh(trade)
+        outcome.warnings.append("Position was closed at the same moment by another exit - this close was not booked")
+        if trade.mode == ExecutionMode.LIVE.value and outcome.broker_exit_order_id:
+            from app.reconciliation.service import mark_broker_uncertain
+            tenant = await session.get(Tenant, trade.tenant_id)
+            if tenant is not None:
+                await mark_broker_uncertain(session, tenant, f"exit order {outcome.broker_exit_order_id} for trade {trade.id} went out after another close")
+                await session.commit()
+        return outcome
+
     direction_sign = 1 if trade.direction == "LONG" else -1
     gross_pnl = direction_sign * (realised_price - trade.entry_price) * trade.quantity
     charges = PaperBroker().estimate_round_trip_costs(trade.entry_price, realised_price, trade.quantity, trade.instrument_kind or "UNDERLYING",
@@ -335,7 +353,7 @@ async def close_position(
                                                       exit_date=now or datetime.now(timezone.utc),
                                                       delivery=(getattr(trade, "holding", None) or "") == "SWING")
     trade.exit_price = round(realised_price, 2)
-    trade.exit_time = now or datetime.now(timezone.utc)
+    trade.exit_time = exit_time
     trade.exit_reason = reason
     trade.charges = charges
     trade.charges_source = "ESTIMATED"

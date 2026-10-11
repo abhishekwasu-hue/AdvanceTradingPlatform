@@ -12,7 +12,7 @@ default**. With the flag off, nothing changes.
 | Trading worker, deployment signal | Raises one ENTRY proposal per signal bar (`ai_actions`, action ENTRY, rule ENTRY_SIGNAL, idempotency key `deployment:<id>:<bar>`). The deployment shows "Waiting for approval: entry proposal #N". |
 | TradingView webhook | Raises an ENTRY proposal (key `tv:<alert id>`). A redelivered alert is answered "already proposed". |
 | Public API `POST /signals` | Raises an ENTRY proposal (key `api:<key id>:<idempotency key>`), answers `status: PROPOSED` and `proposal_id`. |
-| Console Paper-execute | Unchanged. A person pressing the button is their own approval (`origin="manual"`). |
+| Console Paper-execute | Raises an ENTRY proposal (source `console`): the console's price comes from candles the browser sent, so it is re-quoted at the live price on Approve like any other. A trader role is needed (a VIEWER gets 403, flag on or off). With the flag off the fill is unchanged but marked `trades.price_source = "client"` (left out of the PAPER account and ladder). |
 | Multi-leg structures | Refused (not proposed in Phase 0). |
 | LIVE / option / future deployments | Not proposed in Phase 0. The deployment says why. |
 
@@ -20,12 +20,23 @@ default**. With the flag off, nothing changes.
 `app/execution/approval.py::gate_refusal` on every entry. Under approval-only mode an entry is refused, as a REJECTED
 order with the reason on the order trail, unless one of these holds:
 
-- it is a manual console entry; or
 - it carries the id of an **APPROVED ENTRY proposal of the same organisation and deployment**.
+
+There is no other way through: no `origin` value bypasses the gate (review M1).
+
+**Who decides (review L8).** A proposal has an owner (`ai_actions.owner_user_id`): the deployment's creator, the
+alert's or API key's owner, the console user, the holder of the position for an "Exit now?". Only the owner or the
+organisation OWNER approves, rejects or snoozes it (web 403; Telegram says so). An approved entry is placed for the
+owner, into their PAPER account. The monitoring agent's own proposals (no owner) are decided as before.
 
 The pipeline's default `origin` is "automatic". A new caller that does not say what it is gets refused, not let
 through. `tests/test_z3_approval_entries.py::test_every_order_entry_point_is_reviewed_for_approval` lists every caller
 of the two pipelines (by AST), and a new caller fails the test until someone reviews it.
+
+**Live price (review M5).** The re-quote, "Exit now" and Telegram `/paper` read the price through the deciding user:
+with `byob_data_tier` on, only their own Tier A entitlement (`entitlement.resolve`) - never a teammate's credential or
+a broker with pending terms; anything below Tier A is "no live price". With that flag off, the organisation's first
+usable session, as before. The proposal's exchange is used (review L3).
 
 **Approve → re-quote → PAPER order.** On Approve, `execute_entry` prices the entry again at the live LTP (the
 organisation's broker session, as for exits):
@@ -55,12 +66,24 @@ proposal is refused with 409. Snooze never extends the expiry (PW5).
   EXIT_POSITION proposal with rule `TARGET_1_REACHED` / `TARGET_2_REACHED`, asked once per level per position, and it
   expires after `APPROVAL_EXIT_TTL_MINUTES` (default 30). Approve exits at the price at that moment. If the position
   closes another way (stop, time, Exit now), the open question becomes EXPIRED ("Position closed: …").
-- **"Exit now" is always available**, with no flag:
-  - `POST /api/positions/{id}/exit-now`. It uses the live price; for PAPER without a quote, the price given; else the
-    last price seen. A leg closes its whole structure.
-  - The **Exit now** button on the Positions page.
-  - Telegram `/exit <trade id>` (PAPER positions only; LIVE positions are closed on the web).
-  - The Approve button on an "Exit now?" proposal (on Telegram too, for PAPER, with the flag on).
+- **Which positions ask (review L2)**: only open PAPER positions entered by an approved entry proposal. Every other
+  position keeps its automatic target exit.
+- **"Exit now"** exists with the flag on (review M4; with it off, exits run automatically and there is no new route):
+  - `POST /api/positions/{id}/exit-now`, the **Exit now** button on Positions (PAPER rows), Telegram `/exit <trade id>`
+    then `/exit <trade id> confirm` (review L4), and the Approve button on an "Exit now?" proposal.
+  - **PAPER only.** LIVE is refused: "LIVE positions are closed in the broker app" - Phase 0 has no broker order path.
+  - **Price (review M2):** the live price of the person's own entitlement, else the last price the monitor saw for the
+    position. A typed price is never used; with neither, it is refused with the reason (the stop and time exits keep
+    running). The reason says which: "Exit now (web, live price)" / "(web, last seen price)".
+  - The position's holder or the organisation OWNER only (review L8); a trader role.
+- **One close per position (review M3)**: `close_position` claims the close with a conditional UPDATE (`exit_time IS
+  NULL`) before booking; a concurrent second close (worker sweep, "Exit now", an approved exit) books nothing and sends
+  no second notification. Covered in-memory and, with `ATP_PG_RACE_URL` set, on a real Postgres with two parallel
+  connections (`tests/test_z3_pg_close_race.py`).
+- **Expiry (review M6)**: the worker's housekeeping expires proposals of every organisation every cycle (market open or
+  not, with or without deployments). An APPROVED row not carried out within `ORPHAN_MINUTES` (10) was interrupted: an
+  entry whose order went through is recorded EXECUTED, anything else FAILED. A new entry proposal first settles its
+  deployment's overdue rows, so a stale row never swallows a signal.
 
 ## Settings
 

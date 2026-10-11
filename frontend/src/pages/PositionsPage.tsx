@@ -19,6 +19,8 @@ export default function PositionsPage() {
   const [greeks, setGreeks] = useState<PositionGreeks | null>(null);
   const [greeksError, setGreeksError] = useState<string | null>(null);
   const [greeksBusy, setGreeksBusy] = useState(false);
+  // Z3: "Exit now" exists only with approval-only entries on (otherwise exits run automatically).
+  const [exitNowOn, setExitNowOn] = useState(false);
 
   async function loadGreeks() {
     setGreeksBusy(true); setGreeksError(null);
@@ -45,6 +47,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
+    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries))).catch(() => setExitNowOn(false));
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -65,13 +68,13 @@ export default function PositionsPage() {
     }
   }
 
-  // Z3 "Exit now": always available - closes at the live price (PAPER without a quote: the price typed above).
-  async function handleExitNow(tradeId: number) {
-    const raw = priceInputs[tradeId];
-    const price = raw ? Number(raw) : undefined;
-    if (!window.confirm("Exit this position now?")) return;
+  // Z3 "Exit now" (approval-only on): closes a PAPER position at once, at the live price or the last price seen - never
+  // a typed price. LIVE positions are closed in the broker app.
+  async function handleExitNow(p: TradeRecord) {
+    const tradeId = p.id;
+    if (!window.confirm(`Exit ${p.direction} ${p.symbol} x${p.quantity} (PAPER) now, at the current price?`)) return;
     try {
-      const result = await api.exitNow(tradeId, price && !Number.isNaN(price) ? price : undefined);
+      const result = await api.exitNow(tradeId);
       const first = result.closed[0];
       setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${first?.pnl?.toFixed(2)})` }));
       refresh();
@@ -200,9 +203,9 @@ export default function PositionsPage() {
                   >
                     Check price
                   </button>
-                  {user.role !== "VIEWER" && (
+                  {exitNowOn && user.role !== "VIEWER" && p.mode === "PAPER" && (
                     <button
-                      onClick={() => handleExitNow(p.id)}
+                      onClick={() => handleExitNow(p)}
                       className="rounded border border-down/60 px-2 py-1 text-xs text-down hover:bg-down/10"
                       data-testid="exit-now"
                     >

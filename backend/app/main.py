@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
@@ -49,6 +50,7 @@ from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
 from app.options_builder.routes import router as options_builder_router
+from app.options_builder.saved import router as options_builder_saved_router
 from app.news_feed.routes import router as news_feed_router
 from app.telegram_inbound.routes import router as telegram_inbound_router
 from app.option_chain.analysis import analyze_option_chain
@@ -91,6 +93,8 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
+from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
 from app.platform.readiness_routes import router as readiness_router
@@ -168,6 +172,7 @@ app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the c
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
+app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
 app.include_router(risk_guardian_router)
@@ -204,6 +209,8 @@ app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
+app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
+app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
@@ -405,11 +412,32 @@ async def paper_execute(
             return PaperExecuteResponse(signal=signal, executed=False, reasons=reasons)
 
     if user is not None:
-        # Z3 / BT2: a person pressing Paper-execute in the console is their own approval (origin "manual").
+        from app.execution import approval
+        # Z3 (review M1): a persisted entry needs a trading role and the trading:write scope, like every other order route.
+        if not approval.can_trade(user):
+            raise HTTPException(status_code=403, detail="Insufficient role for this action")
+        if await approval.required(session, user.tenant_id):
+            # Z3 / BT2: approval-only - the console's signal (priced from the candles this request sent) becomes an ENTRY
+            # proposal like any other; Approve re-quotes it at the live price, so a client-sent price never fills.
+            if not signal.is_tradeable or signal.entry is None:
+                return PaperExecuteResponse(signal=signal, executed=False, reasons=list(signal.reasons) or ["No trade signal"])
+            key = f"console:{user.id}:{request.idempotency_key}" if request.idempotency_key else f"console:{user.id}:{uuid.uuid4().hex}"
+            row = await approval.propose_entry(session, user.tenant_id, signal=signal, strategy_id=strategy_id, source="console",
+                                               idempotency_key=key, user_id=user.id)
+            return PaperExecuteResponse(signal=signal, executed=False, reasons=[
+                f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order at the live price"
+                if row is not None else "Approval-only mode: this signal was already proposed"])
         result, order = await execute_signal_for_user(
             session, user, mode="PAPER", strategy_id=strategy_id, signal=signal,
-            idempotency_key=request.idempotency_key, risk_config=request.risk_config, origin="manual",
+            idempotency_key=request.idempotency_key, risk_config=request.risk_config,
         )
+        if order.trade_id is not None:
+            # Z3 (review M1/H2): priced from candles the browser sent - kept out of the PAPER account and the ladder.
+            from app.db.models import TradeRecord
+            trade = await session.get(TradeRecord, order.trade_id)
+            if trade is not None:
+                trade.price_source = "client"
+                await session.commit()
         return PaperExecuteResponse(
             signal=signal, executed=result.executed, reasons=result.reasons, order_id=order.id,
         )

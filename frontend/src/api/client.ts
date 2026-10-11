@@ -489,9 +489,8 @@ export const api = {
   paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
   paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
 
-  /** Z3 "Exit now": closes the position at once (live price; for PAPER without a quote, `price`). */
-  exitNow: (tradeId: number, price?: number) =>
-    request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST", body: JSON.stringify(price ? { price } : {}) }),
+  /** Z3 "Exit now" (approval-only or the PAPER account on): closes a PAPER position at once at the live price, else the last price seen. */
+  exitNow: (tradeId: number) => request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST" }),
 
   markPrice: (tradeId: number, currentPrice: number) =>
     request<MarkPriceResponse>(`/positions/${tradeId}/mark-price`, {

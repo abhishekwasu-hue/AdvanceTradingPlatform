@@ -85,6 +85,9 @@ from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
 
+# BT1b: what a deployment says while its organisation (flag byob_data_tier on) has no confirmed-data broker session.
+WAITING_FOR_CONFIRMED_DATA = "Waiting for Upstox/Dhan data: no new entries; exits continue"
+
 WORKER_NAME = "trading_worker"
 LOCK_KEY = "atp:trading_worker:lock"
 
@@ -725,10 +728,13 @@ class TradingWorker:
         # organisation's data source; its cache is kept to this organisation (below) and it is never streamed into the
         # platform-wide tick keys or the lake (each user's own session streams through the fan-in instead).
         byob = await self._byob_on(session, tenant_id)
+        from app.market_data.data_terms import confirmed_brokers
+        confirmed = confirmed_brokers()
         if byob:
-            from app.market_data.data_terms import confirmed_brokers
-            confirmed = confirmed_brokers()
             adapters = dict(sorted(adapters.items(), key=lambda kv: 0 if kv[0].split("@")[0] in confirmed else 1))
+            # Every org-wide stream of this organisation stops (whatever broker it was on, also on the early return
+            # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
+            await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again from Settings"
@@ -766,8 +772,6 @@ class TradingWorker:
             # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
             # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
-        elif byob:
-            await self.streams.drop(f"{tenant_id}:{next((k for k, a in adapters.items() if a is data_broker), data_broker.name)}")
 
         # Exits before entries.
         now_ist = now.astimezone(IST)
@@ -821,6 +825,14 @@ class TradingWorker:
             # Exits above still ran (a suspended org's open risk is still real); no new entries.
             for dep in deployments:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
+            await session.commit()
+            return
+        data_key = next((k for k, a in adapters.items() if a is data_broker), getattr(data_broker, "name", ""))
+        if byob and data_key.split("@")[0] not in confirmed:
+            # BT1b / BT1-4: with the bring-your-own-broker data tier on, no new evaluation on a broker whose terms do not
+            # allow its data in ATP (execution-only / pending). Exits, square-off and the stop guard above still ran.
+            for dep in deployments:
+                dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]

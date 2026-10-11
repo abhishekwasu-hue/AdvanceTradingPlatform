@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.service import ensure_account_for_credential
@@ -33,7 +33,7 @@ from app.brokers.token_lifecycle import (
     token_is_usable,
 )
 from app.core.config import FRONTEND_URL
-from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType
+from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
@@ -127,15 +127,49 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
 
 def _holder_error(record: BrokerCredentialRecord) -> str:
     return (f"This {record.broker_name} connection ({record.account_label or 'primary'}) was linked by another member of your "
-            "organisation, and a broker session belongs to the person who logs in to it: only they can log in to it again. "
-            "To use your own account, add it under another account label.")
+            "organisation. With the bring-your-own-broker data tier on, a broker session belongs to the person who logs in to "
+            "it, so only they can use it here. Ask them to log in, or ask an owner to remove it before you link your own account.")
 
 
-def _ensure_holder(record: BrokerCredentialRecord, user: User) -> None:
-    """BT1b: a broker credential row is its account holder's (`user_id` = who linked it and logs in to it). Another
-    member may not log in to it (the new token would be theirs while the row stays the holder's) - 403."""
-    if record.user_id != user.id:
+async def _byob(session: AsyncSession, tenant_id: int) -> bool:
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, "byob_data_tier", tenant_id)
+
+
+async def _ensure_holder(session: AsyncSession, record: BrokerCredentialRecord, user: User) -> None:
+    """BT1b: with `byob_data_tier` on, a broker credential row is its account holder's (`user_id` = who linked it and
+    logs in to it): another member may not log in to it or read through it - 403. Flag off: no change (any trader of the
+    organisation may do the daily login on keys the owner stored, as before)."""
+    if record.user_id != user.id and await _byob(session, record.tenant_id):
         raise HTTPException(status_code=403, detail=_holder_error(record))
+
+
+async def _ensure_holder_or_owner(session: AsyncSession, record: BrokerCredentialRecord, user: User) -> None:
+    """BT1b: removing / disconnecting another member's connection (flag on) is for its holder or an organisation owner."""
+    if record.user_id != user.id and user.role not in (UserRole.OWNER.value, UserRole.SUPER_ADMIN.value) and await _byob(session, record.tenant_id):
+        raise HTTPException(status_code=403, detail=_holder_error(record))
+
+
+# Smoke-test steps whose detail carries market data (prices, chain, position marks).
+SMOKE_PRICE_STEPS = frozenset({"quote", "contract_quote", "option_chain", "positions"})
+
+CHANGED_HANDS = "The broker connection changed while the login was in progress; nothing was stored. Log in again."
+
+
+async def _write_if_unchanged(session: AsyncSession, record: BrokerCredentialRecord, expected_user_id: int, expected_payload: str,
+                              *, new_user_id: Optional[int] = None) -> bool:
+    """BT1b (both flag states): persist the credential row's new state only if nobody changed it during the broker
+    round-trip - a conditional UPDATE on (id, user_id, payload) with a rowcount check, so a member who stored over the row
+    meanwhile can never end up holding this login's fresh token (or the holder's secrets). The ORM's pending changes are
+    discarded either way; False = changed meanwhile, nothing written."""
+    values = {"encrypted_payload": record.encrypted_payload, "token_status": record.token_status,
+              "token_expires_at": record.token_expires_at, "last_verified_at": record.last_verified_at,
+              "user_id": expected_user_id if new_user_id is None else new_user_id}
+    session.expire(record)
+    result = await session.execute(update(BrokerCredentialRecord).where(
+        BrokerCredentialRecord.id == record.id, BrokerCredentialRecord.user_id == expected_user_id,
+        BrokerCredentialRecord.encrypted_payload == expected_payload).values(**values).execution_options(synchronize_session=False))
+    return int(getattr(result, "rowcount", 0) or 0) == 1
 
 
 @router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
@@ -158,9 +192,9 @@ async def store_broker_credentials(
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
     existing = await get_credential_record(session, user.tenant_id, name, account_label)
-    taking_over = existing is not None and existing.user_id != user.id
-    # BT1b: storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret and above
-    # all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
+    taking_over = existing is not None and existing.user_id != user.id and await _byob(session, user.tenant_id)
+    # BT1b (flag on): storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret
+    # and above all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
     credentials = _merge_with_stored(credentials, None if taking_over else existing)
     if taking_over and not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"This {name} connection was linked by another member: enter all of your own "
@@ -168,11 +202,16 @@ async def store_broker_credentials(
     encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
     if existing:
+        # BT1b: conditional on the row being exactly what was merged from (no concurrent store / login in between).
+        expected_user, expected_payload = existing.user_id, existing.encrypted_payload
         existing.encrypted_payload = encrypted
-        existing.user_id = user.id
         existing.token_status = BrokerTokenStatus.UNKNOWN.value
         existing.token_expires_at = None
         existing.last_verified_at = None
+        if not await _write_if_unchanged(session, existing, expected_user, expected_payload, new_user_id=user.id):
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="The broker connection changed while saving; nothing was stored. Try again.")
+        await session.refresh(existing)
         record = existing
     else:
         record = BrokerCredentialRecord(
@@ -217,6 +256,7 @@ async def delete_broker_credentials(
 ) -> None:
     existing = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
     if existing:
+        await _ensure_holder_or_owner(session, existing, user)
         await session.delete(existing)
         await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_deleted", name)
         await session.commit()
@@ -234,6 +274,7 @@ async def disconnect_broker(
     record = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
+    await _ensure_holder_or_owner(session, record, user)
     detail = "token revoked at broker"
     try:
         adapter = build_adapter(record)
@@ -264,11 +305,22 @@ async def smoke_test_broker(
     record = await get_credential_record(session, user.tenant_id, name, label)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
+    await _ensure_holder(session, record, user)          # BT1b (flag on): quotes, funds and positions are the holder's
     adapter = build_adapter(record)
     report = await run_smoke(adapter, account_label=label)
     await write_audit_log(session, user.tenant_id, user.id, "broker_smoke_test", f"{name}/{label}: {'ok' if report.ok else 'FAILED'} - {report.summary}")
     await session.commit()
-    return report.as_dict()
+    out = report.as_dict()
+    if await _byob(session, user.tenant_id):
+        from app.market_data.data_terms import terms_for
+        terms = terms_for(name)
+        if not terms.tier_a_allowed:
+            # BT1b: this broker's market data may not be shown in ATP - the probe's outcome stays, its prices do not.
+            hidden = f"details hidden: {terms.display_name} market data may not be shown in ATP"
+            for step in out.get("steps", []):
+                if step.get("name") in SMOKE_PRICE_STEPS:
+                    step["detail"] = hidden
+    return out
 
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile)
@@ -284,7 +336,8 @@ async def authenticate_broker(
     record = await get_credential_record(session, user.tenant_id, name)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
-    _ensure_holder(record, user)
+    await _ensure_holder(session, record, user)
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
 
     credentials = load_credentials(record)
     adapter = get_broker_adapter(name, credentials)
@@ -316,6 +369,9 @@ async def authenticate_broker(
         store_access_token(record, new_token)
     else:
         mark_verified(record)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=CHANGED_HANDS)
     await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", name)
     await session.commit()
     return profile
@@ -369,6 +425,7 @@ async def broker_login_url(
     record = await get_credential_record(session, user.tenant_id, name, _clean_label(account_label))
     if record is None:
         raise HTTPException(status_code=404, detail=f"Store your {name} API key (App ID) in Settings first")
+    await _ensure_holder(session, record, user)          # BT1b (flag on): the holder's App ID / redirect URI stay theirs
     credentials = load_credentials(record)
     if not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"{name} credentials need api_key (the App ID)")
@@ -403,7 +460,8 @@ async def broker_login_code(
     record = await get_credential_record(session, user.tenant_id, name, label)
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
-    _ensure_holder(record, user)
+    await _ensure_holder(session, record, user)
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
     code = _code_from_paste(body.code, spec["code_param"])
     if not code or len(code) > 4096:
         raise HTTPException(status_code=400, detail="Paste the code (or the whole redirected address)")
@@ -431,8 +489,13 @@ async def broker_login_code(
     # Persist the exchanged token on the stored row (re-encrypted; the one-time code is dropped).
     record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
     store_access_token(record, new_token)
+    # The person who logged in holds the session (as before); the write is conditional on nobody changing the row meanwhile.
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload, new_user_id=user.id):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=CHANGED_HANDS)
     await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label} (pasted code)")
     await session.commit()
+    await session.refresh(record)
     return _token_status_response(record, request)
 
 
@@ -459,7 +522,7 @@ async def upstox_oauth_start(
     record = await get_credential_record(session, user.tenant_id, "upstox")
     if record is None:
         raise HTTPException(status_code=404, detail="Store your Upstox API key/secret in Settings first")
-    _ensure_holder(record, user)
+    await _ensure_holder(session, record, user)
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
@@ -505,12 +568,13 @@ async def upstox_oauth_callback(
     record = await get_credential_record(session, tenant_id, "upstox")
     if record is None:
         return _frontend_redirect(broker="upstox", error="credentials_missing")
-    if record.user_id != user_id:
-        # BT1b: the row changed hands after the login started (or the state is another member's) - the token would be
-        # this user's while the row is someone else's.
+    if record.user_id != user_id and await _byob(session, tenant_id):
+        # BT1b (flag on): the state names someone other than the connection's holder - the token would be theirs while
+        # the row is someone else's.
         await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", "upstox: not the connection's holder")
         await session.commit()
         return _frontend_redirect(broker="upstox", error="not_holder")
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
 
     credentials = load_credentials(record)
     credentials.access_token = None
@@ -532,6 +596,12 @@ async def upstox_oauth_callback(
     if not new_token:
         return _frontend_redirect(broker="upstox", error="no_token_returned")
     store_access_token(record, new_token)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        # BT1b (both flag states): the row was stored over during the code exchange - the fresh token is not written.
+        await session.rollback()
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", "upstox: the connection changed during the login")
+        await session.commit()
+        return _frontend_redirect(broker="upstox", error="changed_during_login")
     await write_audit_log(session, tenant_id, user_id, "broker_authenticated", "upstox (oauth)")
     await session.commit()
     return _frontend_redirect(broker="upstox", connected="1")

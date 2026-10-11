@@ -529,7 +529,7 @@ def test_migration_chains_into_a_single_head():
     script = ScriptDirectory.from_config(cfg)
     assert len(script.get_heads()) == 1
     rev = script.get_revision("039888cda9b1")
-    assert rev.down_revision == "e4c2a9b7d1f6"
+    assert rev.down_revision == "c5e7a9b1d3f4"
     text = Path(rev.path).read_text()
     for table in ("journal_entries", "journal_tags", "journal_settings"):
         assert f"'{table}'" in text

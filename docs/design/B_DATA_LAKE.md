@@ -25,5 +25,8 @@ Decisions: ADR-0013 (store), ADR-0016 (provider seams), ADR-0017 (global-first) 
 - Vendor adapter: contract suite on a recorded transport (ADR-0016).
 - Migration: upgrade + downgrade on Postgres with the Timescale extension.
 
+History backfill into the lake (daily for everyone, the owner's 1-minute store tenant-private): see
+docs/design/HB_HISTORY_BACKFILL.md (HB0-HB4).
+
 Open questions: OPEN_QUESTIONS B-1 (Timescale image on the Hostinger host before go-live, or after), B-2 (vendor
 choice and cost - over $5/month needs the owner).

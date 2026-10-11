@@ -472,6 +472,30 @@ default and G-LIVE gate before any LIVE wiring.
   contracts. Migration verified on Postgres (upgrade, check, downgrade, upgrade). Frontend: adopt + interview deploy
   with the risk checkbox, approvers textarea on the Telegram card.
 
+### 2026-10-10 - ATP review (PR #74, #75, #77, #81) - 13 fixes, draft PR, merge only on "Merge"
+- Stop path: accept-then-reject re-arm loop capped (STOP_REARM_MAX_REJECTS, then LIVE_EXIT_IF_NO_STOP exit or one
+  CRITICAL); stop triggers on the tick away from the market (place, re-arm, trailing modify); the guard's per-trade
+  memory dies with the position; an exit after a cancel no longer waits on the stop - a late stop fill is netted and
+  handed to reconciliation. All LIVE switches stay default off.
+- Expiry data: a day > coverage_end + 10 raises ExpiryDataStale (backtest skips + counts); a 403 refuses the build and
+  is never cached; check_against compares from the run's --start (older rows kept); the workflow starts CI before the
+  pull request, warns instead of failing when Actions may not open one, and caches the bhavcopies.
+- Copilot: AICore3D has its own error boundary (SVG core on failure); banned words checked on the server on every
+  model text (English + खात्रीशीर, हमखास ...; negated disclaimers pass); Marathi line only under the interview
+  questions; Ask Copilot sends language "en"; Playwright: Watchtower approve / reject / LIVE step-up, risk checkbox
+  gate, apply-risk confirm, 3D chunk failure, strict ai-core-3d; mockApi answers /ai/actions/* by method and state.
+- Two thesis tests seeded market reads at a fixed date and broke once the wall clock passed it (date bomb) - they now
+  seed a read as fresh as today's for the wall-clock paths.
+- data/nse-expiries is not merged; a fresh refresh pull request (with CI) comes from the fixed workflow after merge.
+
+### 2026-10-10 21:40 IST - Part B (backtest realism) started - branch claude/backtest-realism
+- Status table given (HTF lookahead: no; models: partial; speed: no; reproducibility: partial; trial ledger: partial;
+  report: partial). Part A (PR #82) waits on CI + self-review.
+- B1 done: `app/backtest/windows.py` WindowCursor - a timeframe shows only bars whose end <= the decision time (the
+  primary bar's close), one binary search per timeframe instead of a boolean mask per bar. Both engines use it;
+  ENGINE_VERSION 4 / 7-options. Truncation test over every multi-TF strategy (fails on the old slicing: 4 of 4).
+- Next: B3 speed benchmark + guard, then B4 reproducibility, B2 models, B5 trial ledger, B6 report.
+
 ### 2026-10-08 - Copilot UI redesign (7 tabs, i18n, 3D AI Core, compliance lint) -> G-UI
 - Seven tabs at `/copilot/<tab>` (Market Pulse, Strategy Lab, Idea Builder, Ask Copilot, Watchtower, News Radar,
   Coach & Scorecard); the old `/ai-copilot/<slug>` addresses and `?page=ai-copilot` forward to the tab that now
@@ -867,3 +891,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   drawings in our own schema so an engine switch loses nothing; numbers from data, never pixels; actions = proposals.
 - Order CH0..CH7; open questions CH-1..CH-5 (TradingView access is Abhi's application; the v5 drawing plugin is not
   vendored until its licence is confirmed).
+### 2026-10-10 22:30 IST - part C3 + C4 on PR #83 (backtest realism)
+- C3: `backend/scripts/bench_backtest.py` (timings, growth, bars/s, indicator-cache counters); CI guard
+  `tests/test_realism_benchmark.py` - per run the indicator cache's whole computations and unserved calls must not grow
+  with the bars (deterministic; checked to fail on a simulated regression: 12/13 strategies). Table in docs/BENCHMARKS.md.
+- C4: `app/backtest/repro.py` - engine/code/data/config/result hashes + seed on every result (`reproducibility`), kept
+  in the run record; `tests/test_realism_repro.py` (same bytes in-process and across PYTHONHASHSEED; each hash moves only
+  with what it names; API + record). No schema change (stored in the run's metrics JSON). Engine version unchanged
+  (results are identical).
+- Next: C2 (pluggable models) design note, then C5/C6 per the spec order; ROADMAP_STATUS board.

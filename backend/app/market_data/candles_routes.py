@@ -15,6 +15,13 @@ The data goes through the tenant's stored credentials (Fernet/envelope-encrypted
 so a tenant without a logged-in broker gets a 409 that says what to do, not an empty chart. Per-
 symbol failures are reported next to the symbols that worked. Fetches are metered per symbol as
 `market_data_candles` so plans can price them later; nothing is persisted here.
+
+BT1 (flag `byob_data_tier`, off by default; off = everything above, unchanged): every read here goes through the
+entitlement guard (`app/market_data/entitlement.py`). Live data comes only through the user's *own* broker session at a
+broker whose data terms are confirmed, for symbols inside that session's budget; ticks and candles are cached under that
+session's namespace only (never shared across users); each response carries a `data_tier` badge (tier, label,
+timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
+`GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
 """
 import logging
 from datetime import date, datetime, timezone
@@ -31,9 +38,15 @@ from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
+from app.market_data import entitlement
+from app.market_data.calendar import load_holidays
+from app.market_data.data_terms import terms_for
+from app.market_data.entitlement import DataTier, Entitlement
+from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
 from app.market_data.freshness import quote_is_stale
 from app.market_data.service import MarketDataService, build_frames
-from app.market_data.stream import tick_cache
+from app.market_data.stream import TickCache, tick_cache
+from app.platform.controls import flag_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +76,33 @@ async def _records(session: AsyncSession, tenant_id: int) -> List[BrokerCredenti
                                       .order_by(BrokerCredentialRecord.broker_name, BrokerCredentialRecord.account_label)))
 
 
-def _source(record: BrokerCredentialRecord) -> dict:
-    return {"broker": record.broker_name, "account_label": record.account_label, "token_status": record.token_status,
-            "token_expires_at": record.token_expires_at.isoformat() if record.token_expires_at else None, "usable": token_is_usable(record)}
+def _source(record: BrokerCredentialRecord, byob: bool = False) -> dict:
+    out = {"broker": record.broker_name, "account_label": record.account_label, "token_status": record.token_status,
+           "token_expires_at": record.token_expires_at.isoformat() if record.token_expires_at else None, "usable": token_is_usable(record)}
+    if byob:
+        # BT1: whether this broker's data may be shown in ATP at all (docs/BROKER_DATA_TERMS.md).
+        terms = terms_for(record.broker_name)
+        out.update({"data_status": terms.status.value, "tier_a": terms.tier_a_allowed and out["usable"]})
+    return out
+
+
+async def _byob(session: AsyncSession, user: User) -> bool:
+    """BT1: the bring-your-own-broker data tier is on for this user's organisation (flag off = today's behaviour)."""
+    return await flag_enabled(session, BYOB_FLAG, user.tenant_id)
+
+
+async def _eod_context(session: AsyncSession, ents: Dict[tuple, Entitlement]) -> tuple:
+    """(newest EOD file date, holidays) for the per-symbol EOD badges - read only when some symbol is EOD."""
+    if all(e.live for e in ents.values()):
+        return None, set()
+    return await entitlement.eod_as_of(session), await load_holidays(session)
+
+
+def _tier_c(ents: Dict[tuple, Entitlement]) -> HTTPException:
+    """409 for a request none of whose symbols may be shown live; the first symbol's reason says why."""
+    ent = next(iter(ents.values()), None)
+    reason = ent.reason if ent is not None and ent.reason else "EOD data only for this symbol."
+    return HTTPException(status_code=409, detail=reason, headers={"X-Data-Tier": DataTier.EOD.value})
 
 
 async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[str], account_label: str) -> BrokerCredentialRecord:
@@ -93,7 +130,11 @@ def _frame_to_bars(df) -> List[OHLCVBar]:
 
 @router.get("/sources")
 async def sources(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    items = [_source(r) for r in await _records(session, user.tenant_id)]
+    records = await _records(session, user.tenant_id)
+    byob = await _byob(session, user)
+    if byob:
+        records = [r for r in records if r.user_id == user.id]   # BT1: a teammate's broker session is not this user's data source
+    items = [_source(r, byob) for r in records]
     return {"sources": items, "usable": any(i["usable"] for i in items), "timeframes": list(SUPPORTED_TIMEFRAMES),
             "max_symbols": MAX_SYMBOLS, "intraday_max_lookback_days": INTRADAY_MAX_LOOKBACK_DAYS, "daily_max_lookback_days": DAILY_MAX_LOOKBACK_DAYS}
 
@@ -102,7 +143,22 @@ async def sources(user: User = Depends(get_current_user), session: AsyncSession 
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
-    record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+    exchange = body.exchange.upper()
+    byob = await _byob(session, user)
+    ents: Dict[tuple, Entitlement] = {}
+    namespace: Optional[str] = None
+    live: Optional[Entitlement] = None
+    if byob:
+        wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+        ents = await entitlement.resolve_many(session, user, [(s, exchange) for s in wanted], broker=body.broker,
+                                              account_label=body.account_label if body.broker else None,
+                                              priority=Priority.CHART if len(wanted) == 1 else Priority.SCREENER)
+        live = next((e for e in ents.values() if e.live), None)
+        if live is None or live.record is None or live.session is None:
+            raise _tier_c(ents)
+        record, namespace = live.record, live.session.namespace
+    else:
+        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
 
     warnings: List[str] = []
     daily = body.timeframe == "day"
@@ -112,14 +168,21 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
         lookback = cap
     base_interval = "day" if daily else "1min"
-    service = MarketDataService(build_adapter(record), lookback_days=lookback)
-    exchange = body.exchange.upper()
+    service = MarketDataService(build_adapter(record), lookback_days=lookback, cache_namespace=namespace)
+    now = datetime.now(timezone.utc)
+    eod_date, holidays = await _eod_context(session, ents)
 
     out: Dict[str, dict] = {}
     fetched = 0
     for raw in body.symbols:
         symbol = raw.strip().upper()
         if not symbol or symbol in out:
+            continue
+        ent = ents.get((symbol, exchange))
+        if byob and (ent is None or not ent.live):
+            # BT1: outside the user's session budget - EOD only for this one, the others still load.
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "EOD data only",
+                           "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
             if body.before is not None:
@@ -141,10 +204,14 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                     metadata={"broker": record.broker_name, "timeframe": body.timeframe, "exchange": exchange}, commit=True)
     if not fetched:
         warnings.append("every symbol failed - check the symbols are the broker's trading symbols and the session token is valid")
-    return {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
-            "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "symbols": out, "warnings": warnings,
-            "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
+    result = {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
+              "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),
+              "symbols": out, "warnings": warnings,
+              "note": "Candles come from your broker's historical API through your own session and are cached for 60 seconds platform-wide."}
+    if live is not None:
+        result["data_tier"] = live.badge(as_of=now, now=now)
+        result["note"] = "Candles come from your own broker session, are shown only to you and are cached for your session only."
+    return result
 
 
 @router.get("/ltp")
@@ -158,10 +225,23 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
     exchange = exchange.strip().upper()
     if not symbol:
         raise HTTPException(status_code=400, detail="symbol is required")
-    record = await _pick_record(session, user.tenant_id, broker, account_label)
     now = datetime.now(timezone.utc)
+    if await _byob(session, user):
+        # BT1: the user's own confirmed broker session only, its own tick cache only, inside its symbol budget.
+        ent = await entitlement.resolve(session, user, symbol, exchange, broker=broker, account_label=account_label if broker else None, now=now)
+        if not ent.live or ent.record is None or ent.session is None:
+            raise _tier_c({(symbol, exchange): ent})
+        body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now)
+        as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else now
+        body["data_tier"] = ent.badge(as_of=as_of, now=now)
+        return body
+    record = await _pick_record(session, user.tenant_id, broker, account_label)
+    return await _ltp_body(record, tick_cache, symbol, exchange, now)
+
+
+async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime) -> dict:
     base = {"symbol": symbol, "exchange": exchange, "source_broker": record.broker_name, "fetched_at": now.isoformat()}
-    tick = await tick_cache.fresh(record.broker_name, exchange, symbol, now)
+    tick = await ticks.fresh(record.broker_name, exchange, symbol, now)
     if tick is not None:
         return {**base, "ltp": float(tick.ltp), "timestamp": tick.best_ts.isoformat(), "age_seconds": round(tick.age_seconds(now), 1),
                 "stale": False, "stale_reason": None, "source": "tick", "bid": None, "ask": None, "volume": None}
@@ -195,14 +275,34 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
     """Phase AD: the broker's live option chain for up to 20 underlyings through the tenant's own
     session, in the same `OptionChain` shape the scanner, the chain analyser and the strike
     selector consume. Each underlying succeeds or fails on its own."""
-    record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
+    byob = await _byob(session, user)
+    ents: Dict[tuple, Entitlement] = {}
+    live: Optional[Entitlement] = None
+    if byob:
+        # BT1: an option chain counts as one symbol (the underlying, F&O segment) in the user's own session budget.
+        wanted = list(dict.fromkeys(u.strip().upper() for u in body.underlyings if u.strip()))
+        ents = await entitlement.resolve_many(session, user, [(u, "NFO") for u in wanted], broker=body.broker,
+                                              account_label=body.account_label if body.broker else None, priority=Priority.CHART)
+        live = next((e for e in ents.values() if e.live), None)
+        if live is None or live.record is None:
+            raise _tier_c(ents)
+        record = live.record
+    else:
+        record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
     adapter = build_adapter(record)
+    now = datetime.now(timezone.utc)
+    eod_date, holidays = await _eod_context(session, ents)
     out: Dict[str, dict] = {}
     warnings: List[str] = []
     fetched = 0
     for raw in body.underlyings:
         underlying = raw.strip().upper()
         if not underlying or underlying in out:
+            continue
+        ent = ents.get((underlying, "NFO"))
+        if byob and (ent is None or not ent.live):
+            out[underlying] = {"chain": None, "rows": 0, "error": ent.reason if ent else "EOD data only",
+                               "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
             chain = await adapter.get_option_chain(underlying, body.expiry)
@@ -220,6 +320,34 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
                     metadata={"broker": record.broker_name, "expiry": body.expiry.isoformat() if body.expiry else None}, commit=True)
     else:
         warnings.append("every underlying failed - check the symbols are index/stock names the broker's option master knows")
-    return {"source": {"broker": record.broker_name, "account_label": record.account_label}, "expiry": body.expiry.isoformat() if body.expiry else None,
-            "fetched_at": datetime.now(timezone.utc).isoformat(), "symbols": out, "warnings": warnings,
-            "note": "Live chain through your own broker session; option-chain filters and the analyser read it exactly as they read a sample chain."}
+    result = {"source": {"broker": record.broker_name, "account_label": record.account_label}, "expiry": body.expiry.isoformat() if body.expiry else None,
+              "fetched_at": datetime.now(timezone.utc).isoformat(), "symbols": out, "warnings": warnings,
+              "note": "Live chain through your own broker session; option-chain filters and the analyser read it exactly as they read a sample chain."}
+    if live is not None:
+        result["data_tier"] = live.badge(as_of=now, now=now)
+    return result
+
+
+@router.get("/data-tier")
+async def data_tier(symbol: Optional[str] = None, exchange: str = "NSE", user: User = Depends(get_current_user),
+                    session: AsyncSession = Depends(get_session)) -> dict:
+    """BT1: the data-tier badge. With `symbol`: the tier this user would see for it (Live through their own confirmed
+    broker session, or EOD with the reason) - a lookup that takes no budget slot. Without: the market-wide badge (EOD, as
+    of the newest exchange file). `enabled: false` when the `byob_data_tier` flag is off (pages show no badge)."""
+    if not await _byob(session, user):
+        return {"enabled": False}
+    now = datetime.now(timezone.utc)
+    eod_date = await entitlement.eod_as_of(session)
+    holidays = await load_holidays(session)
+    market_wide = entitlement.eod_badge(eod_date, now, holidays)
+    badge = market_wide
+    if symbol and symbol.strip():
+        sym, exch = symbol.strip().upper(), exchange.strip().upper()
+        ent = await entitlement.resolve(session, user, sym, exch, now=now, register=False)
+        as_of = None
+        if ent.live and ent.session is not None:
+            tick = await TickCache(namespace=ent.session.namespace).get(ent.session.broker, exch, sym)
+            as_of = tick.best_ts if tick is not None else None
+        badge = ent.badge(as_of=as_of, eod_date=eod_date, now=now, holidays=holidays)
+    return {"enabled": True, "badge": badge, "market_wide": market_wide, "eod_date": eod_date.isoformat() if eod_date else None,
+            "sessions": await entitlement.session_summaries(session, user, now)}

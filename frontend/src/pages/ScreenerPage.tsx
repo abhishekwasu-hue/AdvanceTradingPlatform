@@ -6,6 +6,7 @@
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
 import { Play, Save } from "lucide-react";
+import { MarketWideTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { Button, cx } from "../components/primitives";
@@ -175,7 +176,7 @@ export default function ScreenerPage(_props: PageProps) {
       <div className="screener-grid">
         {/* Universe */}
         <aside aria-label="Universe" className="screener-universe rounded-panel border border-border bg-surface-1 p-4">
-          <h2 className="text-t15 font-semibold text-fg">Universe</h2>
+          <h2 className="flex flex-wrap items-center gap-2 text-t15 font-semibold text-fg">Universe <MarketWideTierBadge /></h2>
           <div className="screener-universe-body">
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-symbols">Symbols (up to 50)</label>

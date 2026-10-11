@@ -49,6 +49,7 @@ from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
 from app.options_builder.routes import router as options_builder_router
+from app.options_builder.saved import router as options_builder_saved_router
 from app.news_feed.routes import router as news_feed_router
 from app.telegram_inbound.routes import router as telegram_inbound_router
 from app.option_chain.analysis import analyze_option_chain
@@ -90,6 +91,7 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
@@ -112,6 +114,7 @@ from app.alerts.links_routes import router as alert_links_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
+from app.journal.routes import router as journal_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -167,8 +170,10 @@ app.include_router(auth_router)
 app.include_router(broker_router)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
+app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
+app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
 app.include_router(risk_guardian_router)
@@ -206,6 +211,7 @@ app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
+app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)

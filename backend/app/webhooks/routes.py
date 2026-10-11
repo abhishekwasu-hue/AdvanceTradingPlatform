@@ -139,7 +139,7 @@ async def tradingview_webhook(
 
     result, order = await execute_signal_for_user(
         session, user, mode="PAPER", strategy_id=payload.strategy_id, signal=signal,
-        idempotency_key=idempotency_key,
+        idempotency_key=idempotency_key, journal_source="WEBHOOK",   # Z6: the journal says where the trade came from
     )
     await meter(session, user.tenant_id, "webhook_event", 1, source="tradingview", metadata={"order_id": order.id})
     return WebhookExecutionResponse(executed=result.executed, reasons=result.reasons, order_id=order.id)

@@ -6,7 +6,7 @@ import { evaluatedById, type Evaluation, type Leg } from "../optionsBuilder/mode
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import data from "./optionsBuilderCondor.json";
 
-/** P1-c2 - the Options Builder's parts on an iron condor evaluated by the builder API (synthetic prices). Every story
+/** P1-c2 / Z5 - the Options Builder's parts on an iron condor evaluated by the builder API (synthetic prices). Every story
  * follows the toolbar's theme and colour-blind setting. */
 const meta: Meta = { title: "Options Builder/Parts" };
 export default meta;
@@ -23,6 +23,14 @@ export const Payoff: Story = {
   },
 };
 
+export const LegsOnAPhone: Story = {
+  parameters: { viewport: { defaultViewport: "mobile1" } },
+  render: function LegsPhone() {
+    const [list, setList] = useState(legs);
+    return <div className="max-w-sm"><LegTable legs={list} rows={evaluatedById(list, { evaluation, sent: legs })} step={50} onChange={setList} onAdd={() => undefined} compact /></div>;
+  },
+};
+
 export const Legs: Story = {
   render: function Legs() {
     const [list, setList] = useState(legs);
@@ -30,4 +38,4 @@ export const Legs: Story = {
   },
 };
 
-export const Metrics: Story = { render: () => <div className="max-w-xs"><MetricsCard evaluation={evaluation} legs={legs} /></div> };
+export const Metrics: Story = { render: () => <div className="max-w-xs"><MetricsCard evaluation={evaluation} /></div> };

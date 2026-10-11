@@ -35,13 +35,33 @@ export interface Evaluation {
   days_forward: number;
   iv_shift: number;
   single_expiry: boolean;
-  extremes: { max_profit: number | null; max_loss: number | null; unbounded_profit: boolean; unbounded_loss: boolean } | null;
+  extremes: {
+    max_profit: number | null; max_loss: number | null; unbounded_profit: boolean; unbounded_loss: boolean;
+    max_profit_at?: number | null; max_loss_at?: number | null;
+  } | null;
   profitable: [number | null, number | null][] | null;
   breakevens: number[] | null;
   summary: { expiry: string; t_years: number; sigma: number; pop: number; expected_move: number; expected_pnl: number; greeks: Greeks; method: string; model: string };
   legs: (Omit<Leg, "id"> & { iv: number; iv_source?: string; greeks: Greeks; theoretical: number })[];
   disclaimer: string;
+  /** Z5: the metrics card's money lines, from the engine (the page computes none of them) */
+  net_premium: number;                       // + credit received, − debit paid; futures left out
+  reward_to_risk: number | null;
+  margin: Margin;
+  costs: Costs;
 }
+
+/** An estimate, always: `value` null when only the broker can say (undefined risk, calendars, futures). */
+export interface Margin { value: number | null; estimated: true; basis: string; note: string }
+export interface CostParts { stt: number; exch: number; sebi: number; stamp: number; brokerage: number; tax: number; total: number; other: number }
+export interface Costs { to_open: CostParts; round_trip: number; brokerage_per_order: number; orders: number; as_of: string; note: string }
+
+/** The basket shown before "Place as basket" (hedge first), from the engine. Review only in this release. */
+export interface BasketOrder {
+  seq: number; leg: number; side: Direction; option_type: OptionKind; strike: number | null; expiry: string; lots: number; lot_size: number;
+  quantity: number; price: number; key: string;
+}
+export interface Basket { underlying: string; orders: BasketOrder[]; net_premium: number; placeable: boolean; why_not: string }
 
 export interface TemplateInfo { family: string; what: string; two_expiries: boolean; legs: { direction: Direction; option_type: OptionKind; offset: number; lots: number; expiry_slot: 0 | 1 }[] }
 
@@ -60,18 +80,6 @@ export function hedgeFirst<T extends { direction: Direction }>(legs: T[]): T[] {
 export function snapStrike(value: number, step: number): number {
   if (!(step > 0) || !Number.isFinite(value)) return value;
   return Math.max(step, Math.round(value / step) * step);
-}
-
-/** Net option premium in money: positive = credit received, negative = debit paid. A futures leg's "premium" is
- * its entry price, not money changing hands, so it is left out. */
-export function netPremium(legs: Leg[]): number {
-  return legs.reduce((sum, l) => (l.option_type === "FUT" ? sum : sum + (l.direction === "SELL" ? 1 : -1) * l.premium * l.lots * l.lot_size), 0);
-}
-
-/** Reward to risk, when both are finite and there is a risk; null otherwise (an undefined risk has no ratio). */
-export function rewardToRisk(e: Evaluation["extremes"]): number | null {
-  if (!e || e.max_profit == null || e.max_loss == null || e.max_loss >= 0 || e.max_profit <= 0) return null;
-  return e.max_profit / Math.abs(e.max_loss);
 }
 
 export interface Scale { (v: number): number; invert: (p: number) => number; domain: [number, number] }
@@ -166,7 +174,7 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /** What an evaluation was asked with, besides the legs (the sliders and the spot). */
-export interface EvalParams { spot: number; daysForward: number; ivShift: number }
+export interface EvalParams { spot: number; daysForward: number; ivShift: number; brokerage?: number }
 
 /** The legs an evaluation was asked for, by id - the server answers in request order, so its i-th leg is sent[i]. */
 export interface Evaluated { evaluation: Evaluation; sent: Leg[]; params?: EvalParams }
@@ -248,4 +256,94 @@ export function niceTicks(lo: number, hi: number, count = 5): number[] {
   const out: number[] = [];
   for (let k = Math.ceil(lo / step); k * step <= hi + step * 1e-9; k++) out.push(Number((k * step).toPrecision(12)) || 0);
   return out;
+}
+
+/** The value of a curve at any price, linear between grid points (a repeated grid price, possible on a low-priced
+ * underlying, takes the later point). Null without a curve; the curve's end values outside the grid. */
+export function seriesAt(xs: number[], series: number[] | null | undefined, price: number): number | null {
+  if (!series || !xs.length) return null;
+  const i = xs.findIndex((x) => x >= price);
+  if (i < 0) return series[series.length - 1];
+  if (i === 0) return series[0];
+  if (xs[i] === xs[i - 1]) return series[i];
+  const t = (price - xs[i - 1]) / (xs[i] - xs[i - 1]);
+  return series[i - 1] + (series[i] - series[i - 1]) * t;
+}
+
+/** The strikes a handle may take on the chart on show: the chart's own range on the instrument's grid. */
+export function strikeBounds(xs: number[], step: number): [number, number] {
+  const lo = Math.max(step, snapStrike(xs[0], step));
+  return [lo, Math.max(lo, snapStrike(xs[xs.length - 1], step))];
+}
+
+/**
+ * Strike-drag math: the strike under a pointer at `clientX` over a chart drawn `rectWidth` px wide from `rectLeft`
+ * (the SVG's viewBox is `viewWidth` wide; `sx` maps price to viewBox x). Snapped to the grid and held inside
+ * [lo, hi], so a pointer past the edge keeps the strike at the edge. Deterministic: the same pointer gives the same
+ * strike whatever the previous one was.
+ */
+export function strikeAtPointer(clientX: number, rectLeft: number, rectWidth: number, viewWidth: number, sx: Scale, step: number,
+  [lo, hi]: [number, number]): number | null {
+  if (!(rectWidth > 0) || !Number.isFinite(clientX)) return null;
+  const price = sx.invert(((clientX - rectLeft) / rectWidth) * viewWidth);
+  return Math.min(hi, Math.max(lo, snapStrike(price, step)));
+}
+
+/** A key pressed on a focused strike handle: one step with the arrows, five with Page Up / Down, the ends with Home /
+ * End; null for any other key. Always on the grid and inside [lo, hi]. */
+export function strikeForKey(key: string, strike: number, step: number, [lo, hi]: [number, number]): number | null {
+  const moves: Record<string, number> = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -5, PageUp: 5 };
+  let next: number;
+  if (key in moves) next = snapStrike(strike + moves[key] * step, step);
+  else if (key === "Home") next = lo;
+  else if (key === "End") next = hi;
+  else return null;
+  return Math.min(hi, Math.max(lo, next));
+}
+
+/** The radius, in viewBox units, of a strike handle's invisible hit circle so that it is at least `minPx` CSS px
+ * across however small the chart is drawn (PW2: 44 px touch targets on a phone). */
+export function hitRadius(renderedWidth: number, viewWidth: number, minPx = 44, floor = 10): number {
+  if (!(renderedWidth > 0)) return floor;
+  return Math.max(floor, (minPx / 2) * (viewWidth / renderedWidth));
+}
+
+/** Where the max-loss line goes: the y of the worst expiry P&L when it is finite, a loss, and inside the chart's y
+ * domain (an unbounded loss has no line; the shading below zero still shows it). */
+export function maxLossY(extremes: Evaluation["extremes"], sy: Scale): number | null {
+  const v = extremes?.max_loss;
+  if (!extremes || extremes.unbounded_loss || v == null || !Number.isFinite(v) || v >= 0) return null;
+  const [d0, d1] = sy.domain;
+  return v >= Math.min(d0, d1) && v <= Math.max(d0, d1) ? sy(v) : null;
+}
+
+/**
+ * The page's grid areas. Desktop (wide): instrument and templates on top; payoff then legs on the left; metrics and
+ * the actions on the right; adjustments at the bottom. Phone: once there is a strategy the payoff comes first and the
+ * legs below it (spec §3.3), then the numbers, and the instrument and templates after; before there is one, the inputs
+ * and the gallery lead (there is nothing to draw yet).
+ */
+export function builderAreas(wide: boolean, hasLegs: boolean): string {
+  if (wide) return '"inst inst" "tmpl tmpl" "pay side" "legs side" "drawer drawer"';
+  return hasLegs ? '"pay" "legs" "side" "tmpl" "inst" "drawer"' : '"inst" "tmpl" "pay" "legs" "side" "drawer"';
+}
+
+/** The name the basket keys use: the trader's label, upper-cased; null when it is not one word of letters, digits
+ * and & _ . - (the server's rule). */
+export function basketUnderlying(label: string): string | null {
+  const u = label.trim().toUpperCase();
+  return /^[A-Z0-9&_.-]{1,40}$/.test(u) ? u : null;
+}
+
+/** "BUY 22,000 CE 16 Mar" - a basket row in plain words. */
+export function contractLabel(o: Pick<BasketOrder, "side" | "option_type" | "strike" | "expiry">): string {
+  const d = new Date(`${o.expiry}T00:00:00Z`);
+  const day = Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }) : o.expiry;
+  return o.option_type === "FUT" ? `${o.side} FUT ${day}` : `${o.side} ${Math.round(o.strike ?? 0).toLocaleString("en-IN")} ${o.option_type} ${day}`;
+}
+
+/** The canvas's viewBox for the width it is drawn at: the full 800 x 360 from 640 px up; below that (a phone) a
+ * 400 x 300 box, so the labels stay about their 11 px size instead of shrinking to half, with three price ticks. */
+export function canvasSize(drawnWidth: number): { W: number; H: number; xTickCount: number } {
+  return drawnWidth >= 640 ? { W: 800, H: 360, xTickCount: 5 } : { W: 400, H: 300, xTickCount: 3 };
 }

@@ -14,7 +14,8 @@ need pg_restore
 FILE="${1:-}"; [ -n "$FILE" ] || die "usage: restore.sh <file|latest> [target-url]"
 [ "$FILE" = "latest" ] && FILE="$BACKUP_DIR/$(readlink "$BACKUP_DIR/latest")"
 [ -f "$FILE" ] || die "no such file: $FILE"
-TARGET="${2:-$(pg_url)}"
+pg_setup
+TARGET="${2:-$PG_URL}"
 
 if [ -f "$FILE.sha256" ]; then
   EXPECTED="$(cat "$FILE.sha256")"; ACTUAL="$(sha256_file "$FILE")"

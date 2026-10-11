@@ -6,7 +6,7 @@
 # Usage: bash deploy/hostinger/oneliners.sh            (from the repo root)
 set -euo pipefail
 cd "$(dirname "$0")"
-for s in bootstrap install deploy rollback status; do
+for s in bootstrap install status; do   # Z11: deploy / rollback are atp.sh commands now
   printf '\n# %s.sh  sha256 %s\n' "$s" "$(sha256sum "$s.sh" | cut -d' ' -f1)"
   printf 'bash -c "$(echo %s | base64 -d)"\n' "$(base64 -w0 "$s.sh")"
 done

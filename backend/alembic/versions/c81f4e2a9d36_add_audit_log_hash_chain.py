@@ -17,6 +17,7 @@ revision: str = 'c81f4e2a9d36'
 down_revision: Union[str, Sequence[str], None] = 'b7d4f9a3c821'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 GENESIS_HASH = "GENESIS"
 

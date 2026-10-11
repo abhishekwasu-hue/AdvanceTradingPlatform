@@ -19,6 +19,7 @@ revision: str = 'a8c0e2f4b6d8'
 down_revision: Union[str, Sequence[str], None] = 'e4c2a9b7d1f6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 PRICE = sa.Numeric(18, 4)
 TZ = sa.DateTime(timezone=True)

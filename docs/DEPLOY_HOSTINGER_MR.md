@@ -2,7 +2,8 @@
 
 > **Z11 (2026-10-11):** the one owner command is now `deploy/atp.sh` (install / deploy / health / rollback / backup /
 > restore-check) - English runbook `docs/deploy/HOSTINGER_RUNBOOK.md`. Blocks 2 and 3 below (`deploy.sh`, `rollback.sh`) are
-> superseded by it; do not mix them with `atp.sh` on one server. Block 1 (bootstrap) stays the first step.
+> superseded by it: their one-liners are removed and they refuse to run once `atp.sh` has recorded a release. Block 1
+> (bootstrap) stays the first step; the second paste is now `install.sh`.
 
 Host: **Hostinger KVM 2** - 2 vCPU / 8 GB RAM / 100 GB NVMe, Ubuntu 24.04, Mumbai, static IPv4. हा ATP चा production
 host (PAPER पासून सुरुवात). **Trade repo चा DigitalOcean droplet वेगळा राहतो - त्याला या runbook मधलं काहीही

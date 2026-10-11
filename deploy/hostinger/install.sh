@@ -27,7 +27,18 @@ mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
 [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -C "atp-deploy@$(hostname)" -f "$KEY"
 grep -q "Host github.com" "$HOME/.ssh/config" 2>/dev/null || printf 'Host github.com\n  IdentityFile %s\n  IdentitiesOnly yes\n' "$KEY" >> "$HOME/.ssh/config"
 chmod 600 "$HOME/.ssh/config"
-ssh-keyscan -t ed25519 github.com 2>/dev/null >> "$HOME/.ssh/known_hosts"; sort -u -o "$HOME/.ssh/known_hosts" "$HOME/.ssh/known_hosts"
+# GitHub's host key is pinned: the scanned key is accepted only when its fingerprint is GitHub's published ed25519
+# fingerprint (docs.github.com "GitHub's SSH key fingerprints") - a man in the middle cannot slip its own key in here.
+GITHUB_ED25519_FP="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
+if ! ssh-keygen -F github.com -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
+  scanned="$(ssh-keyscan -t ed25519 github.com 2>/dev/null | grep -E '^github\.com ssh-ed25519 ' | head -n 1)"
+  fp="$(printf '%s\n' "$scanned" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')"
+  if [ -z "$scanned" ] || [ "$fp" != "$GITHUB_ED25519_FP" ]; then
+    echo "github.com answered with host key ${fp:-none}, not GitHub's published $GITHUB_ED25519_FP - refusing (network intercepted?)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$scanned" >> "$HOME/.ssh/known_hosts"
+fi
 if ! git ls-remote "$ATP_REPO" HEAD >/dev/null 2>&1; then
   echo
   echo "Add this PUBLIC key at GitHub > AdvanceTradingPlatform > Settings > Deploy keys > Add deploy key"

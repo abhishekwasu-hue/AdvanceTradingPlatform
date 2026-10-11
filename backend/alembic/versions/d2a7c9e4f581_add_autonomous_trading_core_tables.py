@@ -21,6 +21,7 @@ revision: str = 'd2a7c9e4f581'
 down_revision: Union[str, Sequence[str], None] = 'c81f4e2a9d36'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 
 # NSE Capital Market segment trading holidays for calendar year 2026, per NSE circular

@@ -17,5 +17,7 @@ mkdir -p "$DEST"
 find "$DEST" -maxdepth 1 -name 'atp_*' -type f -exec rm -f {} + 2>/dev/null || true   # only the previous test copy
 rclone copyto "$REMOTE/backups/$NEWEST" "$DEST/$NEWEST"
 rclone copyto "$REMOTE/backups/$NEWEST.sha256" "$DEST/$NEWEST.sha256" || log "WARNING: no .sha256 sidecar off-site for $NEWEST"
+# Z11 / L6: the HMAC sidecar (deploy/atp.sh seals each dump) - authenticates the ciphertext; absent for older dumps.
+rclone copyto "$REMOTE/backups/$NEWEST.hmac" "$DEST/$NEWEST.hmac" 2>/dev/null || log "no .hmac sidecar off-site for $NEWEST (not sealed)"
 log "fetched $NEWEST from $REMOTE"
 printf '%s\n' "$DEST/$NEWEST"

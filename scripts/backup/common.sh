@@ -13,14 +13,28 @@ BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
 log() { printf '%s backup: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
 
-# Turns the app's SQLAlchemy URL into a libpq one; leaves plain postgres URLs alone.
-pg_url() {
+# Turns the app's SQLAlchemy URL into a libpq one; leaves plain postgres URLs alone. Carries the password -
+# use pg_setup / pg_url, which keep it out of argv.
+pg_url_raw() {
   if [ -n "${DATABASE_URL:-}" ]; then
     printf '%s' "$DATABASE_URL" | sed -e 's#^postgresql+asyncpg://#postgresql://#' -e 's#^postgresql+psycopg://#postgresql://#'
   else
     printf 'postgresql://%s:%s@%s:%s/%s' "${PGUSER:-atp_user}" "${PGPASSWORD:-}" "${PGHOST:-postgres}" "${PGPORT:-5432}" "${PGDATABASE:-advance_trading_platform}"
   fi
 }
+
+# Z11 / L6: exports PGPASSWORD from the URL and sets PG_URL to the same URL WITHOUT the password, so no password
+# ever reaches a command line (ps shows argv; libpq and asyncpg read PGPASSWORD from the environment). Call it in the
+# script's own shell (not in $(...)) before running psql / pg_dump / pg_restore.
+pg_setup() {
+  _raw="$(pg_url_raw)"
+  _pw="$(printf '%s' "$_raw" | sed -n 's#^postgresql://[^:/@]*:\([^@]*\)@.*#\1#p')"
+  if [ -n "$_pw" ]; then PGPASSWORD="$_pw"; export PGPASSWORD; fi
+  PG_URL="$(printf '%s' "$_raw" | sed 's#^\(postgresql://[^:/@]*\):[^@]*@#\1@#')"
+}
+
+# The connection URL without its password (see pg_setup).
+pg_url() { pg_setup; printf '%s' "$PG_URL"; }
 
 db_name_of() { printf '%s' "$1" | sed -e 's#.*/##' -e 's#?.*##'; }
 

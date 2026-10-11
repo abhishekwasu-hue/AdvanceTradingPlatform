@@ -58,8 +58,15 @@ def finish():
     with open(STATE, "w") as fh:
         json.dump(st, fh)
     if out:
-        print("\n".join(out))
+        sys.stdout.write("\n".join(out) + "\n")
     sys.exit(rc)
+
+def dump_bytes(name):
+    return "DUMPDATA:" + name + ("TAMPERED" if name in st.get("tampered", []) else "")
+
+def backup_by_name(name):
+    name = name.replace("/backups/", "").replace("/restore/", "")
+    return next((b for b in st["backups"] if b["name"] == name or b["name"].endswith("/" + name) or name.endswith(b["name"])), None)
 
 if argv[:2] == ["compose", "version"]:
     out.append("2.29.1"); finish()
@@ -83,7 +90,6 @@ if argv[:2] == ["image", "rm"]:
 if argv[0] != "compose":
     rc = 2; finish()
 
-# strip compose globals: -f X ... -p atp
 rest, i = [], 1
 while i < len(argv):
     if argv[i] in ("-f", "-p"):
@@ -91,13 +97,10 @@ while i < len(argv):
     rest.append(argv[i]); i += 1
 sub, args = rest[0], rest[1:]
 
-def svc_seen(pos):
-    return True
-
 def opts_and_services(a, with_value=("-e", "-v", "--entrypoint", "--format", "--tail", "-w", "--wait-timeout")):
     flags, pos, j = {}, [], 0
     while j < len(a):
-        if pos and sub in ("run", "exec") and svc_seen(pos):
+        if pos and sub in ("run", "exec"):
             pos.append(a[j]); j += 1        # after the service name everything is the command
         elif a[j] in with_value:
             flags.setdefault(a[j], []).append(a[j + 1]); j += 2
@@ -127,7 +130,6 @@ if sub == "up":
 if sub == "stop":
     for svc in args:
         st["running"].pop(svc, None)
-    st["stopped_at_call"] = len(st["calls"])
     finish()
 if sub == "ps":
     for svc, info in st["running"].items():
@@ -137,10 +139,54 @@ if sub == "ps":
 if sub == "logs":
     flags, svcs = opts_and_services(args)
     if svcs and svcs[0] == "offsite":
-        out.extend(f"2026-10-11T00:00:00Z offsite: synced to offsite:atp-backups" for _ in st["offsite_pushes"][-1:])
+        out.extend("2026-10-11T00:00:00Z offsite: synced to offsite:atp-backups" for _ in st["offsite_pushes"][-1:])
     finish()
+
+def run_sql(target, sqls):
+    global rc
+    if st.get("db_down"):
+        rc = 2; return
+    for sql in sqls:
+        low = sql.lower()
+        if low.startswith("create database"):
+            name = sql.split('"')[1]
+            st["databases"][name] = {"rev": "-"}
+            if "_rb_" in name and st.get("hold_scratch"):
+                st["held"].append(name)
+        elif low.startswith("drop database"):
+            st["databases"].pop(sql.split('"')[1], None)
+        elif low.startswith("begin;"):
+            stmts = [s.strip() for s in sql.split(";") if s.strip().lower().startswith("alter database")]
+            if st.get("swap_fail") or any(s.split('"')[1] in st["held"] for s in stmts):
+                print("ERROR: database is being accessed by other users", file=sys.stderr); rc = 1; return
+            for s in stmts:
+                parts = s.split('"')
+                st["databases"][parts[3]] = st["databases"].pop(parts[1])
+        elif "pg_terminate_backend" in low:
+            names = [n.strip(" '") for n in low.split("in (")[1].split(")")[0].split(",")]
+            st["terminated"].append(names)
+            st["held"] = [h for h in st["held"] if h.lower() not in names]
+        elif "to_regclass('public.alembic_version')" in low:
+            if target not in st["databases"]:
+                rc = 2; return
+            out.append("" if st["databases"][target]["rev"] == "-" else "alembic_version")
+        elif "to_regclass('public.platform_controls')" in low:
+            out.append("platform_controls" if st["flags_table"] else "")
+        elif "alembic_version" in low:
+            r = st["databases"].get(target, {}).get("rev", "-")
+            if r == "-":
+                rc = 1
+            else:
+                out.append(r)
+        elif "md5(value_json)" in low:
+            if st["flags_json"] is not None:
+                import hashlib
+                out.append(hashlib.md5(st["flags_json"].encode()).hexdigest())
+        else:
+            st.setdefault("unexpected_sql", []).append(sql); rc = 5
+
 if sub == "exec":
-    flags, pos = opts_and_services(args, with_value=("-U", "-d", "-c", "-v", "-e"))
+    flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
     if svc == "postgres":
         target, sqls = db, []
@@ -149,32 +195,7 @@ if sub == "exec":
                 target = cmd[k + 1]
             elif cmd[k] == "-c":
                 sqls.append(cmd[k + 1])
-        for sql in sqls:
-            low = sql.lower()
-            if low.startswith("create database"):
-                st["databases"][sql.split('"')[1]] = {"rev": "-"}
-            elif low.startswith("alter database"):
-                parts = sql.split('"')
-                st["databases"][parts[3]] = st["databases"].pop(parts[1])
-            elif "pg_terminate_backend" in low:
-                pass
-            elif "alembic_version" in low:
-                r = st["databases"].get(target, {}).get("rev", "-")
-                if r == "-":
-                    rc = 1
-                else:
-                    out.append(r)
-            elif "md5(value_json)" in low:
-                if not st["flags_table"]:
-                    rc = 1
-                elif st["flags_json"] is not None:
-                    import hashlib
-                    out.append(hashlib.md5(st["flags_json"].encode()).hexdigest())
-            elif "select value_json" in low:
-                if st["flags_json"] is not None:
-                    out.append(st["flags_json"])
-            else:
-                st.setdefault("unexpected_sql", []).append(sql); rc = 5
+        run_sql(target, sqls)
         finish()
     if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BACKUP_OK"]:
         if st["last_backup_ok"]:
@@ -187,7 +208,14 @@ if sub == "exec":
             finish()
         if cmd[:2] == ["python", "scripts/check_secrets_key.py"]:
             out.append("secrets key: ok - 2 organisation data keys open"); finish()
+        if cmd[:2] == ["sh", "-c"] and "flag_posture.py" in cmd[2]:
+            if st["posture"] is None:
+                rc = 1
+            else:
+                out.append(json.dumps(st["posture"]))
+            finish()
     rc = 6; finish()
+
 if sub == "run":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
@@ -198,24 +226,76 @@ if sub == "run":
     if svc == "backend" and cmd[:2] == ["python", "scripts/migrate_guard.py"]:
         if st["market_open"]:
             print("guard: REFUSING to migrate - NSE session is open", file=sys.stderr); rc = 3; finish()
+        if st.get("migrate_fail"):
+            st["databases"][db]["rev"] = "partial"; rc = 1; finish()
         st["databases"][db]["rev"] = st["heads"][rel]; finish()
+    if svc == "backend" and cmd[:2] == ["sh", "-c"]:
+        script = cmd[2]
+        if "session_check.py" in script:
+            if rel in st.get("no_session_script", []):
+                rc = 1; finish()
+            s = dict(st["session"])
+            if "--orders-since" in cmd:
+                s["orders_since"] = st["session"].get("orders_since", 0)
+            out.append(json.dumps(s)); finish()
+        if "migration_rollback_safety.py" in script:
+            st["safety_checks"].append({"release": rel, "db": cmd[3], "head": cmd[4]})
+            ok = st["rollback_safe"]
+            out.append(json.dumps({"db": cmd[3], "target_head": cmd[4], "descendant": True, "unsafe": [] if ok else [cmd[3]]}))
+            rc = 0 if ok else 1; finish()
+        if "verify_chain" in script:
+            st["chain_checked"].append(envs.get("ATP_VERIFY_DB"))
+            rc = 1 if st.get("chain_broken") else 0; finish()
+    if svc == "backup" and entry == "cat":
+        path = cmd[0].replace("/backups/", "", 1)
+        if path.endswith(".hmac"):
+            mac = st["hmacs"].get(path[:-5])
+            if mac is None:
+                rc = 1
+            else:
+                out.append(mac)
+            finish()
+        sys.stdout.write(dump_bytes(path.split("/")[-1])); finish()
     if svc == "backup" and entry == "sh":
         if cmd[:1] == ["/scripts/backup.sh"]:
             name = f"atp_{db}_2026101{len(st['backups'])}T183000Z.dump.enc"
             st["backups"].append({"name": name, "rev": st["databases"][db]["rev"]})
+            st["latest"] = name
             st["last_backup_ok"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             finish()
         if cmd[:2] == ["-c", "readlink /backups/latest"]:
-            out.append(st["backups"][-1]["name"]); finish()
+            if st.get("latest"):
+                out.append(st["latest"])
+            finish()
+        if cmd[:1] == ["-c"] and "cat > " in cmd[1]:
+            st["hmacs"][cmd[2]] = sys.stdin.read().strip(); finish()
+        if cmd[:1] == ["-c"] and "/backups/pre-migration" in cmd[1] and "ln -f" in cmd[1]:
+            src = backup_by_name(cmd[2])
+            st["backups"].append({"name": "pre-migration/" + cmd[2], "rev": src["rev"]})
+            if cmd[2] in st["hmacs"]:
+                st["hmacs"]["pre-migration/" + cmd[2]] = st["hmacs"][cmd[2]]
+            finish()
+        if cmd[:1] == ["-c"] and "ls -1 /backups/pre-migration" in cmd[1]:
+            out.extend(b["name"].split("/", 1)[1] for b in st["backups"] if b["name"].startswith("pre-migration/")); finish()
+        if cmd[:1] == ["-c"] and "rm -f" in cmd[1] and "pre-migration" in cmd[1]:
+            st["backups"] = [b for b in st["backups"] if b["name"] != "pre-migration/" + cmd[2]]; finish()
         if cmd[:1] == ["-c"] and "restore.sh" in cmd[1]:
-            name = cmd[2]
-            src = next(b for b in st["backups"] if b["name"] == name)
+            src = next(b for b in st["backups"] if b["name"] == cmd[2])
             st["databases"][envs["ATP_TARGET_DB"]] = {"rev": src["rev"]}
             finish()
         if cmd[:1] == ["/scripts/verify_backup.sh"]:
-            st["verified"].append(cmd[1])
-            out.append(json.dumps({"status": st["verify_status"], "file": os.path.basename(cmd[1]), "alembic": {"source": "r", "copy": "r"},
-                                   "counts": {"tenants": {"source": 2, "copy": 2}, "orders": {"source": 5, "copy": 5}}, "notes": ""}))
+            target = cmd[1]
+            name = st.get("latest") if target == "latest" else target.split("/")[-1]
+            src = backup_by_name(name) or {"rev": "-"}
+            st["verified"].append(target)
+            live = st["databases"][db]["rev"]
+            status = st["verify_status"] if src["rev"] == live else "schema_mismatch"
+            scratch = None
+            if envs.get("VERIFY_KEEP_SCRATCH") == "1":
+                scratch = f"{db}_verify_{len(st['verified'])}"
+                st["databases"][scratch] = {"rev": src["rev"]}
+            out.append(json.dumps({"status": status, "file": name, "restored_into": scratch, "alembic": {"source": live, "copy": src["rev"]},
+                                   "counts": {"tenants": {"source": 2, "copy": 2}, "orders": {"source": 5, "copy": 5}}, "audit_chain": "not_run", "notes": ""}))
             finish()
     if svc == "offsite":
         if cmd == ["--once"]:
@@ -230,14 +310,22 @@ if sub == "run":
                         b.write(a.read())
             finish()
         if entry == "sh" and cmd[:1] == ["/scripts/offsite_fetch.sh"]:
-            out.append("/restore/" + st["backups"][-1]["name"]); finish()
+            top = [b for b in st["backups"] if "/" not in b["name"]]
+            name = top[-1]["name"]
+            with open(os.path.join(st["restore_dir"], name), "w") as fh:
+                fh.write(dump_bytes(name))
+            if name in st["hmacs"]:
+                with open(os.path.join(st["restore_dir"], name + ".hmac"), "w") as fh:
+                    fh.write(st["hmacs"][name] + "\n")
+            out.append("/restore/" + name); finish()
         if entry == "sh" and cmd[:1] == ["-c"] and "rclone lsf" in cmd[1]:
             bucket = st["bucket_files_dir"]
             names = sorted(f for f in os.listdir(bucket) if f.endswith(".enc")) if os.path.isdir(bucket) else []
             if names:
-                for f in (names[-1], names[-1] + ".sha256"):
-                    with open(os.path.join(bucket, f), "rb") as a, open(os.path.join(st["restore_dir"], f), "wb") as b:
-                        b.write(a.read())
+                for f in (names[-1], names[-1] + ".sha256", names[-1] + ".hmac"):
+                    if os.path.exists(os.path.join(bucket, f)):
+                        with open(os.path.join(bucket, f), "rb") as a, open(os.path.join(st["restore_dir"], f), "wb") as b:
+                            b.write(a.read())
                 out.append(names[-1])
             else:
                 out.append("")
@@ -257,8 +345,8 @@ db_rev = st["databases"][st["db_name"]]["rev"]
 up = backend is not None and backend["release"] not in st["bad_releases"]
 if up:
     head = st["heads"].get(backend["release"])
-    if db_rev not in (head, "-") and backend["ahead"] != "1":
-        up = False          # an older image on a newer database refuses to start without the DB-ahead mode
+    if db_rev not in (head, "-") and backend["ahead"] != db_rev:
+        up = False          # an older image on a newer database starts only when told that exact revision
 if "-w" in args:
     print("200" if up and "caddy" in st["running"] else "000", end="")
     sys.exit(0)
@@ -269,7 +357,7 @@ if url.endswith("/api/system/health"):
 if url.endswith("/health/deep"):
     mig = "ok" if db_rev == st["heads"].get(backend["release"]) else "behind"
     print(json.dumps({"status": "ok" if mig == "ok" else "degraded", "checks": {"database": {"status": "ok"}, "migrations": {"status": mig},
-                      "worker": {"status": "ok"}, "redis": {"status": "ok"}}}))
+                      "worker": {"status": "ok", "seconds_since_heartbeat": 0}, "redis": {"status": "ok"}}}))
     sys.exit(0)
 sys.exit(22)
 '''
@@ -317,7 +405,11 @@ class Host:
                       "databases": {"advance_trading_platform": {"rev": "-"}}, "heads": {rel_a: "rev1", rel_b: "rev1", "latest": "rev1"},
                       "market_open": False, "backups": [], "last_backup_ok": None, "offsite_pushes": [], "verified": [],
                       "verify_status": "ok", "bad_releases": [], "flags_table": False, "flags_json": None,
-                      "bucket_files_dir": str(tmp / "bucket-files"), "restore_dir": str(self.restore_dir)}
+                      "bucket_files_dir": str(tmp / "bucket-files"), "restore_dir": str(self.restore_dir),
+                      "hmacs": {}, "held": [], "terminated": [], "safety_checks": [], "chain_checked": [], "rollback_safe": True,
+                      "session": {"open_sessions": [], "open_positions": 0, "orders_since": 0, "now_ist": "2026-10-11 20:00"},
+                      "posture": {"live_trading": {"on": False, "tenants": 0, "stored": True},
+                                  "phase0_paper_only": {"known": True, "on": True, "stored": True}, "stored_on": ["phase0_paper_only"]}}
         self.save()
         py = sys.executable
         for name, body in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL)):
@@ -379,8 +471,10 @@ class Host:
         return -1
 
     def mutating(self, since=0):
-        keys = (" up ", " build", " stop ", " run ", "image rm", "CREATE DATABASE", "ALTER DATABASE")
-        return [c for c in self.calls(since) if any(k in f" {c} " for k in keys)]
+        keys = (" up ", " build", " stop ", " run ", "image rm", "CREATE DATABASE", "ALTER DATABASE", "DROP DATABASE")
+        read_only = ("session_check.py", "alembic heads", "migration_rollback_safety.py", "readlink /backups/latest", "--entrypoint cat",
+                     "flag_posture.py", "ls -1 /backups/pre-migration")
+        return [c for c in self.calls(since) if any(k in f" {c} " for k in keys) and not any(r in c for r in read_only)]
 
 
 @pytest.fixture
@@ -409,10 +503,15 @@ def test_first_deploy_backs_up_then_migrates_then_api_then_worker_and_records_th
     assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev1"
     assert host.state["running"]["worker"]["release"] == host.sha_b[:12] and host.state["running"]["backend"]["release"] == host.sha_b[:12]
     line = (host.dir / ".deploy/releases.log").read_text().split()
-    assert line[1:] == ["deploy", host.sha_b, "-", host.state["backups"][0]["name"], "-", "rev1"]
+    dump = host.state["backups"][0]["name"]
+    assert line[1:] == ["deploy", host.sha_b, "-", "pre-migration/" + dump, "-", "rev1"]   # kept out of the normal retention
+    assert host.state["hmacs"][dump] == host.state["hmacs"]["pre-migration/" + dump] and len(host.state["hmacs"][dump]) == 64   # sealed
+    assert host.index("up -d --no-deps --no-build worker") < host.index("up -d --no-build")      # the worker straight after the API
     assert (host.dir / ".deploy/current").read_text().strip() == host.sha_b
-    fingerprint = (host.dir / ".deploy/secrets_key.sha256").read_text().strip()
-    assert len(fingerprint) == 64 and SECRETS["SECRETS_ENCRYPTION_KEY"] not in fingerprint
+    fingerprint = (host.dir / ".deploy/secrets_key.fingerprint").read_text().strip()
+    salt = (host.dir / ".deploy/key_salt").read_text().strip()
+    assert len(fingerprint) == 64 and len(salt) == 32 and SECRETS["SECRETS_ENCRYPTION_KEY"] not in fingerprint
+    assert fingerprint != hashlib.sha256(SECRETS["SECRETS_ENCRYPTION_KEY"].encode()).hexdigest()   # salted scrypt, not a bare hash
     for f in (host.dir / ".deploy").rglob("*"):
         if f.is_file():
             assert not any(s in f.read_text(errors="ignore") for s in SECRETS.values()), f
@@ -476,7 +575,7 @@ def test_an_unhealthy_new_api_puts_the_previous_one_back_without_touching_the_wo
     host.state["heads"][host.sha_b[:12]] = "rev2"; host.state["bad_releases"] = [host.sha_b[:12]]; host.save()
     res = host.run("deploy")
     assert res.returncode == 1 and "failed at the API health check" in res.all
-    assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": "1"}   # previous image, DB-ahead mode
+    assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": "rev2"}   # previous image, DB-ahead mode for that exact revision
     assert host.state["running"]["worker"]["release"] == host.sha_a[:12]
     assert (host.dir / ".deploy/current").read_text().strip() == host.sha_a
     assert (host.dir / ".deploy/db_ahead").read_text().strip() == "rev2"
@@ -496,7 +595,7 @@ def test_rollback_reuses_the_previous_images_and_runs_on_the_newer_schema(host):
     res = host.run("rollback")
     assert res.returncode == 0, res.all
     assert not any(" build" in c for c in host.calls(before))                     # images of A still there: no rebuild
-    assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": "1"}
+    assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": "rev2"}
     assert host.state["running"]["worker"]["release"] == host.sha_a[:12]
     assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev2"   # schema kept (additive)
     assert (host.dir / ".deploy/current").read_text().strip() == host.sha_a
@@ -590,14 +689,35 @@ def test_backup_with_r2_copies_off_site_and_the_restore_check_reads_back_from_r2
 def test_health_reports_live_and_flags_read_only_and_fails_on_an_extra_public_port(host):
     host.write_env(extra={"LIVE_EXIT_IF_NO_STOP": "true"})
     assert host.run("deploy").returncode == 0
-    host.state["flags_table"] = True; host.state["flags_json"] = json.dumps({"flags": {"byob_data_tier": {"on": True, "tenants": []}}}); host.save()
     before = len(host.state["calls"])
     res = host.run("health")
     assert res.returncode == 0, res.all
-    assert "live_trading is ON by default" in res.stdout and "LIVE switches set in .env: LIVE_EXIT_IF_NO_STOP" in res.stdout
-    assert "stored ON: byob_data_tier" in res.stdout and host.mutating(before) == []
+    assert "live_trading is off" in res.stdout and "phase0_paper_only is on" in res.stdout
+    assert "LIVE switches set in .env: LIVE_EXIT_IF_NO_STOP" in res.stdout and "flags stored on: phase0_paper_only" in res.stdout
+    assert host.mutating(before) == []
     res = host.run("health", extra_env={"FAKE_SS": "LISTEN 0 4096 0.0.0.0:5432 0.0.0.0:*"})
     assert res.returncode == 1 and "public TCP ports besides 22/80/443: 5432" in res.stdout
+
+
+def test_live_reachable_is_an_owner_action_never_changed_by_the_script(host):
+    assert host.run("deploy").returncode == 0
+    host.state["posture"] = {"live_trading": {"on": True, "tenants": 0, "stored": False},
+                             "phase0_paper_only": {"known": True, "on": False, "stored": False}, "stored_on": []}
+    host.save()
+    before = len(host.state["calls"])
+    res = host.run("health")
+    assert res.returncode == 10, res.all
+    assert "OWNER ACTION NEEDED" in res.stdout and "turn live_trading OFF" in res.stdout and "turn phase0_paper_only ON" in res.stdout
+    assert host.mutating(before) == [] and not host.state.get("unexpected_sql")       # read-only: no flag written
+    host.state["posture"]["live_trading"] = {"on": False, "tenants": 2, "stored": True}
+    host.state["posture"]["phase0_paper_only"] = {"known": True, "on": True, "stored": True}
+    host.save()
+    res = host.run("health")
+    assert res.returncode == 10 and "for 2 organisation(s)" in res.stdout
+    host.state["posture"]["live_trading"]["tenants"] = 0
+    host.state["posture"]["phase0_paper_only"] = {"known": False, "on": False, "stored": False}   # a release without Z10-c
+    host.save()
+    assert host.run("health").returncode == 0
 
 
 def test_flags_changed_during_a_deploy_fail_the_run(host):
@@ -632,7 +752,7 @@ def test_release_overlay_pins_images_to_the_commit():
     assert services["worker"]["deploy"]["replicas"] == 1
 
 
-def test_migrate_guard_starts_an_older_image_on_a_newer_database_only_when_told(monkeypatch):
+def test_migrate_guard_starts_an_older_image_on_a_newer_database_only_when_told_that_exact_revision(monkeypatch):
     import importlib.util
     spec = importlib.util.spec_from_file_location("migrate_guard_z11", ROOT / "backend/scripts/migrate_guard.py")
     guard = importlib.util.module_from_spec(spec)
@@ -647,8 +767,11 @@ def test_migrate_guard_starts_an_older_image_on_a_newer_database_only_when_told(
     monkeypatch.setattr("sys.argv", ["migrate_guard.py", "--force"])
     monkeypatch.delenv("MIGRATION_ALLOW_DB_AHEAD", raising=False)
     assert guard.main() == 4 and calls == []                                      # refuses: never runs upgrade on an unknown revision
-    monkeypatch.setenv("MIGRATION_ALLOW_DB_AHEAD", "1")
-    assert guard.main() == 0 and calls == []                                      # rollback mode: starts, migrates nothing
+    for wrong in ("1", "true", "eeee"):
+        monkeypatch.setenv("MIGRATION_ALLOW_DB_AHEAD", wrong)
+        assert guard.main() == 4 and calls == []                                  # only the revision atp.sh checked is accepted
+    monkeypatch.setenv("MIGRATION_ALLOW_DB_AHEAD", "ffff")
+    assert guard.main() == 0 and calls == []                                      # checked rollback: starts, migrates nothing
 
 
 def test_secrets_key_check_counts_keys_that_do_not_open():
@@ -690,3 +813,188 @@ def test_install_runs_bootstrap_checks_then_deploy_then_the_first_backup_and_res
     shutil.rmtree(host.restore_dir)
     res = host.run("install")
     assert res.returncode == 10 and "run the bootstrap block as root" in res.all
+
+
+# --- review follow-ups (H1-H2, M1-M5, L1-L7) --------------------------------------------------------------------
+
+def _deploy_a_then_migrating_b(host):
+    assert host.run("deploy", host.sha_a).returncode == 0
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.save()
+    assert host.run("deploy").returncode == 0
+
+
+def test_redeploying_the_same_release_keeps_rollback_working(host):
+    _deploy_a_then_migrating_b(host)
+    again = host.run("deploy")                                                       # deploy B a second time
+    assert again.returncode == 0, again.all
+    kinds = [line.split()[1] for line in (host.dir / ".deploy/releases.log").read_text().splitlines()]
+    assert kinds == ["deploy", "deploy", "converge"]
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})   # A, B, B -> restore
+    assert res.returncode == 0 and "rolled back to " + host.sha_a[:12] in res.stdout, res.all
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev1"
+    assert host.run("deploy").returncode == 0 and host.run("deploy").returncode == 0  # B (migrates again), B again
+    res = host.run("rollback")                                                       # A, B, B -> code-only
+    assert res.returncode == 0 and "rolled back to " + host.sha_a[:12] in res.stdout, res.all
+
+
+def test_backup_verify_and_install_fail_when_the_verify_fails(host):
+    assert host.run("deploy").returncode == 0
+    host.state["verify_status"] = "count_too_low"; host.save()
+    res = host.run("backup", "--verify")
+    assert res.returncode == 1 and "backup: FAILED" in res.stdout
+    res = host.run("install")
+    assert res.returncode == 1 and "install: done" not in res.stdout
+
+
+def test_swap_terminates_both_databases_and_renames_in_one_transaction(host):
+    _deploy_a_then_migrating_b(host)
+    host.state["hold_scratch"] = True; host.save()                                   # something connected to the restored copy
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 0, res.all
+    terminated = host.state["terminated"][-1]
+    assert "advance_trading_platform" in terminated and any("_rb_" in n for n in terminated)
+    swap = next(c for c in host.calls() if "ALTER DATABASE" in c)
+    assert "BEGIN;" in swap and "COMMIT;" in swap and swap.count("ALTER DATABASE") == 2
+
+
+def test_a_failed_swap_restarts_the_release_that_was_running_on_the_unchanged_database(host):
+    _deploy_a_then_migrating_b(host)
+    host.state["swap_fail"] = True; host.save()
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 1 and "database swap failed (nothing renamed)" in res.all
+    assert host.state["running"]["backend"]["release"] == host.sha_b[:12]           # B again, not A
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev2"
+    assert _git(host.dir, "rev-parse", "HEAD") == host.sha_b
+    assert (host.dir / ".deploy/current").read_text().strip() == host.sha_b
+
+
+def test_open_session_with_open_positions_blocks_the_worker_restart(host):
+    _deploy_a_then_migrating_b(host)
+    host.state["session"] = {"open_sessions": ["MCX"], "open_positions": 2, "orders_since": 0, "now_ist": "2026-10-11 21:10"}
+    host.state["heads"]["latest"] = "rev2"; host.save()
+    before = len(host.state["calls"])
+    res = host.run("rollback")
+    assert res.returncode == 3 and "MCX session open and 2 position(s) open" in res.all and "23:30" in res.all
+    assert host.mutating(before) == [] and _git(host.dir, "rev-parse", "HEAD") == host.sha_b
+    res = host.run("rollback", extra_env={"ATP_ALLOW_SESSION_RESTART": "1"})
+    assert res.returncode == 0, res.all
+    host.state["session"]["open_positions"] = 0; host.save()                           # open session, flat book: fine
+    assert host.run("deploy").returncode == 0
+
+
+def test_restore_db_refuses_to_orphan_positions_or_orders_without_the_typed_acknowledgement(host):
+    _deploy_a_then_migrating_b(host)
+    host.state["session"]["open_positions"] = 1; host.state["session"]["orders_since"] = 4; host.save()
+    before = len(host.state["calls"])
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 1 and "not acknowledged" in res.all and "1 open position(s) and 4 order(s)" in res.all
+    assert host.mutating(before) == []
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform", "ATP_CONFIRM_ORPHANS": "ORPHAN"})
+    assert res.returncode == 0, res.all
+
+
+def test_code_only_rollback_is_refused_past_a_migration_that_is_not_rollback_safe(host):
+    _deploy_a_then_migrating_b(host)
+    host.state["rollback_safe"] = False; host.save()
+    res = host.run("rollback")
+    assert res.returncode == 1 and "not ROLLBACK_SAFE" in res.all and "--restore-db" in res.all
+    assert host.state["safety_checks"][-1] == {"release": host.sha_b[:12], "db": "rev2", "head": "rev1"}   # the newer image decides
+    assert host.state["running"]["backend"]["release"] == host.sha_b[:12]           # nothing restarted
+    assert _git(host.dir, "rev-parse", "HEAD") == host.sha_b                         # checkout put back
+
+
+def test_a_deploy_that_failed_after_migrating_is_logged_and_undone_by_restore_db(host):
+    assert host.run("deploy", host.sha_a).returncode == 0
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.state["bad_releases"] = [host.sha_b[:12]]; host.save()
+    assert host.run("deploy").returncode == 1
+    last = (host.dir / ".deploy/releases.log").read_text().splitlines()[-1].split()
+    assert last[1:3] == ["failed", host.sha_b] and last[3] == host.sha_a and last[4].startswith("pre-migration/")
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 0, res.all
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev1"
+    assert host.state["running"]["backend"] == {"release": host.sha_a[:12], "ahead": ""}
+    assert (host.dir / ".deploy/releases.log").read_text().splitlines()[-1].split()[1] == "restore"
+
+
+def test_failures_before_the_restart_put_the_checkout_back(host):
+    assert host.run("deploy", host.sha_a).returncode == 0
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.state["market_open"] = True; host.save()
+    assert host.run("deploy").returncode == 3
+    assert _git(host.dir, "rev-parse", "HEAD") == host.sha_a
+    host.state["market_open"] = False; host.state["migrate_fail"] = True; host.save()
+    res = host.run("deploy")
+    assert res.returncode == 1 and "migration failed" in res.all and _git(host.dir, "rev-parse", "HEAD") == host.sha_a
+    assert (host.dir / ".deploy/releases.log").read_text().splitlines()[-1].split()[1] == "failed"
+
+
+def test_an_unreadable_database_is_a_failure_not_unchanged(host):
+    assert host.run("deploy").returncode == 0
+    host.state["db_down"] = True; host.save()
+    res = host.run("deploy")
+    assert res.returncode == 1 and "cannot read the database revision" in res.all
+
+
+def test_env_values_are_read_like_compose_reads_them(host):
+    env = host.dir / ".env"
+    text = env.read_text().replace("CADDYFILE=Caddyfile.ip", "CADDYFILE=Caddyfile.ip   # IP until DNS")
+    text = text.replace(f"BACKUP_ENCRYPTION_PASSPHRASE={SECRETS['BACKUP_ENCRYPTION_PASSPHRASE']}",
+                        f"BACKUP_ENCRYPTION_PASSPHRASE=\"{SECRETS['BACKUP_ENCRYPTION_PASSPHRASE']} #kept\"")
+    env.write_text(text)
+    assert host.run("deploy").returncode == 0                                        # the comment is not part of CADDYFILE
+    assert host.run("backup").returncode == 0
+    archive = sorted(host.files_dir.glob("atp_files_*.tar.gz.enc"))[-1]
+    dec = subprocess.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000", "-pass", "env:P", "-in", str(archive)],
+                         env={**os.environ, "P": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"] + " #kept"}, capture_output=True)
+    assert dec.returncode == 0                                                       # the quoted '#' is part of the passphrase
+
+
+def test_a_tampered_backup_fails_its_seal(host):
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    host.state["tampered"] = [host.state["latest"]]; host.save()
+    res = host.run("restore-check")
+    assert res.returncode == 1 and "does not match its seal" in res.stdout
+    archive = sorted(host.files_dir.glob("atp_files_*.tar.gz.enc"))[-1]
+    data = bytearray(archive.read_bytes()); data[-1] ^= 1; archive.write_bytes(bytes(data))
+    (archive.parent / (archive.name + ".sha256")).write_text(hashlib.sha256(bytes(data)).hexdigest() + "\n")   # sha256 recomputed
+    host.state["tampered"] = []; host.save()
+    res = host.run("restore-check")
+    assert res.returncode == 1 and "does not match its seal (changed after it was written)" in res.stdout
+
+
+def test_restore_check_runs_the_audit_chain_and_tolerates_a_backup_from_before_the_last_migration(host):
+    assert host.run("deploy", host.sha_a).returncode == 0
+    assert host.run("backup").returncode == 0                                         # dump at rev1
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.save()
+    assert host.run("deploy").returncode == 0                                         # pre-migration dump only lives under pre-migration/
+    host.state["latest"] = [b["name"] for b in host.state["backups"] if "/" not in b["name"]][0]; host.save()
+    res = host.run("restore-check")
+    assert res.returncode == 0, res.all
+    assert "predates the last migration" in res.stdout and "audit hash chain intact" in res.stdout
+    assert host.state["chain_checked"] and host.state["chain_checked"][-1] not in host.state["databases"]   # scratch dropped
+    host.state["chain_broken"] = True; host.save()
+    assert host.run("restore-check").returncode == 1
+
+
+def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_ones(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("migration_rollback_safety", ROOT / "backend/scripts/migration_rollback_safety.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.lint() == []                                                           # every committed migration declares it
+    head = 'revision = "x1"\ndown_revision = "x0"\n'
+    cases = {
+        "drop.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.drop_column('t', 'c')\n", True),
+        "rename.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.alter_column('t', 'c', new_column_name='d')\n", True),
+        "notnull.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False))\n", True),
+        "sql.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('ALTER TABLE t ALTER COLUMN c SET NOT NULL')\n", True),
+        "missing.py": (head + "\ndef upgrade():\n    op.create_table('t')\n", True),
+        "additive.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False, server_default='0'))\n"
+                        "    op.create_table('u', sa.Column('id', sa.Integer(), nullable=False))\n\ndef downgrade():\n    op.drop_table('u')\n", False),
+        "marked_unsafe.py": (head + "ROLLBACK_SAFE = False\n\ndef upgrade():\n    op.drop_table('t')\n", False),
+        "reviewed.py": (head + "ROLLBACK_SAFE = True\nROLLBACK_SAFE_REASON = 'column unused since #120'\n\ndef upgrade():\n    op.drop_column('t', 'c')\n", False),
+    }
+    for name, (src, _) in cases.items():
+        (tmp_path / name).write_text(src)
+    flagged = {p.split(":")[0] for p in mod.lint(tmp_path)}
+    assert flagged == {name for name, (_, bad) in cases.items() if bad}

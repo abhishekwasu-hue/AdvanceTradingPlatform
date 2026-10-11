@@ -21,6 +21,7 @@ revision: str = 'c5e7a9b1d3f4'
 down_revision: Union[str, Sequence[str], None] = 'a8c0e2f4b6d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 TZ = sa.DateTime(timezone=True)
 

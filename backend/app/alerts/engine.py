@@ -165,7 +165,10 @@ async def _send(session: AsyncSession, rule: AlertRuleRecord, events: List[Alert
                 bucket: Optional[str]) -> NotificationRecord:
     from app.notifications.service import notify
     title, body = _message(rule, events, bucket)
-    note = await notify(session, rule.tenant_id, NotificationType.SCREEN_ALERT, title=title, message=body, severity=SEVERITY[rule.priority])
+    # BT1b: addressed to the rule's creator (with byob_data_tier on, the feed shows it to them only - its values come
+    # from their own broker feed).
+    note = await notify(session, rule.tenant_id, NotificationType.SCREEN_ALERT, title=title, message=body, severity=SEVERITY[rule.priority],
+                        user_id=rule.created_by)
     await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.notification_id == note.id)
                           .values(priority=rule.priority, group_id=group_id, digest_bucket=bucket).execution_options(synchronize_session=False))
     from app.alerts.links import add_linked_delivery                    # S3b-2: the rule creator's own linked Telegram chat

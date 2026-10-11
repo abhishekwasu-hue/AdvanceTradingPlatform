@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
+import PaperAccountCard from "../components/PaperAccountCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
@@ -18,7 +19,7 @@ export default function PositionsPage() {
   const [greeks, setGreeks] = useState<PositionGreeks | null>(null);
   const [greeksError, setGreeksError] = useState<string | null>(null);
   const [greeksBusy, setGreeksBusy] = useState(false);
-  // Z3: "Exit now" exists only with approval-only entries on (otherwise exits run automatically).
+  // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const [exitNowOn, setExitNowOn] = useState(false);
 
   async function loadGreeks() {
@@ -46,7 +47,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries))).catch(() => setExitNowOn(false));
+    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries || f.paper_account))).catch(() => setExitNowOn(false));
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -107,6 +108,8 @@ export default function PositionsPage() {
 
       {error && <div className="text-sm text-down">{error}</div>}
       {loading && <div className="text-sm text-fg-muted">Loading…</div>}
+
+      <PaperAccountCard canTrade={user.role !== "VIEWER"} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <StatTile label="Open Positions" value={positions.length} />

@@ -62,6 +62,10 @@ SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView 
 PriceLookup = Callable[..., Awaitable[float]]       # (symbol, exchange="NSE") -> last price
 
 
+class EntriesPaused(ValueError):
+    """Z3-b: the user the proposal is for paused their PAPER entries (/pause): no proposal is raised."""
+
+
 def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
@@ -107,8 +111,11 @@ def may_act_on_trade(user: User, trade: TradeRecord) -> bool:
 
 
 async def exit_now_enabled(session: AsyncSession, tenant_id: int) -> bool:
-    """Review M4: "Exit now" (API, Telegram /exit, the Positions button) exists with approval-only on."""
-    return await flag_on(session, tenant_id)
+    """Review M4: "Exit now" (API, Telegram /exit, the Positions button) exists with approval-only or the PAPER account on."""
+    if await flag_on(session, tenant_id):
+        return True
+    from app.paper.service import enabled as paper_enabled
+    return await paper_enabled(session, tenant_id)
 
 
 async def gate_refusal(session: AsyncSession, tenant_id: int, *, deployment_id: Optional[int], origin: str,
@@ -180,10 +187,15 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                         exchange: str = "NSE") -> Optional[AiActionRecord]:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
-    for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner. Places nothing."""
+    for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
+    EntriesPaused when that user paused their PAPER entries (Z3-b). Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
+    from app.paper.service import paused_reason
+    paused = await paused_reason(session, user_id)
+    if paused:
+        raise EntriesPaused(paused)
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -325,12 +337,16 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
         signal = Signal.model_validate(evidence["signal"])
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
-        fresh = await propose_entry(session, action.tenant_id, signal=signal.model_copy(update={"entry": price, "risk_reward": rr}),
-                                    strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), source="requote",
-                                    idempotency_key=f"requote:{action.id}", deployment=deployment,
-                                    requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
-                                    holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
-                                    requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"))
+        try:
+            fresh = await propose_entry(session, action.tenant_id, signal=signal.model_copy(update={"entry": price, "risk_reward": rr}),
+                                        strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), source="requote",
+                                        idempotency_key=f"requote:{action.id}", deployment=deployment,
+                                        requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
+                                        holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
+                                        requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"))
+        except EntriesPaused:
+            fresh = None
+            result = f"Not placed: {why}. No re-quote: PAPER entries are paused"
         if fresh is not None:
             result = f"Not placed: {why}. Re-quoted as proposal #{fresh.id}"
     elif verdict == "requote":

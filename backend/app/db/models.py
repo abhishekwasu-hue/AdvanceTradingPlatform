@@ -2209,6 +2209,25 @@ class VisionReportRecord(Base):
     finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
+class PaperAccountRecord(Base):
+    """Z3-b / BT3 (beta spec, Phase 0): one PAPER account per **user** (not per organisation): the starting capital the
+    balance and the progression ladder are measured from, and the PAPER-scope pause (Telegram /pause, /resume) that
+    stops that user's new PAPER entries and entry proposals - exits never (ADR-0004). Balance and P&L are not stored:
+    they are summed from the user's own PAPER trades (`trades.user_id`), so the account can never drift from them."""
+
+    __tablename__ = "paper_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    starting_capital: Mapped[float] = mapped_column(Money, nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a
 # source can correct itself, a `version`: a query "as of T" sees only rows ingested at or before T and, per key, the
 # highest such version. Times are bar END / event time in UTC. On TimescaleDB the four time-series tables become

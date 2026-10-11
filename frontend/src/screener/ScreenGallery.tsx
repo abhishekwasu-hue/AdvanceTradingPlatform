@@ -109,11 +109,11 @@ function Chip({ axis, label, count, active, onClick }: { axis?: TaxAxis; label: 
   );
 }
 
-/** A count; zero reads "0" in muted type (and "none" to a screen reader), never hidden. */
+/** A count; zero reads "0" in muted type (and "(none)" to a screen reader), never hidden. */
 function Count({ n }: { n: number }) {
   return (
     <span className={cx("font-mono font-tabular text-t12", n === 0 ? "text-fg-muted/70" : "text-fg-muted")}>
-      <span aria-hidden>{n}</span><span className="sr-only">{n === 0 ? ", none" : `, ${n} ${n === 1 ? "screen" : "screens"}`}</span>
+      <span aria-hidden>{n}</span><span className="sr-only">{n === 0 ? "(none)" : `(${n} ${n === 1 ? "screen" : "screens"})`}</span>
     </span>
   );
 }

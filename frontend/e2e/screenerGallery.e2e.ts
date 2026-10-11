@@ -43,8 +43,8 @@ test("browse by method and setup, see an empty cell, open a starter into the bui
   const chips = dialog.getByRole("group", { name: "Setup type" });
   await expect(dialog.locator("[data-screen-id]")).toHaveCount(3);
 
-  await rail.getByRole("button", { name: /^B Indicator/ }).click();
-  await expect(rail.getByRole("button", { name: /^B Indicator/ })).toHaveAttribute("aria-pressed", "true");
+  await rail.getByRole("button", { name: /^Indicator \(/ }).click();
+  await expect(rail.getByRole("button", { name: /^Indicator \(/ })).toHaveAttribute("aria-pressed", "true");
   await chips.getByRole("button", { name: /^Breakout \/ breakdown/ }).click();
   await expect(dialog.getByTestId("gallery-empty")).toHaveText("No screens are filed under Indicator → Breakout / breakdown yet.");
 

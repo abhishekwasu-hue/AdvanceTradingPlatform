@@ -320,10 +320,10 @@ def payload(taxonomy: Taxonomy, *, hidden_sources: Iterable[str] = (), method: O
             "screens": [s.as_dict() for s in picked], "matrix": matrix(taxonomy, shown), "total": len(shown), "note": NOTE}
 
 
-if __name__ == "__main__":      # regenerates the frontend's sample: python -m app.screener.taxonomy > ../frontend/src/screener/taxonomySample.json
-    print(json.dumps(payload(load()), indent=1, ensure_ascii=False))
-
-
 __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen", "Source", "Taxonomy", "TaxonomyError", "advice_words",
            "coverage_problems", "lint", "load", "matrix", "parse", "payload", "register_source", "sources", "unregister_source",
            "visible"]
+
+
+if __name__ == "__main__":      # regenerates the frontend's sample: python -m app.screener.taxonomy > ../frontend/src/screener/taxonomySample.json
+    print(json.dumps(payload(load()), indent=1, ensure_ascii=False))

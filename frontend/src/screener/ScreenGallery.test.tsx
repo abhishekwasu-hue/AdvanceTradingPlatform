@@ -17,7 +17,7 @@ describe("ScreenGallery (U9 TX1)", () => {
     for (const m of tax.methods) expect(html).toContain(m.label);
     for (const s of tax.setups) expect(html).toContain(s.label);
     expect(html.match(/data-screen-id=/g)).toHaveLength(tax.screens.length);
-    expect(html).toContain(", none");                                         // empty chips and rail rows say so
+    expect(html).toContain("(none)");                                         // empty chips and rail rows say so
     expect(text(html)).toContain(`${tax.total} screens · All methods → All setups`);
     expect(html).toContain('aria-pressed="true"');                           // "All methods" and "All setups"
   });

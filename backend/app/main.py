@@ -569,6 +569,10 @@ async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_use
     building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
     needs a logged-in caller (P0.1 / S3: CPU-bound work is not offered to anonymous callers).
     """
+    from app.core import config as app_config
+    if app_config.SCANNER_ENGINE == "screenql":
+        from app.scanner.screenql import run_scanner_screenql
+        return await run_in_threadpool(run_scanner_screenql, request)
     return await run_in_threadpool(run_scanner, request)
 
 

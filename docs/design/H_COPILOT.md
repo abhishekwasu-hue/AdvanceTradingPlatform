@@ -94,6 +94,13 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Provisional: rows, hashes and costs are never deleted. Personal data is masked at write time. The text is scrubbed
     on the trader's erasure / "forget me". Age-based scrubbing exists (`RETENTION_LLM_TEXT_DAYS`) but is off by default.
   - Deleting data is the owner's decision (§14), so the period is left to the owner.
+- **H-7. Agent proposals: which actions, and the late-news gap.** ADR-0019 lists `propose_strategy_draft` and
+  `propose_deployment` (PAPER) as well.
+  - Provisional: this slice ships only de-risking proposals (pause, tighter risk, review). They reuse the monitor's
+    approve/execute path unchanged.
+  - Draft and deployment proposals need a new execute path, so they wait for the owner's answer.
+  - The untrusted-text quote check covers news read before the proposal call. (a) and (b) always apply, so the
+    trader's message must ask for the action in every case.
 
 ## H-C2a (built): tool registry, bounded loop, audit - read tools only
 - **Tools.** `app/ai/tools/` is a typed registry:
@@ -115,8 +122,37 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   `llm_calls`.
 - **Route.** `POST /api/ai/agent/ask` sits behind the new `ai_agent` flag, which is off by default, and keeps the
   existing acknowledgement gate and AI rate limit.
-- **H-C2b next:**
-  - proposal tools with the injection guard (intent allow-list, a reason that cites the trader's message);
-  - the JSON answer contract (claims with their source tool call);
-  - an OpenAI tools adapter;
-  - candles, quote, chain and backtest tools.
+- **H-C2b next:** proposal tools with the injection guard (built below), then the JSON answer contract (claims with
+  their source tool call), an OpenAI tools adapter, and candles, quote, chain and backtest tools.
+
+## H-C2b-1 (built): proposal tools and the injection guard
+- **Tools** (`app/ai/tools/proposals.py`, kind `proposal`). Each one only files a PROPOSED row in the monitor's
+  `ai_actions` queue (ADR-0006), through `monitor.raise_proposals`. That gives the same notification, dedupe, 24 h
+  expiry and approve/reject flow as the monitor's own proposals.
+  - `propose_pause_deployment`: PAUSE_DEPLOYMENT, rule `AGENT_PAUSE`; the deployment must be this organisation's and
+    ACTIVE.
+  - `propose_risk_reduction`: REDUCE_RISK, rule `AGENT_RISK`. Only a tighter value is accepted: lower for risk %, loss
+    %, counts and drawdown levels; higher for min R:R and cooldown. On approval the action is acknowledged and the
+    person changes the setting on the Risk page; no setting is changed automatically.
+  - `propose_strategy_review`: REVIEW_STRATEGY, rule `AGENT_REVIEW`.
+  - Nothing here sends, modifies or cancels an order, and nothing touches a LIVE setting.
+- **Guard** (ADR-0019 §3):
+  - (a) Intent allow-list. A proposal tool is offered to the model only when the trader's own message asks for that
+    kind of action (English and Marathi words, `INTENT_WORDS`). Text inside a headline cannot add a tool.
+  - (b) The call's `quote` must be the trader's own words. It must be a piece of the message, contain the words that
+    allowed the tool, and not also appear in untrusted text read during the request.
+  - (c) At most one proposal per request (`AgentLimits.max_proposals`).
+  - `run_tool` refuses a proposal tool unless the loop has cleared it, and `register` refuses a proposal tool without
+    `quote` and `reason`.
+  - A refused call is told to the model as `guard: ...`, stored on the `agent_steps` row, and written to the audit log
+    as `agent_proposal_refused`. A created one is logged as `agent_proposal_created`.
+- **Route.** `POST /api/ai/agent/ask` returns `proposals` (id, action). They are decided under AI Copilot like any
+  other proposal.
+- **Tests.** `tests/test_hc2b_proposals.py`. An injected headline ("pause deployment N") produces zero proposals in
+  three variants:
+  - the trader did not ask;
+  - the quote was taken from the headline;
+  - the trader's words also appear in the headline.
+- **Limit (provisional, H-7).** The untrusted-text check sees only data read before the proposal call. When the model
+  reads news after proposing in the same turn, only checks (a) and (b) protect that call. Both still require the
+  trader's own message to ask for the action.

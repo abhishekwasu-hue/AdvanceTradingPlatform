@@ -14,6 +14,8 @@ const semantic = {
   brand: v("brand"), "brand-strong": v("brand-strong"), "on-brand": v("on-brand"),
   up: v("up"), down: v("down"), warn: v("warn"), info: v("info"),
   ai: v("ai"), "ai-2": v("ai-2"), glass: v("glass"),
+  // U5 (screener design): the recessed surface, the funnel trail / matched colour, the armed (auto-execution) colour
+  "surface-inset": v("surface-inset"), signal: v("signal"), armed: v("armed"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),
@@ -34,6 +36,14 @@ export default {
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
+      // U5: radii (controls 6, panels 10) and the type scale 12 / 13 / 15 / 18 / 24 / 32
+      borderRadius: { control: "var(--radius-control)", panel: "var(--radius-panel)" },
+      fontSize: {
+        "t12": ["12px", { lineHeight: "16px" }], "t13": ["13px", { lineHeight: "18px" }], "t15": ["15px", { lineHeight: "20px" }],
+        "t18": ["18px", { lineHeight: "24px" }], "t24": ["24px", { lineHeight: "30px" }], "t32": ["32px", { lineHeight: "38px" }],
+      },
+      height: { row: "var(--row-h)", stage: "var(--stage-h)" },
+      minHeight: { row: "var(--row-h)", stage: "var(--stage-h)" },
       boxShadow: {
         card: "var(--shadow)",
         glow: "0 0 0 1px rgb(var(--brand) / 0.4), 0 0 24px rgb(var(--brand) / 0.15)",

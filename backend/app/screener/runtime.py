@@ -451,6 +451,28 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
     return ((x - x.rolling(n_).mean()) / std.replace(0.0, np.nan)).astype(float)
 
 
+def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None) -> Dict[str, Any]:
+    """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
+
+    Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
+    same universe as in the full screen) and the results are ANDed cumulatively: the count after a stage is the
+    symbols that passed it and every stage before it, and the last count equals the screen's match count.
+    Symbols the screen cannot evaluate at all (not enough history, a runtime problem) are left out of the funnel
+    (`with_data`) instead of being "removed" by the first stage."""
+    full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params))}
+    usable = [d for d in universe if full[d.symbol].reason is None]
+    items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
+    alive = [d.symbol for d in usable]
+    stages: List[Dict[str, Any]] = []
+    for item in items:
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params) if m.matched}
+        removed = [s for s in alive if s not in passed]
+        alive = [s for s in alive if s in passed]
+        stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
+    return {"with_data": len(usable), "stages": stages}
+
+
 def _last(value: Any) -> Any:
     if isinstance(value, pd.Series):
         return value.iloc[-1] if len(value) else np.nan

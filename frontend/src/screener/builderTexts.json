@@ -1,0 +1,420 @@
+{
+ "_doc": "U5: the contract between the builder and the server. model.ts must write `text` from `stage` with `registry`; the server must accept every text and describe these functions exactly as `registry` says (tests/test_u5_funnel.py). Change both sides together.",
+ "registry": {
+  "BBUpper": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "n",
+    "k"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 20,
+    "k": 2.0
+   },
+   "types": {
+    "n": "window",
+    "k": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "upper Bollinger band"
+  },
+  "EMA": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "same",
+   "args": [
+    "x",
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num",
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "exponential moving average"
+  },
+  "ORHigh": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "minutes"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "minutes": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "opening-range high, visible once the range is complete"
+  },
+  "PDH": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "previous session high"
+  },
+  "PctChange": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "pct",
+   "args": [
+    "x",
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {
+    "x": "num",
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "% change of x over n bars"
+  },
+  "RSI": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "index",
+   "args": [
+    "n"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 14
+   },
+   "types": {
+    "n": "window"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "RSI of close (0-100)"
+  },
+  "Supertrend": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "n",
+    "k"
+   ],
+   "choices": {},
+   "values": [],
+   "defaults": {
+    "n": 10,
+    "k": 3.0
+   },
+   "types": {
+    "n": "window",
+    "k": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "Supertrend line"
+  },
+  "SwingLow": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [
+    "degree"
+   ],
+   "choices": {
+    "degree": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "values": [],
+   "defaults": {
+    "degree": 0
+   },
+   "types": {
+    "degree": "num"
+   },
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"
+  },
+  "VWAP": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": false,
+   "doc": "session VWAP"
+  },
+  "close": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "price",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": true,
+   "doc": "bar close"
+  },
+  "volume": {
+   "kind": "factor",
+   "returns": "num",
+   "unit": "volume",
+   "args": [],
+   "choices": {},
+   "values": [],
+   "defaults": {},
+   "types": {},
+   "cross_sectional": false,
+   "kwargs": [],
+   "varargs": false,
+   "timeframed": true,
+   "field": true,
+   "doc": "bar volume"
+  }
+ },
+ "cases": [
+  {
+   "stage": {
+    "left": {
+     "fn": "RSI",
+     "params": {
+      "n": 14
+     },
+     "tf": "15m"
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 60
+    }
+   },
+   "text": "RSI(14)@15m > 60"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "close",
+     "params": {},
+     "tf": null
+    },
+    "op": "crosses above",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "EMA",
+      "params": {
+       "x": "close",
+       "n": 20
+      },
+      "tf": null
+     }
+    }
+   },
+   "text": "CrossAbove(close, EMA(close, 20))"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "close",
+     "params": {},
+     "tf": null
+    },
+    "op": "crosses below",
+    "right": {
+     "kind": "value",
+     "value": 60
+    }
+   },
+   "text": "CrossBelow(close, 60)"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "Supertrend",
+     "params": {
+      "n": 10,
+      "k": 2.5
+     },
+     "tf": "1h"
+    },
+    "op": "<=",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "close",
+      "params": {},
+      "tf": null
+     }
+    }
+   },
+   "text": "Supertrend(10, 2.5)@1h <= close"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "BBUpper",
+     "params": {
+      "n": 20,
+      "k": -1
+     },
+     "tf": null
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": -5
+    }
+   },
+   "text": "BBUpper(20, -1) > -5"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "VWAP",
+     "params": {},
+     "tf": "5m"
+    },
+    "op": "<",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "close",
+      "params": {},
+      "tf": "5m"
+     }
+    }
+   },
+   "text": "VWAP()@5m < close@5m"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "SwingLow",
+     "params": {
+      "degree": 1
+     },
+     "tf": null
+    },
+    "op": ">=",
+    "right": {
+     "kind": "value",
+     "value": 0.3
+    }
+   },
+   "text": "SwingLow(1) >= 0.3"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "volume",
+     "params": {},
+     "tf": "1d"
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 1500000
+    }
+   },
+   "text": "volume@1d > 1500000"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "PctChange",
+     "params": {
+      "x": "high",
+      "n": 5
+     },
+     "tf": null
+    },
+    "op": ">",
+    "right": {
+     "kind": "value",
+     "value": 1e-06
+    }
+   },
+   "text": "PctChange(high, 5) > 0.000001"
+  },
+  {
+   "stage": {
+    "left": {
+     "fn": "ORHigh",
+     "params": {
+      "minutes": 15
+     },
+     "tf": null
+    },
+    "op": "<",
+    "right": {
+     "kind": "series",
+     "ref": {
+      "fn": "PDH",
+      "params": {},
+      "tf": null
+     }
+    }
+   },
+   "text": "ORHigh(15) < PDH()"
+  }
+ ]
+}

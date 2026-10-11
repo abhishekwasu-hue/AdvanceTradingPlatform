@@ -154,6 +154,8 @@ def describe() -> Dict[str, Dict[str, object]]:
     for spec in (*FIELDS.values(), *FUNCTIONS.values()):
         out[spec.name] = {"kind": spec.kind, "returns": spec.returns, "unit": spec.unit, "args": [a.name for a in spec.args],
                           "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
+                          "defaults": {a.name: a.default for a in spec.args if a.default is not None},
+                          "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
                           "field": spec.name in FIELDS, "doc": spec.doc}
     return out

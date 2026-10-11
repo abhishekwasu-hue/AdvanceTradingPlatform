@@ -1,4 +1,5 @@
 import {
+  Filter,
   GraduationCap,
   BarChart3,
   Bell,
@@ -37,6 +38,7 @@ export type Page =
   | "fundamentals"
   | "signals"
   | "scanner"
+  | "screener"
   | "news-events"
   | "quant"
   | "backtest"
@@ -75,6 +77,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Trade",
     items: [
       { id: "signals", label: "Signals", icon: Zap },
+      { id: "screener", label: "Screener", icon: Filter },
       { id: "scanner", label: "Market Scanner", icon: Radar },
       { id: "strategies", label: "Strategy Library", icon: ListTree },
       { id: "strategy-builder", label: "Strategy Builder", icon: Wand2 },

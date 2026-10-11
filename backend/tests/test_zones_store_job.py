@@ -72,7 +72,7 @@ def _night(day_index: int, hour: int = 16) -> datetime:
 def _lake():
     async def go():
         async with _session_factory() as session:
-            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_([KEY, NATIVE, CUT])))
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_([KEY, NATIVE, CUT, "NSE:ZTESTD"])))
             await session.commit()
         await _write(KEY, "1m", M1)
         native = S15.assign(ts=(S15["timestamp"].dt.tz_localize(IST) + pd.Timedelta(minutes=15)).dt.tz_convert("UTC"))
@@ -280,3 +280,25 @@ def test_worker_schedule_once_per_ist_day_after_the_hour(monkeypatch):
     morning, evening = _night(3, hour=10), _night(3, hour=17)
     assert not job.due(morning, None) and job.due(evening, None)
     assert not job.due(evening, DAYS[3])
+
+
+def test_daily_bars_of_the_shared_lake_alone_are_enough_with_daily_settings():
+    """HB0 puts daily history (timeframe "day", END 15:30 IST) into the shared lake; 1-minute data stays tenant-private and
+    is never read here. With every family on 1d the job builds zones from the daily bars alone."""
+    key = "NSE:ZTESTD"
+    bn = G.load("bn_daily")
+    ends = (bn["timestamp"].dt.normalize() + pd.Timedelta(hours=15, minutes=30)).dt.tz_localize(IST).dt.tz_convert("UTC")
+    _run(_write(key, "day", bn.assign(ts=ends)))
+    s = ZoneSettings(zone_timeframe="1d", sr_timeframe="1d", gap_timeframe="1d", dynamic_sr_timeframes=["1d"], recent_days_by_tf={"1d": 3650},
+                     history_days=3650, gap_min_pct=0.1)
+    now = (ends.iloc[-1] + pd.Timedelta(hours=1)).to_pydatetime()
+    run = _run(_call(job.run_instrument, key, settings=s, now=now))
+
+    async def rows():
+        async with _session_factory() as session:
+            return await store.rows_of(session, run)
+    got = _run(rows())
+    assert run is not None and json.loads(run.bars) == {"1d": len(bn)} and store._utc(run.as_of) == ends.iloc[-1].to_pydatetime()
+    assert {r["timeframe"] for r in got} == {"1d"} and {"BULLISH_OB", "DYNAMIC_SR_SUPPORT"} & {r["zone_type"] for r in got}
+    # a daily bar starts at that session's open (09:15 IST) - so gaps and formation dates are the trade dates
+    assert all(pd.Timestamp(r["formed_at"]).tz_convert(IST).strftime("%H:%M") == "09:15" for r in got)

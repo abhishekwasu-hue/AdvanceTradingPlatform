@@ -23,8 +23,14 @@ maker/taker fees, funding) the first non-Indian phase - **without delaying the I
 5. **Rules**: the jurisdiction rules engine of part D (`app/compliance/rules.py`, rule-sets as data): IN-SEBI first;
    crypto (India resident: spot only, FIU-IND-registered exchanges, 30 % tax + 1 % TDS seam) and others as files.
 6. **Tax**: a `TaxModel` seam per jurisdiction (India FY report exists - Phase P) - reports only, never advice.
-7. **Order of delivery**: Indian PAPER go-live on Hostinger first; then crypto paper (CoinDCX spot); then Binance /
-   Kraken; then IBKR (v1.3). Each new venue is a provider on the ADR-0016 seams plus data rows, not a code branch.
+7. **Order of delivery**: Indian PAPER go-live on Hostinger first; then crypto paper, venue by venue (v1.3 §3):
+   CoinDCX spot (exists) -> Binance spot -> Bybit / KuCoin / OKX (perpetuals and options only where the tenant's
+   jurisdiction allows them) -> CoinSwitch PRO / ZebPay; Kraken later. Then IBKR (ADR-0018). Each new venue is a
+   provider on the ADR-0016 seams plus data rows, not a code branch.
+8. **Crypto exchange registry** (v1.3 §3): one data row per exchange with `fiu_registered: true/false` plus the
+   source and the date it was checked. India resident => only exchanges with `fiu_registered: true`, spot only; the
+   rule names itself when it blocks. Tax: the 30 % + 1 % TDS report seam (P2) on the `TaxModel` - a report, never
+   advice.
 
 ## Consequences
 - Part B's schema is written venue-neutral now (cheap now, expensive later); existing NSE strings keep working through

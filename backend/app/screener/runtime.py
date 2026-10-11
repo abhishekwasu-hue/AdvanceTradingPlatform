@@ -451,6 +451,23 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
     return ((x - x.rolling(n_).mean()) / std.replace(0.0, np.nan)).astype(float)
 
 
+def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
+                    params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage); after each stage,
+    the symbols that passed it and every stage before it. Each stage is the same evaluation as in the whole screen
+    (same lookback and history check), run only on the symbols still in, so the last count is the screen's match
+    count. `removed` names the symbols each stage took out ("see what this removes")."""
+    items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
+    alive = [d for d in universe]
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        passed = {m.symbol for m in run_screen(item, validated, alive, base_tf=base_tf, params=params) if m.matched}
+        removed = [d.symbol for d in alive if d.symbol not in passed]
+        alive = [d for d in alive if d.symbol in passed]
+        out.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
+    return out
+
+
 def _last(value: Any) -> Any:
     if isinstance(value, pd.Series):
         return value.iloc[-1] if len(value) else np.nan

@@ -971,3 +971,31 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - S1d (#125) fix: a screener run no longer decides on the broker's forming intraday bar (`closed_only`), with a test
   and a mutation check. Merged forward through the stack.
 - ROADMAP_STATUS updated (#86).
+
+### 2026-10-11 06:04 IST - S5-A2/A3 PRs, S5-A4 + review, H-C3c PR, U5 D1 (screener funnel page)
+- H-C3c (research jobs + Lab panel): full suite 1422 passed; draft PR #142.
+- S5-A2 / S5-A3: an independent review found two real RealBreak bugs, and both are fixed with tests:
+  - tick-price rounding dropped a break;
+  - the lookback was too short.
+
+  It also found a doc/code mismatch on the scan start, a dead guard, and the reversal prefilter under the addendum
+  follow-through. Full suite 1422 passed. Draft PRs #143 (S5-A2) and #144 (S5-A3).
+- S5-A4 (`SwingZoneStrength` / `SwingZoneDistance`), with its review follow-up:
+  - flat bars no longer crash;
+  - one bad symbol no longer stops a run;
+  - history is set per swing degree (100 / 250 / 600 / 1200; measured);
+  - origin lookup by bar number;
+  - one pass for both functions.
+
+  Mutations 9/9 killed. Full suite running.
+- U5 D1 (screener design addendum):
+  - tokens (signal, armed, inset; AA-checked in four modes);
+  - the funnel canvas with the indicator block (inline editing, keyboard reorder, survivor trail, "see what this
+    removes");
+  - the result table and freshness pill;
+  - `/run` returns per-stage survivors;
+  - stories and headless screenshots.
+
+  New open questions SC-16 (U2/U4 not received) and SC-17 (three columns inside the app shell).
+- P1 spec received (profitability, manual trading, Options Strategy Builder). It starts after U5 D1 with P1-a, the
+  options builder core port.

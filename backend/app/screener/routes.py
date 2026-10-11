@@ -29,7 +29,7 @@ from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import compile_screen, nodes
 from app.screener.registry import describe
-from app.screener.runtime import SymbolData, closed_only, resample, run_screen
+from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
@@ -223,6 +223,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params)
     results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
@@ -233,7 +234,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     session.add(run_row)
     await session.commit()
     return {"run_id": run_row.id, "text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
-            "matched": [r["symbol"] for r in results if r["matched"]], "results": results, "disclaimer": DISCLAIMER}
+            "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
+            "funnel": {"universe": len(symbols), "with_data": len(universe), "stages": stages}, "disclaimer": DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

@@ -159,6 +159,37 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # H-C3c: runs queued AI research studies one at a time, apart from trading and the API. Off unless started:
+  #   docker compose --profile research up -d research-worker
+  # Studies stay "queued" until it runs. It places no orders and saves no strategies.
+  research-worker:
+    logging: *default-logging
+    profiles: ["research"]
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.workers.research_worker"]
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD:-atp_dev_password}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_WRITE_FORMAT: ${SECRETS_WRITE_FORMAT:-fernet}
+      REDIS_URL: redis://redis:6379/0
+      BACKTEST_HOLDOUT_START: ${BACKTEST_HOLDOUT_START:-}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
+      RESEARCH_POLL_SECONDS: ${RESEARCH_POLL_SECONDS:-15}
+    # no HTTP server: the image's API healthcheck does not apply
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
   frontend:
     logging: *default-logging
     build:

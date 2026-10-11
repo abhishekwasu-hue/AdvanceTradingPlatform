@@ -1,7 +1,7 @@
 """PW5: a proposal can be snoozed - ai_actions.snoozed_until (nullable; snooze never extends expires_at).
 
 Revision ID: d4e8a1c6f205
-Revises: c7a1d2e3f4b6
+Revises: e9c1a3b5d7f9
 Create Date: 2026-10-11 12:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd4e8a1c6f205'
-down_revision: Union[str, Sequence[str], None] = 'c7a1d2e3f4b6'
+down_revision: Union[str, Sequence[str], None] = 'e9c1a3b5d7f9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

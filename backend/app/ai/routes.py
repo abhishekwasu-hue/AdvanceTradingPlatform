@@ -652,16 +652,25 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
         trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
         broker = await broker_for_trade(session, trade)
     row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
+    await _sync_telegram(session, row)
     return monitor.as_dict(row)
+
+
+async def _sync_telegram(session: AsyncSession, row) -> None:
+    """PW4: decided in the app -> the proposal's Telegram message loses its buttons and says so (best effort)."""
+    from app.telegram_inbound.service import sync_proposal_message
+    await sync_proposal_message(session, row)
 
 
 @router.post("/actions/{action_id}/reject")
 async def reject_action(action_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     row = await _action(session, action_id, user)
     try:
-        return monitor.as_dict(await monitor.decide(session, row, user, approve=False, note=body.note))
+        row = await monitor.decide(session, row, user, approve=False, note=body.note)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await _sync_telegram(session, row)
+    return monitor.as_dict(row)
 
 
 class SnoozeBody(BaseModel):

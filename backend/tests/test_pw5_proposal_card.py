@@ -340,4 +340,4 @@ def test_migration_is_the_single_head_and_chains_onto_the_previous_one():
     script = ScriptDirectory.from_config(cfg)
     assert script.get_heads() == ["d4e8a1c6f205"]
     rev = script.get_revision("d4e8a1c6f205")
-    assert rev.down_revision == "c7a1d2e3f4b6"
+    assert rev.down_revision == "e9c1a3b5d7f9"

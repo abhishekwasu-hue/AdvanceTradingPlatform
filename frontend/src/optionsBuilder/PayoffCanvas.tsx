@@ -1,12 +1,18 @@
 /**
- * P1-c2: the payoff canvas - the builder's one memorable element. The expiry payoff and the curve on the chosen date
- * on one chart, profit shaded above zero and loss below, the probability cone (one and two expected moves) behind
- * them, the spot marker, breakevens, and the strikes as handles on the x-axis: drag one (or focus it and press the
- * arrow keys) and the strike moves on its grid and the curves follow. Hover reads the P&L at a price.
+ * P1-c2 / Z5: the payoff canvas - the builder's one memorable element (spec §3.3). The expiry payoff and the T+0
+ * curve (and the curve on a chosen later date) on one chart; profit tinted above zero, loss hatched below it with the
+ * max-loss line; the probability cone (one and two expected moves) behind them; the underlying's price marker and the
+ * breakevens; and the strikes as handles on the x-axis: drag one (or focus it and use the arrow keys, Page Up / Down,
+ * Home / End) and the strike moves on its grid and the curves follow. Every number drawn comes from the engine; this
+ * file only places it. Colour is never the only cue: buy handles are circles and sell handles diamonds, the loss area
+ * is hatched, and each curve has its own dash.
  */
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { cx } from "../components/primitives";
-import { cone, linear, linePath, money, niceTicks, signAreas, snapStrike, yDomain, type Evaluation, type Leg } from "./model";
+import {
+  cone, hitRadius, linear, linePath, maxLossY, money, niceTicks, seriesAt, signAreas, strikeAtPointer, strikeBounds, strikeForKey, yDomain,
+  type Evaluation, type Leg,
+} from "./model";
 
 const W = 800;
 const H = 360;
@@ -22,12 +28,22 @@ export interface PayoffCanvasProps {
   onDragging?: (dragging: boolean) => void;
 }
 
+function Handle({ buy, active }: { buy: boolean; active: boolean }) {
+  const tone = buy ? "fill-up/85 stroke-up" : "fill-down/85 stroke-down";
+  return buy
+    ? <circle r={7.5} className={cx("stroke-2", tone, active && "stroke-fg")} />
+    : <rect x={-6.5} y={-6.5} width={13} height={13} transform="rotate(45)" className={cx("stroke-2", tone, active && "stroke-fg")} />;
+}
+
 export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, onDragging }: PayoffCanvasProps) {
   const svg = useRef<SVGSVGElement>(null);
+  const uid = useId().replace(/:/g, "");
   const [hover, setHover] = useState<number | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
+  const [drawnWidth, setDrawnWidth] = useState(W);
   const xs = e.prices;
   const main = e.at_expiry ?? e.on_date;                       // shading follows the expiry payoff when there is one
+  const later = e.days_forward > 0;
   const sx = useMemo(() => linear([xs[0], xs[xs.length - 1]], [M.left, W - M.right]), [xs]);
   const sy = useMemo(() => linear(yDomain([e.at_expiry, e.on_date, e.today]), [H - M.bottom, M.top]), [e.at_expiry, e.on_date, e.today]);
   const areas = useMemo(() => signAreas(xs, main, sx, sy), [xs, main, sx, sy]);
@@ -35,58 +51,58 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
   const clampX = (v: number) => Math.min(W - M.right, Math.max(M.left, v));
   const yTicks = useMemo(() => niceTicks(sy.domain[0], sy.domain[1], 6), [sy]);
   const xTicks = useMemo(() => Array.from({ length: 5 }, (_, i) => xs[0] + ((xs[xs.length - 1] - xs[0]) * i) / 4), [xs]);
+  const bounds = strikeBounds(xs, step);
+  const lossY = maxLossY(e.extremes, sy);
+  const hit = hitRadius(drawnWidth, W);
 
-  const toPrice = (clientX: number): number => {
+  // the chart's drawn width, so a strike handle's hit area stays 44 px across on a phone
+  useEffect(() => {
+    const el = svg.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([entry]) => setDrawnWidth(entry.contentRect.width || W));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const toPrice = (clientX: number): number | null => {
     const r = svg.current?.getBoundingClientRect();
-    if (!r || r.width === 0) return spot;
-    return sx.invert(((clientX - r.left) / r.width) * W);
+    return r && r.width > 0 ? sx.invert(((clientX - r.left) / r.width) * W) : null;
   };
-  const at = (series: number[] | null, price: number): number | null => {
-    if (!series) return null;
-    const i = xs.findIndex((x) => x >= price);
-    if (i <= 0) return series[0];
-    if (xs[i] === xs[i - 1]) return series[i];                 // a low-priced underlying can repeat a rounded price
-    const t = (price - xs[i - 1]) / (xs[i] - xs[i - 1]);
-    return series[i - 1] + (series[i] - series[i - 1]) * t;
-  };
-  // the strike range a handle can take: the chart's own (it widens to cover new strikes once a drag ends)
-  const lo = Math.max(step, snapStrike(xs[0], step));
-  const hi = Math.max(lo, snapStrike(xs[xs.length - 1], step));
-  const clampStrike = (k: number) => Math.min(hi, Math.max(lo, k));
   const endDrag = () => { if (drag) onDragging?.(false); setDrag(null); };
   const onMove = (ev: PointerEvent<SVGSVGElement>) => {
-    const p = toPrice(ev.clientX);
-    setHover(p);
-    if (drag) {
-      const leg = legs.find((l) => l.id === drag);
-      const next = clampStrike(snapStrike(p, step));               // a pointer past the edge holds the strike at the edge
-      if (leg && next !== leg.strike) onStrikeChange(drag, next);
-    }
+    setHover(toPrice(ev.clientX));
+    if (!drag) return;
+    const r = svg.current?.getBoundingClientRect();
+    const leg = legs.find((l) => l.id === drag);
+    const next = r ? strikeAtPointer(ev.clientX, r.left, r.width, W, sx, step, bounds) : null;
+    if (leg && next != null && next !== leg.strike) onStrikeChange(drag, next);
   };
   const keyMove = (leg: Leg) => (ev: KeyboardEvent) => {
-    const moves: Record<string, number> = { ArrowLeft: -step, ArrowRight: step, ArrowDown: -step, ArrowUp: step, PageDown: -5 * step, PageUp: 5 * step };
-    let next: number | null = null;
-    if (ev.key in moves) next = snapStrike(leg.strike + moves[ev.key], step);
-    else if (ev.key === "Home") next = lo;
-    else if (ev.key === "End") next = hi;
+    const next = strikeForKey(ev.key, leg.strike, step, bounds);
     if (next == null) return;
     ev.preventDefault();
-    next = clampStrike(next);
     if (next !== leg.strike) onStrikeChange(leg.id, next);
   };
   // numbered as in the leg table (futures have no strike handle but keep their number)
   const optionLegs = legs.map((l, i) => ({ l, n: i + 1 })).filter(({ l }) => l.option_type !== "FUT");
+  const inChart = hover != null && hover >= xs[0] && hover <= xs[xs.length - 1];
+  const dateLabel = later ? `In ${e.days_forward} days` : "Today (T+0)";
 
   return (
     <figure className="relative">
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full touch-none select-none" role="group"
-           aria-label={`Payoff: ${e.single_expiry ? "at expiry and " : ""}on the chosen date, against the price of the underlying`}
+      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full select-none [touch-action:pan-y]" role="group"
+           aria-label={`Payoff: ${e.single_expiry ? "at expiry, " : ""}today${later ? ` and in ${e.days_forward} days` : ""}, against the price of the underlying`}
            onPointerMove={onMove} onPointerLeave={() => { setHover(null); endDrag(); }} onPointerUp={endDrag} onPointerCancel={endDrag}>
+        <defs>
+          <pattern id={`${uid}-loss`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={6} className="stroke-down/45" strokeWidth={2} />
+          </pattern>
+        </defs>
         {/* the probability cone: two and one expected moves */}
         <rect x={clampX(sx(c.outer[0]))} y={M.top} width={Math.max(0, clampX(sx(c.outer[1])) - clampX(sx(c.outer[0])))} height={H - M.top - M.bottom}
-              className="fill-brand/[0.05]" />
+              className="fill-brand/[0.05]" data-testid="cone-outer" />
         <rect x={clampX(sx(c.inner[0]))} y={M.top} width={Math.max(0, clampX(sx(c.inner[1])) - clampX(sx(c.inner[0])))} height={H - M.top - M.bottom}
-              className="fill-brand/[0.08]" />
+              className="fill-brand/[0.08]" data-testid="cone-inner" />
         {yTicks.map((v) => (
           <g key={v}>
             <line x1={M.left} x2={W - M.right} y1={sy(v)} y2={sy(v)} style={{ stroke: "rgb(var(--chart-grid))" }} />
@@ -97,51 +113,73 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, 
           <text key={v} x={sx(v)} y={H - M.bottom + 30} textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"} className="font-mono text-[11px]" style={{ fill: "rgb(var(--chart-text))" }}>{Math.round(v).toLocaleString("en-IN")}</text>
         ))}
         {areas.profit.map((d, i) => <path key={`p${i}`} d={d} className="fill-up/15" />)}
-        {areas.loss.map((d, i) => <path key={`l${i}`} d={d} className="fill-down/15" />)}
+        {areas.loss.map((d, i) => (
+          <g key={`l${i}`} data-testid="loss-area">
+            <path d={d} className="fill-down/10" />
+            <path d={d} fill={`url(#${uid}-loss)`} />
+          </g>
+        ))}
         <line x1={M.left} x2={W - M.right} y1={sy(0)} y2={sy(0)} className="stroke-fg-muted/60" strokeDasharray="2 3" />
+        {lossY != null && e.extremes?.max_loss != null && (
+          <g data-testid="max-loss-line" pointerEvents="none">
+            <line x1={M.left} x2={W - M.right} y1={lossY} y2={lossY} className="stroke-down" strokeWidth={1.25} strokeDasharray="8 4" />
+            <text x={M.left + 6} y={lossY - 6} className="fill-down font-mono text-[11px] font-semibold">Max loss {money(e.extremes.max_loss)}</text>
+          </g>
+        )}
         {e.at_expiry && <path d={linePath(xs, e.at_expiry, sx, sy)} className="fill-none stroke-fg" strokeWidth={2} data-testid="curve-expiry" />}
-        <path d={linePath(xs, e.on_date, sx, sy)} className="fill-none stroke-brand" strokeWidth={2} strokeDasharray={e.days_forward > 0 ? "6 4" : undefined} data-testid="curve-date" />
-        {/* spot */}
-        <line x1={sx(spot)} x2={sx(spot)} y1={M.top} y2={H - M.bottom} className="stroke-info" strokeWidth={1} />
-        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-[11px]">spot</text>
+        {later && <path d={linePath(xs, e.today, sx, sy)} className="fill-none stroke-signal/70" strokeWidth={1.5} strokeDasharray="1 3" data-testid="curve-today" />}
+        <path d={linePath(xs, e.on_date, sx, sy)} className="fill-none stroke-signal" strokeWidth={2.25} strokeDasharray={later ? "6 4" : undefined} data-testid="curve-date" />
+        {/* the underlying's price */}
+        <line x1={sx(spot)} x2={sx(spot)} y1={M.top} y2={H - M.bottom} className="stroke-info" strokeWidth={1.25} />
+        <text x={sx(spot)} y={M.top + 10} dx={4} className="fill-info font-mono text-[11px]">spot {Math.round(spot).toLocaleString("en-IN")}</text>
         {(e.breakevens ?? []).filter((b) => b >= xs[0] && b <= xs[xs.length - 1]).map((b) => (
           <g key={b} data-testid="breakeven">
             <circle cx={sx(b)} cy={sy(0)} r={3.5} className="fill-surface stroke-fg" strokeWidth={1.5} />
             <text x={sx(b)} y={sy(0) - 8} textAnchor="middle" className="fill-fg font-mono text-[11px]">{Math.round(b).toLocaleString("en-IN")}</text>
           </g>
         ))}
-        {/* strikes: drag on the axis, or focus and use the arrow keys */}
+        {/* strikes: drag on the axis, or focus and use the keys */}
         {optionLegs.map(({ l, n }) => {
           const x = clampX(sx(l.strike));
+          const buy = l.direction === "BUY";
           return (
             <g key={l.id} transform={`translate(${x},${H - M.bottom + 10})`} role="slider" tabIndex={0}
-               aria-label={`Strike of leg ${n} (${l.direction} ${l.option_type})`} aria-valuenow={l.strike} aria-valuemin={lo} aria-valuemax={hi}
+               aria-label={`Strike of leg ${n} (${l.direction} ${l.option_type})`} aria-valuenow={l.strike} aria-valuemin={bounds[0]} aria-valuemax={bounds[1]}
                aria-valuetext={`${l.strike}`} onKeyDown={keyMove(l)}
-               onPointerDown={(ev) => { ev.preventDefault(); (ev.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(ev.pointerId); setDrag(l.id); onDragging?.(true); }}
-               className="cursor-ew-resize outline-none [&:focus-visible>circle]:stroke-brand" data-testid="strike-handle">
-              <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={cx(l.direction === "BUY" ? "stroke-up/40" : "stroke-down/40")} strokeDasharray="1 3" />
-              <circle r={7} className={cx("stroke-2", l.direction === "BUY" ? "fill-up/80 stroke-up" : "fill-down/80 stroke-down", drag === l.id && "stroke-fg")} />
+               onPointerDown={(ev) => { ev.preventDefault(); svg.current?.setPointerCapture?.(ev.pointerId); setDrag(l.id); onDragging?.(true); }}
+               className="cursor-ew-resize outline-none [touch-action:none] [&:focus-visible>.ring]:opacity-100" data-testid="strike-handle">
+              <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={buy ? "stroke-up/40" : "stroke-down/40"} strokeDasharray="1 3" />
+              <circle r={hit} fill="transparent" pointerEvents="all" data-testid="strike-hit" />
+              <circle r={12} className="ring fill-none stroke-brand opacity-0" strokeWidth={2} />
+              <Handle buy={buy} active={drag === l.id} />
               <text dy="0.32em" textAnchor="middle" className="pointer-events-none fill-surface font-mono text-[9px] font-semibold">{n}</text>
             </g>
           );
         })}
-        {hover != null && hover >= xs[0] && hover <= xs[xs.length - 1] && (
+        {inChart && hover != null && (
           <g pointerEvents="none">
             <line x1={sx(hover)} x2={sx(hover)} y1={M.top} y2={H - M.bottom} className="stroke-fg-muted/50" />
           </g>
         )}
       </svg>
-      {hover != null && hover >= xs[0] && hover <= xs[xs.length - 1] && (
+      {inChart && hover != null && (
         <figcaption className="pointer-events-none absolute right-2 top-2 rounded-md border border-border bg-surface-1/95 px-2 py-1 font-mono text-xs text-fg shadow">
           <div>at {Math.round(hover).toLocaleString("en-IN")}</div>
-          {e.at_expiry && <div>expiry {money(at(e.at_expiry, hover))}</div>}
-          <div className="text-brand">{e.days_forward > 0 ? `+${e.days_forward}d` : "today"} {money(at(e.on_date, hover))}</div>
+          {e.at_expiry && <div>expiry {money(seriesAt(xs, e.at_expiry, hover))}</div>}
+          {later && <div className="text-signal">today {money(seriesAt(xs, e.today, hover))}</div>}
+          <div className="text-signal">{later ? `+${e.days_forward}d` : "today"} {money(seriesAt(xs, e.on_date, hover))}</div>
         </figcaption>
       )}
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">
         {e.at_expiry && <span><span className="mr-1 inline-block h-0.5 w-4 bg-fg align-middle" />At expiry</span>}
-        <span><span className="mr-1 inline-block h-0.5 w-4 bg-brand align-middle" />{e.days_forward > 0 ? `In ${e.days_forward} days` : "Today"}</span>
+        {later && <span><span className="mr-1 inline-block w-4 border-t-2 border-dotted border-signal/70 align-middle" />Today (T+0)</span>}
+        <span><span className={cx("mr-1 inline-block w-4 border-t-2 border-signal align-middle", later && "border-dashed")} />{dateLabel}</span>
         <span><span className="mr-1 inline-block h-2.5 w-4 bg-brand/20 align-middle" />1 and 2 expected moves</span>
+        {lossY != null && <span><span className="mr-1 inline-block w-4 border-t-2 border-dashed border-down align-middle" />Max loss</span>}
+        <span className="inline-flex items-center gap-1">
+          <svg width="12" height="12" viewBox="-7 -7 14 14" aria-hidden><circle r={5.5} className="fill-up/85 stroke-up" /></svg>Buy
+          <svg width="12" height="12" viewBox="-7 -7 14 14" aria-hidden className="ml-2"><rect x={-4.5} y={-4.5} width={9} height={9} transform="rotate(45)" className="fill-down/85 stroke-down" /></svg>Sell
+        </span>
         <span>Drag a strike, or focus it and use ← →</span>
       </div>
     </figure>

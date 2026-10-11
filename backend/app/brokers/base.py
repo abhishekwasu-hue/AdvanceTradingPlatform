@@ -51,6 +51,32 @@ def looks_like_option(symbol: str) -> bool:
     return bool(_OPTION_RE.search(text)) or bool(_SHOONYA_OPTION_RE.search(text))
 
 
+_TICK_005_EXCHANGES = {"NSE", "BSE", "NFO", "BFO"}   # equity and equity F&O: 0.05
+
+
+def round_stop_trigger(trigger_price: float, transaction_type: OrderSide, *, tick: Optional[float] = None,
+                       symbol: Optional[str] = None, exchange: Optional[str] = None) -> float:
+    """A stop trigger on the exchange's tick grid, moved to the tick farther from the market: down for a sell stop (it
+    protects a long, the market is above), up for a buy stop. An off-tick trigger is refused by the exchange, and
+    rounding toward the market could fire the stop early. The tick: `tick` if given, else the instrument's own tick
+    from the registry (MCX / crypto), else 0.05 on NSE / BSE / NFO / BFO. With no known tick (another venue, a symbol
+    the registry does not hold) the trigger is returned unchanged - guessing a tick could put a stop on the wrong
+    side of a low-priced instrument."""
+    if tick is None and symbol:
+        from app.instruments.registry import get_contract_spec   # local: the registry is a leaf, keep base light
+        spec = get_contract_spec(symbol)
+        if spec is not None and spec.tick_size:
+            tick = float(spec.tick_size)
+    if tick is None and (exchange is None or exchange.upper() in _TICK_005_EXCHANGES):
+        tick = _STOP_LIMIT_TICK
+    if not tick:
+        return trigger_price
+    steps = trigger_price / tick
+    steps = math.floor(round(steps, 6)) if transaction_type == OrderSide.SELL else math.ceil(round(steps, 6))
+    decimals = max(2, len(f"{tick:.10f}".rstrip("0").split(".")[1]))
+    return round(max(tick, steps * tick), decimals)
+
+
 def stop_order_params(capabilities: BrokerCapabilities, symbol: str, transaction_type: OrderSide, trigger_price: float, *,
                       is_option: Optional[bool] = None, limit_band_pct: Optional[float] = None) -> Tuple[str, Optional[float]]:
     """(order_type, limit price) for a protective stop. SL-M wherever the broker takes it; otherwise SL with the
@@ -236,7 +262,9 @@ class BrokerInterface(ABC):
         ("SL-M") on the opposite side, triggered at the signal's stop-loss price - a market trigger,
         not a limit, because a stop that fails to fill in a fast move is worse than one that fills a
         tick worse. P0.5 / T2: where the broker refuses SL-M (Kite on options) the stop goes as SL
-        with the limit one band past the trigger instead of being refused at the gateway."""
+        with the limit one band past the trigger instead of being refused at the gateway. The trigger is put on
+        the tick grid, away from the market (`round_stop_trigger`)."""
+        trigger_price = round_stop_trigger(trigger_price, transaction_type, symbol=symbol, exchange=exchange)
         order_type, limit = self.stop_order_params(symbol, transaction_type, trigger_price, is_option=is_option)
         order = BrokerOrderRequest(
             symbol=symbol, exchange=exchange, transaction_type=transaction_type, quantity=quantity,

@@ -421,6 +421,83 @@ class OpenAIProvider:
             return spent
         raise ProviderError(f"OpenAI's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
 
+    @staticmethod
+    def _chat_messages(system: str, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """H-C2b: the agent loop's message list (Anthropic-shaped: user text, assistant blocks, user tool_result blocks)
+        as Chat Completions messages (assistant tool_calls, one `tool` message per result)."""
+        out: List[Dict[str, Any]] = [{"role": "system", "content": system}]
+        for m in messages:
+            content = m.get("content")
+            if isinstance(content, str):
+                out.append({"role": m["role"], "content": content})
+                continue
+            blocks = [b if isinstance(b, dict) else b.model_dump() for b in (content or [])]
+            if m["role"] == "assistant":
+                text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                calls = [{"id": b["id"], "type": "function", "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {})}}
+                         for b in blocks if b.get("type") == "tool_use"]
+                msg: Dict[str, Any] = {"role": "assistant", "content": text or None}
+                if calls:
+                    msg["tool_calls"] = calls
+                out.append(msg)
+            else:
+                for b in blocks:
+                    if b.get("type") == "tool_result":
+                        out.append({"role": "tool", "tool_call_id": b["tool_use_id"], "content": str(b.get("content") or "")})
+                    elif b.get("type") == "text":
+                        out.append({"role": "user", "content": b.get("text", "")})
+        return out
+
+    async def complete_tools(self, system: str, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]], *,
+                             max_tokens: int = 4000) -> ToolTurn:
+        """H-C2b (ADR-0019 §6): one model step with function tools on Chat Completions. The assistant content handed back
+        is Anthropic-shaped blocks, so the loop stays provider-neutral; nothing hidden is dropped (Chat Completions
+        returns no reasoning items to send back)."""
+        headers = {"Authorization": f"Bearer {self.api_key}", "content-type": "application/json"}
+        client = self.client or _openai_client()
+        budget = self._budget(max_tokens)
+        payload = self._payload(system, "", budget)
+        payload["messages"] = self._chat_messages(system, messages)
+        payload["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
+                            for t in tools]
+        try:
+            response = await client.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers, timeout=timeout_for(budget))
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Provider unreachable: {exc.__class__.__name__}") from exc
+        if response.status_code == 401:
+            raise ProviderError("Provider rejected the API key (401) - re-enter it under Settings")
+        if response.status_code == 429:
+            raise ProviderError("Provider rate limit (429) - try again shortly")
+        if response.status_code >= 400:
+            detail = _error_detail(response)
+            raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}")
+        try:
+            body = response.json()
+            choice = body["choices"][0]
+            message = choice["message"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise ProviderError("OpenAI answered without a message") from exc
+        raw = body.get("usage") or {}
+        usage = Completion(text="", input_tokens=int(raw.get("prompt_tokens") or 0), output_tokens=int(raw.get("completion_tokens") or 0),
+                           cache_read_tokens=int((raw.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
+                           model=str(body.get("model") or self.model), provider=self.name)
+        if choice.get("finish_reason") == "length":
+            raise ProviderError(f"OpenAI's step was cut off at the token limit (model {self.model})", usage=usage)
+        text = message.get("content") or ""
+        calls: List[ToolCall] = []
+        for c in message.get("tool_calls") or []:
+            fn = c.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {"__invalid_json__": (fn.get("arguments") or "")[:200]}      # refused by the tool's input model
+            calls.append(ToolCall(str(c.get("id")), str(fn.get("name")), args if isinstance(args, dict) else {"__invalid_json__": str(args)[:200]}))
+        blocks: List[Dict[str, Any]] = ([{"type": "text", "text": text}] if text else []) + \
+            [{"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments} for c in calls]
+        stop = "tool_use" if calls else "end_turn"
+        usage.text, usage.stop_reason = text, stop
+        return ToolTurn(text, calls, blocks, usage, stop)
+
 
 def _error_detail(response: httpx.Response) -> str:
     try:

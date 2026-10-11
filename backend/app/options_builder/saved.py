@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
@@ -27,6 +27,8 @@ from app.platform.controls import flag_enabled, require_flag
 
 FLAG = "options_builder_saved"
 MAX_PER_TENANT = 500
+MAX_ROWS_PER_TENANT = 5000      # archived rows included: bounds a save / delete loop (archive keeps rows)
+SAVE_LOCK_KEY = 7349263         # pg_advisory_xact_lock(key, tenant): one save per tenant at a time, so the cap holds
 OWNER_ROLE = "OWNER"            # the tenant's owner may tidy up anyone's saved strategies
 
 
@@ -88,10 +90,17 @@ async def list_strategies(user: User = Depends(get_current_user), session: Async
 
 @router.post("", status_code=201)
 async def save_strategy(body: SaveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        await session.execute(text("SELECT pg_advisory_xact_lock(CAST(:key AS integer), CAST(:tenant AS integer))"), {"key": SAVE_LOCK_KEY, "tenant": user.tenant_id})
     count = await session.scalar(select(func.count()).select_from(OptionStrategyRecord).where(
         OptionStrategyRecord.tenant_id == user.tenant_id, OptionStrategyRecord.archived.is_(False)))
     if (count or 0) >= MAX_PER_TENANT:
         raise HTTPException(status_code=409, detail=f"Your organisation has {MAX_PER_TENANT} saved strategies; delete one first")
+    rows = await session.scalar(select(func.count()).select_from(OptionStrategyRecord).where(
+        OptionStrategyRecord.tenant_id == user.tenant_id))
+    if (rows or 0) >= MAX_ROWS_PER_TENANT:
+        raise HTTPException(status_code=409, detail="Your organisation has reached the limit on saved and deleted strategies")
     payload = {"version": 1, "inputs": body.inputs.model_dump(mode="json"), "legs": [leg.model_dump(mode="json") for leg in body.legs]}
     now = datetime.now(timezone.utc)
     row = OptionStrategyRecord(tenant_id=user.tenant_id, created_by=user.id, name=body.name.strip() or "Untitled",

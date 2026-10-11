@@ -2155,3 +2155,20 @@ export interface StrategistRequestParsed {
 
 /** P0.9: the language of the AI's written answers; the dashboard is English only. */
 export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }
+
+/** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
+export interface StaticIp {
+  broker_name: string;
+  role: "PRIMARY" | "BACKUP";
+  ip: string;
+  registered_at: string | null;
+  updated_at: string | null;
+}
+
+export interface StaticIpOverview {
+  server_egress_ip: string | null;
+  required_for_live: boolean;
+  max_changes_per_week: number;
+  ips: StaticIp[];
+  warnings: string[];
+}

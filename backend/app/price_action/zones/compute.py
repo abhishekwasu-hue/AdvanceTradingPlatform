@@ -15,6 +15,7 @@ Row: {"zone_type", "timeframe", "zone_low", "zone_high", "strength", "formed_at"
 """
 from typing import Any, Dict, List, Mapping, Optional
 
+import numpy as np
 import pandas as pd
 
 from app.price_action.zones.detect import (DEMAND_ZONE, SUPPLY_ZONE, detect_demand_supply_zones, detect_order_blocks, find_overnight_gaps,
@@ -168,8 +169,9 @@ def compute_confluence_row(timeframe: str, df: Optional[pd.DataFrame], current_p
             near = _nearest_n([c["level"] for c in sr[name]], price, want_below, s.confluence_levels_per_side)
             for i, level in enumerate(near):
                 suffix = "" if i == 0 else f"_{i + 1}"
-                row[f"{name}_level{suffix}"] = round(level, 2)
-                row[f"{name}_distance_pct{suffix}"] = pct(level)
+                # Trade rounds these numpy floats with numpy rounding (the zone figures below are Python floats)
+                row[f"{name}_level{suffix}"] = float(np.round(level, 2))
+                row[f"{name}_distance_pct{suffix}"] = float(np.round((level - price) / price * 100, 3))
 
     if df is not None and len(df) >= s.avg_window + 1:
         df = df.reset_index(drop=True)

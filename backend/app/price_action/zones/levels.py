@@ -10,6 +10,7 @@ above it, strongest first.
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from app.price_action.swings import swing_indices
@@ -54,7 +55,8 @@ def filter_major_swings(df: pd.DataFrame, swing_high_idx: List[int], swing_low_i
 
 def cluster_prices(prices: List[float], tolerance_pct: float) -> List[Dict[str, Any]]:
     """Sorted chain clustering: a price joins the current cluster when within tolerance_pct % of the cluster's last
-    price. Each cluster -> {"level": mean rounded to 2 decimals, "touches": size}."""
+    price. Each cluster -> {"level": mean rounded to 2 decimals, "touches": size}. Rounding is numpy's (round half to
+    even on x * 100, as Trade's numpy-float rounding does), not Python's round()."""
     if not prices:
         return []
     ordered = sorted(prices)
@@ -64,7 +66,7 @@ def cluster_prices(prices: List[float], tolerance_pct: float) -> List[Dict[str, 
             clusters[-1].append(p)
         else:
             clusters.append([p])
-    return [{"level": round(sum(c) / len(c), 2), "touches": len(c)} for c in clusters]
+    return [{"level": float(np.round(sum(c) / len(c), 2)), "touches": len(c)} for c in clusters]
 
 
 def find_support_resistance_levels(df: pd.DataFrame, order: Optional[int] = None, cluster_tolerance_pct: Optional[float] = None,
@@ -174,7 +176,8 @@ def compute_dynamic_sr(df: pd.DataFrame, settings: Optional[ZoneSettings] = None
     result: Dict[str, Any] = {"support": [], "resistance": []}
     for up, dn, strength in zip(sr_up, sr_dn, sr_strength):
         mid_raw = (up + dn) / 2
-        mid = round(math.floor(mid_raw / s.dyn_mintick + 0.5) * s.dyn_mintick, 2) if s.dyn_mintick else round(mid_raw, 2)
+        # Trade: the tick path rounds a Python float (round()), the plain path a numpy float (np.round) - kept as is
+        mid = round(math.floor(mid_raw / s.dyn_mintick + 0.5) * s.dyn_mintick, 2) if s.dyn_mintick else float(np.round(mid_raw, 2))
         result["resistance" if mid >= price else "support"].append({"level": mid, "touches": int(strength)})
     result["support"].sort(key=lambda x: -x["touches"])
     result["resistance"].sort(key=lambda x: -x["touches"])

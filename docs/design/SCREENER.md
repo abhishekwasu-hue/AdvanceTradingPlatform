@@ -394,7 +394,92 @@ job, never tuned against results.
   checks, reason labels. tsc, vitest (57) and build all pass, and the bundle budget holds: the panel is in the lazily
   loaded Notifications chunk.
 
+## S4a (built): the bar-close engine for alert rules
+
+- **When.** Every worker cycle, for each active, unexpired rule of an organisation with `screener_v2` on.
+- **Which bar.** `expected_bar` gives the latest fully closed bar on the NSE clock:
+  - intraday buckets start at 09:15 and the day's last bucket may be short (1h: 15:15-15:30);
+  - a daily bar closes at 15:30 on a trading day;
+  - weekends and holidays (the holiday table) are skipped.
+- **Closed bars only.** A still-forming bar is trimmed off and never decides anything.
+  - A symbol whose broker data has not reached the expected bar is skipped this round, never evaluated on stale
+    bars.
+  - When no symbol is current the rule waits, retries after `RETRY_SECONDS` (60) and shows why (`last_problem`).
+- **Once per bar.** `last_bar_at` marks the evaluated bar, and S3a's idempotency key backs it up.
+- **Never holds up trading.** Each cycle gets a 10-second budget (`TIME_BUDGET_SECONDS`), taking the
+  least-recently-checked rules first; the rest are still due next cycle. Evaluation and delivery run in separate
+  guards, so a rule failure never blocks sending what already fired.
+- **What fires.** Each match goes to `record_event` with its trigger values (close, volume, oi when present) and the
+  bar time as `as_of`. Grouping, quiet hours, caps and delivery are S3's job.
+- **Screen rules.** A screen rule now carries its own symbols (1-50, `universe_json`) and an exchange. A screen that
+  is gone or archived is reported on the rule.
+- **Daily rules.** A broker's daily history starts at yesterday, so after 15:30 today's bar is built from today's
+  15-minute bars.
+- **Not yet.** Weekly and monthly rules are listed but not evaluated (SC-10). Live (tick) alerts and the result
+  cache are S4b.
+- **Storage.** `alert_rules` gains `universe_json`, `exchange`, `last_bar_at`, `last_checked_at` and `last_problem`
+  (migration `a3c5e7b9d1f3`, Postgres round-trip OK).
+- **Tests.** `tests/test_s4a_barclose.py` (7), plus 3 mutation checks: forming bar, stale data, once per bar.
+
+## S4b-1 (built): the cycle cache - shared fetches and evaluations
+
+- Within one worker cycle (`CycleCache`, on `Outcome.cache`):
+  - rules needing the same organisation, exchange, timeframe, closed bar and symbol fetch it once; a rule needing a
+    longer lookback than the cached fetch fetches again;
+  - the same screen (canonical AST) over the same current symbols, bar and params is evaluated once, and every rule
+    still records its own events.
+- The cache lives for one cycle only, so nothing from one bar is reused for the next. Counters: `fetched_symbols`,
+  `reused_symbols`, `reused_results`.
+- **Tests.** `tests/test_s4b_cycle_cache.py` (2), plus 3 mutation checks (no fetch cache, ignored lookback, no result
+  cache).
+
+## S4b-2 (built): intrabar alerts, opt-in, default off
+
+- **Opt-in per rule.** `fire_on`: `bar_close` (the default, unchanged) or `intrabar`. Intrabar needs the
+  `screener_intrabar` flag, which is **off by default**.
+  - The API refuses an intrabar rule while the flag is off (409).
+  - If the flag is turned off later, the engine skips the rule and says why (`last_problem`).
+- **Which bar.** `forming_bar` gives the start of the bar forming now, inside the session of a trading day only.
+  Outside the session nothing is evaluated or fetched.
+- **Data.** Server bars with the forming bar kept (`fetch_frames(include_forming=True)`). A base timeframe built by
+  resampling keeps its forming bucket (`resample(keep_forming=True)`).
+  - Higher timeframes referenced inside a screen still use closed buckets only.
+  - Bar-close rules and manual screen runs never see a forming bar.
+- **How often.** At most every `RETRY_SECONDS` (60) per rule, by the same pause as bar-close retries.
+- **Once per bar and symbol.** This uses S3a's idempotency key, which is per bar. `last_bar_at` is not set, so another
+  symbol, or the same one later in the bar, can still fire within that bar. Cooldown applies as before.
+- **Events are marked `intrabar: true`.** The bar had not closed, so the condition may no longer hold at the close
+  (SC-11).
+- **Storage.** `alert_rules.fire_on` (migration `c5e7b9d1f3a5`; Postgres upgrade, check, downgrade and upgrade all OK).
+- **Tests.** `tests/test_s4b2_intrabar.py` (5), plus 6 mutation checks: `last_bar_at` set, session end inclusive, no
+  flag gate, no intrabar mark, forming bucket dropped, no API gate.
+
+### S4b-2 review follow-up
+- **No cached copy for intrabar.** The candle cache keeps a copy for up to 60 s, so an intrabar fetch could miss the
+  bar forming now. `get_candles(fresh=True)` skips the cache read for intrabar fetches only. The result is still
+  written to the cache; bar-close fetches are unchanged.
+- **The message says intrabar.** When a batch holds an intrabar event, the notification says "the bar still forming
+  at … (intrabar: it may not hold at the close)" instead of "the bar closing …".
+- **Out of session clears the old problem.** Outside the session an intrabar rule is skipped with `last_problem`
+  cleared, so a "waiting" note from the day does not stay up overnight.
+- **Tests (+3).**
+  - The real `fetch_frames` path, with and without the forming bar, at 1m and resampled 3m.
+  - `fresh` skips the cache read.
+  - The message text, and the cleared problem.
+- **Not changed (noted).**
+  - Intrabar rules are due every 60 s in session, and broker fetches are per symbol. The 10 s cycle budget is
+    checked between rules, so bar-close rules can move to the next cycle; ordering by oldest `last_checked_at` limits
+    this.
+  - `condition_hash` does not include `fire_on`. No route edits `fire_on` today.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-11. Intrabar alerts that stop holding by the close.** An intrabar event can fire on a condition that is false
+  when the bar closes. Provisional: the event says `intrabar: true` and nothing more is sent.
+  - Owner question: should a short follow-up go out ("no longer true at the 09:30 close")? Or should intrabar rules
+    be limited to critical priority?
+- **SC-10. Weekly / monthly alert rules.** Provisional: they can be saved but are not evaluated yet. A weekly bar
+  would close at the week's last trading session, and the same holds for monthly bars.
+  - Owner question: should these fire at that close (like daily), or only on the next session's pre-open?
 - **SC-9. Unsubscribe scope and bounces.** Provisional:
   - an unsubscribe stops screen-alert emails only; risk and system emails cannot be unsubscribed;
   - a retry after one recipient's failure re-sends to the earlier recipients of that alert (at most 10 addresses).

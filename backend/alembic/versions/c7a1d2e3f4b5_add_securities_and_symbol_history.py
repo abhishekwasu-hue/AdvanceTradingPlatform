@@ -1,7 +1,7 @@
 """Screener addendum U1-a: NSE universe - securities (by ISIN) and symbol history (as-of ranges).
 
 Revision ID: c7a1d2e3f4b5
-Revises: b1c2d3e4f5a6
+Revises: c5e7b9d1f3a5
 Create Date: 2026-10-11 01:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c7a1d2e3f4b5'
-down_revision: Union[str, Sequence[str], None] = 'b1c2d3e4f5a6'
+down_revision: Union[str, Sequence[str], None] = 'c5e7b9d1f3a5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

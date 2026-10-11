@@ -24,6 +24,8 @@ A hook never waits on the journal and never takes a second database connection o
   `HOOK_TIMEOUT_SECONDS`; so the journal holds at most one pool connection, and only between trades. A full queue
   drops the job (logged). Errors are logged and swallowed: the journal can never fail, slow down, block or roll back a
   trade, an exit or an order (ADR-0004: exits are never blocked).
+(On an engine with a single shared connection - StaticPool, the test suite's in-memory SQLite, never production - the
+job runs inline instead: a second session there is the caller's own connection.)
 What a hook missed (flag off at the time, a dropped job, a trade from before this feature) is rebuilt from the trade
 row by `ensure_entries`.
 
@@ -48,6 +50,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Tup
 
 from sqlalchemy import Table, func, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.pool import StaticPool
 
 from app.db.models import JournalEntryRecord, PlatformControlRecord, Price, TradeRecord
 from app.journal import FLAG
@@ -357,14 +360,25 @@ async def drain(timeout: float = 10.0) -> None:
         log.warning("Journal capture queue not drained: %s", exc or type(exc).__name__)
 
 
+def _single_connection(bind: AsyncEngine) -> bool:
+    """An engine whose pool is ONE shared connection (StaticPool: the in-memory SQLite of the test suite, never
+    production). A second session there is the same connection, so a job running beside the caller would interleave
+    with - and could roll back or close - the caller's transaction; the job runs inline instead."""
+    return isinstance(bind.sync_engine.pool, StaticPool)
+
+
 async def _run(session: AsyncSession, tenant_id: int, what: str, work: Job) -> None:
-    """The guard every hook goes through: flag (no new connection), then enqueue. Never raises, never waits on a job."""
+    """The guard every hook goes through: flag (no new connection), then enqueue. Never raises, never waits on a job
+    (except on a single-connection engine, see `_single_connection`)."""
     try:
         if not await _flag_on(session, tenant_id):
             return
         bind = session.bind
         if not isinstance(bind, AsyncEngine):
             log.warning("Journal capture (%s) skipped for tenant %s: the session has no engine bind", what, tenant_id)
+            return
+        if _single_connection(bind):
+            await asyncio.wait_for(_execute(bind, work), timeout=HOOK_TIMEOUT_SECONDS)
             return
         _submit(bind, tenant_id, what, work)
     except Exception as exc:  # noqa: BLE001 - the journal never fails the trade

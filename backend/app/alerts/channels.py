@@ -105,6 +105,20 @@ class PushConfig(BaseModel):
     on delivery."""
 
     subscriptions: List[PushSubscription] = Field(min_length=1, max_length=20)
+    # PW3: which kinds of notification this organisation's devices get (app/alerts/deeplink.py PUSH_CATEGORIES);
+    # None = all. EMERGENCY always goes through.
+    categories: Optional[List[str]] = Field(default=None, max_length=10)
+
+    @field_validator("categories")
+    @classmethod
+    def _known_categories(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        from app.alerts.deeplink import PUSH_CATEGORIES
+        if value is None:
+            return None
+        unknown = [c for c in value if c not in PUSH_CATEGORIES]
+        if unknown:
+            raise ValueError(f"Unknown push categories: {', '.join(unknown)}")
+        return sorted(set(value))
 
 
 class SmsConfig(BaseModel):
@@ -173,8 +187,11 @@ def merge_push(incoming: Dict[str, Any], existing: Optional[Dict[str, Any]]) -> 
     """PUSH upserts are device operations: `subscription` adds (or refreshes, by endpoint),
     `remove_endpoint` drops; a bare `subscriptions` list replaces everything."""
     current = list((existing or {}).get("subscriptions") or [])
+    # PW3: the category preference is kept unless this request sets it.
+    categories = incoming["categories"] if "categories" in incoming else (existing or {}).get("categories")
+    keep = {} if categories is None else {"categories": categories}
     if "subscriptions" in incoming:
-        return {"subscriptions": incoming["subscriptions"]}
+        return {"subscriptions": incoming["subscriptions"], **keep}
     added = incoming.get("subscription")
     if added:
         endpoint = str(added.get("endpoint", ""))
@@ -182,7 +199,7 @@ def merge_push(incoming: Dict[str, Any], existing: Optional[Dict[str, Any]]) -> 
     remove = incoming.get("remove_endpoint")
     if remove:
         current = [s for s in current if str(s.get("endpoint")) != str(remove)]
-    return {"subscriptions": current}
+    return {"subscriptions": current, **keep}
 
 
 def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -222,7 +239,8 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
     if record.channel_type == AlertChannelType.PUSH.value:
         subs = raw.get("subscriptions", [])
         return {"devices": [{"label": s.get("label", "browser"), "endpoint_hint": str(s.get("endpoint", ""))[:40] + "…",
-                             "endpoint": s.get("endpoint")} for s in subs], "count": len(subs)}
+                             "endpoint": s.get("endpoint")} for s in subs], "count": len(subs),
+                "categories": raw.get("categories")}
     if record.channel_type == AlertChannelType.SMS.value:
         return {"url": raw.get("url"), "method": raw.get("method", "POST"), "content_type": raw.get("content_type"),
                 "body_template": raw.get("body_template"), "to_numbers": raw.get("to_numbers", []),

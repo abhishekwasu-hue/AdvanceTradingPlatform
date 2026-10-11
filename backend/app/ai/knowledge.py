@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from app.ai.interview import tr
-from app.ai import grounding, wording
+from app.ai import grounding, output_filter, wording
 
 
 @dataclass(frozen=True)
@@ -508,7 +508,11 @@ async def ai_answer(provider, question: str, lang: str, memory: Optional[dict], 
     if not ok:
         base["note"] = f"AI answer failed the grounding check ({', '.join(bad[:5])}); answered from the concept library"
         return base
-    return {**base, "answer": text, "source": "ai"}
+    ok, shown, why = output_filter.check(text, lang, where="knowledge")             # H-C1 c
+    if not ok:
+        base["note"] = f"AI answer not used ({why}); answered from the concept library"
+        return base
+    return {**base, "answer": shown, "source": "ai"}
 
 
 def catalogue(lang: str) -> List[dict]:

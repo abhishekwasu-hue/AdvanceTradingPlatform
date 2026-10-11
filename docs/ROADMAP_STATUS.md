@@ -6,6 +6,27 @@ Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto pa
 
 Last update: 2026-10-11 10:05 IST.
 
+## Trade port map
+
+docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872) to ATP, with status and parity tests.
+This section stands on its own because PR #165, which adds the Phase 0 section, is not merged yet. Move it under
+Phase 0 when #165 merges. Each port PR updates its row in the map and these counts.
+
+| Status | Rows (of 191) |
+|---|---|
+| ported | 7 |
+| partial | 16 |
+| partial (unverified) | 9 |
+| in progress (Z7a) | 10 |
+| missing | 50 (25 are G rows that wait for the owner's "stable" mark) |
+| not needed | 99 |
+
+Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (missing),
+India VIX gate (missing), PAPER journal / Telegram commands (partial), PAPER exit engine (partial), expiry rule
+(partial: ported, not wired).
+
+## Parts and status
+
 Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged - 72 squash merges to main, plus #106 merged into its own chain (its content reached main with #105/#155). Logs of the train branches land with this docs PR (#154). Main after the last merge (2cb833d): frontend tsc / vitest 167 / build / bundle budgets / English-only check green. Nothing deployed, no flag on, no LIVE, no secrets touched.
 
 | Part | What | Status | PR | % |

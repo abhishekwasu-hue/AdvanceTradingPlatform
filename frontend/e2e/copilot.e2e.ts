@@ -79,8 +79,23 @@ test.describe("3D and motion", () => {
   test("the WebGL AI Core loads when the browser is idle", async ({ page, browserName }) => {
     test.skip(browserName !== "chromium");
     await page.goto("/copilot/market-pulse");
-    const core = page.getByTestId("ai-core-3d").or(page.getByTestId("ai-core-fallback"));
-    await expect(core.first()).toBeVisible();
+    await expect(page.getByTestId("ai-core-3d")).toBeVisible({ timeout: 15_000 });     // the WebGL scene itself, not its fallback
+  });
+
+  test("a 3D core that fails to load shows the still core - the page stays up", async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.route("**/assets/AICore3D-*.js", (route) => route.abort());
+    const failed = page.waitForEvent("requestfailed", { predicate: (r) => /AICore3D-.*\.js/.test(r.url()), timeout: 15_000 });
+    await page.goto("/copilot/market-pulse");
+    await failed;                                                                    // the 3D chunk was asked for and refused
+    await page.waitForTimeout(500);
+    await expect(page.getByTestId("ai-core-fallback").first()).toBeVisible();
+    await expect(page.getByTestId("ai-core-3d")).toHaveCount(0);
+    // the app-level boundary never saw it (its chunk-error and page-error messages are both absent)
+    await expect(page.getByText(/could not be shown|A newer version of the console/)).toHaveCount(0);
+    await expect(page.getByTestId("tab-panel-market-pulse")).toBeVisible();
+    expect(errors).toEqual([]);
   });
 
   test("reduced motion: no 3D scene, the still core instead", async ({ browser }) => {
@@ -115,6 +130,113 @@ test.describe("3D and motion", () => {
     await expect(page.getByTestId("ai-core-3d")).toHaveCount(0);
     await expect(page.getByTestId("ai-core-fallback").first()).toBeVisible();
   });
+});
+
+test.describe("Watchtower decisions", () => {
+  test("approve: the proposal is decided, leaves the list and the badge", async ({ page }) => {
+    const calls = await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);
+    await page.getByTestId("watch-proposal").first().getByRole("button", { name: "Approve" }).click();
+    await expect(page.getByText("Approved and carried out.")).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    await expect(page.getByTestId("tab-watchtower")).toContainText("1");
+    expect(calls.posts.filter((c) => /\/ai\/actions\/\d+\/approve$/.test(c.url))).toHaveLength(1);
+  });
+
+  test("reject: asks for an optional note and sends it", async ({ page }) => {
+    const calls = await mockApi(page);
+    await page.goto("/copilot/watchtower");
+    await page.getByTestId("watch-proposal").first().getByRole("button", { name: "Reject" }).click();
+    const dialog = page.getByRole("dialog", { name: "Reject this proposal" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Why reject? (optional)").fill("Drift is from one bad week");
+    await dialog.getByRole("button", { name: "Reject" }).click();
+    await expect(page.getByText("Rejected.").first()).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    const sent = calls.posts.find((c) => /\/reject$/.test(c.url));
+    expect(sent?.body).toEqual({ note: "Drift is from one bad week" });
+  });
+
+  test("LIVE: approving asks for the authenticator code first, then goes through", async ({ page }) => {
+    await page.unrouteAll();
+    const calls = await mockApi(page, { stepUp: true });
+    await page.goto("/copilot/watchtower");
+    await page.getByTestId("watch-proposal").first().getByRole("button", { name: "Approve" }).click();
+    await expect(page.getByText("Two-factor check required")).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(2);                // nothing decided yet
+    await page.getByPlaceholder("authenticator code").fill("123456");
+    await page.getByRole("button", { name: "Verify" }).click();
+    await expect(page.getByText("Approved and carried out.")).toBeVisible();
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    const flow = calls.posts.map((c) => c.url.replace(/\d+/, "N")).filter((u) => /actions\/N\/approve|mfa\/step-up/.test(u));
+    expect(flow).toEqual(["/ai/actions/N/approve", "/auth/mfa/step-up", "/ai/actions/N/approve"]);
+  });
+});
+
+async function chooseTemplate(page: import("@playwright/test").Page) {
+  await page.goto("/copilot/idea-builder");
+  await page.getByTestId("idea-start").click();
+  await page.getByRole("button", { name: /No, ask me again/ }).click();         // the fixture has a saved profile
+  await expect(page.getByTestId("idea-question")).toBeVisible();
+  for (let i = 0; i < 15 && await page.getByTestId("idea-question").count(); i++) {
+    await page.getByTestId("idea-question").locator("button").first().click();
+  }
+  await page.getByTestId("idea-read-market").click();
+  await expect(page.getByTestId("idea-templates")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("strategy-card").first().getByRole("button", { name: "Choose this" }).click();
+  await expect(page.getByTestId("idea-chosen")).toBeVisible();
+  return page.getByTestId("idea-chosen");
+}
+
+test.describe("Idea Builder: risk gates", () => {
+  test("Start in PAPER stays disabled until the loss is accepted, and sends the acceptance", async ({ page }) => {
+    const calls = await mockApi(page);
+    const chosen = await chooseTemplate(page);
+    const start = chosen.getByRole("button", { name: "Start in PAPER" });
+    await expect(start).toBeDisabled();
+    await chosen.getByRole("checkbox").check();
+    await expect(start).toBeEnabled();
+    await start.click();
+    await expect(page.getByText(/Deployment #77 is running in PAPER/)).toBeVisible();
+    expect(calls.posts.find((c) => /\/ai\/interview\/deploy$/.test(c.url))?.body).toMatchObject({ accept_risk: true });
+  });
+
+  test("Apply risk settings asks first; Cancel changes nothing", async ({ page }) => {
+    const calls = await mockApi(page);
+    const chosen = await chooseTemplate(page);
+    let asked = "";
+    page.once("dialog", (d) => { asked = d.message(); void d.dismiss(); });
+    await chosen.getByRole("button", { name: "Apply risk settings" }).click();
+    expect(asked).toContain("Replace your current risk settings");
+    expect(calls.posts.filter((c) => c.method === "PUT")).toHaveLength(0);
+    page.once("dialog", (d) => void d.accept());
+    await chosen.getByRole("button", { name: "Apply risk settings" }).click();
+    await expect(page.getByText("Risk settings applied.")).toBeVisible();
+    expect(calls.posts.filter((c) => c.method === "PUT" && /\/risk-settings$/.test(c.url))).toHaveLength(1);
+  });
+
+  test("the Marathi line is under the questions only - never under buttons", async ({ page }) => {
+    await page.goto("/copilot/idea-builder");
+    await expect(page.getByTestId("idea-start").locator('[lang="mr"]')).toHaveCount(0);
+    await page.getByTestId("idea-start").click();
+    const notNow = page.getByRole("button", { name: /No, ask me again/ });
+    await expect(notNow).toBeVisible();
+    await expect(notNow.locator('[lang="mr"]')).toHaveCount(0);
+    await notNow.click();
+    const question = page.getByTestId("idea-question");
+    await expect(question.locator('[lang="mr"]').first()).toBeVisible();
+    await expect(question.locator('button [lang="mr"]')).toHaveCount(0);           // answer chips: English only
+    await expect(page.locator('main button [lang="mr"]')).toHaveCount(0);
+  });
+});
+
+test("Ask Copilot asks for an English answer", async ({ page }) => {
+  const calls = await mockApi(page);
+  await page.goto("/copilot/ask");
+  await page.getByTestId("ask-suggestion").first().click();
+  await expect(page.getByTestId("ask-meta")).toBeVisible({ timeout: 15_000 });
+  expect(calls.posts.find((c) => /\/ai\/copilot$/.test(c.url))?.body).toMatchObject({ language: "en" });
 });
 
 test("first use: the acknowledgement modal comes before any AI content", async ({ page }) => {

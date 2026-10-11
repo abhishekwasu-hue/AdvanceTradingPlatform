@@ -73,17 +73,19 @@ class _Provider:
 
 
 def test_copilot_retries_once_then_keeps_the_rule_text():
+    # app.ai.wording (ATP review 11) runs first and already refuses guarantee / recommend / sure-shot; these inputs
+    # use phrases only the H-C1 filter carries, so they reach it
     facts = ["NIFTY 50 last 25200", "trend up"]
-    retry = _Provider(["Guaranteed move to 25200.", "NIFTY 50 is at 25200 and the trend is up."])
+    retry = _Provider(["You should buy now near 25200.", "NIFTY 50 is at 25200 and the trend is up."])
     text, why = _run(copilot.narrate(retry, "en", "market", "how is nifty?", facts))
     assert text == "NIFTY 50 is at 25200 and the trend is up." and retry.calls == 2 and "not allowed" in retry.last_user
-    stubborn = _Provider(["हमखास नफा 25200 वर.", "I recommend 25200."])
+    stubborn = _Provider(["25200 वर हमी आहे.", "Buy now at 25200."])
     text, why = _run(copilot.narrate(stubborn, "mr", "market", "nifty?", facts))
     assert text is None and "advice/guarantee" in why
 
 
 def test_knowledge_answer_falls_back_to_the_library_on_blocked_words():
-    out = _run(knowledge.ai_answer(_Provider(["RSI is a sure shot signal."]), "what is rsi", "en", None, None))
+    out = _run(knowledge.ai_answer(_Provider(["With RSI you should buy now."]), "what is rsi", "en", None, None))
     assert out.get("source") != "ai" and "advice/guarantee" in out["note"]
     ok = _run(knowledge.ai_answer(_Provider(["RSI measures momentum."]), "what is rsi", "en", None, None))
     assert ok["source"] == "ai" and ok["answer"] == "RSI measures momentum."
@@ -92,5 +94,5 @@ def test_knowledge_answer_falls_back_to_the_library_on_blocked_words():
 def test_thesis_narrative_is_filtered():
     from tests.test_phase_bd_thesis import NOW, _snapshot
     th = thesis.compose("NIFTY 50", _snapshot(), {"sentiment": None, "globals": [], "cues": []}, [], [], "en", NOW)
-    text, why = _run(thesis.narrate(_Provider(["A guaranteed rally from 25200.00.", "Still guaranteed above 25200.00."]), th, "en"))
+    text, why = _run(thesis.narrate(_Provider(["A jackpot rally from 25200.00.", "Buy now above 25200.00."]), th, "en"))
     assert text is None and "advice/guarantee" in why

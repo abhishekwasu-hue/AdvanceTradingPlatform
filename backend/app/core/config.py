@@ -220,6 +220,11 @@ LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
 # Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
 LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
+# HB0 (docs/design/HB_HISTORY_BACKFILL.md): the tenant whose private store receives the owner's licensed 1-minute history
+# from the R2 import. Unset: the importer refuses to load 1-minute data at all (daily still goes to the shared lake).
+# The R2 credentials (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_ENDPOINT) are read only by the importer.
+_history_owner = os.environ.get("HISTORY_OWNER_TENANT_ID", "").strip()
+HISTORY_OWNER_TENANT_ID = int(_history_owner) if _history_owner.isdigit() and int(_history_owner) > 0 else None
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

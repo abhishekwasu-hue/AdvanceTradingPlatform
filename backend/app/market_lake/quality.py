@@ -67,6 +67,28 @@ def find_gaps(bars: Sequence[LakeBar], day: date, source: str, *, until: Optiona
     return events
 
 
+def find_daily_gaps(bars: Sequence[LakeBar], trading_days: Sequence[date], source: str) -> List[QualityEvent]:
+    """Trading days between the first and last daily bar that have no bar (one event per contiguous run). The caller
+    supplies the trading days (weekdays minus the exchange's holidays) - without a holiday calendar it should not call
+    this, or every holiday becomes a gap. A daily bar belongs to the UTC date of (END - 1 microsecond)."""
+    if not bars:
+        return []
+    key, tf = bars[0].instrument_key, bars[0].timeframe
+    have = {(_utc(b.ts) - timedelta(microseconds=1)).date() for b in bars}
+    first, last = min(have), max(have)
+    events: List[QualityEvent] = []
+    run: List[date] = []
+    for day in [d for d in sorted(trading_days) if first <= d <= last] + [None]:
+        if day is not None and day not in have:
+            run.append(day)
+            continue
+        if run:
+            events.append(QualityEvent("gap", key, tf, datetime.combine(run[0], MARKET_CLOSE, tzinfo=IST).astimezone(timezone.utc),
+                                       source, f"{len(run)} missing trading day(s) {run[0].isoformat()} .. {run[-1].isoformat()}"))
+            run = []
+    return events
+
+
 def find_bar_problems(bars: Sequence[LakeBar], source: str, *, ingested: Optional[Dict[datetime, datetime]] = None) -> List[QualityEvent]:
     """Spikes, invalid OHLC and late arrivals in one instrument's bars (sorted by end)."""
     spike = float(config.LAKE_SPIKE_PCT)
@@ -117,18 +139,25 @@ def _bar(row: MdCandleRecord) -> LakeBar:
                    float(row.close), int(row.volume), row.oi)
 
 
-async def record(session: AsyncSession, events: Iterable[QualityEvent]) -> int:
+async def record(session: AsyncSession, events: Iterable[QualityEvent], *, tenant_id: Optional[int] = None,
+                 commit: bool = True) -> int:
+    """Writes events not yet recorded. `tenant_id` set = events about that tenant's private store (HB0), which only that
+    tenant can count; None = the shared lake."""
     written = 0
+    owner = DataQualityEventRecord.tenant_id.is_(None) if tenant_id is None else DataQualityEventRecord.tenant_id == tenant_id
     for e in events:
         exists = await session.scalar(select(DataQualityEventRecord.id).where(
             DataQualityEventRecord.kind == e.kind, DataQualityEventRecord.instrument_key == e.instrument_key,
             DataQualityEventRecord.timeframe == e.timeframe, DataQualityEventRecord.ts == e.ts,
-            DataQualityEventRecord.source == e.source).limit(1))
+            DataQualityEventRecord.source == e.source, owner).limit(1))
         if exists is None:
             session.add(DataQualityEventRecord(kind=e.kind, instrument_key=e.instrument_key, timeframe=e.timeframe, ts=e.ts,
-                                               source=e.source, detail=e.detail))
+                                               source=e.source, detail=e.detail, tenant_id=tenant_id))
             written += 1
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return written
 
 

@@ -249,6 +249,17 @@ LIVE_UPSTOX_OPTION_STOP_LIMIT = os.environ.get("LIVE_UPSTOX_OPTION_STOP_LIMIT", 
 # - a LIVE position whose broker-side stop the broker clearly rejected (at entry, or on a stop-guard re-arm) is closed
 #   at once - never after a timeout / 5xx, while broker-uncertain or with the market shut; at most 3 tries.
 LIVE_EXIT_IF_NO_STOP = os.environ.get("LIVE_EXIT_IF_NO_STOP", "false").lower() in ("1", "true", "yes")
+# Stop guard: after this many re-armed stops in a row that the broker accepted and then REJECTED, the guard stops
+# re-arming that position (it would loop forever) - with LIVE_EXIT_IF_NO_STOP the position is closed, else a CRITICAL.
+def _positive_int(raw: str, default: int) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+STOP_REARM_MAX_REJECTS = _positive_int(os.environ.get("STOP_REARM_MAX_REJECTS", "3"), 3)
 # How far past the trigger a stop-limit's limit sits (% of the trigger; Zerodha options today, Upstox options with
 # the flag above). Unset = today's stop-limit (1%, nearest tick). Set = that band, rounded outward to the 0.05 tick
 # and always at least one tick past the trigger. An unreadable value is ignored (today's behaviour) with a warning.

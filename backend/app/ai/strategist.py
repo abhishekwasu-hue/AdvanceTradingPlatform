@@ -35,6 +35,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from app.ai.wording import banned_terms
 from app.ai.interview import tr
 from app.core.models import RiskConfig
 from app.core.resampling import resample_ohlc
@@ -565,7 +566,10 @@ def parse_ai(text: str) -> List[Tuple[str, CustomStrategyConfig]]:
             continue
         if sum(len(x) for x in (cfg.long_conditions, cfg.short_conditions)) > 8:
             continue
-        out.append(((item.get("name") or cfg.name or "AI strategy")[:60], cfg))
+        name = (item.get("name") or cfg.name or "AI strategy")[:60]
+        if banned_terms(name):                 # ATP review 11: "Best breakout" is a claim, not a name
+            name = f"AI strategy {len(out) + 1}"
+        out.append((name, cfg))
     return out
 
 

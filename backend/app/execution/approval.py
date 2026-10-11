@@ -143,7 +143,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. Places nothing."""
-    now = now or datetime.now(timezone.utc)
+    now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -152,8 +152,9 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     reason = (f"{label}: {direction} {signal.symbol} at {_money(signal.entry)} (stop {_money(signal.stop_loss)}, target {_money(signal.target1)})"
               f" - {strategy_id}. Approve to place a PAPER order at the price then (re-quoted); it expires at "
               f"{expires.astimezone(IST).strftime('%H:%M')} IST.")
-    evidence = {"source": source, "symbol": signal.symbol, "direction": direction, "proposal_price": float(signal.entry),
-                "stop_loss": signal.stop_loss, "target1": signal.target1, "target2": signal.target2, "risk_reward": signal.risk_reward,
+    # The card shows the first few numbers: the proposal price and its levels lead.
+    evidence = {"proposal_price": float(signal.entry), "stop_loss": signal.stop_loss, "target1": signal.target1, "source": source,
+                "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,
                 "strategy_id": strategy_id, "mode": "PAPER", "requested_mode": requested_mode, "exit_rules": exit_rules,
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
                 "signal": signal.model_dump(mode="json")}
@@ -170,7 +171,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     from app.notifications.service import notify
     AI_PROPOSALS.labels(action=ACTION_ENTRY).inc()
     await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"Entry proposal: {direction} {signal.symbol} (PAPER)",
-                 message=f"{reason} Nothing is placed until you approve.", severity=NotificationSeverity.INFO, user_id=user_id,
+                 message=f"{reason} Nothing is placed until you approve.", severity=NotificationSeverity.WARNING, user_id=user_id,
                  ai_action_id=row.id)
     from app.ai import vision_audit
     await vision_audit.enqueue_for_proposal(session, row, now=now)
@@ -285,7 +286,7 @@ async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
 async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, price: float, now: Optional[datetime] = None) -> Optional[AiActionRecord]:
     """A target was reached on an approval-only position: ask "Exit now?" once per level per position. Never raises
     (the monitor keeps sweeping); places nothing."""
-    now = now or datetime.now(timezone.utc)
+    now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     rule = _target_rule(reason)
     try:
         seen = await session.scalar(select(AiActionRecord.id).where(AiActionRecord.tenant_id == trade.tenant_id, AiActionRecord.trade_id == trade.id,
@@ -305,7 +306,7 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
             await session.flush()
         from app.notifications.service import notify
         await notify(session, trade.tenant_id, NotificationType.AI_PROPOSAL, title=f"Exit now? {trade.symbol} reached {reason}",
-                     message=text, severity=NotificationSeverity.INFO, related_trade_id=trade.id, ai_action_id=row.id)
+                     message=text, severity=NotificationSeverity.WARNING, related_trade_id=trade.id, ai_action_id=row.id)
         await session.commit()
         return row
     except IntegrityError:

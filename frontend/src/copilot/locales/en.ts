@@ -401,7 +401,11 @@ export const COPILOT_EN = {
     intro: "The monitoring agent watches active deployments (losing streaks, daily drawdown, error streaks, stale positions in adverse regimes, win-rate drift) and proposes an action. Nothing happens until you approve; a proposal expires if you do not.",
     emptyTitle: "Nothing waiting",
     emptyBody: "When the agent proposes an action it appears here and as a badge on this tab.",
-    action: { PAUSE_DEPLOYMENT: "Pause the deployment", EXIT_POSITION: "Exit the position", REDUCE_RISK: "Reduce the risk", REVIEW_STRATEGY: "Review the strategy" },
+    action: { PAUSE_DEPLOYMENT: "Pause the deployment", EXIT_POSITION: "Exit the position", REDUCE_RISK: "Reduce the risk", REVIEW_STRATEGY: "Review the strategy",
+              ENTRY: "Enter a PAPER position" },
+    // Z3: a target reached on an approval-only position; the stop and time exits stay automatic.
+    exitNow: "Exit now?",
+    entryNote: "Approve places a PAPER order at the price at that moment. If the price has moved too far, nothing is placed and a fresh proposal at the new price follows.",
     meta: "rule {{rule}} · deployment #{{deployment}}",
     position: "position #{{id}}",
     evidence: "Evidence",

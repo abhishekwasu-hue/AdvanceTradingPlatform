@@ -64,6 +64,21 @@ export default function PositionsPage() {
     }
   }
 
+  // Z3 "Exit now": always available - closes at the live price (PAPER without a quote: the price typed above).
+  async function handleExitNow(tradeId: number) {
+    const raw = priceInputs[tradeId];
+    const price = raw ? Number(raw) : undefined;
+    if (!window.confirm("Exit this position now?")) return;
+    try {
+      const result = await api.exitNow(tradeId, price && !Number.isNaN(price) ? price : undefined);
+      const first = result.closed[0];
+      setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${first?.pnl?.toFixed(2)})` }));
+      refresh();
+    } catch (e) {
+      setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
+    }
+  }
+
   if (authLoading) return null;
 
   if (!user) {
@@ -182,6 +197,15 @@ export default function PositionsPage() {
                   >
                     Check price
                   </button>
+                  {user.role !== "VIEWER" && (
+                    <button
+                      onClick={() => handleExitNow(p.id)}
+                      className="rounded border border-down/60 px-2 py-1 text-xs text-down hover:bg-down/10"
+                      data-testid="exit-now"
+                    >
+                      Exit now
+                    </button>
+                  )}
                   {markMessages[p.id] && <span className="text-xs text-fg-muted">{markMessages[p.id]}</span>}
                 </div>
               </div>

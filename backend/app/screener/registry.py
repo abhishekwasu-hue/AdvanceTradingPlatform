@@ -63,6 +63,7 @@ PATTERN_NAMES: Tuple[str, ...] = (
 SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
 SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
 REVERSAL_MIN_BARS = 25                            # the median range of 20 bars before a window of up to 4 candles
+BREAK_EXTRA_BARS = 21                             # RealBreak: the median range (20 bars) before the earliest candidate, plus one
 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _X = Arg("x", NUM)
@@ -128,6 +129,11 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          min_bars=REVERSAL_MIN_BARS, price_args=(0,),
          doc="price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close"
              " location; hammer / engulfing / star are one rule) - bullish at support, bearish at resistance"),
+    Spec("RealBreak", "filter", BOOL, None, (Arg("level", NUM), Arg("side", STR, choices=("above", "below")),
+                                             Arg("n", "window", 20, False)), cost=4.0, min_bars=REVERSAL_MIN_BARS, price_args=(0,),
+         extra_bars=BREAK_EXTRA_BARS,
+         doc="a REAL break of `level` (this bar's value) was confirmed within the last n bars: a close beyond it by a buffer,"
+             " then displacement, acceptance (no reclaim) or a failed retest - a wick or a reclaimed close is a false break"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),

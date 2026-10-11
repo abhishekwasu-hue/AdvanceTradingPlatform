@@ -589,7 +589,51 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - the next bar's level (look-ahead);
     - direction ignored;
     - no price check.
-- **Next (S5-A3).** Real break versus false break of a level (`breaks`), and zone strength (`level_strength`).
+- **Next (S5-A3).** Real break versus false break of a level (`breaks`).
+
+## S5-A3 (built): `RealBreak(level, side, n=20)`
+- **What it is.** The trade-port break rule (`app/price_action/breaks.py`, `first_real_break`, default settings), on
+  every bar: was a **real** break of this bar's `level` confirmed within the last `n` bars?
+  - A real break is a close beyond the level by the buffer, then displacement, acceptance (no reclaim within the
+    acceptance bars), or a failed retest from the broken side. A wick through, or a close that is reclaimed before it
+    is confirmed, is a false break and is not counted.
+  - `above` breaks resistance upwards; `below` breaks support downwards. The level is any price expression.
+- **An event in the window.** Like the other windowed filters, a break confirmed and later reclaimed still reads true
+  until it is older than `n` bars. For "still beyond", AND it with the close (`RealBreak(PDL(), "below") AND close <
+  PDL()`). There is a test for both.
+- **Crossing required.** The scan starts on the bar after the **first** close on the near side of the level in bars
+  j-n..j (`break_scan_start`), so every break in the window that crossed from the near side is found. Price that sat
+  beyond the level for the whole window is not a break of it: nothing crossed.
+- **Causal.** The rule and its retest check stop at the bar (`end=j`). The level is the level known at the bar.
+  Truncation invariance is tested, and so is invariance to history beyond the validator's lookback.
+- **History.** The lookback is `n` + 21 bars (`extra_bars`): the bar before the window, and the 20-bar median range
+  before the earliest candidate. Without it, early candidates had no median range and the answer depended on how much
+  history was fetched (review finding).
+- **Cost.** A vector prefilter (the rolling min / max of close beyond the level by the buffer, over the window) skips
+  bars where no close in the window got beyond the level. It is loosened by a relative epsilon, because the rule
+  tests `close < level - buffer`, which can round differently on tick prices (review finding, with a test). Cost
+  weight 4.
+- **Validation.** The level must be a price (`Spec.price_args`); the side is `above` or `below`.
+- **Tests.**
+  - `tests/test_s5a3_breaks.py` (10):
+    - a wick is not a break and a strong close is;
+    - acceptance versus a reclaim;
+    - the window forgets an old break;
+    - parity with the rule and truncation invariance;
+    - validation and the lookback;
+    - the crossing;
+    - the failed-retest confirmation (a session-shaped sample found by search);
+    - a close exactly at level minus buffer on tick prices;
+    - an event in the window after a reclaim;
+    - no dependence on history beyond the lookback.
+  - Mutation checks, 6/6 killed:
+    - no crossing;
+    - reading later bars (`end=None`), killed once the redundant `c <= j` guard was removed;
+    - the `above` prefilter;
+    - the `below` prefilter without the epsilon;
+    - the near side flipped;
+    - no failed-retest confirmation.
+- **Next (S5-A4).** Zone strength (`level_strength`).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no

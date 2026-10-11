@@ -267,11 +267,12 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             raise ValueError(f"No live price for {symbol} on your own broker session - nothing was placed ({exc})") from exc
         except Exception as exc:  # noqa: BLE001 - no quote, no order
             raise ValueError(f"No live price for {symbol} to re-quote the entry at ({type(exc).__name__}) - nothing was placed") from exc
-        owner = user
+        owner: User = user
         if action.owner_user_id is not None and action.owner_user_id != user.id:
-            owner = await session.get(User, action.owner_user_id)
-            if owner is None or owner.tenant_id != action.tenant_id or not owner.is_active:
+            holder = await session.get(User, action.owner_user_id)
+            if holder is None or holder.tenant_id != action.tenant_id or not holder.is_active:
                 raise ValueError("The person this proposal is for is no longer an active member - nothing was placed")
+            owner = holder
         verdict, why = requote_check(direction, float(evidence["proposal_price"]), price, stop_loss=evidence.get("stop_loss"),
                                      target1=evidence.get("target1"), max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
                                      max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=tick_size_for(symbol))

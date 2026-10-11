@@ -343,7 +343,9 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
                 if price_lookup is None:
                     raise ValueError("No price source available to exit the position - use the Positions page")
                 from app.trading.position_monitor import exchange_for_trade
-                price = await price_lookup(trade.symbol, exchange_for_trade(trade)) if callable(price_lookup) else None
+                exchange = exchange_for_trade(trade)           # Z3 (review L3): the position's own venue, NSE by default
+                price = (await (price_lookup(trade.symbol) if exchange == "NSE" else price_lookup(trade.symbol, exchange))
+                         if callable(price_lookup) else None)
                 if price is None:
                     raise ValueError("No live price for the position")
                 if trade.mode == "LIVE" and broker is None:

@@ -22,25 +22,32 @@ export interface LegTableProps {
 /**
  * A number cell that keeps what is typed: clearing it, or typing a half-finished number, is editing - not 0 sent to
  * the server. A value is committed only when it parses and `valid` takes it; leaving the cell shows the leg's value
- * again. `empty` (when given) is what an empty cell commits.
+ * again. `empty` (when given) is what an empty cell commits. `commitOn="blur"` (the strike) commits on Enter or on
+ * leaving the cell only, so "22100" typed slowly never sends strikes 2, 22, 221. Until the trader types, the cell
+ * follows the leg (a re-priced premium shows even while the cell has focus).
  */
-function NumberCell({ value, valid, onCommit, empty, onDone, ...rest }: {
-  value: number | null; valid: (n: number) => boolean; onCommit: (n: number | null) => void; empty?: null; onDone?: () => void;
+function NumberCell({ value, valid, onCommit, empty, commitOn = "change", ...rest }: {
+  value: number | null; valid: (n: number) => boolean; onCommit: (n: number | null) => void; empty?: null;
+  commitOn?: "change" | "blur";
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
   const shown = value == null ? "" : String(value);
   const [text, setText] = useState(shown);
-  const [editing, setEditing] = useState(false);
-  useEffect(() => { if (!editing) setText(shown); }, [shown, editing]);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setText(shown); }, [shown, dirty]);
+  const commit = (t: string) => {
+    if (t.trim() === "") { if (empty !== undefined) onCommit(empty); return; }
+    const n = Number(t);
+    if (Number.isFinite(n) && valid(n)) onCommit(n);
+  };
   return (
     <input {...rest} type="number" value={text}
-           onFocus={() => setEditing(true)}
-           onBlur={() => { setEditing(false); setText(shown); onDone?.(); }}
+           onBlur={() => { if (dirty && commitOn === "blur") commit(text); setDirty(false); setText(shown); }}
+           onKeyDown={(e) => { if (e.key === "Enter" && commitOn === "blur") { commit(text); setDirty(false); } }}
            onChange={(e) => {
              const t = e.target.value;
              setText(t);
-             if (t.trim() === "") { if (empty !== undefined) onCommit(empty); return; }
-             const n = Number(t);
-             if (Number.isFinite(n) && valid(n)) onCommit(n);
+             setDirty(true);
+             if (commitOn === "change") commit(t);
            }} />
   );
 }
@@ -81,9 +88,8 @@ export function LegTable({ legs, rows, step, onChange, onAdd }: LegTableProps) {
                     <td className="px-2"><select aria-label={`Leg ${i + 1} type`} className={cn(cell, "w-[4.5rem]")} value={l.option_type} onChange={(e) => set(l.id, { option_type: e.target.value as OptionKind })}>
                       <option value="CE">CE</option><option value="PE">PE</option><option value="FUT">FUT</option>
                     </select></td>
-                    <td className="px-2"><NumberCell aria-label={`Leg ${i + 1} strike`} className={cn(cell, "w-24")} step={step || 1} value={l.strike} disabled={l.option_type === "FUT"}
-                                                     valid={(n) => n > 0} onCommit={(n) => n != null && set(l.id, { strike: n })}
-                                                     onDone={() => { const snapped = snapStrike(l.strike, step); if (snapped !== l.strike) set(l.id, { strike: snapped }); }} /></td>
+                    <td className="px-2"><NumberCell aria-label={`Leg ${i + 1} strike`} className={cn(cell, "w-24")} step={step || 1} value={l.strike} disabled={l.option_type === "FUT"} commitOn="blur"
+                                                     valid={(n) => n > 0} onCommit={(n) => n != null && set(l.id, { strike: snapStrike(n, step) })} /></td>
                     <td className="px-2"><input aria-label={`Leg ${i + 1} expiry`} className={cn(cell, "w-36")} type="date" value={l.expiry} onChange={(e) => set(l.id, { expiry: e.target.value })} /></td>
                     <td className="px-2"><NumberCell aria-label={`Leg ${i + 1} lots`} className={cn(cell, "w-16")} min={1} step={1} value={l.lots}
                                                      valid={(n) => Number.isInteger(n) && n >= 1 && n <= 1000} onCommit={(n) => n != null && set(l.id, { lots: n })} /></td>

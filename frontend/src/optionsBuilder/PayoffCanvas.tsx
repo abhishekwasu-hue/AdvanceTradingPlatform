@@ -18,9 +18,11 @@ export interface PayoffCanvasProps {
   spot: number;
   step: number;
   onStrikeChange: (legId: string, strike: number) => void;
+  /** a strike drag started (true) or ended (false): the page holds the chart's range still meanwhile */
+  onDragging?: (dragging: boolean) => void;
 }
 
-export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }: PayoffCanvasProps) {
+export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange, onDragging }: PayoffCanvasProps) {
   const svg = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [drag, setDrag] = useState<string | null>(null);
@@ -47,31 +49,39 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }
     const t = (price - xs[i - 1]) / (xs[i] - xs[i - 1]);
     return series[i - 1] + (series[i] - series[i - 1]) * t;
   };
+  // the strike range a handle can take: the chart's own (it widens to cover new strikes once a drag ends)
+  const lo = Math.max(step, snapStrike(xs[0], step));
+  const hi = Math.max(lo, snapStrike(xs[xs.length - 1], step));
+  const clampStrike = (k: number) => Math.min(hi, Math.max(lo, k));
+  const endDrag = () => { if (drag) onDragging?.(false); setDrag(null); };
   const onMove = (ev: PointerEvent<SVGSVGElement>) => {
     const p = toPrice(ev.clientX);
     setHover(p);
     if (drag) {
       const leg = legs.find((l) => l.id === drag);
-      const next = snapStrike(p, step);
+      const next = clampStrike(snapStrike(p, step));               // a pointer past the edge holds the strike at the edge
       if (leg && next !== leg.strike) onStrikeChange(drag, next);
     }
   };
   const keyMove = (leg: Leg) => (ev: KeyboardEvent) => {
-    if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
-      ev.preventDefault();
-      onStrikeChange(leg.id, snapStrike(leg.strike + (ev.key === "ArrowRight" ? step : -step), step));
-    }
+    const moves: Record<string, number> = { ArrowLeft: -step, ArrowRight: step, ArrowDown: -step, ArrowUp: step, PageDown: -5 * step, PageUp: 5 * step };
+    let next: number | null = null;
+    if (ev.key in moves) next = snapStrike(leg.strike + moves[ev.key], step);
+    else if (ev.key === "Home") next = lo;
+    else if (ev.key === "End") next = hi;
+    if (next == null) return;
+    ev.preventDefault();
+    next = clampStrike(next);
+    if (next !== leg.strike) onStrikeChange(leg.id, next);
   };
   // numbered as in the leg table (futures have no strike handle but keep their number)
   const optionLegs = legs.map((l, i) => ({ l, n: i + 1 })).filter(({ l }) => l.option_type !== "FUT");
-  const lo = Math.max(step, snapStrike(xs[0], step));
-  const hi = snapStrike(xs[xs.length - 1], step);
 
   return (
     <figure className="relative">
       <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full touch-none select-none" role="group"
            aria-label={`Payoff: ${e.single_expiry ? "at expiry and " : ""}on the chosen date, against the price of the underlying`}
-           onPointerMove={onMove} onPointerLeave={() => { setHover(null); setDrag(null); }} onPointerUp={() => setDrag(null)} onPointerCancel={() => setDrag(null)}>
+           onPointerMove={onMove} onPointerLeave={() => { setHover(null); endDrag(); }} onPointerUp={endDrag} onPointerCancel={endDrag}>
         {/* the probability cone: two and one expected moves */}
         <rect x={clampX(sx(c.outer[0]))} y={M.top} width={Math.max(0, clampX(sx(c.outer[1])) - clampX(sx(c.outer[0])))} height={H - M.top - M.bottom}
               className="fill-brand/[0.05]" />
@@ -107,7 +117,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }
             <g key={l.id} transform={`translate(${x},${H - M.bottom + 10})`} role="slider" tabIndex={0}
                aria-label={`Strike of leg ${n} (${l.direction} ${l.option_type})`} aria-valuenow={l.strike} aria-valuemin={lo} aria-valuemax={hi}
                aria-valuetext={`${l.strike}`} onKeyDown={keyMove(l)}
-               onPointerDown={(ev) => { ev.preventDefault(); (ev.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(ev.pointerId); setDrag(l.id); }}
+               onPointerDown={(ev) => { ev.preventDefault(); (ev.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(ev.pointerId); setDrag(l.id); onDragging?.(true); }}
                className="cursor-ew-resize outline-none [&:focus-visible>circle]:stroke-brand" data-testid="strike-handle">
               <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={cx(l.direction === "BUY" ? "stroke-up/40" : "stroke-down/40")} strokeDasharray="1 3" />
               <circle r={7} className={cx("stroke-2", l.direction === "BUY" ? "fill-up/80 stroke-up" : "fill-down/80 stroke-down", drag === l.id && "stroke-fg")} />

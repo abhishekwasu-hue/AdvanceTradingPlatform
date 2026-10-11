@@ -21,6 +21,8 @@ export interface Leg {
   expiry: string;                 // YYYY-MM-DD
   iv: number | null;              // fraction; null = solved from the premium by the server
   premium_source?: "model" | "manual";
+  /** for a model premium: the contract it was priced for (`contractKey`); re-priced only when the contract changes */
+  priced_for?: string;
 }
 
 export interface Greeks { delta: number; gamma: number; theta: number; vega: number; rho: number }
@@ -163,8 +165,17 @@ export function daysBetween(from: string, to: string): number {
   return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, Math.round((b - a) / 86400e3)) : 0;
 }
 
+/** What an evaluation was asked with, besides the legs (the sliders and the spot). */
+export interface EvalParams { spot: number; daysForward: number; ivShift: number }
+
 /** The legs an evaluation was asked for, by id - the server answers in request order, so its i-th leg is sent[i]. */
-export interface Evaluated { evaluation: Evaluation; sent: Leg[] }
+export interface Evaluated { evaluation: Evaluation; sent: Leg[]; params?: EvalParams }
+
+/** The contract a model price belongs to. Time passing does not change it, so a model premium is not re-priced (and
+ * the page does not re-evaluate) just because the clock moved between two replies. */
+export function contractKey(l: Leg): string {
+  return [l.option_type, l.strike, l.expiry, l.iv ?? "solve", l.direction].join("|");
+}
 
 /** Same contract: the fields a model price depends on. */
 function sameContract(a: Leg, b: Leg): boolean {
@@ -185,8 +196,12 @@ export function evaluatedById(current: Leg[], ev: Evaluated | null): Record<stri
   return out;
 }
 
-/** Whether an evaluation describes exactly the current legs (same ids, order and every input). */
-export function isCurrent(current: Leg[], ev: Evaluated | null): boolean {
+/** Whether an evaluation describes exactly the current legs (same ids, order and every input) and, when given, the
+ * current spot and sliders. */
+export function isCurrent(current: Leg[], ev: Evaluated | null, params?: EvalParams): boolean {
+  if (params && ev?.params && (ev.params.spot !== params.spot || ev.params.daysForward !== params.daysForward || ev.params.ivShift !== params.ivShift)) {
+    return false;
+  }
   return !!ev && ev.sent.length === current.length && ev.sent.every((s, i) => {
     const c = current[i];
     return c.id === s.id && sameContract(c, s) && c.lots === s.lots && c.lot_size === s.lot_size && c.premium === s.premium;
@@ -194,10 +209,11 @@ export function isCurrent(current: Leg[], ev: Evaluated | null): boolean {
 }
 
 /**
- * Legs whose premium is the model's are re-priced from an evaluation (after a strike, expiry or IV edit the old model
- * price belongs to another contract). Matched by id, and only when the leg is still the contract that was priced - a
- * reply that lands after a further drag never writes an old strike's price. Typed premiums are never touched. Returns
- * the same array when nothing changed.
+ * Legs whose premium is the model's are re-priced from an evaluation after a strike, expiry, IV or side edit (the
+ * old model price belongs to another contract). Matched by id, and only when the leg is still the contract that was
+ * evaluated - a reply that lands after a further drag never writes an old strike's price - and only when the contract
+ * changed since the premium was set (`priced_for`): time decay alone never re-prices, so the page cannot loop on the
+ * clock. Typed premiums are never touched. Returns the same array when nothing changed.
  */
 export function repriceModelLegs(legs: Leg[], ev: Evaluated): Leg[] {
   if (ev.evaluation.legs.length !== ev.sent.length) return legs;
@@ -206,9 +222,10 @@ export function repriceModelLegs(legs: Leg[], ev: Evaluated): Leg[] {
   const out = legs.map((l) => {
     const hit = sent.get(l.id);
     if (!hit || l.premium_source !== "model" || !sameContract(l, hit.s)) return l;
-    if (!Number.isFinite(hit.t) || Math.abs(hit.t - l.premium) < 0.005) return l;
+    const key = contractKey(l);
+    if (l.priced_for === key || !Number.isFinite(hit.t)) return l;
     changed = true;
-    return { ...l, premium: hit.t };
+    return { ...l, premium: hit.t, priced_for: key };
   });
   return changed ? out : legs;
 }

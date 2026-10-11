@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  cone, daysBetween, evaluatedById, isCurrent, niceTicks, rangePctFor, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, netPremium, rewardToRisk, signAreas, snapStrike, thumbnailShape,
+  cone, contractKey, daysBetween, evaluatedById, isCurrent, niceTicks, rangePctFor, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, netPremium, rewardToRisk, signAreas, snapStrike, thumbnailShape,
   yDomain, type Leg, type TemplateInfo,
 } from "./model";
 
@@ -98,13 +98,15 @@ describe("model premiums and greeks follow their leg, by id", () => {
   it("re-prices only legs the model priced, and returns the same array when nothing moved", () => {
     const legs = [leg({ id: "m", premium: 100, premium_source: "model" }), leg({ id: "t", premium: 90, premium_source: "manual" })];
     expect(repriceModelLegs(legs, ev(legs, [120, 80])).map((l) => l.premium)).toEqual([120, 90]);
-    const same = [leg({ premium: 120, premium_source: "model" })];
-    expect(repriceModelLegs(same, ev(same, [120.001]))).toBe(same);
+    const repriced = repriceModelLegs(legs, ev(legs, [120, 80]))[0];
+    expect(repriced.priced_for).toBe(contractKey(repriced));
+    const same = [{ ...repriced }];
+    expect(repriceModelLegs(same, ev(same, [119.4]))).toBe(same);          // the clock moved, not the contract: no loop
     expect(repriceModelLegs(legs, { sent: legs, evaluation: { legs: [] } as unknown as Evaluation })).toBe(legs);   // another shape: untouched
   });
   it("matches by id, not position, and never writes an old strike's price after a further move", () => {
-    const a = leg({ id: "a", strike: 100, premium: 5, premium_source: "model" });
-    const b = leg({ id: "b", strike: 110, premium: 3, premium_source: "model" });
+    const a = leg({ id: "a", strike: 100, premium: 5, premium_source: "model", priced_for: "stale" });
+    const b = leg({ id: "b", strike: 110, premium: 3, premium_source: "model", priced_for: "stale" });
     const reply = ev([a, b], [7, 4]);
     expect(repriceModelLegs([b, a], reply).map((l) => [l.id, l.premium])).toEqual([["b", 4], ["a", 7]]);   // reordered
     const moved = { ...a, strike: 105 };                                                                     // dragged on since
@@ -121,6 +123,11 @@ describe("model premiums and greeks follow their leg, by id", () => {
     expect(isCurrent([b], reply)).toBe(false);
     expect(isCurrent([a, { ...b, lots: 2 }], reply)).toBe(false);
     expect(isCurrent([a, b], null)).toBe(false);
+    const params = { spot: 100, daysForward: 0, ivShift: 0 };
+    const withParams = { ...reply, params };
+    expect(isCurrent([a, b], withParams, params)).toBe(true);
+    expect(isCurrent([a, b], withParams, { ...params, daysForward: 3 })).toBe(false);   // a slider moved since
+    expect(isCurrent([a, b], withParams, { ...params, spot: 101 })).toBe(false);
   });
 });
 

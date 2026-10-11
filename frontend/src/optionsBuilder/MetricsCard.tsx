@@ -15,7 +15,7 @@ function Row({ label, value, tone, hint }: { label: string; value: string; tone?
   );
 }
 
-export function MetricsCard({ evaluation: e, legs }: { evaluation: Evaluation | null; legs: Leg[] }) {
+export function MetricsCard({ evaluation: e, legs, stale = false }: { evaluation: Evaluation | null; legs: Leg[]; stale?: boolean }) {
   if (!e) {
     return (
       <aside aria-label="Metrics" className="rounded-xl border border-border bg-surface-1 p-4 text-sm text-fg-muted">
@@ -28,7 +28,8 @@ export function MetricsCard({ evaluation: e, legs }: { evaluation: Evaluation | 
   const rr = rewardToRisk(ext);
   const g = e.summary.greeks;
   return (
-    <aside aria-label="Metrics" className="rounded-xl border border-border bg-surface-1 p-4" data-testid="metrics">
+    <aside aria-label="Metrics" aria-busy={stale} className={cx("rounded-xl border border-border bg-surface-1 p-4", stale && "opacity-60")} data-testid="metrics">
+      {stale && <p className="mb-2 text-[11px] text-fg-muted" data-testid="metrics-stale">Updating for your last change…</p>}
       <h2 className="text-sm font-semibold text-fg">The strategy</h2>
       <dl className="mt-2 divide-y divide-border/60">
         <Row label={net >= 0 ? "Net credit" : "Net debit"} value={money(Math.abs(net))} tone={net >= 0 ? "up" : undefined} />

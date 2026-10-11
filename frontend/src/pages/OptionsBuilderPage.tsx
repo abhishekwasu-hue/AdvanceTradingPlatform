@@ -15,11 +15,13 @@ import type { PageProps } from "../routes";
 import { builderApi } from "../optionsBuilder/api";
 import { LegTable } from "../optionsBuilder/LegTable";
 import { MetricsCard } from "../optionsBuilder/MetricsCard";
-import { daysBetween, evaluatedById, hedgeFirst, isCurrent, legId, rangePctFor, repriceModelLegs, snapStrike, type Evaluated, type Leg, type TemplateInfo } from "../optionsBuilder/model";
+import { contractKey, daysBetween, evaluatedById, hedgeFirst, isCurrent, legId, rangePctFor, repriceModelLegs, snapStrike, type Evaluated, type Leg, type TemplateInfo } from "../optionsBuilder/model";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import { TemplateGallery } from "../optionsBuilder/TemplateGallery";
 
 const EVALUATE_DELAY_MS = 200;
+/** After a 429 the page waits this long and asks again, once per wait (the server's limit is per minute). */
+const RATE_LIMIT_RETRY_MS = 3000;
 
 function todayIst(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
@@ -52,6 +54,9 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const [evaluated, setEvaluated] = useState<Evaluated | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const seq = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const frozenRange = useRef<number | null>(null);          // the x-range held while a strike is dragged
+  const [retry, setRetry] = useState(0);
   const asOf = useMemo(todayIst, []);
 
   const spot = positive(spotText);
@@ -72,30 +77,38 @@ export default function OptionsBuilderPage(_props: PageProps) {
   // kept with the legs it was asked for, so rows and re-pricing match by leg id, never by position.
   useEffect(() => {
     const n = ++seq.current;
-    if (!legs.length || spot == null) { setEvaluated(null); return undefined; }
+    if (!legs.length || spot == null) { setEvaluated(null); setProblem(null); return undefined; }
     const sent = legs;
+    const params = { spot, daysForward, ivShift };
+    // while a strike is dragged the chart's x-range stays put (a reply must not rescale the axis under the pointer);
+    // it widens to cover the new strikes once the drag ends
+    const range = dragging && frozenRange.current != null ? frozenRange.current : rangePctFor(spot, sent);
+    frozenRange.current = range;
+    let retryTimer: number | undefined;
     const timer = window.setTimeout(() => {
       builderApi.evaluate({
-        legs: sent.map(({ id: _id, premium_source: _src, ...l }) => l), spot, as_of: asOf, days_forward: daysForward, iv_shift: ivShift / 100,
-        range_pct: rangePctFor(spot, sent), points: 241,
+        legs: sent.map(({ id: _id, premium_source: _src, priced_for: _key, ...l }) => l), spot, as_of: asOf, days_forward: daysForward,
+        iv_shift: ivShift / 100, range_pct: range, points: 241,
       }).then((evaluation) => {
         if (n !== seq.current) return;
         setProblem(null);
-        const reply = { evaluation, sent };
+        const reply = { evaluation, sent, params };
         setEvaluated(reply);
-        setLegs((cur) => repriceModelLegs(cur, reply));        // a model price for the old strike: re-price, re-evaluate
+        setLegs((cur) => repriceModelLegs(cur, reply));        // a model price for the old contract: re-price, re-evaluate
       })
         .catch((e: unknown) => {
           if (n !== seq.current) return;
+          // Second review: keep the chart (and a drag or a focused handle) in place; the last numbers stay, dimmed and
+          // marked out of date, and rows no longer matching their leg are blank (evaluatedById). A 429 asks again.
           setProblem(errorText(e));
-          setEvaluated(null);                                  // never the previous strategy's numbers beside these legs
+          if (e instanceof ApiError && e.status === 429) retryTimer = window.setTimeout(() => setRetry((r) => r + 1), RATE_LIMIT_RETRY_MS);
         });
     }, EVALUATE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [legs, spot, asOf, daysForward, ivShift]);
+    return () => { window.clearTimeout(timer); window.clearTimeout(retryTimer); };
+  }, [legs, spot, asOf, daysForward, ivShift, dragging, retry]);
   const evaluation = evaluated?.evaluation ?? null;
   const rows = useMemo(() => evaluatedById(legs, evaluated), [legs, evaluated]);
-  const fresh = isCurrent(legs, evaluated);
+  const fresh = spot != null && isCurrent(legs, evaluated, { spot, daysForward, ivShift });
 
   const pick = async (name: string) => {
     if (!ready || spot == null || step == null || lotSize == null || width == null || iv == null) return;
@@ -104,7 +117,10 @@ export default function OptionsBuilderPage(_props: PageProps) {
         name, atm_strike: snapStrike(spot, step), width, near_expiry: nearExpiry, next_expiry: nextExpiry || null, lots: 1,
         lot_size: lotSize, spot, iv: iv / 100, as_of: asOf,
       });
-      setLegs(hedgeFirst(t.legs.map((l) => ({ ...l, id: legId(), iv: l.iv ?? null } as Leg))));
+      setLegs(hedgeFirst(t.legs.map((l) => {
+        const leg = { ...l, id: legId(), iv: l.iv ?? null } as Leg;
+        return leg.premium_source === "model" ? { ...leg, priced_for: contractKey(leg) } : leg;
+      })));
       setDaysForward(0);
     } catch (e) {
       toast.error(errorText(e));
@@ -148,9 +164,14 @@ export default function OptionsBuilderPage(_props: PageProps) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           <section aria-label="Payoff" aria-busy={!!evaluation && !fresh} className="rounded-xl border border-border bg-surface-1 p-4">
+            {evaluation && !fresh && problem && (
+              <p className="mb-2 text-xs text-warn" data-testid="payoff-stale">These curves are for the legs before your last change. Fix the problem above to update them.</p>
+            )}
             {evaluation && spot != null && step != null ? (
-              <PayoffCanvas evaluation={evaluation} legs={legs} spot={spot} step={step}
-                            onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
+              <div className={!fresh && problem ? "opacity-60" : undefined}>
+                <PayoffCanvas evaluation={evaluation} legs={legs} spot={spot} step={step} onDragging={setDragging}
+                              onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
+              </div>
             ) : (
               <div className="flex h-64 items-center justify-center text-sm text-fg-muted">The payoff appears here once there is a leg.</div>
             )}
@@ -169,7 +190,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
           </section>
           <LegTable legs={legs} rows={rows} step={step ?? 0} onChange={(next) => setLegs(hedgeFirst(next))} onAdd={addLeg} />
         </div>
-        <MetricsCard evaluation={evaluation} legs={legs} />
+        <MetricsCard evaluation={evaluation} legs={legs} stale={!!evaluation && !fresh} />
       </div>
     </div>
   );

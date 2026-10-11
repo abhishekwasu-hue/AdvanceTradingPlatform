@@ -231,6 +231,11 @@ HISTORY_OWNER_TENANT_ID = int(_history_owner) if _history_owner.isdigit() and in
 # The confirmation: must equal that tenant's name, or the 1-minute import refuses (a mistyped id never reaches a customer).
 HISTORY_OWNER_TENANT_NAME = os.environ.get("HISTORY_OWNER_TENANT_NAME", "").strip()
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
+# BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
+# The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);
+# the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.
+# 50 is the per-session figure of the beta capacity model (§4), not a broker limit.
+BYOB_SESSION_SYMBOL_CAP = max(1, int(os.environ.get("BYOB_SESSION_SYMBOL_CAP", "50")))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS

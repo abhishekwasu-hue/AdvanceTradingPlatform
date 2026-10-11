@@ -300,7 +300,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "6-options"
+    assert run["engine_version"] == ENGINE_VERSION == "7-options"
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}
@@ -367,3 +367,18 @@ def test_worker_records_chains_for_active_option_deployments_once_per_interval(m
     assert len(rows) == first + third and all(r.expiry == date(2026, 10, 6) for r in rows)
     monkeypatch.setattr(chain_recorder, "CHAIN_SNAPSHOT_INTERVAL_MINUTES", 0)
     assert _run(worker._record_chains(None, [option_dep], MarketDataService(broker), now + timedelta(hours=2), {"NSE"})) == 0
+
+
+def test_bars_past_the_expiry_data_are_skipped_as_stale_and_counted():
+    """ATP review 4: a NIFTY bar more than STALE_GRACE_DAYS after the file's last day gets no guessed expiry - the
+    bar is skipped and counted (never a silent 'no expiry')."""
+    from app.instruments import expiry_data
+    _, end = expiry_data.coverage()
+    stale_day = end + timedelta(days=expiry_data.STALE_GRACE_DAYS + 3)
+    while stale_day.weekday() >= 5:
+        stale_day += timedelta(days=1)
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.BULL_PUT_SPREAD, implied_volatility=0.14, spread_width=2)
+    result = run_option_backtest(_OneShot(), _frame(24500, 24800, day=stale_day.isoformat()), "NIFTY 50", "1min", RISK, cfg)
+    assert result.total_trades == 0
+    skipped = result.options["signals_skipped"]
+    assert skipped == {f"stale expiry data (read through {end})": 1}

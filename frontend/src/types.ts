@@ -2351,3 +2351,44 @@ export interface StaticIpOverview {
   ips: StaticIp[];
   warnings: string[];
 }
+
+/** Z3-b: one row of the user's PAPER journal (net = gross - charges). */
+export interface PaperTradeRow {
+  id: number; symbol: string; direction: string; strategy_id: string; quantity: number;
+  entry_time: string | null; entry_price: number; stop_loss: number; target1: number | null;
+  exit_time: string | null; exit_price: number | null; exit_reason: string | null;
+  gross_pnl: number | null; charges: number; net_pnl: number | null; mark_price: number | null;
+  deployment_id: number | null; charges_source: string;
+}
+
+/** Z3-b: an entry proposal that was rejected or expired - a would-have record, nothing placed. */
+export interface PaperNotTaken {
+  proposal_id: number; status: string; symbol: string | null; direction: string | null; proposal_price: number | null;
+  stop_loss: number | null; target1: number | null; source: string | null; created_at: string | null; note: string | null;
+}
+
+/** Z3-b: the caller's own PAPER account (GET /api/paper/account; 404 while the `paper_account` flag is off). */
+export interface PaperAccount {
+  user_id: number; mode: "PAPER"; starting_capital: number; balance: number; equity: number;
+  realised: { gross: number; charges: number; net: number }; unrealised: number;
+  closed_trades: number; open_positions: number; wins: number; losses: number; win_rate: number | null; sessions: number;
+  max_drawdown: number; max_drawdown_pct: number; paused: boolean; paused_reason: string | null;
+  /** Trades priced from the user's own inputs (console candles) - left out of every figure here. */
+  excluded_trades: number;
+  positions: PaperTradeRow[]; journal: PaperTradeRow[]; not_taken: PaperNotTaken[];
+  proposals: { approved_by_you: number; rejected_by_you: number; pending: number; expired_unanswered: number };
+  as_of: string; note: string;
+}
+
+export interface LadderCriterion {
+  key: string; label: string; value: number | null; target: number | null;
+  comparison: "at_least" | "at_most" | null; met: boolean | null; note?: string;
+}
+
+/** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
+export interface PaperLadder {
+  stage: string;
+  stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
+  criteria: LadderCriterion[]; met: number; measured: number;
+  summary: Record<string, number | null>; as_of: string;
+}

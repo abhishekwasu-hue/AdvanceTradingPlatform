@@ -1085,10 +1085,15 @@ class TradingWorker:
             dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {skip}"
             await session.commit()
             return False
-        row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
-                                           idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
-                                           requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                           user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
+        try:
+            row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
+                                               idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
+                                               requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
+                                               user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
+        except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
+            dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
+            await session.commit()
+            return False
         dep.last_error = (f"Waiting for approval: entry proposal #{row.id}" if row is not None
                           else f"Signal at {signal_ts.isoformat()} not proposed: an earlier entry proposal of this deployment is still open")
         await session.commit()

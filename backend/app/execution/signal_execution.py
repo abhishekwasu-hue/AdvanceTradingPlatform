@@ -45,6 +45,12 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
     (safety rule 8). Shared by the single-leg pipeline and the multi-leg executor (Phase H2)."""
     reasons = await active_kill_switch_reasons(session, tenant_id, strategy_id)
     reasons.extend(await platform_entry_blocks(session, user=user, mode=mode, broker_name=broker_name))
+    if mode == ExecutionMode.PAPER.value and user is not None:
+        # Z3-b: the user's PAPER-scope pause (Telegram /pause, web) - new PAPER entries only; exits never come here.
+        from app.paper.service import paused_reason
+        paused = await paused_reason(session, user.id)
+        if paused:
+            reasons.append(paused)
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):

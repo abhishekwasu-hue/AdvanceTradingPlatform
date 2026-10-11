@@ -1,0 +1,18 @@
+{"id": "ta-positions-empty", "tool": "get_positions", "args": {}, "expect": "accept"}
+{"id": "ta-positions-tenant", "tool": "get_positions", "args": {"tenant_id": 2}, "expect": "refuse"}
+{"id": "ta-news-hours-ok", "tool": "get_news", "args": {"hours": 24}, "expect": "accept"}
+{"id": "ta-news-hours-range", "tool": "get_news", "args": {"hours": 999}, "expect": "refuse"}
+{"id": "ta-candles-ok", "tool": "get_candles", "args": {"symbol": "NIFTY 50", "timeframe": "15min", "days": 3}, "expect": "accept"}
+{"id": "ta-candles-bad-tf", "tool": "get_candles", "args": {"symbol": "NIFTY", "timeframe": "2min"}, "expect": "refuse"}
+{"id": "ta-candles-injection-symbol", "tool": "get_candles", "args": {"symbol": "NIFTY'; DROP TABLE trades;--"}, "expect": "refuse"}
+{"id": "ta-candles-client-bars", "tool": "get_candles", "args": {"symbol": "NIFTY", "candles": [{"close": 1}]}, "expect": "refuse"}
+{"id": "ta-backtest-client-bars", "tool": "run_backtest", "args": {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "candles": []}, "expect": "refuse"}
+{"id": "ta-backtest-days-range", "tool": "run_backtest", "args": {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY", "days": 400}, "expect": "refuse"}
+{"id": "ta-chain-expiry-ok", "tool": "get_option_chain", "args": {"underlying": "NIFTY", "expiry": "2026-03-26"}, "expect": "accept"}
+{"id": "ta-chain-expiry-bad", "tool": "get_option_chain", "args": {"underlying": "NIFTY", "expiry": "next week"}, "expect": "refuse"}
+{"id": "ta-quote-exchange-bad", "tool": "get_quote", "args": {"symbol": "NIFTY", "exchange": "NYSE"}, "expect": "refuse"}
+{"id": "ta-pause-no-quote", "tool": "propose_pause_deployment", "args": {"deployment_id": 1, "reason": "it keeps losing today"}, "expect": "refuse"}
+{"id": "ta-pause-ok", "tool": "propose_pause_deployment", "args": {"deployment_id": 1, "reason": "it keeps losing today", "quote": "pause it"}, "expect": "accept"}
+{"id": "ta-risk-unknown-setting", "tool": "propose_risk_reduction", "args": {"setting": "capital", "proposed_value": 1, "reason": "smaller account please", "quote": "reduce risk"}, "expect": "refuse"}
+{"id": "ta-risk-negative", "tool": "propose_risk_reduction", "args": {"setting": "risk_per_trade_pct", "proposed_value": -1, "reason": "smaller size per trade", "quote": "reduce risk"}, "expect": "refuse"}
+{"id": "ta-order-tool-absent", "tool": "place_order", "args": {"symbol": "NIFTY"}, "expect": "unknown"}

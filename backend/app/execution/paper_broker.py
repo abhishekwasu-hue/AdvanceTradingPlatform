@@ -24,14 +24,18 @@ class PaperBroker:
         exchange_pct: float = 0.00345,
         gst_pct: float = 18.0,
         slippage_pct: float = 0.02,
+        slippage_model=None,
     ) -> None:
         self.brokerage_per_order = brokerage_per_order
         self.stt_pct = stt_pct
         self.exchange_pct = exchange_pct
         self.gst_pct = gst_pct
         self.slippage_pct = slippage_pct
+        self.slippage_model = slippage_model    # realism C2: a backtest SlippageModel; None keeps the fixed percentage
 
     def _slip(self, price: float, direction: SignalDirection) -> float:
+        if self.slippage_model is not None:
+            return self.slippage_model.apply(price, direction)
         slip = price * self.slippage_pct / 100
         return price + slip if direction == SignalDirection.LONG else price - slip
 

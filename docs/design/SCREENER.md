@@ -421,6 +421,18 @@ job, never tuned against results.
   (migration `a3c5e7b9d1f3`, Postgres round-trip OK).
 - **Tests.** `tests/test_s4a_barclose.py` (7), plus 3 mutation checks: forming bar, stale data, once per bar.
 
+## S4b-1 (built): the cycle cache - shared fetches and evaluations
+
+- Within one worker cycle (`CycleCache`, on `Outcome.cache`):
+  - rules needing the same organisation, exchange, timeframe, closed bar and symbol fetch it once; a rule needing a
+    longer lookback than the cached fetch fetches again;
+  - the same screen (canonical AST) over the same current symbols, bar and params is evaluated once, and every rule
+    still records its own events.
+- The cache lives for one cycle only, so nothing from one bar is reused for the next. Counters: `fetched_symbols`,
+  `reused_symbols`, `reused_results`.
+- **Tests.** `tests/test_s4b_cycle_cache.py` (2), plus 3 mutation checks (no fetch cache, ignored lookback, no result
+  cache).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-10. Weekly / monthly alert rules.** Provisional: they can be saved but are not evaluated yet. A weekly bar
   would close at the week's last trading session, and the same holds for monthly bars.

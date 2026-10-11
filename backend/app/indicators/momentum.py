@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+from app.indicators.prefix_cache import prefix_cached
 
 
+@prefix_cached
 def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0.0)

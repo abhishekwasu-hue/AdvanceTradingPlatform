@@ -76,6 +76,28 @@ assumption.
   tenant keys are in Postgres under the same guarantees, plus the master key in your secret
   store (loss of the master key is unrecoverable by design).
 
+### 1.2b Resource budget - 8 GB host (Hostinger KVM 2)
+
+The production host is 2 vCPU / 8 GB RAM / 100 GB NVMe (`docker-compose.hostinger.yml`, runbook
+`docs/DEPLOY_HOSTINGER_MR.md`). Every container has a memory limit so a runaway process is OOM-killed and restarted
+instead of pushing the host into swap. All values are `.env` overrides (`MEM_*`, `PG_*`, `REDIS_MAXMEMORY`).
+
+| Container | Limit | Sized for |
+|---|---|---|
+| postgres | 2 GB | `shared_buffers` 512 MB, `effective_cache_size` 1.5 GB, `work_mem` 8 MB (x `max_connections` 60 worst case 480 MB, real use far lower), `maintenance_work_mem` 128 MB, WAL archiving on |
+| backend (API) | 1.5 GB | one uvicorn process (2 vCPU: the event loop + the threadpool for backtests); a 2-year 1-min backtest peaks near 600 MB |
+| worker | 1.5 GB | one replica (the Redis lock forbids two); per-cycle candles + indicator caches per deployment |
+| redis | 512 MB | `maxmemory` 384 MB, `volatile-lru`: only keys with a TTL (caches, rate windows) are evicted - never the worker lock or a key without expiry (H-1) |
+| backup | 512 MB | `pg_dump` custom format + encryption |
+| caddy, offsite | 256 MB each | TLS edge; rclone copy |
+| frontend | 128 MB | nginx serving static files |
+| **sum of limits** | **≈ 6.6 GB** | leaves ≈ 1.4 GB for the OS, Docker and page cache; 2 GB swap (swappiness 10) is a safety net, not working memory |
+
+Concurrency: one API process and one worker on 2 vCPU. `WORKER_CYCLE_SECONDS` stays 60. Heavy research (long
+backtests, optimisation) shares the API's threadpool - more than two at once slows the API; the job queue (spec part
+E) moves them off it. When `deploy/hostinger/status.sh` shows a container near its limit, raise its `MEM_*` and keep
+the sum under ≈ 7 GB.
+
 ### 1.3 Crash-recovery runbook: open positions
 
 The scenario Section 52 is most concerned with: the application crashes (or the DB connection is
@@ -917,9 +939,12 @@ Never publish a listing without an attached backtest run; the API refuses the su
 | `LIVE_UPSTOX_OPTION_STOP_LIMIT` | Upstox protective stops are SL-M everywhere | on option contracts the stop is SL (stop-limit): trigger = the stop, limit = trigger -/+ `STOP_LIMIT_BAND_PCT` (sell stop below, buy stop above, at least one tick); stocks / futures keep SL-M |
 | `LIVE_EXIT_IF_NO_STOP` | a stop that fails at entry or cannot be re-armed raises a CRITICAL alert; the software stop keeps watching | when the broker **clearly rejected** the stop (`BrokerOrderRejected` or a 4xx other than 408/429), the position is closed at once with a market exit and ONE CRITICAL alert says whether the exit worked. Not after a timeout / 5xx / rate limit (the stop may be standing - a market exit next to it could later open a position the other way), not while the tenant is broker-uncertain, not while the exchange is shut, and at most 3 tries per position (alerts on a 30-minute cooldown). An exit also skips cancelling a stop the broker already rejected / cancelled / expired / lapsed (a fresh book read must agree; a stop still working is cancelled first), which today fails and blocks the exit. An exit order that errors without a clear answer flags the tenant broker-uncertain (no further tries until reconciliation passes) |
 | `STOP_LIMIT_BAND_PCT` | empty = 1%, nearest tick | the stop-limit band, 0-20 (Zerodha options today; Upstox options with the switch above), rounded outward (down for a sell stop, up for a buy stop) and at least one 0.05 tick past the trigger (a sell stop triggered at 0.05 keeps 0.05: there is no lower price). An unreadable value is ignored with a warning |
+| `STOP_REARM_MAX_REJECTS` (default 3) | - | the stop guard counts, per position, re-armed stops the broker accepted and then REJECTED (it reads each new stop once right after placing it). After this many in a row it stops re-arming: with `LIVE_EXIT_IF_NO_STOP` the position is closed as a clear rejection, otherwise one CRITICAL "Stop keeps being rejected" (30-minute cooldown). A stop cancelled by hand or lost breaks the streak. Every protective stop trigger (entry, re-arm, trailing modify) is put on the 0.05 tick (the registry tick for MCX / crypto), rounded away from the market |
 
 With `LIVE_UPSTOX_OPTION_STOP_LIMIT` or `LIVE_EXIT_IF_NO_STOP` on, an exit nets off what a stop-limit already filled
-(a partial fill before the cancel, read once the stop is cancelled or filled): only the rest is sent at market, and the booking blends both fills. If the stop's fill cannot be read, the full quantity goes out and the tenant is flagged broker-uncertain for reconciliation. A trailing
+(as last read before the cancel - the exit goes out at once, it never waits on the cancel to settle): only the rest is
+sent at market, and the booking blends both fills. A fill the stop made after that read is read once the exit is out,
+netted in the booking, and flags the tenant broker-uncertain so reconciliation settles the excess the exit sent. If the stop's fill cannot be read, the full quantity goes out and the tenant is flagged broker-uncertain for reconciliation. A trailing
 stop that was placed as SL-M before the Upstox switch went on is modified as SL-M (its type is kept).
 
 A stop-limit that triggers but does not fill (price gapped through the limit) is still covered: the position monitor's

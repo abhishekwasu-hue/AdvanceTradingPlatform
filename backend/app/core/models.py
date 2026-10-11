@@ -126,3 +126,5 @@ class BacktestResult(BaseModel):
     # Phase W: set by the option backtest engine - pricing model, conventions, skipped signals,
     # per-structure legs (app/backtest/options_engine.py). None for an underlying backtest.
     options: Optional[Dict[str, Any]] = None
+    # Realism C4: engine / code / data / config / result hashes - what produced this run (app/backtest/repro.py).
+    reproducibility: Optional[Dict[str, Any]] = None

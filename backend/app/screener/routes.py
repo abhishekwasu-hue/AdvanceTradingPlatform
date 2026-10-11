@@ -253,8 +253,10 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await _flag(session, user)
     started = time.monotonic()
     screen_id = None
+    screen_name: Optional[str] = None
     if body.screen_id is not None:
         row = await _owned(session, user, body.screen_id)
+        screen_name = row.name
         source: Union[str, Dict[str, Any]] = json.loads(row.ast_json)
         base_tf, params, screen_id = row.base_tf, {**json.loads(row.params_json or "{}"), **body.params}, row.id
     elif body.source is not None:
@@ -276,7 +278,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
     stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
-    results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
+    results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
                "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
@@ -294,6 +296,18 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                               scanned=len(symbols), matched=sum(1 for r in results if r["matched"]), result_json=json.dumps(results),
                               duration_ms=int((time.monotonic() - started) * 1000))
     session.add(run_row)
+    from app.screener import evidence_store
+    matched_symbols = [str(r["symbol"]) for r in results if r["matched"]]
+    if matched_symbols and await evidence_store.enabled(session, user.tenant_id):
+        # U8 EV1: the matched symbols' evidence packs, from the same bars, parameters and ranks the screen just ran on
+        await session.flush()
+        ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
+                                                 validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
+                                                 params=params, exchange=body.exchange, data_source=data_source,
+                                                 screen_name=screen_name)
+        for r in results:
+            r["evidence_id"] = ids.get(str(r["symbol"]))
+        run_row.result_json = json.dumps(results)
     await session.commit()
     return {"run_id": run_row.id, "preview": False, **payload}
 

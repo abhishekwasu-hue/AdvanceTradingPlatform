@@ -324,6 +324,10 @@ async def send_via_channel(
         row = open_in_app_row(notification)                # PW4: every Telegram alert opens its screen in the app
         await send_telegram(config, html_body, client, chat_id=address,  # type: ignore[arg-type]
                             reply_markup={"inline_keyboard": [row]} if row else None)
+        if session is not None and address and notification.event_type == NotificationType.SCREEN_ALERT.value:
+            # U8 EV2: the evidence images to the rule creator's own linked chat (flag evidence_charts; best effort, never raises)
+            from app.screener.evidence_store import alert_photos
+            await alert_photos(session, channel, str(config.bot_token), notification, address, client)  # type: ignore[union-attr]
     elif channel.channel_type == AlertChannelType.EMAIL.value:
         subject = f"[{notification.severity}] {notification.title}"
         if notification.event_type == NotificationType.SCREEN_ALERT.value:

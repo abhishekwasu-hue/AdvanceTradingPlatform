@@ -2701,6 +2701,30 @@ class ScreenRunRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
 
 
+class ScreenEvidenceRecord(Base):
+    """U8 EV1/EV2: the evidence pack (`evidence/1`) of one matched symbol - stored with the screen run or the alert
+    event that produced it, in the same pass as the match, so "Show on chart", the verify strip and the Telegram image
+    show exactly what the engine used. Read by the run's organisation (and, with BT1 `byob_data_tier` on, by the user
+    whose broker session read the bars). Kept for `RETENTION_SCREEN_EVIDENCE_DAYS`. Never an order or a proposal."""
+
+    __tablename__ = "screen_evidence"
+    __table_args__ = (UniqueConstraint("run_id", "symbol", name="uq_screen_evidence_run_symbol"),
+                      UniqueConstraint("alert_event_id", name="uq_screen_evidence_alert_event"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("screen_runs.id", ondelete="CASCADE"), nullable=True, index=True)
+    alert_event_id: Mapped[int | None] = mapped_column(ForeignKey("alert_events.id", ondelete="CASCADE"), nullable=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    base_tf: Mapped[str] = mapped_column(String(4), nullable=False)
+    bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)        # start of the matched bar (UTC)
+    schema: Mapped[str] = mapped_column(String(20), nullable=False, default="evidence/1")
+    pack_json: Mapped[str] = mapped_column(Text, nullable=False)
+    pack_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
 class AlertRuleRecord(Base):
     """S3a (ADR-0022): a screen or instrument alert rule - what fires (a saved screen, or a ScreenQL condition on one
     symbol), how loud (priority), how often (cooldown), and instant or digest delivery. Rules produce `alert_events`;

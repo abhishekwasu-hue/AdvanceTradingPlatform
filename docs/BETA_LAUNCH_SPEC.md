@@ -1,6 +1,6 @@
 # ATP beta launch spec (owner, verbatim; revision 2: Tier A details + Phase 0 broker launch list)
 
-Order of work (owner, 2026-10-11): finish the merge train; then PW1-PW5 (PWA first, below); then BYOK-V1-V3 (Vision with the user's own AI key, addendum below, §8: after PW5); then PW6; then BT1-BT3 in Phase 0 scope (§4a).
+Order of work (owner, 2026-10-11, revised): finish the merge train; then PW1-PW6 (PWA first, below); then BYOK-V1-V3 (Vision with the user's own AI key, addendum below); then BT1-BT3 in Phase 0 scope (§4a). Screener addenda queued after that, in this order: U6 (breakouts, BK1-BK2), U8 (evidence charts, minimal; docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md), U9 (taxonomy/gallery; docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md), U7 (Legends; docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md).
 
 From Abhi — ATP Beta launch spec (5,000 users; mobile + desktop; approval-only trading) (English). Same working rules as MASTER SPEC. Draft PRs, tests, English strings, flags off by default; LIVE orders only through the approval flow below. This spec decides the beta scope and the data model; costs and licensing are in docs/BETA_COSTS.md (owner-maintained).
 

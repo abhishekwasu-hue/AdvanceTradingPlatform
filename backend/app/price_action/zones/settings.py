@@ -102,6 +102,8 @@ class ZoneSettings(BaseModel):
     # --- unfilled gaps (mtf_pullback_strategy.find_overnight_gaps) --------------------------------------------------------
     gap_min_pct: float = Field(default=0.30, ge=0)
     session_timezone: str = "Asia/Kolkata"                   # tz-aware timestamps are read in this zone to find the session
+    session_open: str = Field(default="09:15", pattern=r"^\d{2}:\d{2}$")    # the job's bars are bucketed from the open
+    session_close: str = Field(default="15:30", pattern=r"^\d{2}:\d{2}$")   # a last bucket ending at the close is complete
     # --- order-block retest (signals.find_order_block / is_retesting_order_block) ----------------------------------------
     ob_impulse_lookforward: int = Field(default=5, ge=1, le=200)
     ob_impulse_min_move_pct: float = Field(default=0.3, ge=0)

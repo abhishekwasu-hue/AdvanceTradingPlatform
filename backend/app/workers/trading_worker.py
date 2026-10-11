@@ -140,6 +140,7 @@ class CycleReport:
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
+    market_zone_runs: int = 0    # Z7a-2: market-zone snapshots stored this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -213,6 +214,7 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
+        self._last_market_zones_day = None    # Z7a-2: the nightly market-zones job, once per IST day
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -449,6 +451,18 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
+                # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, outside market hours (flag
+                # `market_zones`, off by default): zones from the shared lake bars, stored as-of. Reference data; never trades.
+                if not nse.is_open and self._last_market_zones_day != ist_now.date():
+                    from app.price_action.zones import job as zones_job
+                    if zones_job.due(now, self._last_market_zones_day):
+                        self._last_market_zones_day = ist_now.date()      # success or failure: next try is tomorrow
+                        try:
+                            report.market_zone_runs = (await zones_job.run_all(session, now))["runs"]
+                        except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                            logger.exception("Market zones job failed")
+                            report.errors.append(f"market zones: {exc}")
+                            await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():

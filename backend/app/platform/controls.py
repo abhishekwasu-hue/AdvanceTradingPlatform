@@ -110,10 +110,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
+    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
+    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "market_zones"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

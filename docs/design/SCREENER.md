@@ -839,6 +839,53 @@ with the indicator block, and the result table.
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
 
+## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
+parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-7 are in `docs/OPEN_QUESTIONS.md`.
+- **Screens.** B1 range / consolidation (fixed N bars or the auto base), B2 swing high / low with BOS / CHoCH (causal
+  swings of a chosen degree, confirmed by the bar before the break), B4 inside bar / NR4 / NR7 (mother-bar failure
+  rule), B7 N-week high (calendar weeks; Daily / Weekly only), B13 range expansion, B14 volume shock at or through
+  the range edge.
+  - Each is a causal per-bar series on closed bars. ATR is read on the bar before the signal.
+  - The down side is the up rule on mirrored prices.
+  - One signal per leg: a side re-arms after a confirmed swing against it, a failed break, or `leg_rearm_bars`
+    bars without a new extreme.
+- **Quality overlay.** An equal-weight checklist sets the grade at the signal bar:
+  - higher-timeframe Dow trend, one point for each context timeframe;
+  - volume expansion;
+  - base dry-up;
+  - a low ATR-percentile regime;
+  - room to the next opposing level (confirmed swings plus the zones port's classical S/R) of at least `room_min_r` R.
+
+  A = 5+, B = 3+, else C. A break against every context timeframe is C. The liquidity floor is a hard filter. Each
+  result also gets a follow-up status (failed / accepted / pending / unconfirmed) and a retest flag (held / failed)
+  for the journal.
+- **Style / timeframe.** Intraday (1m-15m) or Swing (30m-1w). The signal timeframe maps to its context timeframes
+  through `context_ladder` (15m -> 1h + 1d, 1h -> 1d + 1w). A context value reaches a signal bar by close time, using
+  the runtime's own alignment, so a day's trend is never seen before that day closes (tested). 2h / 4h bars are built
+  09:15-anchored for the engine; screenql/1 has no @2h / @4h (BK1-1).
+- **ScreenQL.** The same series are available as functions:
+  - `RangeBreakout`, `SwingBreakout`, `SwingBreakType`, `NRBreakout`, `NewHighBreakout`, `RangeExpansion`,
+    `VolumeBreakout`;
+  - `RelVolume`, `ATRPercentile`, `DowTrend` (use it with `@tf` for the higher timeframe).
+
+  Their argument defaults are the parameter defaults (tested). A template's text is the screen call AND
+  `DowTrend(degree)@ctx` per context timeframe, built as one AST. It is checked against the engine bar by bar, and on
+  the last bar through `run_screen`.
+- **API.** `GET /api/screener/breakouts/catalog` returns the selector, the "Breakout" and "Breakout quality" block
+  families, the templates with their text, and every parameter. `POST /api/screener/breakouts/run` runs a template or a
+  screen over at most 50 symbols on the organisation's broker bars, with daily context from daily history.
+  - Both endpoints need `screener_v2` and `screener_breakouts`.
+  - While `screener_breakouts` is off, `/registry` hides the breakout functions, and `/validate`, saved screens,
+    `/run` and instrument alert rules refuse them, with the reason.
+  - Research only: nothing places, changes or blocks an order.
+- **Not in BK1.** These need the Trade engine port, the events calendar or BK2's time-of-day series:
+  - the maturity flag (a 5th-leg break into a major level);
+  - the event-day filter;
+  - the time-of-day window.
+
+  The fitness statistics by grade, timeframe and regime come in BK5.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

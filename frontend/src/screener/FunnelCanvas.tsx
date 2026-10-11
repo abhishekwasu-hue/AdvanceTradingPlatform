@@ -104,7 +104,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
                   onDuplicate={() => onChange(duplicateStage(stages, s.id))}
                   onRemove={() => onChange(stages.filter((x) => x.id !== s.id))}
                   onShowRemoved={() => { setShowing(showing === s.id ? null : s.id); props.onShowRemoved?.(s.id); }}
-                  removedList={showing === s.id && rows[i].survivors != null ? funnel?.stages[enabledIndex]?.removed ?? [] : null}
+                  removedList={showing === s.id && rows[i].survivors != null ? funnel?.stages[enabledIndex]?.removed ?? "run" : null}
                   onDragStart={(e) => { setDragId(s.id); e.dataTransfer.effectAllowed = "move"; }}
                   onDragEnd={() => setDragId(null)}
                   onDragOver={(e) => { if (dragId) e.preventDefault(); }}
@@ -141,7 +141,8 @@ function FunnelHead({ universe, withData = null }: { universe: number; withData?
 /** The canvas's one live region: a single summary per run ("Matched 4 of 48"), not a count per stage. */
 function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of: number | null; kills: boolean; live: boolean }) {
   return (
-    <p className="text-t12 text-fg-muted" aria-live="polite" aria-atomic="true">
+    // one announcement per Run; live previews update the number quietly (they come after every pause in editing)
+    <p className="text-t12 text-fg-muted" aria-live={live ? "off" : "polite"} aria-atomic="true">
       Matched{" "}
       <span className={cx("font-mono font-tabular text-t18 font-semibold", matched == null ? "text-fg-muted" : kills || matched === 0 ? "text-warn" : "text-signal")}>
         {matched ?? "–"}

@@ -6,9 +6,11 @@ export interface Problem { message: string; pos: number | null }
 export interface ValidateResponse { ok: boolean; problems: Problem[]; text: string | null; plan: { cost: number; lookback: Record<string, number> } }
 export interface RunResult { symbol: string; matched: boolean; reason: string | null }
 export interface RunResponse {
-  run_id: number | null; preview?: boolean; text: string; base_tf: string; data_source: string; scanned: number; matched: string[];
+  run_id: number; text: string; base_tf: string; data_source: string; scanned: number; matched: string[];
   results: RunResult[]; funnel: FunnelResult; disclaimer: string;
 }
+/** A live preview: counts only (not stored, so no match list, removed symbols or per-symbol passes). */
+export interface PreviewResponse { run_id: null; preview: true; text: string; base_tf: string; scanned: number; matched_count: number; funnel: FunnelResult }
 export interface SavedScreen { id: number; name: string; text: string; base_tf: string }
 
 export const screenerApi = {
@@ -19,7 +21,7 @@ export const screenerApi = {
     request<RunResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange }) }),
   /** D2 live counts while editing: the same evaluation, not stored as a run. */
   preview: (source: string, baseTf: string, symbols: string[], exchange = "NSE") =>
-    request<RunResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, preview: true }) }),
+    request<PreviewResponse>("/screener/run", { method: "POST", body: JSON.stringify({ source, base_tf: baseTf, symbols, exchange, preview: true }) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

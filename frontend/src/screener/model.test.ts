@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  defaultParams, duplicateStage, isCategory, isLive, isFilter, LEVEL_FIELDS, namesWhere, newBlock, whyChips, indicatorNames, isIndicator, moveStage, newStage, paramKinds, parseSymbols, screenText,
+  blockProblems, defaultParams, duplicateStage, isCategory, isLive, isFilter, LEVEL_FIELDS, namesWhere, newBlock, whyChips, indicatorNames, isIndicator, moveStage, newStage, paramKinds, parseSymbols, screenText,
   runStamp, sameRun, stageAt, stageSpans, stageSummary, stageText, trail, type IndicatorStage, type Registry, type Stage,
 } from "./model";
 import contract from "./builderTexts.json";
@@ -155,8 +155,10 @@ describe("editing the list", () => {
 describe("D2 block forms", () => {
   const FULL = contract.registry as unknown as Registry;
   it("offers yes / no filters and classifiers as their own blocks (the crosses stay in the indicator block)", () => {
-    expect(namesWhere(FULL, isFilter)).toEqual(["IndexMember", "IsFnO", "NearSupport", "Pattern", "ReversalAt"]);
-    expect(namesWhere(FULL, isCategory)).toEqual(["ChainBias", "SwingDirection", "Trend"]);
+    // U5 D2 review: functions needing data the run path does not load (sector / index / F&O lists, the chain) are not offered
+    expect(namesWhere(FULL, isFilter)).toEqual(["NearSupport", "Pattern", "ReversalAt"]);
+    expect(namesWhere(FULL, isCategory)).toEqual(["SwingDirection", "Trend"]);
+    expect(FULL.IsFnO.needs).toEqual(["reference"]);
     expect(paramKinds(FULL.NearSupport).map((p) => p.kind)).toEqual(["number", "window"]);
     expect(paramKinds(FULL.ReversalAt)[0]).toEqual({ kind: "series", name: "level", options: LEVEL_FIELDS });
     expect(paramKinds(FULL.IndexMember)[0].kind).toBe("text");
@@ -170,7 +172,7 @@ describe("D2 block forms", () => {
       expect(stageText(FULL, b).length).toBeGreaterThan(0);
     }
     const filter = newBlock(FULL, "filter");
-    expect(filter.kind === "filter" && filter.call.fn).toBe("IsFnO");                // not IndexMember, which needs a name typed
+    expect(filter.kind === "filter" && filter.call.fn).toBe("NearSupport");          // runs on bars, nothing to type first
     const cat = newBlock(FULL, "category");
     expect(cat.kind === "category" && cat.values.length).toBe(1);
   });
@@ -221,5 +223,29 @@ describe("D2 block forms", () => {
     ]);
     expect(whyChips(FULL, [a, group], funnel, "INFY")).toEqual([]);                // another shape: show nothing
     expect(whyChips(FULL, [a, group], null, "TCS")).toEqual([]);
+  });
+});
+
+describe("D2 review: blocks that cannot run yet, NOT spans", () => {
+  const FULL = contract.registry as unknown as Registry;
+  it("asks for a value or a name before a block can run (never `== \"\"`)", () => {
+    const cat: Stage = { id: "c", kind: "category", call: { fn: "Trend", params: { swing: 3 }, tf: null }, values: [], negate: false, enabled: true };
+    const idx: Stage = { id: "f", kind: "filter", call: { fn: "IndexMember", params: { index: "  " }, tf: null }, enabled: true };
+    const ok: Stage = { id: "o", kind: "filter", call: { fn: "Pattern", params: { name: "doji" }, tf: null }, enabled: true };
+    const group: Stage = { id: "g", kind: "group", op: "ANY", children: [cat, ok], enabled: true };
+    expect(blockProblems(FULL, [group, idx, ok])).toEqual({ c: "Pick at least one value for Trend.", f: "Type the index for IndexMember." });
+    expect(blockProblems(FULL, [{ ...idx, enabled: false }])).toEqual({});            // a switched-off block is not in the scan
+  });
+
+  it("maps every block of a NOT group to its own text", () => {
+    const a = stage({ id: "a" });
+    const b: Stage = { id: "b", kind: "filter", call: { fn: "Pattern", params: { name: "doji" }, tf: null }, enabled: true };
+    const c = stage({ id: "c", right: { kind: "value", value: 30 }, op: "<" });
+    const not: Stage = { id: "n", kind: "group", op: "NOT", children: [b, c], enabled: true };
+    const text = screenText(FULL, [a, not]);
+    expect(text).toBe('RSI(14) > 60 AND NOT (Pattern("doji") AND RSI(14) < 30)');
+    const byId = Object.fromEntries(stageSpans(FULL, [a, not]).map((sp) => [sp.id, text.slice(sp.start, sp.end)]));
+    expect(byId).toEqual({ a: "RSI(14) > 60", n: 'NOT (Pattern("doji") AND RSI(14) < 30)', b: 'Pattern("doji")', c: "RSI(14) < 30" });
+    expect(stageAt(FULL, [a, not], text.indexOf("doji"))).toBe("b");
   });
 });

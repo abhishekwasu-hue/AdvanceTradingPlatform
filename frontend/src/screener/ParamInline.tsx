@@ -116,7 +116,9 @@ export interface TextInlineProps { value: string; label: string; placeholder?: s
 export function TextInline({ value, label, placeholder = "type a value", onChange }: TextInlineProps) {
   const [text, setText] = useState(value);
   useEffect(() => { setText(value); }, [value]);
-  const commit = () => { if (text.trim() !== value) onChange(text.trim()); };
+  // control characters have no place in a value (ScreenQL strings do not read JSON's \uXXXX escapes)
+  const clean = (t: string) => t.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const commit = () => { if (clean(text) !== value) onChange(clean(text)); };
   return (
     <input
       aria-label={label}

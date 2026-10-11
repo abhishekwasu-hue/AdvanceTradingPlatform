@@ -23,6 +23,7 @@ export interface RegistryEntry {
   varargs: boolean;
   timeframed: boolean;
   cross_sectional?: boolean;
+  needs?: string[];          // data beyond bars ("reference", "option_chain"); the run path does not load it yet
   field: boolean;
   doc: string;
 }
@@ -79,7 +80,7 @@ export interface FunnelResult {
 
 /** Can this entry be the subject of an indicator block? A number per symbol per bar, with arguments the builder can edit. */
 export function isIndicator(e: RegistryEntry | undefined): boolean {
-  if (!e || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || !e.timeframed) return false;
+  if (!e || e.needs?.length || e.returns !== "num" || e.kind !== "factor" || e.varargs || e.cross_sectional || !e.timeframed) return false;
   return e.args.every((a) => {
     const t = e.types?.[a];
     return t === "window" || t === "num" || (t === "str" && (e.choices[a]?.length ?? 0) > 0);
@@ -101,13 +102,13 @@ function editableArgs(e: RegistryEntry): boolean {
 
 /** A filter block: a yes / no function of one symbol (not the two-series crosses - the indicator block has those). */
 export function isFilter(e: RegistryEntry | undefined): boolean {
-  return !!e && e.kind === "filter" && e.returns === "bool" && !e.varargs && editableArgs(e)
+  return !!e && !e.needs?.length && e.kind === "filter" && e.returns === "bool" && !e.varargs && editableArgs(e)
     && !e.args.some((a) => (a === "a" || a === "b"));
 }
 
 /** A category block: a classifier compared with its values. */
 export function isCategory(e: RegistryEntry | undefined): boolean {
-  return !!e && e.kind === "classifier" && e.returns === "cat" && !e.varargs && editableArgs(e);
+  return !!e && !e.needs?.length && e.kind === "classifier" && e.returns === "cat" && !e.varargs && editableArgs(e);
 }
 
 export function namesWhere(reg: Registry, test: (e: RegistryEntry) => boolean): string[] {
@@ -332,6 +333,33 @@ export function trail(stages: Stage[], funnel: FunnelResult | null, fresh: boole
     before = after;
     return { id: s.id, survivors: after, removed, kills };
   });
+}
+
+/**
+ * What must be filled in before a block can run (U5 D2 review): a category with no value would run as `== ""` (which
+ * means "no event" for StructureEvent and matches nothing elsewhere), and a blank text argument would run as `""`.
+ * Keyed by block id, groups included; the page treats these like the server's problems (no Run, no preview).
+ */
+export function blockProblems(reg: Registry, stages: Stage[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const blankText = (ref: SeriesRef): string | null => {
+    const e = reg[ref.fn];
+    if (!e) return null;
+    const blank = paramKinds(e).find((p) => p.kind === "text" && !String(ref.params[p.name] ?? "").trim());
+    return blank ? `Type the ${blank.name} for ${ref.fn}.` : null;
+  };
+  const walk = (list: Stage[]) => {
+    for (const s of list) {
+      if (!s.enabled) continue;
+      let problem: string | null = null;
+      if (s.kind === "category") problem = s.values.length ? blankText(s.call) : `Pick at least one value for ${s.call.fn}.`;
+      else if (s.kind === "filter") problem = blankText(s.call);
+      else if (s.kind === "group") walk(s.children);
+      if (problem) out[s.id] = problem;
+    }
+  };
+  walk(stages);
+  return out;
 }
 
 /** Moves a stage up or down by one (keyboard reordering; drag uses the same rule). */

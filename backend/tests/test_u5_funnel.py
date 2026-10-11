@@ -46,6 +46,8 @@ def test_the_registry_lists_parameter_defaults_for_inline_editing():
     assert reg["RSI"]["defaults"] == {"n": 14} and reg["SwingLow"]["defaults"] == {"degree": 0}
     assert reg["close"]["defaults"] == {}
     assert reg["SMA"]["types"] == {"x": "num", "n": "window"} and reg["Rank"]["cross_sectional"] is True
+    # U5 D2 review: functions that need more than bars say so (the builder hides them until the run loads that data)
+    assert reg["IsFnO"]["needs"] == ["reference"] and reg["ChainBias"]["needs"] == ["option_chain"] and reg["RSI"]["needs"] == []
 
 
 BUILDER_TEXTS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "screener" / "builderTexts.json"

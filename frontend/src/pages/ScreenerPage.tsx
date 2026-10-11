@@ -11,10 +11,10 @@ import { ApiError } from "../api/errors";
 import { Button, cx } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { screenerApi, type RunResponse } from "../screener/api";
+import { screenerApi, type PreviewResponse, type RunResponse } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas } from "../screener/FunnelCanvas";
-import { parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
 import "../screener/screener.css";
 
@@ -43,8 +43,8 @@ export default function ScreenerPage(_props: PageProps) {
   const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
   const [validating, setValidating] = useState(false);
   const [live, setLive] = useState(true);
-  const [preview, setPreview] = useState<{ res: RunResponse; stamp: RunStamp } | null>(null);
-  const previewSeq = useRef(0);
+  const [preview, setPreview] = useState<{ res: PreviewResponse; stamp: RunStamp } | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);          // one preview at a time; the latest scan goes next
   const [ranAt, setRanAt] = useState<Date | null>(null);
   const [runKey, setRunKey] = useState(0);
   const [savedId, setSavedId] = useState<number | undefined>(undefined);
@@ -56,6 +56,11 @@ export default function ScreenerPage(_props: PageProps) {
 
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
   const text = useMemo(() => (registry ? screenText(registry, stages) : ""), [registry, stages]);
+  const stagesRef = useRef(stages);
+  stagesRef.current = stages;
+  // what must be filled in before a block can run (a category without a value, a blank name): no Run, no preview
+  const local = useMemo(() => (registry ? blockProblems(registry, stages) : {}), [registry, stages]);
+  const allProblems = useMemo(() => ({ ...problems, ...local }), [problems, local]);
 
   // Every edit is checked on the server (debounced); a problem lands on the stage it is about. Run waits for the check
   // of the current text (`validating`), so a scan is never run on the previous text's verdict.
@@ -69,7 +74,7 @@ export default function ScreenerPage(_props: PageProps) {
         const byStage: Record<string, string> = {};
         let other: string | null = null;
         for (const p of v.problems) {
-          const id = stageAt(registry, stages, p.pos);
+          const id = stageAt(registry, stagesRef.current, p.pos);
           if (id && !byStage[id]) byStage[id] = p.message;
           else if (!id && !other) other = p.message;
         }
@@ -79,26 +84,30 @@ export default function ScreenerPage(_props: PageProps) {
         .finally(() => { if (seq === validateSeq.current) setValidating(false); });
     }, VALIDATE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [registry, text, scanTf, stages]);
+  }, [registry, text, scanTf]);                        // an edit that leaves the text alone (a disabled block) is not re-checked
 
-  const canRun = !!registry && !!text && symbols.length > 0 && !validating && Object.keys(problems).length === 0 && !otherProblem && !running;
+  const clean = Object.keys(allProblems).length === 0 && !otherProblem;
+  const canRun = !!registry && !!text && symbols.length > 0 && !validating && clean && !running;
   const now = useMemo(() => (registry ? runStamp(registry, stages, scanTf, symbols) : null), [registry, stages, scanTf, symbols]);
   const fresh = !!now && sameRun(ran, now);
   const liveFresh = !fresh && !!now && !!preview && sameRun(preview.stamp, now);
 
   // Live counts while editing: after the check passes and the trader pauses, a preview run fills the trails.
-  const canPreview = live && !!registry && !!text && symbols.length > 0 && !validating && Object.keys(problems).length === 0 && !otherProblem && !running && !fresh;
+  // One at a time: while a preview is out, edits wait; when it lands it is kept with the scan it counted (`stamp`)
+  // and shown only while that is still the scan (liveFresh), and the next preview goes for the scan as it is then.
+  // Never during a Run.
+  const canPreview = live && !!registry && !!text && symbols.length > 0 && !validating && clean && !running && !fresh;
   useEffect(() => {
-    const seq = ++previewSeq.current;
-    if (!canPreview || !now || (preview && sameRun(preview.stamp, now))) return undefined;
+    if (!canPreview || previewBusy || !now || (preview && sameRun(preview.stamp, now))) return undefined;
     const stamp = now;
     const timer = window.setTimeout(() => {
-      screenerApi.preview(text, scanTf, symbols).then((res) => {
-        if (seq === previewSeq.current) setPreview({ res, stamp });
-      }).catch(() => undefined);                       // a live count is a convenience; Run reports errors
+      setPreviewBusy(true);
+      screenerApi.preview(text, scanTf, symbols).then((res) => setPreview({ res, stamp }))
+        .catch(() => undefined)                        // a live count is a convenience; Run reports errors
+        .finally(() => setPreviewBusy(false));
     }, PREVIEW_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [canPreview, now, preview, text, scanTf, symbols]);
+  }, [canPreview, previewBusy, now, preview, text, scanTf, symbols]);
 
   const doRun = useCallback(async () => {
     if (!registry || !canRun || !now) return;
@@ -135,10 +144,11 @@ export default function ScreenerPage(_props: PageProps) {
   };
 
   // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
-  const shown = fresh ? run : liveFresh ? preview?.res ?? null : null;
+  const shown = fresh && run ? { funnel: run.funnel, matched: run.matched.length }
+    : liveFresh && preview ? { funnel: preview.res.funnel, matched: preview.res.matched_count } : null;
   const rows = trail(stages, shown?.funnel ?? null, !!shown);
   const killer = rows.find((r) => r.kills);
-  const matchedNow = shown ? shown.matched.length : null;
+  const matchedNow = shown ? shown.matched : null;
 
   if (loadError) {
     return <div className="rounded-panel border border-border bg-surface-1 p-4 text-t13 text-fg-muted">{loadError}</div>;
@@ -193,7 +203,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
-                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={problems} runKey={runKey} onChange={setStages} />
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}

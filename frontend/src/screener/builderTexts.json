@@ -24,6 +24,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "upper Bollinger band"
   },
   "ChainBias": {
@@ -45,6 +46,9 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [
+    "option_chain"
+   ],
    "doc": "option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"
   },
   "EMA": {
@@ -67,6 +71,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "exponential moving average"
   },
   "IndexMember": {
@@ -87,6 +92,9 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [
+    "reference"
+   ],
    "doc": "member of the index on the run date"
   },
   "IsFnO": {
@@ -103,6 +111,9 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [
+    "reference"
+   ],
    "doc": "in the F&O segment on the run date"
   },
   "NearSupport": {
@@ -127,6 +138,7 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [],
    "doc": "the close is within tolerance_pct of a support zone edge"
   },
   "ORHigh": {
@@ -147,6 +159,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "opening-range high, visible once the range is complete"
   },
   "PDH": {
@@ -163,6 +176,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "previous session high"
   },
   "Pattern": {
@@ -200,6 +214,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it)"
   },
   "PctChange": {
@@ -222,6 +237,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "% change of x over n bars"
   },
   "PercentileRank": {
@@ -244,6 +260,7 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [],
    "doc": "percentile of x across the universe, optionally within each group of a classifier"
   },
   "RSI": {
@@ -266,6 +283,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "RSI of close (0-100)"
   },
   "Rank": {
@@ -286,6 +304,7 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [],
    "doc": "rank of x across the universe (1 = highest)"
   },
   "ReversalAt": {
@@ -313,6 +332,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close location; hammer / engulfing / star are one rule) - bullish at support, bearish at resistance"
   },
   "Supertrend": {
@@ -338,6 +358,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "Supertrend line"
   },
   "SwingDirection": {
@@ -370,6 +391,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"
   },
   "SwingLow": {
@@ -399,6 +421,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"
   },
   "Trend": {
@@ -425,6 +448,7 @@
    "varargs": false,
    "timeframed": false,
    "field": false,
+   "needs": [],
    "doc": "market-structure trend: UPTREND / DOWNTREND / RANGE"
   },
   "VWAP": {
@@ -441,6 +465,7 @@
    "varargs": false,
    "timeframed": true,
    "field": false,
+   "needs": [],
    "doc": "session VWAP"
   },
   "close": {
@@ -457,6 +482,7 @@
    "varargs": false,
    "timeframed": true,
    "field": true,
+   "needs": [],
    "doc": "bar close"
   },
   "volume": {
@@ -473,6 +499,7 @@
    "varargs": false,
    "timeframed": true,
    "field": true,
+   "needs": [],
    "doc": "bar volume"
   }
  },

@@ -44,7 +44,7 @@ export interface StageRowProps {
   onDrop?: (e: DragEvent) => void;
   dragging?: boolean;
   trailDelayMs?: number;        // the run's fill reaches this stage after the ones above it
-  removedList?: string[] | null; // shown under the stage after "See what this removes"
+  removedList?: string[] | "run" | null; // shown under the stage after "See what this removes" ("run": live counts carry no list)
   nested?: boolean;
 }
 
@@ -153,7 +153,9 @@ function ValuePicker({ values, choices, onChange }: { values: string[]; choices:
         const on = values.includes(c);
         return (
           <button key={c} type="button" aria-pressed={on}
-                  onClick={() => onChange(on ? values.filter((v) => v !== c) : [...values, c])}
+                  aria-disabled={on && values.length === 1 ? true : undefined}
+                  title={on && values.length === 1 ? "A category needs at least one value" : undefined}
+                  onClick={() => { if (on && values.length === 1) return; onChange(on ? values.filter((v) => v !== c) : [...values, c]); }}
                   className={cx("rounded-control border px-1.5 font-mono text-t12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                     on ? "border-signal/60 bg-surface-2 text-fg" : "border-border text-fg-muted hover:text-fg")}>
             {c}
@@ -236,7 +238,7 @@ export function StageRow(props: StageRowProps) {
       style={{ ["--trail-delay" as string]: `${props.trailDelayMs ?? 0}ms` }}
       onDragOver={props.onDragOver}
       onDrop={props.onDrop}
-      className={cx("group relative border-b border-border last:border-b-0", !stage.enabled && "opacity-60", props.dragging && "opacity-40")}
+      className={cx("relative border-b border-border last:border-b-0", props.nested ? "group/block" : "group/stage", !stage.enabled && "opacity-60", props.dragging && "opacity-40")}
     >
       <div className="flex min-h-stage flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1">
         <button
@@ -251,7 +253,8 @@ export function StageRow(props: StageRowProps) {
           }}
           aria-label={`${what}. ${props.nested ? "Press" : "Drag, or press"} Alt and an arrow key, to move it`}
           aria-describedby={summaryId}
-          className="cursor-grab rounded-control p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand active:cursor-grabbing"
+          className={cx("rounded-control p-1 text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+            props.nested ? "cursor-default" : "cursor-grab active:cursor-grabbing")}
         >
           <GripVertical size={14} aria-hidden />
         </button>
@@ -259,7 +262,8 @@ export function StageRow(props: StageRowProps) {
         <div className="flex min-w-[14rem] flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-t13 text-fg">
           <BlockBody stage={stage} registry={registry} scanTf={scanTf} onChange={onChange} />
         </div>
-        <div className="ml-auto flex items-center gap-0.5 opacity-100 sm:opacity-60 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+        <div className={cx("ml-auto flex items-center gap-0.5 opacity-100 sm:opacity-60",
+          props.nested ? "sm:group-focus-within/block:opacity-100 sm:group-hover/block:opacity-100" : "sm:group-focus-within/stage:opacity-100 sm:group-hover/stage:opacity-100")}>
           <label className="inline-flex cursor-pointer items-center rounded-control p-1 focus-within:ring-2 focus-within:ring-brand" title={stage.enabled ? "Disable this block" : "Enable this block"}>
             <input type="checkbox" className="peer sr-only" checked={stage.enabled} onChange={(e) => onChange({ ...stage, enabled: e.target.checked })}
                    aria-label={`${what} on`} />
@@ -283,8 +287,10 @@ export function StageRow(props: StageRowProps) {
       )}
       {props.removedList && (
         <p className="mx-10 mb-2 rounded-control bg-surface-inset px-3 py-2 text-t12 text-fg-muted">
-          This stage removed{" "}
-          {props.removedList.length ? <span className="font-mono text-fg">{props.removedList.join(", ")}</span> : "nothing"}.
+          {props.removedList === "run" ? "Live counts carry no symbol list - Run the scan to see what this stage removes." : (
+            <>This stage removed{" "}
+              {props.removedList.length ? <span className="font-mono text-fg">{props.removedList.join(", ")}</span> : "nothing"}.</>
+          )}
         </p>
       )}
       {open && (

@@ -102,7 +102,7 @@ function SortHeader({ label, active, dir, onClick }: { label: string; active: bo
 
 /** One dot per top-level stage: filled = passed on its own, hollow = did not. Words on hover and for screen readers. */
 export function WhyChips({ chips }: { chips: WhyChip[] }) {
-  if (!chips.length) return <span className="text-t12 text-fg-muted" aria-label="not evaluated">–</span>;
+  if (!chips.length) return <span className="text-t12 text-fg-muted"><span aria-hidden>–</span><span className="sr-only">not evaluated</span></span>;
   return (
     <span className="inline-flex items-center gap-1" data-testid="why-chips">
       {chips.map((c, i) => (

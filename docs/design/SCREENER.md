@@ -734,11 +734,17 @@ with the indicator block, and the result table.
 
 ## U5 D2 (built): the other block forms, groups, live counts, why it matched
 - **Block forms** (`StageRow.tsx`; one row shell, a body per kind). Each reads as a sentence edited in place:
-  - **Filter**: a yes / no function of the bar - `Pattern("doji")@15m`, `NearSupport(0.5, 3)`, `IsFnO()`,
-    `IndexMember("NIFTY 50")`, `ReversalAt(PDH(), "bearish")`. The crosses stay in the indicator block. A new filter
-    starts from the first one with no text to type.
+  - **Filter**: a yes / no function of the bar - `Pattern("doji")@15m`, `NearSupport(0.5, 3)`,
+    `ReversalAt(PDH(), "bearish")`. The crosses stay in the indicator block. A new filter starts from the first one
+    with no text to type.
+  - Functions that need data beyond bars (`needs` in the registry: Sector, Industry, McapBucket, IndexMember, IsFnO
+    need the reference lists; PCR, ChainBias, MaxPainDistancePct need the option chain) are not offered: the run path
+    loads bars only, so they would read empty and remove every symbol. A screen that uses one anyway (typed, or
+    saved earlier) is refused by `/run` with the reason, never answered with a silent "nothing matched" (SC-18).
   - **Category**: a classifier is / is not one value (`==`, `!=`) or one of several (`IN (...)`, `NOT (... IN ...)`).
-    Values with a fixed set are toggle chips; the others (Sector, Industry) are typed.
+    Values with a fixed set are toggle chips (the last one cannot be switched off); the others are typed. A category
+    with no value, or a blank text argument, is a problem on its block before anything runs (it would otherwise run
+    as `== ""`, which means "no event" for StructureEvent).
   - **Rank**: `Rank(PctChange(close, 5)) <= 10` or `PercentileRank(...) >= 90`, across the universe.
   - **Group**: ANY of its blocks (`( a OR b )`) or NOT all of them (`NOT ( a AND b )`), drawn as its own bracket
     with its label inside the ALL bracket; its blocks nest, can be added, edited, moved (Alt+arrow), duplicated and
@@ -749,14 +755,21 @@ with the indicator block, and the result table.
 - **Live counts.** Once the current text passes the check and the trader pauses (0.9 s), a preview run
   (`POST /run` with `preview: true`: evaluated exactly like a run, not stored) fills the trails and the matched count,
   marked "live". A Run's counts take over while the scan is unchanged. "Live counts while editing" in the Universe
-  panel turns previews off. Previews read the same server bars (cached per symbol by the market-data service).
+  panel turns previews off.
+  - A preview returns counts only (no match list, removed symbols or per-symbol passes): what is not stored does not
+    hand out lists; the list comes from a Run, which is stored and can be reproduced.
+  - One preview at a time per page: edits made while one is out wait, and the next one goes for the scan as it is
+    then; a preview's counts show only while they are for the current scan. None during a Run.
+  - `/run` (Runs and previews) has a per-user limit of 60 a minute. Previews read the same server bars, cached for a
+    minute by the market-data service.
+  - The live region announces Runs only; live counts update the number quietly.
 - **Why it matched.** The run's funnel carries `passes` - for each evaluated symbol, whether it passed each stage on
   its own (even after an earlier stage removed it). The result table's "Stages" column shows one dot per stage
   (filled = passed), with the stage's words on hover and for screen readers. Shown only while the scan is the one
   that ran.
 - **Problems** land on the innermost block they point at (`stageSpans` walks into groups).
-- **Contract.** `builderTexts.json` now has 23 cases covering every kind, nested groups and a disabled block in a
-  group; both sides test it.
+- **Contract.** `builderTexts.json` now has 23 cases covering every kind, ANY and NOT groups and a disabled block in
+  a group (groups do not nest in the builder); both sides test it.
 - **Tests.** Frontend: `model.test.ts` (20: D2 adds block predicates, defaults, every kind starts usable, group text
   with disabled and empty groups, innermost spans, deep duplicate, why chips). Backend: `test_u5_funnel.py`
   (passes per stage), `test_s1d_screener_api.py` (passes in the API, preview not stored). Headless Chromium: adding a
@@ -767,6 +780,10 @@ with the indicator block, and the result table.
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).
   - Owner question: please send U2 and U4 if they exist as separate addenda.
+- **SC-18. Reference data and the option chain on the run path.** The screener run loads bars only, so the
+  functions that need the universe lists or the chain are hidden in the builder and refused by `/run`. Provisional:
+  they come back when U1-d (the universe picker and its as-of lists) and a per-run chain fetch are wired into
+  `fetch_frames` (`RUN_PROVIDES` in `routes.py` is the switch).
 - **SC-17. Three columns inside the app shell.** At 1440 px the app's sidebar leaves the 280 / flex / 380 layout a
   funnel about 400 px wide, which breaks every stage onto several lines. Provisional:
   - three columns from 1400 px of page width;

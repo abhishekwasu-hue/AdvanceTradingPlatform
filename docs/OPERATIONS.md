@@ -43,7 +43,7 @@ assumption.
   `tenants`/`orders`/`trades`/`audit_logs` counts are within the source's, re-verifies the audit
   hash chain in the copy (`python -m app.audit.verify_chain`), drops the scratch database and
   prints a one-line JSON report with `status: ok`. Run it monthly and keep the report:
-  `docker compose run --rm backup sh /scripts/verify_backup.sh latest`. CI runs the same
+  `docker compose run --rm --entrypoint sh backup /scripts/verify_backup.sh latest`. CI runs the same
   rehearsal on every push (`tests/test_backup_scripts.py`), including the encrypted and tampered
   cases.
 - **Restore for real**: `scripts/backup/restore.sh <file|latest>` (asks you to type the database
@@ -58,12 +58,12 @@ assumption.
 - **Continuous WAL archiving** is on in `docker-compose.yml` (`archive_mode=on`, five-minute
   `archive_timeout`, segments copied into the `wal_archive` volume). Copy that volume off the host
   with the dumps.
-- **Weekly base backup**: `docker compose run --rm backup sh /scripts/base_backup.sh` (or from
+- **Weekly base backup**: `docker compose run --rm --entrypoint sh backup /scripts/base_backup.sh` (or from
   cron). It writes `backups/base/<stamp>/`, keeps the newest `BASE_BACKUP_KEEP` (4) and prunes WAL
   older than the oldest kept base backup. Alert when `LAST_BASE_BACKUP_OK` is older than 8 days.
 - **Recover to an instant** (e.g. just before a bad bulk change at 11:04 IST):
   1. stop the API and worker (`docker compose stop backend worker`);
-  2. `docker compose run --rm -v atp_pitr:/pitr backup sh /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
+  2. `docker compose run --rm -v atp_pitr:/pitr --entrypoint sh backup /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
   3. start a scratch Postgres on that directory (`docker run --rm -v atp_pitr:/var/lib/postgresql/data postgres:17-alpine`),
      which replays WAL to the target and promotes; verify `alembic current`, open trades and
      `python -m app.audit.verify_chain` against it;

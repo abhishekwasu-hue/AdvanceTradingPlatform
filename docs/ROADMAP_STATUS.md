@@ -18,7 +18,7 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | not started | - | 0 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
 | Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | not started | - | 0 |
-| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | not started | - | 0 |
+| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | built on branch claude/z11-deploy-bundle (deploy/atp.sh, docs/deploy/HOSTINGER_RUNBOOK.md); PR waits for a WIP slot. Owner runs it; blockers: server IP, R2 backup token in .env | - | 80 |
 
 docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).

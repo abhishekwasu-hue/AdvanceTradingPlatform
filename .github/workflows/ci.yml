@@ -56,6 +56,9 @@ jobs:
         working-directory: backend
         run: bandit -q -r app -ll -ii
 
+      - name: shellcheck (Z11 deploy bundle; ShellCheck ships with the runner image)
+        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh
+
       - name: gitleaks secret scan (.gitleaks.toml)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:

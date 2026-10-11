@@ -38,6 +38,7 @@ ENV_FILE="$ATP_DIR/.env"
 PROJECT="atp"
 API="${ATP_API_URL:-http://127.0.0.1:8000}"
 HEALTH_TIMEOUT="${ATP_HEALTH_TIMEOUT:-240}"
+POLL="${ATP_POLL_SECONDS:-3}"
 KEEP_RELEASES="${ATP_KEEP_RELEASES:-3}"
 FILES_BACKUP_DIR="${ATP_FILES_BACKUP_DIR:-/var/backups/atp-files}"
 DRY_RUN="${ATP_DRY_RUN:-0}"
@@ -59,7 +60,7 @@ warn() { WARNS=$((WARNS + 1)); printf '    WARN  %s\n' "$*"; }
 bad()  { FAILS=$((FAILS + 1)); printf '    FAIL  %s\n' "$*"; }
 die()  { local code="${2:-1}"; printf '\nFAILED: %s\n' "$1" >&2; exit "$code"; }
 # shellcheck disable=SC2329  # invoked by the ERR trap below
-on_err() { printf '\nFAILED: a command failed at line %s (exit %s) - stopped before the next step.\n' "$1" "$2" >&2; }
+on_err() { [ "$BASHPID" = "$$" ] || return 0; printf '\nFAILED: a command failed at line %s (exit %s) - stopped before the next step.\n' "$1" "$2" >&2; }
 trap 'on_err "$LINENO" "$?"' ERR
 
 # Mutating command: printed, then run - or only printed under --dry-run. Arguments never carry a secret.
@@ -115,7 +116,7 @@ psql_q() {
   dc exec -T postgres psql -X -A -t -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d "${2:-$(pg_db)}" -c "$1" 2>/dev/null
 }
 db_revision() { local r; r="$(psql_q 'select version_num from alembic_version order by 1' | paste -sd, -)" || r=""; printf '%s' "${r:--}"; }
-code_head() { dc run --rm --no-deps -T backend python -m alembic heads 2>/dev/null | awk '/\(head\)/ {print $1}' | sort | paste -sd, -; }
+code_head() { { dc run --rm --no-deps -T backend python -m alembic heads 2>/dev/null || true; } | awk '/\(head\)/ {print $1}' | sort | paste -sd, -; }
 flags_fingerprint() {
   local h
   h="$(psql_q "select md5(value_json) from platform_controls where key = 'feature_flags'")" || { printf 'no-table'; return 0; }
@@ -128,6 +129,20 @@ images_exist() {
   done
 }
 release_of() { printf '%s' "${1:0:12}"; }
+
+# After RELEASE is set: is the database ahead of that release's code? Then its API may start only with
+# MIGRATION_ALLOW_DB_AHEAD=1 (migrate_guard); the marker keeps later compose runs consistent until a deploy catches up.
+sync_db_ahead() {
+  [ "$DRY_RUN" = "1" ] && return 0
+  local now_rev rel_head
+  now_rev="$(db_revision)"; rel_head="$(code_head)"
+  if [ -n "$rel_head" ] && [ "$now_rev" != "-" ] && [ "$now_rev" != "$rel_head" ]; then
+    DB_AHEAD=1; state_init; printf '%s\n' "$now_rev" > "$STATE_DIR/db_ahead"
+    info "database at $now_rev, release $RELEASE knows up to $rel_head: it starts with MIGRATION_ALLOW_DB_AHEAD=1"
+  else
+    DB_AHEAD=""; rm -f "$STATE_DIR/db_ahead"
+  fi
+}
 
 json_get() {   # json_get <dotted.path>  (stdin: JSON); prints "" when absent, "unparseable" on bad JSON
   python3 -c 'import json, sys
@@ -204,6 +219,7 @@ then fill: ${REQUIRED_KEYS[*]} (runbook section 4)." 10
   case "${caddy:-Caddyfile}" in Caddyfile|Caddyfile.ip) ;; *) die "CADDYFILE must be Caddyfile (domain) or Caddyfile.ip (server IP)" 10 ;; esac
   ok ".env: mode $mode, every required key set (${#REQUIRED_KEYS[@]})"
 
+  [ "$record" = "report" ] && return 0      # health reports the key check itself (check_key_live), it does not stop
   local fp; fp="$(key_fingerprint)"
   if [ -f "$STATE_DIR/secrets_key.sha256" ]; then
     [ "$(cat "$STATE_DIR/secrets_key.sha256")" = "$fp" ] || die "SECRETS_ENCRYPTION_KEY in .env is NOT the key this server deployed with.
@@ -264,7 +280,7 @@ wait_api() {
   local waited=0
   until deep_ok; do
     [ "$waited" -ge "$HEALTH_TIMEOUT" ] && return 1
-    sleep 3; waited=$((waited + 3))
+    sleep "$POLL"; waited=$((waited + POLL))
   done
   ok "API deep health ok after ${waited}s"
 }
@@ -293,9 +309,15 @@ health_checks() {
   if body="$(curl -fsS -m 5 "$API/api/system/health" 2>/dev/null)" && [ "$(printf '%s' "$body" | json_get status)" = "ok" ]; then ok "/api/system/health ok"
   else bad "/api/system/health does not answer ok on $API"; fi
   if body="$(curl -sS -m 10 "$API/api/system/health/deep" 2>/dev/null)"; then
-    st="$(printf '%s' "$body" | json_get status)"
-    local mig; mig="$(printf '%s' "$body" | json_get checks.migrations.status)"
-    info "deep: $st (database $(printf '%s' "$body" | json_get checks.database.status), migrations ${mig:-?}, worker $(printf '%s' "$body" | json_get checks.worker.status), redis $(printf '%s' "$body" | json_get checks.redis.status))"
+    local db_s mig wk rd
+    read -r st db_s mig wk rd < <(printf '%s' "$body" | python3 -c 'import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+c = d.get("checks") or {}
+print(d.get("status") or "unparseable", *[(c.get(k) or {}).get("status") or "-" for k in ("database", "migrations", "worker", "redis")])')
+    info "deep: $st (database $db_s, migrations $mig, worker $wk, redis $rd)"
     if [ "$st" = "ok" ]; then ok "deep health ok"
     elif deep_ok; then warn "deep health degraded only because the database is ahead of this code (after a code-only rollback) - deploy the newer release when fixed"
     else bad "deep health $st"; fi
@@ -383,7 +405,7 @@ health_summary() {
 cmd_health() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
   check_tools
-  check_env
+  check_env report
   RELEASE="$(release_of "$(current_sha)")"
   health_checks
   health_summary
@@ -401,8 +423,9 @@ cmd_bootstrap() {
   local tz; tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
   if [ "$tz" = "Asia/Kolkata" ]; then ok "timezone Asia/Kolkata"; else warn "timezone ${tz:-unknown} (bootstrap sets Asia/Kolkata)"; fi
   if swapon --show --noheadings 2>/dev/null | grep -q .; then ok "swap on"; else warn "no swap (bootstrap adds 2 GB)"; fi
-  local d
-  for d in /var/backups/atp-restore-test /var/backups/atp-offsite; do
+  local d restore_dir local_dir
+  restore_dir="$(env_get OFFSITE_RESTORE_DIR)"; local_dir="$(env_get OFFSITE_LOCAL_DIR)"
+  for d in "${restore_dir:-/var/backups/atp-restore-test}" "${local_dir:-/var/backups/atp-offsite}"; do
     if [ -d "$d" ] && [ -w "$d" ]; then ok "$d writable"; else die "$d missing or not writable - run the bootstrap block as root (runbook section 2)" 10; fi
   done
   check_repo
@@ -474,6 +497,7 @@ cmd_deploy() {
       ok "database migrated $before -> $after"
     fi
     [ -n "$after" ] || after="$before"
+    DB_AHEAD=""; rm -f "$STATE_DIR/db_ahead"        # the database is now exactly at this release's head
   fi
 
   step "rolling restart: API first"
@@ -484,11 +508,10 @@ cmd_deploy() {
     if [ -n "$prev" ] && images_exist "$(release_of "$prev")"; then
       step "putting the previous API back (${prev:0:12})"
       RELEASE="$(release_of "$prev")"
-      if [ "$before" != "$after" ]; then DB_AHEAD=1; fi
+      sync_db_ahead
       rdc up -d --no-deps --no-build backend || true
       if wait_api; then info "previous API healthy again - worker and frontend were not touched"; else info "previous API not healthy either - see runbook 'Troubleshooting'"; fi
       run git -C "$ATP_DIR" checkout -q --detach "$prev"
-      if [ "$DB_AHEAD" = "1" ]; then printf '%s\n' "$after" > "$STATE_DIR/db_ahead"; fi
     fi
     die "deploy of ${sha:0:12} failed at the API health check" 1
   fi
@@ -511,7 +534,7 @@ cmd_deploy() {
       health_checks > "$STATE_DIR/logs/health-last.txt" 2>&1 || true
       [ "$FAILS" = "0" ] && break
       [ "$waited" -ge "$HEALTH_TIMEOUT" ] && break
-      sleep 5; waited=$((waited + 5))
+      sleep "$POLL"; waited=$((waited + POLL))
     done
     cat "$STATE_DIR/logs/health-last.txt"
     local flags_after; flags_after="$(flags_fingerprint)"
@@ -630,24 +653,14 @@ cmd_rollback() {
     fi
     step "swap: stop the app, keep the live database as $kept, put the restored copy in its place"
     rdc stop "${app_services[@]}"
-    rdc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres \
+    rdc exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres \
       -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid()" \
       -c "ALTER DATABASE \"$db\" RENAME TO \"$kept\"" -c "ALTER DATABASE \"$scratch\" RENAME TO \"$db\"" \
       || { dc up -d --no-deps --no-build "${app_services[@]}" || true; die "database swap failed - the app was restarted on the live database" 1; }
     ok "$db is the restored copy; the previous database is kept as $kept (drop it once satisfied: runbook section 8)"
   fi
 
-  # Is the database ahead of the target code? Then the older API may start only with MIGRATION_ALLOW_DB_AHEAD=1.
-  if [ "$DRY_RUN" != "1" ]; then
-    local now_rev target_head
-    now_rev="$(db_revision)"; target_head="$(code_head)"
-    if [ -n "$target_head" ] && [ "$now_rev" != "$target_head" ]; then
-      DB_AHEAD=1; printf '%s\n' "$now_rev" > "$STATE_DIR/db_ahead"
-      info "database at $now_rev, ${target:0:12} knows up to $target_head: starting it with MIGRATION_ALLOW_DB_AHEAD=1"
-    else
-      DB_AHEAD=""; rm -f "$STATE_DIR/db_ahead"
-    fi
-  fi
+  sync_db_ahead      # is the database ahead of the target code? (code-only rollback of a migrating release)
 
   step "rolling restart on ${target:0:12}: API first"
   rdc up -d --no-deps --no-build backend
@@ -710,18 +723,18 @@ backup_files() {
   if [ ! -d "$dir" ]; then
     run mkdir -p "$dir" 2>/dev/null || { dir="$HOME/atp-backups/files"; FILES_BACKUP_DIR="$dir"; run mkdir -p "$dir"; }
   fi
-  local paths=(".deploy") extra p
+  local paths=(".deploy") members=(-C "$ATP_DIR" .deploy) extra p
   extra="$(env_get BACKUP_EXTRA_DIRS)"
   for p in $extra; do
     case "$p" in /*) ;; *) warn "BACKUP_EXTRA_DIRS entry '$p' is not an absolute path - skipped"; continue ;; esac
-    if [ -d "$p" ]; then paths+=("$p"); else warn "BACKUP_EXTRA_DIRS entry $p does not exist - skipped"; fi
+    if [ -d "$p" ]; then paths+=("$p"); members+=(-C / "${p#/}"); else warn "BACKUP_EXTRA_DIRS entry $p does not exist - skipped"; fi
   done
   local out; out="$dir/atp_files_$(date -u +%Y%m%dT%H%M%SZ).tar.gz.enc"
   info "archive: ${paths[*]} -> $out"
   [ "$DRY_RUN" = "1" ] && return 0
   local pass; pass="$(env_get BACKUP_ENCRYPTION_PASSPHRASE)"
   # The passphrase reaches openssl through its environment only (-pass env:), never argv or output.
-  (cd "$ATP_DIR" && tar --exclude='.deploy/lock' --exclude='.deploy/logs' -czf - "${paths[@]}") \
+  tar --exclude='.deploy/lock' --exclude='.deploy/logs' -czf - "${members[@]}" \
     | ATP_FILES_PASS="$pass" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:ATP_FILES_PASS -out "$out.part"
   mv "$out.part" "$out"
   sha256sum "$out" | cut -d' ' -f1 > "$out.sha256"
@@ -790,7 +803,7 @@ cmd_restore_check_inner() {
     ok "$src backup $(printf '%s' "$report" | json_get file) restored: alembic $(printf '%s' "$report" | json_get alembic.copy)"
     printf '%s' "$report" | python3 -c 'import json, sys
 c = json.load(sys.stdin).get("counts") or {}
-print("    rows (copy / live): " + ", ".join(f"{t} {v.get(\"copy\")}/{v.get(\"source\")}" for t, v in c.items()))'
+print("    rows (copy / live): " + ", ".join("%s %s/%s" % (t, v.get("copy"), v.get("source")) for t, v in c.items()))'
   else
     bad "$src backup did not verify: ${status:-no report} $(printf '%s' "$report" | json_get notes) (stderr: $STATE_DIR/logs/verify-stderr.txt)"
   fi

@@ -1,5 +1,9 @@
 # Production host - Hostinger KVM 2 (मराठी runbook)
 
+> **Z11 (2026-10-11):** the one owner command is now `deploy/atp.sh` (install / deploy / health / rollback / backup /
+> restore-check) - English runbook `docs/deploy/HOSTINGER_RUNBOOK.md`. Blocks 2 and 3 below (`deploy.sh`, `rollback.sh`) are
+> superseded by it; do not mix them with `atp.sh` on one server. Block 1 (bootstrap) stays the first step.
+
 Host: **Hostinger KVM 2** - 2 vCPU / 8 GB RAM / 100 GB NVMe, Ubuntu 24.04, Mumbai, static IPv4. हा ATP चा production
 host (PAPER पासून सुरुवात). **Trade repo चा DigitalOcean droplet वेगळा राहतो - त्याला या runbook मधलं काहीही
 लागू नाही, त्याला स्पर्श नाही.**
@@ -110,12 +114,12 @@ box: `OFFSITE_REMOTE=/offsite_local` (host disk - खरा off-site नाह�
 
 ```
 cd /opt/atp && C="docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml -p atp"
-F="$($C exec -T offsite sh /scripts/offsite_fetch.sh /restore)" && $C run --rm backup sh /scripts/verify_backup.sh "$F"
+F="$($C exec -T offsite sh /scripts/offsite_fetch.sh /restore)" && $C run --rm --entrypoint sh backup /scripts/verify_backup.sh "$F"
 ```
 
 पहिली ओळ R2 वरचा सर्वात नवा dump + `.sha256` `/var/backups/atp-restore-test` मध्ये आणते; दुसरी तो sha256 तपासून
 scratch database मध्ये restore करते, तपासते आणि database drop करते. अपेक्षित: एका ओळीचा JSON, `"status": "verified"`.
-Local copy वरून (R2 शिवाय): `$C run --rm backup sh /scripts/verify_backup.sh latest`. PITR drill: `docs/OPERATIONS.md` (Phase O5).
+Local copy वरून (R2 शिवाय): `$C run --rm --entrypoint sh backup /scripts/verify_backup.sh latest`. PITR drill: `docs/OPERATIONS.md` (Phase O5).
 
 ## 6. SEBI - static IP नोंदणी (प्रत्येक broker)
 

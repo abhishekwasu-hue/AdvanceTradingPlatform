@@ -157,6 +157,9 @@ def test_plan_keeps_positions_then_charts_then_watchlist_then_screener_and_degra
     assert set(plan.dropped) == {("WL1", "NSE"), ("SCR1", "NSE")} and plan.degraded and plan.poll_seconds == 15
     assert plan_symbols(entries, 10).poll_seconds == 5 and not plan_symbols(entries, 10).degraded   # 5 of 10: normal refresh
     assert plan_symbols(entries, 6).poll_seconds == 10                                             # over half the cap: slower
+    # Within the screener universe the latest scan wins (a new scan is not starved by the previous one).
+    scans = {"NSE:OLD": [4, t0, t0], "NSE:NEW": [4, t0 + 60, t0 + 60], "NSE:CH": [2, t0, t0]}
+    assert plan_symbols(scans, 2).kept == (("CH", "NSE"), ("NEW", "NSE"))
 
 
 def test_session_symbols_admit_register_idle_and_replace():
@@ -377,6 +380,7 @@ def test_symbols_outside_the_session_budget_are_eod(monkeypatch):
     # Candles for several symbols: the ones in the budget load, the rest say EOD - one does not lose the others.
     body = client.post("/api/market-data/candles", headers=headers, json={"symbols": ["AAA", "DDD"], "timeframe": "1min"}).json()
     assert body["symbols"]["AAA"]["count"] == 5 and body["symbols"]["DDD"]["data_tier"]["tier"] == "C" and body["data_tier"]["degraded"]
+    assert "outside your Upstox session budget" in body["symbols"]["DDD"]["error"]
     # The badge lookup takes no slot.
     assert client.get("/api/market-data/data-tier?symbol=EEE", headers=headers).json()["badge"]["tier"] == "C"
     _flag(False)

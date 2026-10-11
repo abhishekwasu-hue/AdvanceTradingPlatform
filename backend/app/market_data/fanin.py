@@ -10,7 +10,8 @@ what such a session carries:
   screener universe) and when they were first / last wanted. The API process registers what the user opens; the worker
   registers the user's open positions. In-process, mirrored to Redis so both processes plan from the same set (Redis is
   optional: without it each process plans from what it saw itself).
-* `plan_symbols` - the set trimmed to the session's cap by priority, then by how long a symbol has been held, with
+* `plan_symbols` - the set trimmed to the session's cap by priority, then by how long a symbol has been held (the latest
+  scan for the screener universe), with
   graceful degradation: fewer symbols (the rest are served as EOD) and a slower refresh hint when the set is large.
 * `UserSessionFanIn` - the worker side: after the user's daily broker login (a usable token at a confirmed broker) one
   live session per user credential, a websocket stream into the session's own tick cache when streaming is enabled
@@ -57,7 +58,7 @@ class Priority(IntEnum):
 
 # Demands the UI re-asserts while the page is open (a chart polls its last price every few seconds); they lapse when
 # the page is closed. Positions and the screener universe are replaced wholesale by the worker instead.
-IDLE_SECONDS = {int(Priority.CHART): 600, int(Priority.WATCHLIST): 1800}
+IDLE_SECONDS = {int(Priority.CHART): 600, int(Priority.WATCHLIST): 1800, int(Priority.SCREENER): 900}
 
 
 @dataclass(frozen=True)
@@ -126,10 +127,18 @@ class Plan:
 Entries = Dict[str, List[float]]   # "EXCH:SYMBOL" -> [priority, last_seen, first_seen] (epoch seconds)
 
 
+def _rank(item: Tuple[str, List[float]]) -> Tuple[int, float, str]:
+    key, (priority, last_seen, first_seen) = item[0], item[1]
+    if int(priority) == int(Priority.SCREENER):
+        return int(priority), -float(last_seen), key   # a new scan replaces the previous scan's symbols
+    return int(priority), float(first_seen), key       # a held position / chart / watchlist symbol keeps its slot
+
+
 def plan_symbols(entries: Entries, cap: int) -> Plan:
-    """Keep the `cap` most important symbols: lowest priority number first, then the longest held - a symbol already in
-    the session keeps its slot (no flapping between two charts); a new one waits until a slot lapses or frees up."""
-    ordered = sorted(entries.items(), key=lambda kv: (int(kv[1][0]), float(kv[1][2]), kv[0]))
+    """Keep the `cap` most important symbols: lowest priority number first. Within positions, charts and the watchlist
+    the longest held wins - a symbol already in the session keeps its slot (no flapping between two charts) and a new
+    one waits until a slot lapses or frees up; within the screener universe the most recent scan wins."""
+    ordered = sorted(entries.items(), key=_rank)
     kept = tuple(_split(k) for k, _ in ordered[:max(0, cap)])
     dropped = tuple(_split(k) for k, _ in ordered[max(0, cap):])
     return Plan(cap=cap, kept=kept, dropped=dropped)

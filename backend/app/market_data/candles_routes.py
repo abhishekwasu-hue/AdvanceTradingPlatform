@@ -91,6 +91,13 @@ async def _byob(session: AsyncSession, user: User) -> bool:
     return await flag_enabled(session, BYOB_FLAG, user.tenant_id)
 
 
+async def _eod_context(session: AsyncSession, ents: Dict[tuple, Entitlement]) -> tuple:
+    """(newest EOD file date, holidays) for the per-symbol EOD badges - read only when some symbol is EOD."""
+    if all(e.live for e in ents.values()):
+        return None, set()
+    return await entitlement.eod_as_of(session), await load_holidays(session)
+
+
 def _tier_c(ents: Dict[tuple, Entitlement]) -> HTTPException:
     """409 for a request none of whose symbols may be shown live; the first symbol's reason says why."""
     ent = next(iter(ents.values()), None)
@@ -163,6 +170,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     base_interval = "day" if daily else "1min"
     service = MarketDataService(build_adapter(record), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
+    eod_date, holidays = await _eod_context(session, ents)
 
     out: Dict[str, dict] = {}
     fetched = 0
@@ -174,7 +182,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         if byob and (ent is None or not ent.live):
             # BT1: outside the user's session budget - EOD only for this one, the others still load.
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "EOD data only",
-                           "data_tier": ent.badge(now=now) if ent else None}
+                           "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
             if body.before is not None:
@@ -283,6 +291,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
         record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
     adapter = build_adapter(record)
     now = datetime.now(timezone.utc)
+    eod_date, holidays = await _eod_context(session, ents)
     out: Dict[str, dict] = {}
     warnings: List[str] = []
     fetched = 0
@@ -293,7 +302,7 @@ async def option_chains(body: ChainsBody, user: User = Depends(get_current_user)
         ent = ents.get((underlying, "NFO"))
         if byob and (ent is None or not ent.live):
             out[underlying] = {"chain": None, "rows": 0, "error": ent.reason if ent else "EOD data only",
-                               "data_tier": ent.badge(now=now) if ent else None}
+                               "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
             continue
         try:
             chain = await adapter.get_option_chain(underlying, body.expiry)

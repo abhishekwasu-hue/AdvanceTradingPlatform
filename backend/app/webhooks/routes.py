@@ -140,8 +140,11 @@ async def tradingview_webhook(
 
     if await approval.required(session, tenant.id):
         # Z3 / BT2: approval-only - the alert becomes an ENTRY proposal; the PAPER order waits for Approve.
-        row = await approval.propose_entry(session, tenant.id, signal=signal, strategy_id=payload.strategy_id, source="tradingview",
-                                           idempotency_key=idempotency_key or f"tv:{signal.symbol}:{signal.timestamp.isoformat()}", user_id=user.id)
+        try:
+            row = await approval.propose_entry(session, tenant.id, signal=signal, strategy_id=payload.strategy_id, source="tradingview",
+                                               idempotency_key=idempotency_key or f"tv:{signal.symbol}:{signal.timestamp.isoformat()}", user_id=user.id)
+        except approval.EntriesPaused as exc:
+            return WebhookExecutionResponse(executed=False, reasons=[str(exc)])
         await meter(session, user.tenant_id, "webhook_event", 1, source="tradingview", metadata={"ai_action_id": row.id if row else None})
         return WebhookExecutionResponse(executed=False, reasons=[f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order"
                                                                  if row is not None else "Approval-only mode: this alert was already proposed"])

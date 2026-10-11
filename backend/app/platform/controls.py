@@ -114,10 +114,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
     "approval_only_entries": "Approval-only entries: automatic entries become proposals; Approve places a PAPER order at a re-quoted price",
+    # Z3-b / BT3: each user's own PAPER account (starting capital, balance, P&L after charges, positions, journal), the
+    # progression ladder card (PAPER stage only in Phase 0) and the Telegram /status /pause /resume /paper commands.
+    "paper_account": "Per-user PAPER account, progression ladder card and Telegram /status /pause /resume /paper",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "approval_only_entries"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "approval_only_entries",
+                               "paper_account"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

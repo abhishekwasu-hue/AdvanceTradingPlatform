@@ -74,6 +74,7 @@ from app.strategy_engine.registry import registry
 from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
+from app.paper.routes import router as paper_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -222,6 +223,7 @@ app.include_router(live_router)  # PW4: live updates across Telegram, push and o
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
+app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 
 _default_risk_config = RiskConfig()
 

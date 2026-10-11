@@ -1,7 +1,7 @@
-import { LineSeries } from "lightweight-charts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANCHOR_RULES, DrawingConflict, drawingProblem, drawingsApi, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
-import { LightweightEngine, type CandleSeriesLike, type ChartLike, type LineSeriesLike } from "./lightweight";
+import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
+import type { DrawingPrimitive } from "./primitives";
 import type { EngineEvent } from "./engine";
 
 const T1 = "2026-03-02T04:00:00Z";
@@ -61,18 +61,22 @@ describe("drawings API client", () => {
 
 function fakes() {
   const priceLines: { price: number; title: string }[] = [];
-  const lineSeries: { data: { time: number; value: number }[]; removed: boolean; definition: unknown }[] = [];
-  const handlers: Record<string, ((p: unknown) => void)[]> = { cross: [], click: [], range: [] };
-  const candles: CandleSeriesLike & { data: unknown[]; updates: unknown[] } = {
-    data: [], updates: [],
-    setData(d) { this.data = d; },
+  const primitives: DrawingPrimitive[] = [];
+  const handlers: Record<string, ((p: unknown) => void)[]> = { cross: [], click: [], range: [], data: [] };
+  const candles: CandleSeriesLike & { bars: { time: unknown }[]; updates: unknown[] } = {
+    bars: [], updates: [],
+    setData(d) { this.bars = d as { time: unknown }[]; for (const h of handlers.data) h(undefined); },
     update(b) { this.updates.push(b); },
+    data() { return this.bars; },
     createPriceLine(o) { const l = { price: o.price, title: o.title }; priceLines.push(l); return l as never; },
     removePriceLine(l) { priceLines.splice(priceLines.indexOf(l as never), 1); },
+    priceToCoordinate: (p) => 1000 - p * 5,
+    subscribeDataChanged(h) { handlers.data.push(h as (p: unknown) => void); },
+    unsubscribeDataChanged(h) { handlers.data = handlers.data.filter((x) => x !== h); },
+    attachPrimitive(p) { primitives.push(p); },
+    detachPrimitive(p) { primitives.splice(primitives.indexOf(p), 1); },
   };
   const chart: ChartLike = {
-    addSeries(definition) { const s = { definition, data: [] as { time: number; value: number }[], removed: false, setData(d: { time: number; value: number }[]) { this.data = d; } }; lineSeries.push(s); return s as unknown as LineSeriesLike; },
-    removeSeries(s) { (s as unknown as { removed: boolean }).removed = true; },
     subscribeCrosshairMove(h) { handlers.cross.push(h as (p: unknown) => void); },
     unsubscribeCrosshairMove(h) { handlers.cross = handlers.cross.filter((x) => x !== h); },
     subscribeClick(h) { handlers.click.push(h as (p: unknown) => void); },
@@ -80,9 +84,10 @@ function fakes() {
     timeScale: () => ({
       subscribeVisibleTimeRangeChange(h) { handlers.range.push(h as (p: unknown) => void); },
       unsubscribeVisibleTimeRangeChange(h) { handlers.range = handlers.range.filter((x) => x !== h); },
+      logicalToCoordinate: (l: number) => l * 8,
     }),
   };
-  return { chart, candles, priceLines, lineSeries, handlers };
+  return { chart, candles, priceLines, primitives, handlers };
 }
 
 describe("LightweightEngine (B-lite)", () => {
@@ -95,16 +100,36 @@ describe("LightweightEngine (B-lite)", () => {
     engine.addDrawing("b", sample("trendline"));
     engine.addDrawing("c", sample("fib_retracement"));
     expect(f.priceLines.map((l) => l.price)).toEqual([101.5]);
-    expect(f.lineSeries[0].definition).toBe(LineSeries);                                // v5: series by definition
-    expect(f.lineSeries[0].data).toEqual([{ time: Date.parse(T1) / 1000, value: 100 }, { time: Date.parse(T2) / 1000, value: 101 }]);
-    expect(engine.supports("fib_retracement")).toBe(false);
+    expect(f.primitives.map((p) => p.drawing.kind)).toEqual(["trendline", "fib_retracement"]);   // CH2b: v5 primitives
+    for (const kind of Object.keys(ANCHOR_RULES) as DrawingKind[]) expect(engine.supports(kind), kind).toBe(true);
     const layout = engine.serialize();
-    expect(Object.keys(layout.drawings).sort()).toEqual(["a", "b", "c"]);              // kept even when not drawn yet
+    expect(Object.keys(layout.drawings).sort()).toEqual(["a", "b", "c"]);
     const g = fakes();
     const other = new LightweightEngine(g.chart, g.candles);
     other.deserialize(layout);
     expect(other.serialize()).toEqual(layout);
     expect(g.priceLines.length).toBe(1);
+    expect(g.primitives.length).toBe(2);
+  });
+
+  it("places primitives by bar time and price, and re-reads the bar times only when the data changes", () => {
+    const f = fakes();
+    const engine = new LightweightEngine(f.chart, f.candles);
+    engine.addDrawing("r", { kind: "rectangle", anchors: [{ t: T1, p: 100 }, { t: T2, p: 104 }] });
+    const prim = f.primitives[0];
+    expect(prim.converters(800, 600)).toBeNull();                                        // no bars yet: nothing to place
+    const t1 = Date.parse(T1) / 1000;
+    const t2 = Date.parse(T2) / 1000;
+    engine.setBars([{ time: t1, open: 1, high: 1, low: 1, close: 1 }, { time: t2, open: 1, high: 1, low: 1, close: 1 }]);
+    const c = prim.converters(800, 600);
+    expect(c && [c.x(t1), c.x(t2), c.x((t1 + t2) / 2), c.y(100), c.width]).toEqual([0, 8, 4, 500, 800]);
+    const spy = vi.spyOn(f.candles, "data");
+    prim.converters(800, 600);
+    prim.converters(800, 600);
+    expect(spy).not.toHaveBeenCalled();                                                  // cached between paints
+    f.candles.setData([{ time: t2 }, { time: t2 + 900 }]);
+    expect(prim.converters(800, 600)?.x(t2)).toBe(0);                                    // new data: re-read once
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("updates and removes drawings and layers without leaking chart objects", () => {
@@ -113,18 +138,25 @@ describe("LightweightEngine (B-lite)", () => {
     const events: EngineEvent[] = [];
     engine.on((e) => events.push(e));
     engine.addDrawing("a", sample("trendline"));
+    const first = f.primitives[0];
     engine.updateDrawing("a", { ...sample("trendline"), anchors: [{ t: T1, p: 90 }, { t: T3, p: 95 }] });
-    expect(f.lineSeries[0].removed).toBe(true);
-    expect(f.lineSeries[1].data.map((d) => d.value)).toEqual([90, 95]);
+    expect(f.primitives).toEqual([first]);                                                // edited in place, not re-attached
+    expect(first.drawing.anchors.map((a) => a.p)).toEqual([90, 95]);
+    engine.updateDrawing("a", sample("hline"));                                           // kind change: primitive -> price line
+    expect(f.primitives).toEqual([]);
+    expect(f.priceLines.map((l) => l.price)).toEqual([101.5]);
+    engine.removeDrawing("a");
     expect(events[events.length - 1]).toMatchObject({ type: "drawingChanged", id: "a" });
     engine.setLayer("pa", { asOf: T1, lines: [{ price: 100, title: "swing high" }, { price: Number.NaN }] });
     expect(f.priceLines.map((l) => l.title)).toEqual(["swing high"]);
     engine.setLayer("pa", null);
     expect(f.priceLines).toEqual([]);
     engine.addDrawing("h", sample("hline"));
+    engine.addDrawing("z", sample("channel"));
     engine.dispose();
     expect(f.priceLines).toEqual([]);
-    expect(f.handlers.cross.length + f.handlers.click.length + f.handlers.range.length).toBe(0);
+    expect(f.primitives).toEqual([]);
+    expect(f.handlers.cross.length + f.handlers.click.length + f.handlers.range.length + f.handlers.data.length).toBe(0);
   });
 
   it("passes bars through and reports crosshair, click and range events with data values", () => {
@@ -134,7 +166,7 @@ describe("LightweightEngine (B-lite)", () => {
     engine.on((e) => events.push(e));
     engine.setBars([{ time: 1, open: 1, high: 2, low: 0.5, close: 1.5 }]);
     engine.appendBar({ time: 2, open: 1.5, high: 2, low: 1, close: 1.8 });
-    expect(f.candles.data.length).toBe(1);
+    expect(f.candles.bars.length).toBe(1);
     expect(f.candles.updates.length).toBe(1);
     f.handlers.cross[0]({ time: 2, point: { x: 10, y: 100 } });
     f.handlers.click[0]({ time: undefined });

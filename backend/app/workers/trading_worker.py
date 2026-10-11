@@ -53,6 +53,7 @@ from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
 from app.ai import thesis as thesis_module
+from app.brokers import login_reminder
 from app.workers import eod_summary
 from app.workers.redis_guard import RedisGuard
 from app.news_feed import service as news_feed
@@ -130,6 +131,7 @@ class CycleReport:
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
     oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
@@ -194,6 +196,7 @@ class TradingWorker:
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_thesis_report_day = None
+        self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -332,6 +335,16 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # D5 (IN-SEBI.login.daily): before the open, remind each organisation whose broker session will not last
+                # the day to log in. Read-only; once per IST day (the module also dedupes across restarts).
+                if self._last_login_reminder_day != ist_now.date() and login_reminder.in_window(now):
+                    self._last_login_reminder_day = ist_now.date()
+                    try:
+                        report.login_reminders = await login_reminder.send_reminders(session, now)
+                    except Exception as exc:  # noqa: BLE001 - a reminder must never break trading
+                        logger.exception("Login reminder failed")
+                        report.errors.append(f"login reminder: {exc}")
+                        await session.rollback()
                 # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
                 if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
                     self._last_thesis_report_day = ist_now.date()

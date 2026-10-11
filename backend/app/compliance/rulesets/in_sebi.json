@@ -149,13 +149,24 @@
       "id": "IN-SEBI.static_ip.registered",
       "title": "API orders only from a static IP registered with the broker; primary + backup; limited changes",
       "source": "SEBI retail-algo circular; broker policies",
-      "status": "planned",
+      "status": "enforced",
       "params": {
         "max_changes_per_week": 1,
         "backup_ip_allowed": true
       },
-      "code": [],
-      "tests": [],
+      "code": [
+        "app/compliance/static_ip.py",
+        "app/compliance/routes.py",
+        "app/workers/trading_worker.py",
+        "app/platform/readiness.py"
+      ],
+      "tests": [
+        "tests/test_d4_static_ip.py::test_owner_registers_primary_and_backup_and_the_weekly_change_limit_holds",
+        "tests/test_d4_static_ip.py::test_shared_ip_and_unregistered_server_ip_are_warned",
+        "tests/test_d4_static_ip.py::test_live_entry_gate_is_off_by_default_and_names_the_gap_when_on",
+        "tests/test_d4_static_ip.py::test_worker_refuses_live_entries_without_a_registered_ip_but_paper_trades",
+        "tests/test_d4_static_ip.py::test_readiness_lists_the_static_ip_item_for_live"
+      ],
       "flag": "STATIC_IP_REQUIRED_FOR_LIVE"
     },
     {

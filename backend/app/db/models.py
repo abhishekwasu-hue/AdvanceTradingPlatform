@@ -746,6 +746,39 @@ class RiskEventRecord(Base):
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class EgressIpRecord(Base):
+    """Part D4 (rule IN-SEBI.static_ip.registered): an IP the organisation registered with a broker for API orders -
+    one PRIMARY and optionally one BACKUP per broker. The platform's own egress IP (SERVER_EGRESS_IP) must be one of
+    them before a LIVE entry goes out (when STATIC_IP_REQUIRED_FOR_LIVE)."""
+
+    __tablename__ = "egress_ips"
+    __table_args__ = (UniqueConstraint("tenant_id", "broker_name", "role", name="uq_egress_ip_role"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False, default="PRIMARY")      # PRIMARY / BACKUP
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    registered_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)   # when the broker accepted it
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
+
+
+class EgressIpChangeRecord(Base):
+    """Part D4: every change of a registered IP (append-only) - the weekly-change rule counts these."""
+
+    __tablename__ = "egress_ip_changes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    broker_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    old_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    new_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+
+
 class BrokerAccountRecord(Base):
     """Phase I2 (V3.14 rule 3): one trading account at a broker - the credential it authenticates
     with, the broker's own identifier, and the last synced balance/margin/P&L. Deployments may

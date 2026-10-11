@@ -114,6 +114,7 @@ from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
+from app.journal.routes import router as journal_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -169,6 +170,7 @@ app.include_router(auth_router)
 app.include_router(broker_router)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
+app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
 app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)

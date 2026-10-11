@@ -278,3 +278,33 @@ def test_leaving_the_zone_with_a_gap_is_not_a_new_visit():
     tr = new_tracker(100.0, 105.0, SUPPORT_SIDE)
     track_zone(tr, df, start_after=df["timestamp"].iloc[START])
     assert events(tr) == ["TOUCH"] and tr.touches == 1
+
+
+def test_snapshot_memory_families_carry_forward_and_unseen_bars():
+    F = G.frames()
+    days = _sessions(F["s15"])
+    first, second = _cut(F, days[10]), _cut(F, days[11])
+    s = resolve_settings(SNAP)                                           # default memory_families: dynamic S/R only (Trade)
+    prev = build_snapshot({"1h": first["1h"], "15m": first["15m"]}, first, s)
+    rows = build_snapshot({"1h": second["1h"], "15m": second["15m"]}, second, s, previous=prev)
+    classic = [r for r in rows if r["zone_type"] in ("SUPPORT", "RESISTANCE")]
+    assert classic and not any(r["remembered"] for r in classic)
+    assert all(pd.Timestamp(r["formed_at"]) == second["1h"]["timestamp"].iloc[-1] for r in classic)    # today's, as Trade
+    both = resolve_settings({**SNAP, "memory_families": ["SR", "DYNAMIC_SR"]})
+    prev2 = build_snapshot({"1h": first["1h"], "15m": first["15m"]}, first, both)
+    rows2 = build_snapshot({"1h": second["1h"], "15m": second["15m"]}, second, both, previous=prev2)
+    kept = {zone_key(r) for r in prev2 if r["zone_type"] in ("SUPPORT", "RESISTANCE")} & \
+        {zone_key(r) for r in rows2 if r["zone_type"] in ("SUPPORT", "RESISTANCE")}
+    assert kept                                                          # classical levels carried when asked for
+    # tonight's 30m frame is missing: yesterday's live 30m levels are carried forward unchanged, not dropped
+    no30 = {k: v for k, v in second.items() if k != "30m"}
+    rows3 = build_snapshot({"1h": second["1h"], "15m": second["15m"]}, no30, s, previous=prev)
+    carried = [r for r in rows3 if r["timeframe"] == "30m"]
+    old30 = [r for r in prev if r["timeframe"] == "30m" and is_line(r["zone_type"]) and r["state"] != "invalidated"]
+    assert old30 and {zone_key(r) for r in carried} == {zone_key(r) for r in old30} and all(r["remembered"] for r in carried)
+    # a frame that starts after the last bar a remembered level saw: the stretch is recorded, never skipped silently
+    late = {k: v.iloc[-20:].reset_index(drop=True) for k, v in second.items()}         # tonight only, from 10:30
+    stale = [r for r in prev if r["timeframe"] == "15m" and is_line(r["zone_type"])]
+    tr = ZoneTracker.from_dict(stale[0]["tracker"])
+    track_zone(tr, late["15m"], s)
+    assert tr.unseen and tr.unseen[-1]["after"] == stale[0]["tracker"]["last_bar_at"]

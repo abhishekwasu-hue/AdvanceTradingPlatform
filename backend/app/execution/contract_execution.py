@@ -86,6 +86,8 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
         "premium_stop_pct": rules.premium_stop_pct if contract.kind == InstrumentKind.OPTION else None,
         "underlying_symbol": contract.underlying_symbol, "underlying_direction": signal.direction.value,
         "underlying_stop_loss": signal.stop_loss, "underlying_target1": signal.target1, "underlying_target2": signal.target2,
+        # Z6: read only by the journal (Greeks / IV at entry); not a trade column, persist_trade does not store it.
+        "underlying_entry": signal.entry,
     }
     notes = [f"{contract.entry_side.value} {contract.tradingsymbol} (lot {contract.lot_size}) for {signal.direction.value} {contract.underlying_symbol} @ {signal.entry}"]
     notes.extend(contract.selection_notes)  # Phase H1: why this strike

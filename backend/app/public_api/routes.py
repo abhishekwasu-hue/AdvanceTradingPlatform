@@ -177,7 +177,8 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
                     timestamp=datetime.now(timezone.utc), entry=body.entry, stop_loss=body.stop_loss, target1=body.target1, target2=body.target2,
                     risk_reward=rr, score=50, grade=SignalGrade.VALID, reasons=[f"public API key {p.key.name}"], timeframe_combo="external")
     result, order = await execute_signal_for_user(session, p.user, mode=body.mode, strategy_id=body.strategy_id, signal=signal,
-                                                  idempotency_key=f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else None)
+                                                  idempotency_key=f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else None,
+                                                  journal_source="API")   # Z6: the journal says where the trade came from
     return {"order_id": order.id, "status": order.status, "executed": result.executed, "reasons": result.reasons, "trade_id": order.trade_id}
 
 

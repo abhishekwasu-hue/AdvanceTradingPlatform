@@ -143,7 +143,7 @@ class CycleReport:
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
-    market_zone_runs: int = 0    # Z7a-2: market-zone snapshots stored this cycle
+    market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -220,7 +220,8 @@ class TradingWorker:
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
-        self._last_market_zones_day = None    # Z7a-2: the nightly market-zones job, once per IST day
+        self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
+        self._market_zones_task: Optional["asyncio.Task[None]"] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -253,6 +254,8 @@ class TradingWorker:
         self._stop.set()
         if self._history_eod_task is not None and not self._history_eod_task.done():
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
+        if self._market_zones_task is not None and not self._market_zones_task.done():
+            self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -478,18 +481,16 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                     logger.exception("History EOD job not started")
                     report.errors.append(f"history eod: {exc}")
-                # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, outside market hours (flag
-                # `market_zones`, off by default): zones from the shared lake bars, stored as-of. Reference data; never trades.
-                if not nse.is_open and self._last_market_zones_day != ist_now.date():
-                    from app.price_action.zones import job as zones_job
-                    if zones_job.due(now, self._last_market_zones_day):
-                        self._last_market_zones_day = ist_now.date()      # success or failure: next try is tomorrow
-                        try:
-                            report.market_zone_runs = (await zones_job.run_all(session, now))["runs"]
-                        except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
-                            logger.exception("Market zones job failed")
-                            report.errors.append(f"market zones: {exc}")
-                            await session.rollback()
+                # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, NSE closed (flag `market_zones`, off by
+                # default). Started as its own task (own sessions, a time budget), so it never holds up a cycle - exits,
+                # stop guards and MCX square-off keep running. Reference data; never trades.
+                if not nse.is_open:
+                    try:
+                        report.market_zones_started = await self._maybe_start_market_zones(session, now)
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Market zones job not started")
+                        report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -912,6 +913,29 @@ class TradingWorker:
                 await fetcher.aclose()
 
         self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
+        """Z7a-2: starts the nightly market-zones pass as a background task when it is due and the flag is on for anyone.
+        One task per worker; the job's advisory lock keeps a second replica out. The day counts as done only when a pass
+        worked through the whole plan - a pass that ran out of time (or failed) is started again on a later cycle."""
+        from app.price_action.zones import job as zones_job
+
+        day = zones_job.nightly_due(now, self._last_market_zones_day)
+        if day is None or (self._market_zones_task is not None and not self._market_zones_task.done()):
+            return False
+        if not await zones_job.any_enabled(session):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+
+        async def run() -> None:
+            try:
+                result = await zones_job.run_nightly(self.session_factory, now=now)
+                if result.get("complete"):
+                    self._last_market_zones_day = day
+            except Exception:  # noqa: BLE001 - reference data; never reaches trading
+                logger.exception("Market zones job failed")
+
+        self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
 
     def _spawn_vision_drain(self) -> None:

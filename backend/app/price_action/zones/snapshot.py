@@ -3,12 +3,15 @@
 `build_snapshot(frames, dynamic_frames, settings, previous)` is what the storage job (`job.py`) runs per symbol per night:
   1. compute_all_zones on the frames (bars that closed by the snapshot time only - the caller cuts them): order blocks,
      demand / supply, gaps with their lifecycle tracked from confirmation; S/R and dynamic S/R line levels;
-  2. level memory (memory.apply_memory - Trade level_memory) per line family and timeframe, against the PREVIOUS
-     snapshot's live levels: a level near a remembered one keeps the old price and formed time, an old level not found
-     today stays while price visited it within the retire window;
+  2. level memory (memory.apply_memory - Trade level_memory) per line family in settings.memory_families (default
+     dynamic S/R only, as Trade) and timeframe, against the PREVIOUS snapshot's live levels: a level near a remembered one
+     keeps the old price and formed time, an old level not found today stays while price visited it within the retire
+     window. A family whose frame is missing tonight carries its previous live rows forward unchanged;
   3. the lifecycle of every line level: a remembered level continues its stored tracker over the bars after the last one
      it saw (touch / flip / structural break), a new level starts fresh on the snapshot's last bar;
-  4. role by the price and a stable `zone_key` per row (the identity across snapshots).
+  4. zones formed in a frame's first `warmup_bars` bars are dropped (the history window slides every night - a zone
+     at its edge would appear and vanish with it);
+  5. role by the price and a stable `zone_key` per row (the identity across snapshots).
 Nothing here reads the database or the clock: the previous snapshot comes in as rows, "now" is each frame's last bar.
 """
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -63,6 +66,19 @@ def _line_families(frames: Frames, dynamic_frames: Frames, s: ZoneSettings) -> L
     return fams
 
 
+def _in_warmup(row: Mapping[str, Any], frames: Frames, s: ZoneSettings) -> bool:
+    """Formed within the first `warmup_bars` bars of its own frame (or the frame is shorter than that)."""
+    if not s.warmup_bars:
+        return False
+    df = frames.get(str(row["timeframe"]))
+    if df is None or not len(df):
+        return False
+    if len(df) <= s.warmup_bars:
+        return True
+    ts = pd.to_datetime(df["timestamp"])
+    return bool(pd.Timestamp(row["formed_at"]) < ts.iloc[s.warmup_bars])
+
+
 def build_snapshot(frames: Frames, dynamic_frames: Optional[Frames] = None, settings: Optional[ZoneSettings] = None,
                    previous: Optional[Sequence[Mapping[str, Any]]] = None, current_price: Optional[float] = None) -> List[Dict[str, Any]]:
     """All zone rows of one snapshot (see the module doc). `frames` / `dynamic_frames` as compute_all_zones takes them,
@@ -74,24 +90,24 @@ def build_snapshot(frames: Frames, dynamic_frames: Optional[Frames] = None, sett
     prev = [dict(r) for r in (previous or [])]
     prev_line = {zone_key(r): r for r in prev if is_line(str(r["zone_type"])) and r.get("state") != "invalidated"}
 
-    out = [r for r in rows if not is_line(str(r["zone_type"]))]
+    out = [r for r in rows if not is_line(str(r["zone_type"])) and not _in_warmup(r, frames, s)]
     for r in out:
         r["remembered"] = False
     for prefix, tf, df in _line_families(frames, dyn, s):
         types = (f"{prefix}SUPPORT", f"{prefix}RESISTANCE")
         mine = [r for r in rows if r["timeframe"] == tf and r["zone_type"] in types]
-        if df is None or not len(df):
-            out += [{**r, "remembered": False} for r in mine]
+        if df is None or not len(df):              # no bars tonight: carry the previous live levels forward unchanged
+            out += [{**r, "remembered": True} for r in prev_line.values() if r["timeframe"] == tf and r["zone_type"] in types]
             continue
         df = df.reset_index(drop=True)
         now = df["timestamp"].iloc[-1]
-        merged = apply_memory(mine, prev, {tf: df}, now, s, prefix=prefix) if prev and s.memory_enabled else \
-            [{**r, "remembered": False} for r in mine]
+        remember = bool(prev) and s.memory_enabled and family_of(types[0]) in s.memory_families
+        merged = apply_memory(mine, prev, {tf: df}, now, s, prefix=prefix) if remember else [{**r, "remembered": False} for r in mine]
         prepared = prepare(df, s)
         tol = zone_tolerance(df, float(df["close"].iloc[-1]), s)
         for r in merged:
             r.setdefault("remembered", False)
-            old = prev_line.get(zone_key(r))
+            old = prev_line.get(zone_key(r)) if remember else None
             if old is not None and old.get("tracker"):
                 tracker = ZoneTracker.from_dict(old["tracker"])
                 r["confirmed_at"] = old.get("confirmed_at") or r.get("confirmed_at")

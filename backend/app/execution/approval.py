@@ -327,7 +327,7 @@ async def retire_proposals_for_closed(session: AsyncSession, trade: TradeRecord,
                                                                   AiActionRecord.action == "EXIT_POSITION", AiActionRecord.status == "PROPOSED")
                                      .values(status="EXPIRED", result=f"Position closed: {reason}"[:300]).execution_options(synchronize_session=False))
         await session.commit()
-        return int(done.rowcount or 0)
+        return int(getattr(done, "rowcount", 0) or 0)
     except Exception:  # noqa: BLE001 - bookkeeping only
         logger.warning("Could not retire proposals of closed trade %s", trade.id)
         return 0

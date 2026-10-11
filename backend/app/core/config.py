@@ -132,6 +132,10 @@ QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
 STREAMING_QUOTES_ENABLED = os.environ.get("STREAMING_QUOTES_ENABLED", "false").lower() in ("1", "true", "yes")
 # Part B2: streamed ticks -> 1-minute bars in the market data lake (md_candles, source stream:<broker>). Needs the stream.
 LAKE_TICK_WRITER_ENABLED = os.environ.get("LAKE_TICK_WRITER_ENABLED", "false").lower() in ("1", "true", "yes")
+# Part B3: data-quality thresholds for lake bars (events only - nothing is deleted or blocked).
+LAKE_SPIKE_PCT = float(os.environ.get("LAKE_SPIKE_PCT", "10"))
+LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
+LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

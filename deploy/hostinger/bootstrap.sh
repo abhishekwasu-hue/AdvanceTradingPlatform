@@ -131,7 +131,7 @@ sysctl -q -w vm.swappiness=10
 echo 'vm.swappiness=10' > /etc/sysctl.d/90-atp.conf
 
 log "directories"
-install -d -m 750 -o "$ATP_USER" -g "$ATP_USER" /opt/atp /var/backups/atp-offsite
+install -d -m 750 -o "$ATP_USER" -g "$ATP_USER" /opt/atp /var/backups/atp-offsite /var/backups/atp-restore-test
 
 log "done"
 docker --version; docker compose version

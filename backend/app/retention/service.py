@@ -25,7 +25,7 @@ from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
     OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
-    AlertDeliveryRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
+    AlertDeliveryRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserSessionRecord,
 )
 from app.retention.policy import RetentionPolicy, load_policy
@@ -33,6 +33,7 @@ from app.retention.policy import RetentionPolicy, load_policy
 logger = logging.getLogger(__name__)
 
 ERASED_EMAIL_DOMAIN = "erased.invalid"
+SCRUB_MARKERS = ("[erased]", "[expired]")       # H-C1 e: llm_calls text replaced by erasure / by age
 
 
 @dataclass
@@ -116,6 +117,13 @@ async def run_retention(session: AsyncSession, now: Optional[datetime] = None, p
             logger.exception("Retention failed for %s", table)
             report.errors.append(f"{table}: {exc}")
             report.deleted[table] = 0
+    if policy.llm_text_days > 0:                    # H-C1 e: scrub old LLM texts; the rows themselves are never deleted
+        try:
+            report.deleted["llm_calls_text_scrubbed"] = await scrub_llm_text(session, LlmCallRecord.created_at < _cutoff(now, policy.llm_text_days),
+                                                                             "[expired]", limit=policy.batch_size)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Retention failed for llm_calls text")
+            report.errors.append(f"llm_calls text: {exc}")
     if report.total or report.errors:
         detail = ", ".join(f"{k}={v}" for k, v in report.deleted.items() if v) or "nothing eligible"
         if report.errors:
@@ -123,6 +131,19 @@ async def run_retention(session: AsyncSession, now: Optional[datetime] = None, p
         await write_audit_log(session, None, None, "retention_run", detail)
     await session.commit()
     return report
+
+
+async def scrub_llm_text(session: AsyncSession, predicate, marker: str, *, limit: Optional[int] = None) -> int:
+    """H-C1 e: replace the stored prompt/question/answer text of matching `llm_calls` rows with `marker`. The rows, their
+    SHA-256 hashes, model, prompt version, tokens and cost stay (the audit record that a call happened is kept)."""
+    # A row already scrubbed keeps its first marker: an age scrub never turns an "[erased]" row into "[expired]".
+    q = select(LlmCallRecord.id).where(predicate, LlmCallRecord.user_text.notin_(SCRUB_MARKERS)).order_by(LlmCallRecord.id)
+    if limit:
+        q = q.limit(limit)
+    ids = list(await session.scalars(q))
+    if ids:
+        await session.execute(update(LlmCallRecord).where(LlmCallRecord.id.in_(ids)).values(system_text=marker, user_text=marker, response_text=marker))
+    return len(ids)
 
 
 async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[int], reason: str = "") -> str:
@@ -140,5 +161,6 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
     await session.execute(delete(MfaBackupCodeRecord).where(MfaBackupCodeRecord.user_id == user.id))
     await session.execute(delete(PasswordResetRecord).where(PasswordResetRecord.user_id == user.id))
     await session.execute(update(LoginEventRecord).where(LoginEventRecord.email == old_email.lower()).values(email=placeholder))
+    await scrub_llm_text(session, LlmCallRecord.user_id == user.id, "[erased]")       # H-C1 e: their AI conversations
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")
     return placeholder

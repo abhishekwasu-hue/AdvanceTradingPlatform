@@ -1,6 +1,7 @@
 import {
-  ColorType, CrosshairMode, LineStyle, createChart,
-  type IChartApi, type IPriceLine, type ISeriesApi, type LogicalRange, type MouseEventParams, type UTCTimestamp,
+  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, createChart, createSeriesMarkers,
+  type IChartApi, type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type LogicalRange, type MouseEventParams, type Time,
+  type UTCTimestamp,
 } from "lightweight-charts";
 import { ExternalLink, Layers, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +13,8 @@ import {
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
 import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
 import { useChartStrategies } from "./ChartStrategies";
+import type { ChartEngine } from "../charting/engine";
+import { LightweightEngine } from "../charting/lightweight";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
@@ -118,15 +121,19 @@ export interface ProChartProps {
   /** Shown while an older page loads, and once the broker has nothing older. */
   loadingOlder?: boolean;
   olderExhausted?: boolean;
+  /** CH1 (ADR-0023): the chart behind the engine-neutral `ChartEngine` interface (drawings, layers, events); null on teardown. */
+  onEngine?: (engine: ChartEngine | null) => void;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
-  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false,
+  deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false, onEngine,
 }: ProChartProps) {
   const onLoadOlderRef = useRef(onLoadOlder);
   onLoadOlderRef.current = onLoadOlder;
+  const onEngineRef = useRef(onEngine);
+  onEngineRef.current = onEngine;
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
   const [themeTick, setThemeTick] = useState(0);
@@ -197,6 +204,7 @@ export default function ProChart({
   const adxRef = useRef<HTMLDivElement>(null);
   const charts = useRef<{ main?: IChartApi; vol?: IChartApi; rsi?: IChartApi; adx?: IChartApi }>({});
   const series = useRef<Record<string, ISeriesApi<"Candlestick" | "Line" | "Histogram">>>({});
+  const markersPlugin = useRef<ISeriesMarkersPluginApi<Time> | null>(null);   // CH2: v5 markers are a series plugin
   const priceLineRefs = useRef<IPriceLine[]>([]);
   const dataKey = useRef<string>("");
   const lastShape = useRef<{ len: number; lastTime: number }>({ len: 0, lastTime: 0 });
@@ -239,13 +247,13 @@ export default function ProChart({
     charts.current = { main: mainChart, vol: volChart, rsi: rsiChart, adx: adxChart };
 
     const s: Record<string, ISeriesApi<"Candlestick" | "Line" | "Histogram">> = {};
-    s.candles = mainChart.addCandlestickSeries({ upColor: COLORS.up, downColor: COLORS.down, borderVisible: false, wickUpColor: COLORS.up, wickDownColor: COLORS.down });
+    s.candles = mainChart.addSeries(CandlestickSeries, { upColor: COLORS.up, downColor: COLORS.down, borderVisible: false, wickUpColor: COLORS.up, wickDownColor: COLORS.down });
     const line = (chart: IChartApi, color: string, width: 1 | 2 = 1, style = LineStyle.Solid) =>
-      chart.addLineSeries({ color, lineWidth: width, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      chart.addSeries(LineSeries, { color, lineWidth: width, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     s.emaFast = line(mainChart, COLORS.emaFast, 2); s.emaSlow = line(mainChart, COLORS.emaSlow, 2); s.sma = line(mainChart, COLORS.sma, 1);
     s.bbUpper = line(mainChart, COLORS.bb, 1, LineStyle.Dotted); s.bbLower = line(mainChart, COLORS.bb, 1, LineStyle.Dotted); s.bbMid = line(mainChart, COLORS.bb, 1, LineStyle.Dashed);
     s.vwap = line(mainChart, COLORS.vwap, 1, LineStyle.Dashed); s.st = line(mainChart, COLORS.stUp, 2);
-    if (volChart) s.vol = volChart.addHistogramSeries({ priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
+    if (volChart) s.vol = volChart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
     if (rsiChart) {
       s.rsi = line(rsiChart, COLORS.rsi, 2);
       s.rsi.createPriceLine({ price: settings.rsiHigh, color: "#ef444480", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: "" });
@@ -257,7 +265,12 @@ export default function ProChart({
       s.adx.createPriceLine({ price: settings.adxMin, color: "#64748b80", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "" });
     }
     series.current = s;
+    markersPlugin.current = createSeriesMarkers(s.candles as ISeriesApi<"Candlestick">, []);
     dataKey.current = "";
+    // CH1: the same chart behind the ChartEngine interface - ProChart keeps drawing everything it drew before.
+    const engine = new LightweightEngine(mainChart, s.candles as ISeriesApi<"Candlestick">,
+      (y) => (s.candles as ISeriesApi<"Candlestick">).coordinateToPrice(y));
+    onEngineRef.current?.(engine);
 
     // Scroll/zoom together.
     const all = made;
@@ -300,8 +313,10 @@ export default function ProChart({
     return () => {
       window.removeEventListener("resize", onResize);
       for (const u of unsubs) u();
+      engine.dispose();
+      onEngineRef.current?.(null);
       for (const c of all) c.remove();
-      charts.current = {}; series.current = {}; priceLineRefs.current = [];
+      charts.current = {}; series.current = {}; priceLineRefs.current = []; markersPlugin.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartHeight, compact, showVolume, showRsi, showAdx, settings.rsiHigh, settings.rsiMid, settings.rsiLow, settings.adxMin]);
@@ -371,7 +386,7 @@ export default function ProChart({
       while (lo <= hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
       return best < 0 ? null : { time: times[best], position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
     }).filter((m): m is NonNullable<typeof m> => m !== null).sort((a, b) => a.time - b.time);
-    (s.candles as ISeriesApi<"Candlestick">).setMarkers(snapped);
+    markersPlugin.current?.setMarkers(snapped);
     if (keepRange) {
       const added = Math.max(0, timeIndex.get(prevFirst) ?? 0);
       const range = { from: keepRange.from + added, to: keepRange.to + added };

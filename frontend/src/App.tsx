@@ -151,7 +151,7 @@ function AppShell() {
         {/* The window scrolls, not <main>. Other pages keep overflow-y-auto (wide tables without their own wrapper
             scroll inside <main>); the Copilot uses overflow-x-clip, which is not a scroll container, so its sticky tab
             bar sticks to the viewport (its own wide content scrolls in its own wrappers). */}
-        <main ref={mainRef} tabIndex={-1} className={`flex-1 ${page === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} p-3 md:p-6 max-w-6xl outline-none`}>
+        <main ref={mainRef} tabIndex={-1} className={`flex-1 ${page === "copilot" ? "overflow-x-clip" : "overflow-y-auto"} p-3 md:p-6 ${page === "options-builder" ? "max-w-none" : "max-w-6xl"} outline-none`}>
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>

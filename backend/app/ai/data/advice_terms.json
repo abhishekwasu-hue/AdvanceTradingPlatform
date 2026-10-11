@@ -1,0 +1,31 @@
+{
+  "_comment": "H-C1 c: words the AI may not use (app/ai/output_filter.py). Matched case-insensitively on word boundaries, in both languages whatever the answer language. A match right after a negation ('not a recommendation', 'never guaranteed') or right before one (शिफारस नाही) is allowed. Override the whole file with AI_ADVICE_TERMS_FILE.",
+  "guarantee": {
+    "en": ["guaranteed", "guarantee", "guarantees", "sure-shot", "sure shot", "risk-free", "risk free", "no-risk", "zero risk",
+           "can't lose", "cannot lose", "can not lose", "no-loss", "no loss trade", "assured return", "assured returns",
+           "assured profit", "certain profit", "100% profit", "100 percent profit", "will definitely", "definitely will",
+           "jackpot", "double your money"],
+    "mr": ["खात्रीशीर", "हमखास", "गॅरंटी", "गॅरंटीड", "हमी", "नक्की नफा", "निश्चित नफा", "जोखीममुक्त", "जोखीम नाही असा",
+           "शंभर टक्के नफा", "पैसे दुप्पट"]
+  },
+  "advice": {
+    "en": ["i recommend", "we recommend", "i would recommend", "my recommendation", "our recommendation", "recommended trade",
+           "recommended stock", "you should buy", "you should sell", "you must buy", "you must sell", "you should go long",
+           "you should go short", "buy now", "sell now", "best stock", "best trade", "top pick", "strong buy", "strong sell",
+           "multibagger", "don't miss this", "must buy"],
+    "mr": ["मी शिफारस करतो", "मी शिफारस करते", "आम्ही शिफारस करतो", "माझी शिफारस", "आत्ताच खरेदी करा", "आत्ताच विका",
+           "नक्की खरेदी करा", "हा शेअर घ्याच", "सर्वोत्तम शेअर", "उत्तम शेअर", "चुकवू नका"]
+  },
+  "negations": {
+    "before": ["not", "no", "never", "n't", "nor", "without", "isn't", "aren't", "nothing", "none", "nobody"],
+    "after": ["नाही", "नव्हे", "नसते", "नसतो"]
+  },
+  "action_verbs": {
+    "en": ["buy", "sell", "short", "go long", "go short"],
+    "mr": ["खरेदी", "विक्री", "विका", "घ्या"]
+  },
+  "framing": {
+    "en": "Educational illustration only - not investment advice or a recommendation to trade. Check it against your own plan and risk limits.",
+    "mr": "हे फक्त शिक्षणासाठी उदाहरण आहे - गुंतवणुकीचा सल्ला किंवा trade ची शिफारस नाही. तुमच्या plan आणि risk मर्यादांशी तपासून पाहा."
+  }
+}

@@ -35,6 +35,7 @@ from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
 from app.db.models import OrderRecord, Tenant, TradeRecord, User
+from app.execution import approval as approval_gate
 from app.execution.contract_execution import MARGIN_SAFETY, ContractExecutionError, contract_ltp, _is_upstox
 from app.execution.order_persistence import create_order, transition_order
 from app.execution.order_safety import wing_fill_complete
@@ -112,6 +113,11 @@ async def execute_structure(
 
     refusals = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                     broker_name=getattr(broker, "name", None) if broker is not None else None)
+    # Z3 / BT2: a structure is never proposed for approval (Phase 0), so under approval-only mode it is always refused.
+    gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=approval_gate.ORIGIN_AUTOMATIC,
+                                            approval_action_id=None)
+    if gate:
+        refusals.insert(0, gate)
     ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
     if ban:
         refusals.append(ban)

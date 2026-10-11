@@ -17,6 +17,7 @@ from app.db.models import Tenant, User
 from app.db.session import get_session
 from app.execution.order_persistence import get_order_by_idempotency_key
 from app.billing.service import meter
+from app.execution import approval
 from app.execution.signal_execution import execute_signal_for_user
 from app.secrets_store.envelope import ensure_tenant_key
 
@@ -136,6 +137,14 @@ async def tradingview_webhook(
         target1=payload.target1, target2=payload.target2, risk_reward=risk_reward,
         score=100, grade=SignalGrade.A1, reasons=["TradingView webhook alert"], timeframe_combo="webhook",
     )
+
+    if await approval.required(session, tenant.id):
+        # Z3 / BT2: approval-only - the alert becomes an ENTRY proposal; the PAPER order waits for Approve.
+        row = await approval.propose_entry(session, tenant.id, signal=signal, strategy_id=payload.strategy_id, source="tradingview",
+                                           idempotency_key=idempotency_key or f"tv:{signal.symbol}:{signal.timestamp.isoformat()}", user_id=user.id)
+        await meter(session, user.tenant_id, "webhook_event", 1, source="tradingview", metadata={"ai_action_id": row.id if row else None})
+        return WebhookExecutionResponse(executed=False, reasons=[f"Approval-only mode: entry proposal #{row.id} raised - approve it to place the PAPER order"
+                                                                 if row is not None else "Approval-only mode: this alert was already proposed"])
 
     result, order = await execute_signal_for_user(
         session, user, mode="PAPER", strategy_id=payload.strategy_id, signal=signal,

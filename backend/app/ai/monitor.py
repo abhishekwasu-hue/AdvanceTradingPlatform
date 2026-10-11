@@ -39,7 +39,7 @@ DAY_DRAWDOWN_PCT = 2.0
 ERROR_STREAK = 3       # below the worker's own auto-pause (5) so the human hears first
 STALE_POSITION_MINUTES = 120
 WIN_RATE_DRIFT = 0.25      # absolute drop vs the backtest's win rate, with >= 10 trades
-ACTIONS = ("PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY")
+ACTIONS = ("PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY", "ENTRY")   # ENTRY: Z3 approval-only entries
 OPEN_STATES = ("PROPOSED", "APPROVED")
 
 
@@ -172,8 +172,13 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
     return created
 
 
-async def expire_stale(session: AsyncSession, now: datetime) -> int:
-    rows = await session.scalars(select(AiActionRecord).where(AiActionRecord.status == "PROPOSED"))
+async def expire_stale(session: AsyncSession, now: datetime, *, tenant_id: Optional[int] = None) -> int:
+    """PROPOSED rows past their expiry -> EXPIRED. Z3: the worker runs this every cycle per organisation (entry
+    proposals expire in minutes); without `tenant_id` every organisation's rows are swept."""
+    query = select(AiActionRecord).where(AiActionRecord.status == "PROPOSED")
+    if tenant_id is not None:
+        query = query.where(AiActionRecord.tenant_id == tenant_id)
+    rows = await session.scalars(query)
     expired: List[AiActionRecord] = []
     for row in rows:
         if _utc(row.expires_at) <= now:
@@ -288,6 +293,10 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
     now = now or datetime.now(timezone.utc)
     if action.status != "APPROVED":
         raise ValueError(f"Action is {action.status}; only APPROVED actions execute")
+    if action.action == "ENTRY":
+        # Z3 / BT2: an approved entry proposal - re-quoted, then one PAPER order through the ordinary pipeline.
+        from app.execution.approval import execute_entry
+        return await execute_entry(session, action, user, price_lookup=price_lookup, now=now)
     try:
         if action.action == "PAUSE_DEPLOYMENT":
             dep = await session.get(StrategyDeploymentRecord, action.deployment_id)

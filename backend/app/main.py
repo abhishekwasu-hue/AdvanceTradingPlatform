@@ -403,9 +403,10 @@ async def paper_execute(
             return PaperExecuteResponse(signal=signal, executed=False, reasons=reasons)
 
     if user is not None:
+        # Z3 / BT2: a person pressing Paper-execute in the console is their own approval (origin "manual").
         result, order = await execute_signal_for_user(
             session, user, mode="PAPER", strategy_id=strategy_id, signal=signal,
-            idempotency_key=request.idempotency_key, risk_config=request.risk_config,
+            idempotency_key=request.idempotency_key, risk_config=request.risk_config, origin="manual",
         )
         return PaperExecuteResponse(
             signal=signal, executed=result.executed, reasons=result.reasons, order_id=order.id,

@@ -27,6 +27,7 @@ from typing import Dict, Awaitable, Callable, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.execution import approval as approval_policy
 from app.execution.products import product_for_trade
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
@@ -359,6 +360,8 @@ async def close_position(
         severity=NotificationSeverity.WARNING if trade.pnl is not None and trade.pnl < 0 else NotificationSeverity.INFO,
         user_id=user_id, related_trade_id=trade.id,
     )
+    # Z3: an "Exit now?" question still open on this position is void now (best effort, after the close is booked).
+    await approval_policy.retire_proposals_for_closed(session, trade, reason)
     return outcome
 
 
@@ -517,11 +520,17 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, families: Optional[set] = None,
+    exit_approval: Optional[Callable[[TradeRecord], bool]] = None,
 ) -> List[CloseOutcome]:
     """The worker's per-cycle sweep for one tenant: current price for every open position, close
     the ones whose stop/target has been crossed. `price_lookup(symbol, exchange)` is normally
     MarketDataService.get_ltp. A failure on one position (quote unavailable, exit order error) is
-    recorded and the sweep continues - the other positions still need watching."""
+    recorded and the sweep continues - the other positions still need watching.
+
+    Z3 / BT2 (`exit_approval`, None = unchanged): for a position it returns True for, reaching a *target* asks "Exit
+    now?" (an EXIT_POSITION proposal) instead of closing. Every protective exit - the stop, a premium floor/ceiling,
+    a time exit, a structure rule - still closes here at once, before and regardless of any proposal or snooze
+    (ADR-0004); `determine_exit_price` checks the stop first, so a pending question never shadows it."""
     open_trades = list(await session.scalars(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
@@ -573,6 +582,10 @@ async def monitor_open_positions(
         if hit is None:
             continue
         reason, exit_price = hit
+        if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):
+            await approval_policy.propose_exit(session, trade, reason, price)
+            outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"{reason}: waiting for \"Exit now?\" approval"]))
+            continue
         trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
         if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
             trade_broker = await broker_for_trade(session, trade)

@@ -19,6 +19,9 @@ What a whitelisted chat can do:
   authenticator only" (the decision by the operator; ADR-0006, Phase C3 step-up).
   PW5: a third one-time button, **Snooze 1h**, on its own row: not a decision - the proposal stays
   PROPOSED, is hidden for an hour (never past its expiry) and is sent again once, with fresh buttons.
+* Z3 / BT2: an ENTRY proposal (always PAPER) is decided over Telegram too, and with `approval_only_entries` on so is an
+  "Exit now?" on a PAPER position. `/exit <trade id>` closes a PAPER position at once (ADR-0004: an exit is never
+  held back); LIVE positions close on the web.
 
 Rate limit 20 messages a minute per chat; every handled update is metered (`telegram_inbound`).
 """
@@ -66,7 +69,7 @@ TELEGRAM_ACTIONS = ("PAUSE_DEPLOYMENT", "REDUCE_RISK", "REVIEW_STRATEGY")      #
 CALLBACK_PREFIX = "p:"
 SNOOZE_MINUTES = 60                 # PW5: the Telegram Snooze button (the app offers more choices)
 SNOOZE_LABEL = "1h"
-COMMANDS = ("/help", "/start", "/brief", "/positions", "/risk", "/news", "/levels", "/thesis", "/why")
+COMMANDS = ("/help", "/start", "/brief", "/positions", "/risk", "/news", "/levels", "/thesis", "/why", "/exit")
 _rate: Dict[Tuple[int, str], Deque[float]] = defaultdict(deque)
 
 
@@ -258,7 +261,16 @@ def _signature(tenant_id: int, action_id: int, nonce: str, decision: str) -> str
 
 
 async def telegram_allowed(session: AsyncSession, action: AiActionRecord) -> Tuple[bool, str]:
-    """PAPER deployments and the reduce/pause/review actions only."""
+    """PAPER deployments and the reduce/pause/review actions only. Z3 / BT2: also an ENTRY proposal (it always places a
+    PAPER order) and, with `approval_only_entries` on, an "Exit now?" on a PAPER position."""
+    if action.action == "ENTRY":
+        mode = str(json.loads(action.evidence_json or "{}").get("mode") or "")
+        return (True, "") if mode == "PAPER" else (False, "This entry proposal is decided on the web only.")
+    if action.action == "EXIT_POSITION" and action.trade_id is not None:
+        from app.execution import approval
+        trade = await session.get(TradeRecord, action.trade_id)
+        if trade is not None and trade.tenant_id == action.tenant_id and trade.mode == "PAPER" and await approval.flag_on(session, action.tenant_id):
+            return True, ""
     if action.action not in TELEGRAM_ACTIONS:
         return False, "This kind of proposal is decided on the web only (with your authenticator)."
     if action.deployment_id is None:
@@ -356,7 +368,9 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
     except ValueError as exc:
         return f"Could not decide: {exc}"
     if row.decision == "approve":
-        action = await monitor.execute(session, action, user, now=now)
+        from app.execution.approval import execution_sources
+        price_lookup, broker = await execution_sources(session, action)      # Z3: an entry is re-quoted, an exit priced
+        action = await monitor.execute(session, action, user, price_lookup=price_lookup, broker=broker, now=now)
     await write_audit_log(session, tenant.id, user.id, "telegram_decision", f"#{action.id} {action.action} {action.status} via chat {chat_id} by Telegram user {from_id}")
     await session.commit()
     return f"Proposal #{action.id} {action.action.replace('_', ' ').lower()}: {action.status}" + (f" - {action.result}" if action.result else "")
@@ -365,10 +379,11 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
 # --- commands --------------------------------------------------------------------------------------------
 def help_text(lang: str) -> str:
     return tr(lang,
-              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /help. Anything else is a question to the Copilot. "
-              "Read-only: nothing here places or changes an order. Buttons on proposals decide PAPER reduce/pause only.",
-              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /help. बाकी काहीही = Copilot ला प्रश्न. "
-              "फक्त वाचन: इथून कोणतीही order लागत/बदलत नाही. Proposal वरची buttons फक्त PAPER reduce/pause ठरवतात.")
+              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /exit <trade id> · /help. "
+              "Anything else is a question to the Copilot. Nothing here places an order; /exit closes a PAPER position now. "
+              "Buttons on proposals decide PAPER entries and exits and reduce/pause.",
+              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /exit <trade id> · /help. बाकी काहीही = Copilot ला प्रश्न. "
+              "इथून कोणतीही order लागत नाही; /exit PAPER position लगेच बंद करते. Proposal वरची buttons PAPER entries, exits आणि reduce/pause ठरवतात.")
 
 
 def _lang(text: str) -> str:
@@ -396,6 +411,31 @@ async def _why_text(session: AsyncSession, tenant_id: int, trade_id: int, lang: 
     else:
         parts.append(tr(lang, "still open; the worker watches the stop and targets.", "अजून open; worker stop आणि targets पाहतो आहे."))
     return "\n".join(parts)
+
+
+async def _exit_text(session: AsyncSession, tenant_id: int, user: User, arg: str) -> str:
+    """Z3 / BT2: "Exit now" from the chat - `/exit <trade id>` closes that PAPER position at once (the live price when a
+    broker session quotes it, else the last price seen). LIVE positions are closed on the web (authenticated session)."""
+    from app.execution import approval
+    try:
+        trade_id = int(arg.lstrip("#"))
+    except ValueError:
+        return "Usage: /exit <trade id> - /positions lists them."
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None or trade.tenant_id != tenant_id:
+        return "No such position."
+    if trade.exit_time is not None:
+        return f"Position #{trade.id} is already closed."
+    if trade.mode != "PAPER":
+        return "LIVE positions are closed from the web app (Positions page), never over Telegram."
+    try:
+        outcomes = await approval.exit_now(session, trade, user, via="telegram")
+    except ValueError as exc:
+        return f"Could not exit #{trade.id}: {exc}"
+    closed = [o for o in outcomes if o.closed]
+    if not closed:
+        return f"Position #{trade.id} not closed: {'; '.join(w for o in outcomes for w in o.warnings) or 'unknown'}"
+    return "\n".join(f"Closed #{o.trade_id} at {o.exit_price:,.2f}, P&L {o.pnl:+,.2f} (after charges)" for o in closed)
 
 
 async def _risk_text(session: AsyncSession, user: User, lang: str) -> str:
@@ -489,6 +529,8 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
             return await _why_text(session, tenant.id, int(arg), lang)
         except ValueError:
             return tr(lang, "Usage: /why <trade id>", "वापर: /why <trade id>")
+    if cmd == "/exit":
+        return await _exit_text(session, tenant.id, user, arg)
     if cmd.startswith("/"):
         return help_text(lang)
     from app.ai.routes import copilot_answer

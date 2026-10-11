@@ -219,6 +219,9 @@ class DeploymentCreateRequest(ContractRulesRequest):
     # `market_protection_pct` past the signal price (0.5% when omitted). PAPER fills are unaffected.
     order_style: Literal["MARKET", "PROTECTED_LIMIT"] = "MARKET"
     market_protection_pct: Optional[float] = Field(default=None, ge=0.05, le=5.0)
+    # Z3 / BT2: APPROVAL - every entry signal becomes a proposal and only an approved one places a PAPER order. Needs the
+    # `approval_only_entries` flag; with the flag on every deployment is approval-only whatever this says.
+    entry_mode: Literal["AUTO", "APPROVAL"] = "AUTO"
 
 
 class ContractPreviewRequest(ContractRulesRequest):
@@ -272,6 +275,7 @@ class DeploymentResponse(BaseModel):
     holding: str = "INTRADAY"
     order_style: str = "MARKET"
     market_protection_pct: Optional[float] = None
+    entry_mode: str = "AUTO"
 
     @classmethod
     def from_record(cls, record: StrategyDeploymentRecord, open_positions: int = 0) -> "DeploymentResponse":
@@ -297,6 +301,7 @@ class DeploymentResponse(BaseModel):
             oi_gates=[g for g in (getattr(record, "oi_gates", None) or "").split(",") if g] or None,
             holding=getattr(record, "holding", None) or "INTRADAY",
             order_style=getattr(record, "order_style", None) or "MARKET", market_protection_pct=getattr(record, "market_protection_pct", None),
+            entry_mode=getattr(record, "entry_mode", None) or "AUTO",
         )
 
 
@@ -409,6 +414,10 @@ async def create_deployment(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     _check_holding(request, strategy)
+    if request.entry_mode == "APPROVAL":
+        from app.execution import approval
+        if not await approval.flag_on(session, user.tenant_id):
+            raise HTTPException(status_code=400, detail="Approval-only entries are not enabled on this platform (flag approval_only_entries)")
 
     # Phase AS: a swing deployment reads daily candles (checked by _check_holding); the intraday
     # base-timeframe rules below are for everything else.
@@ -506,6 +515,7 @@ async def create_deployment(
         oi_gates=",".join(_oi_gates(request)) or None,
         holding=request.holding,
         order_style=request.order_style, market_protection_pct=request.market_protection_pct,
+        entry_mode=request.entry_mode,
     )
     session.add(record)
     try:

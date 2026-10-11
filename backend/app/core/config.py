@@ -442,3 +442,24 @@ OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes
 # included). The flag is off by default, so the cap does nothing until the operator turns the gate on.
 BETA_COHORT_CAP = _bounded_int("BETA_COHORT_CAP", 500, 1, 1_000_000)
+
+
+def _bounded_float(name: str, default: float, low: float, high: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if low <= value <= high else default
+
+
+# Z3 / BT2 (beta spec, Phase 0): approval-only entries (flag `approval_only_entries`, off by default). An entry proposal
+# expires after APPROVAL_ENTRY_TTL_MINUTES; an "Exit now?" proposal (a target reached) after APPROVAL_EXIT_TTL_MINUTES.
+# On Approve the entry is re-quoted at the current price: a move from the proposal price beyond
+# APPROVAL_REQUOTE_MAX_DRIFT_PCT (percent of the proposal price; 0 = no percent limit) or beyond
+# APPROVAL_REQUOTE_MAX_DRIFT_TICKS (exchange ticks; 0 = no tick limit) is refused - whichever limit is stricter wins - and
+# the proposal is re-issued at the new price, at most APPROVAL_MAX_REQUOTES times, then it expires.
+APPROVAL_ENTRY_TTL_MINUTES = _bounded_int("APPROVAL_ENTRY_TTL_MINUTES", 15, 1, 24 * 60)
+APPROVAL_EXIT_TTL_MINUTES = _bounded_int("APPROVAL_EXIT_TTL_MINUTES", 30, 1, 24 * 60)
+APPROVAL_REQUOTE_MAX_DRIFT_PCT = _bounded_float("APPROVAL_REQUOTE_MAX_DRIFT_PCT", 0.5, 0.0, 20.0)
+APPROVAL_REQUOTE_MAX_DRIFT_TICKS = _bounded_int("APPROVAL_REQUOTE_MAX_DRIFT_TICKS", 0, 0, 100_000)
+APPROVAL_MAX_REQUOTES = _bounded_int("APPROVAL_MAX_REQUOTES", 2, 0, 10)

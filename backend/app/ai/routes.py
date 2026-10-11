@@ -644,13 +644,9 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
         row = await monitor.decide(session, row, user, approve=True, note=body.note)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    price_lookup = broker = None
-    if row.action == "EXIT_POSITION":
-        from app.ai.worker_bridge import price_lookup_for_tenant
-        from app.trading.position_monitor import broker_for_trade
-        price_lookup = await price_lookup_for_tenant(session, user.tenant_id)
-        trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
-        broker = await broker_for_trade(session, trade)
+    # An exit needs a live price (and, LIVE, the trade's broker); Z3: an entry is re-quoted at the live price.
+    from app.execution.approval import execution_sources
+    price_lookup, broker = await execution_sources(session, row)
     row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
     await _sync_telegram(session, row)
     return monitor.as_dict(row)

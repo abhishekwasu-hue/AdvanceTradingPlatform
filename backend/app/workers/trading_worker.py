@@ -66,6 +66,7 @@ from app.instruments.master import sync_upstox
 from app.backtest import chain_recorder
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.instruments.spreads import parse_custom_legs, resolve_structure
+from app.execution import approval
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
@@ -207,7 +208,6 @@ class TradingWorker:
         # agent wants classified even without a filter (those with open positions).
         self._regimes: Dict[int, str] = {}
         self._regime_wanted: set = set()
-        self._last_ai_expiry_day = None
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
@@ -753,7 +753,10 @@ class TradingWorker:
             report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user.id, families=due_square_off)
         monitored = open_families - due_square_off
         if monitored:
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored)
+            # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
+            exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
+            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
+                                                    exit_approval=exit_approval)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
@@ -837,9 +840,8 @@ class TradingWorker:
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
-            if self._last_ai_expiry_day != now.astimezone(IST).date():
-                await ai_monitor.expire_stale(session, now)
-                self._last_ai_expiry_day = now.astimezone(IST).date()
+            # Z3: every cycle, this organisation's rows only - an entry proposal lives for minutes, not a day.
+            await ai_monitor.expire_stale(session, now, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
@@ -950,6 +952,10 @@ class TradingWorker:
                     await session.commit()
                     return False
 
+        # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
+        if await approval.required(session, dep.tenant_id, dep):
+            return await self._propose_entry(session, dep, signal, signal_ts, now)
+
         contract = None
         rules = ContractRules.from_deployment(dep)
         structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
@@ -1000,6 +1006,31 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
         return result.executed
+
+    async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime) -> bool:
+        """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
+        Phase 0 proposes the underlying (cash) only: a LIVE deployment places nothing through ATP, and option / future /
+        structure deployments are not proposed yet - each says so on the deployment instead."""
+        skip = None
+        if dep.mode == ExecutionMode.LIVE.value:
+            skip = "Approval-only (Phase 0): ATP places no LIVE entry - deploy in PAPER to get entry proposals"
+        elif ContractRules.from_deployment(dep).derived or (dep.option_strategy or "SINGLE") != "SINGLE":
+            skip = "Approval-only (Phase 0): option / future deployments are not proposed yet - only the underlying is"
+        dep.last_signal_at = signal_ts                      # this signal bar is handled either way
+        dep.consecutive_failures = 0
+        if skip is not None:
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {skip}"
+            await session.commit()
+            return False
+        row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
+                                           idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
+                                           requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
+                                           user_id=dep.created_by, now=now)
+        dep.last_error = (f"Waiting for approval: entry proposal #{row.id}" if row is not None
+                          else f"Signal at {signal_ts.isoformat()} not proposed: an earlier entry proposal of this deployment is still open")
+        await session.commit()
+        logger.info("Deployment %s signal %s -> entry proposal %s", dep.id, signal.direction.value, row.id if row is not None else "-")
+        return False
 
     async def _evaluate_structure(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,

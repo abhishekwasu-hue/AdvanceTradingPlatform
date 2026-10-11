@@ -2,7 +2,7 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,6 +302,40 @@ async def mark_price(
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)
+
+
+class ExitNowRequest(BaseModel):
+    """Z3 / BT2: the price to book a PAPER exit at when no broker session can quote the position (else ignored)."""
+    price: Optional[float] = Field(default=None, gt=0)
+
+
+class ExitNowResponse(BaseModel):
+    closed: List[MarkPriceResponse]
+    warnings: List[str] = []
+
+
+@router.post("/positions/{trade_id}/exit-now", response_model=ExitNowResponse)
+async def exit_now(
+    trade_id: int, request: ExitNowRequest, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+) -> ExitNowResponse:
+    """Z3 / BT2 "Exit now": close this position at once, whatever proposal is pending or snoozed (ADR-0004 - an exit is
+    never held back). PAPER books it at the live price (else the price given, else the last price seen); LIVE squares
+    off at the broker the trade went through. A leg of a structure closes the whole structure."""
+    from app.execution import approval
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None or trade.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Unknown position")
+    if trade.exit_time is not None:
+        raise HTTPException(status_code=409, detail="Position is already closed")
+    try:
+        outcomes = await approval.exit_now(session, trade, user, price=request.price, via="web")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    closed = [MarkPriceResponse(closed=True, exit_reason=o.exit_reason, exit_price=o.exit_price, pnl=o.pnl) for o in outcomes if o.closed]
+    warnings = [w for o in outcomes for w in o.warnings]
+    if not closed:
+        raise HTTPException(status_code=409, detail="; ".join(warnings) or "Position could not be closed")
+    return ExitNowResponse(closed=closed, warnings=warnings)
 
 
 class JournalBody(BaseModel):

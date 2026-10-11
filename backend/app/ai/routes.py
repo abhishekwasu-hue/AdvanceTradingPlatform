@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import evidence
+from app.ai.rate_limit import ai_rate_limit
 from app.ai import advisor, briefing, coach, copilot, generator, market_study, strategist, global_cues, interview, knowledge, market_memory, monitor, settings as ai_settings, thesis
 from app.ai import compliance_terms as terms
 from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
@@ -27,7 +29,7 @@ from app.risk_engine.routes import get_tenant_risk_config
 from app.strategy_engine.declarative import DeclarativeStrategy
 from app.platform.controls import flag_enabled, require_flag
 
-router = APIRouter(prefix="/api/ai", tags=["ai"])
+router = APIRouter(prefix="/api/ai", tags=["ai"], dependencies=[Depends(ai_rate_limit)])      # H-C1 b
 
 
 class ProviderBody(BaseModel):
@@ -51,10 +53,14 @@ class GenerateBody(BaseModel):
 
 class DraftBacktestBody(BaseModel):
     symbol: str = Field(min_length=1, max_length=50)
+    exchange: str = Field(default="NSE", max_length=10)
     base_timeframe: str = Field(default="1min", max_length=10)
-    candles: List[OHLCVBar] = Field(min_length=30)
+    # H-C1 a: omitted = fetched by the server (the only evidence that can approve); posted = a sample run.
+    candles: Optional[List[OHLCVBar]] = Field(default=None, min_length=30)
+    lookback_days: int = Field(default=30, ge=1, le=400)
+    broker: Optional[str] = Field(default=None, max_length=20)
     risk_config: Optional[RiskConfig] = None
-    data_source: str = Field(default="uploaded", max_length=30)
+    data_source: str = Field(default="uploaded", max_length=30, description="ignored for posted candles (recorded as sample)")
 
 
 class ApproveBody(BaseModel):
@@ -218,12 +224,17 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     strategy = DeclarativeStrategy(f"ai_draft_{draft.id}", config)
     risk = body.risk_config or await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
-    result = run_backtest(copy.copy(strategy), bars_to_dataframe(body.candles), body.symbol.upper(), body.base_timeframe, risk)
+    if body.candles:
+        df, source = bars_to_dataframe(body.candles), evidence.client_source(body.data_source)
+    else:
+        df, source = await evidence.server_frame(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
+                                                 broker=body.broker, lookback_days=body.lookback_days)
+    result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
     run = BacktestRunRecord(tenant_id=user.tenant_id, user_id=user.id, strategy_id=f"ai_draft_{draft.id}", symbol=body.symbol.upper(),
-                            base_timeframe=body.base_timeframe, params_json=None, exit_rules=result.exit_rules, data_source=body.data_source,
-                            bars=len(body.candles), data_from=body.candles[0].timestamp, data_to=body.candles[-1].timestamp,
+                            base_timeframe=body.base_timeframe, params_json=None, exit_rules=result.exit_rules, data_source=source,
+                            bars=len(df), data_from=df.index[0].to_pydatetime(), data_to=df.index[-1].to_pydatetime(),
                             engine_version=ENGINE_VERSION, metrics_json=json.dumps(headline, default=str))
     session.add(run)
     await session.flush()
@@ -239,6 +250,9 @@ async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(r
                         _ack: None = Depends(ai_acknowledged)) -> dict:
     draft = await _draft(session, draft_id, user)
     tenant = await _tenant(session, user)
+    run = await session.get(BacktestRunRecord, draft.backtest_run_id) if draft.backtest_run_id else None
+    if run is not None:                       # no run at all: the generator's own "backtest first" refusal below
+        evidence.require_server(run.data_source, "Approving an AI draft")   # H-C1 a
     try:
         record = await generator.approve(session, draft, user, tenant, name=body.name, accept_risk=body.accept_risk)
     except generator.GenerationError as exc:
@@ -264,8 +278,13 @@ class InterviewStartBody(BaseModel):
 class InterviewPlanBody(BaseModel):
     answers: interview.InterviewAnswers
     base_timeframe: str = Field(default="5min", max_length=10)
-    candles: List[OHLCVBar] = Field(min_length=interview.MIN_BARS, max_length=20_000)
-    data_source: str = Field(default="sample", max_length=30)
+    # H-C1 a: omitted = fetched by the server; posted = a sample plan (its options cannot be deployed).
+    candles: Optional[List[OHLCVBar]] = Field(default=None, min_length=interview.MIN_BARS, max_length=20_000)
+    data_source: str = Field(default="sample", max_length=30, description="ignored for posted candles (recorded as sample)")
+    symbol: Optional[str] = Field(default=None, max_length=50, description="server fetch: defaults to the interview's symbol")
+    exchange: str = Field(default="NSE", max_length=10)
+    broker: Optional[str] = Field(default=None, max_length=20)
+    lookback_days: Optional[int] = Field(default=None, ge=1, le=400, description="server fetch window; None = 30 days")
     # Phase AQ: None = the preferences saved in the trader's profile.
     preferences: Optional[advisor.Preferences] = None
 
@@ -298,21 +317,31 @@ async def interview_start(body: InterviewStartBody, user: User = Depends(require
     return out
 
 
-def _df_for(body: InterviewPlanBody):
+def _check_timeframe(body: InterviewPlanBody) -> None:
     if interview.timeframe_minutes(body.base_timeframe) is None or body.base_timeframe == "day":
         raise HTTPException(status_code=400, detail=f"Use intraday candles for the interview, not {body.base_timeframe!r}")
-    return interview.frame_from_candles(body.candles[-interview.MAX_BARS:])
+
+
+async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
+    """(frame, data_source): posted candles are a sample; otherwise the server fetches them (H-C1 a)."""
+    _check_timeframe(body)
+    if body.candles:
+        return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
+    symbol = body.symbol or body.answers.symbol
+    df, source = await evidence.server_frame(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
+                                             lookback_days=body.lookback_days or 30)
+    return df.tail(interview.MAX_BARS), source
 
 
 async def _options(session: AsyncSession, user: User, answers: interview.InterviewAnswers, prefs: advisor.Preferences,
                    body: InterviewPlanBody) -> dict:
     from app.platform.controls import risk_ceilings
-    df = _df_for(body)
+    df, data_source = await _df_for(session, user, body)
     ceilings = await risk_ceilings(session)
     memory = await market_memory.latest(session, user.tenant_id)   # Phase AR: background for the plan
     # The evidence step walks strategies bar by bar (seconds of CPU): off the event loop.
     result = await run_in_threadpool(advisor.build_options, answers, prefs, df, body.base_timeframe, ceilings=ceilings,
-                                     data_source=body.data_source, memory=memory)
+                                     data_source=data_source, memory=memory)
     await advisor.save_profile(session, user, answers, advisor.Preferences.model_validate(result["preferences"]))
     # P0.8 / A3: each option's deployment is held on the server; "Deploy in PAPER" takes the candidate id and the
     # trader's risk acceptance, never the browser's copy of the plan.
@@ -325,7 +354,7 @@ async def _options(session: AsyncSession, user: User, answers: interview.Intervi
                                 name=str(pick.get("name") or option["deployment"].get("strategy_id") or "interview plan")[:120],
                                 strategy_id=option["deployment"].get("strategy_id"), config_json=None,
                                 metrics_json=json.dumps({"evidence": pick.get("evidence"), "regime_fit": pick.get("regime_fit"), "score": pick.get("score"),
-                                                         "option": option.get("option"), "data_source": body.data_source}, default=str),
+                                                         "option": option.get("option"), "data_source": data_source}, default=str),
                                 deployment_json=json.dumps(option["deployment"], default=str), risk_json=json.dumps(option.get("risk_config") or {}, default=str),
                                 expires_at=now + CANDIDATE_TTL, created_at=now)
         session.add(row)
@@ -372,8 +401,9 @@ async def interview_deploy(body: CandidateDeployBody, user: User = Depends(requi
     await require_flag(session, "ai_copilot", user.tenant_id)
     row = await _candidate(session, body.candidate_id, user, "interview")
     metrics = json.loads(row.metrics_json or "{}")
-    evidence = (metrics.get("evidence") or {})
-    if not evidence.get("tested") or int(evidence.get("total_trades") or 0) <= 0:
+    evidence.require_server(metrics.get("data_source"), "Deploying an interview option")      # H-C1 a
+    tested = (metrics.get("evidence") or {})
+    if not tested.get("tested") or int(tested.get("total_trades") or 0) <= 0:
         raise HTTPException(status_code=400, detail="This option has no backtest evidence with trades on the server - run the plan on more candles first")
     risk = json.loads(row.risk_json or "{}")
     if not body.accept_risk:
@@ -395,7 +425,7 @@ async def interview_plan(body: InterviewPlanBody, user: User = Depends(require_a
     ranked by data, never recommended; no match %): market read, template with its evidence, risk settings, R:R,
     contract and a PAPER deployment - shown, never applied. The answers are remembered in the trader profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    _df_for(body)
+    _check_timeframe(body)
     prefs = body.preferences
     if prefs is None:
         _, prefs = await advisor.load_profile(session, user)
@@ -410,7 +440,7 @@ async def interview_refine(body: InterviewRefineBody, user: User = Depends(requi
     bad = [c for c in body.feedback if c not in advisor.FEEDBACK_CODES]
     if bad:
         raise HTTPException(status_code=400, detail=f"Unknown feedback {bad}; valid: {list(advisor.FEEDBACK_CODES)}")
-    _df_for(body)
+    _check_timeframe(body)
     prefs = body.preferences
     if prefs is None:
         _, prefs = await advisor.load_profile(session, user)
@@ -747,7 +777,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
         await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"AI answer not used ({why}); answered from the rules")
         await session.commit()
         if text:
-            out.update(answer=text, source="ai")
+            out.update(answer=text, source="ai", numbers=copilot.number_sources(text, facts, message))      # H-C1 d
         else:
             out["note"] = f"AI answer not used ({why}); answered from the rules"
         from app.ai import metering

@@ -154,8 +154,6 @@ class ZoneSettings(BaseModel):
     # --- unfilled gaps (mtf_pullback_strategy.find_overnight_gaps) --------------------------------------------------------
     gap_min_pct: float = Field(default=0.30, ge=0)
     session_timezone: str = "Asia/Kolkata"                   # tz-aware timestamps are read in this zone to find the session
-    session_open: str = Field(default="09:15", pattern=r"^\d{2}:\d{2}$")    # the job's bars are bucketed from the open
-    session_close: str = Field(default="15:30", pattern=r"^\d{2}:\d{2}$")   # a last bucket ending at the close is complete
     # --- order-block retest (signals.find_order_block / is_retesting_order_block) ----------------------------------------
     ob_impulse_lookforward: int = Field(default=5, ge=1, le=200)
     ob_impulse_min_move_pct: float = Field(default=0.3, ge=0)
@@ -182,6 +180,8 @@ class ZoneSettings(BaseModel):
     memory_max_distance_pct: float = Field(default=15.0, ge=0)
     memory_max_levels: int = Field(default=12, ge=1, le=500)
     memory_enabled: bool = True                              # Trade level_memory_enabled (default on)
+    memory_families: List[str] = Field(default_factory=lambda: ["DYNAMIC_SR"])  # remembered line families (Trade: dynamic S/R
+    #                                                          only); add "SR" to remember classical S/R too
     # --- zone lifecycle (ATP rule, Z7a-2; Trade has no lifecycle - defaults borrow sr_levels_v3's break rule) -------------
     flip_confirm_closes: int = Field(default=2, ge=1, le=50)       # closes beyond the far edge in a row = closed through and held
     flip_buffer_pct: float = Field(default=0.10, ge=0, le=10)      # a close counts as beyond when this % past the edge
@@ -190,6 +190,9 @@ class ZoneSettings(BaseModel):
     max_events_kept: int = Field(default=50, ge=0, le=1000)        # lifecycle events stored per zone (the most recent ones)
     # --- storage job (Z7a-2): history read from the lake per run --------------------------------------------------------
     history_days: int = Field(default=365, ge=5, le=3650)    # S/R, order blocks, demand / supply, gaps (Trade: one year)
+    max_bars_per_frame: int = Field(default=20000, ge=100, le=200000)   # the job reads at most this many bars per frame
+    warmup_bars: int = Field(default=50, ge=0, le=5000)      # stored zones formed in a frame's first bars are dropped (the
+    #                                                          window start moves every night; an edge zone would flicker)
     recent_days_by_tf: Dict[str, int] = Field(default_factory=lambda: {"1m": 5, "5m": 20, "15m": 180, "30m": 180, "1h": 180})
     # --- scored multi-timeframe levels (sr_levels_v3) ---------------------------------------------------------------------
     sr_v3: SRV3Settings = Field(default_factory=SRV3Settings)
@@ -233,6 +236,9 @@ class ZoneSettings(BaseModel):
             raise ValueError("avg_min_periods must not exceed avg_window")
         if self.memory_tol_min_pct > self.memory_tol_max_pct or self.sr_v3.tol_min_pct > self.sr_v3.tol_max_pct:
             raise ValueError("a tolerance minimum must not exceed its maximum")
+        bad_fam = [f for f in self.memory_families if f not in ("SR", "DYNAMIC_SR")]
+        if bad_fam:
+            raise ValueError(f"memory_families: unknown {bad_fam}; each one of SR, DYNAMIC_SR")
         bad_recent = [tf for tf, d in self.recent_days_by_tf.items() if tf not in ATP_TIMEFRAMES or not 1 <= int(d) <= 3650]
         if bad_recent:
             raise ValueError(f"recent_days_by_tf: unknown timeframe or days outside 1..3650 for {bad_recent}")

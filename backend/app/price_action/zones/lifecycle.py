@@ -11,8 +11,11 @@ Trade kills a zone (FILLED) the first time price comes back into it. ATP keeps i
   * the zone acts on one side: SUPPORT (price above it) or RESISTANCE (price below). It starts on its origin side -
     demand / bullish order block / up gap = support, supply / bearish order block / down gap = resistance, a line level
     (S/R, dynamic S/R) = by the price when it was first stored;
-  * TOUCH: a bar overlaps the zone band coming from outside (one per visit - the touch count). GAP_THROUGH: no overlap,
-    but price jumped from the previous close to this open across a band edge ("tested by gap");
+  * TOUCH: a bar overlaps the zone band coming from outside (one per visit - the touch count). The first tracked bar
+    (the one after confirmation) counts as a TOUCH when it overlaps, even if the confirmation bar itself was inside the
+    band - as Trade's first-touch scan would (parity note: Trade starts that scan one bar after FORMATION, so it can also
+    fire before confirmation; the lifecycle never does). GAP_THROUGH: no bar overlapped, the previous bar was outside,
+    and price jumped from its close to this open across a band edge ("tested by gap");
   * FLIP: `flip_confirm_closes` closes in a row beyond the far edge (below a support, above a resistance) by more than
     `flip_buffer_pct` % - the zone now acts on the other side;
   * STRUCTURAL_BREAK: a close beyond the structural swing beyond the zone by more than `structure_buffer_pct` % - for a
@@ -122,6 +125,7 @@ class ZoneTracker:
     last_event: Optional[Dict[str, Any]] = None
     invalidated_at: Optional[str] = None
     last_bar_at: Optional[str] = None           # the last bar processed (tracking resumes after it)
+    unseen: List[Dict[str, str]] = field(default_factory=list)   # stretches with no bars when resuming (never skipped silently)
     events: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -219,6 +223,9 @@ def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settin
     first = 0 if after is None else int(np.searchsorted(bars.ns, _align(after, ts, s.session_timezone).value, side="right"))
     if first >= n:
         return tracker
+    if first == 0 and tracker.last_bar_at is not None and _align(tracker.last_bar_at, ts, s.session_timezone) < ts.iloc[0]:
+        # the frame starts after the last bar this tracker saw: bars in between were never read - record the stretch
+        tracker.unseen = (tracker.unseen + [{"after": tracker.last_bar_at, "resumed_at": _iso(ts.iloc[0])}])[-10:]
     o, h, low, c = bars.open, bars.high, bars.low, bars.close
     order = s.structure_swing_order
     sw, confirmed_at = bars.swings, bars.confirmed_at

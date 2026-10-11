@@ -38,8 +38,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.execution.ops_throttle import OpsThrottle
+from app.compliance.static_ip import live_entry_problem
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
-from app.cache.client import cache_release_lock, cache_renew_lock, cache_try_lock
+from app.cache.client import cache_lock_holder, cache_release_lock, cache_renew_lock, cache_try_lock
 from app.core import config as app_config
 from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
@@ -51,7 +53,9 @@ from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
 from app.ai import thesis as thesis_module
+from app.brokers import login_reminder
 from app.workers import eod_summary
+from app.workers.redis_guard import RedisGuard
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
@@ -64,7 +68,7 @@ from app.instruments.contracts import ContractResolutionError, ContractRules, re
 from app.instruments.spreads import parse_custom_legs, resolve_structure
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
-from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, session_family
+from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
@@ -111,6 +115,11 @@ class CycleReport:
     # P0.1 / S2: Redis was unreachable, so this cycle ran without the replica lock (LIVE entries paused
     # where a second replica is possible).
     lock_degraded: bool = False
+    # H-1: the lock vanished mid-cycle (Redis eviction) or another replica took it - no new entries for the rest of the
+    # cycle; `lock_aborted` when another holder has it and this worker stopped the cycle there.
+    lock_lost: bool = False
+    lock_aborted: bool = False
+    redis_memory_ratio: Optional[float] = None
     retention: Optional[RetentionReport] = None
     chain_rows_recorded: int = 0   # Phase W
     billing: Optional[Dict[str, int]] = None
@@ -122,6 +131,8 @@ class CycleReport:
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
+    oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
@@ -167,7 +178,9 @@ class TradingWorker:
         # a single dev/test replica may trade LIVE without Redis as before.
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
+        self._lock_lost = False
         self._lock_ttl = max(cycle_seconds * 2, 30)
+        self.redis_guard = RedisGuard()
         self.market_data_factory = market_data_factory
         self.worker_name = worker_name
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
@@ -183,6 +196,7 @@ class TradingWorker:
         # Phase AX: IST date of the last end-of-day summary (one per organisation per day).
         self._last_eod_summary_day = None
         self._last_thesis_report_day = None
+        self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -195,6 +209,7 @@ class TradingWorker:
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
+        self._ops: Dict[Tuple[int, str], OpsThrottle] = {}
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
@@ -204,6 +219,7 @@ class TradingWorker:
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
         self._last_memory: Dict[int, datetime] = {}
+        self._last_oi_slot: Dict[str, datetime] = {}      # OI Banner O2: underlying -> last slot attempted
         self.max_seconds_per_tenant = (
             max_seconds_per_tenant if max_seconds_per_tenant is not None else cycle_seconds * MAX_TENANT_SHARE_OF_CYCLE
         )
@@ -249,6 +265,7 @@ class TradingWorker:
         if self._lock_degraded != (not reachable):
             logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
         self._lock_degraded = not reachable
+        self._lock_lost = False
 
         try:
             async with self.session_factory() as session:
@@ -268,10 +285,16 @@ class TradingWorker:
                     await self._process_tenants(session, now, report)
                     report.stale_skips = self._stale_skips
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
-                    if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
-                        logger.warning("Replica lock could not be renewed - another replica may now hold it")
+                    if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
+                        return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
                 else:
                     logger.debug("Market closed: %s", reason)
+                # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
+                try:
+                    report.redis_memory_ratio = await self.redis_guard.check_memory(session)
+                except Exception as exc:  # noqa: BLE001 - a monitoring read never breaks trading
+                    logger.exception("Redis memory check failed")
+                    report.errors.append(f"redis memory check: {exc}")
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:
@@ -296,6 +319,12 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Market memory failed")
                         report.errors.append(f"market memory: {exc}")
+                # OI Banner O2: one OI snapshot per enabled underlying per slot while its venue is open.
+                try:
+                    report.oi_snapshots = await self._oi_banner(session, now)
+                except Exception as exc:  # noqa: BLE001 - reference data; never blocks trading
+                    logger.exception("OI banner collection failed")
+                    report.errors.append(f"oi banner: {exc}")
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)
@@ -306,6 +335,16 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
+                # D5 (IN-SEBI.login.daily): before the open, remind each organisation whose broker session will not last
+                # the day to log in. Read-only; once per IST day (the module also dedupes across restarts).
+                if self._last_login_reminder_day != ist_now.date() and login_reminder.in_window(now):
+                    self._last_login_reminder_day = ist_now.date()
+                    try:
+                        report.login_reminders = await login_reminder.send_reminders(session, now)
+                    except Exception as exc:  # noqa: BLE001 - a reminder must never break trading
+                        logger.exception("Login reminder failed")
+                        report.errors.append(f"login reminder: {exc}")
+                        await session.rollback()
                 # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
                 if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
                     self._last_thesis_report_day = ist_now.date()
@@ -378,6 +417,58 @@ class TradingWorker:
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
 
+    async def _first_usable_broker(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
+        """The tenant's first ACTIVE account with a usable session (read-only use), or None."""
+        await ensure_tenant_key(session, tenant_id)
+        user = await self._acting_user(session, tenant_id, [])
+        if user is None:
+            return None
+        for account in await list_accounts(session, tenant_id):
+            if account.status == "ACTIVE":
+                broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+                if broker is not None:
+                    return broker
+        return None
+
+    async def _oi_banner(self, session: AsyncSession, now: datetime) -> int:
+        """OI Banner O2: for every underlying some tenant enabled, one option-chain read per collector slot while its
+        venue is open, through the first of those tenants with a usable broker session. The rows are platform-wide
+        reference data; a slot already stored (by another replica or cycle) is skipped. Never places an order."""
+        from app.option_chain import oi_regime, snapshots as oi_snapshots
+        wanted: Dict[str, List[Tuple[int, str]]] = {}
+        for tenant_id, underlying, exchange in await oi_snapshots.enabled_underlyings(session):
+            wanted.setdefault(underlying, []).append((tenant_id, exchange))
+        if not wanted:
+            return 0
+        slot = oi_regime.slot_start(now.astimezone(IST), app_config.OI_BANNER_SLOT_MINUTES)
+        open_by_family: Dict[str, bool] = {}
+        stored = 0
+        for underlying, tenants in sorted(wanted.items()):
+            family = session_family(tenants[0][1])
+            if family not in open_by_family:
+                open_by_family[family] = (await market_session_status(session, now, tenants[0][1])).is_open
+            if not open_by_family[family] or self._last_oi_slot.get(underlying) == slot:
+                continue
+            self._last_oi_slot[underlying] = slot            # once per slot whether or not the read works
+            for tenant_id, _ in sorted(tenants):
+                # Its own session: a failed read is rolled back without touching the cycle's session.
+                async with self.session_factory() as own:
+                    with bind_log_context(tenant_id=tenant_id):
+                        try:
+                            broker = await self._first_usable_broker(own, tenant_id, now)
+                            if broker is None:
+                                continue
+                            expiries = await master.expiries(own, underlying, on_or_after=now.astimezone(IST).date())
+                            chain = await broker.get_option_chain(master.INDEX_SYMBOLS.get(underlying, underlying), expiries[0] if expiries else None)
+                            result = await oi_snapshots.collect(own, underlying, chain, now, source=broker.name)
+                            await own.commit()
+                            stored += 1 if result.status == "OK" else 0
+                            break
+                        except Exception as exc:  # noqa: BLE001 - try the next tenant's session
+                            await own.rollback()
+                            logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
+        return stored
+
     async def _market_memory(self, session: AsyncSession, now: datetime, broker_reads: bool = True) -> int:
         """Phase AR: snapshots for every tenant whose traders use the Copilot (a trader profile
         exists), through the tenant's first usable broker session; the global cues need no broker
@@ -439,6 +530,33 @@ class TradingWorker:
                     await session.rollback()
         return written
 
+    async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
+        """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
+
+        Renewed: carry on. Redis unreachable: the S2 degraded mode (LIVE entries paused where required). The key gone
+        (evicted at the memory cap): take it back, but no new entries for the rest of this cycle - a second replica
+        could have run in the gap - and exits continue. Held by someone else: stop, the holder trades. Both raise the
+        CRITICAL (app/workers/redis_guard.py)."""
+        if self._lock_degraded or await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
+            return True
+        holder, reachable = await cache_lock_holder(LOCK_KEY)
+        if not reachable:
+            logger.warning("Redis unreachable %s - the replica lock is off (LIVE entries paused where required)", where)
+            self._lock_degraded = report.lock_degraded = True
+            return True
+        if holder == self.holder_id:
+            return True   # the renewal call failed but the lock is still ours
+        retaken = False
+        if holder is None:
+            retaken, _ = await cache_try_lock(LOCK_KEY, self.holder_id, self._lock_ttl)
+            holder = None if retaken else (await cache_lock_holder(LOCK_KEY))[0]
+        self._lock_lost = report.lock_lost = True
+        await self.redis_guard.lock_lost(session, retaken=retaken, holder=holder, where=where)
+        if not retaken:
+            report.lock_aborted = True
+            return False
+        return True
+
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:
         deployments = list(await session.scalars(
             select(StrategyDeploymentRecord)
@@ -451,8 +569,8 @@ class TradingWorker:
 
         for tenant_id, tenant_deployments in by_tenant.items():
             # P0.1 / S2: the evaluation phase is the long one; keep the replica lock alive per tenant.
-            if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
-                logger.warning("Replica lock could not be renewed before tenant %s - another replica may now hold it", tenant_id)
+            if not await self._keep_lock(session, report, f"before tenant {tenant_id}"):
+                break   # H-1: another replica holds the lock now - it trades (and exits) the remaining tenants
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
@@ -592,6 +710,16 @@ class TradingWorker:
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
                 continue
+            if self._lock_lost:
+                dep.last_error = "Worker lock was lost this cycle (Redis eviction?) - no new entries until the next cycle; exits continue"
+                await session.commit()
+                continue
+            if dep.mode == ExecutionMode.LIVE.value:
+                ip_problem = await live_entry_problem(session, tenant_id, dep.broker_name)   # Part D4 (flag-gated)
+                if ip_problem:
+                    dep.last_error = ip_problem
+                    await session.commit()
+                    continue
             if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
                 dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
                 await session.commit()
@@ -914,7 +1042,12 @@ class TradingWorker:
         budget = self._budgets.get(key)
         if budget is None:
             budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
-        return RateLimitedBroker(adapter, budget)
+        ops = None
+        if app_config.OPS_THROTTLE_ENABLED:      # Part D2: one OPS throttle per (tenant, broker account), kept across cycles
+            ops = self._ops.get(key)
+            if ops is None:
+                ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
+        return RateLimitedBroker(adapter, budget, ops=ops)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

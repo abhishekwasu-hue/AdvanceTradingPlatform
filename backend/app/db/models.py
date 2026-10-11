@@ -1936,3 +1936,49 @@ class DataQualityEventRecord(Base):
     source: Mapped[str] = mapped_column(String(30), nullable=False)
     detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
     detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+# --- Screener addendum U1: NSE universe reference data (as-of) ------------------------------------------------------------
+class SecurityRecord(Base):
+    """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the
+    tradability layer and joins on ISIN/symbol. `last_seen_on` is the last equity-list file that carried it; a security
+    missing from today's file is not marked delisted on that alone (delisting comes from the exchange's own list)."""
+
+    __tablename__ = "securities"
+
+    isin: Mapped[str] = mapped_column(String(12), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    series: Mapped[str] = mapped_column(String(4), nullable=False)
+    listing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delisting_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    face_value: Mapped[float | None] = mapped_column(Money, nullable=True)
+    market_lot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exchanges: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")          # "NSE", "NSE,BSE"
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="ACTIVE")         # ACTIVE / SUSPENDED / DELISTED
+    is_sme: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_etf: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    underlying: Mapped[str | None] = mapped_column(String(100), nullable=True)                 # ETFs: the tracked index/asset
+    last_seen_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class SymbolHistoryRecord(Base):
+    """U1-a: which symbol an ISIN traded under, as half-open ranges [valid_from, valid_to); valid_to NULL = still current.
+    valid_from NULL = since before the first record we hold (never invented). A change closes the open range and opens
+    a new one; nothing is overwritten."""
+
+    __tablename__ = "symbol_history"
+    __table_args__ = (UniqueConstraint("isin", "symbol", "valid_from", name="uq_symbol_history_range"),
+                      Index("ix_symbol_history_symbol", "symbol", "valid_from"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -282,3 +282,30 @@ STOP_LIMIT_BAND_PCT: Optional[float] = _band_pct(os.environ.get("STOP_LIMIT_BAND
 # Multi-leg LIVE entries: a short leg is sent only after its wings filled IN FULL. Off = today's behaviour (any
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")
+
+
+# Screener addendum U1: NSE universe reference data (securities, symbol history, ...). Off until the operator has
+# recorded each file's terms in docs/DATA_SOURCES.md. The URLs are the exchange's published download files.
+UNIVERSE_SYNC_ENABLED = os.environ.get("UNIVERSE_SYNC_ENABLED", "false").lower() in ("1", "true", "yes")
+UNIVERSE_SYNC_HOUR_IST = int(os.environ.get("UNIVERSE_SYNC_HOUR_IST", "18") or 18)
+UNIVERSE_MIN_ROWS_RATIO = float(os.environ.get("UNIVERSE_MIN_ROWS_RATIO", "0.9") or 0.9)
+UNIVERSE_USER_AGENT = os.environ.get("UNIVERSE_USER_AGENT", "Mozilla/5.0 (compatible; ATP-reference-sync/1.0)")
+_UNIVERSE_FILE_URLS_DEFAULT = {
+    "equity_list": "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+    "sme_equity_list": "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv",
+    "etf_list": "https://nsearchives.nseindia.com/content/equities/eq_etfseclist.csv",
+    "symbol_changes": "https://nsearchives.nseindia.com/content/equities/symbolchange.csv",
+}
+
+
+def _universe_urls() -> dict:
+    import json
+    raw = os.environ.get("UNIVERSE_FILE_URLS", "").strip()
+    try:
+        extra = json.loads(raw) if raw else {}
+    except ValueError:
+        extra = {}
+    return {**_UNIVERSE_FILE_URLS_DEFAULT, **(extra if isinstance(extra, dict) else {})}
+
+
+UNIVERSE_FILE_URLS = _universe_urls()

@@ -72,9 +72,82 @@ proposal is refused with 409. Snooze never extends the expiry (PW5).
 | `APPROVAL_REQUOTE_MAX_DRIFT_TICKS` | 0 | Same limit in exchange ticks (0 = no tick limit). The stricter of the two wins |
 | `APPROVAL_MAX_REQUOTES` | 2 | Re-proposals after a refused approval, before the proposal simply expires |
 
+## Per-user PAPER account (Z3-b)
+
+This is behind the flag `paper_account`, which is **off by default**. While it is off, `/api/paper/*` answers 404,
+the card stays hidden and the Telegram commands say they are not enabled.
+
+**Scope: per user, not per organisation.** The beta spec asks for a "full PAPER account per user" and sends proposals
+to "that user's own Telegram". A team member's practice results are not the owner's.
+
+- Every read filters on both `tenant_id` and `user_id`.
+- A position belongs to the user it was entered for:
+  - the person who approved the entry proposal;
+  - the console user;
+  - for an organisation's automatic deployment, the worker's acting user.
+- The risk engine's daily budget stays organisation-wide. Strictest wins (ADR-0003).
+- In the beta every sign-up is its own organisation, so user scope and organisation scope coincide.
+- Isolation tests cover another member of the same organisation and another organisation
+  (`tests/test_z3b_paper_account.py`).
+
+**The account** (`GET /api/paper/account`):
+
+- **Starting capital.** `PAPER_STARTING_CAPITAL`, default 10 lakh. The user can change it within 10,000 to 10 crore
+  with `PUT /api/paper/account`.
+- **Balance** = start + net realised P&L. **Equity** = balance + the marked P&L of open positions.
+- **Realised P&L** comes as gross, charges and net. Charges are ATP's dated India cost model on each trade (a contract
+  note replaces the estimate).
+- **Counts**: wins/losses, sessions (IST days with a PAPER trade), and the largest drawdown of the closed-trade equity
+  curve.
+- **Open positions** and a **journal** of the last 50 closed trades.
+- **Would-have records** ("not taken"): entry proposals the user rejected, or that expired unanswered. They show their
+  levels; nothing was placed.
+- **Proposal counts**: approved, rejected, waiting, expired.
+- Nothing is stored except the starting capital and the pause. Everything else is summed from the trades, so the
+  account cannot drift from them.
+
+**New users start in PAPER.** The account is created on first use with the default capital. Deployments already
+default to PAPER, and the ladder's only open stage is PAPER.
+
+**PAPER-scope pause** (Trade `paper/pause.py`): `POST /api/paper/pause|resume`, or Telegram `/pause` and `/resume`.
+
+- It stops the user's **new PAPER entries** (refused in the order pipeline) and their **entry proposals** (not
+  raised; the deployment says why).
+- It never stops an exit. A test closes a paused user's position at its stop.
+- It never touches LIVE or another user.
+
+**Progression ladder card** (`GET /api/paper/ladder`, on the Positions page; P1 §1.4, Phase 0 = PAPER only):
+
+| Criterion | Setting | Default |
+|-----------|---------|---------|
+| Sessions with a PAPER trade, at least | `PAPER_LADDER_MIN_SESSIONS` | 20 |
+| Closed PAPER trades, at least | `PAPER_LADDER_MIN_TRADES` | 30 |
+| Largest drawdown, % of peak equity, at most | `PAPER_LADDER_MAX_DRAWDOWN_PCT` | 10 |
+| Discipline score | - | not measured until P1-e |
+
+The card shows each value against its threshold and the next stage, "LIVE (approval-only) · Not available in Phase 0".
+It states facts only: no advice wording, which a test checks, and no switch.
+
+**Telegram** (the existing bot, with the existing whitelist and approver mapping; `paper_account` flag):
+
+- `/status`: market, kill switch, your PAPER pause, approval-only on/off, open positions and waiting proposals. Each
+  line says NA on its own failure, as in the Trade bot.
+- `/pause [reason]` and `/resume`: your own PAPER-scope pause.
+- `/paper`: your account (balance, gross − charges = net, counts).
+- `/paper <symbol> long|short SL <price> T <price>`: the manual trigger.
+  - It is checked against the live price: on a long, the stop is below and the target above; on a short, the reverse.
+  - It shows the reward:risk, with a warning below 3 (the Trade bot's rule; parity cases are in the tests).
+  - It raises an ENTRY proposal with Approve / Reject buttons. Approve places the PAPER order (Z3-a).
+  - Unlike the Trade bot, it covers the underlying only and the target is required.
+
 ## Trade repo port map (folded into Z3)
 
 | Trade repo | ATP |
 |------------|-----|
 | `trade_monitor.py` / `position_stream_monitor.py`: lock-protected exit loop, SL / target / time exits, never blocked | Already in ATP as the trading worker (Redis replica lock, ADR-0010) plus `position_monitor.monitor_open_positions` (exits before entries, one bad quote never stops the sweep). Z3 adds the target-vs-protective split (`approval.is_protective`) on top, with no second loop. |
-| `paper/pause.py`, `paper/commands.py` (/status /positions /pause /resume), `paper/manual.py` (/paper), `paper/journal.py` (charges, net P&L, would-have), `paper/watch.py` (throttled updates) | Z3-b (stacked PR): the per-user PAPER account, ladder card and Telegram commands. |
+| `paper/pause.py` | `PaperAccountRecord.paused` + `paper.service.set_paused` / `paused_reason` (per user, in the database; checked in `entry_refusals` and before raising a proposal). |
+| `paper/commands.py` (/status /positions /pause /resume) | Telegram `/status`, `/pause`, `/resume` (`telegram_inbound.service._paper_command`); `/positions` already existed. |
+| `paper/manual.py` (/paper: `parse`, `side_errors`, `rr`, R:R warning) | `app/paper/manual.py` (`parse`, `side_errors`, `reward_risk`, `RR_WARN`) + `/paper` raising an ENTRY proposal. |
+| `paper/journal.py` (charges, gross/net P&L, would-have) | `paper.service.summary` (journal rows with gross, charges, net; `not_taken`). Charges come from ATP's dated cost model already stored on each trade. |
+| `paper/lots.py` (lot size from the instrument master, config fallback) | Already in ATP: F&O contracts are sized from the instrument master's lot size (`instruments.master` / `contracts`). Phase 0 approval-only proposes the underlying only. |
+| `paper/watch.py` (throttled P&L updates, "near SL/target" alerts) | Not ported in Z3: the app shows live P&L, and an exit sends its own notification. Throttled Telegram updates are left for a later item (Telegram volume per user). |

@@ -114,6 +114,10 @@ def test_a_run_on_server_bars_is_stored_and_reproducible(flag_on, monkeypatch):
     assert out.status_code == 200, out.text
     body = out.json()
     assert body["matched"] == ["UP"] and body["data_source"] == "broker:fake" and body["scanned"] == 3
+    funnel = body["funnel"]                                                                      # U5: the survivors after each stage
+    assert funnel["universe"] == 3 and funnel["with_data"] == 2
+    assert [s["survivors"] for s in funnel["stages"]] == [1, 1] and funnel["stages"][-1]["survivors"] == len(body["matched"])
+    assert funnel["stages"][0]["text"] == "close > SMA(close, 20)"
     assert {r["symbol"]: r["matched"] for r in body["results"]} == {"UP": True, "DOWN": False, "BROKEN": False}
     assert "broker said no" in next(r["reason"] for r in body["results"] if r["symbol"] == "BROKEN")
     assert all(a[2] == "day" for a in asked) and "recommendation" in body["disclaimer"]

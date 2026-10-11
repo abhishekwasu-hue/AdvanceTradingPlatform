@@ -20,6 +20,7 @@ PC वर हवं तर ओळी पुन्हा तयार करा: 
 | 0.2 | तुमचा SSH public key VPS ला जोडा (password login नको) | hPanel → VPS → Settings → SSH keys |
 | 0.3 | Domain असेल तर `A` record `atp.<domain>` → IP | registrar; नसेल तर तात्पुरतं IP वापरू (खाली) |
 | 0.4 | Hostinger चा VPS firewall (असेल तर) 22/80/443 उघडे | hPanel → VPS → Firewall |
+| 0.5 | Cloudflare R2 bucket `atp-backups` + bucket-scoped token (off-site backups) | Cloudflare → R2 (§5) |
 
 ## 1. Block 1 - bootstrap (root, एकदाच)
 
@@ -80,25 +81,41 @@ commit, containers, प्रत्येकाची memory, host RAM/disk/swap
 backup, off-site copy, public ports (फक्त 22/80/443 अपेक्षित), ufw, certificate, आणि **egress IP** (broker
 whitelisting साठी - §6).
 
-## 5. Backups
+## 5. Backups (H-2: Cloudflare R2)
 
 | काय | कसे | कुठे |
 |---|---|---|
 | रोज Postgres dump (encrypted, SHA-256) | compose `backup` service (24 h), retention 14 दिवस | volume `backups` |
 | WAL (PITR, ≤5 मिनिटे RPO) | Postgres `archive_command` | volume `wal_archive` |
-| Off-site copy (तासाने) | compose `offsite` (rclone): `copy` dumps, `sync` WAL | **आत्ता:** host वरचा `/var/backups/atp-offsite` (तात्पुरता); **provider निवडल्यावर:** `.env` मध्ये `OFFSITE_REMOTE=spaces:atp-backups` (कोणताही S3-compatible: `OFFSITE_S3_PROVIDER`, `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`) आणि block 2 पुन्हा |
+| Off-site copy (तासाने) | compose `offsite` (rclone): `copy` dumps, `sync` WAL | **Cloudflare R2** bucket `atp-backups` (`OFFSITE_REMOTE=offsite:atp-backups`) |
 
-> Local `/var/backups/atp-offsite` हा **खरा off-site नाही** (तोच disk). S3-compatible provider निवडेपर्यंत weekly
-> एकदा PC वर copy: `scp -r atp@<ip>:/var/backups/atp-offsite ./atp-backups-<date>` (OPEN_QUESTIONS H-2).
+**R2 एकदाच तयार करा (तुम्ही, Cloudflare dashboard मध्ये; खर्च: 10 GB + egress मोफत, $5 मर्यादेत):**
 
-**Restore test (आठवड्यातून एकदा, scratch database - production ला हात नाही):**
+1. Cloudflare → R2 → *Create bucket* `atp-backups` (location hint: Asia-Pacific). Public access **बंद**.
+2. R2 → *Manage API tokens* → *Create API token*: permission **Object Read & Write**, फक्त bucket `atp-backups`,
+   TTL नको. (Admin token नको - token ने bucket delete करता येऊ नये.)
+3. मिळालेले तीन: Access Key ID, Secret Access Key, endpoint `https://<account id>.r2.cloudflarestorage.com` →
+   **फक्त server वर** `nano /opt/atp/.env`: `OFFSITE_S3_ENDPOINT`, `OFFSITE_S3_ACCESS_KEY`, `OFFSITE_S3_SECRET_KEY`
+   (deploy block तोपर्यंत `CHANGE_ME` म्हणून थांबतो). Chat/GitHub मध्ये कधीही नाही.
+4. R2 → bucket → *Settings → Object lifecycle rules*: prefix `backups/`, 35 दिवसांनी delete (off-site copy कधी
+   delete करत नाही - हा नियम 10 GB मोफत मर्यादेत ठेवतो). `wal_archive/` ला नियम नको (sync स्वतः छाटतो).
+5. Block 2 पुन्हा चालवा. `status.sh` मध्ये "off-site" खाली `remote: offsite:atp-backups`, `synced`, शेवटचे dumps
+   आणि एकूण size दिसले पाहिजे.
+
+पर्याय (provider seam): Backblaze B2 - `OFFSITE_REMOTE=b2:<bucket>`, `OFFSITE_B2_KEY_ID`, `OFFSITE_B2_APPLICATION_KEY`
+(bucket-scoped application key). दुसरा S3-compatible: `OFFSITE_S3_PROVIDER` + `OFFSITE_S3_ENDPOINT`. Provider नसलेला
+box: `OFFSITE_REMOTE=/offsite_local` (host disk - खरा off-site नाही).
+
+**Restore test - R2 वरून (आठवड्यातून एकदा, scratch database - production ला हात नाही):**
 
 ```
-cd /opt/atp && docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml -p atp \
-  run --rm backup sh /scripts/verify_backup.sh latest
+cd /opt/atp && C="docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml -p atp"
+F="$($C exec -T offsite sh /scripts/offsite_fetch.sh /restore)" && $C run --rm backup sh /scripts/verify_backup.sh "$F"
 ```
 
-अपेक्षित: एका ओळीचा JSON, `"status": "verified"`. PITR drill: `docs/OPERATIONS.md` (Phase O5).
+पहिली ओळ R2 वरचा सर्वात नवा dump + `.sha256` `/var/backups/atp-restore-test` मध्ये आणते; दुसरी तो sha256 तपासून
+scratch database मध्ये restore करते, तपासते आणि database drop करते. अपेक्षित: एका ओळीचा JSON, `"status": "verified"`.
+Local copy वरून (R2 शिवाय): `$C run --rm backup sh /scripts/verify_backup.sh latest`. PITR drill: `docs/OPERATIONS.md` (Phase O5).
 
 ## 6. SEBI - static IP नोंदणी (प्रत्येक broker)
 

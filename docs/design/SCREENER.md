@@ -394,7 +394,37 @@ job, never tuned against results.
   checks, reason labels. tsc, vitest (57) and build all pass, and the bundle budget holds: the panel is in the lazily
   loaded Notifications chunk.
 
+## S4a (built): the bar-close engine for alert rules
+
+- **When.** Every worker cycle, for each active, unexpired rule of an organisation with `screener_v2` on.
+- **Which bar.** `expected_bar` gives the latest fully closed bar on the NSE clock:
+  - intraday buckets start at 09:15 and the day's last bucket may be short (1h: 15:15-15:30);
+  - a daily bar closes at 15:30 on a trading day;
+  - weekends and holidays (the holiday table) are skipped.
+- **Closed bars only.** A still-forming bar is trimmed off and never decides anything.
+  - A symbol whose broker data has not reached the expected bar is skipped this round, never evaluated on stale
+    bars.
+  - When no symbol is current the rule waits, retries after `RETRY_SECONDS` (60) and shows why (`last_problem`).
+- **Once per bar.** `last_bar_at` marks the evaluated bar, and S3a's idempotency key backs it up.
+- **Never holds up trading.** Each cycle gets a 10-second budget (`TIME_BUDGET_SECONDS`), taking the
+  least-recently-checked rules first; the rest are still due next cycle. Evaluation and delivery run in separate
+  guards, so a rule failure never blocks sending what already fired.
+- **What fires.** Each match goes to `record_event` with its trigger values (close, volume, oi when present) and the
+  bar time as `as_of`. Grouping, quiet hours, caps and delivery are S3's job.
+- **Screen rules.** A screen rule now carries its own symbols (1-50, `universe_json`) and an exchange. A screen that
+  is gone or archived is reported on the rule.
+- **Daily rules.** A broker's daily history starts at yesterday, so after 15:30 today's bar is built from today's
+  15-minute bars.
+- **Not yet.** Weekly and monthly rules are listed but not evaluated (SC-10). Live (tick) alerts and the result
+  cache are S4b.
+- **Storage.** `alert_rules` gains `universe_json`, `exchange`, `last_bar_at`, `last_checked_at` and `last_problem`
+  (migration `a3c5e7b9d1f3`, Postgres round-trip OK).
+- **Tests.** `tests/test_s4a_barclose.py` (7), plus 3 mutation checks: forming bar, stale data, once per bar.
+
 ## Open questions (provisional answers taken, work continues)
+- **SC-10. Weekly / monthly alert rules.** Provisional: they can be saved but are not evaluated yet. A weekly bar
+  would close at the week's last trading session, and the same holds for monthly bars.
+  - Owner question: should these fire at that close (like daily), or only on the next session's pre-open?
 - **SC-9. Unsubscribe scope and bounces.** Provisional:
   - an unsubscribe stops screen-alert emails only; risk and system emails cannot be unsubscribed;
   - a retry after one recipient's failure re-sends to the earlier recipients of that alert (at most 10 addresses).

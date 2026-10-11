@@ -38,8 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.execution.ops_throttle import OpsThrottle
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
-from app.cache.client import cache_release_lock, cache_renew_lock, cache_try_lock
+from app.cache.client import cache_lock_holder, cache_release_lock, cache_renew_lock, cache_try_lock
 from app.core import config as app_config
 from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SECONDS
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
@@ -52,6 +53,7 @@ from app.billing.service import sweep as billing_sweep
 from app.ai import monitor as ai_monitor
 from app.ai import thesis as thesis_module
 from app.workers import eod_summary
+from app.workers.redis_guard import RedisGuard
 from app.news_feed import service as news_feed
 from app.platform import controls as platform_controls
 from app.ai.regime import classify_regime, parse_filter, regime_blocks
@@ -111,6 +113,11 @@ class CycleReport:
     # P0.1 / S2: Redis was unreachable, so this cycle ran without the replica lock (LIVE entries paused
     # where a second replica is possible).
     lock_degraded: bool = False
+    # H-1: the lock vanished mid-cycle (Redis eviction) or another replica took it - no new entries for the rest of the
+    # cycle; `lock_aborted` when another holder has it and this worker stopped the cycle there.
+    lock_lost: bool = False
+    lock_aborted: bool = False
+    redis_memory_ratio: Optional[float] = None
     retention: Optional[RetentionReport] = None
     chain_rows_recorded: int = 0   # Phase W
     billing: Optional[Dict[str, int]] = None
@@ -168,7 +175,9 @@ class TradingWorker:
         # a single dev/test replica may trade LIVE without Redis as before.
         self.require_lock_for_live = ENVIRONMENT in HARDENED_ENVIRONMENTS if require_lock_for_live is None else require_lock_for_live
         self._lock_degraded = False
+        self._lock_lost = False
         self._lock_ttl = max(cycle_seconds * 2, 30)
+        self.redis_guard = RedisGuard()
         self.market_data_factory = market_data_factory
         self.worker_name = worker_name
         self.holder_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
@@ -196,6 +205,7 @@ class TradingWorker:
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
+        self._ops: Dict[Tuple[int, str], OpsThrottle] = {}
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
@@ -251,6 +261,7 @@ class TradingWorker:
         if self._lock_degraded != (not reachable):
             logger.warning("Redis %s - the replica lock is %s", "unreachable" if not reachable else "back", "off (LIVE entries paused where required)" if not reachable else "on again")
         self._lock_degraded = not reachable
+        self._lock_lost = False
 
         try:
             async with self.session_factory() as session:
@@ -270,10 +281,16 @@ class TradingWorker:
                     await self._process_tenants(session, now, report)
                     report.stale_skips = self._stale_skips
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
-                    if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
-                        logger.warning("Replica lock could not be renewed - another replica may now hold it")
+                    if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
+                        return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
                 else:
                     logger.debug("Market closed: %s", reason)
+                # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
+                try:
+                    report.redis_memory_ratio = await self.redis_guard.check_memory(session)
+                except Exception as exc:  # noqa: BLE001 - a monitoring read never breaks trading
+                    logger.exception("Redis memory check failed")
+                    report.errors.append(f"redis memory check: {exc}")
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:
@@ -491,6 +508,33 @@ class TradingWorker:
                     await session.rollback()
         return written
 
+    async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
+        """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
+
+        Renewed: carry on. Redis unreachable: the S2 degraded mode (LIVE entries paused where required). The key gone
+        (evicted at the memory cap): take it back, but no new entries for the rest of this cycle - a second replica
+        could have run in the gap - and exits continue. Held by someone else: stop, the holder trades. Both raise the
+        CRITICAL (app/workers/redis_guard.py)."""
+        if self._lock_degraded or await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
+            return True
+        holder, reachable = await cache_lock_holder(LOCK_KEY)
+        if not reachable:
+            logger.warning("Redis unreachable %s - the replica lock is off (LIVE entries paused where required)", where)
+            self._lock_degraded = report.lock_degraded = True
+            return True
+        if holder == self.holder_id:
+            return True   # the renewal call failed but the lock is still ours
+        retaken = False
+        if holder is None:
+            retaken, _ = await cache_try_lock(LOCK_KEY, self.holder_id, self._lock_ttl)
+            holder = None if retaken else (await cache_lock_holder(LOCK_KEY))[0]
+        self._lock_lost = report.lock_lost = True
+        await self.redis_guard.lock_lost(session, retaken=retaken, holder=holder, where=where)
+        if not retaken:
+            report.lock_aborted = True
+            return False
+        return True
+
     async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:
         deployments = list(await session.scalars(
             select(StrategyDeploymentRecord)
@@ -503,8 +547,8 @@ class TradingWorker:
 
         for tenant_id, tenant_deployments in by_tenant.items():
             # P0.1 / S2: the evaluation phase is the long one; keep the replica lock alive per tenant.
-            if not self._lock_degraded and not await cache_renew_lock(LOCK_KEY, self.holder_id, self._lock_ttl):
-                logger.warning("Replica lock could not be renewed before tenant %s - another replica may now hold it", tenant_id)
+            if not await self._keep_lock(session, report, f"before tenant {tenant_id}"):
+                break   # H-1: another replica holds the lock now - it trades (and exits) the remaining tenants
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
@@ -642,6 +686,10 @@ class TradingWorker:
                 continue  # Phase O2: this venue is closed right now; nothing to evaluate
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
+                await session.commit()
+                continue
+            if self._lock_lost:
+                dep.last_error = "Worker lock was lost this cycle (Redis eviction?) - no new entries until the next cycle; exits continue"
                 await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
@@ -966,7 +1014,12 @@ class TradingWorker:
         budget = self._budgets.get(key)
         if budget is None:
             budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
-        return RateLimitedBroker(adapter, budget)
+        ops = None
+        if app_config.OPS_THROTTLE_ENABLED:      # Part D2: one OPS throttle per (tenant, broker account), kept across cycles
+            ops = self._ops.get(key)
+            if ops is None:
+                ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
+        return RateLimitedBroker(adapter, budget, ops=ops)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

@@ -78,6 +78,25 @@ SECRETS_WRITE_FORMAT = os.environ.get("SECRETS_WRITE_FORMAT", "fernet").strip().
 # The app runs fine without Redis reachable - every cache call is wrapped to fail open.
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+
+def _ratio(name: str, default: float) -> float:
+    """A fraction in (0, 1]; anything else (typo, 70 instead of 0.70) falls back to the default."""
+    try:
+        value = float(os.environ.get(name, default))
+    except ValueError:
+        return default
+    return value if 0 < value <= 1 else default
+
+
+# H-1 (OPEN_QUESTIONS): Redis runs with a memory cap and `volatile-lru` - at the cap it evicts keys that carry a TTL,
+# and the worker's replica lock is one of them. The worker warns the operators at this share of `maxmemory`
+# (checked every REDIS_MEMORY_CHECK_SECONDS) and a lost lock makes it fail closed (app/workers/redis_guard.py).
+REDIS_MEMORY_WARN_RATIO = _ratio("REDIS_MEMORY_WARN_RATIO", 0.70)
+REDIS_MEMORY_CHECK_SECONDS = max(30, int(float(os.environ.get("REDIS_MEMORY_CHECK_SECONDS", "300") or 300)))
+# Every cache entry is short-lived: cache_set refuses a TTL longer than this (an hour), so a cache can never crowd
+# out the lock under memory pressure with keys that outlive their use.
+CACHE_MAX_TTL_SECONDS = 3600
+
 # Comma-separated list of allowed frontend origins for CORS, e.g. "https://app.example.com".
 # Defaults to "*" (any origin) so the dev server and API docs "try it out" work with zero
 # config - see validate_production_config(), which refuses to start with this default set in
@@ -96,7 +115,38 @@ SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMA
 # Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
 # (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
 # keeps working; turn on once live trading is offered to customers.
+# H-C1 a: AI approval evidence (draft backtests, interview options) must run on server-fetched candles; client-posted
+# candles are recorded as "sample" and cannot approve or deploy. On by default (a safety rule, not a feature).
+AI_EVIDENCE_SERVER_ONLY = os.environ.get("AI_EVIDENCE_SERVER_ONLY", "true").lower() in ("1", "true", "yes")
+# H-C1 b: AI rate limit (app/ai/rate_limit.py). Units per window for each plan, per user and per organisation; a call
+# costs 1 unit unless AI_RATE_WEIGHTS names its route ("METHOD path-after-/api/ai/"). Both are JSON objects in the
+# environment; an empty or invalid value keeps the defaults below. 0 = no limit for that scope.
+AI_RATE_WINDOW_SECONDS = max(1, int(os.environ.get("AI_RATE_WINDOW_SECONDS", "60") or 60))
+_AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 180, "tenant": 600}, "business": {"user": 360, "tenant": 3000}}
+_AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
+                            "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
+                            "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3}
+
+
+def _json_table(name: str, default: dict) -> dict:
+    import json
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return default
+    return value if isinstance(value, dict) else default
+
+
+AI_RATE_LIMITS = _json_table("AI_RATE_LIMITS", _AI_RATE_LIMITS_DEFAULT)
+AI_RATE_WEIGHTS = _json_table("AI_RATE_WEIGHTS", _AI_RATE_WEIGHTS_DEFAULT)
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
+# Part D2 (rule IN-SEBI.ops.throttle): orders per second per client and exchange, exits first. Off by default; the
+# rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.
+OPS_THROTTLE_ENABLED = os.environ.get("OPS_THROTTLE_ENABLED", "false").lower() in ("1", "true", "yes")
+OPS_PER_SECOND = float(os.environ.get("OPS_PER_SECOND", "0") or 0) or None
 
 # Phase E1: observability. METRICS_TOKEN protects GET /metrics on the API (empty = open, fine
 # behind a private network); WORKER_METRICS_PORT serves the worker's own metrics (0 = off).

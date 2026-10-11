@@ -253,10 +253,6 @@ def eligible(sm: SessionMap, skip_min: float, window: str) -> np.ndarray:
     return np.asarray(ok, dtype=bool)
 
 
-def session_dates(sm: SessionMap) -> List[str]:
-    return [d.isoformat() for d in sm.dates]
-
-
 def clock(dt: datetime, cal: SessionCalendar = DEFAULT_CALENDAR) -> str:
     """HH:MM in exchange time (for the reasons a result shows)."""
     ts = pd.Timestamp(dt)
@@ -265,4 +261,4 @@ def clock(dt: datetime, cal: SessionCalendar = DEFAULT_CALENDAR) -> str:
 
 
 __all__ = ["SessionCalendar", "SessionMap", "calendar_for", "DEFAULT_CALENDAR", "map_sessions", "session_vwap", "time_of_day_rvol",
-           "session_extremes_before", "window_levels", "previous_session_levels", "premarket_levels", "eligible", "session_dates", "clock"]
+           "session_extremes_before", "window_levels", "previous_session_levels", "premarket_levels", "eligible", "clock"]

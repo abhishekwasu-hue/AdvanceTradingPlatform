@@ -173,17 +173,24 @@
       "id": "IN-SEBI.login.daily",
       "title": "Daily 2FA / OAuth login per broker session; no reliance on refresh tokens; pre-open reminder",
       "source": "SEBI retail-algo circular; broker session rules",
-      "status": "partial",
+      "status": "enforced",
       "params": {
         "reminder_minutes_before_open": 30
       },
       "code": [
+        "app/brokers/login_reminder.py",
+        "app/brokers/routes.py",
         "app/brokers/token_lifecycle.py",
-        "app/brokers/routes.py"
+        "app/workers/trading_worker.py"
       ],
       "tests": [
         "tests/test_token_lifecycle.py::test_upstox_token_expires_at_next_0330_ist",
-        "tests/test_trading_worker.py::test_live_deployment_never_fires_on_expired_token_but_paper_sibling_still_runs"
+        "tests/test_trading_worker.py::test_live_deployment_never_fires_on_expired_token_but_paper_sibling_still_runs",
+        "tests/test_d5_daily_login.py::test_every_broker_has_a_login_method_from_the_token_lifecycle_sets",
+        "tests/test_d5_daily_login.py::test_reminder_time_and_window_come_from_the_rule_set",
+        "tests/test_d5_daily_login.py::test_expired_or_short_session_is_reminded_a_full_day_session_is_not",
+        "tests/test_d5_daily_login.py::test_one_reminder_per_day_naming_how_to_log_in",
+        "tests/test_d5_daily_login.py::test_worker_raises_the_reminder_before_the_open"
       ],
       "flag": null
     },

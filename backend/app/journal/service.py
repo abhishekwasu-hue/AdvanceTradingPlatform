@@ -279,3 +279,41 @@ async def add_user_tag(session: AsyncSession, user: User, trade: TradeRecord, ta
     await session.commit()
     await session.refresh(row)
     return row
+
+
+# --- Z6-b: the weekly review ------------------------------------------------------------------------------------------
+
+def review_trades(trades: Sequence[TradeRecord]) -> List[Any]:
+    from app.journal.review import ReviewTrade
+    out = []
+    for t in trades:
+        stop = t.initial_stop_loss if t.initial_stop_loss is not None else t.stop_loss
+        sign = 1 if t.direction == "LONG" else -1
+        per_unit = sign * (float(t.entry_price) - float(stop)) if stop else 0.0
+        entry_time, exit_time = _utc(t.entry_time), _utc(t.exit_time)
+        out.append(ReviewTrade(id=t.id, setup=t.strategy_id, unit=f"g:{t.leg_group_id}" if t.leg_group_id else f"t:{t.id}",
+                               pnl=float(t.pnl) if t.pnl is not None and t.exit_time is not None else None,
+                               charges=float(t.charges or 0.0), risk=per_unit * abs(float(t.quantity)) if per_unit > 0 else 0.0,
+                               holding_minutes=(exit_time - entry_time).total_seconds() / 60.0 if exit_time and entry_time else None))
+    return out
+
+
+async def weekly_review(session: AsyncSession, user: User, label: Optional[str] = None, *, history_weeks: int = 4,
+                        now: Optional[datetime] = None) -> Dict[str, Any]:
+    """The week's review from the journal, with the trader's own previous `history_weeks` weeks for comparison."""
+    from app.journal.review import _stats, build_review
+    from app.journal.score import counted
+    data = await refresh_week(session, user, label, now=now)
+    s: DisciplineSettings = data["settings"]
+    live = counted([TagState(r.trade_id, r.tag, r.status) for r in data["tags"]], s)
+    history: List[Dict[str, Any]] = []
+    week = data["week"]
+    for _ in range(max(0, history_weeks)):
+        week = previous_week(week)
+        past = await refresh_week(session, user, week, now=now)
+        stats = _stats(review_trades(past["trades"]))
+        history.append({"week": week, "score": past["score"]["score"], "trades": stats["trades"], "net_pnl": stats["net_pnl"],
+                        "avg_r": stats["avg_r"], "win_rate": stats["win_rate"]})
+    review = build_review(data["week"], review_trades(data["trades"]), [(t.trade_id, t.tag) for t in live], data["score"], history, s)
+    review.update(start=data["start"].isoformat(), end=data["end"].isoformat())
+    return review

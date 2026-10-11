@@ -883,3 +883,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   killed after the independent review (0DTE, calendars, FUT carry, IV units, zero tolerance).
 - Also today: `test_phase_bd_thesis` turned red on every branch (fixed 2026-10-06 in the test, wall clock in the API);
   fixed test-only in #147 and carried in the open PRs.
+
+### 2026-10-11 07:32 IST - P1-c: the builder API (P1-c1) and the builder page (P1-c2)
+- API: catalog, template (optionally priced by the model, labelled), evaluate (curves, exact extremes, PoP, Greeks,
+  per-leg theoretical), suggest (a ported selector on any broker's chain). Kill flag `options_builder`, research
+  only (a test fails if the package imports an order path).
+- Page: payoff canvas with the cone and draggable strikes, template gallery, leg table, metrics card, date and IV
+  sliders; model premiums re-priced when a strike moves. Browser-checked against the real API.
+- Open: OB-6 (instrument numbers typed until P1-d), OB-7 (main tokens until U5 merges).

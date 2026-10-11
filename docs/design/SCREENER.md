@@ -963,6 +963,25 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
   while the flag is off, rules paused (not dropped) while it is off, and bar close only (tested with `ORBreakout` /
   `DayExtremeBreak`).
 
+### U6 BK2 review follow-up (#181)
+- **Exchange clock (M1).** `SymbolData.exchange` carries the venue from the screener fetch and the alert engine into the
+  runtime, so ScreenQL's session functions use the same clock as the breakout run (an MCX test compares the two).
+  Currency derivatives have their own family (09:00-17:00, BK2-8). Alert rules on MCX / CDS that use a session function
+  are refused, because the bar-close engine still expects NSE bars (BK2-5).
+- **Daily context on the saved / alert path (M2).** This comes from BK1's verification fix: the fetch is sized for the
+  trend, the daily history is attached, and an unknown context blocks `not_against`. The 15m templates fetch the daily
+  history, and their intraday fetch covers the whole-session lookback within the 60-day cap (tested).
+- **Cost (M3).**
+  - Time-of-day volume is vectorised: a per-slot rolling mean, then merge_asof to the last earlier session. It is
+    about 6x faster on 1m bars, and equal to the plain definition with gaps, half days and special sessions.
+  - The opening-range levels are vectorised and memoised per frame.
+  - A screen run builds its session map, VWAP and averages once per timeframe (`_Eval.session_bars`).
+  - The bar-close engine runs a rule's screen in a worker thread.
+- **Guards (L2, L4).** Stamps that look like exchange wall-clock times without a zone are logged and noted on the run.
+  An opening range that is not a whole number of the timeframe's bars fails validation.
+- **Documented (L1, L3).** BK2-9: where special sessions come from, and what an unannounced late open does. BK2-3:
+  confirmations must pass on the crossing bar.
+
 ## U9 TX1 (built): screen taxonomy (method x setup) and the gallery rail and chips
 
 Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1"); Phase 0 item Z8. Flag

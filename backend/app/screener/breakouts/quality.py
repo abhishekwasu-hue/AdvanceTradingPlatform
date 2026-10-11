@@ -284,7 +284,7 @@ def _intraday_fields(b: Bars, j: int) -> Dict[str, Any]:
 
 def _intraday_notes(screen: str, b: Bars, p: Dict[str, Any]) -> List[str]:
     sm = b.sessions()
-    notes: List[str] = []
+    notes: List[str] = list(sm.warnings)
     if screen == "B17" and p["day_level"] == "premarket":
         have = {int(x) for x in sm.pre_session[sm.pre]}
         missing = len(sm.dates) - len(have)

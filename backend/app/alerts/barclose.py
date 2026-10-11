@@ -24,6 +24,7 @@ longer hold at the close.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time as time_module
@@ -208,7 +209,8 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             daily = data.frames.get("1d") if data is not None and tf != "1d" else None
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
                 kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
-            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            closed = (SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno, exchange=data.exchange or exchange)
+                      if data is not None and frame is not None else None)
             cache.frames[key(sym)] = (need, closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
@@ -264,7 +266,9 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     if result_key in cache.results:
         cache.reused_results += 1
     else:
-        cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params)
+        # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
+        # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
+        cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params)
     for match in cache.results[result_key]:
         values = _values(frames[match.symbol])
         if intrabar:

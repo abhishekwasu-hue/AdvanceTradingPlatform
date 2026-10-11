@@ -21,16 +21,19 @@ Everything is causal: a value at bar j uses bars 0..j only (the time-of-day aver
 """
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
-from typing import Deque, Dict, List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 from zoneinfo import ZoneInfo
+
+import logging
 
 import numpy as np
 import pandas as pd
 
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, session_family
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,7 @@ class SessionMap:
     special: np.ndarray
     window_end: np.ndarray         # per session: minutes from the open by which a signal bar must have closed
     tf_minutes: float
+    warnings: List[str] = field(default_factory=list)   # data that looks mis-stamped (see map_sessions)
 
     @property
     def in_session(self) -> np.ndarray:
@@ -130,8 +134,30 @@ def map_sessions(index: pd.Index, tf_minutes: float, cal: SessionCalendar = DEFA
             for j in before:
                 pre[j], pre_session[j] = True, sid
         i = k
-    return SessionMap(session, minute, pre, pre_session, dates, np.array(special, dtype=bool), np.array(window_end, dtype=float),
-                      float(tf_minutes))
+    sm = SessionMap(session, minute, pre, pre_session, dates, np.array(special, dtype=bool), np.array(window_end, dtype=float),
+                    float(tf_minutes))
+    sm.warnings = _stamp_warnings(sm, local, cal)
+    for w in sm.warnings:
+        logger.warning("session map: %s", w)
+    return sm
+
+
+def _stamp_warnings(sm: SessionMap, local: pd.DatetimeIndex, cal: SessionCalendar) -> List[str]:
+    """Review L2: a naive index is read as UTC. Exchange wall-clock stamps (09:15 written without a zone) then land 5:30
+    late, so every session seems to start 330 minutes after the open (or, for an evening venue, after the close)."""
+    n = len(sm.dates)
+    if n < 3:
+        return []
+    out: List[str] = []
+    if sm.special.all():
+        out.append(f"every one of the {n} sessions starts at or after the {cal.close.strftime('%H:%M')} close and reads as an "
+                   "evening session - are these exchange wall-clock stamps stored without a time zone (read as UTC)?")
+    offset = local[0].utcoffset()
+    shift = offset.total_seconds() / 60.0 if offset is not None else 0.0
+    firsts = sm.minute[sm.first_of_session()]
+    if shift and np.mean(np.isclose(firsts, shift)) >= 0.8:
+        out.append(f"most sessions start {shift:g} minutes after the open - the bars look like exchange wall-clock times read as UTC")
+    return out
 
 
 def session_vwap(f: pd.DataFrame, sm: SessionMap) -> np.ndarray:
@@ -159,17 +185,25 @@ def time_of_day_rvol(f: pd.DataFrame, sm: SessionMap, sessions: int, min_session
     if mode == "cumulative":
         vv = pd.Series(np.where(sm.in_session, v, np.nan))
         v = vv.groupby(pd.Series(sm.session)).cumsum().to_numpy(float)
-    history: Dict[float, Deque[float]] = {}
     out = np.full(len(f), np.nan)
-    for j in np.flatnonzero(sm.in_session):
-        slot = float(sm.minute[j])
-        hist = history.setdefault(slot, deque(maxlen=int(sessions)))
-        if len(hist) >= int(min_sessions):
-            avg = float(np.mean(hist))
-            if avg > 0 and np.isfinite(v[j]):
-                out[j] = v[j] / avg
-        if not sm.special[sm.session[j]] and np.isfinite(v[j]):
-            hist.append(float(v[j]))
+    ins = np.flatnonzero(sm.in_session)
+    if not len(ins):
+        return out
+    # Vectorised (review M3): per slot, the rolling mean over the regular sessions' values (each row includes itself);
+    # a bar then takes the row of the LAST earlier contribution to its slot (merge_asof, strictly before) - the
+    # previous `sessions` regular sessions that had the slot, never its own.
+    bars = pd.DataFrame({"pos": ins, "slot": sm.minute[ins], "v": v[ins]})
+    regular = ~sm.special[sm.session[ins]] & np.isfinite(bars["v"].to_numpy())
+    contrib = bars[regular]
+    if contrib.empty:
+        return out
+    avg = contrib.groupby("slot", sort=False)["v"].rolling(int(sessions), min_periods=int(min_sessions)).mean()
+    contrib = contrib.assign(avg=avg.reset_index(level=0, drop=True))[["pos", "slot", "avg"]]
+    merged = pd.merge_asof(bars, contrib, on="pos", by="slot", allow_exact_matches=False)
+    a = merged["avg"].to_numpy(float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(np.isfinite(a) & (a > 0) & np.isfinite(merged["v"].to_numpy(float)), merged["v"].to_numpy(float) / a, np.nan)
+    out[merged["pos"].to_numpy()] = ratio
     return out
 
 
@@ -178,8 +212,8 @@ def session_extremes_before(h: np.ndarray, low: np.ndarray, sm: SessionMap) -> T
     key = pd.Series(sm.session)
     hs = pd.Series(np.where(sm.in_session, h, np.nan))
     ls = pd.Series(np.where(sm.in_session, low, np.nan))
-    hi = hs.groupby(key).transform(lambda x: x.cummax().shift(1)).to_numpy(float)
-    lo = ls.groupby(key).transform(lambda x: x.cummin().shift(1)).to_numpy(float)
+    hi = hs.groupby(key).cummax().groupby(key).shift(1).to_numpy(float)
+    lo = ls.groupby(key).cummin().groupby(key).shift(1).to_numpy(float)
     hi[~sm.in_session] = np.nan
     lo[~sm.in_session] = np.nan
     return hi, lo
@@ -190,19 +224,16 @@ def window_levels(h: np.ndarray, low: np.ndarray, sm: SessionMap, minutes: float
     after the window's end; NaN when the session's data does not start at the open (a partial first day)."""
     hi, lo = np.full(len(h), np.nan), np.full(len(h), np.nan)
     ins = np.flatnonzero(sm.in_session)
-    by: Dict[int, List[int]] = {}
-    for jj in ins:
-        by.setdefault(int(sm.session[jj]), []).append(int(jj))
-    for bars in by.values():
-        if sm.minute[bars[0]] != 0:
-            continue
-        win = [j for j in bars if sm.minute[j] < minutes]
-        if not win:
-            continue
-        top, bot = float(np.max(h[win])), float(np.min(low[win]))
-        for j in bars:
-            if sm.minute[j] >= minutes:
-                hi[j], lo[j] = top, bot
+    if not len(ins):
+        return hi, lo
+    df = pd.DataFrame({"sid": sm.session[ins], "minute": sm.minute[ins], "h": h[ins], "l": low[ins]})
+    opens_at_zero = df.groupby("sid")["minute"].min() == 0
+    win = df[df["minute"] < minutes].groupby("sid").agg(top=("h", "max"), bot=("l", "min"))
+    win = win[opens_at_zero.reindex(win.index, fill_value=False)]
+    after = (df["minute"] >= minutes).to_numpy() & df["sid"].isin(win.index).to_numpy()
+    sids = df["sid"].to_numpy()[after]
+    hi[ins[after]] = win["top"].reindex(sids).to_numpy(float)
+    lo[ins[after]] = win["bot"].reindex(sids).to_numpy(float)
     return hi, lo
 
 

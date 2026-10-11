@@ -593,7 +593,7 @@ def test_every_intraday_template_can_match_within_the_real_fetch_windows(broker_
     tf, params = t.signal_tf, templates.template_params(t)
     text, why = templates.screenql(t.screen, tf, params)
     ast, validated = compile_screen(text, base_tf=tf)
-    days = fetch_days(validated.lookback, tf)
+    days = fetch_days(validated.fetch_lookback, tf)                   # what the alert / saved-screen path fetches
     assert days <= MAX_INTRADAY_FETCH_DAYS
     full = broker_history[tf]
     recent = full[full.index >= full.index[-1].normalize() - pd.Timedelta(days=90)]
@@ -695,3 +695,121 @@ def test_intraday_breakout_alerts_are_gated_bar_close_only_and_pause_while_off()
         assert status == "active" and problem is None and fired == 1                            # resumes on the same bar
     finally:
         _set(screener_v2=False, screener_breakouts=False, screener_intrabar=False)
+
+
+# ------------------------------------------------------------------------- review of #181: exchange clock, cost, guards
+MCX_DAY = 174                                                           # 5m bars from 09:00 to 23:30 IST
+
+
+def _mcx_frame():
+    days = [quiet_day(MCX_DAY) for _ in range(21)] + [orb_day(rest=above(MCX_DAY - 7))]
+    return sessions_frame(days, starts={k: "03:30" for k in range(22)})  # 09:00 IST
+
+
+def test_currency_derivatives_have_their_own_clock():
+    assert mcal.session_family("CDS") == mcal.session_family("BCD") == "CDS" and mcal.session_family("NFO") == "NSE"
+    cds = ses.calendar_for("CDS")
+    assert (cds.open, cds.close) == (time(9, 0), time(17, 0))
+
+
+def test_mcx_screenql_and_the_breakout_run_read_the_same_exchange_clock(monkeypatch):
+    f = _mcx_frame()
+    bar = 21 * MCX_DAY + 6                                               # starts 09:30 IST: the 15-minute range was 09:00-09:15
+    mcx = SymbolData("CRUDEOIL", {"5m": f}, exchange="MCX")
+    got = evaluate(parse('ORBreakout("up")'), mcx, base_tf="5m").fillna(False).astype(bool).to_numpy()
+    assert list(np.flatnonzero(got)) == [bar]
+    # on the NSE clock the same bars would open at 09:15 (09:00-09:15 pre-open): a 30-minute range then swallows the break
+    thirty = 'ORBreakout("up", 30)'
+    assert bar in np.flatnonzero(evaluate(parse(thirty), mcx, base_tf="5m").fillna(False).astype(bool).to_numpy())
+    nse = evaluate(parse(thirty), SymbolData("CRUDEOIL", {"5m": f}), base_tf="5m").fillna(False).astype(bool).to_numpy()
+    assert bar not in np.flatnonzero(nse)
+    assert np.isnan(evaluate(parse("SessionVWAP()"), SymbolData("CRUDEOIL", {"5m": f}), base_tf="5m").iloc[21 * MCX_DAY])   # pre-open on NSE
+    engine = run_breakout("B16", {"5m": f}, "5m", params={"htf_filter": "off"}, within=None, calendar=ses.calendar_for("MCX")).signals
+    assert [(r["bar"], r["clock"], r["minutes_from_open"]) for r in engine] == [(bar, "09:30", 30)]
+    # the session series follow the clock too: VWAP and time-of-day volume restart at 09:00
+    assert evaluate(parse("SessionVWAP()"), mcx, base_tf="5m").iloc[21 * MCX_DAY] == pytest.approx(sum(OR_BARS[0][1:4]) / 3)
+    # and the breakout run API on MCX lists the same bar
+    from app.screener.breakouts import routes as bk_routes
+    from tests.test_auth_api import client
+    from tests.test_phase_l_ai import _owner
+    from tests.test_z7_bk1_api import _set
+
+    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **kw):
+        assert exchange == "MCX"
+        return [SymbolData(s, {base_tf: f}, exchange=exchange) for s in symbols], {}, "broker:fake"
+    monkeypatch.setattr(bk_routes, "fetch_frames", fake_fetch)
+    _set(screener_v2=True, screener_breakouts=True)
+    try:
+        headers, _ = _owner("bk2-mcx@example.com")
+        out = client.post("/api/screener/breakouts/run", json={"screen": "B16", "signal_tf": "5m", "exchange": "MCX", "within": 500,
+                                                               "params": {"htf_filter": "off"}, "symbols": ["CRUDEOIL"]}, headers=headers)
+        assert out.status_code == 200, out.text
+        assert [(r["bar"], r["clock"]) for r in out.json()["rows"]] == [(bar, "09:30")]
+        # alerts keep the NSE bar-close clock: an MCX alert rule on a session function is refused with the reason
+        r = client.post("/api/alerts/rules", json={"name": "m", "kind": "instrument", "symbol": "CRUDEOIL", "exchange": "MCX",
+                                                   "condition": 'ORBreakout("up")', "base_tf": "5m"}, headers=headers)
+        assert r.status_code == 422 and "NSE session clock" in str(r.json())
+        ok = client.post("/api/alerts/rules", json={"name": "n", "kind": "instrument", "symbol": "TCS", "exchange": "NSE",
+                                                    "condition": 'ORBreakout("up")', "base_tf": "5m"}, headers=headers)
+        assert ok.status_code == 201, ok.text
+    finally:
+        _set(screener_v2=False, screener_breakouts=False)
+
+
+def test_daily_context_of_the_15m_templates_is_fetched_on_the_saved_and_alert_path():
+    from app.screener.routes import MAX_INTRADAY_FETCH_DAYS, fetch_days
+    for tid in ("intraday_15m_orb30", "intraday_15m_first_hour"):
+        t = templates.BY_ID[tid]
+        _, validated = compile_screen(templates.screenql(t.screen, t.signal_tf, templates.template_params(t))[0], base_tf=t.signal_tf)
+        assert validated.fetch_lookback["1d"] >= bp.DEFAULTS["dow_min_bars"]          # the daily history is fetched for the trend
+        assert validated.fetch_lookback["15m"] >= (bp.DEFAULTS["tod_sessions"] + 1) * 25  # and whole sessions for the averages
+        assert fetch_days(validated.fetch_lookback, t.signal_tf) <= MAX_INTRADAY_FETCH_DAYS
+
+
+def test_time_of_day_volume_matches_the_plain_definition_with_gaps_and_special_sessions():
+    days = _varied(28)
+    days[9] = days[9][:40]                                               # a half day
+    f = sessions_frame(days, starts={14: "12:45"})                       # an evening session
+    f.iloc[::17, f.columns.get_loc("volume")] = np.nan                   # missing volumes
+    for mode in ("bar", "cumulative"):
+        sm = ses.map_sessions(f.index, 5, ses.DEFAULT_CALENDAR)
+        got = ses.time_of_day_rvol(f, sm, 20, 5, mode)
+        v = f["volume"].to_numpy(float)
+        if mode == "cumulative":
+            v = pd.Series(np.where(sm.in_session, v, np.nan)).groupby(pd.Series(sm.session)).cumsum().to_numpy(float)
+        want = np.full(len(f), np.nan)
+        hist = {}
+        for j in np.flatnonzero(sm.in_session):                          # the definition, one bar at a time
+            h = hist.setdefault(sm.minute[j], [])
+            last = h[-20:]
+            if len(last) >= 5 and np.mean(last) > 0 and np.isfinite(v[j]):
+                want[j] = v[j] / np.mean(last)
+            if not sm.special[sm.session[j]] and np.isfinite(v[j]):
+                h.append(v[j])
+        assert np.allclose(got, want, equal_nan=True), mode
+
+
+def test_a_screen_builds_its_sessions_once(monkeypatch):
+    calls = []
+    real = ses.map_sessions
+    monkeypatch.setattr(ses, "map_sessions", lambda *a, **k: calls.append(1) or real(*a, **k))
+    f = sessions_frame(history() + [orb_day()])
+    out = evaluate(parse('ORBreakout("up") AND SessionVWAP() < close AND RelVolumeTOD() > 2 AND DayExtremeBreak("up", 0, FALSE)'),
+                   SymbolData("S", {"5m": f}), base_tf="5m")
+    assert bool(out.iloc[ORB_BAR]) and len(calls) == 1
+
+
+def test_wall_clock_stamps_without_a_time_zone_are_flagged():
+    f = sessions_frame(history() + [orb_day()])
+    naive_ist = f.set_axis(f.index.tz_convert("Asia/Kolkata").tz_localize(None))   # 09:15 written as 09:15, no zone
+    run = run_breakout("B16", {"5m": naive_ist}, "5m", within=None)
+    assert run.signals == [] and any("wall-clock" in n for n in run.notes)
+    assert not any("wall-clock" in n for n in run_breakout("B16", {"5m": f}, "5m", within=None).notes)
+
+
+def test_the_range_must_be_a_whole_number_of_bars_at_validation():
+    def problems(text, tf):
+        return [p.message for p in compile_screen(text, base_tf=tf)[1].problems]
+    assert problems('ORBreakout("up", 20)', "15m") == ['ORBreakout: minutes 20 is not a whole number of @15m bars (15 minutes each)']
+    assert problems('ORBreakout("up", 20)', "5m") == [] and problems('ORBreakout("up")', "15m") == []
+    assert problems('ORBreakout("up", 30)', "15m") == [] and problems('ORBreakout("up", 15)', "3m") == []

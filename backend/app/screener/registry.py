@@ -52,6 +52,7 @@ class Spec:
     window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
     min_sessions: int = 0                  # U6 BK2: whole sessions of history it needs (intraday; on top of min_bars)
     sessions_arg: Optional[str] = None     # U6 BK2: the argument that sets min_sessions (prior sessions + the current one)
+    tf_multiple_args: Tuple[str, ...] = ()  # U6 BK2: minute arguments that must be a whole number of the timeframe's bars
     fetch_degree_bars: Tuple[int, ...] = ()  # U6 BK1: bars to FETCH by degree (fetch sizing only; min_bars decides refusal)
 
 
@@ -231,6 +232,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.
     Spec("ORBreakout", "filter", BOOL, None, (_SIDE, _bk("or_minutes", "minutes", NUM), _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
          min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         tf_multiple_args=("minutes",),
          doc="B16: the first close beyond the high (up) / low (down) of the session's first `minutes` by k ATR, with relative volume"
              " by time of day >= v and the close on the breakout side of the session VWAP (vwap); no signal in the first `skip`"
              " minutes; once per side per session"),

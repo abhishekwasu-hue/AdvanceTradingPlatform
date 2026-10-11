@@ -6,7 +6,7 @@ screen or an alert rule that uses one is refused with the reason. Nothing in the
 """
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,27 @@ def flagged_calls(ast: Any) -> List[str]:
     return out
 
 
+# U6 BK2: functions that read the exchange session (open, VWAP from the open, time-of-day slots)
+SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP")
+
+
+def session_calls(ast: Any) -> List[str]:
+    """Session functions used in a screen (each once, in order)."""
+    return [n for n in flagged_calls(ast) if n in SESSION_FUNCTIONS]
+
+
+def alert_clock_refusal(ast: Any, exchange: Optional[str]) -> Optional[str]:
+    """U6 BK2 (review M1): the bar-close alert engine keeps the NSE clock (expected bars 09:15-15:30), so an alert rule
+    on another exchange's session (MCX, currency) cannot use the session functions yet - refused with the reason."""
+    from app.market_data.calendar import session_family
+    names = session_calls(ast)
+    family = session_family(exchange)
+    if not names or family == "NSE":
+        return None
+    return (f"{', '.join(n + '()' for n in names)}: bar-close alerts follow the NSE session clock; on {family} these session "
+            f"functions run in screens and the breakout run, not in alert rules yet (open question BK2-5)")
+
+
 def refusal(names: List[str]) -> str:
     return f"{', '.join(n + '()' for n in names)}: the breakout screens are not enabled for this organisation (flag {FLAG})"
 
@@ -45,4 +66,4 @@ async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> List
     return names
 
 
-__all__ = ["FLAG", "flagged_calls", "refusal", "enabled", "blocked_calls"]
+__all__ = ["FLAG", "SESSION_FUNCTIONS", "flagged_calls", "session_calls", "alert_clock_refusal", "refusal", "enabled", "blocked_calls"]

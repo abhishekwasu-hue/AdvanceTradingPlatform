@@ -103,8 +103,15 @@ class Bars:
         self._sm: Optional[ses.SessionMap] = None
         self._vwap: Optional[np.ndarray] = None
         self._tod: Optional[np.ndarray] = None
+        self._memo: Dict[Any, Any] = {}
 
     # ---- intraday (U6 BK2) ----------------------------------------------------------------------------------------------
+    def memo(self, key: Any, build: Any) -> Any:
+        """A per-frame cache for the session levels both sides read (the opening range, the previous day)."""
+        if key not in self._memo:
+            self._memo[key] = build()
+        return self._memo[key]
+
     def tf_minutes(self) -> float:
         if self.tf is not None:
             if self.tf not in TF_MINUTES or TF_MINUTES[self.tf] >= TF_MINUTES["1d"]:

@@ -346,6 +346,14 @@ class _Checker:
         min_bars = spec.min_bars
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
+        for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones
+            pos = next(i for i, a in enumerate(spec.args) if a.name == name)
+            arg = node.args[pos] if pos < len(node.args) else None
+            value = (arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param)
+                     else spec.args[pos].default if arg is None else None)
+            step = n.TF_MINUTES.get(own_tf, 0)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < step < n.TF_MINUTES["1d"] and float(value) % step:
+                self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node)
         sessions = self.sessions_needed(node, spec)
         if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
             min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))

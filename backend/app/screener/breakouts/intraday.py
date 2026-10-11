@@ -17,7 +17,8 @@ One signal per leg:
 * B16 / B17 levels are fixed for the session, so the event is the CROSS: the first eligible bar that closes beyond the
   level after a close that was not (the first eligible bar of a session counts when it is already beyond - a gap that
   held through the skipped minutes). A new leg needs a close back inside first, and `intraday_max_per_session` caps the
-  signals per side per session (default 1: the first break).
+  signals per side per session (default 1: the first break). The confirmations must pass ON the crossing bar: a cross
+  on ordinary volume is not signalled later when volume arrives with price still beyond (OPEN_QUESTIONS BK2-3).
 * B18's level moves with every new extreme, so it uses the swing-leg rule of BK1 (screens.one_per_leg), re-armed at the
   start of every session.
 """
@@ -92,7 +93,7 @@ def b16(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) ->
     minutes = int(p["or_minutes"])
     _whole_bars(minutes, b, "the opening range")
     sm = b.sessions()
-    hi, lo = ses.window_levels(b.h, b.l, sm, minutes)
+    hi, lo = b.memo(("window", minutes), lambda: ses.window_levels(b.h, b.l, sm, minutes))
     level, opposite = _oriented(s, hi, lo)
     elig = ses.eligible(sm, max(minutes, float(p["skip_first_min"])), p["tod_window_end"])
     _fixed_level(b, s, p, out, level, opposite, elig, f"OR{minutes}", minutes / b.tf_minutes())
@@ -105,17 +106,17 @@ def b17(b: "Bars", s: "_Side", p: Dict[str, Any], out: Dict[str, np.ndarray]) ->
     if kind == "first_hour":
         minutes = int(p["first_hour_min"])
         _whole_bars(minutes, b, "the first hour")
-        hi, lo = ses.window_levels(b.h, b.l, sm, minutes)
+        hi, lo = b.memo(("window", minutes), lambda: ses.window_levels(b.h, b.l, sm, minutes))
         skip, event, length = max(skip, minutes), "FIRST_HOUR", minutes / b.tf_minutes()
     elif kind == "first_candle":
         minutes = int(b.tf_minutes())
-        hi, lo = ses.window_levels(b.h, b.l, sm, minutes)
+        hi, lo = b.memo(("window", minutes), lambda: ses.window_levels(b.h, b.l, sm, minutes))
         skip, event, length = max(skip, minutes), "FIRST_CANDLE", 1.0
     elif kind == "prev_day":
-        hi, lo = ses.previous_session_levels(b.h, b.l, sm)
+        hi, lo = b.memo(("prev_day",), lambda: ses.previous_session_levels(b.h, b.l, sm))
         event, length = ("PDH" if s.sign > 0 else "PDL"), float("nan")
     else:
-        hi, lo = ses.premarket_levels(b.h, b.l, sm)
+        hi, lo = b.memo(("premarket",), lambda: ses.premarket_levels(b.h, b.l, sm))
         event, length = "PREMARKET", float("nan")
     level, opposite = _oriented(s, hi, lo)
     _fixed_level(b, s, p, out, level, opposite, ses.eligible(sm, skip, p["tod_window_end"]), event, length)

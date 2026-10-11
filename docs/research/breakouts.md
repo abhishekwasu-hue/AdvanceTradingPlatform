@@ -96,7 +96,9 @@ How BK2 uses them:
 - **Signals.** Each signal is a close beyond the level by `min_break_atr` x ATR, on a bar inside the time-of-day window.
   That bar must also have the time-of-day volume and VWAP agreement. B16 / B17 levels are fixed for the session, so the
   event is the cross (one per leg by construction), capped at `intraday_max_per_session` per side per session. B18's
-  level moves with each new extreme: it uses the BK1 swing-leg rule, re-armed at each session start.
+  level moves with each new extreme: it uses the BK1 swing-leg rule, re-armed at each session start. The
+  confirmations must pass on the crossing bar itself: a break on ordinary volume is not signalled later, when volume
+  arrives while price is still beyond the level.
 - **Quality overlay.** The overlay is the same equal-weight checklist. For B16-B18 two checks change: "volume expansion"
   reads the time-of-day relative volume, and "base dry-up" asks whether the bars before the break traded at or below
   their usual volume for the time of day. The time-of-day window (spec quality overlays; BK1-7) is a hard filter on the

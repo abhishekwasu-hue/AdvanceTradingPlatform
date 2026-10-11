@@ -13,6 +13,10 @@ Each worker cycle, for every active rule whose organisation has `screener_v2` on
 4. The screen runs on the current symbols; each match is recorded with its trigger values (close, volume, the bar
    time as `as_of`).
 
+BT1b: with `byob_data_tier` on, a rule's bars come only through the own broker session of the user who created it
+(`fetch(..., user_id=rule.created_by)`), and the cycle cache is per user, so one member's feed never evaluates another
+member's rule.
+
 S4b-2: a rule with `fire_on = "intrabar"` (flag `screener_intrabar`, off by default) is evaluated on the bar still
 forming instead: during the session only, at most every `RETRY_SECONDS`, firing at most once per bar and symbol (the
 S3a idempotency key is per bar). Its events say `intrabar: true` - the bar had not closed, so the condition may no
@@ -134,7 +138,7 @@ class CycleCache:
     """S4b-1: one worker cycle's shared work. Rules that need the same symbol, timeframe and bar fetch it once (a
     longer lookback than the cached one fetches again); the same screen over the same current symbols, bar and
     params is evaluated once. Lives for one cycle only, so nothing stale survives into the next bar."""
-    frames: Dict[Tuple[int, str, str, datetime, str, bool], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
+    frames: Dict[Tuple[int, Optional[int], str, str, datetime, str, bool], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
     results: Dict[Tuple[Any, ...], List[Any]] = field(default_factory=dict)
     fetched_symbols: int = 0
     reused_symbols: int = 0
@@ -180,19 +184,21 @@ def _values(frame: pd.DataFrame) -> Dict[str, Any]:
 
 
 async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbols: List[str], bar: datetime, lookback: Dict[str, int],
-                            fetch: Fetch, cache: CycleCache, forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
+                            fetch: Fetch, cache: CycleCache, forming: bool = False, per_user: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
     """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
-    does not already hold."""
+    does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
     need = max([*lookback.values(), 1])
-    key = lambda sym: (rule.tenant_id, exchange, tf, bar, sym, forming)  # noqa: E731
+    owner = rule.created_by if per_user else None
+    extra: Dict[str, Any] = {"user_id": owner} if per_user else {}
+    key = lambda sym: (rule.tenant_id, owner, exchange, tf, bar, sym, forming)  # noqa: E731
     missing = [s for s in symbols if key(s) not in cache.frames or cache.frames[key(s)][0] < need]
     problems: Dict[str, str] = {}
     if missing:
         if forming:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True)
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True, **extra)
         else:
-            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback)
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, **extra)
         cache.fetched_symbols += len(missing)
         got = {d.symbol: d for d in universe}
         for sym in missing:
@@ -206,7 +212,7 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
-                        zones_enabled: bool = True) -> Tuple[str, int]:
+                        zones_enabled: bool = True, per_user: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
     from app.alerts.engine import record_event
     now = _utc(now)
@@ -238,7 +244,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
             return "unsupported", 0
-        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar)
+        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar, per_user=per_user)
         if zone_calls and current:
             # the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it closed)
             await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, validated.lookback)
@@ -250,7 +256,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         return "waiting", 0
     fired = 0
     frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    result_key = (rule.tenant_id, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
+    result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
                   json.dumps(params, sort_keys=True, default=str), intrabar)
     if result_key in cache.results:
         cache.reused_results += 1
@@ -283,6 +289,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     enabled: Dict[int, bool] = {}
     intrabar_on: Dict[int, bool] = {}
     zones_on: Dict[int, bool] = {}
+    per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -299,9 +306,11 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             intrabar_on[rule.tenant_id] = await flag_enabled(session, INTRABAR_FLAG, rule.tenant_id)
         if rule.tenant_id not in zones_on:
             zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
+        if rule.tenant_id not in per_user:
+            per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
-                                           zones_enabled=zones_on[rule.tenant_id])
+                                           zones_enabled=zones_on[rule.tenant_id], per_user=per_user[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired
@@ -312,16 +321,16 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
 
 
 async def server_fetch(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int], forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], forming: bool = False, user_id: Optional[int] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars via the organisation's broker session (S1d `fetch_frames`). For a daily rule, today's bar is built
     from today's 15-minute bars (after the close; during the session for an intrabar rule, `forming`), since a
     broker's daily history starts at yesterday."""
     from app.screener.routes import fetch_frames
-    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming)
+    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming, user_id=user_id)
     if base_tf != "1d" or not universe:
         return universe, problems, source
     intraday, _p, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30},
-                                          include_forming=forming)
+                                          include_forming=forming, user_id=user_id)
     today = datetime.now(timezone.utc).astimezone(IST).date()
     by_symbol = {d.symbol: d.frames.get("15m") for d in intraday}
     for data in universe:

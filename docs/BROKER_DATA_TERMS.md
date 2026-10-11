@@ -82,6 +82,12 @@ referenced here.
 - Symbols per session: open positions > open charts > watchlist > screener universe, up to the cap; beyond it the
   symbol is EOD for that user (a symbol already held keeps its slot; the latest scan wins among screener symbols), with
   a slower refresh hint.
+- BT1b: every live read in ATP (screener runs and alert rules, Copilot evidence and tools, portfolio prices, Greeks,
+  deployment previews, the PAPER exit price) goes through the same guard; organisation-wide stores (market memory,
+  sentiment, the OI banner collector, option-chain recording, the org quote stream) are never fed from a per-user
+  session. The credential's holder is the person who linked it and logs in to it; with the data tier on, another member
+  cannot log in to it or keep its secrets / token by storing over it, and its smoke test is the holder's. In both modes a
+  login never writes its token onto a row that changed hands during the broker round-trip.
 
 ## Zerodha Kite Publisher (basket)
 

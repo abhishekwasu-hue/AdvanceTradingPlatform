@@ -215,19 +215,40 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
+                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
-    `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars)."""
+    `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
+
+    BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
+    (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
+    reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
+    `tier_out` receives the data-tier badge of what was read."""
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
+    from app.market_data.fanin import Priority
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, tenant_id, None, "primary")
     interval = _FETCH[base_tf]
     days = fetch_days(lookback, base_tf) if interval != "day" else 5
-    service = MarketDataService(build_adapter(record), lookback_days=days)
-    universe: List[SymbolData] = []
     problems: Dict[str, str] = {}
+    own = None
+    if await live_access.byob_on(session, tenant_id):
+        user = await live_access.load_user(session, user_id)
+        if user is not None and user.tenant_id != tenant_id:
+            user = None                                   # never another organisation's member
+        own = await live_access.user_source(session, user, [(s, exchange) for s in symbols], priority=Priority.SCREENER)
+        record = own.record
+        service = own.market_data(lookback_days=days)
+        allowed = [s for s in symbols if own.allows(s, exchange)]
+        problems.update({s: own.reason(s, exchange) for s in symbols if not own.allows(s, exchange)})
+        symbols = allowed
+    else:
+        record = await _pick_record(session, tenant_id, None, "primary")
+        service = MarketDataService(build_adapter(record), lookback_days=days)
+    universe: List[SymbolData] = []
+    newest: List[datetime] = []
     for symbol in symbols:
         try:
             bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
@@ -249,6 +270,12 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             continue
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames))
+        newest.append(df.index[-1].to_pydatetime())
+    if own is not None and tier_out is not None:
+        # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
+        oldest = min(newest) if newest else None
+        tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
+                                          now=now or datetime.now(timezone.utc))
     return universe, problems, f"broker:{record.broker_name}"
 
 
@@ -286,7 +313,9 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                 "yet (sector / index / F&O lists or the option chain); a run uses bars only",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback)
+    tier: Dict[str, Any] = {}
+    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback,
+                                                               user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
@@ -296,13 +325,18 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
                "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
                "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+    if tier:
+        payload["data_tier"] = tier["data_tier"]          # BT1b: the tier the run actually used (flag byob_data_tier)
     if body.preview:
         # U5 D2 review: a preview is not stored, so it returns counts only - the match list itself comes from a Run,
         # which is stored and can be reproduced.
         counts = {"universe": len(symbols), "with_data": stages["with_data"],
                   "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in stages["stages"]]}
-        return {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
-                "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
+        preview = {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
+                   "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
+        if tier:
+            preview["data_tier"] = tier["data_tier"]
+        return preview
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),
                               ast_version=nodes.VERSION, base_tf=base_tf, universe_json=json.dumps(symbols), data_source=data_source,
@@ -316,7 +350,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
 @router.get("/runs/{run_id}")
 async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
-    row = await session.scalar(select(ScreenRunRecord).where(ScreenRunRecord.id == run_id, ScreenRunRecord.tenant_id == user.tenant_id))
+    query = select(ScreenRunRecord).where(ScreenRunRecord.id == run_id, ScreenRunRecord.tenant_id == user.tenant_id)
+    from app.market_data import live_access
+    if await live_access.byob_on(session, user.tenant_id):
+        query = query.where(ScreenRunRecord.user_id == user.id)       # BT1b: a run read the runner's own broker feed
+    row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return {"run_id": row.id, "screen_id": row.screen_id, "ast_sha256": row.ast_sha256, "version": row.ast_version, "base_tf": row.base_tf,

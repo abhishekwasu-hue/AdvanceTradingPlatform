@@ -472,7 +472,7 @@ def test_screen_runs_on_stored_zones_per_tenant_when_on(screener_on, monkeypatch
     _run(_write_run(KEY, old, [_zrow("o", "SUPPLY_ZONE", 100.2, 100.4, "tested", 1)], tenant_id=other["tenant_id"], settings=own))
     frame = _daily_frame()
 
-    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False):
+    async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **_kw):
         return [SymbolData(s, {base_tf: frame}) for s in symbols if s != "NOZONES"], {}, "broker:fake"
     from app.screener import routes as screener_routes
     monkeypatch.setattr(screener_routes, "fetch_frames", fake_fetch)

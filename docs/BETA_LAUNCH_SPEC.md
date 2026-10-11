@@ -1,0 +1,65 @@
+# ATP beta launch spec (owner, verbatim)
+
+Order of work (owner, 2026-10-11): finish the merge train; then PW1-PW6 (PWA first, below); then BT1-BT3 in Phase 0 scope (§4a).
+
+From Abhi — ATP Beta launch spec (5,000 users; mobile + desktop; approval-only trading) (English). Same working rules as MASTER SPEC. Draft PRs, tests, English strings, flags off by default; LIVE orders only through the approval flow below. This spec decides the beta scope and the data model; costs and licensing are in docs/BETA_COSTS.md (owner-maintained).
+
+1. Beta scope (what is ON)
+ - Accounts: invite codes, waitlist, 5,000-user cap (config), KYC-light (email + phone + broker link), DPDP consent, mandatory risk disclosure and "no guarantee" acknowledgement at signup.
+ - Broker linking: bring-your-own-broker (BYOB). Each user links their own broker via OAuth (Upstox, Dhan, Angel One, Fyers, Zerodha where terms allow); daily broker login reminder (SEBI 2FA), platform static egress IP registered per broker app (Part D4), per-user algo tagging (D1), ≤ 10 orders/second per user (D2), limit orders only for algo entries (D3).
+ - Trading mode in beta = "Approval-only": automation is OFF for entries. The user builds a strategy or scan ("Then" template); every entry signal becomes a proposal sent to that user's own Telegram (and in-app/push) with Approve / Reject / Snooze; the order is placed only after Approve (same monitor state machine; ADR-0006). Exits: protective exits (SL, max loss, time stop, kill switch) always execute automatically (ADR-0004); target/discretionary exits send an "Exit now?" button, and an "Exit now" command is always available. Approval expiry and re-quote on price drift.
+ - Paper trading: full PAPER account per user with the same flow (proposals, approvals, journal); new users start in PAPER; graduation to the approval-only LIVE mode per the progression ladder (P1 §1.4).
+ - Option chain analysis in detail: chain with OI/IV/Greeks, OI banner, buildups, PCR, max pain, IV rank, expected move, per-strike OI history, option-contract charts, Strategy Builder (P1 §3).
+ - Screener: all categories, full builder (U2), alerts (§4) — intraday screens in beta run on the data tier defined in §2; EOD screens on bhavcopy.
+ - AI Copilot: full page, tool-calling agent in read/propose mode only, per-user daily token budget (plan), output filter, evals in CI.
+ - Journal, discipline score, weekly review (P1 §1.3) — core of the beta's value and of the feedback we want.
+ OFF in beta: Auto PAPER/Auto LIVE execution (U4 modes 3–4), marketplace, community, global venues, crypto, SMS.
+
+2. Market-data model for beta (decided after reading NSE's real-time tariff and vendor terms)
+ - Tier A — per-user live data through the user's own broker session (BYOB): used for everything that user sees live: watchlists, charts, option chain for the symbols they open, proposals, positions. Data is fetched under that user's broker entitlement and shown only to that user; never pooled or redistributed. Connection budget per user (symbol caps per broker), server-side fan-in per user session, strict tenant isolation. Each broker's API terms are recorded in docs/BROKER_DATA_TERMS.md; brokers whose terms forbid display on third-party platforms (Zerodha Kite Connect states this) are execution-only in beta: users of those brokers see Tier B/C data and trade via their broker.
+ - Tier B — platform-wide 15-minute delayed data (NSE delayed-data licence, per medium: website and mobile app): used for market-wide pages (heatmaps, breadth, scanner candidates, index pages, education) with a visible "15-min delayed" badge; a user's own broker feed refreshes the symbols they open (Tier A).
+ - Tier C — EOD and reference data (bhavcopy, F&O bhavcopy, participant OI, delivery, constituents, corporate actions): free NSE/BSE/AMFI downloads under their terms; drives EOD screeners, fundamentals, universe (U1).
+ - Not in beta: a platform-wide real-time feed shown to all users. That requires an NSE real-time licence per medium (fixed annual fees in the tens of lakhs per segment plus, for desktop/charting software, per-user monthly fees) and a vendor feed; revisit after beta with real revenue numbers. Server-side computation on a full real-time feed (real-time screener for all symbols) falls under NSE's non-display policy — obtain a quote before building it.
+ - Paper trading uses Tier A/B/C data under the same entitlements; no vendor feed licensed for personal use may be used for simulation (TrueData's terms exclude it).
+ - Every page shows the data tier and timestamp; stale data suppresses alerts (U3).
+
+3. Apps
+ - Mobile: wrap the existing React app with Capacitor (iOS + Android), native push (FCM/APNs), deep links to proposals, biometric lock, Telegram linking; app-store listings as a free app (data tier B for market-wide pages).
+ - Desktop: Tauri wrapper of the same web app (Windows/macOS/Linux); auto-update; the web build remains the primary medium.
+ - One codebase, platform-specific shells; visual regression on all three.
+
+4. Scale and operations for 5,000 users
+ - Capacity model: assume 20% daily active, 1,000 concurrent broker sessions at peak, 50 symbols per session cap, 200 proposals/minute peak, 5,000 Telegram chats. Separate workers: broker-session fan-in, proposal/approval, alerts, screener EOD, copilot. Horizontal workers behind Redis; Postgres with connection pooling; Hostinger KVM 2 is the dev/staging box — beta runs on at least two app nodes + one DB node (sizing in BETA_COSTS.md) with the deploy/rollback blocks from #84 generalised.
+ - Load tests before launch: 1,000 concurrent sessions, approval round-trip p95 < 3 s, alert handoff < 2 s, broker rate limits respected.
+ - Observability, status page, on-call runbooks (U3 G7); incident channel; feature flags per cohort (staged rollout 100 → 500 → 2,000 → 5,000).
+ - Support: in-app help, Telegram support bot, FAQ; bug-report button attaches logs (no secrets).
+ - Compliance pack for beta: algo-provider empanelment with each supported broker/exchange (Part D6 evidence), AI-usage disclosure, risk disclosures, terms/privacy (DPDP), grievance process, audit retention; research-analyst boundary respected (no recommendations; user-authored white-box strategies only).
+
+4a. Lean start — Phase 0 (owner decision: costs must stay near zero until revenue)
+ - Cohort: 300–500 invited users (config cap), free during Phase 0; PWA only (installable on Android/iOS/desktop, web push) — no app-store builds, no Capacitor/Tauri until Phase 1.
+ - Trading: PAPER account + analysis + alerts + Telegram proposals only. No order is placed by ATP through any broker API in Phase 0. A proposal carries a "Trade in your broker app" deep link that opens a pre-filled order/basket in the user's own broker app where the broker offers such a link (e.g. Zerodha Kite Publisher basket links; verify and document each broker's equivalent in BROKER_DATA_TERMS.md); the user confirms there. Consequence: ATP is not yet routing orders for others, so static IP registration, algo tagging and algo-provider empanelment are deferred to Phase 1 (document this reasoning; legal review before Phase 1).
+ - Data: Tier C (EOD, free) for all market-wide pages, labelled "EOD"; Tier A (user's own broker feed) for everything live that user opens; per-user intraday scanning runs inside that user's own session on the symbols their broker entitlement allows (F&O universe fits within typical per-connection caps) — never pooled. No delayed-data licence in Phase 0 (no delayed display at all).
+ - AI Copilot: bring-your-own-key (existing per-tenant encrypted keys) or a small free daily quota on the cheapest tier; Vision audits remain only for the owner's instruments within the existing cap.
+ - Infra: one Hostinger KVM 2 (existing) plus one KVM 4 when concurrency needs it; free tiers for email (transactional), uptime monitoring (self-hosted), error tracking; support via a Telegram group.
+ - Exit from Phase 0 → Phase 1 (approval-only API orders, 1,000 users): paid plan live (small monthly fee), legal review done, empanelment in progress, second app node, delayed-data licence if market-wide intraday pages are wanted.
+ - Target Phase 0 running cost: a few thousand rupees per month; the build order below starts with BT1–BT3 adapted to Phase 0 (no order routing), then BT4+ at Phase 1.
+
+5. Build order (after the merge train): BT1 BYOB data tier + per-user session fan-in + entitlement guard + data-tier badges → BT2 approval-only mode for strategies and scans (proposal → Telegram/in-app/push → order), exits policy, approval expiry/re-quote → BT3 PAPER account per user on the same flow + progression ladder → BT4 Capacitor mobile + Tauri desktop shells + push + deep links → BT5 delayed-data tier for market-wide pages + badges → BT6 capacity/load tests, staged rollout flags, status page, support bot → BT7 compliance pack and store listings.
+ Acceptance: a new user can sign up, link a broker, build a strategy or scan, receive a proposal on Telegram, approve it, see the order, see protective exits execute, and read their journal — on mobile and desktop — with every number carrying its data tier and timestamp; no code path places an entry without approval in beta; load test passes at 1,000 concurrent sessions.
+
+
+## Addendum: PWA first (owner, verbatim)
+
+From Abhi — PWA first (English). Applies with ATP_BETA_LAUNCH_SPEC §3/§4a. Same working rules; draft PRs; tests; flags off; English strings.
+
+Decision: the mobile app ships first as an installable PWA in Phase 0, before BT1. Native store builds (Capacitor) and the desktop wrapper (Tauri) move to Phase 1.
+
+Build (one PR per item, in this order, right after the merge train):
+PW1 PWA shell: web app manifest (name, short name, icons incl. maskable, theme/background from tokens, display standalone, start_url, shortcuts to Dashboard / Screener / Option chain / Alerts), service worker with an app-shell cache (static assets only; never cache market data or API responses), offline page, install prompt handling (Android/desktop beforeinstallprompt; iOS "Add to Home Screen" guide), version/update banner ("A new version is ready — Reload"). Lighthouse PWA checks green.
+PW2 Mobile layout pass on the pages used daily: Dashboard, Screener (U5 stacked layout with the sticky bottom bar), Option chain + OI banner, Charts (touch: pinch-zoom, crosshair on long-press, toolbar as bottom sheet), Positions/Orders, Alerts inbox, Settings, Copilot. 44 px touch targets, safe-area insets (notch), no horizontal scroll, bottom navigation with 5 items, keyboard-aware forms. Visual regression at 360 × 800 and 390 × 844 in dark and light.
+PW3 Web push on all platforms: VAPID keys (existing alerts/webpush.py), subscription UI with permission explained before asking, iOS requirement noted (installed PWA only), per-channel preferences wired to the Notification Service; notification click deep-links to the proposal/alert; test-send button; delivery log entries.
+PW4 Telegram ⇄ app deep links: every Telegram proposal/alert message carries an app link that opens the exact screen (proposal, position, scan result); app → Telegram linking flow (existing one-time code); approval from either surface updates the other within 2 s (SSE).
+PW5 Phase 0 proposal flow in the PWA: proposal card with Approve (PAPER) / Reject / Snooze and, where the broker offers it, "Trade in your broker app" deep link (pre-filled basket; document per broker in BROKER_DATA_TERMS.md); no API order from ATP in Phase 0.
+PW6 Install analytics + beta cohort gate: invite code, cohort cap (config, default 500), install/update metrics, a "Send feedback" button that attaches app version and screen (no secrets, no data).
+Acceptance: a tester installs from the site on Android, iPhone and a laptop; receives a push for a PAPER proposal; approves it in the app or on Telegram and sees both sides update; option chain, screener and charts usable one-handed on a 360 px screen; Lighthouse PWA and accessibility ≥ 95; no market data cached offline.
+Then continue BT1–BT3 (Phase 0 scope) per ATP_BETA_LAUNCH_SPEC; Capacitor/Tauri only when Phase 1 starts.

@@ -58,7 +58,8 @@ PriceLookup = Callable[[str], Awaitable[float]]
 
 
 class EntriesPaused(ValueError):
-    """Z3-b: the user the proposal is for paused their PAPER entries (/pause): no proposal is raised."""
+    """Z3-b: the user the proposal is for paused their PAPER entries (/pause), or (Z5 / P1-d, flag risk_by_default) is
+    locked out for the day by their daily loss limit or entries-per-day limit: no proposal is raised."""
 
 
 def _utc(dt: datetime) -> datetime:
@@ -143,11 +144,13 @@ def _money(value: Optional[float]) -> str:
 async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal, strategy_id: str, source: str,
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
                         exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
-                        now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None) -> Optional[AiActionRecord]:
+                        now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
+                        strike_breach: Optional[Dict] = None) -> Optional[AiActionRecord]:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there; raises EntriesPaused when `user_id` paused their
-    PAPER entries (Z3-b). Places nothing."""
+    PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d). `strike_breach` (Z5): the short strikes' breach
+    chances of an option proposal (app/options_builder/strike_breach.py::report), shown on the card. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
@@ -155,6 +158,10 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     paused = await paused_reason(session, user_id)
     if paused:
         raise EntriesPaused(paused)
+    from app.risk_engine.by_default import proposal_refusal
+    locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
+    if locked:
+        raise EntriesPaused(locked)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
     expires = now + timedelta(minutes=app_config.APPROVAL_ENTRY_TTL_MINUTES)
     label = SOURCE_LABELS.get(source, source)
@@ -166,7 +173,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "symbol": signal.symbol, "direction": direction, "target2": signal.target2, "risk_reward": signal.risk_reward,
                 "strategy_id": strategy_id, "mode": "PAPER", "requested_mode": requested_mode, "exit_rules": exit_rules,
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
-                "signal": signal.model_dump(mode="json")}
+                "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach}
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
                          action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=json.dumps(evidence, default=str),
                          status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200])

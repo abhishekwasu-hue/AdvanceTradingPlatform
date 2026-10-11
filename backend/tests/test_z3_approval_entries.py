@@ -286,9 +286,13 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     mode. A new caller fails this test until it is reviewed (and the pipelines' own default refuses it meanwhile)."""
     assert _pipeline_callers() == {"app/main.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
-                                   "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"}}
+                                   "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
+                                   "app/paper/ticket.py": {"execute_signal_for_user"}}
     main = (BACKEND / "app" / "main.py").read_text()
     assert 'origin="manual"' in main                                           # the console: a person's own entry
+    # Z5 / P1-d: the plan-before-trade PAPER ticket is the person's own entry (they confirm the plan), always PAPER.
+    ticket_src = (BACKEND / "app" / "paper" / "ticket.py").read_text()
+    assert "origin=approval.ORIGIN_MANUAL" in ticket_src and "mode=by_default.MODE" in ticket_src
     for rel in ("app/webhooks/routes.py", "app/public_api/routes.py"):
         text = (BACKEND / rel).read_text()
         assert text.index("approval.required(") < text.index("execute_signal_for_user("), rel   # proposes first

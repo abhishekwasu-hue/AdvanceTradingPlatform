@@ -5,7 +5,8 @@ the platform's execution and risk layers).
 - `GET  /api/options-builder/catalog`   the template gallery (families, legs as offsets, descriptions).
 - `POST /api/options-builder/template`  a template's legs at a given ATM / width / expiries / lots.
 - `POST /api/options-builder/evaluate`  curves (expiry and any date, IV shift), exact extremes and intervals,
-                                        breakevens, PoP, expected move, probability-weighted P&L, net and per-leg Greeks.
+                                        breakevens, PoP, expected move, probability-weighted P&L, net and per-leg Greeks;
+                                        with the underlying's daily bars, each short strike's breach chance (Z5).
 - `POST /api/options-builder/suggest`   a selector rule (P1-a, ported) on a broker chain through the adapter.
 
 Instrument numbers (strike step, lot size, width) always come from the caller (the instrument master on the page);
@@ -26,9 +27,10 @@ from app.auth.dependencies import get_current_user
 from app.brokers.models import OptionChain
 from app.core.config import RISK_FREE_RATE
 from app.core.rate_limit import user_rate_limit
+from app.option_chain.greeks import IST
 from app.db.models import User
 from app.db.session import get_session
-from app.options_builder import catalog, chain, model, selectors
+from app.options_builder import catalog, chain, model, selectors, strike_breach
 from app.options_builder.greeks import leg_with_model_greeks
 from app.options_builder.payoff import build_default_price_range, compute_strategy_payoff_curve
 from app.platform.controls import require_flag
@@ -38,6 +40,7 @@ MAX_LEGS = 12
 MAX_POINTS = 401
 MAX_CHAIN_ROWS = 1000           # strikes in one chain; real index chains are a few hundred
 MAX_PRICE = 1e7                 # above any listed price or strike; keeps the model's arithmetic finite
+MAX_DAILY_BARS = 400            # the breach model reads the last 30-odd; a year and a half is plenty
 
 
 async def _flag_on(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
@@ -65,6 +68,12 @@ class LegIn(BaseModel):
     iv: Optional[float] = Field(default=None, gt=0, lt=5, description="annualised, as a fraction; solved from the premium when absent")
 
 
+class DailyBar(BaseModel):
+    high: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    low: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    close: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+
 class EvaluateBody(BaseModel):
     legs: List[LegIn] = Field(min_length=1, max_length=MAX_LEGS)
     spot: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
@@ -74,6 +83,12 @@ class EvaluateBody(BaseModel):
     range_pct: float = Field(default=10.0, gt=0, le=60)
     points: int = Field(default=201, ge=21, le=MAX_POINTS)
     rate: float = Field(default=RISK_FREE_RATE, ge=-0.05, le=0.3)
+    # Z5 (Trade port, strike_breach_model): the underlying's completed daily bars, oldest first, up to the session before
+    # `as_of` - with them the answer carries each short strike's breach chance. `structure`: the daily market structure
+    # (+1 up, -1 down, 0 unknown); `holidays`: exchange holidays between now and the expiry (sessions are counted).
+    daily_bars: Optional[List[DailyBar]] = Field(default=None, max_length=MAX_DAILY_BARS)
+    structure: Literal[-1, 0, 1] = 0
+    holidays: List[date] = Field(default_factory=list, max_length=60)
 
     @field_validator("as_of", mode="before")
     @classmethod
@@ -219,6 +234,7 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
                   # the model's price now at the leg's own IV: what a leg priced by the model is worth after an edit
                   "theoretical": round(model.leg_theoretical(leg, body.spot, as_of, r=body.rate), 2)} for leg in legs],
         "single_expiry": single, "disclaimer": DISCLAIMER,
+        "strike_breach": _strike_breach(body, legs, as_of),
     }
     if single:
         ext = model.payoff_extremes(legs)
@@ -235,6 +251,16 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
         out["profitable"] = None
         out["breakevens"] = None
     return out
+
+
+def _strike_breach(body: EvaluateBody, legs: List[Dict[str, Any]], as_of: Union[date, datetime]) -> Optional[Dict[str, Any]]:
+    """Each short strike's chance of a breach before expiry (Trade strike_breach_model, frozen NIFTY fit), when the
+    underlying's daily bars came with the request; None otherwise."""
+    if body.daily_bars is None:
+        return None
+    day = as_of.astimezone(IST).date() if isinstance(as_of, datetime) else as_of
+    return strike_breach.report(legs, spot=body.spot, as_of=day, bars=[b.model_dump() for b in body.daily_bars], structure=body.structure,
+                                holidays=body.holidays)
 
 
 @router.post("/suggest", dependencies=[Depends(compute_rate_limit)])

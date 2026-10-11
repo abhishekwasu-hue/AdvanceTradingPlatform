@@ -9,6 +9,14 @@
   format is documented in docs/BROKER_DATA_TERMS.md; the user confirms the order in the broker's own app. ATP sends
   nothing to any broker API here (Phase 0: no order from ATP through a broker API).
 
+* `risk_check` - Z5 / P1-d, only with the `risk_by_default` flag on and only for a waiting ENTRY proposal: what the
+  caller's own risk by default makes of it (`app/paper/ticket.py::assess`) - the quantity their cap allows at the
+  proposal price, the risk at the stop, the cap that binds, the cost line (charges, slippage estimate, break-even move,
+  reward:risk after costs), and why it would be refused now (daily loss lockout, entries per day, the guardian, the
+  India VIX gate). Approve places the PAPER order sized the same way (the pipeline applies the same cap).
+* `strike_breach` - Z5 (Trade `strike_breach_model.py`), with the same flag: each short strike's chance of a breach
+  before expiry, when the proposal carries option legs (`evidence.strike_breach`, computed when it was raised).
+
 Everything is scoped to the caller's organisation; a row of another organisation is never read.
 """
 from __future__ import annotations
@@ -20,10 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import monitor
 from app.core import config as app_config
-from app.db.models import AiActionRecord, BrokerAccountRecord, BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord
+from app.db.models import AiActionRecord, BrokerAccountRecord, BrokerCredentialRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.platform.controls import flag_enabled
 
 FLAG = "broker_app_links"
+RISK_FLAG = "risk_by_default"
 TICKET_ACTIONS = ("EXIT_POSITION",)          # PAUSE / REDUCE / REVIEW concern no tradable instrument
 
 
@@ -67,7 +76,19 @@ def ticket_for(trade: TradeRecord, broker: Optional[str], publisher_api_key: str
             "publisher_api_key": (publisher_api_key or None) if broker == "zerodha" else None}
 
 
-async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionRecord]) -> List[dict]:
+async def _risk_check(session: AsyncSession, user: User, evidence: dict) -> Optional[dict]:
+    """The caller's risk by default applied to a waiting entry proposal, or None when its levels are incomplete."""
+    from app.paper import ticket
+    try:
+        plan = ticket.Plan(symbol=str(evidence["symbol"]), direction=str(evidence["direction"]), setup="OTHER",
+                           entry=float(evidence["proposal_price"]), stop_loss=float(evidence["stop_loss"]), target=float(evidence["target1"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    view = await ticket.assess(session, user, plan)
+    return {k: view[k] for k in ("sizing", "costs", "refusals", "warnings", "errors", "reward_risk", "min_reward_risk")}
+
+
+async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionRecord], user: Optional[User] = None) -> List[dict]:
     rows = [r for r in rows if r.tenant_id == tenant_id]
     dep_ids: Set[int] = {r.deployment_id for r in rows if r.deployment_id is not None}
     trade_ids: Set[int] = {r.trade_id for r in rows if r.trade_id is not None}
@@ -77,6 +98,7 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.id.in_(trade_ids)))} if trade_ids else {}
     links_on = any(r.action in TICKET_ACTIONS and r.status == "PROPOSED" for r in rows) and await flag_enabled(session, FLAG, tenant_id)
     key = (app_config.KITE_PUBLISHER_API_KEY or "").strip()
+    risk_on = user is not None and user.tenant_id == tenant_id and any(r.action == "ENTRY" for r in rows) and await flag_enabled(session, RISK_FLAG, tenant_id)
     out: List[dict] = []
     for row in rows:
         item = monitor.as_dict(row)
@@ -89,5 +111,13 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         item["ticket"] = None
         if links_on and row.action in TICKET_ACTIONS and row.status == "PROPOSED" and trade is not None:
             item["ticket"] = ticket_for(trade, await _broker_of(session, tenant_id, trade, dep), key)
+        item["risk_check"] = None
+        item["strike_breach"] = None
+        if risk_on and row.action == "ENTRY" and user is not None:
+            item["strike_breach"] = item["evidence"].get("strike_breach")
+            if row.status == "PROPOSED":
+                item["risk_check"] = await _risk_check(session, user, item["evidence"])
         out.append(item)
+    if risk_on:
+        await session.commit()                 # a daily loss lockout seen for the first time is recorded
     return out

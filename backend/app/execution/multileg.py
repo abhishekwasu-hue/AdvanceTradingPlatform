@@ -53,6 +53,7 @@ from app.notifications.service import notify
 from app.observability.metrics import ORDERS
 from app.reconciliation.service import mark_broker_uncertain
 from app.risk_engine.hierarchy import RiskContext, evaluate as evaluate_hierarchy
+from app.risk_engine import by_default
 from app.risk_engine.guardian import GuardianVerdict, apply_multiplier, guard_entry, portfolio_risk_block
 from app.platform.controls import clamp_config, risk_ceilings
 from app.risk_engine.risk_manager import RiskManager
@@ -156,8 +157,12 @@ async def execute_structure(
     state = await build_trading_day_state(session, user)
     daily_limit = -abs(cfg.capital * cfg.max_daily_loss_pct / 100)
     # A breached daily-loss limit outranks the guardian (the risk engine's refusal engages the kill switch).
-    guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg) \
-        if state.daily_pnl > daily_limit else GuardianVerdict()
+    if mode == ExecutionMode.PAPER.value and await by_default.enabled(session, user.tenant_id):
+        # Z5 / P1-d: the user's own PAPER risk cap as well as the organisation's (strictest wins), before the guardian.
+        cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
+        guardian_notes.extend(cap_notes)
+    guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
+                              direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
     if guard.reasons:
         await _reject_all(session, orders, guard.reasons)
         await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused by the risk guardian: {structure.underlying_symbol}",

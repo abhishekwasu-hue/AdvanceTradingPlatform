@@ -51,6 +51,11 @@ async def entry_refusals(session: AsyncSession, tenant: Optional[Tenant], tenant
         paused = await paused_reason(session, user.id)
         if paused:
             reasons.append(paused)
+        # Z5 / P1-d (flag risk_by_default): the user's daily loss lockout and entries-per-day limit - new PAPER entries
+        # only; exits never come here (ADR-0004).
+        from app.risk_engine import by_default
+        if await by_default.enabled(session, user.tenant_id):
+            reasons.extend(await by_default.entry_refusals(session, user))
     if tenant is not None and not tenant_is_active(tenant):
         reasons.append(f"Organisation is {tenant.status}: no new orders")
     if mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
@@ -77,6 +82,7 @@ async def execute_signal_for_user(
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
     holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
+    max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -90,7 +96,12 @@ async def execute_signal_for_user(
     Z3 / BT2: `origin` says who asks - "manual" (a person's own console entry), "approval" (an APPROVED entry proposal,
     whose id is `approval_action_id`) or "automatic" (the default: worker, webhook, public API). Under approval-only
     mode an automatic entry without an approved proposal is REJECTED here (app/execution/approval.py::gate_refusal).
+
+    Z5 / P1-d: `max_quantity` caps the size (a PAPER ticket's checked quantity); `risk_cap_amount` is the user's checked
+    cap for this entry (a ticket's, an override included). With the `risk_by_default` flag on, a PAPER entry is sized
+    within the user's own cap (that amount, or their settings') as well as the organisation's, strictest wins.
     """
+    ticket_quantity = max_quantity
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
     # (premium/future price levels) while the strategy's levels stay on the underlying. The order
     # signal is built up front so the order trail's symbol is the contract from the first event;
@@ -99,7 +110,7 @@ async def execute_signal_for_user(
     plan = None
     plan_error: Optional[str] = None
     contract_spec = None
-    max_quantity: Optional[float] = None
+    max_quantity = ticket_quantity
     if contract is not None:
         price_source = quote_broker or broker
         try:
@@ -109,7 +120,8 @@ async def execute_signal_for_user(
             plan = build_order_plan(underlying_signal, contract, rules or ContractRules(kind=contract.kind, position=contract.position), ltp)
             signal = plan.order_signal
             contract_spec = plan.contract_spec
-            max_quantity = plan.max_quantity
+            max_quantity = plan.max_quantity if ticket_quantity is None else (
+                ticket_quantity if plan.max_quantity is None else min(ticket_quantity, plan.max_quantity))
         except ContractExecutionError as exc:
             plan_error = str(exc)
             signal = underlying_signal.model_copy(update={"symbol": contract.tradingsymbol, "direction": contract.trade_direction})
@@ -197,13 +209,19 @@ async def execute_signal_for_user(
         # is a smaller risk per trade for every sizer downstream.
         effective_risk_config, ceiling_notes = clamp_config(effective_risk_config, await risk_ceilings(session))
         pre_notes.extend(ceiling_notes)
+        if mode == ExecutionMode.PAPER.value:
+            from app.risk_engine import by_default
+            if await by_default.enabled(session, user.tenant_id):
+                # Z5 / P1-d: the user's own PAPER cap (or the ticket's checked one) and the organisation's - strictest wins.
+                effective_risk_config, cap_notes = await by_default.apply_user_cap(session, user, effective_risk_config, amount=risk_cap_amount)
+                pre_notes.extend(cap_notes)
         # A breached daily-loss limit (R5) outranks the guardian: the risk engine's own refusal
         # below engages the kill switch and raises DAILY_LOSS_LIMIT, which a guardian refusal
         # must not pre-empt.
         day_state = await build_trading_day_state(session, user)
         daily_limit = -abs(effective_risk_config.capital * effective_risk_config.max_daily_loss_pct / 100)
-        guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config) \
-            if day_state.daily_pnl > daily_limit else GuardianVerdict()
+        guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config,
+                                  direction=underlying_signal.direction.value) if day_state.daily_pnl > daily_limit else GuardianVerdict()
         if guard.reasons:
             order.reasons_json = json.dumps(guard.reasons)
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(guard.reasons))

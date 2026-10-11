@@ -480,3 +480,40 @@ PAPER_MAX_CAPITAL = 100_000_000.0
 PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 1000)
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)
+
+# Z5 / P1-d (P1 spec 1.1, 1.2, 2.2; Phase 0): risk by default and the plan-before-trade PAPER ticket (flag
+# `risk_by_default`, off by default). Every user starts with these defaults and may change their own within the bounds
+# (the platform's risk ceilings still clamp them, strictest wins - ADR-0003):
+# - RISK_DEFAULT_RISK_PER_TRADE_PCT: the most a PAPER entry may lose at its stop, % of the user's PAPER capital basis
+#   (starting capital + realised net P&L before today); RISK_DEFAULT_RISK_PER_TRADE_AMOUNT: the same cap in rupees
+#   (0 = no rupee cap). The stricter of the two is the cap; the ticket sizes the quantity from it and the stop distance.
+# - RISK_OVERRIDE_MAX_MULTIPLE: a deliberate, logged and counted override may size up to this many times the cap, never
+#   more (and never past the platform ceiling); RISK_OVERRIDE_MIN_REASON_CHARS: the override needs a reason this long.
+# - RISK_DEFAULT_DAILY_LOSS_PCT: today's PAPER net P&L (realised + today's open marks) at or below minus this % of the
+#   capital basis locks new PAPER entries for the rest of the IST day. Exits are never locked (ADR-0004).
+# - RISK_DEFAULT_MAX_TRADES_PER_DAY: new PAPER entries per IST day (0 = no limit).
+# - RISK_DEFAULT_MIN_RR: a plan's reward:risk (target vs stop, from the entry) must be at least this.
+# - TICKET_SLIPPAGE_PCT: the slippage estimate on the ticket's cost line, % of the price per side (the paper broker's own
+#   fill slippage); TICKET_BROKERAGE_PER_ORDER: the brokerage per executed order on the cost line.
+RISK_DEFAULT_RISK_PER_TRADE_PCT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_PCT", 1.0, 0.05, 5.0)
+RISK_DEFAULT_RISK_PER_TRADE_AMOUNT = _bounded_float("RISK_DEFAULT_RISK_PER_TRADE_AMOUNT", 0.0, 0.0, 10_000_000.0)
+RISK_OVERRIDE_MAX_MULTIPLE = _bounded_float("RISK_OVERRIDE_MAX_MULTIPLE", 2.0, 1.0, 5.0)
+RISK_OVERRIDE_MIN_REASON_CHARS = _bounded_int("RISK_OVERRIDE_MIN_REASON_CHARS", 10, 1, 200)
+RISK_DEFAULT_DAILY_LOSS_PCT = _bounded_float("RISK_DEFAULT_DAILY_LOSS_PCT", 2.0, 0.1, 20.0)
+RISK_DEFAULT_MAX_TRADES_PER_DAY = _bounded_int("RISK_DEFAULT_MAX_TRADES_PER_DAY", 10, 0, 500)
+RISK_DEFAULT_MIN_RR = _bounded_float("RISK_DEFAULT_MIN_RR", 1.5, 0.0, 10.0)
+TICKET_SLIPPAGE_PCT = _bounded_float("TICKET_SLIPPAGE_PCT", 0.02, 0.0, 5.0)
+TICKET_BROKERAGE_PER_ORDER = _bounded_float("TICKET_BROKERAGE_PER_ORDER", 20.0, 0.0, 1000.0)
+
+# Z5 (Trade port, `check_vix_spike_halt.py` + `trading_engine.check_vix_spike_halt`): the India VIX gate (flag `vix_gate`,
+# off by default). It reads the organisation's India VIX readings of the day (market memory, captured through its own
+# broker session). VIX_GATE_SPIKE_PCT: a reading today at or above this % change against the previous close pauses new
+# BULLISH (long) entries on VIX_GATE_UNDERLYINGS for the rest of the IST day, PAPER and LIVE alike (the Trade rule;
+# bearish entries and other symbols are not touched). VIX_GATE_HIGH_LEVEL: the latest reading today at or above this
+# level cuts the risk per trade of every new entry on those underlyings by VIX_GATE_SIZE_CUT_PCT % (0 level = off).
+# A reading older than VIX_GATE_MAX_AGE_MINUTES is not used for the level. Exits are never gated (ADR-0004).
+VIX_GATE_SPIKE_PCT = _bounded_float("VIX_GATE_SPIKE_PCT", 5.0, 0.5, 100.0)
+VIX_GATE_HIGH_LEVEL = _bounded_float("VIX_GATE_HIGH_LEVEL", 20.0, 0.0, 200.0)
+VIX_GATE_SIZE_CUT_PCT = _bounded_float("VIX_GATE_SIZE_CUT_PCT", 50.0, 0.0, 100.0)
+VIX_GATE_MAX_AGE_MINUTES = _bounded_int("VIX_GATE_MAX_AGE_MINUTES", 45, 1, 24 * 60)
+VIX_GATE_UNDERLYINGS = tuple(s.strip().upper() for s in os.environ.get("VIX_GATE_UNDERLYINGS", "NIFTY,BANKNIFTY,SENSEX").split(",") if s.strip())

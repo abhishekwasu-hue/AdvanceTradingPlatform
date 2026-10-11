@@ -615,10 +615,15 @@ async def list_actions(status: Optional[str] = Query(default=None, max_length=10
     return await proposal_card.enrich(session, user.tenant_id, rows)
 
 
-async def _action(session: AsyncSession, action_id: int, user: User) -> AiActionRecord:
+async def _action(session: AsyncSession, action_id: int, user: User, *, deciding: bool = False) -> AiActionRecord:
     row = await session.get(AiActionRecord, action_id)
     if row is None or row.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="No such proposal")
+    if deciding:
+        # Z3 (review L8): a proposal for one person (an entry, an "Exit now?") is theirs - or the organisation OWNER's - to decide.
+        from app.execution.approval import may_decide
+        if not may_decide(user, row):
+            raise HTTPException(status_code=403, detail="This proposal belongs to another member; only they or the organisation owner can decide it")
     return row
 
 
@@ -643,20 +648,16 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
     otherwise tells the user to close from the Positions page. P0.8 / A2: a LIVE deployment or
     position needs the authenticator step-up the Telegram message promises (same rule as creating
     or resuming a LIVE deployment); A1: a LIVE exit squares off at the broker the trade went through."""
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     if await _action_is_live(session, row):
         await ensure_live_step_up(session, user, session_id, "Approving an AI proposal on a LIVE deployment")
     try:
         row = await monitor.decide(session, row, user, approve=True, note=body.note)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    price_lookup = broker = None
-    if row.action == "EXIT_POSITION":
-        from app.ai.worker_bridge import price_lookup_for_tenant
-        from app.trading.position_monitor import broker_for_trade
-        price_lookup = await price_lookup_for_tenant(session, user.tenant_id, user=user)
-        trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
-        broker = await broker_for_trade(session, trade)
+    # An exit needs a live price (and, LIVE, the trade's broker); Z3: an entry is re-quoted at the live price.
+    from app.execution.approval import execution_sources
+    price_lookup, broker = await execution_sources(session, row, user)
     row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
     await _sync_telegram(session, row)
     return monitor.as_dict(row)
@@ -670,7 +671,7 @@ async def _sync_telegram(session: AsyncSession, row) -> None:
 
 @router.post("/actions/{action_id}/reject")
 async def reject_action(action_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     try:
         row = await monitor.decide(session, row, user, approve=False, note=body.note)
     except ValueError as exc:
@@ -698,7 +699,7 @@ async def snooze_action(action_id: int, body: SnoozeBody, user: User = Depends(r
             raise HTTPException(status_code=422, detail="until must be in the next 7 days")
     else:
         until = now + timedelta(minutes=int(body.minutes or 0))
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     try:
         row = await monitor.snooze(session, row, user, until=until, via="web", now=now)
     except ValueError as exc:

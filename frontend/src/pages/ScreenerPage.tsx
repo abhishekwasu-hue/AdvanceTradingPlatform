@@ -5,18 +5,20 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { Play, Save } from "lucide-react";
+import { LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
-import { Button, cx } from "../components/primitives";
+import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
 import { screenerApi, type PreviewResponse, type RunResponse } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
-import { FunnelCanvas } from "../screener/FunnelCanvas";
+import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
+import { ScreenGallery } from "../screener/ScreenGallery";
+import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
 const VALIDATE_DELAY_MS = 350;
@@ -50,10 +52,27 @@ export default function ScreenerPage(_props: PageProps) {
   const [runKey, setRunKey] = useState(0);
   const [savedId, setSavedId] = useState<number | undefined>(undefined);
   const validateSeq = useRef(0);
+  // U9 TX1 (flag `screener_gallery`): the taxonomy loads once; while the flag is off the call fails and the page shows
+  // no gallery - it is then exactly as before.
+  const [taxonomy, setTaxonomy] = useState<Taxonomy | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
+    screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
   }, []);
+
+  // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
+  // breakout family joins with U6 BK1).
+  const canOpen = useCallback((s: TaxScreen) => !!registry && s.source === "starter" && STARTERS.some((t) => t.id === s.id), [registry]);
+  const openScreen = (s: TaxScreen) => {
+    const starter = STARTERS.find((t) => t.id === s.id);
+    if (!registry || !starter) return;
+    if (stages.length > 0 && !window.confirm(`Replace the current conditions with "${s.name}"?`)) return;
+    setStages(starter.build(registry));
+    setName(s.name);
+    setGalleryOpen(false);
+  };
 
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
   const text = useMemo(() => (registry ? screenText(registry, stages) : ""), [registry, stages]);
@@ -167,6 +186,9 @@ export default function ScreenerPage(_props: PageProps) {
         <FreshnessPill ranAt={ranAt} source={run?.data_source ?? null} scanTf={scanTf} />
         {/* BT1b: the tier the last run actually read (only sent with byob_data_tier on). */}
         <DataTierBadge badge={run?.data_tier} />
+        {taxonomy && (
+          <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
+        )}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -229,6 +251,13 @@ export default function ScreenerPage(_props: PageProps) {
           {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
         </div>
       </div>
+
+      {taxonomy && (
+        <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
+                description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} />
+        </Dialog>
+      )}
 
       {/* Phone: the live count and Run stay in reach - PW2: just above the app's bottom navigation */}
       <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}>

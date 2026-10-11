@@ -162,8 +162,10 @@ def test_tax_report_classifies_and_estimates_by_income_head():
     assert body["trades"] == 4 and body["net_pnl"] == pytest.approx(35 - 520 + 10 - 5)
     assert eq["trades"] == 1 and eq["gross_pnl"] == 40.0 and eq["net_pnl"] == 35.0 and eq["turnover"] == 40.0
     assert eq["stt_estimate"] == pytest.approx(1040 * 0.025 / 100, abs=0.01)
-    assert fno["trades"] == 1 and fno["gross_pnl"] == -500.0 and fno["turnover"] == pytest.approx(500 + 2000)
-    assert fno["stt_estimate"] == pytest.approx(2000 * 0.1 / 100, abs=0.01) and fno["income_head"].startswith("Non-speculative")
+    # F&O turnover: the default absolute-P&L method (JM-1); the older method adds the 2000 of premium sold.
+    assert body["turnover_method"] == "ABS_PNL" and fno["trades"] == 1 and fno["gross_pnl"] == -500.0 and fno["turnover"] == pytest.approx(500)
+    # STT from india_costs at the sale date (15 Jun 2026: 0.15% of premium sold).
+    assert fno["stt_estimate"] == pytest.approx(2000 * 0.15 / 100, abs=0.01) and fno["income_head"].startswith("Non-speculative")
     assert crypto["trades"] == 2 and crypto["taxable_gains"] == 10.0 and crypto["disallowed_losses"] == 5.0 and crypto["tax_estimate"] == 3.0
     assert crypto["tds_estimate"] == pytest.approx((110 + 95) * 1.0 / 100, abs=0.01)
     assert any("115BBH" in n for n in body["notes"]) and body["rates"]["CRYPTO"]["tax_pct"] == 30.0
@@ -172,6 +174,11 @@ def test_tax_report_classifies_and_estimates_by_income_head():
     assert "2026-27" in years["years"] and "2025-26" in years["years"]
     all_modes = client.get("/api/tax/report?fy=2026-27&mode=ALL", headers=headers).json()
     assert all_modes["trades"] == 5
+    older = client.get("/api/tax/report?fy=2026-27&turnover_method=ABS_PNL_PLUS_PREMIUM", headers=headers).json()
+    assert older["turnover_method"] == "ABS_PNL_PLUS_PREMIUM" and older["classes"]["FNO"]["turnover"] == pytest.approx(500 + 2000)
+    assert client.get("/api/tax/report?fy=2026-27&turnover_method=OTHER", headers=headers).status_code == 400
+    assert "turnover_method,ABS_PNL_PLUS_PREMIUM" in client.get("/api/tax/report.csv?fy=2026-27&turnover_method=ABS_PNL_PLUS_PREMIUM",
+                                                                headers=headers).text.splitlines()[0]
     assert client.get("/api/tax/report?fy=2026-27&mode=BOTH", headers=headers).status_code == 400
     assert client.get("/api/tax/report?fy=garbage", headers=headers).status_code == 400
     csv_resp = client.get("/api/tax/report.csv?fy=2026-27", headers=headers)

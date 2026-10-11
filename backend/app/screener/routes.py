@@ -26,8 +26,9 @@ from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
+from app.screener import taxonomy as tx
 from app.core.rate_limit import user_rate_limit
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
@@ -35,6 +36,7 @@ from app.screener.runtime import SymbolData, closed_only, resample, run_screen, 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 FLAG = "screener_v2"
+GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery on the Screener page
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
 run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
 # Data the run path loads today: bars only. A screen using a function that needs more is refused with the reason
@@ -99,6 +101,23 @@ async def _flag(session: AsyncSession, user: User) -> None:
 async def registry(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": describe()}
+
+
+@router.get("/taxonomy")
+async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U9 TX1: the library's two axes (method x setup), the tag vocabulary, the pre-built screens filed on them and the
+    full matrix of counts (empty cells are 0). `method` / `setup` narrow the screen list, never the matrix. A template
+    source behind its own flag (e.g. the breakouts) is left out while that flag is off for the organisation."""
+    await _flag(session, user)
+    await require_flag(session, GALLERY_FLAG, user.tenant_id)
+    tax = tx.load()
+    if method is not None and method not in {m.id for m in tax.methods}:
+        raise HTTPException(status_code=422, detail=f"unknown method {method!r}; one of {', '.join(m.id for m in tax.methods)}")
+    if setup is not None and setup not in {s.id for s in tax.setups}:
+        raise HTTPException(status_code=422, detail=f"unknown setup {setup!r}; one of {', '.join(s.id for s in tax.setups)}")
+    hidden = [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
+    return tx.payload(tax, hidden_sources=hidden, method=method, setup=setup)
 
 
 @router.post("/validate")
@@ -317,4 +336,4 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
             "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None, "disclaimer": DISCLAIMER}
 
 
-__all__ = ["router", "FLAG", "fetch_frames"]
+__all__ = ["router", "FLAG", "GALLERY_FLAG", "fetch_frames"]

@@ -20,6 +20,12 @@ import { useCopilotT } from "../i18n";
  */
 const ACTION_BUTTON = "min-h-[44px] w-full px-2 text-sm";
 
+/** Z3: a target reached on an approval-only position reads "Exit now?"; everything else by its action. */
+export function proposalTitle(a: Pick<AiAction, "action" | "rule">, t: (key: string) => string): string {
+  if (a.action === "EXIT_POSITION" && a.rule.startsWith("TARGET_")) return t("watch.exitNow");
+  return t(`watch.action.${a.action}`);
+}
+
 function clock(d: Date): string {
   return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
 }
@@ -68,7 +74,7 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
       <div className="flex items-start gap-2">
         <ShieldAlert size={18} className="mt-0.5 shrink-0 text-warn" aria-hidden />
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold leading-snug text-fg">{t(`watch.action.${a.action}`)}</h3>
+          <h3 className="text-base font-semibold leading-snug text-fg">{proposalTitle(a, t)}</h3>
           <p className="text-xs text-fg-muted">{t("watch.meta", { rule: a.rule, deployment: a.deployment_id ?? "-" })}{a.trade_id ? ` · ${t("watch.position", { id: a.trade_id })}` : ""}</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -125,6 +131,7 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
         </div>
       )}
 
+      {a.action === "ENTRY" && <p className="text-[11px] text-fg-muted" data-testid="watch-entry-note">{t("watch.entryNote")}</p>}
       {!paper && <p className="text-[11px] text-fg-muted">{t("watch.liveNote")}</p>}
       {error && <p className="text-xs text-down" role="alert">{error}</p>}
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}

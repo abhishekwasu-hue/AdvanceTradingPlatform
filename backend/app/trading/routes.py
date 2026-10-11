@@ -305,12 +305,19 @@ async def mark_price(
         raise HTTPException(status_code=404, detail="Unknown position")
     if trade.exit_time is not None:
         raise HTTPException(status_code=409, detail="Position is already closed")
+    from app.execution import approval
+    if await approval.exit_now_enabled(session, user.tenant_id):
+        # Z3 (review V3): with approval-only (or the PAPER account) on, a typed price never closes a position - the
+        # monitor's own quotes run the stop and target, and "Exit now" closes at a platform price.
+        raise HTTPException(status_code=409, detail="Closing on a typed price is off here - use Exit now (it prices from the platform's quotes)")
 
     hit = check_contract_exit(trade, request.current_price, request.underlying_price)
     if hit is None:
         return MarkPriceResponse(closed=False)
 
     reason, exit_price = hit
+    if trade.mode == "PAPER":
+        trade.price_source = "client"          # Z3 (review V3/H2): closed at a typed price - left out of the PAPER account and ladder
     # LIVE positions are squared off at the broker inside close_position (using the deployment's
     # broker session); a LIVE trade with no usable session stays open and the 409 says so.
     broker = await broker_for_trade(session, trade)
@@ -319,6 +326,40 @@ async def mark_price(
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)
+
+
+class ExitNowResponse(BaseModel):
+    closed: List[MarkPriceResponse]
+    warnings: List[str] = []
+
+
+@router.post("/positions/{trade_id}/exit-now", response_model=ExitNowResponse)
+async def exit_now(
+    trade_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+) -> ExitNowResponse:
+    """Z3 / BT2 "Exit now", with approval-only on (404 otherwise - exits then run automatically, review M4): close this
+    PAPER position at once, whatever proposal is pending or snoozed (ADR-0004). Priced at the live price of the caller's
+    own entitlement, else the last price the monitor saw - never a typed price (review M2). LIVE positions are closed in
+    the broker app (409). The position's holder or the organisation owner only (review L8). A leg closes its structure."""
+    from app.execution import approval
+    if not await approval.exit_now_enabled(session, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": approval.FLAG})
+    trade = await session.get(TradeRecord, trade_id)
+    if trade is None or trade.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Unknown position")
+    if not approval.may_act_on_trade(user, trade):
+        raise HTTPException(status_code=403, detail="This position belongs to another member; only they or the organisation owner can close it")
+    if trade.exit_time is not None:
+        raise HTTPException(status_code=409, detail="Position is already closed")
+    try:
+        outcomes = await approval.exit_now(session, trade, user, via="web")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    closed = [MarkPriceResponse(closed=True, exit_reason=o.exit_reason, exit_price=o.exit_price, pnl=o.pnl) for o in outcomes if o.closed]
+    warnings = [w for o in outcomes for w in o.warnings]
+    if not closed:
+        raise HTTPException(status_code=409, detail="; ".join(warnings) or "Position could not be closed")
+    return ExitNowResponse(closed=closed, warnings=warnings)
 
 
 class JournalBody(BaseModel):

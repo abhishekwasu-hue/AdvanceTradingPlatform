@@ -294,6 +294,9 @@ class TradeRecord(Base):
         ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
     # Phase T: the broker account the LIVE position sits in (routing + FEWEST_POSITIONS + reconciliation).
+    # Z3 (review M1/H2): where the trade's prices came from when not from the platform's own quotes - "client" for a
+    # console paper-execute priced from candles the browser sent. The PAPER account and the ladder leave such trades out.
+    price_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     broker_account_id: Mapped[int | None] = mapped_column(ForeignKey("broker_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     # Phase D4: the broker's id for the order that closed a LIVE position (the SL when the
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
@@ -538,6 +541,10 @@ class StrategyDeploymentRecord(Base):
     # order far from the price the strategy sized on. Unfilled remainder is cancelled by the fill check (T1).
     order_style: Mapped[str] = mapped_column(String(20), nullable=False, default="MARKET", server_default="MARKET")
     market_protection_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Z3 / BT2: AUTO (the worker enters on its own, as before) or APPROVAL (every entry signal becomes an ENTRY proposal and
+    # only an approved one places a PAPER order - app/execution/approval.py). With the `approval_only_entries` flag on
+    # every deployment of the organisation is approval-only whatever this says; APPROVAL never reverts to AUTO by itself.
+    entry_mode: Mapped[str] = mapped_column(String(10), nullable=False, default="AUTO", server_default="AUTO")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow)
@@ -1216,6 +1223,8 @@ class AiActionRecord(Base):
     __table_args__ = (
         Index("uq_ai_actions_open_rule", "tenant_id", "deployment_id", "rule", unique=True,
               postgresql_where=text("status IN ('PROPOSED', 'APPROVED')"), sqlite_where=text("status IN ('PROPOSED', 'APPROVED')")),
+        # Z3 / BT2: one ENTRY proposal per signal (a redelivered webhook or a second worker pass is refused by the database).
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_actions_tenant_idempotency_key"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1241,6 +1250,13 @@ class AiActionRecord(Base):
     # decision taken in the app - or the proposal expiring - can take the buttons off and say what happened there too.
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Z3 / BT2: the signal an ENTRY proposal was raised for ("deployment:<id>:<bar>", "tv:<alert id>", "requote:<id>");
+    # NULL for the monitoring agent's own proposals.
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Z3 (review L7/L8): the person a proposal is for - an entry proposal's deployment creator / alert owner / sender, an
+    # "Exit now?" question's position holder. Only they (or the organisation OWNER) decide it; NULL = the monitoring
+    # agent's organisation-wide proposals, decided as before.
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class AiCandidateRecord(Base):
@@ -2184,6 +2200,25 @@ class VisionReportRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class PaperAccountRecord(Base):
+    """Z3-b / BT3 (beta spec, Phase 0): one PAPER account per **user** (not per organisation): the starting capital the
+    balance and the progression ladder are measured from, and the PAPER-scope pause (Telegram /pause, /resume) that
+    stops that user's new PAPER entries and entry proposals - exits never (ADR-0004). Balance and P&L are not stored:
+    they are summed from the user's own PAPER trades (`trades.user_id`), so the account can never drift from them."""
+
+    __tablename__ = "paper_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    starting_capital: Mapped[float] = mapped_column(Money, nullable=False)
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a

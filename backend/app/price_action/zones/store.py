@@ -1,8 +1,9 @@
 """Market-zone storage (Z7a-2): tenant settings (the OI banner `overrides` pattern) and the as-of zone snapshots.
 
-  * market_zone_settings - a tenant's overrides per lake instrument ("*" = the tenant's default), layered platform
-    defaults (MARKET_ZONES_DEFAULTS, then the Trade values in ZoneSettings) -> "*" row -> instrument row. `enabled`
-    asks the nightly job to follow the instrument.
+  * market_zone_settings - a tenant's overrides per lake instrument ("*" = the tenant's default), layered: the Trade
+    values in ZoneSettings -> PLATFORM_DEFAULTS (all-daily) -> MARKET_ZONES_DEFAULTS -> "*" row -> instrument row
+    (PRESETS["trade_intraday"] is Trade's intraday choice as a tenant opt-in). `enabled` asks the nightly job to follow
+    the instrument.
   * market_zone_runs / market_zones - one append-only snapshot per (scope, instrument, as_of): the rows of
     snapshot.build_snapshot. scope "platform" is shared by every tenant whose resolved settings equal the platform's
     (settings_hash); a tenant with different settings gets scope "tenant:<id>". Inputs are the shared lake bars only.

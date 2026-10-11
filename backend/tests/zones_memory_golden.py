@@ -3,7 +3,7 @@ app.price_action.zones.memory, on the Z7a-1 zone fixtures (tests/fixtures/zones)
 
   * `trade_outputs(LM, SD)` - Trade's level_memory (LM) and sr_dynamic (SD) on the fixtures;
   * `atp_outputs()`         - the ATP port on the same fixtures with the equivalent settings;
-  * GOLDEN                  - the frozen Trade output (tests/fixtures/zones/golden_level_memory_eafc872.json), so CI checks
+  * GOLDEN                  - the frozen Trade output (tests/fixtures/zones/golden_level_memory_eafc872.json.gz), so CI checks
                               ATP == Trade without the Trade repository on disk.
 
 Sections: zone_tolerance (ATR-scaled, bounded), last_touch_time, merge walks (day after day: today's dynamic S/R merged
@@ -13,7 +13,6 @@ the documented differences: ATP timeframe labels and zone rows without the timef
 Regenerate (after a deliberate Trade re-sync) from backend/ with:  python -m tests.zones_memory_golden --write
 """
 import importlib
-import json
 import os
 import sys
 import types
@@ -23,7 +22,7 @@ import pandas as pd
 
 from tests import zones_golden as G
 
-GOLDEN = os.path.join(G.FIXTURE_DIR, f"golden_level_memory_{G.TRADE_COMMIT}.json")
+GOLDEN = os.path.join(G.FIXTURE_DIR, f"golden_level_memory_{G.TRADE_COMMIT}.json.gz")
 
 TOL_FRAMES = ("s15", "m5", "bn", "w1")
 TOL_PARAMS = [(0.5, 0.08, 0.40), (1.0, 0.01, 2.0), (0.2, 0.5, 0.6)]
@@ -229,8 +228,7 @@ def atp_outputs() -> Dict[str, Any]:
 
 
 def load_golden() -> Dict[str, Any]:
-    with open(GOLDEN, encoding="utf-8") as fh:
-        return json.load(fh)
+    return G.read_golden(GOLDEN)
 
 
 if __name__ == "__main__":
@@ -239,9 +237,7 @@ if __name__ == "__main__":
         sys.exit(f"Trade checkout not found at {G.TRADE_PATH} (set TRADE_REPO_PATH)")
     data = G.to_json(trade_outputs(T))
     if "--write" in sys.argv:
-        with open(GOLDEN, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=1, sort_keys=True, ensure_ascii=False)
-            fh.write("\n")
+        G.write_golden(GOLDEN, data)
         print("wrote", GOLDEN)
     st: Dict[str, int] = {"exact": 0, "approx": 0}
     problems = G.diff(data, G.to_json(atp_outputs()), stats=st)

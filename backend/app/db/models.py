@@ -2373,7 +2373,7 @@ class HistoryImportFileRecord(Base):
 class MarketZoneSettingRecord(Base):
     """Z7a-2: a tenant's market-zone settings for one instrument ("*" = the tenant's default for every instrument), the
     OI banner pattern. `enabled` asks the nightly zone job to follow the instrument; `overrides` is a JSON object of
-    ZoneSettings fields layered over the platform defaults (MARKET_ZONES_DEFAULTS, then the Trade values)."""
+    ZoneSettings fields layered over the platform defaults (zones/store.py PLATFORM_DEFAULTS + MARKET_ZONES_DEFAULTS)."""
 
     __tablename__ = "market_zone_settings"
     __table_args__ = (UniqueConstraint("tenant_id", "instrument_key", name="uq_market_zone_setting"),)

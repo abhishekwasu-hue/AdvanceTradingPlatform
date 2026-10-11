@@ -14,14 +14,19 @@ particular nothing from the sealed NIFTY holdout (Trade `data/nifty50_*.parquet`
 The 15m / 30m / 1h frames used by the tests are resampled from these (label / closed left, as Trade's tests do), and
 Trade's `tests/test_market_zones.py::_fake_ohlc` series is generated in code (`tests/zones_golden.py::fake_ohlc`).
 
-`golden_trade_eafc872.json` is Trade's output on these fixtures (`tests/zones_golden.py::trade_outputs`, normalised to
+`golden_trade_eafc872.json.gz` is Trade's output on these fixtures (`tests/zones_golden.py::trade_outputs`, normalised to
 ATP timeframe labels / ASCII tags / zone states). `tests/test_zones_parity.py` checks ATP against it on every run and,
 when the Trade checkout is on disk, checks the file against Trade run live.
 
 Rebuild (from `backend/`): `python tests/fixtures/zones/build_fixtures.py` (CSV) and
-`TRADE_REPO_PATH=/path/to/trade python -m tests.zones_golden --write` (golden JSON - only on a deliberate Trade re-sync).
+`TRADE_REPO_PATH=/path/to/trade python -m tests.zones_golden --write` (golden file - only on a deliberate Trade re-sync).
 
-`golden_level_memory_eafc872.json` (Z7a-2) is Trade's `level_memory.py` on the same fixtures
+`golden_level_memory_eafc872.json.gz` (Z7a-2) is Trade's `level_memory.py` on the same fixtures
 (`tests/zones_memory_golden.py::trade_outputs`: tolerance, last touch, night-by-night merge walks, remember / nightly
 apply); `tests/test_zones_memory_parity.py` checks ATP's `memory.py` against it. Rebuild only on a deliberate Trade
 re-sync: `TRADE_REPO_PATH=/path/to/trade python -m tests.zones_memory_golden --write`.
+
+Both golden files are gzip-compressed JSON (working rule: golden fixtures over ~1,000 lines are stored compressed or
+generated). `tests/zones_golden.py::write_golden` writes them deterministically - sorted keys, one layout, gzip header
+without a name or time (mtime 0) - so regenerating from the same Trade commit gives byte-identical files (no diff), and
+`read_golden` is what the tests load. To read one by hand: `zcat golden_trade_eafc872.json.gz | less`.

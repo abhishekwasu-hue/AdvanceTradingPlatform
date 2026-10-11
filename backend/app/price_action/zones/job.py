@@ -12,7 +12,8 @@ Bars: the lake labels a bar by its END; the zone functions take START-labelled f
 once per instrument), bucketed from its exchange's session open (app.market_data.calendar); a bucket counts only once
 its end has passed the run time, or once its last minute is the exchange's regular close (the short 15:15-15:30 hour on
 NSE; MCX runs to 23:30) - so a higher timeframe never carries a bar still forming. Bars are read as plain tuples (no ORM
-objects), at most `max_bars_per_frame` per frame and at most MAX_DAYS_BY_TF days per timeframe, whatever a tenant sets.
+objects), at most `max_bars_per_frame` per frame and at most MAX_DAYS_BY_TF days per timeframe (a rebuild from 1-minute
+bars at most REBUILD_MAX_DAYS), whatever a tenant sets.
 
 Never on the trading loop: the worker starts `run_nightly` as its own task (own sessions, one at a time, cancelled on
 stop) once per IST day from MARKET_ZONES_HOUR_IST (default 20, after HB1's 19:00 EOD ingest). The CPU part (snapshot)
@@ -50,6 +51,7 @@ LAKE_LABELS = {"1m": ("1m",), "3m": ("3m",), "5m": ("5m",), "15m": ("15m",), "30
 # The most history any setting may make the job read per timeframe (a tenant can set history_days up to 3650).
 MAX_DAYS_BY_TF = {"1m": 30, "3m": 45, "5m": 90, "15m": 365, "30m": 365, "1h": 730, "4h": 1825, "1d": 3650, "1w": 3650}
 FRAME_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume", "close_at"]
+REBUILD_MAX_DAYS = 180                                  # 1-minute history read to rebuild a timeframe the lake does not hold
 
 
 def exchange_session(key: str) -> ExchangeSession:
@@ -160,7 +162,7 @@ async def load_frames(session: AsyncSession, key: str, s: ZoneSettings, now: dat
             if tf in INTRADAY_MINUTES and tf != "1m":
                 missing.append(tf)
     if missing:                                              # one 1-minute read for every rebuilt timeframe
-        start = min(starts[tf] for tf in missing)
+        start = max(min(starts[tf] for tf in missing), now - timedelta(days=REBUILD_MAX_DAYS))
         m1 = await _read(session, key, "1m", start, now)
         if len(m1):
             m1f = bars_to_frame(m1, "1m", sess)

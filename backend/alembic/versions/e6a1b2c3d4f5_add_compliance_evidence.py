@@ -1,7 +1,7 @@
 """Part D6: evidence for the go-live checklist items (vendor, strategy class, AI, DPDP)
 
 Revision ID: e6a1b2c3d4f5
-Revises: d4e1f2a3b4c5
+Revises: b4d6f8a0c2e4
 Create Date: 2026-10-10 23:15:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e6a1b2c3d4f5'
-down_revision: Union[str, Sequence[str], None] = 'd4e1f2a3b4c5'
+down_revision: Union[str, Sequence[str], None] = 'b4d6f8a0c2e4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

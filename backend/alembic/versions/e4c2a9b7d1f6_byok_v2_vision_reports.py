@@ -2,7 +2,7 @@
 user only (status pending/running/ok/skipped/failed, sanitised reason, report text, the chart's SHA-256 - never the image).
 
 Revision ID: e4c2a9b7d1f6
-Revises: e9c1a3b5d7f9
+Revises: d4e8a1c6f205
 Create Date: 2026-10-11 18:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e4c2a9b7d1f6'
-down_revision: Union[str, Sequence[str], None] = 'e9c1a3b5d7f9'
+down_revision: Union[str, Sequence[str], None] = 'd4e8a1c6f205'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -1,7 +1,7 @@
 """H-C3c: research_studies - a research study as a queued job (run by the research worker)
 
 Revision ID: c6e8a0b2d4f6
-Revises: e6a1b2c3d4f5
+Revises: b1c2d3e4f5a6
 Create Date: 2026-10-11 10:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c6e8a0b2d4f6'
-down_revision: Union[str, Sequence[str], None] = 'e6a1b2c3d4f5'
+down_revision: Union[str, Sequence[str], None] = 'b1c2d3e4f5a6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

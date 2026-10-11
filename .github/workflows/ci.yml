@@ -170,7 +170,7 @@ jobs:
   # Z10-d (G4 + load, docs/PERFORMANCE.md): the screener's performance targets (ATP_SCREENER_SPEC §1.5) on a synthetic
   # universe - each the median of 5 timed runs after a warm-up, the budget scaled by the printed CI factor - and the
   # session-shaped load test with 20 users against the in-process test app (in-memory SQLite, never a deployed host).
-  # Numbers are written as check-run notices. Runs alongside the other jobs (about 3 minutes, most of it pip).
+  # Numbers are written as check-run notices. Runs alongside the other jobs (about 1.5 minutes, most of it pip and the load test).
   perf:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest

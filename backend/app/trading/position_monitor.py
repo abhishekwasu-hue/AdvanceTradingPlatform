@@ -540,6 +540,7 @@ async def monitor_open_positions(
         from app.market_data.calendar import session_family
         open_trades = [t for t in open_trades if session_family(exchange_for_trade(t)) in families]
     outcomes: List[CloseOutcome] = []
+    asks: List[tuple] = []          # Z3: (trade, target reason, price) - "Exit now?" questions, raised after every exit
     # Phase H2: legs of one structure are judged together, never one by one.
     groups: Dict[str, List[TradeRecord]] = {}
     for trade in open_trades:
@@ -583,7 +584,7 @@ async def monitor_open_positions(
             continue
         reason, exit_price = hit
         if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):
-            await approval_policy.propose_exit(session, trade, reason, price)
+            asks.append((trade, reason, price))          # asked after the sweep: no question ever delays another exit
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"{reason}: waiting for \"Exit now?\" approval"]))
             continue
         trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
@@ -597,6 +598,8 @@ async def monitor_open_positions(
         except Exception as exc:  # noqa: BLE001 - a failed mark write must not fail the sweep
             logger.warning("Could not persist position marks: %s", exc)
             await session.rollback()
+    for trade, reason, price in asks:
+        await approval_policy.propose_exit(session, trade, reason, price)
     return outcomes
 
 

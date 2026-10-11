@@ -274,9 +274,14 @@ def _target_rule(reason: str) -> str:
 async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
                                   deployments: Iterable[StrategyDeploymentRecord]) -> Optional[Callable[[TradeRecord], bool]]:
     """Which of this organisation's positions ask "Exit now?" on a target: every position with the flag on, else the
-    positions of APPROVAL deployments. None when no position does (the monitor behaves exactly as before)."""
-    if await flag_on(session, tenant_id):
-        return lambda trade: True
+    positions of APPROVAL deployments. None when no position does (the monitor behaves exactly as before), and None when
+    the flag cannot be read: the exits sweep then runs as before rather than not at all (ADR-0004)."""
+    try:
+        if await flag_on(session, tenant_id):
+            return lambda trade: True
+    except Exception:  # noqa: BLE001 - never in the way of the exits sweep
+        logger.exception("Approval-only flag unreadable for tenant %s - target exits stay automatic this cycle", tenant_id)
+        return None
     ids = {d.id for d in deployments if (d.entry_mode or "AUTO") == "APPROVAL"}
     if not ids:
         return None
@@ -284,8 +289,8 @@ async def exit_approval_predicate(session: AsyncSession, tenant_id: int,
 
 
 async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, price: float, now: Optional[datetime] = None) -> Optional[AiActionRecord]:
-    """A target was reached on an approval-only position: ask "Exit now?" once per level per position. Never raises
-    (the monitor keeps sweeping); places nothing."""
+    """A target was reached on an approval-only position: ask "Exit now?" once per level per position. Never raises;
+    places nothing. The monitor calls it only after every exit of its sweep is done, so a failure here cannot hold one."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     rule = _target_rule(reason)
     try:
@@ -301,31 +306,32 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
                                                                     "stop_loss": trade.stop_loss, "target1": trade.target1, "target2": trade.target2,
                                                                     "mode": trade.mode}, default=str),
                              status="PROPOSED", expires_at=expires)
-        async with session.begin_nested():
+        async with session.begin_nested():       # a concurrent duplicate drops this row alone
             session.add(row)
             await session.flush()
-        from app.notifications.service import notify
-        await notify(session, trade.tenant_id, NotificationType.AI_PROPOSAL, title=f"Exit now? {trade.symbol} reached {reason}",
-                     message=text, severity=NotificationSeverity.WARNING, related_trade_id=trade.id, ai_action_id=row.id)
-        await session.commit()
-        return row
     except IntegrityError:
         return None
-    except Exception:  # noqa: BLE001 - a failed question must never stop the sweep (protective exits continue)
+    except Exception:  # noqa: BLE001 - a failed question never stops anything (the monitor asks after its exits)
         logger.exception("Exit-now proposal for trade %s failed", trade.id)
-        try:
-            await session.rollback()
-        except Exception:  # noqa: BLE001
-            pass
         return None
+    try:
+        from app.notifications.service import notify
+        await notify(session, trade.tenant_id, NotificationType.AI_PROPOSAL, title=f"Exit now? {trade.symbol} reached {reason}",
+                     message=text, severity=NotificationSeverity.WARNING, related_trade_id=trade.id, ai_action_id=row.id)   # commits
+    except Exception:  # noqa: BLE001
+        logger.exception("Exit-now proposal for trade %s not announced", trade.id)
+        await session.rollback()
+        return None
+    return row
 
 
 async def retire_proposals_for_closed(session: AsyncSession, trade: TradeRecord, reason: str) -> int:
     """A position closed (by its stop, a time exit, an "Exit now"...): its open "Exit now?" proposals are void."""
     try:
-        done = await session.execute(update(AiActionRecord).where(AiActionRecord.tenant_id == trade.tenant_id, AiActionRecord.trade_id == trade.id,
-                                                                  AiActionRecord.action == "EXIT_POSITION", AiActionRecord.status == "PROPOSED")
-                                     .values(status="EXPIRED", result=f"Position closed: {reason}"[:300]).execution_options(synchronize_session=False))
+        async with session.begin_nested():       # a failure rolls back the savepoint only; the close is already committed
+            done = await session.execute(update(AiActionRecord).where(AiActionRecord.tenant_id == trade.tenant_id, AiActionRecord.trade_id == trade.id,
+                                                                      AiActionRecord.action == "EXIT_POSITION", AiActionRecord.status == "PROPOSED")
+                                         .values(status="EXPIRED", result=f"Position closed: {reason}"[:300]).execution_options(synchronize_session=False))
         await session.commit()
         return int(getattr(done, "rowcount", 0) or 0)
     except Exception:  # noqa: BLE001 - bookkeeping only

@@ -220,7 +220,45 @@ LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
 # Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
 LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
+# HB0: most 1-minute rows one tenant-store request may READ before resampling (checked with a count first), so a
+# 60-minute request cannot pull 60 x LAKE_HISTORY_MAX_BARS rows into memory. 60,000 is about 160 sessions of 1-minute bars.
+LAKE_TENANT_MAX_BASE_ROWS = int(os.environ.get("LAKE_TENANT_MAX_BASE_ROWS", "60000"))
+# HB0 (docs/design/HB_HISTORY_BACKFILL.md): the tenant whose private store receives the owner's licensed 1-minute history
+# from the R2 import. Unset: the importer refuses to load 1-minute data at all (daily still goes to the shared lake).
+# The R2 credentials (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_ENDPOINT) are read only by the importer.
+_history_owner = os.environ.get("HISTORY_OWNER_TENANT_ID", "").strip()
+HISTORY_OWNER_TENANT_ID = int(_history_owner) if _history_owner.isdigit() and int(_history_owner) > 0 else None
+# The confirmation: must equal that tenant's name, or the 1-minute import refuses (a mistyped id never reaches a customer).
+HISTORY_OWNER_TENANT_NAME = os.environ.get("HISTORY_OWNER_TENANT_NAME", "").strip()
+# HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill and nightly EOD job - both only while the
+# `history_backfill` flag is on. Politeness: one request at a time, at least HISTORY_BACKFILL_PAUSE_SECONDS apart, and
+# exponential backoff (honouring Retry-After) on 429 / 403 / 5xx / timeouts, HISTORY_BACKFILL_RETRIES attempts per URL.
+HISTORY_BACKFILL_PAUSE_SECONDS = float(os.environ.get("HISTORY_BACKFILL_PAUSE_SECONDS", "1.5") or 1.5)
+HISTORY_BACKFILL_RETRIES = max(1, int(os.environ.get("HISTORY_BACKFILL_RETRIES", "4") or 4))
+HISTORY_BACKFILL_MAX_BACKOFF_SECONDS = float(os.environ.get("HISTORY_BACKFILL_MAX_BACKOFF_SECONDS", "120") or 120)
+HISTORY_BACKFILL_USER_AGENT = os.environ.get("HISTORY_BACKFILL_USER_AGENT", "").strip()     # empty: a browser-like default
+# Cash-market series loaded as equities (main board, trade-for-trade, SME); the first listed wins if a symbol has two.
+HISTORY_BACKFILL_SERIES = tuple(s.strip().upper() for s in os.environ.get("HISTORY_BACKFILL_SERIES", "EQ,BE,BZ,SM,ST,SZ").split(",") if s.strip())
+HISTORY_BACKFILL_FO_OPTIONS = os.environ.get("HISTORY_BACKFILL_FO_OPTIONS", "false").lower() in ("1", "true", "yes")
+# F&O volume: "withhold" (default - stored as 0 until the legacy CONTRACTS vs UDiFF TtlTradgVol unit is confirmed on
+# real files, so nothing downstream mixes units) or "as_printed". The unit is recorded per file either way.
+HISTORY_BACKFILL_FO_VOLUME = os.environ.get("HISTORY_BACKFILL_FO_VOLUME", "withhold").strip().lower()
+# Weekends are probed with the cash file only (a special session - budget Saturday, Muhurat - has one); index and F&O
+# files are asked for only when the cash file of that day exists. "false" skips weekends entirely.
+HISTORY_BACKFILL_PROBE_WEEKENDS = os.environ.get("HISTORY_BACKFILL_PROBE_WEEKENDS", "true").lower() in ("1", "true", "yes")
+# A file with fewer rows than this share of the median of the last done days of its segment is refused (truncated).
+HISTORY_BACKFILL_MIN_ROWS_RATIO = float(os.environ.get("HISTORY_BACKFILL_MIN_ROWS_RATIO", "0.5") or 0.5)
+# Optional: keep every file as received under this directory ({segment}/{yyyy}/{name}); empty = not kept.
+HISTORY_BACKFILL_ARCHIVE_DIR = os.environ.get("HISTORY_BACKFILL_ARCHIVE_DIR", "").strip()
+# Nightly EOD job (trading worker): once per IST day from this hour, today's files plus a catch-up of the last N days.
+HISTORY_BACKFILL_HOUR_IST = int(os.environ.get("HISTORY_BACKFILL_HOUR_IST", "19") or 19)
+HISTORY_BACKFILL_CATCHUP_DAYS = int(os.environ.get("HISTORY_BACKFILL_CATCHUP_DAYS", "7") or 7)
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
+# BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
+# The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);
+# the broker's own per-connection cap (app/market_data/broker_data_terms.json) applies on top when it is recorded.
+# 50 is the per-session figure of the beta capacity model (§4), not a broker limit.
+BYOB_SESSION_SYMBOL_CAP = max(1, int(os.environ.get("BYOB_SESSION_SYMBOL_CAP", "50")))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
 # than BROKER_CIRCUIT_FAILURE_RATIO of the broker calls in the last BROKER_CIRCUIT_WINDOW_SECONDS

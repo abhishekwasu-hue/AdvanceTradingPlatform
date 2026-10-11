@@ -2,7 +2,7 @@
 shared within the tenant, archived rather than deleted. Behind the `options_builder_saved` flag (off by default).
 
 Revision ID: 5e356061be72
-Revises: e4c2a9b7d1f6
+Revises: c5e7a9b1d3f4
 Create Date: 2026-10-11 20:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = '5e356061be72'
-down_revision: Union[str, Sequence[str], None] = 'e4c2a9b7d1f6'
+down_revision: Union[str, Sequence[str], None] = 'c5e7a9b1d3f4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

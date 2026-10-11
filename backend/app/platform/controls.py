@@ -111,11 +111,21 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
+    # BT1 (beta spec §2/§4a, Phase 0): live data only through each user's own broker session at a broker whose data terms
+    # are confirmed (docs/BROKER_DATA_TERMS.md), never pooled or shown to another user; everything else EOD; every number
+    # carries its data tier. OFF: market data reads are exactly as before. Places no order.
+    "byob_data_tier": "Bring-your-own-broker data tier: live data only through each user's own confirmed broker session, EOD otherwise, data-tier badges",
+    # HB0 (docs/design/HB_HISTORY_BACKFILL.md): lets the operator run the R2 history import by hand (CLI). OFF: the
+    # importer refuses to start. Nothing runs on a schedule; 1-minute data only ever goes to the owner's tenant.
+    "history_import": "History import from the R2 store: daily bars into the shared lake, 1-minute bars into the owner's private store",
+    # HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill (CLI), the nightly EOD fetch (worker) and
+    # the admin's manual file / corporate-action / holiday uploads. OFF: all of them refuse and nothing contacts NSE.
+    "history_backfill": "Daily NSE bhavcopy backfill and nightly EOD fetch into the shared lake (cash, indices, F&O futures)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links",
-                               "options_builder_saved"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier", "history_import",
+                               "history_backfill", "options_builder_saved"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

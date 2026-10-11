@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 
@@ -45,3 +45,21 @@ def alternate_swings(swings: List[SwingPoint]) -> List[SwingPoint]:
         else:
             result.append(swing)
     return result
+
+
+def swing_indices(df: pd.DataFrame, window: int = 3) -> Tuple[List[int], List[int]]:
+    """The positional form of `find_swings` (Trade signals.find_swings): (swing-high bar indices, swing-low bar indices).
+    Bar i is a swing high / low if it is the max / min of the 2*window+1 bars centred on it (ties allowed). A bar can
+    be both. Fewer than 2*window+1 bars -> no swings."""
+    n = len(df)
+    if n < window * 2 + 1:
+        return [], []
+    highs, lows = df["high"].to_numpy(), df["low"].to_numpy()
+    swing_high_idx: List[int] = []
+    swing_low_idx: List[int] = []
+    for i in range(window, n - window):
+        if highs[i] == highs[i - window:i + window + 1].max():
+            swing_high_idx.append(i)
+        if lows[i] == lows[i - window:i + window + 1].min():
+            swing_low_idx.append(i)
+    return swing_high_idx, swing_low_idx

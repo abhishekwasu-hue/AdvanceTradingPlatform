@@ -71,6 +71,7 @@ from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
+from app.market_data.fanin import UserSessionFanIn
 from app.market_data.stream import StreamManager
 from app.market_lake.recorder import LakeRecorder
 from app.observability.metrics import MARKET_DATA_STALE
@@ -128,11 +129,13 @@ class CycleReport:
     ai_snoozes_woken: int = 0     # PW5: snoozed proposals announced again this cycle
     master_synced: Optional[Dict[str, int]] = None
     universe_synced: Optional[Dict[str, int]] = None      # U1-a
+    history_eod_started: bool = False                     # HB1: the nightly EOD bhavcopy job was started this cycle
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
+    byob_sessions: int = 0       # BT1: per-user broker data sessions open (flag byob_data_tier)
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
     lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
@@ -213,6 +216,9 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
+        # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
+        self._last_history_eod_day = None
+        self._history_eod_task: Optional["asyncio.Task[None]"] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -222,6 +228,8 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # BT1: per-user broker sessions for the bring-your-own-broker data tier (flag byob_data_tier, off by default).
+        self.byob = UserSessionFanIn()
         # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
         self.lake = None
         if app_config.LAKE_TICK_WRITER_ENABLED:
@@ -241,6 +249,8 @@ class TradingWorker:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._history_eod_task is not None and not self._history_eod_task.done():
+            self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -263,6 +273,7 @@ class TradingWorker:
             except asyncio.TimeoutError:
                 pass
         await self.streams.stop_all()
+        await self.byob.close_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
     # --- one cycle ---------------------------------------------------------------------------
@@ -302,6 +313,15 @@ class TradingWorker:
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
                 else:
                     logger.debug("Market closed: %s", reason)
+                # BT1: open / refresh / close each user's own broker session (flag byob_data_tier; market closed = day end).
+                try:
+                    byob = await self.byob.sync(session, now, market_open="NSE" in self._open_families)
+                    report.byob_sessions = byob.active
+                    report.errors.extend(byob.errors)
+                except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
+                    logger.exception("BYOB session sync failed")
+                    report.errors.append(f"byob sessions: {exc}")
+                    await session.rollback()
                 if self.lake is not None:
                     try:
                         report.lake_bars = (await self.lake.drain(session, now)).inserted
@@ -449,6 +469,13 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
+                # HB1: the nightly EOD job - once per IST day from HISTORY_BACKFILL_HOUR_IST, only while the
+                # `history_backfill` flag is on; it runs in its own task, so a slow archive never holds up a cycle.
+                try:
+                    report.history_eod_started = await self._maybe_start_history_eod(session, now)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("History EOD job not started")
+                    report.errors.append(f"history eod: {exc}")
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -843,6 +870,35 @@ class TradingWorker:
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
+
+    async def _maybe_start_history_eod(self, session: AsyncSession, now: datetime) -> bool:
+        """HB1: starts the nightly bhavcopy job (today's files + the catch-up window) when it is due and the flag is on.
+        One task per worker; the backfill's advisory lock keeps a second replica (or a manual run) out."""
+        from app.market_lake import bhavcopy_backfill
+        from app.platform.controls import flag_enabled
+
+        day = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
+        if day is None or (self._history_eod_task is not None and not self._history_eod_task.done()):
+            return False
+        if not await flag_enabled(session, bhavcopy_backfill.FLAG):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._last_history_eod_day = day                 # started: the next run is tomorrow
+
+        async def run() -> None:
+            from app.market_lake.nse_fetch import PoliteFetcher
+            fetcher = PoliteFetcher()
+            try:
+                summary = await bhavcopy_backfill.run_nightly(self.session_factory, fetcher, now=now)
+                logger.info("History EOD job: %s", summary.as_dict())
+            except bhavcopy_backfill.BackfillConfigError as exc:
+                logger.warning("History EOD job did not run: %s", exc)
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("History EOD job failed")
+            finally:
+                await fetcher.aclose()
+
+        self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

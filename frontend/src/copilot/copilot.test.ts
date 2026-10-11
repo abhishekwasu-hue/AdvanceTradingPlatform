@@ -155,3 +155,16 @@ describe("Copilot data helpers", () => {
     expect(loadCopilotLanguage()).toEqual({ ui: "en", secondary: "mr" });
   });
 });
+
+describe("AI Core error boundary (ATP review 10)", () => {
+  it("shows the still core once the 3D scene throws, and tells the parent", async () => {
+    const { CoreBoundary } = await import("./components/AICore");
+    let told = 0;
+    const boundary = new CoreBoundary({ fallback: "STILL", onError: () => { told += 1; }, children: "SCENE" });
+    expect(boundary.render()).toBe("SCENE");
+    boundary.state = { ...boundary.state, ...CoreBoundary.getDerivedStateFromError() };
+    boundary.componentDidCatch(new Error("WebGL context lost"));
+    expect(boundary.render()).toBe("STILL");
+    expect(told).toBe(1);
+  });
+});

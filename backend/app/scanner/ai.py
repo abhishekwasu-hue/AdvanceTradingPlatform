@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.wording import banned_terms
 from app.ai import settings as ai_settings
 from app.ai.prompt_versions import stamp
 from app.ai.providers import LLMProvider, ProviderError, RuleBasedProvider
@@ -447,6 +448,9 @@ async def read_scan(session: AsyncSession, tenant: Tenant, user: User, request: 
             why = read_problem(read, payload)                                    # H-C1 d/c: grounded, no advice words
             if why:
                 raise ValueError(f"the read failed the grounding check ({why})")
+            bad = banned_terms(" ".join([read.summary, *(f"{r.thesis} {r.risks} {r.next_step}" for r in read.ranked)]))
+            if bad:                                        # ATP review 11: advice / promise wording -> the deterministic read
+                raise ValueError(f"wording check failed ({', '.join(bad[:5])})")
             read.provider, read.model = provider.name, provider.model
             await ai_settings.mark_used(session, tenant.id)
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:

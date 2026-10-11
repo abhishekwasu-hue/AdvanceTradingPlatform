@@ -1921,9 +1921,15 @@ export interface TaxClassTotals {
   stt_estimate: number; ctt_estimate: number; tds_estimate: number; taxable_gains: number; tax_estimate: number; disallowed_losses: number;
   top_symbols: { symbol: string; net_pnl: number }[]; income_head: string;
 }
+export type TaxTurnoverMethod = "ABS_PNL" | "ABS_PNL_PLUS_PREMIUM";
+export interface TaxRateChange { from: string; class: string; rate: string; before_pct: number; pct: number }
 export interface TaxReport {
   financial_year: string; mode: string; generated_at: string; trades: number; net_pnl: number;
-  classes: Record<"EQUITY_INTRADAY" | "FNO" | "CRYPTO", TaxClassTotals>; notes: string[]; rates: Record<string, Record<string, number>>;
+  classes: Record<"EQUITY_INTRADAY" | "FNO" | "CRYPTO", TaxClassTotals>; notes: string[];
+  // F&O turnover method used (server setting TAX_FNO_TURNOVER_METHOD unless the request named one) and its description.
+  turnover_method: TaxTurnoverMethod; turnover_method_label: string;
+  // Statutory rates (percent) on the FY's first day, from the platform's dated charges table; changes inside the FY.
+  rates: Record<string, Record<string, number>>; rates_as_of: string; rate_changes: TaxRateChange[];
 }
 export interface FxRate { base: string; quote: string; rate: number; source: string; as_of: string | null }
 

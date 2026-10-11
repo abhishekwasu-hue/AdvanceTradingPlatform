@@ -138,11 +138,15 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z5 (Trade port): India VIX gate - a spike against the previous close pauses new bullish index entries for the day;
     # a high VIX level cuts the risk per trade. Exits are never gated. OFF: nothing changes.
     "vix_gate": "India VIX gate: a VIX spike pauses new bullish index entries for the day, a high VIX cuts the size (exits never gated)",
+    # U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library taxonomy (method x setup) and the gallery
+    # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
+    # Files screens only - never ranks or recommends one.
+    "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account",
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "risk_by_default", "vix_gate"})
 
 

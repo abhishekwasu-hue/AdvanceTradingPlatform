@@ -31,3 +31,14 @@
   .screener-grid { grid-template-columns: 280px minmax(0, 1fr) 380px; grid-template-areas: "universe canvas results"; }
   .screener-universe-body { display: block; }
 }
+
+/* U9 TX1: the gallery - the method rail on the left, setup chips and cards beside it; below 720 px of the sheet's own
+   width the rail runs across the top as a scrolling row so the cards keep the width. */
+.screen-gallery { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.screen-gallery-rail-list { display: flex; gap: 4px; overflow-x: auto; }
+.screen-gallery-rail-list > li { flex: 0 0 auto; }
+.screen-gallery-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+@media (min-width: 900px) {
+  .screen-gallery { grid-template-columns: 220px minmax(0, 1fr); }
+  .screen-gallery-rail-list { display: block; overflow: visible; }
+}

@@ -1669,3 +1669,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The reviewer's adversarial cases are ported into `tests/test_z5_p1d_review.py`.
 - The migration `612f572d7ad2` gains `paper_accounts.entries_day` / `entries_count` and `trade_plans.proposal_id`, and
   still revises `a7d3e9f1c5b8`.
+### 2026-10-11 - Z8 U9 TX1: screen taxonomy (method x setup) + gallery rail and chips
+- Taxonomy as a reviewed data file (`backend/app/screener/data/taxonomy.json`: methods A-F, setups 1-8, tag vocabulary,
+  the three U5 starters filed), linted on load (both axes, vocabulary, definition <= 160 characters, no advice wording).
+- CI guard: template sources register (`taxonomy.register_source`, optional flag); the starters file
+  (`frontend/src/screener/starters.json`) is read by both sides; an unfiled template fails `tests/test_z8_tx1_taxonomy.py`.
+- `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
+  on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
+- BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.

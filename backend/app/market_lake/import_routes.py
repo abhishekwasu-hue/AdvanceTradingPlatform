@@ -9,7 +9,9 @@ HB1: /api/admin/history-backfill/...
 - POST upload             the manual-upload fallback: one day's file for one segment (the archive blocked it, or a
                           correction) - same checks as the job; `force` skips only the short-file gate
 - POST corporate-actions  a corporate-actions CSV (ATP layout or the exchange's export) for the B4 adjusted view
-- POST holidays           a past holiday list CSV (market_holidays) so the daily gap check can run for that year
+- POST holidays           a PAST holiday list CSV (market_holidays) so the daily gap check can run for that year; dates
+                          from today on are refused unless `allow_future`; the form's exchange is the only one loaded
+- POST holidays/remove    undo: the same CSV removes exactly the dates it lists
 Every upload needs the `history_backfill` flag on, is size-capped and is written to the audit log.
 """
 from datetime import date
@@ -96,12 +98,27 @@ async def upload_corporate_actions(file: UploadFile = File(...), user: User = De
 
 @backfill_router.post("/holidays")
 async def upload_holidays(file: UploadFile = File(...), exchange: str = Form("NSE", min_length=1, max_length=20),
-                          user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+                          allow_future: bool = Form(False), user: User = Depends(require_role()),
+                          session: AsyncSession = Depends(get_session)) -> dict:
     from app.market_data.holiday_import import import_holidays
 
     await _flag_on(session)
-    report = await import_holidays(session, await _read(file, MAX_CSV_BYTES), exchange=exchange, commit=False)
+    report = await import_holidays(session, await _read(file, MAX_CSV_BYTES), exchange=exchange, commit=False,
+                                   allow_future=allow_future)
     await write_audit_log(session, user.tenant_id, user.id, "history_holidays_upload",
-                          f"{exchange.upper()} {file.filename}: {report.added} added, years {report.years}")
+                          f"{exchange.upper()} {file.filename}: {report.added} added, years {report.years}, allow_future={allow_future}")
+    await session.commit()
+    return report.as_dict()
+
+
+@backfill_router.post("/holidays/remove")
+async def remove_uploaded_holidays(file: UploadFile = File(...), exchange: str = Form("NSE", min_length=1, max_length=20),
+                                   user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.market_data.holiday_import import remove_holidays
+
+    await _flag_on(session)
+    report = await remove_holidays(session, await _read(file, MAX_CSV_BYTES), exchange=exchange, commit=False)
+    await write_audit_log(session, user.tenant_id, user.id, "history_holidays_removed",
+                          f"{exchange.upper()} {file.filename}: {report.removed} removed, years {report.years}")
     await session.commit()
     return report.as_dict()

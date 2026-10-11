@@ -2326,6 +2326,9 @@ class HistoryBackfillFileRecord(Base):
     file_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     url: Mapped[str | None] = mapped_column(String(400), nullable=True)
     file_format: Mapped[str | None] = mapped_column(String(16), nullable=True)     # cm_legacy | cm_udiff | cm_full | fo_legacy | ...
+    # What the bars' volume counts: shares (cash), contracts (legacy F&O), unconfirmed (UDiFF F&O TtlTradgVol),
+    # withheld (F&O volume stored as 0 until the unit is settled), none (indices).
+    volume_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)          # of the bytes as received (zip or csv)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -2344,13 +2347,14 @@ class HistoryBackfillFileRecord(Base):
 
 
 class MdIsinSymbolRecord(Base):
-    """HB1: which symbol an ISIN traded under, as OBSERVED in the exchange's own daily cash files (first and last trade
-    date seen). Survivorship-free by construction - a delisted or suspended name keeps its rows - and the join that
-    stitches one company's daily history across symbol changes (`app.market_lake.by_isin`). Kept apart from U1's
-    `symbol_history` (derived from the exchange's symbol-change file) so neither rewrites the other."""
+    """HB1: which symbol an ISIN traded under, as OBSERVED in the exchange's own daily cash files - one row per
+    contiguous run (first and last trade date seen), so a rename and back (X -> Y -> X) is two X runs. Survivorship-free
+    by construction - a delisted or suspended name keeps its rows - and the join that stitches one company's daily
+    history across symbol changes and ISIN changes (`app.market_lake.by_isin`). Kept apart from U1's `symbol_history`
+    (derived from the exchange's symbol-change file) so neither rewrites the other."""
 
     __tablename__ = "md_isin_symbols"
-    __table_args__ = (UniqueConstraint("exchange", "isin", "symbol", name="uq_md_isin_symbol"),
+    __table_args__ = (UniqueConstraint("exchange", "isin", "symbol", "first_date", name="uq_md_isin_symbol_run"),
                       Index("ix_md_isin_symbols_symbol", "exchange", "symbol"))
 
     id: Mapped[int] = mapped_column(primary_key=True)

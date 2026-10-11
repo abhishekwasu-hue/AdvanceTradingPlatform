@@ -595,3 +595,172 @@ def test_corporate_action_purpose_parser():
     assert parse("Dividend - 50%", 2) == ([("DIVIDEND", None, None, 1.0)], None)
     assert parse("Annual General Meeting", 1) == ([], None)
     assert "demerger" in parse("Demerger", 1)[1]
+
+
+# --- review fixes -------------------------------------------------------------------------------------------------
+def _load_ca(content):
+    async def go():
+        async with _session_factory() as session:
+            return await corporate_actions.load_csv(session, content)
+    return _run(go())
+
+
+def _isin_closes(isin, start, end, adjusted=True):
+    async def go():
+        async with _session_factory() as session:
+            return [(b.instrument_key, round(b.close, 4)) for b in await by_isin.isin_candles(session, isin, start, end, adjusted=adjusted)]
+    return _run(go())
+
+
+def test_a_reused_symbols_later_actions_never_reach_an_older_company():
+    _flag(True)
+    old_days, new_days = _weekdays(date(2014, 1, 6), 3), _weekdays(date(2014, 9, 1), 3)
+    archive = Archive()
+    for i, d in enumerate(old_days):
+        archive.put("cm", d, cm_legacy(d, [_row("HBQXYZ", 100 + i, isin="INE0HBQA1018")]))      # company A, delisted later
+    for i, d in enumerate(new_days):
+        archive.put("cm", d, cm_legacy(d, [_row("HBQXYZ", 10 + i, isin="INE0HBQB1016")]))       # company B reuses the symbol
+    _backfill(archive, old_days[0], new_days[-1], segments=["cm"], include_weekends=False)
+    _load_ca(f"symbol,ex_date,action,ratio_new,ratio_old,amount\nHBQXYZ,{new_days[1]},SPLIT,10,1,\n".encode())
+    assert [c for _, c in _isin_closes("INE0HBQA1018", old_days[0], new_days[-1])] == [100, 101, 102]   # not 10, 10.1, 10.2
+    assert [c for _, c in _isin_closes("INE0HBQB1016", old_days[0], new_days[-1])] == [1.0, 11, 12]     # B's own split applies
+
+
+def test_a_new_isin_at_a_split_and_a_rename_back_are_stitched_as_one_company():
+    _flag(True)
+    days = _weekdays(date(2015, 3, 2), 8)              # Mon 2 .. Wed 11 (a weekend in between)
+    plan = [("HBQHD", "INE0HBQD1012", 2000), ("HBQHD", "INE0HBQD1012", 2010),         # the old ISIN
+            ("HBQHD", "INE0HBQD2010", 1005), ("HBQHD", "INE0HBQD2010", 1010),         # split 1:2 -> new ISIN, same symbol
+            ("HBQHDX", "INE0HBQD2010", 1015), ("HBQHDX", "INE0HBQD2010", 1020),       # renamed ...
+            ("HBQHD", "INE0HBQD2010", 1025), ("HBQHD", "INE0HBQD2010", 1030)]         # ... and back
+    archive = Archive()
+    for d, (sym, isin, close) in zip(days, plan):
+        archive.put("cm", d, cm_legacy(d, [_row(sym, close, isin=isin)]))
+    _backfill(archive, days[0], days[-1], segments=["cm"], include_weekends=False)
+    _load_ca(f"symbol,ex_date,action,ratio_new,ratio_old,amount\nHBQHD,{days[2]},SPLIT,2,1,\n".encode())
+
+    async def runs():
+        async with _session_factory() as session:
+            return [(r.isin[-5:], r.symbol, r.first_date, r.last_date) for r in await by_isin.company_runs(session, "INE0HBQD1012")]
+    assert _run(runs()) == [("D1012", "HBQHD", days[0], days[1]), ("D2010", "HBQHD", days[2], days[3]),
+                            ("D2010", "HBQHDX", days[4], days[5]), ("D2010", "HBQHD", days[6], days[7])]
+    closes = _isin_closes("INE0HBQD1012", days[0], days[-1])
+    assert [c for _, c in closes] == [1000, 1005, 1005, 1010, 1015, 1020, 1025, 1030]       # adjusted across the ISIN change
+    assert _isin_closes("INE0HBQD2010", days[0], days[-1]) == closes                         # the same company either way
+
+    # Out of order: a day uploaded between two runs of the same symbol joins them into one run.
+    gap_days = _weekdays(date(2015, 4, 6), 3)
+    for d in (gap_days[0], gap_days[2], gap_days[1]):
+        _run(hb1.ingest_upload(_session_factory, "cm", d, cm_legacy(d, [_row("HBQJN", 50, isin="INE0HBQJ1019")]).encode(), "j.csv"))
+    assert _count(MdIsinSymbolRecord, MdIsinSymbolRecord.isin == "INE0HBQJ1019") == 1
+
+
+def test_past_holiday_uploads_cannot_close_live_days_or_switch_exchange_and_can_be_undone():
+    from app.market_data.holiday_import import import_holidays, remove_holidays
+    content = (b"date,description,exchange\n2016-01-26,Republic Day (test),NSE\n2016-03-07,Mahashivratri (test),MCX\n"
+               b"2099-01-26,Far future (test),NSE\n")
+
+    async def go(fn, **kw):
+        async with _session_factory() as session:
+            return await fn(session, content, exchange="NSE", **kw)
+    report = _run(go(import_holidays, today=date(2026, 10, 11)))
+    assert report.added == 1 and len(report.unreadable) == 2
+    assert any("MCX" in u for u in report.unreadable) and any("2099-01-26" in u for u in report.unreadable)
+    assert _count(MarketHolidayRecord, MarketHolidayRecord.holiday_date == date(2099, 1, 26)) == 0
+    assert _count(MarketHolidayRecord, MarketHolidayRecord.holiday_date == date(2016, 3, 7)) == 0
+    assert _run(go(import_holidays, today=date(2026, 10, 11), allow_future=True)).added == 1          # explicit only
+    undone = _run(go(remove_holidays))
+    assert undone.removed == 2 and _count(MarketHolidayRecord, MarketHolidayRecord.holiday_date.in_([date(2016, 1, 26), date(2099, 1, 26)])) == 0
+
+
+def test_uploads_wait_for_a_running_job_and_a_state_row_race_is_not_an_error(monkeypatch):
+    _flag(True)
+    d = date(2016, 6, 6)
+
+    async def busy(session, take):
+        return False
+    monkeypatch.setattr(hb1, "_lock", busy)
+    with pytest.raises(hb1.BackfillConfigError, match="in progress"):
+        _run(hb1.ingest_upload(_session_factory, "cm", d, b"x", "x.csv"))
+    monkeypatch.undo()
+
+    async def race():
+        async with _session_factory() as session:
+            session.add(F(segment="cm", trade_date=d, status="running", attempts=1, inserted=0, corrected=0, skipped=0, quality_events=0))
+            await session.commit()
+
+        class Blind:                                    # a writer that did not see the other's row yet
+            def __init__(self):
+                self.inner = _session_factory()
+
+            async def __aenter__(self):
+                session = await self.inner.__aenter__()
+
+                async def scalar(*_a, **_k):
+                    return None
+                session.scalar = scalar
+                return session
+
+            async def __aexit__(self, *exc):
+                return await self.inner.__aexit__(*exc)
+        return await hb1._start(lambda: Blind(), "cm", d, skip_done=True, retry_no_file=False, today=date(2026, 1, 1))
+    assert _run(race()) == (None, "running")
+
+
+def test_fo_volume_is_withheld_until_the_unit_is_settled(monkeypatch):
+    from app.core import config
+    _flag(True)
+    d1, d2 = date(2016, 8, 1), date(2016, 8, 2)
+    archive = Archive()
+    archive.put("fo", d1, fo_legacy(d1, [("FUTSTK", "HBQV1", date(2016, 8, 25), 0, "XX", 100, 77, 900)]))
+    archive.put("fo", d2, fo_legacy(d2, [("FUTSTK", "HBQV1", date(2016, 8, 25), 0, "XX", 101, 88, 950)]))
+    _backfill(archive, d1, d1, segments=["fo"])
+    assert _state("fo", d1).volume_unit == "withheld" and "withheld" in _state("fo", d1).note
+    monkeypatch.setattr(config, "HISTORY_BACKFILL_FO_VOLUME", "as_printed")
+    _backfill(archive, d2, d2, segments=["fo"])
+    assert _state("fo", d2).volume_unit == "contracts"
+
+    async def vols():
+        async with _session_factory() as session:
+            rows = await session.scalars(select(MdCandleRecord).where(MdCandleRecord.instrument_key == "NFO:HBQV1:FUT:2016-08-25"))
+            return sorted((r.ts, r.volume, r.oi) for r in rows)
+    assert [(v, oi) for _, v, oi in _run(vols())] == [(0, 900), (88, 950)]
+    assert bhavcopy.parse_fo(fo_udiff(date(2024, 7, 8), [("STF", "HBQV1", date(2024, 7, 25), "", "", 1, 1, 1)])).volume_unit == "unconfirmed"
+
+
+def test_a_zip_that_would_unpack_too_large_is_refused_before_inflating(monkeypatch):
+    monkeypatch.setattr(bhavcopy, "MAX_CSV_BYTES", 1000)
+    big = zipped("cm.csv", cm_legacy(date(2016, 1, 1), [_row(f"HBQZ{i}", 10) for i in range(100)]))
+    with pytest.raises(BhavcopyRefused, match="unpack"):
+        bhavcopy.decode(big)
+    assert bhavcopy.decode(zipped("cm.csv", "a,b\n1,2\n")) == "a,b\n1,2\n"
+
+
+def test_weekends_are_probed_with_the_cash_file_only_and_a_special_session_loads():
+    _flag(True)
+    budget_saturday, sunday = date(2020, 2, 1), date(2020, 2, 2)
+    archive = Archive()
+    archive.put("cm", budget_saturday, cm_legacy(budget_saturday, [_row("HBQSAT", 300)]))
+    archive.put("index", budget_saturday, index_file(budget_saturday, [("HBQ Saturday Index", 1, 2, 0.5, 1.5)]))
+    summary = _backfill(archive, budget_saturday, sunday)
+    assert _state("cm", budget_saturday).status == "done" and _state("index", budget_saturday).status == "done"
+    assert _state("cm", sunday).status == "no_file" and _state("cm", sunday).note.startswith("weekend")
+    assert _state("index", sunday) is None and _state("fo", sunday) is None             # nothing else asked on a closed day
+    sunday_calls = [c.rsplit("/", 1)[-1] for c in archive.calls if "02022020" in c or "20200202" in c or "02FEB2020" in c]
+    assert sunday_calls and all(n.startswith(("cm", "BhavCopy_NSE_CM")) for n in sunday_calls)       # cash only
+    assert summary.gaps == []
+    skipped = _backfill(Archive(), date(2020, 2, 8), date(2020, 2, 9), include_weekends=False)
+    assert skipped.days == 0 and _state("cm", date(2020, 2, 8)) is None
+
+
+def test_stopping_the_worker_cancels_the_nightly_job():
+    from app.workers.trading_worker import TradingWorker
+
+    async def go():
+        worker = TradingWorker(_session_factory)
+        worker._history_eod_task = asyncio.get_running_loop().create_task(asyncio.sleep(3600))
+        worker.stop()
+        with pytest.raises(asyncio.CancelledError):
+            await worker._history_eod_task
+        return worker._history_eod_task.cancelled()
+    assert _run(go()) is True

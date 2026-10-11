@@ -2,8 +2,9 @@
 
 - `history_backfill_files`: one row per (segment, trade date) - cm / fo / index - the backfill's resume point and the
   admin progress source (status, checksum, rows, quality events, last error).
-- `md_isin_symbols`: which symbol an ISIN traded under, as observed in the exchange's daily cash files (first / last
-  trade date) - survivorship-free, and the join that stitches a company's history across symbol changes.
+- `md_isin_symbols`: which symbol an ISIN traded under, as observed in the exchange's daily cash files - one row per
+  contiguous run (first / last trade date) - survivorship-free, and the join that stitches a company's history across
+  symbol and ISIN changes.
 
 Bars themselves go to the existing `md_candles` (timeframe `day`, sources `nse_bhav:cm|fo|index`); no column changes.
 
@@ -31,7 +32,8 @@ def upgrade() -> None:
         sa.Column('segment', sa.String(8), nullable=False), sa.Column('trade_date', sa.Date(), nullable=False),
         sa.Column('status', sa.String(12), nullable=False), sa.Column('origin', sa.String(16), nullable=True),
         sa.Column('file_name', sa.String(200), nullable=True), sa.Column('url', sa.String(400), nullable=True),
-        sa.Column('file_format', sa.String(16), nullable=True), sa.Column('sha256', sa.String(64), nullable=True),
+        sa.Column('file_format', sa.String(16), nullable=True), sa.Column('volume_unit', sa.String(16), nullable=True),
+        sa.Column('sha256', sa.String(64), nullable=True),
         sa.Column('size_bytes', sa.BigInteger(), nullable=True), sa.Column('http_status', sa.Integer(), nullable=True),
         sa.Column('rows_read', sa.Integer(), nullable=True), sa.Column('rows_loaded', sa.Integer(), nullable=True),
         sa.Column('inserted', sa.Integer(), nullable=False), sa.Column('corrected', sa.Integer(), nullable=False),
@@ -50,7 +52,7 @@ def upgrade() -> None:
         sa.Column('symbol', sa.String(40), nullable=False), sa.Column('series', sa.String(4), nullable=False),
         sa.Column('first_date', sa.Date(), nullable=False), sa.Column('last_date', sa.Date(), nullable=False),
         sa.Column('updated_at', TZ, nullable=False),
-        sa.UniqueConstraint('exchange', 'isin', 'symbol', name='uq_md_isin_symbol'),
+        sa.UniqueConstraint('exchange', 'isin', 'symbol', 'first_date', name='uq_md_isin_symbol_run'),
     )
     op.create_index('ix_md_isin_symbols_isin', 'md_isin_symbols', ['isin'])
     op.create_index('ix_md_isin_symbols_symbol', 'md_isin_symbols', ['exchange', 'symbol'])

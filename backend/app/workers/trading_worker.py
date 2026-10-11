@@ -245,6 +245,8 @@ class TradingWorker:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._history_eod_task is not None and not self._history_eod_task.done():
+            self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)

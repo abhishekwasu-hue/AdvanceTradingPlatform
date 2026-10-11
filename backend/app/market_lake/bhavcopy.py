@@ -42,6 +42,9 @@ SEGMENTS = ("cm", "index", "fo")
 UDIFF_FROM = nse_expiries.UDIFF_FROM                 # 8 Jul 2024: NSE's UDiFF bhavcopies replace the legacy files
 ARCHIVE = nse_expiries.ARCHIVE
 MAX_KEY = 64
+MAX_CSV_BYTES = 256 * 1024 * 1024        # an unzipped file larger than this is refused before it is read (zip bomb)
+VOLUME_UNIT = {"cm_legacy": "shares", "cm_full": "shares", "cm_udiff": "shares", "fo_legacy": "contracts",
+               "fo_udiff": "unconfirmed", "index_close": "none"}
 
 
 class BhavcopyRefused(ValueError):
@@ -78,6 +81,12 @@ class ParsedFile:
     duplicates: List[str] = field(default_factory=list)           # identical repeats dropped (reported as `duplicate`)
     notes: List[str] = field(default_factory=list)
 
+    @property
+    def volume_unit(self) -> str:
+        """What `volume` counts in this file: shares (cash), contracts (legacy F&O CONTRACTS), unconfirmed (UDiFF F&O
+        TtlTradgVol - contracts or quantity is an open question until checked on real files), none (indices)."""
+        return VOLUME_UNIT.get(self.file_format, "unconfirmed")
+
     def skip(self, reason: str) -> None:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
 
@@ -88,10 +97,16 @@ def decode(content: bytes) -> str:
     if content[:2] == b"PK":
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as z:
-                names = [n for n in z.namelist() if n.lower().endswith(".csv")]
-                if len(names) != 1:
-                    raise BhavcopyRefused(f"the zip holds {len(names)} CSV files, expected one")
-                return z.read(names[0]).decode("utf-8-sig", errors="replace")
+                infos = [i for i in z.infolist() if i.filename.lower().endswith(".csv")]
+                if len(infos) != 1:
+                    raise BhavcopyRefused(f"the zip holds {len(infos)} CSV files, expected one")
+                if infos[0].file_size > MAX_CSV_BYTES:      # checked from the directory BEFORE anything is inflated
+                    raise BhavcopyRefused(f"the zipped CSV would unpack to {infos[0].file_size} bytes (limit {MAX_CSV_BYTES})")
+                with z.open(infos[0]) as member:
+                    data = member.read(MAX_CSV_BYTES + 1)
+                if len(data) > MAX_CSV_BYTES:               # a directory entry that understates the size
+                    raise BhavcopyRefused(f"the zipped CSV unpacks to more than {MAX_CSV_BYTES} bytes")
+                return data.decode("utf-8-sig", errors="replace")
         except zipfile.BadZipFile as exc:
             raise BhavcopyRefused(f"not a readable zip ({exc})") from None
     return content.decode("utf-8-sig", errors="replace")
@@ -267,8 +282,9 @@ UDIFF_FO = {"IDF": "FUT", "STF": "FUT", "IDO": "OPT", "STO": "OPT"}
 
 
 def parse_fo(text: str, *, with_options: bool = False) -> ParsedFile:
-    """Futures always; options only `with_options` (tens of thousands of contracts a day). The volume unit is the
-    file's own: CONTRACTS in the legacy file, TtlTradgVol in UDiFF (see the design note's open questions)."""
+    """Futures always; options only `with_options` (tens of thousands of contracts a day). The volume is parsed as
+    printed - CONTRACTS in the legacy file, TtlTradgVol in UDiFF, possibly different units (`ParsedFile.volume_unit`);
+    the backfill withholds it from the lake until the unit is settled (HISTORY_BACKFILL_FO_VOLUME)."""
     headers, rows = _table(text)
     fmt, rows = _udiff_rows(detect(headers), rows, "fo")
     if fmt not in ("fo_legacy", "fo_udiff"):

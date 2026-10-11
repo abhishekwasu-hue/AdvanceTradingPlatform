@@ -24,7 +24,7 @@ Rules:
 
 CLI (inside the backend container; never run by the test suite against NSE):
     python -m app.market_lake.bhavcopy_backfill run --from 2016-01-01 --to 2025-12-31 [--segments cm,index,fo]
-        [--with-options] [--include-weekends] [--limit N] [--retry-missing] [--local-dir DIR]
+        [--with-options] [--skip-weekends] [--limit N] [--retry-missing] [--local-dir DIR]
     python -m app.market_lake.bhavcopy_backfill nightly
     python -m app.market_lake.bhavcopy_backfill holidays FILE.csv [--exchange NSE]
     python -m app.market_lake.bhavcopy_backfill corporate-actions FILE.csv
@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import distinct, func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
@@ -89,6 +90,7 @@ class Obtained:
 @dataclass
 class Outcome:
     file_format: str = ""
+    volume_unit: str = ""
     rows_read: int = 0
     rows_loaded: int = 0
     inserted: int = 0
@@ -167,30 +169,51 @@ async def _quality(session: AsyncSession, parsed: ParsedFile, bars: List[LakeBar
     return len(events)
 
 
+def _between(runs: Sequence[MdIsinSymbolRecord], symbol: str, lo: date, hi: date) -> bool:
+    """True when the ISIN traded under ANOTHER symbol strictly between lo and hi (so a run of `symbol` must not span it)."""
+    return any(r.symbol != symbol and r.last_date > lo and r.first_date < hi for r in runs)
+
+
 async def _observe_isins(session: AsyncSession, rows: Sequence[DailyRow], day: date) -> None:
+    """One row per contiguous run of (ISIN, symbol): a day extends the run it touches unless the ISIN traded under
+    another symbol in between (a rename and back, X -> Y -> X, is two X runs). Order-independent (uploads may come in
+    any order): a day between two runs of the same symbol joins them."""
     pairs: Dict[Tuple[str, str], str] = {(r.isin, r.symbol[:40]): r.series for r in rows if r.isin}
     isins = sorted({isin for isin, _ in pairs})
-    known: Dict[Tuple[str, str], MdIsinSymbolRecord] = {}
+    runs: Dict[str, List[MdIsinSymbolRecord]] = {}
     for i in range(0, len(isins), 500):
         for rec in await session.scalars(select(MdIsinSymbolRecord).where(MdIsinSymbolRecord.exchange == "NSE",
                                                                          MdIsinSymbolRecord.isin.in_(isins[i:i + 500]))):
-            known[(rec.isin, rec.symbol)] = rec
+            runs.setdefault(rec.isin, []).append(rec)
     for (isin, symbol), series in sorted(pairs.items()):
-        rec = known.get((isin, symbol))
-        if rec is None:
-            session.add(MdIsinSymbolRecord(exchange="NSE", isin=isin, symbol=symbol, series=series[:4], first_date=day, last_date=day))
+        mine = runs.setdefault(isin, [])
+        same = [r for r in mine if r.symbol == symbol]
+        if any(r.first_date <= day <= r.last_date for r in same):
             continue
-        if day < rec.first_date:
-            rec.first_date = day
-        if day >= rec.last_date:
-            rec.last_date, rec.series = day, series[:4]
+        before = max((r for r in same if r.last_date < day and not _between(mine, symbol, r.last_date, day)),
+                     key=lambda r: r.last_date, default=None)
+        after = min((r for r in same if r.first_date > day and not _between(mine, symbol, day, r.first_date)),
+                    key=lambda r: r.first_date, default=None)
+        if before is not None and after is not None:          # the missing day between two runs: one run again
+            before.last_date, before.series = after.last_date, after.series
+            mine.remove(after)
+            await session.delete(after)
+        elif before is not None:
+            before.last_date, before.series = day, series[:4]
+        elif after is not None:
+            after.first_date = day
+        else:
+            rec = MdIsinSymbolRecord(exchange="NSE", isin=isin, symbol=symbol, series=series[:4], first_date=day, last_date=day)
+            session.add(rec)
+            mine.append(rec)
 
 
 async def load_file(session: AsyncSession, segment: str, day: date, content: bytes, *, sha256: str, now: datetime,
                     with_options: Optional[bool] = None, force: bool = False) -> Outcome:
     """Checks, writes and verifies one day's file. Does not commit (the caller commits it with the file's state row)."""
-    parsed, closes = bhavcopy.parse(segment, content, series=config.HISTORY_BACKFILL_SERIES,
-                                    with_options=config.HISTORY_BACKFILL_FO_OPTIONS if with_options is None else with_options)
+    parsed, closes = await asyncio.to_thread(        # CPU work off the event loop (the worker's trading cycle shares it)
+        bhavcopy.parse, segment, content, series=config.HISTORY_BACKFILL_SERIES,
+        with_options=config.HISTORY_BACKFILL_FO_OPTIONS if with_options is None else with_options)
     if parsed.trade_date != day:
         raise BhavcopyRefused(f"the file is for {parsed.trade_date.isoformat()}, not {day.isoformat()}")
     if not parsed.rows:
@@ -198,14 +221,21 @@ async def load_file(session: AsyncSession, segment: str, day: date, content: byt
     if not force:
         await _short_file_gate(session, segment, day, len(parsed.rows))
     end, source = bar_end(day), SOURCE[segment]
-    bars = [LakeBar(r.instrument_key, TIMEFRAME, end, r.open, r.high, r.low, r.close, r.volume, r.oi) for r in parsed.rows]
+    unit = parsed.volume_unit
+    withhold = segment == "fo" and config.HISTORY_BACKFILL_FO_VOLUME != "as_printed"
+    if withhold:
+        unit = "withheld"             # F&O volume units differ between the formats (open question): stored as 0 for now
+    bars = [LakeBar(r.instrument_key, TIMEFRAME, end, r.open, r.high, r.low, r.close, 0 if withhold else r.volume, r.oi)
+            for r in parsed.rows]
     written = await write_candles_bulk(session, bars, source, ingested_at=now)
     await session.flush()
     in_lake = int(await session.scalar(select(func.count(distinct(MdCandleRecord.instrument_key))).where(
         MdCandleRecord.timeframe == TIMEFRAME, MdCandleRecord.source == source, MdCandleRecord.ts == end)) or 0)
     if in_lake < len(bars):
         raise RuntimeError(f"verification failed: the lake holds {in_lake} of the file's {len(bars)} instruments for {day}")
-    out = Outcome(parsed.file_format, parsed.rows_read, len(bars), written.inserted, written.corrected, written.skipped)
+    out = Outcome(parsed.file_format, unit, parsed.rows_read, len(bars), written.inserted, written.corrected, written.skipped)
+    if withhold:
+        out.notes.append(f"volume withheld (stored as 0): the {parsed.volume_unit} unit is not settled")
     out.notes += parsed.notes[:20]
     if parsed.skipped:
         out.notes.append("left out: " + ", ".join(f"{k} {v}" for k, v in sorted(parsed.skipped.items())))
@@ -308,7 +338,11 @@ async def _start(session_factory, segment: str, day: date, *, skip_done: bool, r
         state.status, state.error = "running", None
         state.started_at = datetime.now(timezone.utc)
         state.attempts = (state.attempts or 0) + 1
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError:       # another writer created the row first (an upload racing a run): it owns this day now
+            await session.rollback()
+            return None, "running"
         return state.id, previous
 
 
@@ -349,13 +383,13 @@ async def attempt(session_factory, segment: str, day: date, obtain: ObtainFn, su
         return "blocked" if got.status == "blocked" else "failed"
     sha = hashlib.sha256(got.content).hexdigest()
     if got.origin == "nse_archives":
-        _keep_raw(segment, day, got.file_name, got.content)
+        await asyncio.to_thread(_keep_raw, segment, day, got.file_name, got.content)
     async with session_factory() as session:
         try:
             out = await load_file(session, segment, day, got.content, sha256=sha, now=now or datetime.now(timezone.utc),
                                   with_options=with_options, force=force)
             await session.execute(update(F).where(F.id == state_id).values(
-                status="done", error=None, sha256=sha, size_bytes=len(got.content), file_format=out.file_format,
+                status="done", error=None, sha256=sha, size_bytes=len(got.content), file_format=out.file_format, volume_unit=out.volume_unit or None,
                 rows_read=out.rows_read, rows_loaded=out.rows_loaded, inserted=out.inserted, corrected=out.corrected,
                 skipped=out.skipped, quality_events=out.quality_events, note="; ".join(out.notes)[:2000] or None,
                 done_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc), **common))
@@ -413,7 +447,8 @@ def _segments(raw: Sequence[str]) -> List[str]:
 
 
 async def run_backfill(session_factory, *, start: date, end: date, segments: Sequence[str] = SEGMENTS,
-                       fetcher: Optional[Fetcher] = None, local_dir: Optional[str] = None, include_weekends: bool = False,
+                       fetcher: Optional[Fetcher] = None, local_dir: Optional[str] = None,
+                       include_weekends: Optional[bool] = None,
                        limit: Optional[int] = None, retry_no_file: bool = False, with_options: Optional[bool] = None,
                        today: Optional[date] = None, now: Optional[datetime] = None) -> BackfillSummary:
     """Every (segment, day) from `start` to `end` that is not done yet, oldest first. See the module docstring."""
@@ -431,12 +466,18 @@ async def run_backfill(session_factory, *, start: date, end: date, segments: Seq
             raise BackfillConfigError("Another history backfill is running on this database - one at a time")
         try:
             attempted, day = 0, start
+            weekends = config.HISTORY_BACKFILL_PROBE_WEEKENDS if include_weekends is None else include_weekends
             while day <= end:
-                if include_weekends or day.weekday() < 5:
+                weekend = day.weekday() >= 5
+                if weekends or not weekend:
                     summary.days += 1
-                    for segment in wanted:
+                    for segment in wanted if not weekend else ["cm"] + [s for s in wanted if s != "cm"]:
+                        if weekend and segment != "cm" and not await _cash_done(session_factory, day):
+                            break             # a weekend is probed with the cash file; no session -> nothing else asked
                         if limit is not None and attempted >= limit:
                             return summary
+                        if weekend and segment == "cm" and "cm" not in wanted:
+                            continue          # the cash file is only consulted, not fetched, when cm is not requested
                         status = await attempt(session_factory, segment, day, obtain, summary, today=today, now=now,
                                                retry_no_file=retry_no_file, with_options=with_options)
                         attempted += status != "skipped"
@@ -444,6 +485,11 @@ async def run_backfill(session_factory, *, start: date, end: date, segments: Seq
         finally:
             await _lock(lock_session, False)
     return summary
+
+
+async def _cash_done(session_factory, day: date) -> bool:
+    async with session_factory() as session:
+        return await session.scalar(select(F.status).where(F.segment == "cm", F.trade_date == day)) == "done"
 
 
 def nightly_due(now: datetime, last_day: Optional[date]) -> Optional[date]:
@@ -456,7 +502,7 @@ def nightly_due(now: datetime, last_day: Optional[date]) -> Optional[date]:
 
 async def run_nightly(session_factory, fetcher: Fetcher, *, now: Optional[datetime] = None) -> BackfillSummary:
     """After the close: today's files plus a catch-up of the last HISTORY_BACKFILL_CATCHUP_DAYS (a late or blocked file is
-    picked up the next night). Weekends are asked too - a special session (budget day, Muhurat) has files."""
+    picked up the next night). Weekends are probed with the cash file - a special session (budget day, Muhurat) has one."""
     now = now or datetime.now(timezone.utc)
     today = now.astimezone(IST).date()
     return await run_backfill(session_factory, start=today - timedelta(days=max(0, config.HISTORY_BACKFILL_CATCHUP_DAYS)),
@@ -474,8 +520,14 @@ async def ingest_upload(session_factory, segment: str, day: date, content: bytes
     async def obtain(_segment: str, _day: date) -> Obtained:
         return Obtained("ok", content, "upload", None, file_name[:200] or None)
 
-    status = await attempt(session_factory, segment, day, obtain, summary, today=datetime.now(IST).date(), now=now,
-                           skip_done=False, force=force)
+    async with session_factory() as lock_session:        # the same lock as the CLI and the nightly job
+        if not await _lock(lock_session, True):
+            raise BackfillConfigError("A history backfill run is in progress - upload again when it has finished")
+        try:
+            status = await attempt(session_factory, segment, day, obtain, summary, today=datetime.now(IST).date(), now=now,
+                                   skip_done=False, force=force)
+        finally:
+            await _lock(lock_session, False)
     async with session_factory() as session:
         state = await session.scalar(select(F).where(F.segment == segment, F.trade_date == day))
     return {"segment": segment, "trade_date": day.isoformat(), **_state_dict(state), "status": status,
@@ -486,7 +538,8 @@ async def ingest_upload(session_factory, segment: str, day: date, content: bytes
 def _state_dict(s: Optional[HistoryBackfillFileRecord]) -> Dict[str, Any]:
     if s is None:
         return {}
-    return {"status": s.status, "origin": s.origin, "file_name": s.file_name, "file_format": s.file_format, "sha256": s.sha256,
+    return {"status": s.status, "origin": s.origin, "file_name": s.file_name, "file_format": s.file_format,
+            "volume_unit": s.volume_unit, "sha256": s.sha256,
             "rows_read": s.rows_read, "rows_loaded": s.rows_loaded, "inserted": s.inserted, "corrected": s.corrected,
             "skipped": s.skipped, "quality_events": s.quality_events, "note": s.note, "error": s.error, "attempts": s.attempts}
 
@@ -551,7 +604,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--to", dest="end", required=True, type=date.fromisoformat)
     run.add_argument("--segments", default="cm,index,fo")
     run.add_argument("--with-options", action="store_true", help="also load F&O options (large)")
-    run.add_argument("--include-weekends", action="store_true", help="also ask for Saturdays and Sundays (special sessions)")
+    run.add_argument("--skip-weekends", action="store_true",
+                     help="do not probe Saturdays / Sundays (by default the cash file is asked for, for special sessions)")
     run.add_argument("--limit", type=int, default=None, help="process at most N files this run (resume later)")
     run.add_argument("--retry-missing", action="store_true", help="ask again for days recorded as no_file")
     run.add_argument("--local-dir", default=None, help="read the files from a directory instead of the NSE archive")
@@ -559,6 +613,8 @@ def _parser() -> argparse.ArgumentParser:
     hol = sub.add_parser("holidays", help="load an exchange holiday list CSV into market_holidays")
     hol.add_argument("file")
     hol.add_argument("--exchange", default="NSE")
+    hol.add_argument("--remove", action="store_true", help="undo: remove exactly the dates the file lists")
+    hol.add_argument("--allow-future", action="store_true", help="also load dates from today on (closes live market days)")
     ca = sub.add_parser("corporate-actions", help="load a corporate-actions CSV into md_corporate_actions")
     ca.add_argument("file")
     gaps = sub.add_parser("gaps", help="report per-instrument gaps on days whose cash file is held")
@@ -585,7 +641,7 @@ async def _main(argv: Optional[Sequence[str]] = None) -> int:
                 else:
                     summary = await run_backfill(factory, start=args.start, end=args.end, fetcher=fetcher, local_dir=args.local_dir,
                                                  segments=[s.strip() for s in args.segments.split(",") if s.strip()],
-                                                 include_weekends=args.include_weekends, limit=args.limit,
+                                                 include_weekends=False if args.skip_weekends else None, limit=args.limit,
                                                  retry_no_file=args.retry_missing, with_options=args.with_options or None)
             finally:
                 if fetcher is not None:
@@ -594,8 +650,10 @@ async def _main(argv: Optional[Sequence[str]] = None) -> int:
             return 1 if summary.refused or summary.failed or summary.blocked else 0
         async with factory() as session:
             if args.command == "holidays":
-                from app.market_data.holiday_import import import_holidays
-                result = (await import_holidays(session, Path(args.file).read_bytes(), exchange=args.exchange)).as_dict()
+                from app.market_data.holiday_import import import_holidays, remove_holidays
+                content = Path(args.file).read_bytes()
+                result = (await remove_holidays(session, content, exchange=args.exchange) if args.remove else
+                          await import_holidays(session, content, exchange=args.exchange, allow_future=args.allow_future)).as_dict()
             elif args.command == "corporate-actions":
                 from app.market_lake.corporate_actions import load_csv
                 result = (await load_csv(session, Path(args.file).read_bytes(), source="ca_csv:cli")).as_dict()

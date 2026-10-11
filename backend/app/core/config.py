@@ -240,6 +240,12 @@ HISTORY_BACKFILL_USER_AGENT = os.environ.get("HISTORY_BACKFILL_USER_AGENT", "").
 # Cash-market series loaded as equities (main board, trade-for-trade, SME); the first listed wins if a symbol has two.
 HISTORY_BACKFILL_SERIES = tuple(s.strip().upper() for s in os.environ.get("HISTORY_BACKFILL_SERIES", "EQ,BE,BZ,SM,ST,SZ").split(",") if s.strip())
 HISTORY_BACKFILL_FO_OPTIONS = os.environ.get("HISTORY_BACKFILL_FO_OPTIONS", "false").lower() in ("1", "true", "yes")
+# F&O volume: "withhold" (default - stored as 0 until the legacy CONTRACTS vs UDiFF TtlTradgVol unit is confirmed on
+# real files, so nothing downstream mixes units) or "as_printed". The unit is recorded per file either way.
+HISTORY_BACKFILL_FO_VOLUME = os.environ.get("HISTORY_BACKFILL_FO_VOLUME", "withhold").strip().lower()
+# Weekends are probed with the cash file only (a special session - budget Saturday, Muhurat - has one); index and F&O
+# files are asked for only when the cash file of that day exists. "false" skips weekends entirely.
+HISTORY_BACKFILL_PROBE_WEEKENDS = os.environ.get("HISTORY_BACKFILL_PROBE_WEEKENDS", "true").lower() in ("1", "true", "yes")
 # A file with fewer rows than this share of the median of the last done days of its segment is refused (truncated).
 HISTORY_BACKFILL_MIN_ROWS_RATIO = float(os.environ.get("HISTORY_BACKFILL_MIN_ROWS_RATIO", "0.5") or 0.5)
 # Optional: keep every file as received under this directory ({segment}/{yyyy}/{name}); empty = not kept.

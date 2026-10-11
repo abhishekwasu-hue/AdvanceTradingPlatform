@@ -15,6 +15,9 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4173",
     trace: "retain-on-failure",
+    // PW1: the production build registers a service worker; page.route() cannot see requests a worker handles, so
+    // the fixtures would be bypassed. The worker has its own tests (test/pwa-shell.test.ts).
+    serviceWorkers: "block",
     // Software WebGL (SwiftShader) on GPU-less runners, so the ai-core-3d test sees the real scene.
     launchOptions: { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
                      ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}) },

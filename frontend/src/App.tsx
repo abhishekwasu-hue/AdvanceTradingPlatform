@@ -4,6 +4,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate,
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
 import ErrorBoundary from "./components/ErrorBoundary";
+import PwaBanners from "./pwa/PwaBanners";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
@@ -148,6 +149,7 @@ function AppShell() {
       <Sidebar page={page} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar page={page} onMenu={() => setMenuOpen(true)} />
+        <PwaBanners />
         {/* The window scrolls, not <main>. Other pages keep overflow-y-auto (wide tables without their own wrapper
             scroll inside <main>); the Copilot uses overflow-x-clip, which is not a scroll container, so its sticky tab
             bar sticks to the viewport (its own wide content scrolls in its own wrappers). */}

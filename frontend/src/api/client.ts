@@ -1,3 +1,4 @@
+import type { OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
   StrategistResult,
   StrategistRequestParsed,
@@ -359,6 +360,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ symbol, candles }),
     }),
+
+  // OI Banner (O3): read-only banner, history, per-strike OI; settings are saved by the organisation owner.
+  oiBanners: () => request<{ banners: OiBannerResponse[] }>("/option-chain/banners"),
+  oiBanner: (underlying: string) => request<OiBannerResponse>(`/option-chain/${encodeURIComponent(underlying)}/banner`),
+  oiHistory: (underlying: string, interval: number, date?: string) =>
+    request<OiHistoryResponse>(`/option-chain/${encodeURIComponent(underlying)}/history?interval=${interval}${date ? `&date=${date}` : ""}`),
+  oiStrikes: (underlying: string, date?: string) =>
+    request<OiStrikesResponse>(`/option-chain/${encodeURIComponent(underlying)}/strikes${date ? `?date=${date}` : ""}`),
+  oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
+  saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
+    request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {

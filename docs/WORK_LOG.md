@@ -1608,3 +1608,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+### 2026-10-11 21:30 IST - Z10 design note + Z10-a (U3 G2 no-look-ahead harness, G1 golden correctness)
+- `docs/design/Z10_LAUNCH_HARDENING.md`: Z10 split into Z10-a..f, each mapped to existing code. The pieces: the alert
+  outbox and dispatcher, BT1 `alerts_suppressed`, the PW6 invite gate + `BETA_COHORT_CAP`, the feature flags,
+  `scripts/loadtest.py`, the health probes and incidents, the retention / compliance rules, and the Copilot advice filter.
+- Z10-a (branch `claude/z10a-lookahead-correctness`, no PR yet: WIP limit):
+  * the harness, `app/quality/lookahead.py`: truncation, future mutation (up-spike, down-spike, walk) and immutability
+    checks; 161 registered cases in `app/quality/causal_cases.py`; a coverage test for every ScreenQL function,
+    operand and pattern.
+- Bugs found and fixed:
+  1. Market-structure BOS / CHoCH used swings `window` bars before they were confirmed (look-ahead in ScreenQL
+     `Trend` / `StructureEvent`, the scanner's BOS / CHoCH filters and signal scoring).
+  2. The validator accepted last-bar-only functions inside history-reading ones (`Count(5, PatternBullish())`), so
+     today's answer was repeated on earlier bars.
+  3. `session_vwap` raised TypeError on a session without volume, which crashed the S/R engine on indices. It also
+     reset at UTC midnight, not on the IST date.
+  4. The Pro Chart's Supertrend and ADX / DI differed from the engine's values for the same bars.
+- Tests:
+  * golden reference loops for every shipped indicator and session operand;
+  * a canonical shape and a near miss for each of the 14 patterns;
+  * a Wilder-seed convergence check;
+  * chart parity (vitest against a backend-generated fixture).
+- Open: OPEN_QUESTIONS Z10-1..Z10-5.

@@ -633,6 +633,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   switch the toggle to LIVE and clear MFA, email verification and the algo id before the first LIVE
   deployment.
 - **API**: `GET /api/readiness?target=LIVE`, `GET /api/admin/readiness` (SUPER_ADMIN, MFA session).
+- **Go-live evidence (D6, rule IN-SEBI.golive.checklist)**: the platform checklist also lists `golive.*` items (LIVE
+  scope; `warn` at most, so PAPER is never blocked): ISO 27001 / SOC 2, CERT-In VAPT, incident register review, strategy
+  white-box / black-box filing, AI disclosure review, DPO contact, breach runbook (notify within 72 h) - each `ok` while
+  its latest evidence is valid. Record where the evidence lives (a document id or URL, never the document or a secret)
+  with `PUT /api/compliance/golive/evidence {item_id, reference, valid_until?}` (SUPER_ADMIN, audited); `GET
+  /api/compliance/golive` lists them. Two are checked automatically: login history kept at least 365 days, and AI trade
+  ideas unpublished (`marketplace_ai_listings` off) unless an RA registration is on record for `ai.ra_gate`.
 
 ### 1.6t Angel One (SmartAPI) setup (Phase AC)
 
@@ -841,6 +848,22 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - Every GitHub Action in both workflows is pinned to a commit SHA with the tag in a comment; bump by editing
   both. Dependabot-style tag updates are not automatic.
 - RSS/Atom feeds are parsed with defusedxml (new dependency, in the image on the next build).
+
+### 1.6ab-R AI research studies (H-C3c)
+- **What it is.** The research loop is off by default (flag `ai_research`). It runs in its own process,
+  `research-worker`, which is also off by default:
+  ```
+  docker compose --profile research up -d research-worker
+  ```
+  Without that process, studies stay "queued".
+- **What it does.** It runs one study at a time; each organisation can have one study queued or running. Every draft
+  is a backtest on server bars, with the sealed holdout cut off. It places no orders and saves no strategies.
+- **Watch.**
+  - `research_studies.status`.
+  - A study `running` with no heartbeat for 20 minutes becomes `interrupted` on the worker's next step. Its trials
+    are kept.
+  - Model spend shows on the study (`usage`) and in the usual AI metering.
+- **Stopping.** Stop the service. A study cut off mid-way becomes `interrupted`; nothing else is affected.
 
 ### 1.6ab-7 AI Copilot approvals and hand-offs (P0.8-A)
 

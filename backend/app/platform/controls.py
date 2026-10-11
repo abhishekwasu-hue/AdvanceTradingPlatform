@@ -132,11 +132,15 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
+    # Z10-f (docs/design/Z10_LAUNCH_HARDENING.md): the how-to support bot over the help and legal pages. No tools (reads
+    # no positions, touches no order), refuses advice, hands low-confidence questions to the feedback form. OFF: 404.
+    "support_bot": "Support bot: how-to answers from the help and legal pages (no advice, no account data, no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery"})
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery",
+                               "support_bot"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

@@ -115,6 +115,8 @@ from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
+from app.legal.routes import router as legal_router
+from app.support.routes import router as support_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -231,6 +233,8 @@ app.include_router(live_router)  # PW4: live updates across Telegram, push and o
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
+app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
+app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 
 _default_risk_config = RiskConfig()
 

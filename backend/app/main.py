@@ -49,6 +49,7 @@ from app.kill_switch.checks import is_global_kill_switch_engaged
 from app.kill_switch.routes import router as kill_switch_router
 from app.news_events.routes import router as news_events_router
 from app.options_builder.routes import router as options_builder_router
+from app.options_builder.saved import router as options_builder_saved_router
 from app.news_feed.routes import router as news_feed_router
 from app.telegram_inbound.routes import router as telegram_inbound_router
 from app.option_chain.analysis import analyze_option_chain
@@ -169,6 +170,7 @@ app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the c
 app.include_router(trading_router)
 app.include_router(custom_strategies_router)
 app.include_router(options_builder_router)  # P1-c: Options Strategy Builder (research only, no orders)
+app.include_router(options_builder_saved_router)  # Z5: saved builder strategies (flag options_builder_saved, off by default)
 app.include_router(risk_settings_router)
 app.include_router(risk_hierarchy_router)
 app.include_router(risk_guardian_router)

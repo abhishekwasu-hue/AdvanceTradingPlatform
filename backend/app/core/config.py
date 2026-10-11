@@ -480,3 +480,22 @@ OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes
 # included). The flag is off by default, so the cap does nothing until the operator turns the gate on.
 BETA_COHORT_CAP = _bounded_int("BETA_COHORT_CAP", 500, 1, 1_000_000)
+
+# Tax report (app/tax/report.py): how F&O turnover is counted. "ABS_PNL" (default) = the sum of the absolute profit or
+# loss of every F&O trade (options and futures alike). "ABS_PNL_PLUS_PREMIUM" = the older method, which also adds the
+# premium received on options sold. The report names the method it used; GET /api/tax/report?turnover_method=...
+# picks the other one for a single report. docs/journal/OPEN_QUESTIONS.md JM-1 (a CA confirms the default).
+TAX_FNO_TURNOVER_METHODS = ("ABS_PNL", "ABS_PNL_PLUS_PREMIUM")
+
+
+def _choice(name: str, default: str, choices: tuple) -> str:
+    raw = os.environ.get(name, "").strip().upper()
+    if not raw:
+        return default
+    if raw in choices:
+        return raw
+    logging.getLogger(__name__).warning("%s=%r is not one of %s - using %s", name, raw, choices, default)
+    return default
+
+
+TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_TURNOVER_METHODS)

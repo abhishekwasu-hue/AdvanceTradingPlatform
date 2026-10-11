@@ -372,6 +372,28 @@ job, never tuned against results.
   opt-out filter, single use.
 - **Not yet.** Bounce handling needs an inbound mail source and is deferred until one is chosen (SC-9).
 
+## S3c (built): alert-management UI
+
+- **Where.** Notifications page, new tab "Rules & delivery" (the feed stays the first tab). Strings are English, as the
+  rest of the dashboard.
+- **Rules.**
+  - The list shows each rule's status, priority and a one-line description (target, timeframe, delivery, cooldown).
+  - Pause / resume.
+  - A delivery log per rule shows every firing with a plain-language reason (cooldown, quiet hours, cap, digest).
+- **New instrument rule.**
+  - Fields: name, symbol, ScreenQL condition, timeframe, priority, cooldown, instant or digest.
+  - Client checks mirror the server; the server's validator problems are shown with their column.
+- **Delivery policy.** Timezone, quiet hours, messages per hour, burst grouping window, end-of-day digest time.
+- **Failed deliveries.** Dead letters with their reason and last error, plus Retry. Viewers simply see none.
+- **Your channels.**
+  - Telegram link code (the `/start` command to send privately, its expiry), link status, unlink.
+  - Email addresses that unsubscribed, with Re-subscribe.
+- **Flag off.** With `screener_v2` off the rules part says so; failed deliveries and personal channels still work.
+- **Wording.** "Alerts report that a rule's conditions matched. They are not recommendations and never place orders."
+- **Tests.** `src/alerts/rules.test.ts` (5) for the helpers: rule description, validator problems, policy and rule
+  checks, reason labels. tsc, vitest (57) and build all pass, and the bundle budget holds: the panel is in the lazily
+  loaded Notifications chunk.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-9. Unsubscribe scope and bounces.** Provisional:
   - an unsubscribe stops screen-alert emails only; risk and system emails cannot be unsubscribed;

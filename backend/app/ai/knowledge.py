@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from app.ai.interview import tr
-from app.ai import grounding, output_filter
+from app.ai import grounding, output_filter, wording
 
 
 @dataclass(frozen=True)
@@ -503,6 +503,8 @@ async def ai_answer(provider, question: str, lang: str, memory: Optional[dict], 
     ok, bad = grounding.check_numbers(text, allowed)
     if ok:
         ok, bad = grounding.check_tickers(text, trusted)
+    if ok:
+        ok, bad = wording.check_wording(text)      # ATP review 11: banned words -> the library answer
     if not ok:
         base["note"] = f"AI answer failed the grounding check ({', '.join(bad[:5])}); answered from the concept library"
         return base

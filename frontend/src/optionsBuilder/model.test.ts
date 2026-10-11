@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  cone, daysBetween, niceTicks, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, netPremium, rewardToRisk, signAreas, snapStrike, thumbnailShape,
+  cone, daysBetween, evaluatedById, isCurrent, niceTicks, rangePctFor, repriceModelLegs, type Evaluation, hedgeFirst, linear, linePath, money, netPremium, rewardToRisk, signAreas, snapStrike, thumbnailShape,
   yDomain, type Leg, type TemplateInfo,
 } from "./model";
 
@@ -20,12 +20,15 @@ describe("legs", () => {
   it("adds premiums as money: credit positive, debit negative", () => {
     expect(netPremium([leg({ direction: "SELL", premium: 100 }), leg({ premium: 40 })])).toBe((100 - 40) * 50);
     expect(netPremium([leg({ premium: 10, lots: 2 })])).toBe(-1000);
+    // review P1-c: a futures leg's entry price is not premium (a covered call is a credit, not a ₹1 crore debit)
+    expect(netPremium([leg({ option_type: "FUT", premium: 22000 }), leg({ direction: "SELL", premium: 100 })])).toBe(100 * 50);
   });
   it("gives reward to risk only when both ends are finite and there is a risk", () => {
     expect(rewardToRisk({ max_profit: 3000, max_loss: -6000, unbounded_profit: false, unbounded_loss: false })).toBe(0.5);
     expect(rewardToRisk({ max_profit: 3000, max_loss: null, unbounded_profit: false, unbounded_loss: true })).toBeNull();
     expect(rewardToRisk({ max_profit: 3000, max_loss: 0, unbounded_profit: false, unbounded_loss: false })).toBeNull();
     expect(rewardToRisk(null)).toBeNull();
+    expect(rewardToRisk({ max_profit: -500, max_loss: -6000, unbounded_profit: false, unbounded_loss: false })).toBeNull();   // no profit anywhere
   });
 });
 
@@ -90,15 +93,45 @@ describe("words and numbers", () => {
   });
 });
 
-describe("model premiums follow their contract", () => {
+describe("model premiums and greeks follow their leg, by id", () => {
+  const ev = (sent: Leg[], theoretical: number[]) => ({ sent, evaluation: { legs: theoretical.map((t) => ({ theoretical: t, greeks: { delta: t } })) } as unknown as Evaluation });
   it("re-prices only legs the model priced, and returns the same array when nothing moved", () => {
     const legs = [leg({ id: "m", premium: 100, premium_source: "model" }), leg({ id: "t", premium: 90, premium_source: "manual" })];
-    const ev = { legs: [{ theoretical: 120 }, { theoretical: 80 }] } as unknown as Evaluation;
-    const out = repriceModelLegs(legs, ev);
-    expect(out.map((l) => l.premium)).toEqual([120, 90]);
+    expect(repriceModelLegs(legs, ev(legs, [120, 80])).map((l) => l.premium)).toEqual([120, 90]);
     const same = [leg({ premium: 120, premium_source: "model" })];
-    expect(repriceModelLegs(same, { legs: [{ theoretical: 120.001 }] } as unknown as Evaluation)).toBe(same);
-    expect(repriceModelLegs(legs, { legs: [] } as unknown as Evaluation)).toBe(legs);    // another shape: untouched
+    expect(repriceModelLegs(same, ev(same, [120.001]))).toBe(same);
+    expect(repriceModelLegs(legs, { sent: legs, evaluation: { legs: [] } as unknown as Evaluation })).toBe(legs);   // another shape: untouched
+  });
+  it("matches by id, not position, and never writes an old strike's price after a further move", () => {
+    const a = leg({ id: "a", strike: 100, premium: 5, premium_source: "model" });
+    const b = leg({ id: "b", strike: 110, premium: 3, premium_source: "model" });
+    const reply = ev([a, b], [7, 4]);
+    expect(repriceModelLegs([b, a], reply).map((l) => [l.id, l.premium])).toEqual([["b", 4], ["a", 7]]);   // reordered
+    const moved = { ...a, strike: 105 };                                                                     // dragged on since
+    expect(repriceModelLegs([moved, b], reply)[0]).toBe(moved);
+  });
+  it("shows a leg's greeks only while it is the contract that was evaluated", () => {
+    const a = leg({ id: "a" });
+    const b = leg({ id: "b", strike: 110 });
+    const reply = ev([a, b], [1, 2]);
+    expect(Object.keys(evaluatedById([a, b], reply))).toEqual(["a", "b"]);
+    expect(evaluatedById([b], reply).b.greeks.delta).toBe(2);                       // a removed: b keeps its own row
+    expect(evaluatedById([{ ...a, direction: "SELL" }, b], reply).a).toBeUndefined(); // side switched: not a's old numbers
+    expect(isCurrent([a, b], reply)).toBe(true);
+    expect(isCurrent([b], reply)).toBe(false);
+    expect(isCurrent([a, { ...b, lots: 2 }], reply)).toBe(false);
+    expect(isCurrent([a, b], null)).toBe(false);
+  });
+});
+
+describe("chart range", () => {
+  it("covers every strike with a margin, within 8 % and 60 %", () => {
+    expect(rangePctFor(22000, [leg({ strike: 22000 })])).toBe(8);
+    const wide = rangePctFor(1000, [leg({ strike: 800 }), leg({ strike: 1200 })]);
+    expect(wide).toBeGreaterThan(20);
+    expect(1000 * (1 - wide / 100)).toBeLessThan(800);
+    expect(rangePctFor(100, [leg({ strike: 1000 })])).toBe(60);
+    expect(rangePctFor(1000, [leg({ option_type: "FUT", strike: 5000 })])).toBe(8);   // a future's "strike" is not drawn
   });
 });
 

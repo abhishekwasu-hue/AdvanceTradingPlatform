@@ -43,6 +43,7 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }
     if (!series) return null;
     const i = xs.findIndex((x) => x >= price);
     if (i <= 0) return series[0];
+    if (xs[i] === xs[i - 1]) return series[i];                 // a low-priced underlying can repeat a rounded price
     const t = (price - xs[i - 1]) / (xs[i] - xs[i - 1]);
     return series[i - 1] + (series[i] - series[i - 1]) * t;
   };
@@ -61,13 +62,16 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }
       onStrikeChange(leg.id, snapStrike(leg.strike + (ev.key === "ArrowRight" ? step : -step), step));
     }
   };
-  const optionLegs = legs.filter((l) => l.option_type !== "FUT");
+  // numbered as in the leg table (futures have no strike handle but keep their number)
+  const optionLegs = legs.map((l, i) => ({ l, n: i + 1 })).filter(({ l }) => l.option_type !== "FUT");
+  const lo = Math.max(step, snapStrike(xs[0], step));
+  const hi = snapStrike(xs[xs.length - 1], step);
 
   return (
     <figure className="relative">
-      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full touch-none select-none" role="img"
+      <svg ref={svg} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full touch-none select-none" role="group"
            aria-label={`Payoff: ${e.single_expiry ? "at expiry and " : ""}on the chosen date, against the price of the underlying`}
-           onPointerMove={onMove} onPointerLeave={() => { setHover(null); setDrag(null); }} onPointerUp={() => setDrag(null)}>
+           onPointerMove={onMove} onPointerLeave={() => { setHover(null); setDrag(null); }} onPointerUp={() => setDrag(null)} onPointerCancel={() => setDrag(null)}>
         {/* the probability cone: two and one expected moves */}
         <rect x={clampX(sx(c.outer[0]))} y={M.top} width={Math.max(0, clampX(sx(c.outer[1])) - clampX(sx(c.outer[0])))} height={H - M.top - M.bottom}
               className="fill-brand/[0.05]" />
@@ -97,17 +101,17 @@ export function PayoffCanvas({ evaluation: e, legs, spot, step, onStrikeChange }
           </g>
         ))}
         {/* strikes: drag on the axis, or focus and use the arrow keys */}
-        {optionLegs.map((l, i) => {
+        {optionLegs.map(({ l, n }) => {
           const x = clampX(sx(l.strike));
           return (
             <g key={l.id} transform={`translate(${x},${H - M.bottom + 10})`} role="slider" tabIndex={0}
-               aria-label={`Strike of leg ${i + 1} (${l.direction} ${l.option_type})`} aria-valuenow={l.strike}
+               aria-label={`Strike of leg ${n} (${l.direction} ${l.option_type})`} aria-valuenow={l.strike} aria-valuemin={lo} aria-valuemax={hi}
                aria-valuetext={`${l.strike}`} onKeyDown={keyMove(l)}
                onPointerDown={(ev) => { ev.preventDefault(); (ev.currentTarget.ownerSVGElement as SVGSVGElement | null)?.setPointerCapture?.(ev.pointerId); setDrag(l.id); }}
                className="cursor-ew-resize outline-none [&:focus-visible>circle]:stroke-brand" data-testid="strike-handle">
               <line y1={-10 - (H - M.bottom - M.top)} y2={-10} className={cx(l.direction === "BUY" ? "stroke-up/40" : "stroke-down/40")} strokeDasharray="1 3" />
               <circle r={7} className={cx("stroke-2", l.direction === "BUY" ? "fill-up/80 stroke-up" : "fill-down/80 stroke-down", drag === l.id && "stroke-fg")} />
-              <text dy="0.32em" textAnchor="middle" className="pointer-events-none fill-surface font-mono text-[9px] font-semibold">{i + 1}</text>
+              <text dy="0.32em" textAnchor="middle" className="pointer-events-none fill-surface font-mono text-[9px] font-semibold">{n}</text>
             </g>
           );
         })}

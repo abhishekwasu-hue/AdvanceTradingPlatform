@@ -15,7 +15,7 @@ import type { PageProps } from "../routes";
 import { builderApi } from "../optionsBuilder/api";
 import { LegTable } from "../optionsBuilder/LegTable";
 import { MetricsCard } from "../optionsBuilder/MetricsCard";
-import { daysBetween, hedgeFirst, legId, repriceModelLegs, snapStrike, type Evaluation, type Leg, type TemplateInfo } from "../optionsBuilder/model";
+import { daysBetween, evaluatedById, hedgeFirst, isCurrent, legId, rangePctFor, repriceModelLegs, snapStrike, type Evaluated, type Leg, type TemplateInfo } from "../optionsBuilder/model";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import { TemplateGallery } from "../optionsBuilder/TemplateGallery";
 
@@ -49,7 +49,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const [legs, setLegs] = useState<Leg[]>([]);
   const [daysForward, setDaysForward] = useState(0);
   const [ivShift, setIvShift] = useState(0);
-  const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [evaluated, setEvaluated] = useState<Evaluated | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const seq = useRef(0);
   const asOf = useMemo(todayIst, []);
@@ -68,25 +68,34 @@ export default function OptionsBuilderPage(_props: PageProps) {
   }, []);
   useEffect(() => { if (daysForward > maxDays) setDaysForward(maxDays); }, [daysForward, maxDays]);
 
-  // Every change re-evaluates on the server (debounced); an older reply never overwrites a newer one.
+  // Every change re-evaluates on the server (debounced); an older reply never overwrites a newer one. The reply is
+  // kept with the legs it was asked for, so rows and re-pricing match by leg id, never by position.
   useEffect(() => {
     const n = ++seq.current;
-    if (!legs.length || spot == null) { setEvaluation(null); return undefined; }
+    if (!legs.length || spot == null) { setEvaluated(null); return undefined; }
+    const sent = legs;
     const timer = window.setTimeout(() => {
       builderApi.evaluate({
-        legs: legs.map(({ id: _id, premium_source: _src, ...l }) => l), spot, as_of: asOf, days_forward: daysForward, iv_shift: ivShift / 100,
-        range_pct: 8, points: 241,
-      }).then((ev) => {
+        legs: sent.map(({ id: _id, premium_source: _src, ...l }) => l), spot, as_of: asOf, days_forward: daysForward, iv_shift: ivShift / 100,
+        range_pct: rangePctFor(spot, sent), points: 241,
+      }).then((evaluation) => {
         if (n !== seq.current) return;
         setProblem(null);
-        const repriced = repriceModelLegs(legs, ev);
-        if (repriced !== legs) setLegs(repriced);              // a model price for the old strike: re-price, re-evaluate
-        else setEvaluation(ev);
+        const reply = { evaluation, sent };
+        setEvaluated(reply);
+        setLegs((cur) => repriceModelLegs(cur, reply));        // a model price for the old strike: re-price, re-evaluate
       })
-        .catch((e: unknown) => { if (n === seq.current) setProblem(errorText(e)); });
+        .catch((e: unknown) => {
+          if (n !== seq.current) return;
+          setProblem(errorText(e));
+          setEvaluated(null);                                  // never the previous strategy's numbers beside these legs
+        });
     }, EVALUATE_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [legs, spot, asOf, daysForward, ivShift]);
+  const evaluation = evaluated?.evaluation ?? null;
+  const rows = useMemo(() => evaluatedById(legs, evaluated), [legs, evaluated]);
+  const fresh = isCurrent(legs, evaluated);
 
   const pick = async (name: string) => {
     if (!ready || spot == null || step == null || lotSize == null || width == null || iv == null) return;
@@ -138,7 +147,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
-          <section aria-label="Payoff" className="rounded-xl border border-border bg-surface-1 p-4">
+          <section aria-label="Payoff" aria-busy={!!evaluation && !fresh} className="rounded-xl border border-border bg-surface-1 p-4">
             {evaluation && spot != null && step != null ? (
               <PayoffCanvas evaluation={evaluation} legs={legs} spot={spot} step={step}
                             onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
@@ -158,7 +167,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
               </label>
             </div>
           </section>
-          <LegTable legs={legs} evaluation={evaluation} step={step ?? 0} onChange={(next) => setLegs(hedgeFirst(next))} onAdd={addLeg} />
+          <LegTable legs={legs} rows={rows} step={step ?? 0} onChange={(next) => setLegs(hedgeFirst(next))} onAdd={addLeg} />
         </div>
         <MetricsCard evaluation={evaluation} legs={legs} />
       </div>

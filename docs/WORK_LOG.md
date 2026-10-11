@@ -891,3 +891,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Page: payoff canvas with the cone and draggable strikes, template gallery, leg table, metrics card, date and IV
   sliders; model premiums re-priced when a strike moves. Browser-checked against the real API.
 - Open: OB-6 (instrument numbers typed until P1-d), OB-7 (main tokens until U5 merges).
+
+### 2026-10-11 07:53 IST - P1-c review follow-up; U5 D2 CI fix
+- An independent review of P1-c found 500s (a wing below zero, a negative spot or zero strike), CPU work on the event
+  loop with no limit, the IV solved at the wrong rate, Infinity accepted, a weak no-order-path test (all fixed in
+  P1-c1, #151), and on the page: futures counted as premium, Greeks matched by position (wrong after a removal), a
+  stale evaluation kept after an error, cleared number cells sent as 0, strikes off a fixed ±8 % chart, sliders hidden
+  from screen readers (all fixed in P1-c2). Each fix has a test; the page was re-checked in the browser.
+- #150 (U5 D2): CI's lint pins mypy 2.4.0, which rejected one `len()` on an object-typed dict value; fixed, green.

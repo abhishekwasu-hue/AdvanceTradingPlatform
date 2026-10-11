@@ -60,14 +60,15 @@ export function snapStrike(value: number, step: number): number {
   return Math.max(step, Math.round(value / step) * step);
 }
 
-/** Net premium in money: positive = credit received, negative = debit paid. */
+/** Net option premium in money: positive = credit received, negative = debit paid. A futures leg's "premium" is
+ * its entry price, not money changing hands, so it is left out. */
 export function netPremium(legs: Leg[]): number {
-  return legs.reduce((sum, l) => sum + (l.direction === "SELL" ? 1 : -1) * l.premium * l.lots * l.lot_size, 0);
+  return legs.reduce((sum, l) => (l.option_type === "FUT" ? sum : sum + (l.direction === "SELL" ? 1 : -1) * l.premium * l.lots * l.lot_size), 0);
 }
 
 /** Reward to risk, when both are finite and there is a risk; null otherwise (an undefined risk has no ratio). */
 export function rewardToRisk(e: Evaluation["extremes"]): number | null {
-  if (!e || e.max_profit == null || e.max_loss == null || e.max_loss >= 0) return null;
+  if (!e || e.max_profit == null || e.max_loss == null || e.max_loss >= 0 || e.max_profit <= 0) return null;
   return e.max_profit / Math.abs(e.max_loss);
 }
 
@@ -162,20 +163,62 @@ export function daysBetween(from: string, to: string): number {
   return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, Math.round((b - a) / 86400e3)) : 0;
 }
 
+/** The legs an evaluation was asked for, by id - the server answers in request order, so its i-th leg is sent[i]. */
+export interface Evaluated { evaluation: Evaluation; sent: Leg[] }
+
+/** Same contract: the fields a model price depends on. */
+function sameContract(a: Leg, b: Leg): boolean {
+  return a.option_type === b.option_type && a.strike === b.strike && a.expiry === b.expiry && a.iv === b.iv && a.direction === b.direction;
+}
+
+/** Each current leg's evaluated row, matched by id and only while the leg is still the contract that was evaluated
+ * (after a removal, a side switch or a strike move, a row never shows another leg's numbers). */
+export function evaluatedById(current: Leg[], ev: Evaluated | null): Record<string, Evaluation["legs"][number]> {
+  const out: Record<string, Evaluation["legs"][number]> = {};
+  if (!ev || ev.evaluation.legs.length !== ev.sent.length) return out;
+  const now = new Map(current.map((l) => [l.id, l]));
+  ev.sent.forEach((s, i) => {
+    const c = now.get(s.id);
+    // a premium only moves a leg's greeks when its IV is solved from it
+    if (c && sameContract(c, s) && c.lots === s.lots && (c.iv != null || c.premium === s.premium)) out[s.id] = ev.evaluation.legs[i];
+  });
+  return out;
+}
+
+/** Whether an evaluation describes exactly the current legs (same ids, order and every input). */
+export function isCurrent(current: Leg[], ev: Evaluated | null): boolean {
+  return !!ev && ev.sent.length === current.length && ev.sent.every((s, i) => {
+    const c = current[i];
+    return c.id === s.id && sameContract(c, s) && c.lots === s.lots && c.lot_size === s.lot_size && c.premium === s.premium;
+  });
+}
+
 /**
  * Legs whose premium is the model's are re-priced from an evaluation (after a strike, expiry or IV edit the old model
- * price belongs to another contract). Typed premiums are never touched. Returns the same array when nothing changed.
+ * price belongs to another contract). Matched by id, and only when the leg is still the contract that was priced - a
+ * reply that lands after a further drag never writes an old strike's price. Typed premiums are never touched. Returns
+ * the same array when nothing changed.
  */
-export function repriceModelLegs(legs: Leg[], e: Evaluation): Leg[] {
-  if (e.legs.length !== legs.length) return legs;
+export function repriceModelLegs(legs: Leg[], ev: Evaluated): Leg[] {
+  if (ev.evaluation.legs.length !== ev.sent.length) return legs;
+  const sent = new Map(ev.sent.map((s, i) => [s.id, { s, t: ev.evaluation.legs[i].theoretical }]));
   let changed = false;
-  const out = legs.map((l, i) => {
-    const t = e.legs[i].theoretical;
-    if (l.premium_source !== "model" || !Number.isFinite(t) || Math.abs(t - l.premium) < 0.005) return l;
+  const out = legs.map((l) => {
+    const hit = sent.get(l.id);
+    if (!hit || l.premium_source !== "model" || !sameContract(l, hit.s)) return l;
+    if (!Number.isFinite(hit.t) || Math.abs(hit.t - l.premium) < 0.005) return l;
     changed = true;
-    return { ...l, premium: t };
+    return { ...l, premium: hit.t };
   });
   return changed ? out : legs;
+}
+
+/** The chart's half-width in % of spot: wide enough that every strike sits inside with a margin (a strike off the
+ * chart would be drawn at its edge, at the wrong price), never under `min`, and within the server's 60 %. */
+export function rangePctFor(spot: number, legs: Leg[], min = 8): number {
+  if (!(spot > 0)) return min;
+  const far = legs.filter((l) => l.option_type !== "FUT").reduce((m, l) => Math.max(m, Math.abs(l.strike - spot) / spot), 0);
+  return Math.min(60, Math.max(min, Math.ceil(far * 100 * 1.25 + 2)));
 }
 
 /** Round axis ticks (1, 2 or 5 times a power of ten, chosen as d3 does) spanning the domain - readable money labels. */

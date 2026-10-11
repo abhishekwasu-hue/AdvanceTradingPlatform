@@ -1,7 +1,7 @@
 /**
  * P1-c2: the numbers beside the payoff - net credit / debit, max profit and loss ("unlimited" when the structure has
  * no cap), reward to risk, PoP, probability-weighted P&L, the expected move, breakevens and net Greeks - each a model
- * estimate, labelled so, with how it was computed. A risk gauge shows max loss against the premium at stake.
+ * estimate, labelled so, with how it was computed. A risk gauge shows max loss against max profit.
  */
 import { cx } from "../components/primitives";
 import { money, netPremium, rewardToRisk, type Evaluation, type Leg } from "./model";
@@ -37,7 +37,7 @@ export function MetricsCard({ evaluation: e, legs }: { evaluation: Evaluation | 
             <Row label="Max profit" value={ext.unbounded_profit ? "Unlimited" : money(ext.max_profit)} tone="up" />
             <Row label="Max loss" value={ext.unbounded_loss ? "Unlimited" : money(ext.max_loss)} tone={ext.unbounded_loss ? "warn" : "down"}
                  hint={ext.unbounded_loss ? "No cap: the loss grows with the price - size it as undefined risk" : undefined} />
-            <Row label="Reward : risk" value={rr == null ? "–" : `${rr.toFixed(2)} : 1`} />
+            <Row label="Reward : risk" value={rr != null ? `${rr.toFixed(2)} : 1` : ext.unbounded_profit && !ext.unbounded_loss ? "Unlimited" : "–"} />
           </>
         ) : (
           <Row label="Max profit / loss" value="see the curve" hint="Legs expire on different dates: there is no single expiry payoff" />

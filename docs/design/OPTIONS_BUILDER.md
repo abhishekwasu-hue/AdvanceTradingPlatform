@@ -181,21 +181,39 @@ Research only: nothing on the page places an order. The basket to the order tick
   theta per day per leg; add and remove; hedge legs listed first.
 - **Metrics card.**
   - Net credit or debit; max profit and max loss ("Unlimited" for an undefined risk, with the reason on hover);
-    reward to risk; a risk gauge.
+    reward to risk; a risk gauge (max loss against max profit).
   - PoP, probability-weighted P&L, expected move, breakevens, theta per day, delta and vega.
   - How each number was computed (exact or numerical) and the "estimate, not a forecast" disclaimer.
   - A calendar shows "see the curve" for max profit and loss.
 - **Layout.** Canvas and legs on the left, metrics on the right (320 px). On a phone everything stacks, with the
   payoff before the legs. The page uses the full width.
+- **Review follow-up** (independent review of P1-c):
+  - Net premium leaves futures legs out: a covered call or collar no longer shows the future's price as a debit.
+  - Each evaluation is kept with the legs it was asked for. Rows, Greeks and re-pricing match by leg id, and only
+    while the leg is still the contract that was evaluated. After a removal or a side switch no row shows another
+    leg's numbers, and a reply that lands after a further drag never writes an old strike's price. A failed
+    evaluation clears the canvas and the metrics (never the previous strategy's numbers beside new legs); the
+    payoff is marked busy while it catches up.
+  - Number cells keep what is typed. Clearing a cell or typing a half-finished number is editing, not 0 sent to the
+    server; leaving the cell shows the leg's value again. An empty IV cell means "solve from the premium".
+  - The chart's range covers every strike with a margin (8 % to 60 % of spot), so no strike is drawn at the edge at
+    the wrong price and a wide template keeps its wings.
+  - The strike handles are real sliders to assistive technology (the chart is a group, not an image), with a
+    minimum and maximum, and are numbered as in the leg table.
+  - Reward to risk is "–" when no price makes a profit and "Unlimited" when profit has no cap; the hover readout
+    copes with repeated prices; a cancelled pointer ends a drag.
 - **Tests.**
-  - `src/optionsBuilder/model.test.ts` (15): hedge first, snapping, net premium, reward to risk, scales, paths, sign
-    areas at exact crossings, the cone, thumbnails (none for calendars), money format, days, nice ticks,
-    re-pricing only model legs.
+  - `src/optionsBuilder/model.test.ts` (18): hedge first, snapping, net premium (futures left out), reward to risk,
+    scales, paths, sign areas at exact crossings, the cone, thumbnails (none for calendars), money format, days, nice
+    ticks, re-pricing and Greeks matched by id (reordered, removed, switched, moved on since), the chart range.
   - API test: `theoretical` equals the premium of model-priced legs.
   - Headless Chromium against the real builder API (a router-only server): fill the inputs, pick an iron condor
     (4 legs, 2 breakevens, model badges), move a strike by keyboard (the premium is re-priced and max loss
     follows), drag a strike with the mouse, move the date (dashed curve), a short strangle ("Unlimited"), a calendar
-    ("see the curve"), light mode and the phone; no page errors.
+    ("see the curve"), light mode and the phone; no page errors. After the review: removing a leg keeps each row's
+    own delta, clearing lots and typing 5 gives 5, a cleared strike sends nothing, a covered call shows the call's
+    credit, a 422 clears the curve and the metrics, a wide template keeps every strike inside the chart, and the
+    strike handles are sliders with a minimum and maximum (screenshots `ob-07`, `ob-08`).
   - Stories: `Options Builder/Parts` (payoff, legs, metrics) on an iron condor fixture from the API.
 
 ## Open questions (provisional answers taken)

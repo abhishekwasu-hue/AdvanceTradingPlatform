@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import { LegTable } from "../optionsBuilder/LegTable";
 import { MetricsCard } from "../optionsBuilder/MetricsCard";
-import type { Evaluation, Leg } from "../optionsBuilder/model";
+import { evaluatedById, type Evaluation, type Leg } from "../optionsBuilder/model";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import data from "./optionsBuilderCondor.json";
 
@@ -26,7 +26,7 @@ export const Payoff: Story = {
 export const Legs: Story = {
   render: function Legs() {
     const [list, setList] = useState(legs);
-    return <LegTable legs={list} evaluation={evaluation} step={50} onChange={setList} onAdd={() => undefined} />;
+    return <LegTable legs={list} rows={evaluatedById(list, { evaluation, sent: legs })} step={50} onChange={setList} onAdd={() => undefined} />;
   },
 };
 

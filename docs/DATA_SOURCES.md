@@ -21,6 +21,7 @@ whose terms are unclear is **off** until the operator confirms it (Admin, or the
 | NSDL FPI monitor | Phase BC alternative for FII flows | public statistics, monthly/fortnightly cadence - too slow for a daily score | - | not wired |
 | Tenant's broker option chain and heavyweight quotes | Phase BC sentiment (PCR/OI, breadth) | the tenant's own API agreement | SENTIMENT snapshot (score, components) in market memory | on with a broker session |
 | NSE archives equity lists (`EQUITY_L.csv`, `SME_EQUITY_L.csv`, `eq_etfseclist.csv`) and `symbolchange.csv` | Screener U1-a universe (`securities`, `symbol_history`) | published download files; NSE's website terms restrict automated access, so the job stays off until the operator has checked the terms; the admin's manual upload of the same files is the alternative | rows with source, fetched_at, checksum; never fabricated history | **off** (`UNIVERSE_SYNC_ENABLED`) |
+| NSE Indices constituent files (`niftyindices.com/IndexConstituent/ind_*list.csv`, catalogue in `backend/app/universe/data/indices.json`) | Screener U1-b index membership and NSE sector classification | published downloads of the index provider; terms to be checked (and each file name confirmed) before the job is switched on; manual upload is the alternative | membership ranges, classification ranges, source/fetched_at/checksum | **off** (`UNIVERSE_SYNC_ENABLED`) |
 
 ## Phase BB rules
 

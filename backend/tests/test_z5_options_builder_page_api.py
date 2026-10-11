@@ -212,3 +212,27 @@ def test_a_switched_off_builder_switches_off_saving_too():
     finally:
         _set_flag("options_builder", True)
         _set_flag("options_builder_saved", False)
+
+
+def test_save_and_delete_loops_are_bounded_by_the_row_cap(monkeypatch):
+    # archived rows are kept, so a save / delete loop could grow the table; the row cap counts them too (review L1)
+    from app.options_builder import saved
+    monkeypatch.setattr(saved, "MAX_ROWS_PER_TENANT", 2)
+    _set_flag("options_builder_saved", True)
+    try:
+        h = _headers("z5-save-loop@example.com")
+        for _ in range(2):
+            r = client.post("/api/options-builder/strategies", json=SAVE, headers=h)
+            assert r.status_code == 201, r.text
+            assert client.delete(f"/api/options-builder/strategies/{r.json()['id']}", headers=h).status_code == 200
+        r = client.post("/api/options-builder/strategies", json=SAVE, headers=h)
+        assert r.status_code == 409 and "limit" in r.json()["detail"]
+    finally:
+        _set_flag("options_builder_saved", False)
+
+
+def test_costs_carry_the_other_charges():
+    h = _headers("z5-cost-other@example.com")
+    to_open = _evaluate(h, CONDOR)["costs"]["to_open"]
+    assert to_open["other"] == pytest.approx(to_open["total"] - to_open["stt"] - to_open["brokerage"], abs=0.02)
+    assert to_open["other"] > 0

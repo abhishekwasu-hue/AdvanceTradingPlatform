@@ -187,7 +187,8 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
                 "proposal_id": row.id if row is not None else None,
                 "reasons": ["Approval-only mode: the signal was raised as an entry proposal - approve it to place the PAPER order"]}
     result, order = await execute_signal_for_user(session, p.user, mode=body.mode, strategy_id=body.strategy_id, signal=signal,
-                                                  idempotency_key=f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else None)
+                                                  idempotency_key=f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else None,
+                                                  journal_source="API")   # Z6: the journal says where the trade came from
     return {"order_id": order.id, "status": order.status, "executed": result.executed, "reasons": result.reasons, "trade_id": order.trade_id}
 
 

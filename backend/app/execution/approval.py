@@ -287,6 +287,7 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             session, owner, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
             idempotency_key=f"approval:{action.id}", deployment_id=action.deployment_id, exit_rules=evidence.get("exit_rules"),
             holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))

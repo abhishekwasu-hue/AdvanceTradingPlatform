@@ -392,6 +392,67 @@ class ContractNoteLineRecord(Base):
     match_method: Mapped[str] = mapped_column(String(20), nullable=False, default="UNMATCHED")
 
 
+class JournalEntryRecord(Base):
+    """Z6 / P1-e (ADR-0026): the auto-captured journal of one trade, written by the capture hooks in
+    `app/journal/capture.py` (entry fill, monitor marks, stop changes, exit) while the `discipline_engine` flag is on,
+    and rebuilt from the trade row for anything a hook did not see. Personal: scoped by user, never shown to anyone else
+    in the tenant. The JSON columns are data written by the platform; the user's own words stay on `trades.notes`."""
+
+    __tablename__ = "journal_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="MANUAL")      # MANUAL/STRATEGY/SCAN/PROPOSAL/WEBHOOK
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    plan_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")             # the levels the trade was taken on
+    fills_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")            # entry and exit fills
+    stop_history_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")     # every stop change seen, with its source
+    chart_entry_json: Mapped[str | None] = mapped_column(Text, nullable=True)              # a reproducible chart reference at entry
+    chart_exit_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    greeks_entry_json: Mapped[str | None] = mapped_column(Text, nullable=True)             # options: IV and Greeks at entry
+    iv_entry: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iv_exit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    high_price: Mapped[float | None] = mapped_column(Price, nullable=True)                 # highest / lowest price seen while open
+    low_price: Mapped[float | None] = mapped_column(Price, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class JournalTagRecord(Base):
+    """Z6 / P1-e: one behaviour tag on one trade. `source` AUTO (a detector found it) or USER (added by the trader);
+    `status` SUGGESTED until the trader CONFIRMs or DISMISSes it. A detector re-run never overrides the trader's decision;
+    a SUGGESTED tag whose rule no longer fires (a setting changed) is removed. Personal, like the journal entry."""
+
+    __tablename__ = "journal_tags"
+    __table_args__ = (UniqueConstraint("trade_id", "tag", name="uq_journal_tags_trade_tag"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    trade_id: Mapped[int] = mapped_column(ForeignKey("trades.id", ondelete="CASCADE"), nullable=False, index=True)
+    tag: Mapped[str] = mapped_column(String(30), nullable=False)
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="AUTO")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="SUGGESTED")
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    detected_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class JournalSettingsRecord(Base):
+    """Z6 / P1-e: one trader's discipline-engine thresholds and score weights (JSON, merged over the documented defaults
+    in `app/journal/settings.py`; a key that is absent means the default)."""
+
+    __tablename__ = "journal_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    settings_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class StrategyDeploymentRecord(Base):
     """One "run this strategy on this symbol, in this mode, with this broker" instruction for
     the autonomous trading worker (app/workers/trading_worker.py) - the piece that turns the

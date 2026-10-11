@@ -1,14 +1,18 @@
 import pandas as pd
+from app.indicators.prefix_cache import prefix_cached
 
 
+@prefix_cached
 def ema(series: pd.Series, period: int) -> pd.Series:
     return series.ewm(span=period, adjust=False, min_periods=period).mean()
 
 
+@prefix_cached
 def sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(window=period, min_periods=period).mean()
 
 
+@prefix_cached
 def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
     """MACD line (EMA fast - EMA slow), its signal line (EMA of MACD) and the histogram."""
     line = ema(series, fast) - ema(series, slow)

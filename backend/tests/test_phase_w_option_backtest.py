@@ -300,7 +300,7 @@ def test_backtest_endpoints_dispatch_option_runs_and_record_them():
     out = res.json()
     assert out["options"]["pricing_model"] == "synthetic" and out["options"]["structure"] == "BULL_PUT_SPREAD" and out["run_id"]
     run = client.get(f"/api/backtests/{out['run_id']}", headers=headers).json()
-    assert run["engine_version"] == ENGINE_VERSION == "6-options"
+    assert run["engine_version"] == ENGINE_VERSION == "7-options"
     assert run["params"]["_options"]["option_strategy"] == "BULL_PUT_SPREAD" and "structures" not in run["metrics"]["options"]
     # Snapshot pricing with nothing recorded and no fallback is a plain 400; with the fallback it runs.
     strict = {**body, "options": {**body["options"], "pricing": "snapshots", "allow_synthetic_fallback": False}}

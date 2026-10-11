@@ -5,6 +5,7 @@ import { Card } from "../components/ui";
 import type { NotificationEntry, NotificationSeverity } from "../types";
 import { PageHeader, Tabs } from "../components/primitives";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
+import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
 
 function severityClasses(severity: NotificationSeverity): string {
   switch (severity) {
@@ -20,6 +21,8 @@ function severityClasses(severity: NotificationSeverity): string {
 export default function NotificationsPage() {
   const { user, loading: authLoading } = useAuth();
   const [notifications, setNotifications] = useState<NotificationEntry[]>([]);
+  // PW3: a push opens /notifications?n=<id> - that notification is scrolled to and outlined.
+  const target = useDeepLinkTarget("n", "notification", notifications.length > 0);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("feed");
 
@@ -71,7 +74,8 @@ export default function NotificationsPage() {
             {notifications.map((n) => (
               <div
                 key={n.id}
-                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-surface-2/50"}`}
+                id={`notification-${n.id}`}
+                className={`rounded border px-3 py-2 ${n.read ? "border-border opacity-80" : "border-border bg-surface-2/50"} ${target === n.id ? "ring-2 ring-brand" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">

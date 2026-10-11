@@ -8,6 +8,7 @@ import { friendlyError } from "../aiTask";
 import TiltCard from "../components/TiltCard";
 import { useCopilotData } from "../data";
 import { useCopilotT } from "../i18n";
+import { useDeepLinkTarget } from "../../utils/useDeepLinkTarget";
 import { Panel } from "./shared";
 
 /**
@@ -90,6 +91,8 @@ export default function WatchtowerTab() {
   }, []);
 
   const decided = (msg: string) => { setMessage(msg); reloadActions(); loadHistory(); };
+  // PW3: a push or Telegram link opens /copilot/watchtower?action=<id> - that proposal is scrolled to and outlined.
+  const target = useDeepLinkTarget("action", "proposal", pending.length > 0);
 
   return (
     <div className="space-y-4" data-testid="tab-panel-watchtower">
@@ -98,7 +101,11 @@ export default function WatchtowerTab() {
         {message && <p className="mb-3 rounded-lg border border-ai/30 bg-ai/5 px-3 py-2 text-xs text-fg" role="status">{message}</p>}
         {pending.length === 0 ? (
           <EmptyState icon={<CheckCircle2 size={22} />} title={t("watch.emptyTitle")} body={t("watch.emptyBody")} />
-        ) : <div className="space-y-3">{pending.map((a) => <ProposalCard key={a.id} a={a} onDecided={decided} />)}</div>}
+        ) : <div className="space-y-3">{pending.map((a) => (
+          <div key={a.id} id={`proposal-${a.id}`} className={target === a.id ? "rounded-2xl ring-2 ring-brand" : undefined}>
+            <ProposalCard a={a} onDecided={decided} />
+          </div>
+        ))}</div>}
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-3">

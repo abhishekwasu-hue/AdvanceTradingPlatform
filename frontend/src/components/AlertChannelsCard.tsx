@@ -1,6 +1,7 @@
-import { BellRing, Mail, MessageSquare, Send, Smartphone, Webhook } from "lucide-react";
+import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import WebPushSection from "../alerts/WebPushSection";
 import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 
@@ -37,7 +38,6 @@ export default function AlertChannelsCard() {
     preset: "msg91", url: "", headers: "", body_template: "", to_numbers: "", content_type: "application/json",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
   });
-  const [pushSupported] = useState(() => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window);
   const [em, setEm] = useState({
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
@@ -68,7 +68,7 @@ export default function AlertChannelsCard() {
         }));
       }
     }).catch((e) => setError(String(e)));
-    api.listAlertDeliveries(10).then(setDeliveries).catch(() => {});
+    api.listAlertDeliveries(30).then(setDeliveries).catch(() => {});
     api.telegramInboundStatus().then((s) => {
       setInbound(s); setInboundChats(s.allowed_chat_ids.slice(1).join(", "));
       setInboundApprovers((s.approvers ?? []).map((a) => `${a.telegram_user_id} ${a.email}`).join("\n"));
@@ -127,20 +127,6 @@ export default function AlertChannelsCard() {
     const out: Record<string, string> = {};
     text.split("\n").forEach((line) => { const i = line.indexOf(":"); if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim(); });
     return out;
-  }
-
-  async function enablePushHere() {
-    const { public_key } = await api.pushPublicKey();
-    const registration = await navigator.serviceWorker.register("/sw.js");
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") throw new Error("Notification permission was not granted in the browser");
-    const padded = public_key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (public_key.length % 4)) % 4);
-    const raw = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-    const sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
-    const json = sub.toJSON();
-    const label = `${navigator.platform || "device"} · ${/Chrome|Firefox|Safari|Edg/.exec(navigator.userAgent)?.[0] ?? "browser"}`;
-    await api.upsertAlertChannel("push", { enabled: true, min_severity: (stored("PUSH")?.min_severity ?? "WARNING") as NotificationSeverity,
-      config: { subscription: { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth, label } } });
   }
 
   function status(type: AlertChannelType) {
@@ -287,27 +273,7 @@ export default function AlertChannelsCard() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-bold text-fg"><Smartphone size={14} /> Browser push</div>
-          <div className="text-[11px]">{status("PUSH")}</div>
-          <p className="text-[11px] text-fg-muted">
-            System notifications on this device even with the tab closed (Chrome, Edge, Firefox, Safari 16+). Messages are
-            end-to-end encrypted to this browser; the push service never sees them. Add each device you use.
-          </p>
-          {((stored("PUSH")?.config.devices as { label: string; endpoint: string }[] | undefined) ?? []).map((d) => (
-            <div key={d.endpoint} className="flex items-center justify-between text-xs">
-              <span className="text-fg">{d.label}</span>
-              <button disabled={busy} onClick={() => run("Device removed.", () => (stored("PUSH")?.config.count as number) > 1
-                ? api.upsertAlertChannel("push", { enabled: true, min_severity: stored("PUSH")!.min_severity, config: { remove_endpoint: d.endpoint } })
-                : api.deleteAlertChannel("push"))} className="text-down hover:underline">remove</button>
-            </div>
-          ))}
-          <div className="flex gap-2">
-            <button disabled={busy || !pushSupported} title={pushSupported ? "" : "This browser does not support Web Push"} onClick={() => run("Push enabled on this device.", enablePushHere)} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Enable on this device</button>
-            <button disabled={busy || !stored("PUSH")} onClick={() => test("PUSH")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
-            {stored("PUSH") && <button disabled={busy} onClick={() => run("Push channel removed.", () => api.deleteAlertChannel("push"))} className="text-xs text-down hover:underline">Remove all</button>}
-          </div>
-        </div>
+        <WebPushSection channel={stored("PUSH")} deliveries={deliveries} busy={busy} run={run} test={() => test("PUSH")} />
 
         <div className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
           <div className="flex items-center gap-2 text-sm font-bold text-fg"><MessageSquare size={14} /> SMS (any HTTP gateway)</div>
@@ -354,7 +320,7 @@ export default function AlertChannelsCard() {
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-muted mb-1.5"><BellRing size={12} /> Recent deliveries</div>
           <table className="w-full text-xs">
             <tbody>
-              {deliveries.map((d) => (
+              {deliveries.slice(0, 10).map((d) => (
                 <tr key={d.id} className="border-t border-border">
                   <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(d.created_at).toLocaleString()}</td>
                   <td className="py-1 pr-3 capitalize text-fg-muted">{d.channel_type.toLowerCase()}</td>

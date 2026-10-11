@@ -8,6 +8,7 @@ from app.ai.compliance import MIN_STOP_ATR_MULT, assess_evidence, evaluate_confi
 from app.core.models import RiskConfig
 from app.db.models import Tenant, User
 from app.strategy_engine.declarative import CustomStrategyConfig
+from tests.server_evidence import serve_candles
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import VALID_ANSWER, _ScriptedProvider, _candles, _owner
 from tests.utils import noisy_uptrend
@@ -86,7 +87,7 @@ def test_generator_gives_the_ai_one_auto_fix_round_then_fixes_deterministically(
     assert "max_loss_per_trade_text" in draft["compliance"]["user_must_accept"]
 
 
-def test_approval_requires_evidence_and_explicit_acceptance():
+def test_approval_requires_evidence_and_explicit_acceptance(monkeypatch):
     headers, me = _owner("v2-approve@example.com")
 
     async def gen():
@@ -95,7 +96,8 @@ def test_approval_requires_evidence_and_explicit_acceptance():
             user = await session.get(User, me["id"])
             return (await generator.generate(session, tenant, user, "Buy pullbacks in an uptrend on 5 minute bars", provider=_ScriptedProvider([VALID_ANSWER]))).id
     draft_id = _run(gen())
-    bt = client.post(f"/api/ai/drafts/{draft_id}/backtest", headers=headers, json={"symbol": "TEST", "base_timeframe": "1min", "candles": _candles(noisy_uptrend(400))})
+    serve_candles(monkeypatch, _candles(noisy_uptrend(400)))           # H-C1 a: the server fetches the evidence
+    bt = client.post(f"/api/ai/drafts/{draft_id}/backtest", headers=headers, json={"symbol": "TEST", "base_timeframe": "1min"})
     assert bt.status_code == 200, bt.text
     compliance = bt.json()["draft"]["compliance"]
     assert compliance["evidence"] is not None and "E1" in (compliance["warnings"] + compliance["passed"])

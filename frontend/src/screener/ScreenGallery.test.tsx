@@ -50,7 +50,7 @@ describe("ScreenGallery (U9 TX1)", () => {
     expect(html.match(/scope="col"/g)).toHaveLength(tax.setups.length + 1);
     const cells = tax.methods.length * tax.setups.length;
     const filled = Object.values(tax.matrix).flatMap((r) => Object.values(r)).filter((n) => n > 0).length;
-    expect(html.match(/: none"/g)).toHaveLength(cells - filled);
+    expect(html.match(/data-empty-cell/g)).toHaveLength(cells - filled);
   });
 
   it("uses no advice wording and no Devanagari", () => {

@@ -174,7 +174,7 @@ function Matrix({ taxonomy, filter, onPick }: { taxonomy: Taxonomy; filter: Gall
                 return (
                   <td key={s.id} className="px-1 py-1 text-center">
                     {n === 0 ? (
-                      <span className="font-mono text-fg-muted/70" aria-label={`${m.label}, ${s.label}: none`}>–</span>
+                      <span data-empty-cell className="font-mono text-fg-muted/70"><span aria-hidden>–</span><span className="sr-only">none</span></span>
                     ) : (
                       <button type="button" aria-pressed={here} onClick={() => onPick(m.id, s.id)} aria-label={`${m.label}, ${s.label}: ${n} ${n === 1 ? "screen" : "screens"}`}
                               className={cx("min-w-6 rounded-control px-1 font-mono font-tabular focus:outline-none focus-visible:ring-2 focus-visible:ring-brand",

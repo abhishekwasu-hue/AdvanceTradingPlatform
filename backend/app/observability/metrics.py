@@ -73,6 +73,12 @@ WORKER_SIGNALS = _counter("worker_signals_executed", "Signals the worker execute
 WORKER_CLOSES = _counter("worker_positions_closed", "Positions the worker closed")
 WORKER_ERRORS = _counter("worker_errors", "Errors recorded on worker cycle reports")
 WORKER_LAST_CYCLE = _gauge("worker_last_cycle_timestamp_seconds", "Unix time of the worker's last completed cycle (this process)")
+# H-1: the replica lock found gone mid-cycle (outcome = retaken | held_elsewhere) and Redis memory against its cap.
+WORKER_LOCK_LOST = _counter("worker_lock_lost", "Worker replica lock lost mid-cycle (Redis eviction or a second replica)", ("outcome",))
+REDIS_MEMORY_RATIO = _gauge("redis_memory_used_ratio", "Redis used_memory / maxmemory as last read by the worker")
+# Part D2: the SEBI OPS throttle (lane = entry | exit; outcome = refused | waited) and broker 429s (warning | critical).
+OPS_THROTTLED = _counter("ops_throttled", "Orders held or refused by the orders-per-second throttle", ("lane", "outcome"))
+OPS_429 = _counter("ops_broker_429", "Broker 429 answers on order calls", ("severity",))
 RETENTION_DELETED = _counter("retention_rows_deleted", "Rows deleted by the retention job", ("table",))
 # Phase G1: decisions refused on stale market data (kind = candles | quote), and tenants whose
 # LIVE entries are blocked because the broker's state is uncertain.

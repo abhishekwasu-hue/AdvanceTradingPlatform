@@ -19,7 +19,7 @@ from app.paper import manual, service
 from app.platform import controls
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _worker
-from tests.test_z3_approval_entries import _flag_for, _price, _propose, _sig
+from tests.test_z3_approval_entries import _flag_for, _price, _propose, _sig, quiet_alerts
 
 UTC = timezone.utc
 
@@ -257,13 +257,21 @@ def test_manual_parse_and_parity_with_the_trade_bot_levels_and_reward_risk():
 # --- Telegram ------------------------------------------------------------------------------------------------------------
 
 def test_telegram_status_pause_resume_and_paper_commands(monkeypatch):
-    from tests.test_phase_be_telegram_inbound import _message, _post, _setup, _Telegram
+    from tests.test_phase_be_telegram_inbound import _setup, _Telegram
     from app.telegram_inbound import service as tg
 
     async def never(*_a, **_k):
         return False
     monkeypatch.setattr(tg, "rate_limited", never)
     t = _setup(_email("tg"), monkeypatch, _Telegram())
+    try:
+        _paper_commands(t, monkeypatch)
+    finally:
+        quiet_alerts(t["tenant_id"])
+
+
+def _paper_commands(t, monkeypatch):
+    from tests.test_phase_be_telegram_inbound import _message, _post
     assert "not enabled" in _post(t, _message("987654", "/status")).json()["reply"]
     _paper_flag(t["tenant_id"])
 

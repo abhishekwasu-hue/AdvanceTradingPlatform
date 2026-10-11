@@ -4,8 +4,10 @@ The file holds every index expiry the exchange printed (EXPIRY_DT / XpryDt) from
 (`coverage_start` .. `coverage_end` in the meta file), each confirmed by the bhavcopy of its own day, with its kind
 ("monthly" when a futures contract expired that day, else "weekly") and the week it was first seen. Underlyings in
 `DATA_DRIVEN` take their backtest expiries from here only - no weekday rule. A date before the coverage raises
-`ExpiryDataMissing`; a date after it gets the contracts already listed on the last day read (monthlies are listed
-months ahead) and nothing invented - no listed contract left is "no expiry" for that bar. A contract counts from the
+`ExpiryDataMissing`. A date up to STALE_GRACE_DAYS after the last day read (the weekly refresh's gap) gets the
+contracts already listed by then (monthlies are listed months ahead) and nothing invented; a later date raises
+`ExpiryDataStale` - the file is out of date and silently answering from it would hide that (the backtest skips such
+bars and counts them). A contract counts from the
 day it was first seen (causal; `first_seen` is the weekly sample, so a contract listed mid-week counts a few days
 late, never early). Live trading never reads this file (it uses the broker instrument master).
 """
@@ -14,6 +16,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -29,8 +32,24 @@ DATA_DRIVEN = frozenset({"NIFTY", "BANKNIFTY"})
 Listed = Tuple[dt.date, str, dt.date]
 
 
+# Days after `coverage_end` the file is still trusted (it is rebuilt weekly; a refresh pull request waits for review).
+def _grace_days(raw: str, default: int = 10) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return default             # an unreadable value never stops the options engine from importing
+    return value if value >= 0 else default
+
+
+STALE_GRACE_DAYS = _grace_days(os.environ.get("EXPIRY_DATA_STALE_GRACE_DAYS", "10"))
+
+
 class ExpiryDataMissing(ValueError):
     """No exchange data for the date asked - refresh the file instead of guessing an expiry."""
+
+
+class ExpiryDataStale(ExpiryDataMissing):
+    """The date is more than STALE_GRACE_DAYS after the last day the file read."""
 
 
 @lru_cache(maxsize=1)
@@ -70,7 +89,8 @@ def listed(symbol: str) -> List[Listed]:
 def expiries(symbol: str, on_or_after: dt.date, count: int = 6, monthly_only: bool = False,
              as_of: Optional[dt.date] = None) -> List[dt.date]:
     """The next `count` expiries on/after `on_or_after` that were listed on `as_of` (default: the same day), i.e. first
-    seen on or before it. Raises ExpiryDataMissing before the coverage or for an underlying not in the file."""
+    seen on or before it. Raises ExpiryDataMissing before the coverage or for an underlying not in the file, and
+    ExpiryDataStale more than STALE_GRACE_DAYS after it."""
     cov = coverage()
     rows = _load()[0].get(symbol.upper())
     if cov is None or not rows:
@@ -80,6 +100,10 @@ def expiries(symbol: str, on_or_after: dt.date, count: int = 6, monthly_only: bo
     if day < start:
         raise ExpiryDataMissing(
             f"NSE expiry data for {symbol.upper()} starts on {start}; {day} is before it.")
+    if day > end + dt.timedelta(days=STALE_GRACE_DAYS):
+        raise ExpiryDataStale(
+            f"NSE expiry data for {symbol.upper()} was read through {end}; {day} is more than {STALE_GRACE_DAYS} days later "
+            "- refresh the file (the 'NSE expiry data' workflow).")
     out = [e for e, kind, seen in rows
            if e >= on_or_after and seen <= day and (kind == "monthly" or not monthly_only)]
     return out[:count]

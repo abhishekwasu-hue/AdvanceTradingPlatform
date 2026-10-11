@@ -120,19 +120,29 @@
     },
     {
       "id": "IN-SEBI.order_type.policy",
-      "title": "Per-broker order-type policy for algos: MARKET refused or mapped to LIMIT/MPP; IOC / AMO refused where barred",
+      "title": "Per-broker order-type policy for algo entries: MARKET allowed, mapped to a marketable LIMIT, or refused; validities allowed",
       "source": "SEBI retail-algo circular; broker policies",
-      "status": "planned",
+      "status": "enforced",
       "params": {
-        "market_for_algo": "allow",
-        "allowed_validity": [
-          "DAY",
-          "IOC"
-        ],
-        "amo_allowed": true
+        "default": {
+          "market_for_algo": "allow",
+          "allowed_validity": [
+            "DAY",
+            "IOC"
+          ]
+        },
+        "brokers": {}
       },
-      "code": [],
-      "tests": [],
+      "code": [
+        "app/compliance/order_policy.py",
+        "app/execution/router.py"
+      ],
+      "tests": [
+        "tests/test_d3_order_policy.py::test_default_policy_changes_nothing",
+        "tests/test_d3_order_policy.py::test_market_entry_mapped_to_a_marketable_limit_for_one_broker",
+        "tests/test_d3_order_policy.py::test_refused_market_or_validity_never_reaches_the_broker",
+        "tests/test_d3_order_policy.py::test_exits_and_stops_are_not_touched_by_the_policy"
+      ],
       "flag": null
     },
     {

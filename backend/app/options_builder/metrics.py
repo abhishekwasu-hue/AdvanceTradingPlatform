@@ -106,7 +106,9 @@ def costs(legs: Sequence[Leg], day: date, *, brokerage_per_order: float) -> Dict
         for k in keys:
             open_sum[k] += a[k]
             close_sum[k] += b[k]
-    return {"to_open": {k: round(v, 2) for k, v in open_sum.items()},
+    to_open = {k: round(v, 2) for k, v in open_sum.items()}
+    to_open["other"] = round(open_sum["total"] - open_sum["stt"] - open_sum["brokerage"], 2)   # exchange, SEBI, stamp, GST
+    return {"to_open": to_open,
             "round_trip": round(open_sum["total"] + close_sum["total"], 2),
             "brokerage_per_order": brokerage_per_order, "orders": len(legs), "as_of": day.isoformat(),
             "note": "Estimate: statutory charges as on the day plus the brokerage per order you set; slippage not included."}

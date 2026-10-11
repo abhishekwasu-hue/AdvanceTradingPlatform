@@ -2,7 +2,7 @@
 snapshots with lifecycle state and level memory, computed from the shared lake bars by the flag-gated nightly job).
 
 Revision ID: b476873844dd
-Revises: 5e356061be72
+Revises: 039888cda9b1
 Create Date: 2026-10-11 21:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b476873844dd'
-down_revision: Union[str, Sequence[str], None] = '5e356061be72'
+down_revision: Union[str, Sequence[str], None] = '039888cda9b1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

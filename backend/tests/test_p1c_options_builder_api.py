@@ -267,3 +267,5 @@ def test_the_cost_table_the_builder_reads_is_pure():
             assert node.level == 0
             imported.add((node.module or "").split(".")[0])
     assert imported <= {"datetime", "typing", "pandas"}, imported
+    named = {n.id for n in ast.walk(ast.parse((root / "india_costs.py").read_text())) if isinstance(n, ast.Name)}
+    assert not named & {"__import__", "importlib", "open", "eval", "exec", "compile"}, named

@@ -12,6 +12,11 @@ Each worker cycle, for every active rule whose organisation has `screener_v2` on
    rule is retried later and `last_problem` says why.
 4. The screen runs on the current symbols; each match is recorded with its trigger values (close, volume, the bar
    time as `as_of`).
+
+S4b-2: a rule with `fire_on = "intrabar"` (flag `screener_intrabar`, off by default) is evaluated on the bar still
+forming instead: during the session only, at most every `RETRY_SECONDS`, firing at most once per bar and symbol (the
+S3a idempotency key is per bar). Its events say `intrabar: true` - the bar had not closed, so the condition may no
+longer hold at the close.
 """
 from __future__ import annotations
 
@@ -34,14 +39,16 @@ from app.screener.runtime import SymbolData, run_screen
 logger = logging.getLogger(__name__)
 
 FLAG = "screener_v2"
+INTRABAR_FLAG = "screener_intrabar"
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
 INTRADAY = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
 SUPPORTED = set(INTRADAY) | {"1d"}
 
-# fetch(session, tenant_id, symbols, exchange, base_tf, lookback) -> (universe, per-symbol problems, data source)
-Fetch = Callable[[AsyncSession, int, List[str], str, str, Dict[str, int]], Awaitable[Tuple[List[SymbolData], Dict[str, str], str]]]
+# fetch(session, tenant_id, symbols, exchange, base_tf, lookback[, forming=True]) -> (universe, per-symbol problems, data
+# source); `forming` is passed only for intrabar rules, so a bar-close fetch keeps the six-argument shape.
+Fetch = Callable[..., Awaitable[Tuple[List[SymbolData], Dict[str, str], str]]]
 
 
 def _utc(dt: datetime) -> datetime:
@@ -91,6 +98,22 @@ def expected_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optio
     return None
 
 
+def forming_bar(now: datetime, tf: str, holidays: Iterable[date] = ()) -> Optional[datetime]:
+    """Start (UTC) of the `tf` bar forming at `now` - only inside the session of a trading day; None otherwise (and for
+    an unsupported timeframe). A daily bar is labelled by its session open, like `expected_bar`."""
+    if tf not in SUPPORTED:
+        return None
+    at = _utc(now).astimezone(IST)
+    open_, close = _session_bounds(at.date())
+    if not is_trading_day(at.date(), set(holidays)) or not (open_ <= at < close):
+        return None
+    if tf == "1d":
+        return open_.astimezone(timezone.utc)
+    step = INTRADAY[tf] * 60
+    start = open_ + timedelta(seconds=((at - open_).total_seconds() // step) * step)
+    return start.astimezone(timezone.utc)
+
+
 def closed_frame(df: pd.DataFrame, tf: str, expected: datetime) -> Optional[pd.DataFrame]:
     """`df` trimmed to bars that had closed by the expected bar; None when the data has not reached it. Daily bars are
     matched by IST date (brokers label them at midnight or at the open)."""
@@ -110,7 +133,7 @@ class CycleCache:
     """S4b-1: one worker cycle's shared work. Rules that need the same symbol, timeframe and bar fetch it once (a
     longer lookback than the cached one fetches again); the same screen over the same current symbols, bar and
     params is evaluated once. Lives for one cycle only, so nothing stale survives into the next bar."""
-    frames: Dict[Tuple[int, str, str, datetime, str], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
+    frames: Dict[Tuple[int, str, str, datetime, str, bool], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
     results: Dict[Tuple[Any, ...], List[Any]] = field(default_factory=dict)
     fetched_symbols: int = 0
     reused_symbols: int = 0
@@ -156,15 +179,19 @@ def _values(frame: pd.DataFrame) -> Dict[str, Any]:
 
 
 async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbols: List[str], bar: datetime, lookback: Dict[str, int],
-                            fetch: Fetch, cache: CycleCache) -> Tuple[List[SymbolData], Dict[str, str]]:
-    """The symbols whose closed bars reach `bar`, fetching only what the cycle cache does not already hold."""
+                            fetch: Fetch, cache: CycleCache, forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str]]:
+    """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
+    does not already hold."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
     need = max([*lookback.values(), 1])
-    key = lambda sym: (rule.tenant_id, exchange, tf, bar, sym)  # noqa: E731
+    key = lambda sym: (rule.tenant_id, exchange, tf, bar, sym, forming)  # noqa: E731
     missing = [s for s in symbols if key(s) not in cache.frames or cache.frames[key(s)][0] < need]
     problems: Dict[str, str] = {}
     if missing:
-        universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback)
+        if forming:
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True)
+        else:
+            universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback)
         cache.fetched_symbols += len(missing)
         got = {d.symbol: d for d in universe}
         for sym in missing:
@@ -177,15 +204,25 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
 
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
-                        holidays: Iterable[date] = (), cache: Optional[CycleCache] = None) -> Tuple[str, int]:
+                        holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
     from app.alerts.engine import record_event
     now = _utc(now)
-    bar = expected_bar(now, rule.base_tf, holidays)
-    if bar is None:
+    intrabar = rule.fire_on == "intrabar"
+    if rule.base_tf not in SUPPORTED:
         rule.last_problem = f"{rule.base_tf} rules are not evaluated yet (weekly / monthly come later)"
         return "unsupported", 0
-    if rule.last_bar_at is not None and _utc(rule.last_bar_at) >= bar:
+    if intrabar and not intrabar_enabled:
+        rule.last_problem = "intrabar alerts are off for this organisation (flag screener_intrabar)"
+        return "unsupported", 0
+    bar = forming_bar(now, rule.base_tf, holidays) if intrabar else expected_bar(now, rule.base_tf, holidays)
+    if bar is None:
+        if intrabar:
+            rule.last_problem = None                               # outside the session nothing is forming: not a problem
+            return "skipped", 0
+        rule.last_problem = f"no closed {rule.base_tf} bar found"
+        return "unsupported", 0
+    if not intrabar and rule.last_bar_at is not None and _utc(rule.last_bar_at) >= bar:
         return "skipped", 0
     if rule.last_checked_at is not None and now - _utc(rule.last_checked_at) < timedelta(seconds=RETRY_SECONDS):
         return "waiting", 0
@@ -193,25 +230,30 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache)
+        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
     if not current:
-        rule.last_problem = "waiting for the closed bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
+        rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
         return "waiting", 0
     fired = 0
     frames = {d.symbol: d.frames[rule.base_tf] for d in current}
     result_key = (rule.tenant_id, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
-                  json.dumps(params, sort_keys=True, default=str))
+                  json.dumps(params, sort_keys=True, default=str), intrabar)
     if result_key in cache.results:
         cache.reused_results += 1
     else:
         cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params)
     for match in cache.results[result_key]:
-        if match.matched and await record_event(session, rule, match.symbol, bar, _values(frames[match.symbol]), now=now) is not None:
+        values = _values(frames[match.symbol])
+        if intrabar:
+            values["intrabar"] = True                             # the bar had not closed; it may not hold at the close
+        if match.matched and await record_event(session, rule, match.symbol, bar, values, now=now) is not None:
             fired += 1
-    rule.last_bar_at, rule.last_problem = bar, None
+    if not intrabar:
+        rule.last_bar_at = bar                                    # intrabar: other symbols may still match later in the bar
+    rule.last_problem = None
     return "done", fired
 
 
@@ -228,6 +270,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     rules = list(await session.scalars(select(AlertRuleRecord).where(AlertRuleRecord.status == "active")
                                        .order_by(AlertRuleRecord.last_checked_at.is_not(None), AlertRuleRecord.last_checked_at, AlertRuleRecord.id)))
     enabled: Dict[int, bool] = {}
+    intrabar_on: Dict[int, bool] = {}
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -240,7 +283,10 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         if time_module.monotonic() - started > budget_seconds:
             out.deferred += 1
             continue
-        state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache)
+        if rule.fire_on == "intrabar" and rule.tenant_id not in intrabar_on:
+            intrabar_on[rule.tenant_id] = await flag_enabled(session, INTRABAR_FLAG, rule.tenant_id)
+        state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
+                                           intrabar_enabled=intrabar_on.get(rule.tenant_id, False))
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired
@@ -251,14 +297,16 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
 
 
 async def server_fetch(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int]) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars via the organisation's broker session (S1d `fetch_frames`). For a daily rule, today's bar is built
-    from today's 15-minute bars after the close, since a broker's daily history starts at yesterday."""
+    from today's 15-minute bars (after the close; during the session for an intrabar rule, `forming`), since a
+    broker's daily history starts at yesterday."""
     from app.screener.routes import fetch_frames
-    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback)
+    universe, problems, source = await fetch_frames(session, tenant_id, symbols, exchange, base_tf, lookback, include_forming=forming)
     if base_tf != "1d" or not universe:
         return universe, problems, source
-    intraday, _p, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30})
+    intraday, _p, _s = await fetch_frames(session, tenant_id, [d.symbol for d in universe], exchange, "15m", {"15m": 30},
+                                          include_forming=forming)
     today = datetime.now(timezone.utc).astimezone(IST).date()
     by_symbol = {d.symbol: d.frames.get("15m") for d in intraday}
     for data in universe:
@@ -285,4 +333,4 @@ def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: dat
     return pd.concat([daily, pd.DataFrame([row], index=pd.DatetimeIndex([label]))])
 
 
-__all__ = ["CycleCache", "expected_bar", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]
+__all__ = ["CycleCache", "expected_bar", "forming_bar", "INTRABAR_FLAG", "closed_frame", "evaluate_rule", "run_due", "server_fetch", "with_today", "Outcome", "SUPPORTED", "RETRY_SECONDS"]

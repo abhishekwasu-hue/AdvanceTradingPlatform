@@ -11,6 +11,7 @@ from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType
 from app.core.logging_config import bind_log_context, update_log_context
 from app.core.models import RiskConfig, Signal
 from app.db.models import OrderRecord, Tenant, User
+from app.execution import approval as approval_gate
 from app.execution.order_persistence import create_order, execution_result_from_order, transition_order
 from app.execution.router import ExecutionResult, OrderRouter
 from app.instruments.registry import get_contract_spec
@@ -70,6 +71,7 @@ async def execute_signal_for_user(
     quote_broker: Optional[BrokerInterface] = None, account_id: Optional[int] = None, exit_rules: Optional[str] = None,
     holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
     journal_source: Optional[str] = None,
+    origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -79,6 +81,10 @@ async def execute_signal_for_user(
     and protective stop-loss order ids), and notify. One sequence, one state machine, for every
     caller. A LIVE request without a broker is REJECTED on the order trail rather than raised:
     the worker's token gate normally prevents it, but if it ever happens it must be visible.
+
+    Z3 / BT2: `origin` says who asks - "approval" (an APPROVED entry proposal, whose id is `approval_action_id`) or
+    "automatic" (the default: worker, webhook, public API, console). Under approval-only mode any entry without an
+    approved proposal is REJECTED here (app/execution/approval.py::gate_refusal) - there is no bypass.
     """
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
     # (premium/future price levels) while the strategy's levels stay on the underlying. The order
@@ -126,6 +132,10 @@ async def execute_signal_for_user(
         tenant = await session.get(Tenant, user.tenant_id)
         kill_switch_reasons = await entry_refusals(session, tenant, user.tenant_id, mode, strategy_id, user=user,
                                                    broker_name=getattr(broker, "name", None) if broker is not None else None)
+        gate = await approval_gate.gate_refusal(session, user.tenant_id, deployment_id=deployment_id, origin=origin,
+                                                approval_action_id=approval_action_id)
+        if gate:
+            kill_switch_reasons.insert(0, gate)
         fo_notes: list = []
         if contract is not None:
             # D7: a derivative on an underlying in the exchange's F&O ban period is not a new trade the market allows.

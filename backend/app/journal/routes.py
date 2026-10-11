@@ -17,6 +17,7 @@ from app.db.models import JournalTagRecord, User
 from app.db.session import get_session
 from app.journal import FLAG, capture, service
 from app.journal import settings as journal_settings
+from app.journal.review import advice_in as review_advice_in
 from app.journal.settings import COMPONENT_TAGS, RANGES, TAGS, DisciplineSettings, SettingsError
 from app.platform.controls import require_flag
 
@@ -76,6 +77,58 @@ async def journal_week(week: Optional[str] = Query(default=None, pattern=WEEK_PA
     return {"week": data["week"], "start": data["start"].isoformat(), "end": data["end"].isoformat(),
             "entries": [service.entry_dict(t, data["entries"].get(t.id), tags_by_trade.get(t.id, [])) for t in data["trades"]],
             "score": data["score"]}
+
+
+REVIEW_QUESTION = ("Explain this weekly trading review in plain language: what the numbers show about the week and which "
+                   "behaviours the losses came with. Describe only; do not advise any trade, security or action.")
+
+
+@router.get("/review")
+async def weekly_review(week: Optional[str] = Query(default=None, pattern=WEEK_PATTERN), history: int = Query(default=4, ge=0, le=12),
+                        narrate: bool = Query(default=False, description="ask the organisation's AI provider to explain the numbers (checked)"),
+                        user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Z6-b: the weekly review - every number from the trader's own journal (totals, setups, behaviour costs, the
+    discipline score, the trader's own previous weeks), with plain-language lines that describe them. `narrate=true`
+    asks the Copilot to explain the same facts: its text must use only those numbers and pass the advice filter, else
+    the lines stay the explanation. Never a leaderboard: only this trader's weeks."""
+    await _flag(session, user)
+    review = await service.weekly_review(session, user, _week_or_422(week), history_weeks=history)
+    explanation: Dict[str, Any] = {"source": "rules", "text": "\n".join(review["lines"])}
+    if narrate and review["totals"]["trades"]:
+        explanation.update(await _narrate(session, user, review["lines"]))
+    review["explanation"] = explanation
+    return review
+
+
+async def _narrate(session: AsyncSession, user: User, facts: List[str]) -> Dict[str, Any]:
+    from app.ai import copilot, metering
+    from app.ai import settings as ai_settings
+    from app.ai.compliance_terms import KIND_COPILOT, latest
+    from app.db.models import Tenant
+    if await latest(session, KIND_COPILOT, tenant_id=user.tenant_id, user_id=user.id) is None:
+        return {"note": "AI explanation needs the Copilot acknowledgement (AI Copilot page); the numbers are explained from the rules"}
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, "ai_copilot", user.tenant_id):
+        return {"note": "The AI Copilot is turned off; the numbers are explained from the rules"}
+    tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is None:
+        return {"note": "No organisation record; the numbers are explained from the rules"}
+    provider = await ai_settings.provider_for(session, tenant, task="knowledge", user_id=user.id)
+    if provider.name == "rule_based":
+        reason = getattr(provider, "reason", "") or "no AI provider configured"
+        return {"note": f"AI not used ({reason}); the numbers are explained from the rules"}
+    text, why = await copilot.narrate(provider, "en", "weekly review of the trader's own journal", REVIEW_QUESTION, facts)
+    if text:
+        # Stricter than the Copilot's own filter: a review only describes a finished week. A "framed" reply (a specific
+        # call kept with a disclaimer elsewhere) or any instruction / forward-looking / buy-sell wording is not shown.
+        advice = review_advice_in(text)
+        if why == "framed" or advice:
+            text, why = None, "it gave advice: " + (", ".join(f'"{a}"' for a in advice[:3]) if advice else "a specific trade call")
+    await ai_settings.mark_used(session, user.tenant_id, error=None if text else f"weekly review explanation not used ({why})")
+    await session.commit()
+    if not text:
+        return {"note": f"AI explanation not used ({why}); the numbers are explained from the rules", "usage": metering.spent_by(provider)}
+    return {"source": "ai", "text": text, "usage": metering.spent_by(provider)}
 
 
 @router.get("/trades/{trade_id}")

@@ -63,7 +63,8 @@ describe("Copilot i18n keys", () => {
     for (const tab of ["market-pulse", "strategy-lab", "idea-builder", "ask", "watchtower", "news-radar", "coach"]) expect(lookup(`tabs.${tab}`)).toBeTypeOf("string");
     for (const k of ["TREND_UP", "TREND_DOWN", "RANGE", "VOLATILE", "UNKNOWN"]) expect(lookup(`pulse.regime.${k}`)).toBeTypeOf("string");
     for (const k of ["robust", "overfit", "weak", "insufficient", "sample", "thin", "untested"]) expect(lookup(`lab.verdict.${k}`)).toBeTypeOf("string");
-    for (const k of ["PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY"]) expect(lookup(`watch.action.${k}`)).toBeTypeOf("string");
+    for (const k of ["PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY", "ENTRY"]) expect(lookup(`watch.action.${k}`)).toBeTypeOf("string");
+    expect(lookup("watch.exitNow")).toBeTypeOf("string");
   });
 
   it("puts the second-language line under the interview questions only (ATP review 12)", () => {

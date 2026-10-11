@@ -18,6 +18,8 @@ export default function PositionsPage() {
   const [greeks, setGreeks] = useState<PositionGreeks | null>(null);
   const [greeksError, setGreeksError] = useState<string | null>(null);
   const [greeksBusy, setGreeksBusy] = useState(false);
+  // Z3: "Exit now" exists only with approval-only entries on (otherwise exits run automatically).
+  const [exitNowOn, setExitNowOn] = useState(false);
 
   async function loadGreeks() {
     setGreeksBusy(true); setGreeksError(null);
@@ -44,6 +46,7 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
+    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries))).catch(() => setExitNowOn(false));
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -59,6 +62,21 @@ export default function PositionsPage() {
           : "Price doesn't hit SL/target yet - still open.",
       }));
       if (result.closed) refresh();
+    } catch (e) {
+      setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
+    }
+  }
+
+  // Z3 "Exit now" (approval-only on): closes a PAPER position at once, at the live price or the last price seen - never
+  // a typed price. LIVE positions are closed in the broker app.
+  async function handleExitNow(p: TradeRecord) {
+    const tradeId = p.id;
+    if (!window.confirm(`Exit ${p.direction} ${p.symbol} x${p.quantity} (PAPER) now, at the current price?`)) return;
+    try {
+      const result = await api.exitNow(tradeId);
+      const first = result.closed[0];
+      setMarkMessages((m) => ({ ...m, [tradeId]: `Closed: ${first?.exit_reason} @ ${first?.exit_price} (P&L ${first?.pnl?.toFixed(2)})` }));
+      refresh();
     } catch (e) {
       setMarkMessages((m) => ({ ...m, [tradeId]: String(e) }));
     }
@@ -168,6 +186,8 @@ export default function PositionsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Z3 (review V3): with Exit now on, a typed price never closes a position - the platform's quotes do. */}
+                  {!exitNowOn && <>
                   <span className="text-xs text-fg-muted">Live price and P&amp;L are on the chart above when a broker is logged in; or check a price by hand:</span>
                   <input
                     type="number"
@@ -182,6 +202,16 @@ export default function PositionsPage() {
                   >
                     Check price
                   </button>
+                  </>}
+                  {exitNowOn && user.role !== "VIEWER" && p.mode === "PAPER" && (
+                    <button
+                      onClick={() => handleExitNow(p)}
+                      className="rounded border border-down/60 px-2 py-1 text-xs text-down hover:bg-down/10"
+                      data-testid="exit-now"
+                    >
+                      Exit now
+                    </button>
+                  )}
                   {markMessages[p.id] && <span className="text-xs text-fg-muted">{markMessages[p.id]}</span>}
                 </div>
               </div>

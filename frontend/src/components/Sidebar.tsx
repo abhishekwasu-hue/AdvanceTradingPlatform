@@ -22,7 +22,7 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon, Store, Sparkles, Sigma} from "lucide-react";
+  type LucideIcon, Store, Sparkles, Sigma, ChartSpline } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
@@ -44,6 +44,7 @@ export type Page =
   | "copilot"
   | "coach"
   | "option-chain"
+  | "options-builder"
   | "instruments"
   | "positions"
   | "portfolio"
@@ -88,6 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "fundamentals", label: "Fundamental Analysis", icon: Building2 },
       { id: "option-chain", label: "Option Chain", icon: Link2 },
+      { id: "options-builder", label: "Options Builder", icon: ChartSpline },
       { id: "instruments", label: "Instruments", icon: Boxes },
       { id: "news-events", label: "News & Events", icon: Newspaper },
       { id: "quant", label: "Factor Lab", icon: Sigma },

@@ -10,7 +10,7 @@
 import copy
 import json
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
+from app.backtest.models import ModelError, ModelSet
 from app.backtest.repro import config_hash, fingerprint
 from app.backtest.options import OptionChainSnapshotRow, SnapshotPricer, SyntheticPricer, VolatilityModel, underlying_name
 from app.backtest.options_engine import ENGINE_VERSION as OPTIONS_ENGINE_VERSION, OptionBacktestConfig, OptionBacktestError, run_option_backtest
@@ -109,6 +110,8 @@ class BacktestBody(BaseModel):
     data_source: str = Field(default="uploaded", max_length=30)
     # Phase W: present = an option backtest on the same signals.
     options: Optional[OptionBacktestBody] = None
+    # Realism C2: execution models (fill, slippage, ...); omitted = the defaults, i.e. the engine before C2.
+    execution_models: Optional[Dict[str, Any]] = None
 
     @property
     def engine_version(self) -> str:
@@ -138,6 +141,13 @@ class BacktestRunner:
         self.rules = body.exit_rules.to_rules() if body.exit_rules else None
         self.config = body.options.to_config(holidays) if body.options is not None else None
         self.pricer = pricer
+        try:
+            self.models = ModelSet(**(body.execution_models or {}))
+        except (ModelError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
+        if body.options is not None and not self.models.is_default:
+            # Never silently ignored: the option engine takes its models in a later C2 PR.
+            raise HTTPException(status_code=422, detail="execution_models apply to single-leg backtests only for now")
 
     @classmethod
     async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession) -> "BacktestRunner":
@@ -165,7 +175,8 @@ class BacktestRunner:
 
     def run(self, strategy, df) -> BacktestResult:
         if self.config is None:
-            result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules)
+            result = run_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, exit_rules=self.rules,
+                                  models=self.models)
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
@@ -177,7 +188,9 @@ class BacktestRunner:
             result, df, engine_version=self.body.engine_version, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
             symbol=self.body.symbol.upper(), base_timeframe=self.body.base_timeframe, risk=self.risk,
             exit_rules=self.body.exit_rules, options=self.body.options.model_dump(exclude={"option_chain"}) if self.body.options else None,
-            option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None)
+            option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None,
+            # C2: only a non-default model set enters the hash, so default runs keep the hash they had before C2.
+            **({} if self.models.is_default else {"execution_models": self.models.describe()}))
         return result
 
 

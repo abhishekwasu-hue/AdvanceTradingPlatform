@@ -320,7 +320,7 @@ async def _settle(session: AsyncSession, action: AiActionRecord, values: Dict) -
                                     .values(**values).execution_options(synchronize_session=False))
     await session.commit()
     await session.refresh(action)
-    return claimed.rowcount == 1
+    return getattr(claimed, "rowcount", 0) == 1
 
 
 async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: User, evidence: Dict, deployment: Optional[StrategyDeploymentRecord],

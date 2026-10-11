@@ -16,9 +16,17 @@ Rules:
   transaction; a re-run skips files already `done` with the same sha256 and retries everything else (including one
   left `running` by a crash). Re-importing changed bars writes them as new versions (B1), identical bars are skipped.
 - After writing, the lake is counted for the file's range and must hold every bar the file had.
+- Bar labels are checked, never shifted: a DAILY file must hold at most one bar per trade date, every END at 15:30 IST
+  (10:00 UTC), no Saturday / Sunday (so a file of intraday bars can never reach the shared lake as daily bars); a
+  1-MINUTE file's ENDs must be whole minutes inside the session (09:16 .. 15:30 IST) - a START-labelled file (a bar
+  ending at 09:15) is refused rather than loaded one minute early.
+- The owner tenant must be confirmed: HISTORY_OWNER_TENANT_NAME must equal that tenant's name, so a mistyped id cannot
+  send licensed data to another customer. `--purge-tenant ID --confirm-name NAME` removes a tenant's imported
+  1-minute rows, their quality events and state rows (the remedy if it ever happened).
 - One run at a time per database (a Postgres advisory lock); a second run refuses to start.
 
 CLI:  python -m app.market_lake.r2_import --dataset daily|m1 [--symbols A,B] [--limit N] [--local-dir DIR]
+      python -m app.market_lake.r2_import --purge-tenant ID --confirm-name "TENANT NAME"
 """
 import argparse
 import asyncio
@@ -34,14 +42,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from sqlalchemy import distinct, func, select, text, update
+from sqlalchemy import delete, distinct, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config
-from app.db.models import HistoryImportFileRecord, MdCandleRecord, MdTenantCandleRecord, Tenant
+from app.db.models import DataQualityEventRecord, HistoryImportFileRecord, MdCandleRecord, MdTenantCandleRecord, Tenant
 from app.market_data.calendar import EXCHANGE_SESSIONS, IST, is_trading_day, load_holidays, session_family
 from app.market_lake import quality
-from app.market_lake.ingest import LakeBar, write_candles_bulk
+from app.market_lake.ingest import DAILY_END_IST, LakeBar, trade_date, write_candles_bulk
 from app.market_lake.object_store import LocalDirStore, ObjectStore, R2Store
 
 logger = logging.getLogger(__name__)
@@ -104,9 +112,59 @@ def _utc(ts: datetime) -> datetime:
 
 
 def bar_date(ts: datetime) -> date:
-    """The day a bar belongs to: the UTC date of (END - 1 microsecond), so a bar ending exactly at midnight is the
-    previous day's (NSE sessions are 03:45-10:00 UTC, so 1-minute bars never come near it)."""
-    return (_utc(ts) - timedelta(microseconds=1)).date()
+    """The trade date a bar belongs to - `ingest.trade_date`, the same rule the gap check and the adjustment use."""
+    return trade_date(_utc(ts))
+
+
+def _number(value: Any, what: str, *, nullable: bool) -> Optional[float]:
+    """A volume / OI cell: None stays None (OI) or 0 (volume); NaN / infinite / negative refuses the file."""
+    if value is None:
+        return None if nullable else 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ImportRefused(f"unreadable {what} {value!r}") from None
+    if math.isnan(number) and nullable:
+        return None                    # a float column's missing OI
+    if math.isnan(number) or math.isinf(number) or number < 0:
+        raise ImportRefused(f"{what} {value!r} is not a count - nothing is filled in")
+    return number
+
+
+def check_labels(dataset: str, bars: Sequence[LakeBar], exchange: str = "NSE") -> None:
+    """Refuses bars whose labels do not fit the dataset (see the module docstring); never shifts them."""
+    if dataset == "daily":
+        per_day: Dict[date, set] = defaultdict(set)      # distinct ENDs: an identical repeat is _dedupe's business
+        off_time, weekend = [], []
+        for bar in bars:
+            ist = _utc(bar.ts).astimezone(IST)
+            day = bar_date(bar.ts)
+            per_day[day].add(_utc(bar.ts))
+            if (ist.hour, ist.minute) != DAILY_END_IST or ist.second or ist.microsecond:
+                off_time.append(ist)
+            if day.weekday() >= 5:
+                weekend.append(day)
+        many = sorted(d for d, ends in per_day.items() if len(ends) > 1)
+        if many:
+            raise ImportRefused(f"not daily bars: {len(many)} trade date(s) with more than one bar (first {many[0]})")
+        if off_time:
+            raise ImportRefused(f"{len(off_time)} daily bar(s) not labelled by the 15:30 IST close (10:00 UTC) END - "
+                                f"first {off_time[0].isoformat()}")
+        if weekend:
+            raise ImportRefused(f"{len(weekend)} daily bar(s) on a Saturday / Sunday (first {weekend[0]}) - load a special "
+                                "session from the exchange's own file (HB1)")
+        return
+    family = EXCHANGE_SESSIONS[session_family(exchange)]
+    bad = []
+    for bar in bars:
+        ist = _utc(bar.ts).astimezone(IST)
+        day = ist.date()
+        open_, close = datetime.combine(day, family.open, tzinfo=IST), datetime.combine(day, family.close, tzinfo=IST)
+        if ist.second or ist.microsecond or not (open_ < ist <= close):
+            bad.append(ist)
+    if bad:
+        raise ImportRefused(f"{len(bad)} 1-minute bar END(s) outside {family.open:%H:%M}-{family.close:%H:%M} IST or not on a "
+                            f"whole minute (first {bad[0].isoformat()}) - a START-labelled file is refused, not shifted")
 
 
 def lake_source(raw: Optional[str]) -> str:
@@ -273,15 +331,18 @@ def _bars_from_table(mf: ManifestFile, table) -> Tuple[Dict[str, List[LakeBar]],
         if o is None or h is None or lo is None or c is None:
             no_price += 1
             continue
-        oi = cols["oi"][i]
+        volume = _number(cols["volume"][i], "volume", nullable=False)
+        oi = _number(cols["oi"][i], "oi", nullable=True)
         by_source[lake_source(cols["source"][i])].append(
-            LakeBar(key, tf, ts, o, h, lo, c, int(cols["volume"][i] or 0), int(oi) if oi is not None else None))
+            LakeBar(key, tf, ts, o, h, lo, c, int(volume or 0), int(oi) if oi is not None else None))
     if no_price:
         raise ImportRefused(f"{no_price} row(s) without a timestamp or a price - nothing is filled in")
     if outside:
         raise ImportRefused(f"{outside} bar(s) outside the file's period {mf.period}")
     if outside_range:
         raise ImportRefused(f"{outside_range} bar(s) outside the manifest's date range")
+    for bars in by_source.values():
+        check_labels(mf.dataset, bars, mf.exchange)
     isins = sorted({str(v).strip() for v in cols["isin"] if v not in (None, "")})
     return by_source, isins
 
@@ -407,6 +468,10 @@ async def _refuse_listed(session_factory: Callable[[], Any], manifest_key: str, 
             state = HistoryImportFileRecord(object_key=key[:512], sha256="", rows_expected=0, attempts=0, inserted=0,
                                             corrected=0, skipped=0, quality_events=0)
             session.add(state)
+        if state.status == "done":           # its bars are in the lake: keep it done, record why the manifest refuses it now
+            state.error = f"the manifest now refuses this entry: {reason}"[:2000]
+            await session.commit()
+            return
         state.manifest_key = manifest_key
         state.dataset = key.split("/", 1)[0][:8]
         state.exchange = (match.group("exchange").upper() if match else "?")[:20]
@@ -421,8 +486,9 @@ async def import_one(session_factory: Callable[[], Any], store: ObjectStore, mf:
     """Imports one manifest entry; returns its final status ('skipped' when it was already done)."""
     async with session_factory() as session:
         existing = await session.scalar(select(HistoryImportFileRecord).where(HistoryImportFileRecord.object_key == mf.key))
-        if existing is not None and existing.status == "done" and existing.sha256 == mf.sha256:
-            summary.skipped += 1          # already loaded, and the collector has not rewritten it since
+        target = tenant_id if mf.dataset == "m1" else None
+        if existing is not None and existing.status == "done" and existing.sha256 == mf.sha256 and existing.tenant_id == target:
+            summary.skipped += 1          # already loaded into the same store, and not rewritten since
             return "skipped"
         state = await _state_for(session, mf, tenant_id, existing)
         state.status, state.error = "running", None
@@ -474,7 +540,8 @@ def _list(store: ObjectStore, prefix: str) -> List[str]:
 
 async def run_import(session_factory: Callable[[], Any], store: ObjectStore, *, datasets: Sequence[str],
                      owner_tenant_id: Optional[int] = None, symbols: Optional[Sequence[str]] = None,
-                     limit: Optional[int] = None, now: Optional[datetime] = None) -> ImportSummary:
+                     limit: Optional[int] = None, now: Optional[datetime] = None,
+                     owner_tenant_name: Optional[str] = None) -> ImportSummary:
     """Reads every manifest of the requested datasets and imports what is not done yet. See the module docstring."""
     from app.platform.controls import flag_enabled
 
@@ -487,8 +554,13 @@ async def run_import(session_factory: Callable[[], Any], store: ObjectStore, *, 
         if "m1" in datasets:
             if owner_tenant_id is None:
                 raise ImportConfigError("HISTORY_OWNER_TENANT_ID is not set: refusing to load 1-minute data (owner-licensed)")
-            if await session.get(Tenant, owner_tenant_id) is None:
+            owner = await session.get(Tenant, owner_tenant_id)
+            if owner is None:
                 raise ImportConfigError(f"HISTORY_OWNER_TENANT_ID={owner_tenant_id} is not a tenant of this database")
+            expected = (owner_tenant_name if owner_tenant_name is not None else config.HISTORY_OWNER_TENANT_NAME or "").strip()
+            if not expected or expected != (owner.name or "").strip():
+                raise ImportConfigError(f"HISTORY_OWNER_TENANT_NAME must equal the name of tenant {owner_tenant_id} - a "
+                                        "confirmation that the id is the owner's (refusing to load licensed 1-minute data)")
     wanted = {s.upper() for s in symbols} if symbols else None
     summary = ImportSummary()
     async with session_factory() as lock_session:
@@ -574,10 +646,30 @@ async def progress(session: AsyncSession, *, dataset: Optional[str] = None, limi
             "symbol_count": len(symbols)}
 
 
+async def purge_tenant_m1(session: AsyncSession, tenant_id: int, *, confirm_name: str) -> Dict[str, int]:
+    """Removes what the importer put in ONE tenant's private store: its 1-minute rows from the R2 store (`r2:*`), the
+    quality events about them and the m1 state rows (so a corrected run imports them into the right tenant). The name
+    must match the tenant's - the same confirmation the import asks for."""
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant is None or not confirm_name.strip() or confirm_name.strip() != (tenant.name or "").strip():
+        raise ImportConfigError(f"--confirm-name must equal the name of tenant {tenant_id}")
+    bars = await session.execute(delete(MdTenantCandleRecord).where(
+        MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.timeframe == TIMEFRAME["m1"],
+        MdTenantCandleRecord.source.like("r2:%")))
+    events = await session.execute(delete(DataQualityEventRecord).where(
+        DataQualityEventRecord.tenant_id == tenant_id, DataQualityEventRecord.source.like("r2:%")))
+    states = await session.execute(delete(HistoryImportFileRecord).where(
+        HistoryImportFileRecord.tenant_id == tenant_id, HistoryImportFileRecord.dataset == "m1"))
+    await session.commit()
+    return {"bars": int(bars.rowcount or 0), "quality_events": int(events.rowcount or 0), "state_rows": int(states.rowcount or 0)}
+
+
 # --- CLI ----------------------------------------------------------------------------------------------------------
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m app.market_lake.r2_import", description="HB0: import the R2 history store")
-    p.add_argument("--dataset", required=True, choices=("daily", "m1", "all"))
+    p.add_argument("--dataset", choices=("daily", "m1", "all"))
+    p.add_argument("--purge-tenant", type=int, default=None, help="remove this tenant's imported 1-minute rows and state")
+    p.add_argument("--confirm-name", default="", help="the tenant's name, for --purge-tenant")
     p.add_argument("--symbols", default="", help="comma-separated symbols (default: every symbol in the manifests)")
     p.add_argument("--limit", type=int, default=None, help="import at most this many files this run (resume later)")
     p.add_argument("--local-dir", default=None, help="read the layout from a directory instead of R2")
@@ -588,6 +680,20 @@ async def _main(argv: Optional[Sequence[str]] = None) -> int:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     args = _parser().parse_args(argv)
+    if args.purge_tenant is not None:
+        engine = create_async_engine(config.DATABASE_URL)
+        try:
+            async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+                print(json.dumps(await purge_tenant_m1(session, args.purge_tenant, confirm_name=args.confirm_name), indent=2))
+            return 0
+        except ImportConfigError as exc:
+            print(f"REFUSED: {exc}", file=sys.stderr)
+            return 2
+        finally:
+            await engine.dispose()
+    if args.dataset is None:
+        print("REFUSED: --dataset is required (or --purge-tenant)", file=sys.stderr)
+        return 2
     datasets = list(DATASETS) if args.dataset == "all" else [args.dataset]
     try:
         store: ObjectStore = LocalDirStore(args.local_dir) if args.local_dir else R2Store.from_env()

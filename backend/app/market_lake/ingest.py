@@ -12,15 +12,26 @@
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Iterable, List, Optional, Protocol, Sequence, Tuple
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import MdCandleRecord, MdTenantCandleRecord
+from app.market_data.calendar import IST
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# The END every DAILY lake bar carries: the NSE close, 15:30 IST = 10:00 UTC on the trade date (HB0 / HB1).
+DAILY_END_IST = (15, 30)
+
+
+def trade_date(ts: datetime) -> date:
+    """The trading day a bar belongs to - ONE rule for every reader (import checks, gap detection, adjustment): the IST
+    date of (END - 1 microsecond). A bar ending exactly at IST midnight belongs to the day before; NSE bars (09:15 to
+    15:30 IST, daily END 15:30 IST) fall on the same date in IST and UTC."""
+    ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts
+    return (ts - timedelta(microseconds=1)).astimezone(IST).date()
 
 
 def timeframe_minutes(timeframe: str) -> int:

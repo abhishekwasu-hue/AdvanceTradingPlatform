@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.db.models import (DataQualityEventRecord, HistoryImportFileRecord, MarketHolidayRecord, MdCandleRecord,
-                           MdTenantCandleRecord, User)
+                           MdTenantCandleRecord, Tenant, User)
 from app.market_data.calendar import IST
 from app.market_lake import r2_import, tenant_store
 from app.market_lake.ingest import LakeBar
@@ -149,8 +149,19 @@ class Bucket:
         return LocalDirStore(self.root)
 
 
-def _import(store, datasets=("daily",), owner=None, **kw):
-    return _run(r2_import.run_import(_session_factory, store, datasets=list(datasets), owner_tenant_id=owner, **kw))
+def _tenant_name(tenant_id):
+    async def go():
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            return tenant.name if tenant is not None else None
+    return _run(go())
+
+
+def _import(store, datasets=("daily",), owner=None, owner_name=None, **kw):
+    if owner is not None and owner_name is None:
+        owner_name = _tenant_name(owner)                 # the confirmation the operator sets (HISTORY_OWNER_TENANT_NAME)
+    return _run(r2_import.run_import(_session_factory, store, datasets=list(datasets), owner_tenant_id=owner,
+                                     owner_tenant_name=owner_name, **kw))
 
 
 def _state(key):
@@ -490,3 +501,114 @@ def test_r2_store_reads_through_the_s3_api_with_env_credentials_only(monkeypatch
     assert list(store.list_keys("daily/")) == ["daily/x/manifest.json"]
     obj = store.get("daily/x/manifest.json")
     assert obj.data == b"payload" and obj.etag == "etag-1"
+
+
+# --- review fixes: labels, owner confirmation, purge, caps, odd values ----------------------------------------------
+def test_a_daily_file_must_hold_daily_bars_never_intraday_ones(tmp_path):
+    _flag(True)
+    bucket = Bucket(tmp_path)
+    keys = {"HBZMIS": m1_rows()}                                       # 747 one-minute bars put in a daily folder
+    off_time = [dict(r, ts=r["ts"] - timedelta(hours=1)) for r in daily_rows()]
+    saturday = daily_rows() + [_row(datetime.combine(date(YEAR, 3, 10), time(15, 30), tzinfo=IST).astimezone(timezone.utc), 101)]
+    keys.update({"HBZOFF": off_time, "HBZSAT": saturday})
+    for sym, rows in keys.items():
+        bucket.put(f"daily/NSE/{sym}/{YEAR}.parquet", rows)
+    bucket.manifests(extra={"daily/NSE": {"date_range": {}}})
+    summary = _import(bucket.store())
+    assert summary.refused == 3 and summary.done == 0
+    assert "more than one bar" in _state(f"daily/NSE/HBZMIS/{YEAR}.parquet").error
+    assert "15:30 IST" in _state(f"daily/NSE/HBZOFF/{YEAR}.parquet").error
+    assert "Saturday" in _state(f"daily/NSE/HBZSAT/{YEAR}.parquet").error
+    for sym in keys:
+        assert _count(MdCandleRecord, MdCandleRecord.instrument_key == f"NSE:{sym}") == 0     # nothing reached the shared lake
+
+
+def test_start_labelled_minute_files_and_nan_counts_are_refused_and_nan_oi_is_missing(tmp_path):
+    _flag(True)
+    owner = _user("hb0-labels-owner@example.com")[1]["tenant_id"]
+    bucket = Bucket(tmp_path)
+    start_labelled = [dict(r, ts=r["ts"] - timedelta(minutes=1)) for r in m1_rows()]      # first bar "ends" at 09:15
+    bucket.put(f"m1/NSE/HBZST/{YEAR}-02.parquet", start_labelled)
+    bucket.manifests()
+    assert _import(bucket.store(), datasets=("m1",), owner=owner).refused == 1
+    assert "START-labelled" in _state(f"m1/NSE/HBZST/{YEAR}-02.parquet").error
+    assert r2_import._number(float("nan"), "oi", nullable=True) is None
+    with pytest.raises(r2_import.ImportRefused):
+        r2_import._number(float("nan"), "volume", nullable=False)
+    with pytest.raises(r2_import.ImportRefused):
+        r2_import._number(-5, "volume", nullable=False)
+
+
+def test_one_trade_date_rule_for_import_gaps_and_adjustment():
+    from app.market_lake.ingest import trade_date
+    ist_midnight = datetime(YEAR, 3, 6, 0, 0, tzinfo=IST).astimezone(timezone.utc)    # 18:30 UTC on the 5th
+    assert trade_date(ist_midnight) == date(YEAR, 3, 5) == r2_import.bar_date(ist_midnight)
+    late = datetime(YEAR, 3, 5, 19, 0, tzinfo=timezone.utc)                          # 00:30 IST on the 6th
+    assert trade_date(late) == date(YEAR, 3, 6)                                     # the IST date, as adjust() reads it
+
+
+def test_the_owner_tenant_must_be_confirmed_and_a_wrong_tenant_can_be_purged(tmp_path):
+    _flag(True)
+    right = _user("hb0-right-owner@example.com")[1]["tenant_id"]
+    wrong = _user("hb0-wrong-tenant@example.com")[1]["tenant_id"]
+    bucket = Bucket(tmp_path)
+    key = f"m1/NSE/HBZW1/{YEAR}-02.parquet"
+    bucket.put(key, m1_rows())
+    bucket.manifests()
+    with pytest.raises(r2_import.ImportConfigError, match="HISTORY_OWNER_TENANT_NAME"):
+        _import(bucket.store(), datasets=("m1",), owner=wrong, owner_name="")                # unset: refused
+    with pytest.raises(r2_import.ImportConfigError, match="HISTORY_OWNER_TENANT_NAME"):
+        _import(bucket.store(), datasets=("m1",), owner=wrong, owner_name=_tenant_name(right))   # id typo: refused
+    # It happened anyway (both settings wrong): the next run with the right owner re-imports - the skip test
+    # compares the tenant - and the purge removes the wrong tenant's copy.
+    assert _import(bucket.store(), datasets=("m1",), owner=wrong).done == 1
+    assert _import(bucket.store(), datasets=("m1",), owner=right).done == 1
+    assert _state(key).tenant_id == right
+    assert _count(MdTenantCandleRecord, MdTenantCandleRecord.tenant_id == wrong) == len(m1_rows())
+
+    async def purge(name):
+        async with _session_factory() as session:
+            return await r2_import.purge_tenant_m1(session, wrong, confirm_name=name)
+    with pytest.raises(r2_import.ImportConfigError):
+        _run(purge("not the name"))
+    removed = _run(purge(_tenant_name(wrong)))
+    assert removed["bars"] == len(m1_rows()) and removed["quality_events"] >= 1
+    assert _count(MdTenantCandleRecord, MdTenantCandleRecord.tenant_id == wrong) == 0
+    assert _count(DataQualityEventRecord, DataQualityEventRecord.tenant_id == wrong) == 0
+    assert _count(MdTenantCandleRecord, MdTenantCandleRecord.tenant_id == right) == len(m1_rows())
+
+
+def test_tenant_store_reads_are_capped_before_loading(tmp_path, monkeypatch):
+    from app.core import config
+    _flag(True)
+    headers, owner = _user("hb0-cap-owner@example.com")
+    bucket = Bucket(tmp_path)
+    bucket.put(f"m1/NSE/HBZCAP/{YEAR}-02.parquet", m1_rows())
+    bucket.manifests()
+    assert _import(bucket.store(), datasets=("m1",), owner=owner["tenant_id"]).done == 1
+    params = {"instrument_key": "NSE:HBZCAP", "start": datetime(YEAR, 2, 5, tzinfo=timezone.utc).isoformat(),
+              "end": datetime(YEAR, 2, 7, tzinfo=timezone.utc).isoformat(), "store": "tenant", "adjusted": "false"}
+    assert client.get("/api/market-data/history", params={**params, "timeframe": "60m"}, headers=headers).status_code == 200
+    monkeypatch.setattr(config, "LAKE_TENANT_MAX_BASE_ROWS", 100)
+    capped = client.get("/api/market-data/history", params={**params, "timeframe": "60m"}, headers=headers)
+    assert capped.status_code == 422 and "one-minute rows" in capped.json()["detail"]
+
+
+def test_a_manifest_refusal_never_flips_a_done_file(tmp_path):
+    _flag(True)
+    bucket = Bucket(tmp_path)
+    key = f"daily/NSE/HBZDN/{YEAR}.parquet"
+    bucket.put(key, daily_rows())
+    bucket.manifests()
+    assert _import(bucket.store()).done == 1
+    bucket.manifests(extra={"daily/NSE": {"symbols": ["SOMETHINGELSE"]}})            # the manifest now refuses the entry
+    _import(bucket.store())
+    state = _state(key)
+    assert state.status == "done" and "manifest now refuses" in state.error
+    assert _count(MdCandleRecord, MdCandleRecord.instrument_key == "NSE:HBZDN") == len(daily_rows())
+
+
+def test_downgrade_removes_tenant_scoped_quality_events_before_dropping_the_column():
+    source = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "a8c0e2f4b6d8_hb0_history_import.py").read_text()
+    body = source.split("def downgrade", 1)[1]
+    assert body.index("DELETE FROM data_quality_events WHERE tenant_id IS NOT NULL") < body.index("drop_column('data_quality_events'")

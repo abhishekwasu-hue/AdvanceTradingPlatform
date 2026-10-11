@@ -79,6 +79,8 @@ def downgrade() -> None:
     op.drop_index('ix_history_import_files_dataset_symbol', table_name='history_import_files')
     op.drop_index('ix_history_import_files_status', table_name='history_import_files')
     op.drop_table('history_import_files')
+    # Events about a tenant's PRIVATE store go with that store: without the column they would read as shared-lake events.
+    op.execute("DELETE FROM data_quality_events WHERE tenant_id IS NOT NULL")
     op.drop_index('ix_data_quality_events_tenant_id', table_name='data_quality_events')
     op.drop_constraint('fk_data_quality_events_tenant_id', 'data_quality_events', type_='foreignkey')
     op.drop_column('data_quality_events', 'tenant_id')

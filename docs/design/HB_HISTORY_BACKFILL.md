@@ -33,7 +33,15 @@ are events (B3), never edits.
   - `GET /api/market-data/history?store=tenant` always uses the authenticated user's own tenant (there is no tenant
     parameter); `store=shared` (the default) never sees private rows;
   - data-quality events about the private store carry `tenant_id` and are counted only for that tenant;
-  - the importer loads 1-minute data only into `HISTORY_OWNER_TENANT_ID` and refuses to load it when that is unset.
+  - the importer loads 1-minute data only into `HISTORY_OWNER_TENANT_ID` and refuses to load it when that is unset, or
+    when `HISTORY_OWNER_TENANT_NAME` does not equal that tenant's name (a confirmation: a mistyped id cannot send
+    licensed data to another customer). The skip-if-done test compares the tenant too, so a corrected run re-imports into
+    the right tenant, and `--purge-tenant ID --confirm-name NAME` removes a wrong tenant's imported rows, events and
+    state rows;
+  - a private-store read counts the 1-minute rows first and refuses more than `LAKE_TENANT_MAX_BASE_ROWS` (60,000), so
+    a 60-minute request cannot pull 60 x 5,000 rows into memory;
+  - downgrading the migration deletes the tenant-scoped quality events before it drops their `tenant_id` column (they
+    would otherwise read as shared-lake events).
 
 Why a separate table instead of a nullable `tenant_id` on `md_candles`: the column would have to join the primary key
 (a hypertable on TimescaleDB, where changing the key is a table rewrite), and every existing reader would need a new
@@ -48,8 +56,16 @@ m1/{exchange}/{symbol}/{yyyy-mm}.parquet
 {daily|m1}/{exchange}/manifest.json        (or one per symbol folder)
 ```
 Parquet with zstd compression. Columns: `ts` (timestamp, UTC, bar END), `open`, `high`, `low`, `close` (unadjusted),
-`volume`, `oi` (nullable), `isin`, `source`, `fetched_at`. Naive timestamps are read as UTC; a daily bar belongs to the
-UTC date of (END - 1 microsecond).
+`volume`, `oi` (nullable), `isin`, `source`, `fetched_at`. Naive timestamps are read as UTC. A bar belongs to the
+trade date `ingest.trade_date` = the IST date of (END - 1 microsecond) - one rule shared by the importer, the gap
+check (B3) and the adjustment (B4).
+
+Labels are checked, never shifted (review fix): a **daily** file must hold at most one bar per trade date, every END at
+**15:30 IST = 10:00 UTC** (the same END HB1 writes) and no Saturday / Sunday - so intraday bars put in a daily folder
+are refused and can never reach the shared lake as `day` bars (a special weekend session comes from HB1's exchange
+files instead). A **1-minute** file's ENDs must be whole minutes inside the session (09:16 .. 15:30 IST): a
+START-labelled file (first bar "ending" 09:15) is refused, since it would shift every resampled bar. A NaN / negative
+volume refuses the file; a NaN OI is read as missing.
 
 Manifest accepted by the importer (paths relative to the manifest's folder, or full keys):
 ```json
@@ -73,6 +89,7 @@ are checked.
    for the file's range and must hold every bar, the B3 detectors run (spike / invalid / duplicate; 1-minute gaps per
    session; daily gaps against the holiday calendar), and the file's state row becomes `done`.
 4. A refused file is recorded with its reason and nothing of it is written; a failed one (unexpected error) likewise.
+   A file already `done` stays `done` if its manifest later refuses it (the reason goes to its error field).
    Both are retried on the next run. A file already `done` with the same sha256 is skipped; one the collector has
    rewritten (new sha256) is re-imported, and only changed bars become new versions.
 5. A crash leaves the current file `running` with nothing written; the next run retries it.
@@ -97,7 +114,8 @@ symbols and counts only, never bars. HB4's admin page reads this.
 Environment names only - values are set on the server, never committed:
 - `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` - a **read-only, bucket-scoped** R2 API token;
 - `R2_BUCKET`, `R2_ENDPOINT` (`https://<account id>.r2.cloudflarestorage.com`);
-- `HISTORY_OWNER_TENANT_ID` - the owner's tenant id (only for the 1-minute import).
+- `HISTORY_OWNER_TENANT_ID` - the owner's tenant id, and `HISTORY_OWNER_TENANT_NAME` - that tenant's exact name (only
+  for the 1-minute import).
 
 1. Deploy this release and run `alembic upgrade head` (migration `a8c0e2f4b6d8`).
 2. Admin > Controls: turn the `history_import` flag on (it is off by default).

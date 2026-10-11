@@ -178,6 +178,12 @@ BYOK_VISION_MODEL_CHOICES = {
 BYOK_DEFAULT_DAILY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_DAILY_CAP_USD", "1") or 1))
 BYOK_DEFAULT_MONTHLY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_MONTHLY_CAP_USD", "10") or 10))
 BYOK_MAX_CAP_USD = max(1.0, float(os.environ.get("BYOK_MAX_CAP_USD", "500") or 500))
+# BYOK-V3: scan-alert audits per user per rolling hour (a noisy screen cannot burn the user's cap), and the daily
+# review - after the close (IST, HH:MM) on NSE trading days, at most this many symbols per user, on this timeframe.
+BYOK_SCAN_AUDITS_PER_HOUR = max(0, int(os.environ.get("BYOK_SCAN_AUDITS_PER_HOUR", "6") or 6))
+BYOK_DAILY_REVIEW_AT = (os.environ.get("BYOK_DAILY_REVIEW_AT", "16:00") or "16:00").strip()
+BYOK_DAILY_REVIEW_MAX_SYMBOLS = min(10, max(1, int(os.environ.get("BYOK_DAILY_REVIEW_MAX_SYMBOLS", "3") or 3)))
+BYOK_DAILY_REVIEW_TIMEFRAME = (os.environ.get("BYOK_DAILY_REVIEW_TIMEFRAME", "1d") or "1d").strip()
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
 # Part D2 (rule IN-SEBI.ops.throttle): orders per second per client and exchange, exits first. Off by default; the
 # rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.

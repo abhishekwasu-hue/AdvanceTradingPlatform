@@ -101,9 +101,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
     # deflated report. Nothing deploys. OFF until the operator turns it on.
     "ai_research": "Strategy research loop: AI drafts are backtested in-sample on server bars, recorded as trials, and reported deflated",
+    # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
+    # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
+    "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research"})
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
+                               "vision_byok"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

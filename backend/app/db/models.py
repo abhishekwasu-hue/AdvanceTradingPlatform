@@ -2043,6 +2043,55 @@ class LlmCallRecord(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    # BYOK-V1: True when the call ran on the user's own provider key (the user pays the provider, not the plan budget);
+    # `app.ai.byok.byok_spend` sums these per user against the user's caps.
+    billed_to_user_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+
+
+class UserAiKeyRecord(Base):
+    """BYOK-V1 (docs/BYOK.md): one user's own AI provider API key, one row per (user, provider). The key is encrypted with
+    the tenant's data key (purpose `byok_ai_key`) and the sealed plaintext also carries the tenant, the user and the
+    provider, so a ciphertext copied to another user's or organisation's row refuses to open. Only `key_hint` (first 4
+    and last 4 characters) is ever shown; the key itself is never returned, logged or audited."""
+
+    __tablename__ = "user_ai_keys"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_ai_keys_user_provider"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)               # anthropic / openai / gemini
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hint: Mapped[str] = mapped_column(String(16), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False, default="")       # "" = the configured default
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_tested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(String(200), nullable=True)   # sanitised, never the key
+
+
+class UserVisionPrefsRecord(Base):
+    """BYOK-V1: one user's "Vision chart review" settings - on/off, the provider their charts go to, daily and monthly
+    spend caps in USD (hard stop), which charts to audit and where reports go. Vision only comments (ADR-0006)."""
+
+    __tablename__ = "user_vision_prefs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    provider: Mapped[str | None] = mapped_column(String(20), nullable=True)          # None = the first provider with a key
+    daily_cap_usd: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    monthly_cap_usd: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
+    audit_proposals: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    audit_scan_alerts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    audit_daily_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    channel_telegram: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    channel_in_app: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a

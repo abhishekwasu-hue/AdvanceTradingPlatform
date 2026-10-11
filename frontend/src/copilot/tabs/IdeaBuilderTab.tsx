@@ -47,7 +47,9 @@ interface Msg { from: "ai" | "me"; text: string; second?: string }
 
 export default function IdeaBuilderTab() {
   const t = useCopilotT();
-  const { lang, line } = useSecondary();
+  // ATP review 12: the muted Marathi line sits only under the interview's questions (the question, its "why", and
+  // the question echoed in the chat) - never under buttons, answers, status text or the template cards.
+  const { lang } = useSecondary();
   const sv = (mr?: string | null) => (lang === "mr" ? mr ?? null : null);      // the server sends the Marathi lines
   const source = useCandleSource(30);
   const location = useLocation();
@@ -86,10 +88,10 @@ export default function IdeaBuilderTab() {
       const prefill: Record<string, string> = { ...s.prefill, language: "en" };
       setStart(s); setAnswers(prefill); setQueue(s.questions.map((q) => q.id).filter((id) => !(id in prefill)));
       const known = Object.keys(s.prefill).filter((k) => k !== "language");
-      const intro: Msg[] = [{ from: "ai", text: s.intro, second: s.intro_mr }];
+      const intro: Msg[] = [{ from: "ai", text: s.intro }];
       if (known.length) {
         const list = known.map((k) => `${k} = ${prefill[k]}`).join(", ");
-        intro.push({ from: "ai", text: t("idea.understood", { list }), second: `${line("alreadyUnderstood")} ${list}` });
+        intro.push({ from: "ai", text: t("idea.understood", { list }) });
       }
       setLog(intro);
       setOfferProfile(!!s.profile);
@@ -106,10 +108,10 @@ export default function IdeaBuilderTab() {
           <span className="rounded-xl bg-ai/15 p-2.5 text-ai"><Compass size={26} /></span>
           <div className="flex-1">
             <h2 className="text-base font-semibold text-fg">{t("idea.title")}</h2>
-            <p className="text-sm text-fg-muted">{t("idea.startIntro")}<Secondary lang={lang}>{line("startIntro")}</Secondary></p>
+            <p className="text-sm text-fg-muted">{t("idea.startIntro")}</p>
           </div>
           <Button variant="primary" icon={<Compass size={15} />} onClick={() => begin("")} data-testid="idea-start">
-            <span className="text-left leading-tight">{t("idea.start")}<Secondary lang={lang}>{line("start")}</Secondary></span>
+            <span className="text-left leading-tight">{t("idea.start")}</span>
           </Button>
         </TiltCard>
         <PrivacyNote />
@@ -122,7 +124,6 @@ export default function IdeaBuilderTab() {
   const current: InterviewQuestion | undefined = queue[step] ? byId(queue[step]) : undefined;
   const finished = step >= queue.length;
   const optLabel = (q: InterviewQuestion, v: string) => q.options.find((o) => o.value === v)?.en ?? v;
-  const optSecond = (q: InterviewQuestion, v: string) => { const o = q.options.find((x) => x.value === v); return o?.mr && o.mr !== o.en ? o.mr : undefined; };
   const symbolChoices = answers.instrument === "index" || !answers.instrument ? FNO_INDICES : FNO_STOCKS.slice(0, 12);
 
   function answer(value: string, label?: string) {
@@ -131,7 +132,7 @@ export default function IdeaBuilderTab() {
     const next = { ...answers, [q.id]: value };
     if (q.id === "instrument" && value !== "index" && (answers.symbol ?? "NIFTY 50").startsWith("NIFTY")) delete next.symbol;
     setAnswers(next);
-    setLog((prev) => [...prev, { from: "ai", text: q.en, second: q.mr }, { from: "me", text: label ?? optLabel(q, value), second: label ? undefined : optSecond(q, value) }]);
+    setLog((prev) => [...prev, { from: "ai", text: q.en, second: q.mr }, { from: "me", text: label ?? optLabel(q, value) }]);
     setCustom("");
     setStep((s) => s + 1);
   }
@@ -149,7 +150,7 @@ export default function IdeaBuilderTab() {
     setAnswers({ ...saved, ...start.prefill, language: "en" });
     setStep(queue.length);
     setOfferProfile(false);
-    setLog((prev) => [...prev, { from: "me", text: t("idea.usedLast"), second: line("usedLastAnswers") }]);
+    setLog((prev) => [...prev, { from: "me", text: t("idea.usedLast") }]);
   }
   async function forgetProfile() {
     try { await api.aiProfileDelete(); setOfferProfile(false); setDone(t("idea.forgotten")); } catch (e) { setError(friendlyError(e, t)); }
@@ -211,10 +212,9 @@ export default function IdeaBuilderTab() {
           <h2 className="text-base font-semibold text-fg">{t("idea.title")}</h2>
           <span className="text-xs text-fg-muted" data-testid="idea-progress-label">
             {finished ? t("idea.allAnswered") : t("idea.questionOf", { n: step + 1, total: queue.length })}
-            <Secondary lang={lang} inline>{finished ? null : `${line("question")} ${step + 1} / ${queue.length}`}</Secondary>
           </span>
           <Button size="sm" variant="ghost" className="ml-auto" icon={<RotateCcw size={13} />} onClick={() => begin("")}>
-            <span className="text-left leading-tight">{t("idea.startOver")}<Secondary lang={lang}>{line("startOver")}</Secondary></span>
+            <span className="text-left leading-tight">{t("idea.startOver")}</span>
           </Button>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-label={t("idea.progress")} aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
@@ -235,11 +235,10 @@ export default function IdeaBuilderTab() {
           <div className="rounded-xl border border-ai/30 bg-ai/5 p-3 text-sm text-fg">
             <History size={15} className="mr-1 inline text-ai" />
             {t("idea.welcomeBack", { capital: Number(start.profile.answers.capital ?? 0).toLocaleString("en-IN"), style: String(start.profile.answers.style ?? ""), symbol: String(start.profile.answers.symbol ?? "") })}
-            <Secondary lang={lang}>{line("welcomeBack")}</Secondary>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Button size="sm" variant="primary" onClick={applyProfile}><span className="text-left leading-tight">{t("idea.yesUse")}<Secondary lang={lang}>{line("yesUse")}</Secondary></span></Button>
-              <Button size="sm" onClick={() => setOfferProfile(false)}><span className="text-left leading-tight">{t("idea.noAsk")}<Secondary lang={lang}>{line("noAsk")}</Secondary></span></Button>
-              <Button size="sm" variant="ghost" onClick={() => void forgetProfile()}><span className="text-left leading-tight">{t("idea.forget")}<Secondary lang={lang}>{line("forget")}</Secondary></span></Button>
+              <Button size="sm" variant="primary" onClick={applyProfile}><span className="text-left leading-tight">{t("idea.yesUse")}</span></Button>
+              <Button size="sm" onClick={() => setOfferProfile(false)}><span className="text-left leading-tight">{t("idea.noAsk")}</span></Button>
+              <Button size="sm" variant="ghost" onClick={() => void forgetProfile()}><span className="text-left leading-tight">{t("idea.forget")}</span></Button>
             </div>
           </div>
         )}
@@ -251,7 +250,7 @@ export default function IdeaBuilderTab() {
                 <div className="flex flex-wrap gap-1.5">
                   {current.options.map((o) => (
                     <button key={o.value} onClick={() => answer(o.value)} className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg hover:border-ai/60 hover:bg-ai/10">
-                      {o.en}{o.mr && o.mr !== o.en && <Secondary lang={lang} inline>{sv(o.mr)}</Secondary>}
+                      {o.en}
                     </button>
                   ))}
                 </div>
@@ -262,7 +261,7 @@ export default function IdeaBuilderTab() {
                     <button key={c} onClick={() => answer(String(c), `₹${c.toLocaleString("en-IN")}`)} className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg hover:border-ai/60 hover:bg-ai/10">₹{c.toLocaleString("en-IN")}</button>
                   ))}
                   <input value={custom} onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ""))} aria-label={t("idea.otherAmount")}
-                         placeholder={lang ? `${t("idea.otherAmount")} / ${line("otherAmount")}` : t("idea.otherAmount")} className={`${fieldClass} w-40`} />
+                         placeholder={t("idea.otherAmount")} className={`${fieldClass} w-40`} />
                   <Button size="sm" variant="primary" disabled={Number(custom) < 5000} onClick={() => answer(custom, `₹${Number(custom).toLocaleString("en-IN")}`)}>{t("idea.ok")}</Button>
                 </div>
               )}
@@ -270,7 +269,7 @@ export default function IdeaBuilderTab() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   {symbolChoices.map((s) => <button key={s} onClick={() => answer(s)} className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg hover:border-ai/60 hover:bg-ai/10">{s}</button>)}
                   <input value={custom} list="idea-symbols" onChange={(e) => setCustom(e.target.value.toUpperCase())} aria-label={t("idea.typeSymbol")}
-                         placeholder={lang ? `${t("idea.typeSymbol")} / ${line("typeSymbol")}` : t("idea.typeSymbol")} className={`${fieldClass} w-40`} />
+                         placeholder={t("idea.typeSymbol")} className={`${fieldClass} w-40`} />
                   <datalist id="idea-symbols">{[...FNO_INDICES, ...FNO_STOCKS].map((s) => <option key={s} value={s} />)}</datalist>
                   <Button size="sm" variant="primary" disabled={!custom.trim()} onClick={() => answer(custom.trim())}>{t("idea.ok")}</Button>
                 </div>
@@ -281,19 +280,19 @@ export default function IdeaBuilderTab() {
 
         {finished && !plan && (
           <div className="rounded-xl border border-ai/30 bg-ai/5 p-4 text-sm text-fg">
-            {t("idea.thanks")}<Secondary lang={lang}>{line("thanks")}</Secondary>
+            {t("idea.thanks")}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button variant="primary" icon={<Compass size={14} />} disabled={task.busy} onClick={() => void buildPlan()} data-testid="idea-read-market">
-                <span className="text-left leading-tight">{t("idea.readMarket")}<Secondary lang={lang}>{line("readMarket")}</Secondary></span>
+                <span className="text-left leading-tight">{t("idea.readMarket")}</span>
               </Button>
               {estimate && <CostChip tokens={estimate.tokens} inr={estimate.inr} estimate />}
-              <span className="text-xs text-fg-muted">{source.mode === "sample" ? t("idea.onSample") : t("idea.onBroker")}<Secondary lang={lang}>{source.mode === "sample" ? line("onSample") : line("onBroker")}</Secondary></span>
+              <span className="text-xs text-fg-muted">{source.mode === "sample" ? t("idea.onSample") : t("idea.onBroker")}</span>
             </div>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {step > 0 && <Button size="sm" variant="ghost" icon={<ArrowLeft size={13} />} onClick={back}><span className="text-left leading-tight">{t("idea.back")}<Secondary lang={lang}>{line("back")}</Secondary></span></Button>}
+          {step > 0 && <Button size="sm" variant="ghost" icon={<ArrowLeft size={13} />} onClick={back}><span className="text-left leading-tight">{t("idea.back")}</span></Button>}
           {error && <span className="text-down" role="alert">{error}</span>}
           {done && <span className="text-up" role="status">{done}</span>}
         </div>
@@ -301,36 +300,34 @@ export default function IdeaBuilderTab() {
       </TiltCard>
 
       {plan?.options && (
-        <TemplateGrid plan={plan} sample={sample} selected={selected} busy={task.busy} rejecting={rejecting} reasons={reasons} lang={lang} line={line} sv={sv}
+        <TemplateGrid plan={plan} sample={sample} selected={selected} busy={task.busy} rejecting={rejecting} reasons={reasons}
                       onChoose={(o) => void choose(o)} onReject={(id) => { setRejecting(rejecting === id ? null : id); setReasons([]); }}
                       onToggleReason={(code) => setReasons((r) => (r.includes(code) ? r.filter((c) => c !== code) : [...r, code]))} onRefine={(o) => void refine(o)} />
       )}
       {plan && (() => {
         const shown = plan.options ? plan.options.find((o) => o.option?.id === selected) : plan;
-        if (!shown) return <p className="text-sm text-fg-muted">{t("idea.openTemplate")}<Secondary lang={lang}>{line("openTemplate")}</Secondary></p>;
+        if (!shown) return <p className="text-sm text-fg-muted">{t("idea.openTemplate")}</p>;
         // keyed by the template: the risk acceptance of one template never carries over to another
-        return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined} lang={lang} line={line} sv={sv}
+        return <ChosenTemplate key={shown.option?.id ?? "plan"} plan={shown} sample={sample} broker={source.mode === "broker" ? source.broker : undefined}
                                onDone={setDone} onError={(e) => setError(friendlyError(e, t))} onDraft={(draftId) => navigate(copilotPath("strategy-lab"), { state: { draftId } })} />;
       })()}
     </div>
   );
 }
 
-type Line = ReturnType<typeof useSecondary>["line"];
 
-function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, line, sv, onChoose, onReject, onToggleReason, onRefine }: {
+function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, onChoose, onReject, onToggleReason, onRefine }: {
   plan: InterviewPlan; sample: boolean; selected: string | null; busy: boolean; rejecting: string | null; reasons: string[];
-  lang: string | null; line: Line; sv: (mr?: string | null) => string | null;
   onChoose: (o: InterviewPlan) => void; onReject: (id: string) => void; onToggleReason: (code: string) => void; onRefine: (o: InterviewPlan) => void;
 }) {
   const t = useCopilotT();
   const feedback: FeedbackOption[] = plan.feedback_options ?? [];
   return (
-    <Panel title={<span>{t("idea.templatesTitle")}<Secondary lang={lang}>{line("chooseTemplate")}</Secondary></span>} icon={<Sparkles size={15} />} testId="idea-templates">
-      <p className="mb-3 text-xs text-fg-muted">{t("idea.templatesHint")}<Secondary lang={lang}>{line("chooseTemplateHint")}</Secondary></p>
+    <Panel title={<span>{t("idea.templatesTitle")}</span>} icon={<Sparkles size={15} />} testId="idea-templates">
+      <p className="mb-3 text-xs text-fg-muted">{t("idea.templatesHint")}</p>
       {plan.changes && plan.changes.length > 0 && (
         <div className="mb-3 rounded-xl border border-ai/30 bg-ai/5 p-2 text-xs text-fg">
-          <b>{t("idea.changed")}</b><Secondary lang={lang}>{line("changedFromFeedback")}</Secondary>
+          <b>{t("idea.changed")}</b>
           <ul className="mt-1 list-disc pl-5">{plan.changes.map((c, i) => <li key={i}>{c}</li>)}</ul>
         </div>
       )}
@@ -342,8 +339,8 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, 
           return (
             <StaggerItem key={meta.id}>
               <TiltCard as="article" tilt={false} className={`flex h-full flex-col gap-2 ${isSel ? "ring-2 ring-ai" : ""}`} data-testid="strategy-card">
-                <h3 className="text-base font-semibold text-fg">{meta.label}<Secondary lang={lang}>{sv(meta.label_mr)}</Secondary></h3>
-                <p className="text-xs text-fg-muted">{meta.summary}<Secondary lang={lang}>{sv(meta.summary_mr)}</Secondary></p>
+                <h3 className="text-base font-semibold text-fg">{meta.label}</h3>
+                <p className="text-xs text-fg-muted">{meta.summary}</p>
                 {meta.headline && (
                   <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
                     <dt className="text-fg-muted">{t("idea.h.risk")}</dt><dd className="text-right font-tabular text-fg">{meta.headline.risk_pct}%</dd>
@@ -364,25 +361,25 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, 
                 )}
                 <div className="mt-auto flex flex-wrap gap-2 pt-1">
                   <Button size="sm" variant={isSel ? "primary" : "secondary"} icon={<Check size={13} />} disabled={busy} onClick={() => onChoose(o)} aria-pressed={isSel}>
-                    <span className="text-left leading-tight">{isSel ? t("idea.chosenBtn") : t("idea.choose")}<Secondary lang={lang}>{isSel ? line("chosen") : line("chooseThis")}</Secondary></span>
+                    <span className="text-left leading-tight">{isSel ? t("idea.chosenBtn") : t("idea.choose")}</span>
                   </Button>
                   <Button size="sm" variant="ghost" icon={<ThumbsDown size={13} />} disabled={busy} onClick={() => onReject(meta.id)}>
-                    <span className="text-left leading-tight">{t("idea.notThis")}<Secondary lang={lang}>{line("notThis")}</Secondary></span>
+                    <span className="text-left leading-tight">{t("idea.notThis")}</span>
                   </Button>
                 </div>
                 {rejecting === meta.id && (
                   <div className="space-y-1.5 rounded-xl border border-border bg-surface-2/60 p-2">
-                    <div className="text-xs font-semibold text-fg">{t("idea.whyNot")}<Secondary lang={lang}>{line("whyNot")}</Secondary></div>
+                    <div className="text-xs font-semibold text-fg">{t("idea.whyNot")}</div>
                     <div className="flex flex-wrap gap-1">
                       {feedback.map((f) => (
                         <button key={f.code} onClick={() => onToggleReason(f.code)} aria-pressed={reasons.includes(f.code)}
                                 className={`rounded-full border px-2 py-0.5 text-[11px] ${reasons.includes(f.code) ? "border-ai bg-ai/15 text-fg" : "border-border text-fg-muted"}`}>
-                          {f.en}{f.mr && f.mr !== f.en && <Secondary lang={lang} inline>{sv(f.mr)}</Secondary>}
+                          {f.en}
                         </button>
                       ))}
                     </div>
                     <Button size="sm" disabled={busy || reasons.length === 0} onClick={() => onRefine(o)}>
-                      <span className="text-left leading-tight">{t("idea.showOther")}<Secondary lang={lang}>{line("showOther")}</Secondary></span>
+                      <span className="text-left leading-tight">{t("idea.showOther")}</span>
                     </Button>
                   </div>
                 )}
@@ -395,8 +392,8 @@ function TemplateGrid({ plan, sample, selected, busy, rejecting, reasons, lang, 
   );
 }
 
-function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError, onDraft }: {
-  plan: InterviewPlan; sample: boolean; broker?: string; lang: string | null; line: Line; sv: (mr?: string | null) => string | null;
+function ChosenTemplate({ plan, sample, broker, onDone, onError, onDraft }: {
+  plan: InterviewPlan; sample: boolean; broker?: string;
   onDone: (m: string) => void; onError: (e: unknown) => void; onDraft: (draftId: number) => void;
 }) {
   const t = useCopilotT();
@@ -413,7 +410,7 @@ function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError,
           const strategy = s.id === "strategy";
           return (
             <div key={s.id} className="relative overflow-hidden rounded-xl border border-border bg-surface-2/40 p-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{s.title}<Secondary lang={lang}>{sv(s.title_mr)}</Secondary></div>
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{s.title}</div>
               {strategy ? <StrategyLines lines={s.lines} sample={sample} className="space-y-1 text-sm text-fg" />
                 : <ul className="space-y-1 text-sm text-fg">{s.lines.map((l, i) => <li key={i}>· {l}</li>)}</ul>}
               {strategy && sample && <p className="mt-1 text-[11px] font-semibold text-warn">{t("idea.sampleBlur")}</p>}
@@ -426,21 +423,21 @@ function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError,
           const cap = `₹${Math.round(plan.risk_config.capital).toLocaleString("en-IN")}`;
           if (!window.confirm(t("idea.confirmRisk", { capital: cap }))) return;
           void act(async () => { await api.updateRiskSettings(plan.risk_config); return t("idea.riskApplied"); });
-        }}><span className="text-left leading-tight">{t("idea.applyRisk")}<Secondary lang={lang}>{line("applyRisk")}</Secondary></span></Button>
+        }}><span className="text-left leading-tight">{t("idea.applyRisk")}</span></Button>
         {plan.deployment && plan.candidate_id != null && (
           <>
             <label className="flex items-center gap-1.5 text-xs text-fg">
               <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--ai))]" checked={acceptRisk} onChange={(e) => setAcceptRisk(e.target.checked)} />
-              <span>{t("idea.acceptLoss", { amount: perTrade.toLocaleString("en-IN") })}<Secondary lang={lang}>{line("acceptLoss")}</Secondary></span>
+              <span>{t("idea.acceptLoss", { amount: perTrade.toLocaleString("en-IN") })}</span>
             </label>
             <Button size="sm" variant="primary" icon={<Rocket size={13} />} disabled={busy || !acceptRisk}
                     onClick={() => void act(async () => t("idea.deployed", { id: (await api.aiInterviewDeploy(plan.candidate_id!, acceptRisk)).deployment.id }))}>
-              <span className="text-left leading-tight">{t("idea.deployPaper")}<Secondary lang={lang}>{line("deployPaper")}</Secondary></span>
+              <span className="text-left leading-tight">{t("idea.deployPaper")}</span>
             </Button>
           </>
         )}
         <Button size="sm" variant="ghost" icon={<CandlestickChart size={13} />} onClick={() => window.open(chartWindowUrl(symbol, "5min", "NSE", broker), "_blank")}>
-          <span className="text-left leading-tight">{t("idea.openChart")}<Secondary lang={lang}>{line("openChart")}</Secondary></span>
+          <span className="text-left leading-tight">{t("idea.openChart")}</span>
         </Button>
         {/* the AI writes a draft from this template's prompt, today's regime and the interview's symbol; it opens in Strategy Lab for review */}
         <Button size="sm" variant="ghost" icon={<Sparkles size={13} />} disabled={busy} onClick={() => void act(async () => {
@@ -448,7 +445,7 @@ function ChosenTemplate({ plan, sample, broker, lang, line, sv, onDone, onError,
           onDraft(d.id);
           return t("idea.draftReady", { id: d.id });
         })}>
-          <span className="text-left leading-tight">{t("idea.askAi")}<Secondary lang={lang}>{line("askAi")}</Secondary></span>
+          <span className="text-left leading-tight">{t("idea.askAi")}</span>
         </Button>
       </div>
       <Badge tone="neutral" className="mt-3">{t("idea.paperFirst")}</Badge>

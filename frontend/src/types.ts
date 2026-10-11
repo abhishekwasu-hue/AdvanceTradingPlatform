@@ -1573,6 +1573,61 @@ export interface MarketplaceSubscription {
   created_at: string | null;
 }
 
+// ---- BYOK-V1: Vision with your own AI key (flag vision_byok) -------------------------------------
+
+export type ByokProviderName = "anthropic" | "openai" | "gemini";
+
+export interface ByokProviderStatus {
+  provider: ByokProviderName;
+  label: string;
+  console_url: string;
+  key_set: boolean;
+  /** First 4 + last 4 characters only; the key itself never comes back. */
+  key_hint: string | null;
+  model: string;
+  model_pinned: boolean;
+  default_model: string;
+  models: string[];
+  last_used_at: string | null;
+  last_tested_at: string | null;
+  last_test_ok: boolean | null;
+  last_test_error: string | null;
+  month_spend_usd: number;
+}
+
+export interface ByokAuditScope { proposals: boolean; scan_alerts: boolean; daily_review: boolean }
+export interface ByokChannels { telegram: boolean; in_app: boolean }
+
+export interface ByokStatus {
+  enabled: boolean;
+  active: boolean;
+  reason: string;
+  vision_line: string;
+  provider: ByokProviderName | null;
+  active_provider: ByokProviderName | null;
+  providers: ByokProviderStatus[];
+  caps: { daily_cap_usd: number; monthly_cap_usd: number; max_cap_usd: number };
+  spend: { today_usd: number; month_usd: number; month: string; usd_inr_rate: number; resets: string };
+  audit: ByokAuditScope;
+  channels: ByokChannels;
+  notes: { subscription: string; privacy: string };
+}
+
+export interface ByokTestResponse {
+  result: { provider: ByokProviderName; ok: boolean; error: string | null; model: string; cost_usd: number };
+  status: ByokStatus;
+}
+
+export interface ByokPrefsInput {
+  enabled?: boolean;
+  provider?: ByokProviderName | "auto";
+  daily_cap_usd?: number;
+  monthly_cap_usd?: number;
+  audit?: Partial<ByokAuditScope>;
+  channels?: Partial<ByokChannels>;
+  models?: Partial<Record<ByokProviderName, string>>;
+}
+
 // ---- Phase L: AI layer -------------------------------------------------------------------------
 
 export type AiProviderName = "anthropic" | "openai" | "rule_based";

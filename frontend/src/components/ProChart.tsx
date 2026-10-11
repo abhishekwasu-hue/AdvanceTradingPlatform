@@ -3,7 +3,7 @@ import {
   type IChartApi, type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type LogicalRange, type MouseEventParams, type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { ExternalLink, Layers, Maximize2, Minimize2, Radio, Scan } from "lucide-react";
+import { ExternalLink, Layers, Maximize2, Minimize2, Radio, Scan, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LtpResponse, OHLCVBar, SRZone } from "../types";
 import {
@@ -16,6 +16,8 @@ import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
 import { LightweightEngine } from "../charting/lightweight";
 import { DrawingToolbar, useDrawingTools } from "../charting/DrawingToolbar";
+import { Sheet } from "./primitives";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
 export type { ChartMarker, PriceLineSpec } from "./CandleChart";
 
@@ -76,7 +78,11 @@ function baseOptions(height: number, showTime: boolean, attribution = true) {
     timeScale: { visible: showTime, timeVisible: true, secondsVisible: false, borderColor: COLORS.border, rightOffset: 4,
                  tickMarkFormatter: (t: number) => fmtIst(t, false) },
     localization: { timeFormatter: (t: number) => fmtIst(t, true) },
-    handleScroll: true, handleScale: true,
+    // PW2: touch - pinch to zoom, one-finger drag pans the time axis while a vertical swipe still scrolls the page,
+    // and a long press shows the crosshair (the library's tracking mode; the next tap hides it).
+    handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+    handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+    kineticScroll: { touch: true, mouse: false },
   };
 }
 
@@ -139,6 +145,8 @@ export default function ProChart({
   onEngineRef.current = onEngine;
   // Expanded: the same chart over the whole screen, with the full toolbar and panes even if it was a mini chart.
   const [expanded, setExpanded] = useState(false);
+  const phone = useMediaQuery(PHONE_QUERY);
+  const [toolsOpen, setToolsOpen] = useState(false);   // PW2: the phone bottom sheet with indicators and drawing tools
   const [themeTick, setThemeTick] = useState(0);
   const [winH, setWinH] = useState(() => window.innerHeight);
   useEffect(() => {
@@ -416,6 +424,22 @@ export default function ProChart({
   const toggle = (id: IndicatorId) => setActive((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const fit = () => { for (const c of Object.values(charts.current)) c?.timeScale().fitContent(); };
 
+  const indicatorControls = (
+    <div className={phone ? "flex flex-wrap items-center gap-2" : "ml-auto flex flex-wrap items-center gap-1"}>
+      {[...OVERLAYS, ...PANES].map((id) => (
+        <button key={id} onClick={() => toggle(id)} title={INDICATOR_LABELS[id]}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
+          {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
+        </button>
+      ))}
+      <button onClick={() => { strat.setOpen(!strat.open); setToolsOpen(false); }} title="Strategies on this chart: draw their trades, deploy them"
+              className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
+        <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
+      </button>
+      <button onClick={() => { fit(); setToolsOpen(false); }} title="Fit all candles" aria-label="Fit all candles" className="rounded p-1 text-fg-muted hover:text-fg"><Scan size={12} /></button>
+    </div>
+  );
+
   return (
     <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-surface p-4" : "w-full"}>
       {/* Header: symbol, last price, change, live badge, timeframe pills, indicator toggles */}
@@ -443,21 +467,13 @@ export default function ProChart({
             ))}
           </div>
         )}
-        {!compact && (
-          <div className="ml-auto flex flex-wrap items-center gap-1">
-            {[...OVERLAYS, ...PANES].map((id) => (
-              <button key={id} onClick={() => toggle(id)} title={INDICATOR_LABELS[id]}
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${active.has(id) ? "bg-surface-3 text-fg ring-1 ring-brand/40" : "text-fg-muted hover:text-fg"}`}>
-                {INDICATOR_LABELS[id]}{id === "ema_fast" ? ` ${settings.emaFast}` : id === "ema_slow" ? ` ${settings.emaSlow}` : id === "sma" ? ` ${settings.smaPeriod}` : id === "rsi" ? ` ${settings.rsiPeriod}` : id === "adx" ? ` ${settings.adxPeriod}` : id === "supertrend" ? ` ${settings.stPeriod}/${settings.stMult}` : ""}
-              </button>
-            ))}
-            <button onClick={() => strat.setOpen(!strat.open)} title="Strategies on this chart: draw their trades, deploy them"
-                    className={`ml-1 flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${strat.open || strat.onCount ? "border-brand/40 bg-brand/15 text-brand" : "border-border text-fg hover:bg-surface-2"}`}>
-              <Layers size={11} /> Strategies{strat.onCount ? ` (${strat.onCount})` : ""}
-            </button>
-            <button onClick={fit} title="Fit all candles" className="rounded p-1 text-fg-muted hover:text-fg"><Scan size={12} /></button>
-          </div>
+        {!compact && phone && (
+          <button onClick={() => setToolsOpen(true)} title="Indicators, strategies and drawing tools"
+                  className="ml-auto flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] font-semibold text-fg hover:bg-surface-2">
+            <SlidersHorizontal size={12} /> Tools{active.size || strat.onCount ? ` (${active.size + strat.onCount})` : ""}
+          </button>
         )}
+        {!compact && !phone && indicatorControls}
         <div className={`${compact ? "ml-auto" : ""} flex items-center gap-1`}>
           {openUrl && (
             <a href={openUrl} target="_blank" rel="noopener" title="Open this chart in a new browser tab"
@@ -476,7 +492,18 @@ export default function ProChart({
 
       {strat.panel}
 
-      {tools.view && tools.controller && <DrawingToolbar view={tools.view} controller={tools.controller} />}
+      {tools.view && tools.controller && !phone && <DrawingToolbar view={tools.view} controller={tools.controller} />}
+      {phone && tools.view?.tool && <div className="mb-1 text-[11px] text-fg-muted">Tap the chart to place it · Tools → the same tool to cancel</div>}
+      {phone && !compact && (
+        <Sheet side="bottom" open={toolsOpen} onOpenChange={setToolsOpen} title="Chart tools">
+          <div className="space-y-4 pb-[env(safe-area-inset-bottom)]">
+            <section aria-label="Indicators">{indicatorControls}</section>
+            {tools.view && tools.controller && (
+              <section aria-label="Drawing"><DrawingToolbar view={tools.view} controller={tools.controller} onPick={() => setToolsOpen(false)} /></section>
+            )}
+          </div>
+        </Sheet>
+      )}
 
       {/* Legend */}
       {bar && !compact && (

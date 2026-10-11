@@ -74,7 +74,7 @@ export function ThemeToggle() {
   const next = resolved === "dark" ? "light" : "dark";
   return (
     <button onClick={() => save({ ...a, theme: next })} title={`Switch to the ${next} theme`} aria-label={`Switch to the ${next} theme`}
-      className="rounded-md p-2 text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg">
+      className="flex h-11 w-11 items-center justify-center rounded-md text-fg-muted md:h-9 md:w-9 transition-colors hover:bg-surface-2 hover:text-fg">
       {resolved === "dark" ? <Sun size={18} /> : <Moon size={18} />}
     </button>
   );

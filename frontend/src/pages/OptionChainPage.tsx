@@ -5,6 +5,11 @@ import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { OptionChainAnalysis } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
 import { PageHeader } from "../components/primitives";
+import OiBanner from "../components/OiBanner";
+import OiHistoryTable from "../components/OiHistoryTable";
+import OiSettingsCard from "../components/OiSettingsCard";
+import StrikeOiChart from "../components/StrikeOiChart";
+import { getToken } from "../api/client";
 
 const BIAS_COLOR: Record<string, string> = {
   BULLISH: "text-up",
@@ -22,8 +27,11 @@ export default function OptionChainPage() {
   const [analysis, setAnalysis] = useState<OptionChainAnalysis | null>(null);
   const source = useCandleSource();            // Phase AD: live chain through the broker session
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
+  // OI Banner (O3): the collector's view of the underlying last analysed (stored 5-minute snapshots, not this fetch).
+  const [oiUnderlying, setOiUnderlying] = useState(underlying.trim().toUpperCase());
 
   async function analyze() {
+    setOiUnderlying(underlying.trim().toUpperCase());
     setLoading(true);
     setError(null);
     try {
@@ -89,6 +97,17 @@ export default function OptionChainPage() {
       </Card>
 
       {error && <div className="text-sm text-down">{error}</div>}
+
+      {getToken() && oiUnderlying && (
+        <>
+          <OiBanner underlying={oiUnderlying} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title={`${oiUnderlying} OI history`}><OiHistoryTable underlying={oiUnderlying} /></Card>
+            <Card title={`${oiUnderlying} OI by strike`}><StrikeOiChart underlying={oiUnderlying} /></Card>
+          </div>
+          <Card title="OI banner settings"><OiSettingsCard underlying={oiUnderlying} /></Card>
+        </>
+      )}
 
       {analysis && (
         <>

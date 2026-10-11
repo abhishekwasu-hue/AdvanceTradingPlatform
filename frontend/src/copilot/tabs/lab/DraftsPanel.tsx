@@ -69,11 +69,16 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
     setMessage(null);
     const tf = d.config?.timeframe ?? "1min";
     const r = await task.run([t("lab.drafts.step.candles"), t("lab.drafts.step.backtest")], async (signal, advance) => {
+      // H-C1 a: in broker mode the server fetches the candles itself - only that evidence can approve the draft.
+      if (source.mode === "broker") {
+        advance(1);
+        return api.aiBacktestDraft(d.id, symbol, tf, [], `broker:${source.broker}`, signal);
+      }
       const data = await source.fetch([symbol], tf, { count: 600, startPriceFor: () => 100, seedFor: () => 11 });
       const candles = data.candles[symbol.trim().toUpperCase()];
       if (!candles?.length) throw new Error(t("lab.drafts.noCandles", { symbol }));
       advance(1);
-      return api.aiBacktestDraft(d.id, symbol, tf, candles, source.mode === "broker" ? `broker:${source.broker}` : "sample", signal);
+      return api.aiBacktestDraft(d.id, symbol, tf, candles, "sample", signal);
     });
     if (!r) return;
     setSelected(r.draft); refresh();

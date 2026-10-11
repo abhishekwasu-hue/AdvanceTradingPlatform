@@ -193,6 +193,18 @@ async def tenant_checklist(session: AsyncSession, user: User, tenant: Tenant, ta
     items.append(Item("algo_id", "SEBI algo id set for order tagging", "ok" if tenant.algo_id else ("todo" if live else "info"),
                       tenant.algo_id or "not set", "" if tenant.algo_id else "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.", "team", scope="LIVE"))
 
+    # Part D4: the server's egress IP registered with each LIVE broker (SEBI retail-algo framework).
+    from app.compliance import static_ip
+    from app.core import config as app_config
+    live_brokers = sorted({d.broker_name for d in deployments if d.mode == "LIVE" and d.broker_name}) if deployments else []
+    if live_brokers or live:
+        problems = [p for b in live_brokers if (p := await _static_ip_gap(session, tenant.id, b, app_config.SERVER_EGRESS_IP))]
+        items.append(Item("static_ip", "Server IP registered with each LIVE broker",
+                          "ok" if live_brokers and not problems and app_config.SERVER_EGRESS_IP else ("todo" if live else "info"),
+                          "; ".join(problems)[:200] if problems else (f"{app_config.SERVER_EGRESS_IP} registered" if app_config.SERVER_EGRESS_IP else "SERVER_EGRESS_IP not configured"),
+                          "Register this server's public IP with the broker (its API console), then record it under Settings > Static IP. "
+                          f"Rule {static_ip.RULE}.", "settings", scope="LIVE"))
+
     # 10. Optional --------------------------------------------------------------------------------
     ai = await session.scalar(select(AiProviderConfigRecord).where(AiProviderConfigRecord.tenant_id == tenant.id))
     items.append(Item("ai_provider", "AI provider key (optional)", "ok" if ai and ai.encrypted_api_key else "info",
@@ -258,3 +270,13 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
     items.append(Item("streaming", "Streaming quotes (optional)", "ok" if live_streams else "info", "enabled" if live_streams else "REST polling",
                       "" if live_streams else "Set STREAMING_QUOTES_ENABLED=true after the first live confirmation of the tick decoders.", "STREAMING_QUOTES_ENABLED"))
     return Checklist(target="PLATFORM", items=items)
+
+
+async def _static_ip_gap(session, tenant_id: int, broker_name: str, server_ip):
+    from app.compliance import static_ip
+    ips = {r.ip for r in await static_ip.registered(session, tenant_id) if r.broker_name == broker_name.lower()}
+    if not ips:
+        return f"{broker_name}: no IP registered"
+    if server_ip and server_ip not in ips:
+        return f"{broker_name}: {server_ip} not registered ({', '.join(sorted(ips))})"
+    return None

@@ -25,9 +25,9 @@ def test_rate_limiter_counts_in_redis_when_backed_and_falls_back_locally(monkeyp
         """Just the INCR+EXPIRE script the limiter sends (atomic in Redis, see rate_limit._HIT_LUA)."""
         def __init__(self):
             self.counts, self.ttl = {}, {}
-        async def eval(self, script, numkeys, key, ttl):
+        async def eval(self, script, numkeys, key, ttl, units=1):        # H-C1 b: INCRBY units
             assert "incr" in script and "expire" in script and numkeys == 1
-            self.counts[key] = self.counts.get(key, 0) + 1
+            self.counts[key] = self.counts.get(key, 0) + units
             if self.counts[key] == 1:
                 self.ttl[key] = ttl
             return self.counts[key]

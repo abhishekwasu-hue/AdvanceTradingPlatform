@@ -38,6 +38,8 @@ class NotificationType(str, Enum):
     MARKETPLACE = "MARKETPLACE"
     # Phase AX: the worker's end-of-day summary of the session (signals, trades, exits, errors).
     EOD_SUMMARY = "EOD_SUMMARY"
+    # S3a (ADR-0022): a screen or instrument alert rule fired (grouped per rule and bar, or a digest).
+    SCREEN_ALERT = "SCREEN_ALERT"
     # Phase BB: a high-severity item from the live news feed (unverified feed data).
     NEWS_ALERT = "NEWS_ALERT"
     # Phase BD-2: the weekly market-thesis scoreboard (shadow overlay evaluation, read-only).

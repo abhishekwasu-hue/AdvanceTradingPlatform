@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.compliance_terms import ai_acknowledged
+from app.ai.rate_limit import ai_rate_limit
 from app.auth.dependencies import require_trader
 from app.db.models import Tenant, User
 from app.db.session import get_session
@@ -23,7 +24,7 @@ from app.platform.controls import require_flag
 from app.scanner import ai as scanner_ai
 from app.scanner.models import ScannerRequest, ScannerResult
 
-router = APIRouter(prefix="/api/scanner/ai", tags=["scanner"])
+router = APIRouter(prefix="/api/scanner/ai", tags=["scanner"], dependencies=[Depends(ai_rate_limit)])      # H-C1 b
 
 
 class PlanBody(BaseModel):

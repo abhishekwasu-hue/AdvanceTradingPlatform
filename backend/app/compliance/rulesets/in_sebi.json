@@ -1,0 +1,218 @@
+{
+  "id": "IN-SEBI",
+  "jurisdiction": "IN",
+  "version": "1",
+  "effective_from": "2025-08-01",
+  "source_note": "SEBI circular on safer participation of retail investors in algorithmic trading (Feb 2025, in force Aug 2025) and the NSE implementation standards; broker policies where the exchange leaves a choice. Parameters are config: change them here, never in code.",
+  "rules": [
+    {
+      "id": "IN-SEBI.algo_id.tag",
+      "title": "Every algo order carries the exchange-issued algo id",
+      "source": "SEBI retail-algo circular; NSE implementation standards",
+      "status": "enforced",
+      "params": {
+        "max_tag_length_default": 20
+      },
+      "code": [
+        "app/execution/tagging.py",
+        "app/execution/router.py",
+        "app/execution/multileg.py"
+      ],
+      "tests": [
+        "tests/test_algo_tagging.py::test_live_router_tags_entry_and_stop_with_algo_id",
+        "tests/test_algo_tagging.py::test_exit_order_carries_algo_id",
+        "tests/test_algo_tagging.py::test_router_respects_broker_tag_limit"
+      ],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.algo_id.required_for_live",
+      "title": "No LIVE order without an algo id",
+      "source": "SEBI retail-algo circular",
+      "status": "enforced",
+      "params": {},
+      "code": [
+        "app/execution/router.py"
+      ],
+      "tests": [
+        "tests/test_algo_tagging.py::test_live_refused_without_algo_id_when_required"
+      ],
+      "flag": "ALGO_ID_REQUIRED_FOR_LIVE"
+    },
+    {
+      "id": "IN-SEBI.algo_id.registered_above_ops",
+      "title": "Above the OPS threshold the registered algo id is required (below it the broker's generic id)",
+      "source": "SEBI retail-algo circular (OPS threshold set by the exchange)",
+      "status": "planned",
+      "params": {
+        "ops_threshold": 10,
+        "generic_id_source": "broker"
+      },
+      "code": [],
+      "tests": [],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.ops.throttle",
+      "title": "Orders per second per client, exchange and segment - modify, cancel and stop included; exits served first",
+      "source": "SEBI retail-algo circular; ADR-0004 (exits never blocked)",
+      "status": "enforced",
+      "params": {
+        "ops_per_second": 10,
+        "counts": [
+          "place",
+          "modify",
+          "cancel",
+          "stop"
+        ],
+        "exit_lane_first": true,
+        "backoff_seconds": [
+          0.5,
+          1,
+          2,
+          4
+        ],
+        "critical_after_429s": 3
+      },
+      "code": [
+        "app/execution/ops_throttle.py",
+        "app/brokers/rate_budget.py",
+        "app/workers/trading_worker.py"
+      ],
+      "tests": [
+        "tests/test_d2_ops_throttle.py::test_entries_beyond_the_rate_are_refused_before_the_broker_and_exits_are_never_refused",
+        "tests/test_d2_ops_throttle.py::test_while_an_exit_waits_no_entry_takes_a_token",
+        "tests/test_d2_ops_throttle.py::test_each_exchange_has_its_own_bucket",
+        "tests/test_d2_ops_throttle.py::test_a_broker_429_pauses_that_exchange_and_a_success_resets_the_back_off"
+      ],
+      "flag": "OPS_THROTTLE_ENABLED"
+    },
+    {
+      "id": "IN-SEBI.api.rate_budget",
+      "title": "Per-tenant broker API budget (requests per second and minute) on every call",
+      "source": "broker API limits",
+      "status": "enforced",
+      "params": {},
+      "code": [
+        "app/brokers/rate_budget.py"
+      ],
+      "tests": [
+        "tests/test_rate_budget.py::test_rate_limited_broker_delegates_every_call_through_the_budget",
+        "tests/test_rate_budget.py::test_worker_wraps_each_tenant_adapter_in_its_own_budget"
+      ],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.order_type.market_protection",
+      "title": "Market and SL-M orders carry market protection where the broker requires it",
+      "source": "exchange rule for algo orders; Kite / Upstox APIs",
+      "status": "enforced",
+      "params": {},
+      "code": [
+        "app/execution/order_safety.py",
+        "app/brokers/zerodha.py",
+        "app/brokers/upstox.py"
+      ],
+      "tests": [
+        "tests/test_trade_port_order_safety.py::test_upstox_sends_market_protection_only_when_the_operator_sets_it"
+      ],
+      "flag": "LIVE_MARKET_PROTECTION"
+    },
+    {
+      "id": "IN-SEBI.order_type.policy",
+      "title": "Per-broker order-type policy for algo entries: MARKET allowed, mapped to a marketable LIMIT, or refused; validities allowed",
+      "source": "SEBI retail-algo circular; broker policies",
+      "status": "enforced",
+      "params": {
+        "default": {
+          "market_for_algo": "allow",
+          "allowed_validity": [
+            "DAY",
+            "IOC"
+          ]
+        },
+        "brokers": {}
+      },
+      "code": [
+        "app/compliance/order_policy.py",
+        "app/execution/router.py"
+      ],
+      "tests": [
+        "tests/test_d3_order_policy.py::test_default_policy_changes_nothing",
+        "tests/test_d3_order_policy.py::test_market_entry_mapped_to_a_marketable_limit_for_one_broker",
+        "tests/test_d3_order_policy.py::test_refused_market_or_validity_never_reaches_the_broker",
+        "tests/test_d3_order_policy.py::test_exits_and_stops_are_not_touched_by_the_policy"
+      ],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.static_ip.registered",
+      "title": "API orders only from a static IP registered with the broker; primary + backup; limited changes",
+      "source": "SEBI retail-algo circular; broker policies",
+      "status": "enforced",
+      "params": {
+        "max_changes_per_week": 1,
+        "backup_ip_allowed": true
+      },
+      "code": [
+        "app/compliance/static_ip.py",
+        "app/compliance/routes.py",
+        "app/workers/trading_worker.py",
+        "app/platform/readiness.py"
+      ],
+      "tests": [
+        "tests/test_d4_static_ip.py::test_owner_registers_primary_and_backup_and_the_weekly_change_limit_holds",
+        "tests/test_d4_static_ip.py::test_shared_ip_and_unregistered_server_ip_are_warned",
+        "tests/test_d4_static_ip.py::test_live_entry_gate_is_off_by_default_and_names_the_gap_when_on",
+        "tests/test_d4_static_ip.py::test_worker_refuses_live_entries_without_a_registered_ip_but_paper_trades",
+        "tests/test_d4_static_ip.py::test_readiness_lists_the_static_ip_item_for_live"
+      ],
+      "flag": "STATIC_IP_REQUIRED_FOR_LIVE"
+    },
+    {
+      "id": "IN-SEBI.login.daily",
+      "title": "Daily 2FA / OAuth login per broker session; no reliance on refresh tokens; pre-open reminder",
+      "source": "SEBI retail-algo circular; broker session rules",
+      "status": "partial",
+      "params": {
+        "reminder_minutes_before_open": 30
+      },
+      "code": [
+        "app/brokers/token_lifecycle.py",
+        "app/brokers/routes.py"
+      ],
+      "tests": [
+        "tests/test_token_lifecycle.py::test_upstox_token_expires_at_next_0330_ist",
+        "tests/test_trading_worker.py::test_live_deployment_never_fires_on_expired_token_but_paper_sibling_still_runs"
+      ],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.golive.checklist",
+      "title": "Go-live checklist: vendor empanelment, strategy white-box/black-box class, AI disclosure / RA flag, DPDP",
+      "source": "SEBI retail-algo circular; SEBI RA regulations; DPDP Act 2023",
+      "status": "partial",
+      "params": {
+        "dpdp_breach_notify_hours": 72,
+        "log_retention_days": 365
+      },
+      "code": [
+        "app/platform/readiness.py"
+      ],
+      "tests": [],
+      "flag": null
+    },
+    {
+      "id": "IN-SEBI.risk.futeq_mwpl",
+      "title": "FutEq / OI (MWPL) limits, expiry-day margin, lot sizes as of the trade date",
+      "source": "NSE F&O position limits; SEBI margin framework",
+      "status": "planned",
+      "params": {
+        "expiry_day_margin_multiplier": 1.0
+      },
+      "code": [],
+      "tests": [],
+      "flag": null
+    }
+  ]
+}

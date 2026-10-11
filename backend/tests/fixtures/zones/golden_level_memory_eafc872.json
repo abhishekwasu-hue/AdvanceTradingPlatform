@@ -1,0 +1,8271 @@
+{
+ "apply_memory": {
+  "12": [
+   [
+    "BULLISH_OB",
+    "1h",
+    100.0,
+    110.0,
+    null,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    47102.43,
+    47102.43,
+    3.0,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    47336.58,
+    47336.58,
+    4.0,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    48099.64,
+    48099.64,
+    2.0,
+    "2026-03-13T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    47351.4,
+    47351.4,
+    2.0,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47102.43,
+    47102.43,
+    2.0,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47351.4,
+    47351.4,
+    2.0,
+    "2026-03-18T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "15m",
+    46586.51,
+    46586.51,
+    4.0,
+    "2026-03-13T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "15m",
+    47010.06,
+    47010.06,
+    2.0,
+    "2026-03-13T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "1h",
+    46575.14,
+    46575.14,
+    3.0,
+    "2026-03-13T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "30m",
+    46575.14,
+    46575.14,
+    3.0,
+    "2026-03-13T15:15:00"
+   ]
+  ],
+  "20": [
+   [
+    "BULLISH_OB",
+    "1h",
+    100.0,
+    110.0,
+    null,
+    "2026-03-30T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46360.2,
+    46360.2,
+    3.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46443.34,
+    46443.34,
+    2.0,
+    "2026-03-30T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46649.68,
+    46649.68,
+    6.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46690.82,
+    46690.82,
+    4.0,
+    "2026-03-30T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46909.5,
+    46909.5,
+    2.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    47102.43,
+    47102.43,
+    3.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    47329.76,
+    47329.76,
+    4.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    46610.04,
+    46610.04,
+    4.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    47342.25,
+    47342.25,
+    3.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    46616.87,
+    46616.87,
+    5.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47338.59,
+    47338.59,
+    4.0,
+    "2026-03-25T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "15m",
+    46109.09,
+    46109.09,
+    3.0,
+    "2026-03-30T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "15m",
+    46310.48,
+    46310.48,
+    2.0,
+    "2026-03-30T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "30m",
+    46347.54,
+    46347.54,
+    2.0,
+    "2026-03-25T15:15:00"
+   ]
+  ],
+  "29": [
+   [
+    "BULLISH_OB",
+    "1h",
+    100.0,
+    110.0,
+    null,
+    "2026-04-10T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    45818.88,
+    45818.88,
+    2.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46089.56,
+    46089.56,
+    7.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46437.9,
+    46437.9,
+    5.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46619.28,
+    46619.28,
+    4.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "15m",
+    46656.3,
+    46656.3,
+    2.0,
+    "2026-04-10T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    46208.48,
+    46208.48,
+    3.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    46542.2,
+    46542.2,
+    5.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "1h",
+    47342.25,
+    47342.25,
+    3.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    46058.92,
+    46058.92,
+    4.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    46377.59,
+    46377.59,
+    5.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    46635.7,
+    46635.7,
+    6.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47102.43,
+    47102.43,
+    2.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47237.08,
+    47237.08,
+    3.0,
+    "2026-04-10T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_RESISTANCE",
+    "30m",
+    47338.59,
+    47338.59,
+    4.0,
+    "2026-04-07T15:15:00"
+   ],
+   [
+    "DYNAMIC_SR_SUPPORT",
+    "1h",
+    45501.16,
+    45501.16,
+    2.0,
+    "2026-04-10T15:15:00"
+   ]
+  ]
+ },
+ "last_touch_time": {
+  "bn/0.05/0.0": "2022-02-21T00:00:00",
+  "bn/0.05/5.0": "2022-02-21T00:00:00",
+  "bn/0.05/50.0": "2022-02-21T00:00:00",
+  "bn/0.3/0.0": "2022-08-12T00:00:00",
+  "bn/0.3/5.0": "2022-08-12T00:00:00",
+  "bn/0.3/50.0": "2022-08-12T00:00:00",
+  "bn/0.5/0.0": "2022-08-23T00:00:00",
+  "bn/0.5/5.0": "2022-08-23T00:00:00",
+  "bn/0.5/50.0": "2022-08-26T00:00:00",
+  "bn/0.9/0.0": "2023-03-10T00:00:00",
+  "bn/0.9/5.0": "2023-03-10T00:00:00",
+  "bn/0.9/50.0": "2023-03-10T00:00:00",
+  "bn/0.99/0.0": "2022-10-24T00:00:00",
+  "bn/0.99/5.0": "2022-10-24T00:00:00",
+  "bn/0.99/50.0": "2022-10-24T00:00:00",
+  "empty": null,
+  "s15/0.05/0.0": "2026-04-10T15:00:00",
+  "s15/0.05/5.0": "2026-04-10T15:00:00",
+  "s15/0.05/50.0": "2026-04-10T15:00:00",
+  "s15/0.3/0.0": "2026-04-06T12:30:00",
+  "s15/0.3/5.0": "2026-04-06T12:30:00",
+  "s15/0.3/50.0": "2026-04-06T12:30:00",
+  "s15/0.5/0.0": "2026-03-30T13:30:00",
+  "s15/0.5/5.0": "2026-03-30T13:30:00",
+  "s15/0.5/50.0": "2026-03-30T14:30:00",
+  "s15/0.9/0.0": "2026-03-19T14:45:00",
+  "s15/0.9/5.0": "2026-03-19T15:00:00",
+  "s15/0.9/50.0": "2026-03-19T15:00:00",
+  "s15/0.99/0.0": "2026-03-02T15:00:00",
+  "s15/0.99/5.0": "2026-03-02T15:15:00",
+  "s15/0.99/50.0": "2026-03-02T15:15:00"
+ },
+ "merge_walks": {
+  "bn/near_cap3": [
+   {
+    "end": 39,
+    "levels": [
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 28236.09,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 29825.77,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 49,
+    "levels": [
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 29825.77,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-09T00:00:00",
+      "fresh": true,
+      "level": 31176.74,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 59,
+    "levels": [
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-10-26T00:00:00",
+      "fresh": true,
+      "level": 29825.77,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 30628.02,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 69,
+    "levels": [
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28236.09,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 79,
+    "levels": [
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28236.09,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 89,
+    "levels": [
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28236.09,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 99,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 27183.82,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-12-07T00:00:00",
+      "fresh": true,
+      "level": 28236.09,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 109,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 27183.82,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 119,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 27183.82,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 28571.16,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 129,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 27183.82,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-01T00:00:00",
+      "fresh": true,
+      "level": 30144.2,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 139,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 27183.82,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-01T00:00:00",
+      "fresh": true,
+      "level": 30144.2,
+      "role": "SUPPORT",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2021-11-23T00:00:00",
+      "fresh": true,
+      "level": 28986.7,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 159,
+    "levels": [
+     {
+      "formed": "2022-04-12T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 169,
+    "levels": [
+     {
+      "formed": "2022-04-12T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 179,
+    "levels": [
+     {
+      "formed": "2022-04-12T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 189,
+    "levels": [
+     {
+      "formed": "2022-04-12T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 199,
+    "levels": [
+     {
+      "formed": "2022-06-07T00:00:00",
+      "fresh": true,
+      "level": 30258.24,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-07T00:00:00",
+      "fresh": true,
+      "level": 31005.18,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 209,
+    "levels": [
+     {
+      "formed": "2022-03-29T00:00:00",
+      "fresh": true,
+      "level": 30731.52,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-07T00:00:00",
+      "fresh": true,
+      "level": 31005.18,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 34674.56,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 219,
+    "levels": [
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 30525.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 33206.81,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 229,
+    "levels": [
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 30525.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-19T00:00:00",
+      "fresh": true,
+      "level": 31175.32,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 239,
+    "levels": [
+     {
+      "formed": "2022-08-02T00:00:00",
+      "fresh": true,
+      "level": 29663.83,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 30525.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 249,
+    "levels": [
+     {
+      "formed": "2022-08-02T00:00:00",
+      "fresh": true,
+      "level": 29663.83,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-08-16T00:00:00",
+      "fresh": true,
+      "level": 30820.94,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 259,
+    "levels": [
+     {
+      "formed": "2022-08-16T00:00:00",
+      "fresh": true,
+      "level": 30820.94,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-30T00:00:00",
+      "fresh": true,
+      "level": 32738.5,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 269,
+    "levels": [
+     {
+      "formed": "2022-08-30T00:00:00",
+      "fresh": true,
+      "level": 32738.5,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-09-13T00:00:00",
+      "fresh": true,
+      "level": 33206.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 279,
+    "levels": [
+     {
+      "formed": "2022-08-30T00:00:00",
+      "fresh": true,
+      "level": 32738.5,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-09-13T00:00:00",
+      "fresh": true,
+      "level": 33206.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 289,
+    "levels": [
+     {
+      "formed": "2022-08-30T00:00:00",
+      "fresh": true,
+      "level": 32738.5,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-10-11T00:00:00",
+      "fresh": true,
+      "level": 34973.58,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2022-08-30T00:00:00",
+      "fresh": true,
+      "level": 32738.5,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-10-11T00:00:00",
+      "fresh": true,
+      "level": 34973.58,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 309,
+    "levels": [
+     {
+      "formed": "2022-11-08T00:00:00",
+      "fresh": true,
+      "level": 33206.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-10-11T00:00:00",
+      "fresh": true,
+      "level": 34973.58,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 319,
+    "levels": [
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-07-05T00:00:00",
+      "fresh": true,
+      "level": 34416.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 329,
+    "levels": [
+     {
+      "formed": "2022-12-06T00:00:00",
+      "fresh": true,
+      "level": 32588.92,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 339,
+    "levels": [
+     {
+      "formed": "2022-12-06T00:00:00",
+      "fresh": true,
+      "level": 32588.92,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 349,
+    "levels": [
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34397.93,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 359,
+    "levels": [
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34397.93,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 369,
+    "levels": [
+     {
+      "formed": "2023-01-31T00:00:00",
+      "fresh": true,
+      "level": 32458.86,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     }
+    ]
+   },
+   {
+    "end": 379,
+    "levels": [
+     {
+      "formed": "2023-01-31T00:00:00",
+      "fresh": true,
+      "level": 32458.86,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     }
+    ]
+   },
+   {
+    "end": 389,
+    "levels": [
+     {
+      "formed": "2023-01-31T00:00:00",
+      "fresh": true,
+      "level": 32458.86,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     }
+    ]
+   },
+   {
+    "end": 399,
+    "levels": [
+     {
+      "formed": "2023-01-31T00:00:00",
+      "fresh": true,
+      "level": 32458.86,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33612.41,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 35181.95,
+      "role": "SUPPORT",
+      "strength": 4.0
+     }
+    ]
+   }
+  ],
+  "bn/weekly": [
+   {
+    "end": 39,
+    "levels": []
+   },
+   {
+    "end": 44,
+    "levels": []
+   },
+   {
+    "end": 49,
+    "levels": []
+   },
+   {
+    "end": 54,
+    "levels": []
+   },
+   {
+    "end": 59,
+    "levels": []
+   },
+   {
+    "end": 64,
+    "levels": []
+   },
+   {
+    "end": 69,
+    "levels": []
+   },
+   {
+    "end": 74,
+    "levels": []
+   },
+   {
+    "end": 79,
+    "levels": []
+   },
+   {
+    "end": 84,
+    "levels": []
+   },
+   {
+    "end": 89,
+    "levels": []
+   },
+   {
+    "end": 94,
+    "levels": []
+   },
+   {
+    "end": 99,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 104,
+    "levels": [
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 109,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 114,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 119,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 124,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 129,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 134,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 139,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 144,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 154,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 159,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 164,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 169,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 174,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 179,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 184,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 189,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 194,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 199,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 204,
+    "levels": [
+     {
+      "formed": "2022-02-01T00:00:00",
+      "fresh": true,
+      "level": 27091.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-04-05T00:00:00",
+      "fresh": true,
+      "level": 31176.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 209,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 214,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 219,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 224,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 229,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 234,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 239,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 244,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 249,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-01-18T00:00:00",
+      "fresh": true,
+      "level": 29063.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 254,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 259,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 264,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 269,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 274,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 279,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 284,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 289,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 294,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 304,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29930.22,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 309,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 314,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 319,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33175.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 324,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33175.46,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 329,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33175.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 334,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 30902.38,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": true,
+      "level": 33175.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 339,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": false,
+      "level": 33175.46,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 344,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": false,
+      "level": 33175.46,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 349,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-11-22T00:00:00",
+      "fresh": false,
+      "level": 33175.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 354,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34610.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 359,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34610.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 364,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 369,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": true,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 374,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 379,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2022-12-20T00:00:00",
+      "fresh": true,
+      "level": 31540.67,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 384,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-21T00:00:00",
+      "fresh": true,
+      "level": 32322.26,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 389,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-21T00:00:00",
+      "fresh": true,
+      "level": 32322.26,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 394,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-21T00:00:00",
+      "fresh": true,
+      "level": 32322.26,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 399,
+    "levels": [
+     {
+      "formed": "2022-06-21T00:00:00",
+      "fresh": true,
+      "level": 27520.77,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2022-08-23T00:00:00",
+      "fresh": true,
+      "level": 29351.47,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-21T00:00:00",
+      "fresh": true,
+      "level": 32322.26,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 34005.17,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-01-03T00:00:00",
+      "fresh": false,
+      "level": 34610.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2023-02-07T00:00:00",
+      "fresh": true,
+      "level": 35132.01,
+      "role": "SUPPORT",
+      "strength": 2.0
+     }
+    ]
+   }
+  ],
+  "m5/alt": [
+   {
+    "end": 74,
+    "levels": [
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 224,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 374,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 449,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 524,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 599,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 674,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 749,
+    "levels": [
+     {
+      "formed": "2026-09-02T15:25:00",
+      "fresh": true,
+      "level": 23991.9,
+      "role": "SUPPORT",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-09-01T15:25:00",
+      "fresh": true,
+      "level": 24205.04,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   }
+  ],
+  "s15/default": [
+   {
+    "end": 49,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 74,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 99,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 124,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 174,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 199,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 224,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 249,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 274,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 324,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 349,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 374,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 399,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 424,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 449,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 474,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "SUPPORT",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 499,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 524,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": false,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 549,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 574,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 599,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 624,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 649,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 674,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 699,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 724,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 749,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 7.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": false,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": false,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": false,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   }
+  ],
+  "s15/fixed_role": [
+   {
+    "end": 49,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 74,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 99,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 124,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 174,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 199,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 224,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 249,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 274,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 324,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 349,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 374,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 399,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": false,
+      "level": 47010.06,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 424,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 449,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-18T15:15:00",
+      "fresh": true,
+      "level": 47102.43,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 474,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 499,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46923.46,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 524,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": false,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 549,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": false,
+      "level": 46715.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46909.5,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 574,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46909.5,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47351.4,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     }
+    ]
+   },
+   {
+    "end": 599,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46909.5,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 624,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": true,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": false,
+      "level": 46575.14,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46909.5,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 649,
+    "levels": [
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 674,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 699,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 724,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   },
+   {
+    "end": 749,
+    "levels": [
+     {
+      "formed": "2026-04-07T15:15:00",
+      "fresh": true,
+      "level": 45818.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-26T15:15:00",
+      "fresh": true,
+      "level": 46109.09,
+      "role": "RESISTANCE",
+      "strength": 7.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46195.73,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-31T15:15:00",
+      "fresh": false,
+      "level": 46298.16,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": false,
+      "level": 46347.54,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46443.34,
+      "role": "RESISTANCE",
+      "strength": 5.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46633.32,
+      "role": "RESISTANCE",
+      "strength": 6.0
+     }
+    ]
+   }
+  ],
+  "s15/retire2_cap5": [
+   {
+    "end": 49,
+    "levels": [
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 47877.63,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 47960.2,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 74,
+    "levels": [
+     {
+      "formed": "2026-03-04T15:15:00",
+      "fresh": true,
+      "level": 46985.52,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-04T15:15:00",
+      "fresh": true,
+      "level": 47061.14,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 47877.63,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 47960.2,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 99,
+    "levels": [
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46558.68,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46676.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-04T15:15:00",
+      "fresh": true,
+      "level": 47061.14,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 124,
+    "levels": [
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-04T15:15:00",
+      "fresh": true,
+      "level": 47061.14,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-06T15:15:00",
+      "fresh": true,
+      "level": 47273.31,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-06T15:15:00",
+      "fresh": true,
+      "level": 47358.21,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 149,
+    "levels": [
+     {
+      "formed": "2026-03-09T15:15:00",
+      "fresh": true,
+      "level": 46676.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-04T15:15:00",
+      "fresh": true,
+      "level": 47061.14,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-06T15:15:00",
+      "fresh": true,
+      "level": 47273.31,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-03T15:15:00",
+      "fresh": true,
+      "level": 48099.64,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 174,
+    "levels": [
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 46575.14,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-09T15:15:00",
+      "fresh": true,
+      "level": 46676.81,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 47015.02,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-06T15:15:00",
+      "fresh": true,
+      "level": 47273.31,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 199,
+    "levels": [
+     {
+      "formed": "2026-03-09T15:15:00",
+      "fresh": true,
+      "level": 46676.81,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 46941.87,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 47015.02,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-06T15:15:00",
+      "fresh": true,
+      "level": 47273.31,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 224,
+    "levels": [
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46431.79,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46602.97,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-05T15:15:00",
+      "fresh": true,
+      "level": 46799.67,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 46941.87,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-10T15:15:00",
+      "fresh": true,
+      "level": 47015.02,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 249,
+    "levels": [
+     {
+      "formed": "2026-03-13T15:15:00",
+      "fresh": true,
+      "level": 46332.18,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46431.79,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46602.97,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-11T15:15:00",
+      "fresh": true,
+      "level": 46941.87,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-13T15:15:00",
+      "fresh": true,
+      "level": 47088.02,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 274,
+    "levels": [
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46431.79,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-12T15:15:00",
+      "fresh": true,
+      "level": 46602.97,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 46804.14,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47133.44,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 46661.39,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 46804.14,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47133.44,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 324,
+    "levels": [
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 46661.39,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 46804.14,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47133.44,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 349,
+    "levels": [
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 46661.39,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46887.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47133.44,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 374,
+    "levels": [
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46887.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47133.44,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 399,
+    "levels": [
+     {
+      "formed": "2026-03-23T15:15:00",
+      "fresh": true,
+      "level": 46524.34,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46887.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 424,
+    "levels": [
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46362.91,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-19T15:15:00",
+      "fresh": true,
+      "level": 46887.26,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-16T15:15:00",
+      "fresh": true,
+      "level": 47025.63,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-17T15:15:00",
+      "fresh": true,
+      "level": 47344.59,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 449,
+    "levels": [
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46084.78,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46193.26,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46362.91,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46524.34,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 474,
+    "levels": [
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46084.78,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46193.26,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-24T15:15:00",
+      "fresh": true,
+      "level": 46362.91,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46524.34,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 499,
+    "levels": [
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46213.34,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46407.22,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-25T15:15:00",
+      "fresh": true,
+      "level": 46524.34,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46563.51,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 524,
+    "levels": [
+     {
+      "formed": "2026-03-30T15:15:00",
+      "fresh": true,
+      "level": 46123.62,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46213.34,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46407.22,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46563.51,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 549,
+    "levels": [
+     {
+      "formed": "2026-03-30T15:15:00",
+      "fresh": true,
+      "level": 46123.62,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46213.34,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46407.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46563.51,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 574,
+    "levels": [
+     {
+      "formed": "2026-03-30T15:15:00",
+      "fresh": true,
+      "level": 46123.62,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46213.34,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46407.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46563.51,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-03-20T15:15:00",
+      "fresh": true,
+      "level": 46707.75,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 599,
+    "levels": [
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 45602.17,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 46073.44,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46213.34,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46407.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": true,
+      "level": 46563.51,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 624,
+    "levels": [
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 45602.17,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 45832.32,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 46073.44,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-03-27T15:15:00",
+      "fresh": false,
+      "level": 46213.34,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 46259.65,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 649,
+    "levels": [
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 45602.17,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 45832.32,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46129.0,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 46259.65,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46400.17,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 674,
+    "levels": [
+     {
+      "formed": "2026-04-02T15:15:00",
+      "fresh": true,
+      "level": 45602.17,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 45832.32,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46129.0,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 46259.65,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46400.17,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 699,
+    "levels": [
+     {
+      "formed": "2026-04-08T15:15:00",
+      "fresh": true,
+      "level": 45400.16,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 45832.32,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46129.0,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 46259.65,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46400.17,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 724,
+    "levels": [
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 45832.32,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-09T15:15:00",
+      "fresh": true,
+      "level": 45924.97,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46129.0,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-03T15:15:00",
+      "fresh": true,
+      "level": 46259.65,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46400.17,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 749,
+    "levels": [
+     {
+      "formed": "2026-04-10T15:15:00",
+      "fresh": true,
+      "level": 45609.58,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-10T15:15:00",
+      "fresh": true,
+      "level": 45782.13,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-04-09T15:15:00",
+      "fresh": true,
+      "level": 45924.97,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-04-10T15:15:00",
+      "fresh": true,
+      "level": 46067.78,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-04-06T15:15:00",
+      "fresh": true,
+      "level": 46400.17,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   }
+  ],
+  "w1/hourly": [
+   {
+    "end": 59,
+    "levels": [
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": true,
+      "level": 21979.91,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": true,
+      "level": 22000.18,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": true,
+      "level": 22021.52,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 119,
+    "levels": [
+     {
+      "formed": "2026-01-05T11:14:00",
+      "fresh": true,
+      "level": 21952.29,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T11:14:00",
+      "fresh": true,
+      "level": 21974.81,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": true,
+      "level": 22000.18,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": true,
+      "level": 22021.52,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 179,
+    "levels": [
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21897.29,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21920.71,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21944.4,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T11:14:00",
+      "fresh": true,
+      "level": 21974.81,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": false,
+      "level": 22000.18,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T10:14:00",
+      "fresh": false,
+      "level": 22021.52,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 239,
+    "levels": [
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21897.29,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21920.71,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21944.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     }
+    ]
+   },
+   {
+    "end": 299,
+    "levels": [
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21793.86,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21858.88,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21897.29,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21920.71,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T12:14:00",
+      "fresh": true,
+      "level": 21944.4,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     }
+    ]
+   },
+   {
+    "end": 359,
+    "levels": [
+     {
+      "formed": "2026-01-05T15:14:00",
+      "fresh": true,
+      "level": 21767.03,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21793.86,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21858.88,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 419,
+    "levels": [
+     {
+      "formed": "2026-01-05T15:14:00",
+      "fresh": true,
+      "level": 21767.03,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21793.86,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21858.88,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 479,
+    "levels": [
+     {
+      "formed": "2026-01-05T15:14:00",
+      "fresh": true,
+      "level": 21767.03,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21793.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21858.88,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T17:14:00",
+      "fresh": true,
+      "level": 21877.74,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 539,
+    "levels": [
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21793.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21858.88,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T17:14:00",
+      "fresh": true,
+      "level": 21877.74,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T18:14:00",
+      "fresh": true,
+      "level": 21908.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 599,
+    "levels": [
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21793.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21824.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21858.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T17:14:00",
+      "fresh": true,
+      "level": 21877.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T18:14:00",
+      "fresh": true,
+      "level": 21908.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T19:14:00",
+      "fresh": true,
+      "level": 21943.06,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 659,
+    "levels": [
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": false,
+      "level": 21793.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21858.88,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T17:14:00",
+      "fresh": true,
+      "level": 21877.74,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T18:14:00",
+      "fresh": true,
+      "level": 21908.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T19:14:00",
+      "fresh": true,
+      "level": 21943.06,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     }
+    ]
+   },
+   {
+    "end": 719,
+    "levels": [
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21719.33,
+      "role": "SUPPORT",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21754.36,
+      "role": "RESISTANCE",
+      "strength": 1.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21793.86,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T14:14:00",
+      "fresh": true,
+      "level": 21824.86,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T18:14:00",
+      "fresh": true,
+      "level": 21908.22,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 779,
+    "levels": [
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21719.33,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21754.36,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     }
+    ]
+   },
+   {
+    "end": 839,
+    "levels": [
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21630.6,
+      "role": "SUPPORT",
+      "strength": 3.0
+     },
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21657.24,
+      "role": "RESISTANCE",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21701.45,
+      "role": "RESISTANCE",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21719.33,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   },
+   {
+    "end": 899,
+    "levels": [
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21630.6,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21657.24,
+      "role": "SUPPORT",
+      "strength": 4.0
+     },
+     {
+      "formed": "2026-01-05T23:14:00",
+      "fresh": true,
+      "level": 21701.45,
+      "role": "SUPPORT",
+      "strength": 2.0
+     },
+     {
+      "formed": "2026-01-05T21:14:00",
+      "fresh": true,
+      "level": 21719.33,
+      "role": "RESISTANCE",
+      "strength": 3.0
+     }
+    ]
+   }
+  ]
+ },
+ "remember_dyn_sr": {
+  "12/15m": {
+   "resistance": [
+    {
+     "level": 47102.43,
+     "touches": 3
+    },
+    {
+     "level": 47336.58,
+     "touches": 4
+    },
+    {
+     "level": 48099.64,
+     "touches": 2
+    }
+   ],
+   "support": [
+    {
+     "level": 46586.51,
+     "touches": 4
+    },
+    {
+     "level": 47010.06,
+     "touches": 2
+    }
+   ]
+  },
+  "12/1h": {
+   "resistance": [
+    {
+     "level": 47351.4,
+     "touches": 2
+    }
+   ],
+   "support": [
+    {
+     "level": 46575.14,
+     "touches": 3
+    }
+   ]
+  },
+  "12/30m": {
+   "resistance": [
+    {
+     "level": 47102.43,
+     "touches": 2
+    },
+    {
+     "level": 47351.4,
+     "touches": 2
+    }
+   ],
+   "support": [
+    {
+     "level": 46575.14,
+     "touches": 3
+    }
+   ]
+  },
+  "20/15m": {
+   "resistance": [
+    {
+     "level": 46360.2,
+     "touches": 3
+    },
+    {
+     "level": 46443.34,
+     "touches": 2
+    },
+    {
+     "level": 46649.68,
+     "touches": 6
+    },
+    {
+     "level": 46690.82,
+     "touches": 4
+    },
+    {
+     "level": 46909.5,
+     "touches": 2
+    },
+    {
+     "level": 47102.43,
+     "touches": 3
+    },
+    {
+     "level": 47329.76,
+     "touches": 4
+    }
+   ],
+   "support": [
+    {
+     "level": 46109.09,
+     "touches": 3
+    },
+    {
+     "level": 46310.48,
+     "touches": 2
+    }
+   ]
+  },
+  "20/1h": {
+   "resistance": [
+    {
+     "level": 46610.04,
+     "touches": 4
+    },
+    {
+     "level": 47342.25,
+     "touches": 3
+    }
+   ],
+   "support": []
+  },
+  "20/30m": {
+   "resistance": [
+    {
+     "level": 46616.87,
+     "touches": 5
+    },
+    {
+     "level": 47338.59,
+     "touches": 4
+    }
+   ],
+   "support": [
+    {
+     "level": 46347.54,
+     "touches": 2
+    }
+   ]
+  },
+  "29/15m": {
+   "resistance": [
+    {
+     "level": 45818.88,
+     "touches": 2
+    },
+    {
+     "level": 46089.56,
+     "touches": 7
+    },
+    {
+     "level": 46437.9,
+     "touches": 5
+    },
+    {
+     "level": 46619.28,
+     "touches": 4
+    },
+    {
+     "level": 46656.3,
+     "touches": 2
+    }
+   ],
+   "support": []
+  },
+  "29/1h": {
+   "resistance": [
+    {
+     "level": 46208.48,
+     "touches": 3
+    },
+    {
+     "level": 46542.2,
+     "touches": 5
+    },
+    {
+     "level": 47342.25,
+     "touches": 3
+    }
+   ],
+   "support": [
+    {
+     "level": 45501.16,
+     "touches": 2
+    }
+   ]
+  },
+  "29/30m": {
+   "resistance": [
+    {
+     "level": 46058.92,
+     "touches": 4
+    },
+    {
+     "level": 46377.59,
+     "touches": 5
+    },
+    {
+     "level": 46635.7,
+     "touches": 6
+    },
+    {
+     "level": 47102.43,
+     "touches": 2
+    },
+    {
+     "level": 47237.08,
+     "touches": 3
+    },
+    {
+     "level": 47338.59,
+     "touches": 4
+    }
+   ],
+   "support": []
+  }
+ },
+ "trade_commit": "eafc872",
+ "zone_tolerance": {
+  "bn@10/0/0.2": 4.7483808000000005,
+  "bn@10/0/1.0": 23.741903999999998,
+  "bn@10/0/1.5": 35.612856,
+  "bn@10/1/0.2": 0.5935476000000001,
+  "bn@10/1/1.0": 2.9677379999999998,
+  "bn@10/1/1.5": 4.451607,
+  "bn@10/2/0.2": 29.677380000000003,
+  "bn@10/2/1.0": 148.3869,
+  "bn@10/2/1.5": 222.58035,
+  "bn@14/0/0.2": 23.079767999999998,
+  "bn@14/0/1.0": 115.39884,
+  "bn@14/0/1.5": 173.09826,
+  "bn@14/1/0.2": 115.39884,
+  "bn@14/1/1.0": 576.9942,
+  "bn@14/1/1.5": 614.4050000000004,
+  "bn@14/2/0.2": 34.619652,
+  "bn@14/2/1.0": 144.24855,
+  "bn@14/2/1.5": 216.372825,
+  "bn@15/0/0.2": 22.971784000000003,
+  "bn@15/0/1.0": 114.85892,
+  "bn@15/0/1.5": 172.28838,
+  "bn@15/1/0.2": 114.85892,
+  "bn@15/1/1.0": 555.3842857142857,
+  "bn@15/1/1.5": 555.3842857142857,
+  "bn@15/2/0.2": 34.457676,
+  "bn@15/2/1.0": 143.57365,
+  "bn@15/2/1.5": 215.360475,
+  "bn@16/0/0.2": 23.105024000000004,
+  "bn@16/0/1.0": 115.52512,
+  "bn@16/0/1.5": 173.28768,
+  "bn@16/1/0.2": 115.52512,
+  "bn@16/1/1.0": 556.9785714285715,
+  "bn@16/1/1.5": 556.9785714285715,
+  "bn@16/2/0.2": 34.657536,
+  "bn@16/2/1.0": 144.4064,
+  "bn@16/2/1.5": 216.6096,
+  "bn@399/0/0.2": 28.245888000000004,
+  "bn@399/0/1.0": 141.22944,
+  "bn@399/0/1.5": 211.84416000000002,
+  "bn@399/1/0.2": 141.22944,
+  "bn@399/1/1.0": 632.195714285713,
+  "bn@399/1/1.5": 632.195714285713,
+  "bn@399/2/0.2": 42.368832000000005,
+  "bn@399/2/1.0": 176.5368,
+  "bn@399/2/1.5": 264.8052,
+  "bn@50/0/0.2": 24.300704,
+  "bn@50/0/1.0": 121.50352000000001,
+  "bn@50/0/1.5": 182.25528000000003,
+  "bn@50/1/0.2": 121.50352000000001,
+  "bn@50/1/1.0": 550.6135714285714,
+  "bn@50/1/1.5": 550.6135714285714,
+  "bn@50/2/0.2": 36.451056,
+  "bn@50/2/1.0": 151.8794,
+  "bn@50/2/1.5": 227.8191,
+  "m5@10/0/0.2": 3.862616,
+  "m5@10/0/1.0": 19.31308,
+  "m5@10/0/1.5": 28.969619999999995,
+  "m5@10/1/0.2": 0.482827,
+  "m5@10/1/1.0": 2.414135,
+  "m5@10/1/1.5": 3.6212024999999994,
+  "m5@10/2/0.2": 24.14135,
+  "m5@10/2/1.0": 120.70675,
+  "m5@10/2/1.5": 181.06012499999997,
+  "m5@14/0/0.2": 4.813214285714041,
+  "m5@14/0/1.0": 19.321735999999998,
+  "m5@14/0/1.5": 28.982603999999995,
+  "m5@14/1/0.2": 9.626428571428082,
+  "m5@14/1/1.0": 9.626428571428082,
+  "m5@14/1/1.5": 9.626428571428082,
+  "m5@14/2/0.2": 24.15217,
+  "m5@14/2/1.0": 120.76084999999999,
+  "m5@14/2/1.5": 181.14127499999998,
+  "m5@15/0/0.2": 4.664642857142748,
+  "m5@15/0/1.0": 19.326088,
+  "m5@15/0/1.5": 28.989131999999998,
+  "m5@15/1/0.2": 9.329285714285495,
+  "m5@15/1/1.0": 9.329285714285495,
+  "m5@15/1/1.5": 9.329285714285495,
+  "m5@15/2/0.2": 24.15761,
+  "m5@15/2/1.0": 120.78805,
+  "m5@15/2/1.5": 181.182075,
+  "m5@16/0/0.2": 4.409285714285683,
+  "m5@16/0/1.0": 19.330848,
+  "m5@16/0/1.5": 28.996272000000005,
+  "m5@16/1/0.2": 8.818571428571365,
+  "m5@16/1/1.0": 8.818571428571365,
+  "m5@16/1/1.5": 8.818571428571365,
+  "m5@16/2/0.2": 24.163560000000004,
+  "m5@16/2/1.0": 120.8178,
+  "m5@16/2/1.5": 181.22670000000002,
+  "m5@50/0/0.2": 3.911785714285283,
+  "m5@50/0/1.0": 19.348792,
+  "m5@50/0/1.5": 29.023188,
+  "m5@50/1/0.2": 7.823571428570566,
+  "m5@50/1/1.0": 7.823571428570566,
+  "m5@50/1/1.5": 7.823571428570566,
+  "m5@50/2/0.2": 24.18599,
+  "m5@50/2/1.0": 120.92995,
+  "m5@50/2/1.5": 181.394925,
+  "m5@749/0/0.2": 4.242857142857117,
+  "m5@749/0/1.0": 19.272848,
+  "m5@749/0/1.5": 28.909272000000005,
+  "m5@749/1/0.2": 8.485714285714234,
+  "m5@749/1/1.0": 8.485714285714234,
+  "m5@749/1/1.5": 8.485714285714234,
+  "m5@749/2/0.2": 24.091060000000002,
+  "m5@749/2/1.0": 120.45530000000001,
+  "m5@749/2/1.5": 180.68295,
+  "none": 0.08,
+  "s15@10/0/0.2": 7.6930912000000005,
+  "s15@10/0/1.0": 38.465455999999996,
+  "s15@10/0/1.5": 57.698184,
+  "s15@10/1/0.2": 0.9616364000000001,
+  "s15@10/1/1.0": 4.8081819999999995,
+  "s15@10/1/1.5": 7.212273,
+  "s15@10/2/0.2": 48.08182,
+  "s15@10/2/1.0": 240.4091,
+  "s15@10/2/1.5": 360.61365,
+  "s15@14/0/0.2": 25.141071428571326,
+  "s15@14/0/1.0": 38.456472,
+  "s15@14/0/1.5": 57.684708,
+  "s15@14/1/0.2": 50.28214285714265,
+  "s15@14/1/1.0": 50.28214285714265,
+  "s15@14/1/1.5": 50.28214285714265,
+  "s15@14/2/0.2": 48.07059,
+  "s15@14/2/1.0": 240.35295,
+  "s15@14/2/1.5": 360.52942499999995,
+  "s15@15/0/0.2": 25.129642857142763,
+  "s15@15/0/1.0": 38.437552000000004,
+  "s15@15/0/1.5": 57.656328,
+  "s15@15/1/0.2": 50.259285714285525,
+  "s15@15/1/1.0": 50.259285714285525,
+  "s15@15/1/1.5": 50.259285714285525,
+  "s15@15/2/0.2": 48.046940000000006,
+  "s15@15/2/1.0": 240.2347,
+  "s15@15/2/1.5": 360.35205,
+  "s15@16/0/0.2": 25.88571428571439,
+  "s15@16/0/1.0": 38.404312,
+  "s15@16/0/1.5": 57.60646799999999,
+  "s15@16/1/0.2": 51.77142857142878,
+  "s15@16/1/1.0": 51.77142857142878,
+  "s15@16/1/1.5": 51.77142857142878,
+  "s15@16/2/0.2": 48.00539,
+  "s15@16/2/1.0": 240.02695,
+  "s15@16/2/1.5": 360.04042499999997,
+  "s15@50/0/0.2": 25.866428571429164,
+  "s15@50/0/1.0": 37.665512,
+  "s15@50/0/1.5": 56.498267999999996,
+  "s15@50/1/0.2": 51.73285714285833,
+  "s15@50/1/1.0": 51.73285714285833,
+  "s15@50/1/1.5": 51.73285714285833,
+  "s15@50/2/0.2": 47.08189,
+  "s15@50/2/1.0": 235.40945,
+  "s15@50/2/1.5": 353.11417499999993,
+  "s15@749/0/0.2": 30.941071428572155,
+  "s15@749/0/1.0": 36.607488000000004,
+  "s15@749/0/1.5": 54.91123200000001,
+  "s15@749/1/0.2": 61.88214285714431,
+  "s15@749/1/1.0": 61.88214285714431,
+  "s15@749/1/1.5": 61.88214285714431,
+  "s15@749/2/0.2": 45.75936000000001,
+  "s15@749/2/1.0": 228.7968,
+  "s15@749/2/1.5": 343.19520000000006,
+  "w1@10/0/0.2": 3.5221871999999994,
+  "w1@10/0/1.0": 17.610936,
+  "w1@10/0/1.5": 26.416403999999996,
+  "w1@10/1/0.2": 0.4402733999999999,
+  "w1@10/1/1.0": 2.201367,
+  "w1@10/1/1.5": 3.3020504999999996,
+  "w1@10/2/0.2": 22.013669999999998,
+  "w1@10/2/1.0": 110.06835,
+  "w1@10/2/1.5": 165.10252499999999,
+  "w1@14/0/0.2": 5.028214285714317,
+  "w1@14/0/1.0": 17.606928,
+  "w1@14/0/1.5": 26.410391999999998,
+  "w1@14/1/0.2": 10.056428571428635,
+  "w1@14/1/1.0": 10.056428571428635,
+  "w1@14/1/1.5": 10.056428571428635,
+  "w1@14/2/0.2": 22.00866,
+  "w1@14/2/1.0": 110.0433,
+  "w1@14/2/1.5": 165.06494999999998,
+  "w1@15/0/0.2": 4.926071428571569,
+  "w1@15/0/1.0": 17.6098,
+  "w1@15/0/1.5": 26.414700000000003,
+  "w1@15/1/0.2": 9.852142857143138,
+  "w1@15/1/1.0": 9.852142857143138,
+  "w1@15/1/1.5": 9.852142857143138,
+  "w1@15/2/0.2": 22.012249999999998,
+  "w1@15/2/1.0": 110.06125,
+  "w1@15/2/1.5": 165.091875,
+  "w1@16/0/0.2": 5.19571428571453,
+  "w1@16/0/1.0": 17.609992000000002,
+  "w1@16/0/1.5": 26.414988000000005,
+  "w1@16/1/0.2": 10.39142857142906,
+  "w1@16/1/1.0": 10.39142857142906,
+  "w1@16/1/1.5": 10.39142857142906,
+  "w1@16/2/0.2": 22.012490000000003,
+  "w1@16/2/1.0": 110.06245000000001,
+  "w1@16/2/1.5": 165.093675,
+  "w1@50/0/0.2": 5.0935714285713924,
+  "w1@50/0/1.0": 17.59288,
+  "w1@50/0/1.5": 26.389319999999998,
+  "w1@50/1/0.2": 10.187142857142785,
+  "w1@50/1/1.0": 10.187142857142785,
+  "w1@50/1/1.5": 10.187142857142785,
+  "w1@50/2/0.2": 21.991100000000003,
+  "w1@50/2/1.0": 109.95549999999999,
+  "w1@50/2/1.5": 164.93324999999996,
+  "w1@899/0/0.2": 5.673214285713974,
+  "w1@899/0/1.0": 17.372656,
+  "w1@899/0/1.5": 26.058984,
+  "w1@899/1/0.2": 11.346428571427948,
+  "w1@899/1/1.0": 11.346428571427948,
+  "w1@899/1/1.5": 11.346428571427948,
+  "w1@899/2/0.2": 21.715819999999997,
+  "w1@899/2/1.0": 108.5791,
+  "w1@899/2/1.5": 162.86865
+ }
+}

@@ -32,6 +32,21 @@ groups:
         annotations:
           summary: "Signals/exits are being refused on stale market data ({{ $value }} in 10m)"
 
+      - alert: WorkerLockLost
+        expr: increase(atp_worker_lock_lost_total[10m]) > 0
+        labels: {severity: critical, slo: "SLO-2 engine liveness"}
+        annotations:
+          summary: "Trading worker replica lock lost ({{ $labels.outcome }}) - the worker failed closed (H-1)"
+          runbook: "docs/OPERATIONS.md#12b-resource-budget---8-gb-host-hostinger-kvm-2"
+
+      - alert: RedisMemoryHigh
+        expr: atp_redis_memory_used_ratio >= 0.70
+        for: 5m
+        labels: {severity: warning, slo: "SLO-2 engine liveness"}
+        annotations:
+          summary: "Redis at {{ $value | humanizePercentage }} of maxmemory - eviction (volatile-lru) starts at the cap (H-1)"
+          runbook: "docs/OPERATIONS.md#12b-resource-budget---8-gb-host-hostinger-kvm-2"
+
   - name: atp-broker-and-orders
     rules:
       - alert: BrokerCircuitOpen

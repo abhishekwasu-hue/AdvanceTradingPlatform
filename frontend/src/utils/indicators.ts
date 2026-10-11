@@ -94,13 +94,15 @@ export function rsi(close: Series, period = 14): Series {
 
 export function adx(c: OHLCVBar[], period = 14): { adx: Series; plusDi: Series; minusDi: Series } {
   const n = c.length;
-  const plusDm: Series = [null], minusDm: Series = [null];
+  // Z10-a parity: like the backend (pandas diff -> 0 on the first bar), the first bar counts with DM = 0 and TR = high - low,
+  // so +DI / -DI start at bar period - 1 and ADX at 2 x period - 2, the bars the engine starts on.
+  const plusDm: Series = n ? [0] : [], minusDm: Series = n ? [0] : [];
   for (let i = 1; i < n; i++) {
     const up = c[i].high - c[i - 1].high, down = c[i - 1].low - c[i].low;
     plusDm.push(up > down && up > 0 ? up : 0);
     minusDm.push(down > up && down > 0 ? down : 0);
   }
-  const tr = trueRange(c); tr[0] = null;
+  const tr = trueRange(c);
   const sTr = wilder(tr, period), sP = wilder(plusDm, period), sM = wilder(minusDm, period);
   const plusDi: Series = [], minusDi: Series = [], dx: Series = [];
   for (let i = 0; i < n; i++) {
@@ -115,25 +117,31 @@ export function adx(c: OHLCVBar[], period = 14): { adx: Series; plusDi: Series; 
 }
 
 export function supertrend(c: OHLCVBar[], period = 10, multiplier = 3): { line: Series; direction: (1 | -1 | null)[] } {
+  // Z10-a parity with the backend (app/indicators/volatility.supertrend): the line starts at bar `period` (one bar after
+  // the first ATR), long when that bar closes at or above the lower band; the final upper band only moves down (the
+  // lower only up) unless the previous close broke it; the direction flips when the close crosses the active band.
   const n = c.length;
   const a = atr(c, period);
   const line: Series = new Array(n).fill(null);
   const direction: (1 | -1 | null)[] = new Array(n).fill(null);
-  let finalUpper = NaN, finalLower = NaN, trend: 1 | -1 = 1;
-  for (let i = 0; i < n; i++) {
+  if (period >= n) return { line, direction };
+  let finalUpper = 0, finalLower = 0, trend: 1 | -1 = 1;
+  for (let i = period; i < n; i++) {
     const at = a[i];
-    if (!isNum(at)) continue;
+    if (!isNum(at)) return { line, direction };
     const hl2 = (c[i].high + c[i].low) / 2;
     const bu = hl2 + multiplier * at, bl = hl2 - multiplier * at;
-    const prevClose = i > 0 ? c[i - 1].close : c[i].close;
-    const fu = Number.isNaN(finalUpper) || bu < finalUpper || prevClose > finalUpper ? bu : finalUpper;
-    const fl = Number.isNaN(finalLower) || bl > finalLower || prevClose < finalLower ? bl : finalLower;
-    if (!Number.isNaN(finalUpper)) {
-      if (trend === 1 && c[i].close < fl) trend = -1;
-      else if (trend === -1 && c[i].close > fu) trend = 1;
+    if (i === period) {
+      finalUpper = bu; finalLower = bl;
+      trend = c[i].close >= finalLower ? 1 : -1;
+    } else {
+      const prevClose = c[i - 1].close;
+      finalUpper = bu < finalUpper || prevClose > finalUpper ? bu : finalUpper;
+      finalLower = bl > finalLower || prevClose < finalLower ? bl : finalLower;
+      if (trend === 1) trend = c[i].close < finalLower ? -1 : 1;
+      else trend = c[i].close > finalUpper ? 1 : -1;
     }
-    finalUpper = fu; finalLower = fl;
-    line[i] = trend === 1 ? fl : fu;
+    line[i] = trend === 1 ? finalLower : finalUpper;
     direction[i] = trend;
   }
   return { line, direction };

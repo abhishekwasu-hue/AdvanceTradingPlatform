@@ -17,7 +17,7 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 in progress (branch claude/z7-bk1-breakouts); BK2, EV1, EV2 next | - | 5 |
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | not started | - | 0 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
-| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | not started | - | 0 |
+| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | design note `docs/design/Z10_LAUNCH_HARDENING.md` (Z10-a..f); Z10-a (G2 no-look-ahead harness + G1 golden / chart parity) on branch claude/z10a-lookahead-correctness, PR waits for the WIP limit | - | 10 |
 | Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | not started | - | 0 |
 
 docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.

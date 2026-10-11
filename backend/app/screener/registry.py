@@ -161,6 +161,14 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
 )}
 
 
+# Z10-a (U3 G2): functions answered for the LAST bar only - the structure / pattern / zone filters, the option chain,
+# reference data as of the run date and the cross-sectional ranks. Read as a series, their single answer would be
+# repeated on every earlier bar, so a function that reads a history (READS_HISTORY) would count, average or compare
+# today's answer as if it had held all along. The validator refuses that combination.
+LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
+READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag"})
+
+
 def describe() -> Dict[str, Dict[str, object]]:
     """The registry as data (for the builder's palette and the docs page)."""
     out: Dict[str, Dict[str, object]] = {}
@@ -174,4 +182,4 @@ def describe() -> Dict[str, Dict[str, object]]:
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

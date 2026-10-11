@@ -505,3 +505,21 @@ APPROVAL_MAX_REQUOTES = _bounded_int("APPROVAL_MAX_REQUOTES", 2, 0, 10)
 # price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep
 # working on their own).
 EXIT_NOW_MAX_MARK_AGE_MINUTES = _bounded_int("EXIT_NOW_MAX_MARK_AGE_MINUTES", 5, 1, 60)
+# Tax report (app/tax/report.py): how F&O turnover is counted. "ABS_PNL" (default) = the sum of the absolute profit or
+# loss of every F&O trade (options and futures alike). "ABS_PNL_PLUS_PREMIUM" = the older method, which also adds the
+# premium received on options sold. The report names the method it used; GET /api/tax/report?turnover_method=...
+# picks the other one for a single report. docs/journal/OPEN_QUESTIONS.md JM-1 (a CA confirms the default).
+TAX_FNO_TURNOVER_METHODS = ("ABS_PNL", "ABS_PNL_PLUS_PREMIUM")
+
+
+def _choice(name: str, default: str, choices: tuple) -> str:
+    raw = os.environ.get(name, "").strip().upper()
+    if not raw:
+        return default
+    if raw in choices:
+        return raw
+    logging.getLogger(__name__).warning("%s=%r is not one of %s - using %s", name, raw, choices, default)
+    return default
+
+
+TAX_FNO_TURNOVER_METHOD = _choice("TAX_FNO_TURNOVER_METHOD", "ABS_PNL", TAX_FNO_TURNOVER_METHODS)

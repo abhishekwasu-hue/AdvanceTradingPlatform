@@ -28,7 +28,59 @@ third-party platforms), **second wave - written confirmation pending**. For link
 | Shoonya / Finvasia | Second wave - written confirmation pending | Not verified | |
 | Alice Blue | Second wave - written confirmation pending | Not verified | |
 
-Per-broker instrument / connection caps (Tier A universe) are to be added here with each broker's confirmation.
+## Tier A data registry (BT1) - the table the code reads
+
+`backend/app/market_data/broker_data_terms.json` is the machine-readable copy of this table; the entitlement guard
+(`backend/app/market_data/entitlement.py`) reads it, and `backend/tests/test_bt1_byob_data_tier.py` fails when the two
+disagree. Change a row only together with the JSON, and a status to **confirmed** only with the broker's written
+confirmation referenced in the table above.
+
+- **confirmed** - the broker's live data is shown to that broker's own user in ATP (Tier A), through the user's own
+  session only. Phase 0: Upstox; Dhan (the user's own Dhan Data API subscription is needed - without it Dhan refuses
+  the market-data call and the user sees EOD).
+- **execution-only** - the broker's API terms forbid showing its market data on a third-party platform. Its users see
+  Tier C (EOD) in ATP and use their own broker app for live prices. Phase 0: Zerodha.
+- **pending** - second wave; written confirmation not yet received. Treated exactly like execution-only until then.
+  A broker missing from this table is treated as pending.
+
+Per-connection symbol cap = the broker's own limit on instruments per market-data connection, from its documentation or
+written confirmation. **to confirm** = not recorded yet: then only the ATP per-session budget applies
+(`BYOB_SESSION_SYMBOL_CAP`, default 50 - the per-session figure of the beta capacity model, spec §4, not a broker
+limit). When a broker's cap is recorded, the lower of the two applies. A number is never guessed here.
+
+| Key | Broker | Data status | Per-connection symbol cap | Needs the user's own data subscription |
+| --- | --- | --- | --- | --- |
+| `upstox` | Upstox | confirmed | to confirm | no |
+| `dhan` | Dhan | confirmed | to confirm | yes |
+| `zerodha` | Zerodha | execution-only | to confirm | no |
+| `angel_one` | Angel One | pending | to confirm | no |
+| `fyers` | Fyers | pending | to confirm | no |
+| `groww` | Groww | pending | to confirm | no |
+| `kotak_neo` | Kotak Neo | pending | to confirm | no |
+| `icici_breeze` | ICICI Breeze | pending | to confirm | no |
+| `five_paisa` | 5paisa | pending | to confirm | no |
+| `shoonya` | Shoonya / Finvasia | pending | to confirm | no |
+| `alice_blue` | Alice Blue | pending | to confirm | no |
+
+### Why Zerodha is execution-only
+
+The owner's decision from Zerodha's published terms (beta spec §2: Kite Connect states that its market data may not be
+displayed on third-party platforms). A per-user Kite session does not change that: each call would carry the user's own
+token, but ATP would still be the third-party platform displaying the data. So a Zerodha user's broker session is never
+used for display in ATP; the user sees EOD data here and live prices in Kite. The "Trade in your broker app" basket
+link (below) is not market data and stays available. This record was written without network access: before changing
+the row, record the exact clause (document title, section, date read), and a change needs Zerodha's written permission
+referenced here.
+
+### Isolation rules the code enforces (beta spec §2)
+
+- One user's session = the broker credential that user linked themselves (`broker_credentials.user_id`). Credentials
+  are stored per tenant; a teammate's credential in the same tenant is never used for another user's data.
+- Every cache entry written for a session is keyed by that session (`md:byob:u<user>.c<credential>:...`): ticks,
+  candles and the session's symbol set. The shared, platform-wide caches are not read or written for Tier A reads.
+- A per-user websocket stream never feeds platform-wide consumers (the lake recorder); nothing is pooled.
+- Symbols per session: open positions > open charts > watchlist > screener universe, up to the cap; beyond it the
+  symbol is EOD for that user (a symbol already held keeps its slot), with a slower refresh hint.
 
 ## Zerodha Kite Publisher (basket)
 

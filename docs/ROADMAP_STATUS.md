@@ -17,12 +17,13 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 in review (B1/B2/B4/B7/B13/B14, quality overlay, style / timeframe selector; flag screener_breakouts off, #178); BK2 in review (B16 ORB / B17 first hour, previous day, first candle / B18 new high-low of day, session VWAP, time-of-day relative volume; same flag, stacked on #178, #181); EV1, EV2 next | #178, #181 | 45 |
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 merged (flag `screener_gallery` off): taxonomy data file + lint + CI guard (every pre-built screen filed), `GET /api/screener/taxonomy`, gallery rail / chips / matrix; breakouts register when #178 merges (OPEN_QUESTIONS TX1-6); LG1 next | #184 merged | 60 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
-| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | next | - | 0 |
+| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | design note `docs/design/Z10_LAUNCH_HARDENING.md` (Z10-a..f); Z10-a (G2 no-look-ahead harness + G1 golden / chart parity) in review as draft PR #187 | #187 | 10 |
 | Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | next | - | 0 |
 
 Also merged: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method (STT rows from 1 Apr 2026 still marked verify, OPEN_QUESTIONS TX-1).
 
 Data source note: the Trade-repo data collector was cancelled by the owner (2026-10-11), so HB0's R2 importer (#164) stays idle unless data arrives in that store. HB1 (NSE bhavcopy, run on the server) covers the daily history. The owner's intraday history comes from **HB2** (an intraday capture/backfill job on the server), kept in the plan right after Z11.
+
 
 docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).

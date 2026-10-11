@@ -94,7 +94,14 @@ the session budget). Wired into the user-facing live reads, flag on:
   user's adapter. **Day end**: market closed, token no longer usable, or a new IST day -> the session is closed and its
   cache and symbol set are cleared.
 
-### 5. Data-tier badges and staleness
+### 5. Daily-login reminder for the data session
+
+The D5 pre-open reminder (`app/brokers/login_reminder.py`) reminds an organisation whose ACTIVE deployment's broker has
+no session for the day. With the flag on, each user whose own credential is at a confirmed broker and whose session
+will not last the day also gets their own reminder ("Live data: log in to Upstox before the open"), once per user per
+IST day, addressed to that user. Until they log in, their pages show EOD.
+
+### 6. Data-tier badges and staleness
 
 Every Tier A / Tier C answer carries a badge: `tier`, `label` ("Live · your Upstox" / "EOD · <date>"), `as_of`
 (exchange time of the tick or quote), `eod_date` (the newest exchange EOD file, `index_eod`), `stale`,
@@ -115,8 +122,7 @@ the flag off the backend sends no badge and the components render nothing.
   bars via its own G1 / bar-close rules).
 - **Tier C chart bars**: charts for Tier C users currently show the 409 reason instead of bars; serve daily bars from
   the lake / bhavcopy as EOD.
-- Per-user process budget (CPU / memory) and the pre-open reminder for the next day's login are covered only by the
-  symbol budget and the existing D5 login reminder.
+- Per-user process budget (CPU / memory) is covered only by the symbol budget and the REST fallback.
 - Record each broker's per-connection caps (with the written confirmation) in `docs/BROKER_DATA_TERMS.md`.
 
 ## Open questions (also in docs/OPEN_QUESTIONS.md)

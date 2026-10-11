@@ -581,3 +581,44 @@ def test_fan_in_without_streaming_keeps_a_rest_session_and_a_new_day_reopens():
         run(go())
     finally:
         _flag(False)
+
+
+# --- the daily-login reminder for a user's own data session -----------------------------------------------------------
+
+def test_pre_open_data_login_reminder_per_user_once_a_day():
+    from app.brokers import login_reminder as lr
+    from app.db.models import NotificationRecord
+    from app.market_data.calendar import IST, MARKET_OPEN
+
+    headers, me = _owner(_email("remind"))
+    _store_credentials(me, status=BrokerTokenStatus.EXPIRED.value)       # no login yet today
+    z_headers, z = _owner(_email("remind-z"))
+    _store_credentials(z, broker="zerodha", status=BrokerTokenStatus.EXPIRED.value)   # execution-only: no data reminder
+    today = datetime.now(IST).date()
+    day = today - timedelta(days=today.weekday() + 7)                    # a past Monday (created_at is real time)
+    now = datetime.combine(day, MARKET_OPEN, tzinfo=IST) - timedelta(minutes=10)
+
+    def send():
+        async def go():
+            async with _session_factory() as session:
+                return await lr.send_reminders(session, now, holidays=())
+        return run(go())
+
+    def mine(user):
+        async def go():
+            async with _session_factory() as session:
+                return list(await session.scalars(select(NotificationRecord).where(
+                    NotificationRecord.user_id == user["id"], NotificationRecord.title.startswith(lr.DATA_TITLE_PREFIX))))
+        return run(go())
+
+    send()
+    assert mine(me) == []                                                 # flag off: nothing new
+    _flag(False, [me["tenant_id"], z["tenant_id"]])
+    try:
+        send()
+        send()                                                            # a restarted worker: still one per user per day
+        sent = mine(me)
+        assert len(sent) == 1 and "upstox" in sent[0].title and sent[0].severity == "WARNING" and sent[0].tenant_id == me["tenant_id"]
+        assert mine(z) == []
+    finally:
+        _flag(False)

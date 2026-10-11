@@ -103,17 +103,17 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "SwingBreakout": ['SwingBreakout("up", 0, 0)', 'SwingBreakout("down", 0, 0)@1h'],
     "SwingBreakType": ['SwingBreakType("up", 0, 0)', 'SwingBreakType("down", 0, 0)'],
     "NRBreakout": ['NRBreakout("up", "nr7", 0, 0)', 'NRBreakout("down", "inside", 0, 0)', 'NRBreakout("up", "nr4", 0, 0)@1h'],
-    "NewHighBreakout": ['NewHighBreakout("up", 1, 0, 0)', 'NewHighBreakout("down", 1, 0, 0)'],
+    "NewHighBreakout": ['NewHighBreakout("down", 1, 0, 0)'],          # Daily / Weekly in screens; daily cases below
     "RangeExpansion": ['RangeExpansion("up", 1.5, 0)', 'RangeExpansion("down", 1.5, 0)@1h'],
     "VolumeBreakout": ['VolumeBreakout("up", 1.5)', 'VolumeBreakout("down", 1.5, 10)'],
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
-    "DowTrend": ["DowTrend(0)", "DowTrend(0)@1h"],
+    "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
 }
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
 SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
-                             'NewHighBreakout("up", 26, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)@1w', "DowTrend(0)@1w"]   # U6 BK1
+                             'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w"]   # U6 BK1
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],

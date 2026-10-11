@@ -120,7 +120,9 @@ async def _frames(session: AsyncSession, user: User, symbols: List[str], exchang
         frames[d.symbol] = {signal_tf: style.resample(f, fetch_tf, signal_tf) if fetch_tf != signal_tf else f}
     daily_ctx = [tf for tf in context if bp.TF_MINUTES[tf] >= daily_tf]
     if daily_ctx and frames:
-        daily, _, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS}, user_id=user.id)
+        daily, daily_problems, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
+                                                      user_id=user.id)
+        problems.update({s: f"daily context: {why}" for s, why in daily_problems.items() if s not in problems})
         for d in daily:
             for tf in daily_ctx:
                 frames[d.symbol][tf] = style.resample(d.frames["1d"], "1d", tf)

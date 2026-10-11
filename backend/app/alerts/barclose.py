@@ -138,7 +138,9 @@ class CycleCache:
     """S4b-1: one worker cycle's shared work. Rules that need the same symbol, timeframe and bar fetch it once (a
     longer lookback than the cached one fetches again); the same screen over the same current symbols, bar and
     params is evaluated once. Lives for one cycle only, so nothing stale survives into the next bar."""
-    frames: Dict[Tuple[int, Optional[int], str, str, datetime, str, bool], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
+    # value: (the lookback the frames were fetched for, per timeframe; the frames). BK1 verification F1: an entry is reused
+    # only when it covers EVERY timeframe asked for - a frame fetched for a plain 15m rule has no daily context.
+    frames: Dict[Tuple[int, Optional[int], str, str, datetime, str, bool], Tuple[Dict[str, int], Optional[SymbolData]]] = field(default_factory=dict)
     results: Dict[Tuple[Any, ...], List[Any]] = field(default_factory=dict)
     fetched_symbols: int = 0
     reused_symbols: int = 0
@@ -188,13 +190,20 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
     """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
     does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
-    need = max([*lookback.values(), 1])
     owner = rule.created_by if per_user else None
     extra: Dict[str, Any] = {"user_id": owner} if per_user else {}
     key = lambda sym: (rule.tenant_id, owner, exchange, tf, bar, sym, forming)  # noqa: E731
-    missing = [s for s in symbols if key(s) not in cache.frames or cache.frames[key(s)][0] < need]
+    def covers(have: Dict[str, int]) -> bool:
+        return all(have.get(t, 0) >= bars for t, bars in lookback.items())
+    missing = [s for s in symbols if key(s) not in cache.frames or not covers(cache.frames[key(s)][0])]
     problems: Dict[str, str] = {}
     if missing:
+        # one fetch that covers both the cached entries' needs and this rule's (later rules keep reusing it)
+        merged = dict(lookback)
+        for sym in missing:
+            for t, bars in (cache.frames[key(sym)][0] if key(sym) in cache.frames else {}).items():
+                merged[t] = max(merged.get(t, 0), bars)
+        lookback = merged
         if forming:
             universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True, **extra)
         else:
@@ -209,7 +218,7 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
                 kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
             closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
-            cache.frames[key(sym)] = (need, closed)
+            cache.frames[key(sym)] = (dict(lookback), closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
 

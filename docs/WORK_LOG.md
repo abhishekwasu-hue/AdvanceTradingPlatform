@@ -885,54 +885,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-11 00:56 IST - OI Banner O1: oi_regime.py (port from Trade)
-- Spec stored at `docs/specs/ATP_OI_BANNER_SPEC.md`; design note at `docs/design/OI_BANNER.md`.
-- `app/option_chain/oi_regime.py` holds the pure functions and `OIRegimeSettings` (every threshold, the PCR band
-  edges and the hysteresis counts are settings). Strike step: from settings, or inferred from the chain. Max pain
-  reuses ATP's `compute_max_pain`.
-- Golden fixtures were captured from Trade's own functions, and Trade's named tests were ported in English. 30 tests.
-- Deliberate differences: gates fail closed on missing data; strict confirmation mode works (Trade's could never
-  pass); untimed data counts as stale. Open questions OI-1..OI-4 are in the design note.
-
-### 2026-10-11 01:10 IST - OI Banner O2: collector, tables, history API
-- Four tables (migration `e2b4d6f8a0c1`, reversible; checked on Postgres 16 with upgrade, check, downgrade and
-  upgrade): `oi_snapshots`, `strike_oi_snapshots`, `oi_day_baselines`, `oi_banner_settings`.
-- **Collector:** idempotent per slot, keeps a wide strike window, and writes day baselines once. The worker runs it
-  only for underlyings a tenant enabled, only while the venue is open, and through the first usable session.
-  A failed read is rolled back in its own session and the next tenant is tried.
-- **Reading:** stored strikes are replayed through `oi_regime` with each tenant's own settings, so no verdict is
-  stored.
-- **API:** banner, history (5/10/15), strikes, and settings (PUT is owner only and validated). Responses carry
-  `data_as_of`, `market_open` and `stale`.
-- **Retention:** `RETENTION_OI_SNAPSHOTS_DAYS` (default 400).
-- **Decisions:** persisted per-tenant banner states move to O4 (alerts need change detection). Open question OI-5
-  covers the read path.
-- **U1-c (#110)** is pushed after a green suite (1390 passed) and a Postgres migration check.
-- **Ported date-bomb fix:** #104, #107 and #109 now carry the thesis date-bomb test fix (the same change as
-  e167b2a). Their red CI came from `main`, not from those PRs.
-
-### 2026-10-11 01:20 IST - OI Banner O3: banner API and frontend
-- `GET /api/option-chain/banners` (the tenant's followed underlyings) for the dashboard.
-- **Components:** `OiBanner`, `OiHistoryTable` (5/10/15), `StrikeOiChart`, `OiSettingsCard` and `OiBannersCard`,
-  placed on the Dashboard and the Option Chain page. The chart options layer is deferred to CH4.
-- **Tests:** `src/oi/format.test.ts` (6 vitest tests) and one backend test for `/banners` (tenant-scoped).
-
-### 2026-10-11 01:25 IST - OI Banner O4a: alerts on banner state changes
-- New tables: `oi_banner_states` (per tenant and slot) and `oi_alert_log` (unique dedupe key; status SENT, COOLDOWN,
-  QUIET or SNOOZED). Also `oi_banner_settings.snoozed_until` and `notifications.metadata_json`. Migration
-  `e2b4d6f8a0c2` is reversible and passed upgrade, check, downgrade and upgrade on Postgres 16.
-- Alert types: direction change, confirmed flip, strength change, PCR band, max pain move, OI wall, DTE, collector
-  stale. They go through the existing `notify()` and dispatcher, and webhooks get versioned JSON. Snooze, mute-today
-  and resume are available through the API.
-- Deferred to O4b: Telegram buttons, the digest and the settings UI. Rollover-flip alerts need next-expiry collection.
-
-### 2026-10-11 01:36 IST - OI Banner O4b: Telegram buttons, digest, alert settings UI
-- **Telegram buttons:** OI alerts carry read-only buttons — chain and chart links, and snooze/mute callbacks. A
-  callback is accepted only from a whitelisted chat and an authorised sender.
-- **Digest and test alert:** the daily digest is sent after each tenant's digest time. The test alert has its own
-  endpoint.
-- **UI:** `OiAlertsCard` (types, cooldown, quiet hours, digest, snooze/mute/resume, log), and the
-  `/option-chain?underlying=` deep link.
 ### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
 - What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
   `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per

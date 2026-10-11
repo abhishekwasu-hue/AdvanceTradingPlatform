@@ -794,7 +794,8 @@ class AgentAskBody(BaseModel):
 
 @router.post("/agent/ask")
 async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
-    """H-C2 (ADR-0019, behind the `ai_agent` flag, off by default): the AI answers after reading typed, read-only tools.
+    """H-C2 (ADR-0019, behind the `ai_agent` flag, off by default): the AI answers after reading typed, read-only tools;
+    when the trader asks for it, it may file one guarded proposal (pause / risk reduction / review) for a person to decide.
     A provider without tool use (the rules, or one not wired yet) gets the ordinary Copilot answer. Never an order."""
     from app.ai import agent
     from app.ai.prompt_versions import stamp
@@ -811,6 +812,7 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
     answer = await agent.run_agent(provider, ToolContext(session, user.tenant_id, user), body.question, lang=lang)
     from app.ai import metering
     return {"answer": answer.text, "source": answer.source, "language": lang, "note": answer.note, "numbers": answer.numbers,
+            "proposals": answer.proposals,                                   # PROPOSED - decided under AI Copilot, never auto-run
             "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped,
                       "tools": [{k: c[k] for k in ("name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
             "usage": metering.spent_by(provider)}

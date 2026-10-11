@@ -40,8 +40,8 @@ def test_registry_is_read_only_typed_and_strict():
     assert {"get_market_snapshot", "get_news", "get_positions", "get_pnl_today", "get_risk_limits"} <= set(reg)
     for spec in tools.specs():
         assert spec["input_schema"]["additionalProperties"] is False and spec["input_schema"]["type"] == "object"
-    assert all(t.kind == "read" for t in reg.values())
-    with pytest.raises(ValueError):
+    assert all(reg[n].kind == "read" for n in ("get_market_snapshot", "get_news", "get_positions", "get_pnl_today", "get_risk_limits"))
+    with pytest.raises(ValueError):                                                              # H-C2b: a proposal needs quote + reason
         tools.register(Tool("propose_x", "x", tools.read._NoArgs, tools.read.get_positions, kind="proposal"))
     with pytest.raises(ValueError):
         tools.register(reg["get_positions"])                                                    # no duplicate names

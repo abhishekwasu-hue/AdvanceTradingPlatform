@@ -155,6 +155,29 @@ Kept as in the source, and flagged for review:
   - today's alert log with the status of each alert.
 - **Deep link:** `/option-chain?underlying=` opens that underlying, which is the target of the Telegram button.
 
+## O5: OI gates on deployments (opt-in)
+
+- **Opting in:** `strategy_deployments.oi_gates` (migration `e2b4d6f8a0c3`) holds a comma-separated subset of
+  `OI_DIFF`, `OI_CONFIRM`, `PCR`, `IV_CHANGE`, `SWING_OI` and `OI_WALL`. It is set through the deployments API
+  (`oi_gates`, where an unknown name returns 422) and the Autopilot form ("OI gates").
+- **When it runs:** the worker checks the gates after the signal and before a **new** entry. The exit path never calls
+  them (ADR-0004). A blocked signal is recorded as `last_error` ("skipped by OI gates: …") and marked handled; the next
+  signal is checked afresh.
+- **Fail-closed everywhere:**
+  - no OI snapshot today, or one older than the tenant's `stale_after_minutes`, blocks;
+  - the PCR or IV gate blocks while the organisation has not set its limits (`pcr_bullish_min/pcr_bearish_max`,
+    `iv_change_max_pct`);
+  - the IV gate blocks when there is no sideways history yet.
+- **Data comes only from the stored snapshots, with the tenant's settings:**
+  - the stable signal for `OI_DIFF` and `OI_CONFIRM` (strictness A/B from the settings);
+  - PCR over the ATM window;
+  - ATM IV from the stored strike IVs;
+  - the sideways test on past sessions, built from each session's sampled first, highest, lowest and last underlying
+    price;
+  - the OI-price matrix against the previous session's last slot;
+  - the wall check at the psychological level against the day baseline.
+- **Rollover** is passed as unknown to `swing_oi_gate`, because next-expiry chains are not collected yet.
+
 ## Golden fixtures
 
 `backend/tests/fixtures/oi_regime/golden.json` holds 1,300+ cases produced by running Trade's own functions on

@@ -359,9 +359,9 @@ class UserSessionFanIn:
                 await self.symbols.replace(namespace, Priority.POSITION, sorted(positions), now)
                 await self.refresh(namespace, now)
             except Exception as exc:  # noqa: BLE001 - one user's session must never stop another's (or the worker)
-                live = self._sessions.get(namespace)
-                if live is not None:
-                    live.last_error = str(exc)[:200]
+                failed = self._sessions.get(namespace)
+                if failed is not None:
+                    failed.last_error = str(exc)[:200]
                 report.errors.append(f"byob session {namespace}: {exc}")
                 logger.warning("BYOB session %s failed: %s", namespace, exc)
         report.active = len(self._sessions)

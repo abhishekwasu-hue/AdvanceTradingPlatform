@@ -1,7 +1,7 @@
 """PW4: the Telegram message of a proposal (chat id + message id), so app decisions and expiry update it.
 
 Revision ID: e9c1a3b5d7f9
-Revises: c7a1d2e3f4b7
+Revises: d4e6f8a0b2c9
 Create Date: 2026-10-11 10:30:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e9c1a3b5d7f9'
-down_revision: Union[str, Sequence[str], None] = 'c7a1d2e3f4b7'
+down_revision: Union[str, Sequence[str], None] = 'd4e6f8a0b2c9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

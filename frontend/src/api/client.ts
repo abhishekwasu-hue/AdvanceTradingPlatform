@@ -114,6 +114,10 @@ import type {
   MemberScopes,
   ScopeCatalogueEntry,
   TenantFeatures,
+  ByokPrefsInput,
+  ByokProviderName,
+  ByokStatus,
+  ByokTestResponse,
   VerificationSendResult,
   TaxReport,
   FxRate,
@@ -389,8 +393,15 @@ export const api = {
 
   availableBrokers: () => request<{ brokers: string[] }>("/broker/available"),
 
-  register: (email: string, password: string) =>
-    request<TokenResponse>("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
+  // PW6: `inviteCode` only matters while the closed-beta gate is on (the server ignores it otherwise).
+  register: (email: string, password: string, inviteCode?: string) =>
+    request<TokenResponse>("/auth/register", {
+      method: "POST", body: JSON.stringify(inviteCode ? { email, password, invite_code: inviteCode } : { email, password }),
+    }),
+
+  // PW6: "Send feedback" - the message plus the app version and the screen path, nothing else.
+  sendFeedback: (body: { message: string; app_version: string; screen: string }) =>
+    request<{ id: number; created_at: string | null }>("/feedback", { method: "POST", body: JSON.stringify(body) }),
 
   login: (email: string, password: string) =>
     request<TokenResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
@@ -712,6 +723,14 @@ export const api = {
   aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" | "mr" }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
+  // BYOK-V1: the user's own AI key for Vision (404 while the operator flag vision_byok is off). The key is sent once and
+  // never comes back - responses carry only its hint.
+  byokStatus: () => request<ByokStatus>("/ai/byok/status"),
+  byokSaveKey: (provider: ByokProviderName, api_key: string, model?: string | null) =>
+    request<ByokStatus>("/ai/byok/key", { method: "PUT", body: JSON.stringify({ provider, api_key, ...(model ? { model } : {}) }) }),
+  byokDeleteKey: (provider: ByokProviderName) => request<ByokStatus>(`/ai/byok/key/${provider}`, { method: "DELETE" }),
+  byokTestKey: (provider: ByokProviderName) => request<ByokTestResponse>(`/ai/byok/test/${provider}`, { method: "POST" }),
+  byokSavePrefs: (body: ByokPrefsInput) => request<ByokStatus>("/ai/byok/prefs", { method: "PUT", body: JSON.stringify(body) }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
   aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {

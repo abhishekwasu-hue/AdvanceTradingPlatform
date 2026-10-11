@@ -395,7 +395,7 @@ class OpenAIProvider:
             if response.status_code == 429:
                 raise ProviderError("Provider rate limit (429) - try again shortly", usage=spent)
             if response.status_code >= 400:
-                detail = _error_detail(response)
+                detail = _error_detail(response, self.api_key)
                 # C3: the body says which parameter the model rejected; the key is in the header, never in the body.
                 logger.warning("OpenAI HTTP %s for model %s: %s", response.status_code, self.model, detail)
                 raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}", usage=spent)
@@ -469,7 +469,7 @@ class OpenAIProvider:
         if response.status_code == 429:
             raise ProviderError("Provider rate limit (429) - try again shortly")
         if response.status_code >= 400:
-            detail = _error_detail(response)
+            detail = _error_detail(response, self.api_key)
             raise ProviderError(f"Provider error HTTP {response.status_code}: {detail}" if detail else f"Provider error HTTP {response.status_code}")
         try:
             body = response.json()
@@ -499,15 +499,119 @@ class OpenAIProvider:
         return ToolTurn(text, calls, blocks, usage, stop)
 
 
-def _error_detail(response: httpx.Response) -> str:
+def _error_detail(response: httpx.Response, secret: Optional[str] = None) -> str:
+    """The provider's error message (max 300 chars). `secret` (the key of the call) is masked should a provider ever echo it."""
     try:
         body = response.json()
     except ValueError:
-        return (response.text or "")[:300]
-    err = body.get("error") if isinstance(body, dict) else None
-    if isinstance(err, dict):
-        return str(err.get("message") or err.get("type") or "")[:300]
-    return json.dumps(body)[:300] if body else ""
+        text = response.text or ""
+    else:
+        err = body.get("error") if isinstance(body, dict) else None
+        if isinstance(err, dict):
+            text = str(err.get("message") or err.get("type") or "")
+        else:
+            text = json.dumps(body) if body else ""
+    if secret:
+        text = text.replace(secret, "[redacted]")
+    return text[:300]
+
+
+_GEMINI_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")      # goes into the URL path: no slashes, no leading dot
+
+
+@dataclass
+class GeminiProvider:
+    """BYOK-V1: Google Gemini through the Generative Language REST API (`models/{model}:generateContent`). Only used with a
+    user's own key ("Vision with your own AI key"); the tenant provider stays Anthropic / OpenAI / rule-based. The key
+    travels in the `x-goog-api-key` header - never in the URL, so it cannot end up in an access or client log line."""
+
+    api_key: str = field(repr=False)
+    model: str = "gemini-2.5-flash"
+    client: Optional[httpx.AsyncClient] = field(default=None, repr=False)
+    name: str = "gemini"
+    base_url: str = "https://generativelanguage.googleapis.com"
+    tier: str = "cheap"
+
+    def _payload(self, system: str, user: str, budget: int) -> dict:
+        return {"systemInstruction": {"parts": [{"text": system}]},
+                "contents": [{"role": "user", "parts": [{"text": user}]}],
+                "generationConfig": {"maxOutputTokens": budget, "temperature": 0.2}}
+
+    def _budget(self, max_tokens: int) -> int:
+        # Thinking models (2.5 generation) spend output tokens on thoughts first (C1, like the other providers).
+        return int(max_tokens) + thinking_headroom(_effort_for(self.tier))
+
+    async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
+        return (await self.complete_full(system, user, max_tokens=max_tokens)).text
+
+    async def complete_full(self, system: str, user: str, *, max_tokens: int = 2000) -> Completion:
+        if not _GEMINI_MODEL_ID.match(self.model or ""):
+            raise ProviderError("Gemini model id is not valid - pick another under Settings")
+        headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
+        client = self.client or _openai_client()
+        budget = self._budget(max_tokens)
+        spent = Completion(text="", model=self.model, provider=self.name)
+        url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
+        for attempt in range(2):
+            try:
+                response = await client.post(url, json=self._payload(system, user, budget), headers=headers, timeout=timeout_for(budget))
+            except httpx.HTTPError as exc:
+                raise ProviderError(f"Gemini unreachable: {exc.__class__.__name__}", usage=spent) from exc
+            detail = _error_detail(response, self.api_key) if response.status_code >= 400 else ""
+            if response.status_code in (401, 403) or (response.status_code == 400 and "api key" in detail.lower()):
+                raise ProviderError(f"Gemini rejected the API key (HTTP {response.status_code}) - re-enter it under Settings", usage=spent)
+            if response.status_code == 429:
+                raise ProviderError("Gemini rate limit or quota (429) - try again later", usage=spent)
+            if response.status_code == 404:
+                raise ProviderError(f"Gemini does not know model '{self.model}' - pick another under Settings", usage=spent)
+            if response.status_code >= 400:
+                raise ProviderError(f"Gemini error HTTP {response.status_code}: {detail}" if detail else f"Gemini error HTTP {response.status_code}", usage=spent)
+            try:
+                body = response.json()
+            except ValueError as exc:
+                raise ProviderError("Gemini answered with non-JSON", usage=spent) from exc
+            meta = (body.get("usageMetadata") or {}) if isinstance(body, dict) else {}
+            cached = int(meta.get("cachedContentTokenCount") or 0)
+            spent.add_usage(Completion(text="", input_tokens=max(0, int(meta.get("promptTokenCount") or 0) - cached), cache_read_tokens=cached,
+                                       output_tokens=int(meta.get("candidatesTokenCount") or 0) + int(meta.get("thoughtsTokenCount") or 0)))
+            try:
+                candidate = body["candidates"][0]
+            except (KeyError, IndexError, TypeError) as exc:
+                reason = (body.get("promptFeedback") or {}).get("blockReason") if isinstance(body, dict) else None
+                raise ProviderError(f"Gemini declined the request: {reason}" if reason else "Gemini answered without a candidate", usage=spent) from exc
+            finish = str(candidate.get("finishReason") or "STOP")
+            parts = (candidate.get("content") or {}).get("parts") or []
+            text = "".join(str(p.get("text") or "") for p in parts if isinstance(p, dict) and not p.get("thought"))
+            if finish == "MAX_TOKENS":
+                logger.warning("Gemini answer cut off at %s tokens (model %s, attempt %s)", budget, self.model, attempt + 1)
+                budget *= 2
+                continue
+            if finish in ("SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"):
+                raise ProviderError(f"Gemini declined the request ({finish})", usage=spent)
+            if not text:
+                raise ProviderError("Gemini answered without text content", usage=spent)
+            spent.text, spent.stop_reason, spent.model = text, finish, str(body.get("modelVersion") or self.model)
+            return spent
+        raise ProviderError(f"Gemini's answer was cut off at the token limit twice (model {self.model}); nothing partial is shown", usage=spent)
+
+
+# BYOK-V1: the providers a user may bring their own key for (Settings > Vision with your own AI key).
+BYOK_PROVIDERS = ("anthropic", "openai", "gemini")
+
+
+def build_byok_provider(name: str, api_key: str, model: str, client: Optional[Any] = None) -> LLMProvider:
+    """BYOK-V1: one user's provider, on that user's key and chosen model, at the cheap tier (low effort). `client` is the
+    Anthropic SDK http client or an `httpx.AsyncClient` (tests hand in mock transports). Never falls back to another key."""
+    name = (name or "").lower()
+    if not api_key:
+        raise ProviderError("No API key stored for this provider")
+    if name == "anthropic":
+        return AnthropicProvider(api_key=api_key, model=model, http_client=client, effort=EFFORT_FOR_TIER["cheap"], tier="cheap")
+    if name == "openai":
+        return OpenAIProvider(api_key=api_key, model=model, client=client, tier="cheap")
+    if name == "gemini":
+        return GeminiProvider(api_key=api_key, model=model, client=client, tier="cheap")
+    raise ProviderError(f"Unknown provider '{name}'; one of {BYOK_PROVIDERS}")
 
 
 @dataclass

@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.db.models import (AiProviderConfigRecord, AlertChannelRecord, BrokerCredentialRecord, MarketplacePayoutRecord, Tenant,
-                           TenantKeyRecord, User)
+                           TenantKeyRecord, User, UserAiKeyRecord)
 from app.secrets_store import encryption
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,9 @@ PURPOSE_ALERT_CHANNEL = "alert_channel"
 PURPOSE_AI_PROVIDER_KEY = "ai_provider_key"
 PURPOSE_MFA_SECRET = "mfa_secret"
 PURPOSE_PAYOUT_DESTINATION = "payout_destination"
+# BYOK-V1: a user's own AI provider key (`user_ai_keys.encrypted_key`). The sealed plaintext also binds the user and the
+# provider (app/ai/byok.py), so the per-user binding holds in every write format, not only under AES-GCM.
+PURPOSE_BYOK_AI_KEY = "byok_ai_key"
 
 
 def _remember(tenant_id: int, raw: bytes) -> Fernet:
@@ -159,7 +162,7 @@ async def reencrypt_tenant(session: AsyncSession, tenant_id: int) -> Dict[str, i
     """Moves every secret of one tenant that is not in the configured write format (legacy master-key rows;
     with SECRETS_WRITE_FORMAT=aesgcm also the Phase N tenant-Fernet rows) to that format."""
     await ensure_tenant_key(session, tenant_id)
-    counts = {"broker_credentials": 0, "alert_channels": 0, "ai_providers": 0, "mfa_secrets": 0, "payout_destinations": 0}
+    counts = {"broker_credentials": 0, "alert_channels": 0, "ai_providers": 0, "mfa_secrets": 0, "payout_destinations": 0, "byok_ai_keys": 0}
 
     def _upgrade(ciphertext: Optional[str], purpose: str) -> Optional[str]:
         if not ciphertext or not encryption.needs_rewrite(ciphertext):
@@ -191,6 +194,11 @@ async def reencrypt_tenant(session: AsyncSession, tenant_id: int) -> Dict[str, i
         if new:
             row.destination_encrypted = new
             counts["payout_destinations"] += 1
+    for row in await session.scalars(select(UserAiKeyRecord).where(UserAiKeyRecord.tenant_id == tenant_id)):
+        new = _upgrade(row.encrypted_key, PURPOSE_BYOK_AI_KEY)
+        if new:
+            row.encrypted_key = new
+            counts["byok_ai_keys"] += 1
     await session.commit()
     return counts
 
@@ -213,7 +221,7 @@ async def status(session: AsyncSession) -> Dict[str, int]:
     pending = 0
     for model, column in ((BrokerCredentialRecord, "encrypted_payload"), (AlertChannelRecord, "encrypted_config"),
                           (AiProviderConfigRecord, "encrypted_api_key"), (User, "mfa_secret_encrypted"),
-                          (MarketplacePayoutRecord, "destination_encrypted")):
+                          (MarketplacePayoutRecord, "destination_encrypted"), (UserAiKeyRecord, "encrypted_key")):
         for value in await session.scalars(select(getattr(model, column))):
             if not value:
                 continue

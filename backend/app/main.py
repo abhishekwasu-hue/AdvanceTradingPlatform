@@ -98,6 +98,7 @@ from app.billing.service import meter
 from app.marketplace.routes import admin_router as marketplace_admin_router, router as marketplace_router
 from app.public_api.routes import keys_router as api_keys_router, public_router as public_api_router
 from app.ai.routes import router as ai_router
+from app.ai.byok_routes import router as ai_byok_router
 from app.platform.routes import admin_router as controls_admin_router, status_router as system_status_router, users_router as trading_disable_router
 from app.portfolio.routes import router as portfolio_router
 from app.tax.routes import router as tax_router
@@ -108,6 +109,7 @@ from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
+from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -195,6 +197,7 @@ app.include_router(marketplace_router)
 app.include_router(marketplace_admin_router)
 app.include_router(api_keys_router)
 app.include_router(public_api_router)
+app.include_router(ai_byok_router)       # BYOK-V1: the user's own AI key for Vision (flag vision_byok, off by default)
 app.include_router(ai_router)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
@@ -216,6 +219,9 @@ app.include_router(alert_links_router)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
+app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
+app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
+app.include_router(feedback_router)        # PW6: "Send feedback"
 
 _default_risk_config = RiskConfig()
 

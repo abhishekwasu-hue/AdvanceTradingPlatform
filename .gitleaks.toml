@@ -12,3 +12,9 @@ regexes = [
   '''JWT_ACCEPT_LEGACY=(true|false)''',
   '''AAGLIFsecretPartNoColon_xyz123''',
 ]
+
+[[allowlists]]
+description = "BYOK-V1 tests: obviously fake provider keys and tokens, every one marked FAKEFAKE (never a real key)"
+regexes = [
+  '''FAKEFAKE''',
+]

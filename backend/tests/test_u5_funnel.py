@@ -46,6 +46,8 @@ def test_the_registry_lists_parameter_defaults_for_inline_editing():
     assert reg["RSI"]["defaults"] == {"n": 14} and reg["SwingLow"]["defaults"] == {"degree": 0}
     assert reg["close"]["defaults"] == {}
     assert reg["SMA"]["types"] == {"x": "num", "n": "window"} and reg["Rank"]["cross_sectional"] is True
+    # U5 D2 review: functions that need more than bars say so (the builder hides them until the run loads that data)
+    assert reg["IsFnO"]["needs"] == ["reference"] and reg["ChainBias"]["needs"] == ["option_chain"] and reg["RSI"]["needs"] == []
 
 
 BUILDER_TEXTS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "screener" / "builderTexts.json"
@@ -79,3 +81,13 @@ def test_a_symbol_without_enough_history_is_left_out_not_removed_by_stage_one():
     uni = _universe() + [_sym("NEW", [100.0] * 10)]                                     # listed recently
     funnel = stage_survivors(ast, v, uni, base_tf="1d")
     assert funnel["with_data"] == 4 and all("NEW" not in s["removed"] for s in funnel["stages"])
+
+
+def test_each_symbol_shows_which_stages_it_passed_on_its_own():
+    """U5 D2 why-matched chips: a stage's pass is the symbol's own result, even after an earlier stage removed it."""
+    ast, v = compile_screen("close > 100 AND close > SMA(close, 20)", base_tf="1d")
+    funnel = stage_survivors(ast, v, _universe(), base_tf="1d")
+    # UP2 (last close 70) fails stage one but passes stage two on its own; FLAT equals its SMA (not above)
+    assert funnel["passes"] == {"UP": [True, True], "DOWN": [False, False], "FLAT": [False, False], "UP2": [False, True]}
+    matched = {m.symbol for m in run_screen(ast, v, _universe(), base_tf="1d") if m.matched}
+    assert {s for s, row in funnel["passes"].items() if all(row)} == matched

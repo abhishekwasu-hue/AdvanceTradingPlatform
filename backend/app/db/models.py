@@ -1173,6 +1173,10 @@ class AiActionRecord(Base):
     result: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, index=True)
+    # PW4 (ported from the Trade bot's vision/tg.py): the Telegram message that carries this proposal's buttons, so a
+    # decision taken in the app - or the proposal expiring - can take the buttons off and say what happened there too.
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class AiCandidateRecord(Base):

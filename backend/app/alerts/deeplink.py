@@ -75,3 +75,26 @@ def app_path(notification) -> str:
     if getattr(notification, "id", None):
         return "/notifications?" + urlencode({"n": notification.id})
     return "/notifications"
+
+
+def app_base_url() -> Optional[str]:
+    """PW4: the app's absolute address for links outside the app (Telegram refuses relative URLs): PUBLIC_BASE_URL,
+    else an absolute FRONTEND_URL; None when neither is set (the link is then left out, never guessed)."""
+    from app.core import config as app_config
+    for candidate in (getattr(app_config, "PUBLIC_BASE_URL", ""), getattr(app_config, "FRONTEND_URL", "")):
+        base = (candidate or "").strip().rstrip("/")
+        if base.startswith(("https://", "http://")):
+            return base
+    return None
+
+
+def app_url(notification) -> Optional[str]:
+    """The absolute link to the screen a notification is about (for Telegram's "Open in app" button)."""
+    base = app_base_url()
+    return f"{base}{app_path(notification)}" if base else None
+
+
+def open_in_app_row(notification) -> Optional[list]:
+    """One inline-keyboard row with the "Open in app" link, or None without an absolute app address."""
+    url = app_url(notification)
+    return [{"text": "Open in app", "url": url}] if url else None

@@ -31,6 +31,7 @@ from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, Opt
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
+from app.live.routes import router as live_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
 from app.strategy_engine.chart_routes import router as strategy_chart_router
@@ -217,6 +218,7 @@ app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
+app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"

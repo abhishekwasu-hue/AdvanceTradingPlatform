@@ -170,14 +170,18 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
 
 async def expire_stale(session: AsyncSession, now: datetime) -> int:
     rows = await session.scalars(select(AiActionRecord).where(AiActionRecord.status == "PROPOSED"))
-    count = 0
+    expired: List[AiActionRecord] = []
     for row in rows:
         if _utc(row.expires_at) <= now:
             row.status, row.result = "EXPIRED", "No decision within the time window"
-            count += 1
-    if count:
+            expired.append(row)
+    if expired:
         await session.commit()
-    return count
+        # PW4: an expired proposal's Telegram buttons come off too (best effort, after the commit).
+        from app.telegram_inbound.service import sync_proposal_message
+        for row in expired:
+            await sync_proposal_message(session, row, now=now)
+    return len(expired)
 
 
 async def decide(session: AsyncSession, action: AiActionRecord, user: User, *, approve: bool, note: Optional[str], now: Optional[datetime] = None) -> AiActionRecord:

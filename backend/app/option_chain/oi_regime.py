@@ -76,6 +76,27 @@ class PcrBands(BaseModel):
         return self
 
 
+ALERT_TYPES = ("DIRECTION_CHANGE", "STABLE_FLIP", "STRENGTH_CHANGE", "PCR_BAND", "MAX_PAIN_MOVE", "OI_WALL", "DTE", "COLLECTOR_STALE")
+
+
+class OIAlertSettings(BaseModel):
+    """O4: which banner changes notify, how often, and when not (all off until the tenant turns alerts on)."""
+    enabled: bool = False
+    types: List[str] = Field(default_factory=lambda: list(ALERT_TYPES))
+    cooldown_minutes: int = Field(default=15, ge=0, le=1440)            # per alert type and underlying
+    max_pain_strikes: int = Field(default=2, ge=1, le=50)               # a move of this many strikes notifies
+    dte_milestones: List[int] = Field(default_factory=lambda: [1, 0])   # expiry tomorrow / today
+    quiet_start: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")   # IST, e.g. "12:00"
+    quiet_end: Optional[str] = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+
+    @model_validator(mode="after")
+    def _known(self) -> "OIAlertSettings":
+        unknown = [t for t in self.types if t not in ALERT_TYPES]
+        if unknown:
+            raise ValueError(f"unknown alert types {unknown}")
+        return self
+
+
 class OIRegimeSettings(BaseModel):
     """Defaults for one tenant / underlying. Layer platform -> tenant -> underlying with `resolve_settings`."""
     strike_step: Optional[float] = Field(default=None, gt=0)      # None: the chain's own strike spacing
@@ -100,6 +121,7 @@ class OIRegimeSettings(BaseModel):
     iv_lookback_days: int = Field(default=10, ge=1)
     iv_max_age_minutes: float = Field(default=20.0, gt=0)
     marubozu_threshold: float = Field(default=0.8, gt=0, le=1)
+    alerts: OIAlertSettings = Field(default_factory=OIAlertSettings)
 
 
 def resolve_settings(*layers: Optional[Mapping[str, Any]]) -> OIRegimeSettings:
@@ -109,8 +131,8 @@ def resolve_settings(*layers: Optional[Mapping[str, Any]]) -> OIRegimeSettings:
         for key, value in (layer or {}).items():
             if key not in OIRegimeSettings.model_fields:
                 raise ValueError(f"unknown OI setting {key!r}")
-            if key == "pcr_bands" and isinstance(value, Mapping):
-                value = {**merged.get("pcr_bands", {}), **value}
+            if key in ("pcr_bands", "alerts") and isinstance(value, Mapping):
+                value = {**merged.get(key, {}), **value}
             merged[key] = value
     return OIRegimeSettings.model_validate(merged)
 

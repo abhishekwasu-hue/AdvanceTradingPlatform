@@ -1,0 +1,59 @@
+{
+ "bars": "crafted_bars(4) intraday, crafted_bars(208, daily=True) daily",
+ "engine_version": "4",
+ "results": {
+  "bb_rsi_reversion_5m": {
+   "result_hash": "sha256:076e312eb26fe0de3a93f40f6561a0226ed83e03538cf9bac401568f94984923",
+   "trades": 1
+  },
+  "ema_rsi_scalper_1m": {
+   "result_hash": "sha256:cd1bfd91f0e65fcd48f28c21e248befdc6d656c3ebfe52dc07cc51e275154719",
+   "trades": 7
+  },
+  "macd_ema_trend_5m": {
+   "result_hash": "sha256:c15db2309a907e8265e1cc44ca1b229a323b83f410a538a137722fa67e295590",
+   "trades": 5
+  },
+  "mtf_1m_15m_trend_pullback": {
+   "result_hash": "sha256:e590af475bded6c55100572968484fac15f671480731191b498634c91686d97e",
+   "trades": 1
+  },
+  "mtf_1m_5m_trend_pullback": {
+   "result_hash": "sha256:b233219cbfa6c5558d693502878b0de1cf089e4ad5f1395f6133f0e275549168",
+   "trades": 1
+  },
+  "mtf_5m_30m_trend_pullback": {
+   "result_hash": "sha256:48c4613260d1307ab19065d211ed84e61946d44259ca4cc06fbea45cf9521128",
+   "trades": 0
+  },
+  "mtf_5m_60m_trend_pullback": {
+   "result_hash": "sha256:b107e57252eb5cc4e41ad77ea46030b692fea18dacd51367aa59d815fc51f8b3",
+   "trades": 0
+  },
+  "orb_15m_5m": {
+   "result_hash": "sha256:a212d74ba4adcaca928722d0359f74bbcfcd5b0aeb0069f559227b36ff8e1468",
+   "trades": 0
+  },
+  "rsi_adx_momentum_5m": {
+   "result_hash": "sha256:a63b61e3a2ae1721cbf5c5c2daa8e62679b283a0f002adf41034ddc55b351e14",
+   "trades": 6
+  },
+  "supertrend_adx_scalper_1m": {
+   "result_hash": "sha256:42b8bbdefc8e8aac778a0e473e953d04620a8004e1bc42dc371167184c9a8df7",
+   "trades": 14
+  },
+  "swing_breakout_d": {
+   "result_hash": "sha256:48964bc73c3619dff44c164c42ff60c60b64b5baa65fed4f4be3726d7edd6bff",
+   "trades": 4
+  },
+  "swing_ema_pullback_d": {
+   "result_hash": "sha256:4258c43b4652e3c98a2e0d7053db8bf0e9e81de307a5c6f011047bfb264e1745",
+   "trades": 5
+  },
+  "vwap_supertrend_5m": {
+   "result_hash": "sha256:d6e42cc616f0c57f46298ea3cea8075f0ebe1402dcab01106e171e186e44c48b",
+   "trades": 5
+  }
+ },
+ "risk_per_trade_pct": 0.5
+}

@@ -1,6 +1,6 @@
 # ATP beta launch spec (owner, verbatim; revision 2: Tier A details + Phase 0 broker launch list)
 
-Order of work (owner, 2026-10-11): finish the merge train; then PW1-PW6 (PWA first, below); then BT1-BT3 in Phase 0 scope (§4a).
+Order of work (owner, 2026-10-11): finish the merge train; then PW1-PW5 (PWA first, below); then BYOK-V1-V3 (Vision with the user's own AI key, addendum below, §8: after PW5); then PW6; then BT1-BT3 in Phase 0 scope (§4a).
 
 From Abhi — ATP Beta launch spec (5,000 users; mobile + desktop; approval-only trading) (English). Same working rules as MASTER SPEC. Draft PRs, tests, English strings, flags off by default; LIVE orders only through the approval flow below. This spec decides the beta scope and the data model; costs and licensing are in docs/BETA_COSTS.md (owner-maintained).
 
@@ -65,3 +65,17 @@ PW5 Phase 0 proposal flow in the PWA: proposal card with Approve (PAPER) / Rejec
 PW6 Install analytics + beta cohort gate: invite code, cohort cap (config, default 500), install/update metrics, a "Send feedback" button that attaches app version and screen (no secrets, no data).
 Acceptance: a tester installs from the site on Android, iPhone and a laptop; receives a push for a PAPER proposal; approves it in the app or on Telegram and sees both sides update; option chain, screener and charts usable one-handed on a 360 px screen; Lighthouse PWA and accessibility ≥ 95; no market data cached offline.
 Then continue BT1–BT3 (Phase 0 scope) per ATP_BETA_LAUNCH_SPEC; Capacitor/Tauri only when Phase 1 starts.
+
+
+## Addendum: Vision with the user's own AI key - BYOK (owner, verbatim)
+
+From Abhi — Vision for every user with their own AI key (BYOK) (English). Applies with the Copilot spec (per-tenant encrypted keys, consent, metering already exist) and the Beta spec §4a. Draft PRs; tests; flags off by default; English strings.
+
+1. Principle: each user can turn on "Vision chart review" from their dashboard using their OWN AI provider API key. The user pays the provider directly; ATP stores the key encrypted, never bills for it, and never uses one user's key for another user. Providers via the existing provider seam: Anthropic (Claude), OpenAI, Google Gemini.
+2. Credentials: API keys only (created by the user in the provider's developer console). Do NOT support signing in with a consumer chat subscription (claude.ai Pro/Max or similar) — Anthropic's terms do not allow subscription authentication in third-party apps. The settings page explains in one line how to create an API key and links to the provider's console.
+3. Settings → AI & Vision: add/test/remove key per provider (test call, masked display, last-used, monthly usage estimate from metering), model choice per provider (default: the provider's cost-efficient vision-capable model), per-user daily and monthly spend caps (user-set; hard stop at cap with a notice), which charts to audit (proposals only / every scan alert / daily review), and on/off per channel (Telegram, in-app).
+4. Flow (same as the owner's Trade flow): chart rendered server-side from the user's own data (Tier A/C) → Vision audit with the user's key → Telegram/in-app message with the chart, the caption and a "Vision report" (Zones, Structure, Pullback & trigger, Entry/SL/Target as ✅/⚠️/❌, ≤ 12 lines). Numbers always come from the engine's data, never read from the image. Vision never places, blocks or changes an order or decision (ADR-0006); it only comments. If the key fails or the cap is reached, the chart is still sent with "Vision skipped: <reason>".
+5. Without a key: everything else works; the Vision line says "Vision off — add your API key in Settings".
+6. Privacy: the chart image and the minimal context are sent only to the provider the user chose, under the user's key; disclosed in the AI-usage disclosure; no images retained by ATP beyond the user's journal (user-deletable).
+7. Tests: key encryption/masking; one user's key never used for another (test); cap enforcement; failure/skip path; report format; no order/decision mutation from Vision output; provider seam mocks for all three providers.
+8. Order: fits after PW5 (proposal flow) — BYOK-V1 settings + key test + caps → BYOK-V2 audit on proposals + Telegram/in-app report → BYOK-V3 scan-alert and daily-review audits.

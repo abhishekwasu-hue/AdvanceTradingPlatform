@@ -58,6 +58,7 @@ def test_screenql_argument_defaults_are_the_intraday_parameter_defaults():
         for arg, param in args.items():
             assert spec[arg].default == bp.DEFAULTS[param], (fn, arg)
         assert FUNCTIONS[fn].flag == "screener_breakouts"
+    assert {fn: bp.SCREENQL_ARGS[fn] for fn in want} == want
     assert FUNCTIONS["ORBreakout"].min_sessions == bp.DEFAULTS["tod_sessions"] + 1
     assert set(FUNCTIONS["ORBreakout"].timeframes) == set(style.STYLES["intraday"])
 
@@ -521,3 +522,122 @@ def test_intraday_run_api_fetches_whole_sessions_and_uses_the_exchange_clock(mon
         assert not v["ok"] and "DayExtremeBreak()" in v["problems"][-1]["message"]
     finally:
         _set(screener_v2=False, screener_breakouts=False)
+
+
+# ------------------------------------------------------------------------------- IST-aware indexes (broker-shaped data)
+def _ist(f):
+    return f.set_axis(f.index.tz_convert("Asia/Kolkata"))
+
+
+@pytest.mark.parametrize("screen,params", [("B16", {}), ("B17", {"day_level": "prev_day"}), ("B17", {"day_level": "first_hour"}), ("B18", {})])
+def test_an_ist_aware_index_gives_the_same_sessions_vwap_volume_and_signals(m5, screen, params):
+    # brokers (Kite, Fyers, Dhan) deliver IST-aware stamps: nothing may depend on the index's time zone
+    p = bp.settings(tod_vol_mult=1.0, **params)
+    utc, ist = Bars(m5, p, tf="5m"), Bars(_ist(m5), p, tf="5m")
+    su, si = utc.sessions(), ist.sessions()
+    assert su.dates == si.dates and (su.session == si.session).all() and np.array_equal(su.minute, si.minute, equal_nan=True)
+    assert np.allclose(utc.vwap(), ist.vwap(), equal_nan=True) and np.allclose(utc.tod_rvol(), ist.tod_rvol(), equal_nan=True)
+    a, b = evaluate_screen(m5, screen, p, tf="5m"), evaluate_screen(_ist(m5), screen, p, tf="5m")
+    for side in ("up", "down"):
+        assert (a[side]["signal"].to_numpy() == b[side]["signal"].to_numpy()).all()
+    # the higher-timeframe bars built from an IST-aware index start at 09:15 IST like the UTC ones
+    hour = resample(_ist(m5), "5m", "1h")
+    assert hour.index[0].strftime("%H:%M") == "09:15" and (hour.index.tz_convert("UTC") == resample(m5, "5m", "1h").index).all()
+    ra = run_breakout(screen, {"5m": m5}, "5m", params={**params, "tod_vol_mult": 1.0}, within=None).signals
+    rb = run_breakout(screen, {"5m": _ist(m5)}, "5m", params={**params, "tod_vol_mult": 1.0}, within=None).signals
+    assert [(r["bar"], r["side"], r["htf"], r["grade"], r["clock"]) for r in ra] == [(r["bar"], r["side"], r["htf"], r["grade"], r["clock"]) for r in rb]
+
+
+def test_session_dates_are_exchange_dates_across_the_utc_midnight_boundary():
+    # a 24-hour venue clock (00:00-23:59 IST) puts bars of one IST day on two UTC dates: 18:30 UTC is IST midnight
+    cal = ses.SessionCalendar("X", time(0, 0), time(23, 59), None)
+    idx = pd.DatetimeIndex(["2026-03-02 18:00", "2026-03-02 18:25", "2026-03-02 18:30", "2026-03-02 18:35", "2026-03-03 18:30"], tz="UTC")
+    f = pd.DataFrame({"open": 100.0, "high": [101.0, 102.0, 103.0, 104.0, 105.0], "low": 99.0, "close": 100.0, "volume": 1.0}, index=idx)
+    for index in (idx, idx.tz_convert("Asia/Kolkata")):
+        sm = ses.map_sessions(index, 5, cal)
+        assert [str(d) for d in sm.dates] == ["2026-03-02", "2026-03-03", "2026-03-04"] and list(sm.session) == [0, 0, 1, 1, 2]
+        hi, _ = ses.previous_session_levels(f["high"].to_numpy(), f["low"].to_numpy(), sm)
+        assert list(hi[2:]) == [102.0, 102.0, 104.0]                    # the previous IST day, not the previous UTC date
+        vw = ses.session_vwap(f.set_axis(index), sm)
+        assert vw[2] == pytest.approx((103.0 + 99.0 + 100.0) / 3)       # VWAP resets at IST midnight
+    # daily bars (labelled 18:30 UTC = IST midnight by some brokers) are not session bars
+    daily = f.set_axis(pd.DatetimeIndex(["2026-03-01 18:30", "2026-03-02 18:30", "2026-03-03 18:30", "2026-03-04 18:30", "2026-03-05 18:30"],
+                                        tz="UTC"))
+    with pytest.raises(ValueError):
+        Bars(daily, bp.settings()).sessions()
+
+
+# ------------------------------------------------------------------ production-shaped history: the real fetch windows
+@pytest.fixture(scope="module")
+def broker_history():
+    """A year of 1-minute sessions with an exchange holiday, delivered as a broker does: IST-aware 5m / 15m bars, and daily
+    bars labelled at IST midnight (18:30 UTC)."""
+    m1 = generate(375 * 260, 100.0, 7)
+    days = sorted(set(m1.index.normalize()))
+    m1 = m1[m1.index.normalize() != days[-25]]                           # a holiday inside the intraday window
+    daily = resample(m1, "1m", "1d")
+    daily.index = daily.index.tz_localize(None).tz_localize("Asia/Kolkata")
+    return {"5m": _ist(resample(m1, "1m", "5m")), "15m": _ist(resample(m1, "1m", "15m")), "1d": daily}
+
+
+@pytest.mark.parametrize("template_id", [t.id for t in templates.TEMPLATES if t.screen in INTRADAY_SCREENS])
+def test_every_intraday_template_can_match_within_the_real_fetch_windows(broker_history, template_id):
+    """What the breakout run fetches: the signal timeframe for `fetch_days(lookback)` calendar days (60 at most) plus daily
+    history when the context ladder reaches 1d. Every template must be able to match on exactly that - its ScreenQL text
+    with check_history=True (nothing 'too short') and the graded engine run, context ladder included."""
+    from app.screener.routes import MAX_INTRADAY_FETCH_DAYS, fetch_days
+
+    t = templates.BY_ID[template_id]
+    tf, params = t.signal_tf, templates.template_params(t)
+    text, why = templates.screenql(t.screen, tf, params)
+    ast, validated = compile_screen(text, base_tf=tf)
+    days = fetch_days(validated.lookback, tf)
+    assert days <= MAX_INTRADAY_FETCH_DAYS
+    full = broker_history[tf]
+    recent = full[full.index >= full.index[-1].normalize() - pd.Timedelta(days=90)]
+    context = style.context_timeframes(tf)
+    daily_ctx = [c for c in context if bp.TF_MINUTES[c] >= bp.TF_MINUTES["1d"]]
+
+    def fetched(j):
+        """The broker fetch made at the close of bar j: `days` calendar days of signal bars, daily bars closed before."""
+        cut = recent.iloc[:j + 1]
+        out = {tf: cut[cut.index >= cut.index[-1].normalize() - pd.Timedelta(days=days)].copy()}
+        if daily_ctx:
+            out["1d"] = broker_history["1d"][broker_history["1d"].index < cut.index[-1].normalize()]
+        return out
+
+    # a candidate break in the last sessions (ignoring volume) on a side the context allows, then the volume a real break
+    # would carry, evaluated on exactly what the fetch at that bar returns
+    loose = evaluate_screen(recent, t.screen, bp.settings(**{**params, "tod_vol_mult": 0.0}), tf=tf)
+    last_days = recent.index.normalize().unique()[-20:]
+    found = None
+    for side in ("up", "down"):
+        for j in np.flatnonzero(loose[side]["signal"].to_numpy() & recent.index.normalize().isin(last_days))[::-1]:
+            fr = fetched(int(j))
+            fr[tf].iloc[-1, fr[tf].columns.get_loc("volume")] *= 6
+            rows = run_breakout(t.screen, fr, tf, params=params, within=1).signals
+            if rows and rows[0]["side"] == side and rows[0]["htf_pass"]:
+                found = (fr, rows[0])
+                break
+        if found:
+            break
+    assert found is not None, "no bar in the fetch window can carry this template's match"
+    fr, row = found
+    assert row["rvol"] is not None and row["rvol"] >= bp.DEFAULTS["tod_vol_mult"] and None not in row["htf"].values()
+    match = run_screen(ast, validated, [SymbolData("S", fr)], base_tf=tf, check_history=True)[0]
+    assert match.matched and match.reason is None, match.reason
+
+
+def test_screenql_arguments_are_checked_against_the_parameter_ranges_when_validated():
+    def problems(text, **params):
+        return [p.message for p in compile_screen(text, base_tf="5m", params=params)[1].problems]
+    assert problems('ORBreakout("up", 0)') == ["ORBreakout: minutes 0 - or_minutes: must be between 1 and 240"]
+    assert problems('ORBreakout("up", 15.5)') == ["ORBreakout: minutes 15.5 - or_minutes: invalid value 15.5"]
+    assert problems('DayLevelBreak("up", "first_hour", 1.5, TRUE, 300) AND close > 0') == [
+        "DayLevelBreak: skip 300 - skip_first_min: must be between 0 and 240"]
+    assert problems('DayExtremeBreak("up", -1)') == ["DayExtremeBreak: v -1 - tod_vol_mult: must be between 0 and 20"]
+    assert problems('RelVolumeTOD(1) > 2') == ["RelVolumeTOD: sessions 1 - tod_sessions: must be between 2 and 120"]
+    assert problems('RangeBreakout("up", 20, 9)') == ["RangeBreakout: k 9 - min_break_atr: must be between 0 and 5"]   # BK1 too
+    assert problems('ORBreakout("up", $m)', m=500) and not problems('ORBreakout("up", $m)', m=30)        # screen parameters too
+    assert not problems('ORBreakout("up", 30, 2, FALSE, 0, 0)') and not problems('RelVolumeTOD(3) > 2')
+

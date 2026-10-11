@@ -132,6 +132,21 @@ class _Checker:
         except (TypeError, ValueError, IndexError):
             return max(spec.degree_min_bars)
 
+    def param_ranges(self, node: Any, spec: Any) -> None:
+        """A breakout function's literal (or parameter) arguments within the breakout parameter they set
+        (app/screener/breakouts/params.py: range and choices), so a bad value fails here, not on the first run."""
+        from app.screener.breakouts.params import arg_problem
+        for sig, arg in zip(spec.args, node.args):
+            if isinstance(arg, (n.Num, n.Str, n.Bool)):
+                value: Any = arg.value
+            elif isinstance(arg, n.Param) and arg.name in self.params:
+                value = self.params[arg.name]
+            else:
+                continue
+            problem = arg_problem(spec.name, sig.name, value)
+            if problem:
+                self.err(problem, arg)
+
     def sessions_needed(self, node: Any, spec: Any) -> int:
         """U6 BK2: whole sessions a function needs - its fixed `min_sessions`, or the `sessions_arg` argument (literal,
         parameter or default) plus the current session."""
@@ -305,6 +320,8 @@ class _Checker:
             t, _ = self.check(arg_node, own_tf)
             if t != kw_sig.type:
                 self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node)
+        if spec.flag is not None:                                     # U6 breakout family: arguments within the parameter ranges
+            self.param_ranges(node, spec)
         for i in spec.price_args:
             if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
                 self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i])

@@ -73,6 +73,7 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "RelVolume": {"n": "vol_avg_n"}, "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"}, "DowTrend": {"degree": "htf_degree"}}
     bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
     assert set(want) | bk2 == set(BREAKOUT_FUNCTIONS)
+    assert {fn: bp.SCREENQL_ARGS[fn] for fn in want} == want                 # the validator's range map is the same map
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():

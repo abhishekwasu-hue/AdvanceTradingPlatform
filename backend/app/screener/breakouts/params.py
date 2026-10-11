@@ -253,10 +253,47 @@ def settings(**overrides: Any) -> Dict[str, Any]:
     return clean
 
 
+# ScreenQL breakout function -> {argument: the parameter it sets}. The validator checks a literal (or a screen parameter)
+# against that parameter's range / choices, so a bad value is refused when the screen is saved, not when it first runs.
+SCREENQL_ARGS: Dict[str, Dict[str, str]] = {
+    "RangeBreakout": {"n": "range_n", "k": "min_break_atr", "v": "vol_mult", "mode": "range_mode"},
+    "SwingBreakout": {"degree": "swing_degree", "k": "min_break_atr"},
+    "SwingBreakType": {"degree": "swing_degree", "k": "min_break_atr"},
+    "NRBreakout": {"setup": "nr_setup", "v": "vol_mult", "k": "min_break_atr"},
+    "NewHighBreakout": {"weeks": "high_weeks", "v": "vol_mult", "k": "min_break_atr"},
+    "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"},
+    "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
+    "RelVolume": {"n": "vol_avg_n"},
+    "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"},
+    "DowTrend": {"degree": "htf_degree"},
+    "ORBreakout": {"minutes": "or_minutes", "v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
+    "DayLevelBreak": {"level": "day_level", "v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
+    "DayExtremeBreak": {"v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
+    "RelVolumeTOD": {"sessions": "tod_sessions", "mode": "tod_mode"},
+}
+
+
+def arg_problem(function: str, arg: str, value: Any) -> Optional[str]:
+    """Why `value` is not allowed for a breakout function's argument (None: fine, or not a parameter argument)."""
+    name = SCREENQL_ARGS.get(function, {}).get(arg)
+    if name is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if name == "tod_sessions":                     # RelVolumeTOD(sessions): at least one prior session, as many as the window
+        clean, errors = validate({name: value, "tod_min_sessions": 1})
+    else:
+        clean, errors = validate({name: value})
+    if errors:
+        return f"{function}: {arg} {value!r} - {errors[0].replace(' - default used', '').replace(' - defaults used', '')}"
+    return None
+
+
 def describe() -> List[Dict[str, Any]]:
     """The parameters as data (the builder's 'Breakout' and 'Breakout quality' block fields, the docs page)."""
     return [{"name": p.name, "default": _copy(p.default), "doc": p.doc, "note": p.note, "group": p.group,
              "min": p.low, "max": p.high, "choices": list(p.choices)} for p in PARAMS]
 
 
-__all__ = ["PARAMS", "DEFAULTS", "BY_NAME", "Param", "TF_MINUTES", "DEFAULT_CONTEXT_LADDER", "validate", "settings", "describe"]
+__all__ = ["PARAMS", "DEFAULTS", "BY_NAME", "Param", "TF_MINUTES", "DEFAULT_CONTEXT_LADDER", "validate", "settings", "describe",
+           "SCREENQL_ARGS", "arg_problem"]

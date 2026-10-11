@@ -73,6 +73,16 @@ def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
     return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
 
 
+def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
+    """The 09:15 IST anchor of intraday buckets on the first bar's day, in the index's own time zone. The day is the UTC
+    day (09:15 IST is 03:45 UTC on the same date): normalising an IST-aware index first would anchor at 03:45 IST."""
+    from app.strategy_engine.declarative import _IST_OPEN_UTC
+    first = index[0]
+    if first.tzinfo is None:
+        return first.normalize() + _IST_OPEN_UTC
+    return (first.tz_convert("UTC").normalize() + _IST_OPEN_UTC).tz_convert(first.tzinfo)
+
+
 def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = False) -> pd.DataFrame:
     """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed (kept only for
     S4b-2 intrabar alerts, `keep_forming`). Intraday buckets start at the exchange open, like the broker's charts and
@@ -82,8 +92,7 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
         agg["oi"] = "last"
     kwargs: Dict[str, Any] = {"label": "left", "closed": "left"}
     if n.TF_MINUTES[tf] < n.TF_MINUTES["1d"] and len(base):
-        from app.strategy_engine.declarative import _IST_OPEN_UTC
-        kwargs["origin"] = base.index[0].normalize() + _IST_OPEN_UTC
+        kwargs["origin"] = session_origin(base.index)
     out = base.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
     if len(out) and len(base) and not keep_forming:
         last_base_close = base.index[-1] + _DURATION[base_tf]

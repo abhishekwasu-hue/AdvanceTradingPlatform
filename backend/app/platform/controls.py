@@ -117,13 +117,17 @@ FEATURE_FLAGS: Dict[str, str] = {
     # HB0 (docs/design/HB_HISTORY_BACKFILL.md): lets the operator run the R2 history import by hand (CLI). OFF: the
     # importer refuses to start. Nothing runs on a schedule; 1-minute data only ever goes to the owner's tenant.
     "history_import": "History import from the R2 store: daily bars into the shared lake, 1-minute bars into the owner's private store",
+    # HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill (CLI), the nightly EOD fetch (worker) and
+    # the admin's manual file / corporate-action / holiday uploads. OFF: all of them refuse and nothing contacts NSE.
+    "history_backfill": "Daily NSE bhavcopy backfill and nightly EOD fetch into the shared lake (cash, indices, F&O futures)",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier", "history_import", "market_zones"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier", "history_import",
+                               "history_backfill", "market_zones"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

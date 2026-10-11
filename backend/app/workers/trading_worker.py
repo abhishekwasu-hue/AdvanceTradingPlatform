@@ -129,6 +129,7 @@ class CycleReport:
     ai_snoozes_woken: int = 0     # PW5: snoozed proposals announced again this cycle
     master_synced: Optional[Dict[str, int]] = None
     universe_synced: Optional[Dict[str, int]] = None      # U1-a
+    history_eod_started: bool = False                     # HB1: the nightly EOD bhavcopy job was started this cycle
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
@@ -216,6 +217,9 @@ class TradingWorker:
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
+        # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
+        self._last_history_eod_day = None
+        self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the nightly market-zones job, once per IST day
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
@@ -247,6 +251,8 @@ class TradingWorker:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._history_eod_task is not None and not self._history_eod_task.done():
+            self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -465,6 +471,13 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
+                # HB1: the nightly EOD job - once per IST day from HISTORY_BACKFILL_HOUR_IST, only while the
+                # `history_backfill` flag is on; it runs in its own task, so a slow archive never holds up a cycle.
+                try:
+                    report.history_eod_started = await self._maybe_start_history_eod(session, now)
+                except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                    logger.exception("History EOD job not started")
+                    report.errors.append(f"history eod: {exc}")
                 # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, outside market hours (flag
                 # `market_zones`, off by default): zones from the shared lake bars, stored as-of. Reference data; never trades.
                 if not nse.is_open and self._last_market_zones_day != ist_now.date():
@@ -871,6 +884,35 @@ class TradingWorker:
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
+
+    async def _maybe_start_history_eod(self, session: AsyncSession, now: datetime) -> bool:
+        """HB1: starts the nightly bhavcopy job (today's files + the catch-up window) when it is due and the flag is on.
+        One task per worker; the backfill's advisory lock keeps a second replica (or a manual run) out."""
+        from app.market_lake import bhavcopy_backfill
+        from app.platform.controls import flag_enabled
+
+        day = bhavcopy_backfill.nightly_due(now, self._last_history_eod_day)
+        if day is None or (self._history_eod_task is not None and not self._history_eod_task.done()):
+            return False
+        if not await flag_enabled(session, bhavcopy_backfill.FLAG):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._last_history_eod_day = day                 # started: the next run is tomorrow
+
+        async def run() -> None:
+            from app.market_lake.nse_fetch import PoliteFetcher
+            fetcher = PoliteFetcher()
+            try:
+                summary = await bhavcopy_backfill.run_nightly(self.session_factory, fetcher, now=now)
+                logger.info("History EOD job: %s", summary.as_dict())
+            except bhavcopy_backfill.BackfillConfigError as exc:
+                logger.warning("History EOD job did not run: %s", exc)
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("History EOD job failed")
+            finally:
+                await fetcher.aclose()
+
+        self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

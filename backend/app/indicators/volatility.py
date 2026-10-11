@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+from app.indicators.prefix_cache import prefix_cached
 
 
+@prefix_cached
 def true_range(df: pd.DataFrame) -> pd.Series:
     prev_close = df["close"].shift(1)
     ranges = pd.concat(
@@ -15,11 +17,13 @@ def true_range(df: pd.DataFrame) -> pd.Series:
     return ranges.max(axis=1)
 
 
+@prefix_cached
 def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr = true_range(df)
     return tr.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
 
 
+@prefix_cached
 def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.DataFrame:
     atr_series = atr(df, period)
     hl2 = (df["high"] + df["low"]) / 2.0
@@ -63,6 +67,7 @@ def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> p
     return pd.DataFrame({"supertrend": st, "trend": trend}, index=df.index)
 
 
+@prefix_cached
 def bollinger(close: pd.Series, period: int = 20, k: float = 2.0) -> pd.DataFrame:
     """Bollinger bands: SMA mid with upper/lower at k sample standard deviations."""
     mid = close.rolling(window=period, min_periods=period).mean()

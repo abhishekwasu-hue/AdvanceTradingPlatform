@@ -138,6 +138,8 @@ LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
 LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
 # Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
 LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
+# Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
+LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more

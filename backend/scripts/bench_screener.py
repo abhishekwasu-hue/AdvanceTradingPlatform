@@ -39,7 +39,7 @@ from app.screener.runtime import SymbolData, run_screen  # noqa: E402
 EOD_SYMBOLS, EOD_BARS = 2_500, 300                # about 14 months of sessions: room for the 200-bar factors
 BARCLOSE_SYMBOLS, BARCLOSE_RULE_SIZE, BARCLOSE_SESSIONS = 200, 50, 5
 TARGETS = {"eod_screen": 3.0, "eod_cached": 0.2, "barclose_scan": 1.0}
-REFERENCE_CALIBRATION_SECONDS = 0.25              # calibrate() on a GitHub-hosted ubuntu-latest runner (docs/PERFORMANCE.md)
+REFERENCE_CALIBRATION_SECONDS = 0.08              # calibrate() on a GitHub-hosted ubuntu-latest runner (0.079 s, docs/PERFORMANCE.md)
 
 # 50 factors: trend, momentum, volatility, range, volume and pattern-count filters at several windows - the mix a
 # daily screen library is built from. Each is a filter that most symbols pass, so no factor ends the evaluation early

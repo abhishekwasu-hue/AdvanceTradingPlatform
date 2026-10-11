@@ -22,6 +22,8 @@ from collections import OrderedDict
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
+
 from app.screener import nodes
 from app.screener.runtime import Match, SymbolData, run_screen
 from app.screener.validator import Validated
@@ -38,7 +40,11 @@ def _fingerprint(data: SymbolData, base_tf: str) -> Tuple[Any, ...]:
     frame = data.frames.get(base_tf)
     if frame is None or frame.empty:
         return (data.symbol, 0)
-    return (data.symbol, len(frame), _stamp(frame.index[0]), _stamp(frame.index[-1]), tuple(frame.columns), tuple(frame.iloc[-1].tolist()))
+    index = frame.index
+    ends = (int(index.asi8[0]), int(index.asi8[-1])) if isinstance(index, pd.DatetimeIndex) else (_stamp(index[0]), _stamp(index[-1]))
+    values = frame.to_numpy()                                  # one float block: a view, not a copy
+    last = values[-1].tobytes() if values.dtype.kind == "f" else repr(values[-1].tolist())
+    return (data.symbol, len(frame), ends, tuple(frame.columns), last)
 
 
 def cache_key(ast: Any, base_tf: str, params: Optional[Dict[str, Any]], universe: List[SymbolData], *, as_of: Optional[Any] = None) -> str:

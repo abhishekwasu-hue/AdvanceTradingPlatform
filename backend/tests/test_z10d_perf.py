@@ -38,7 +38,7 @@ def _say(name: str, median: float, budget: float, runs, factor: float) -> None:
     line = f"{name}: median {median:.3f} s, budget {budget:.3f} s (target x CI factor {factor:.2f}), runs {runs}"
     print(line)
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        print(f"::notice title=G4 {name}::{line}")
+        print(f"::notice title=G4 {name.split(' ')[0]}::{line}")
 
 
 @pytest.fixture(scope="module")

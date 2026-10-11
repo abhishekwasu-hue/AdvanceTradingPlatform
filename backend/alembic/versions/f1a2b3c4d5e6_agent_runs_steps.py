@@ -1,7 +1,7 @@
 """H-C2: agent_runs and agent_steps (the Copilot agent's audit trail)
 
 Revision ID: f1a2b3c4d5e6
-Revises: a1c3e5f7b9d2
+Revises: e2b4d6f8a0c1
 Create Date: 2026-10-11 02:10:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f1a2b3c4d5e6'
-down_revision: Union[str, Sequence[str], None] = 'a1c3e5f7b9d2'
+down_revision: Union[str, Sequence[str], None] = 'e2b4d6f8a0c1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

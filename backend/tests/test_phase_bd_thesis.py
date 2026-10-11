@@ -23,6 +23,22 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+class _FrozenDatetime(datetime):
+    """`datetime` whose now() is the test's NOW: the API and Telegram paths read the wall clock, and the seeded market
+    reads are dated NOW, so without this the tests turn red a few days after NOW."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return NOW if tz is None else NOW.astimezone(tz)
+
+
+def _freeze_clock(monkeypatch):
+    from app.ai import market_memory
+    from app.telegram_inbound import service as tg
+    for module in (th, market_memory, tg):
+        monkeypatch.setattr(module, "datetime", _FrozenDatetime)
+
+
 def _tenant(email):
     headers = {"Authorization": f"Bearer {_register(email)}"}
     me = client.get("/api/auth/me", headers=headers).json()
@@ -166,7 +182,8 @@ def test_numbers_check_accepts_only_numbers_from_the_inputs():
     assert text is None and "provider error" in why
 
 
-def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_next_session():
+def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_next_session(monkeypatch):
+    _freeze_clock(monkeypatch)
     headers, tenant_id, _ = _tenant("bd-api@example.com")
     _flag(False)
     assert client.get("/api/ai/thesis/NIFTY%2050", headers=headers).status_code == 503              # default off
@@ -240,6 +257,7 @@ def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_n
 
 
 def test_capture_daily_builds_one_thesis_per_symbol_per_day_and_telegram_thesis_uses_it(monkeypatch):
+    _freeze_clock(monkeypatch)
     headers, tenant_id, _ = _tenant("bd-daily@example.com")
     _flag(True)
     _seed(tenant_id)

@@ -83,7 +83,7 @@ def test_day_counters_reset_per_indian_trading_day():
     result = run_backtest(_EveryBar(), df, "TESTSYM", "1min", RiskConfig(capital=1_000_000, risk_per_trade_pct=0.5, max_trades_per_day=1))
     days = {t.entry_time.date() if hasattr(t.entry_time, "date") else t.entry_time for t in result.trades}
     assert result.total_trades == 2 and len(days) == 2                  # one trade per day, both days - not one for the whole run
-    assert ENGINE_VERSION == "3"
+    assert int(ENGINE_VERSION) >= 3                                       # P0.6 introduced it; later versions keep it
 
 
 # --- B4 ------------------------------------------------------------------------------------------------------------------

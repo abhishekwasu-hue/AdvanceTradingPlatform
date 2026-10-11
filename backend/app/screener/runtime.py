@@ -211,6 +211,8 @@ class _Eval:
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
             "MedianRange": lambda: _median_range(f, win(0, 20)),
+            "SwingZoneStrength": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "strength"),
+            "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
@@ -287,6 +289,48 @@ def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Seri
     lo = pd.Series(low, index=f.index).ffill()
     d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
     return hi, lo, d
+
+
+def _swing_zone(f: pd.DataFrame, side: str, degree: int, what: str) -> pd.Series:
+    """S5-A4: the zone at the last CONFIRMED swing low (support) or high (resistance) as of each bar, measured by the
+    trade-port level_strength module (default settings) from bars up to that bar.
+
+    - The zone is the pivot candle from its extreme to its body: support [low, min(open, close)], resistance
+      [max(open, close), high]. The pivot bar is the zone's origin (departure and base are measured from it); the pivot
+      is used only from the bar that confirmed it, and every bar after the origin that the measures read is <= the bar.
+    - `strength` is strength_score (0-100) without leg labels (no leg classifier in ScreenQL) and without time at price
+      (that needs 1-minute data), so those two parts score as unknown, the same way the module scores them.
+    - `distance` is (close - zone mid) / median range (dist_mr). Missing before the first confirmed pivot."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import level_strength as ls
+    from app.price_action import pa_settings
+    if side not in ("low", "high"):
+        raise ScreenRuntimeError(f"unknown swing zone side {side!r}")
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    idx = pd.DatetimeIndex(f.index)
+    stamps = idx.tz_convert(None) if idx.tz is not None else idx          # naive UTC on both sides of the origin lookup
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = stamps
+    kind = "L" if side == "low" else "H"
+    origin = np.full(len(f), -1, dtype=int)                               # the pivot bar known at each bar (-1: none yet)
+    for p in cs.degree_pivots(frame, degree, s):
+        if p.kind == kind and p.confirmed_idx is not None:
+            origin[int(p.confirmed_idx):] = int(p.bar_idx)
+    bars = ls.prep_bars(frame, s)
+    o, h, l, c = bars["o"], bars["h"], bars["l"], bars["c"]
+    out = np.full(len(f), np.nan)
+    for t in np.flatnonzero(origin >= 0):
+        b = int(origin[t])
+        if side == "low":
+            zone = {"low": float(l[b]), "high": float(max(l[b], min(o[b], c[b]))), "kind": "SUPPORT"}
+        else:
+            zone = {"low": float(min(h[b], max(o[b], c[b]))), "high": float(h[b]), "kind": "RESISTANCE"}
+        zone["formed_at"] = stamps[b]
+        feats = ls.strength_features(zone, frame, int(t), symbol="DEFAULT", settings=s, bars=bars)
+        out[t] = ls.strength_score(feats) if what == "strength" else feats["dist_mr"]
+    return pd.Series(out, index=f.index)
 
 
 def _reversal_series(f: pd.DataFrame, level: pd.Series, direction: str) -> pd.Series:

@@ -125,6 +125,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="the last CONFIRMED swing low: known only once price has come back from it by the degree's threshold"),
     Spec("SwingDirection", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, values=("UP", "DOWN"),
          doc="UP after a confirmed swing low, DOWN after a confirmed swing high (missing before the first: never matches)"),
+    Spec("SwingZoneStrength", "factor", NUM, "index", (Arg("side", STR, choices=("low", "high")), _DEGREE), cost=4.0,
+         min_bars=SWING_MIN_BARS,
+         doc="0-100 strength of the zone at the last confirmed swing low (support) or high (resistance): the trade-port"
+             " level_strength score (departure, short base, recency, role reversal) from bars up to this one"),
+    Spec("SwingZoneDistance", "factor", NUM, "ratio", (Arg("side", STR, choices=("low", "high")), _DEGREE), cost=4.0,
+         min_bars=SWING_MIN_BARS,
+         doc="close minus the mid of that swing zone, in median ranges (positive above the zone)"),
     Spec("ReversalAt", "filter", BOOL, None, (Arg("level", NUM), Arg("direction", STR, choices=("bullish", "bearish"))), cost=4.0,
          min_bars=REVERSAL_MIN_BARS, price_args=(0,),
          doc="price logically reversed at `level` on this bar (the trade-port reversal rule: touch, reclaim, strength, close"

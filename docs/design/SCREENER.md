@@ -635,12 +635,56 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
     - no failed-retest confirmation.
 - **Next (S5-A4).** Zone strength (`level_strength`).
 
+## S5-A4 (built): `SwingZoneStrength(side, degree=0)` and `SwingZoneDistance(side, degree=0)`
+- **What they are.** The zone at the last confirmed swing low (`low`, support) or swing high (`high`, resistance),
+  measured on every bar by the trade-port module `app/price_action/level_strength.py` (default settings).
+  - `SwingZoneStrength` is `strength_score`, 0-100, from departure, a short base, recency and role reversal.
+  - `SwingZoneDistance` is (close - zone mid) / median range: positive above the zone.
+  - Both are missing before the first confirmed pivot of that side.
+- **The zone.** The pivot candle from its extreme to its body: support is [low, min(open, close)], resistance is
+  [max(open, close), high]. The pivot bar is the zone's origin, so departure and base are measured from it.
+- **Causal.** A pivot is used only from the bar that confirmed it. Every bar the measures read is at or before the bar
+  (the module clips the departure window to the bar). Tested by parity with the module on the pivot confirmed by each
+  bar (found independently), and by truncation invariance for degrees 0 and 1.
+- **Time zone.** Timestamps go to the module as naive UTC on both sides of its origin lookup. An IST-indexed frame
+  gives the same series as UTC (tested). Passing aware stamps would shift the origin by the IST offset.
+- **What the score leaves out.**
+  - Leg labels: ScreenQL has no leg classifier yet, so the origin-strength part scores 0.
+  - Time at price: that needs 1-minute data, so it scores as unknown (half).
+  - So the score runs from 5 to 70 today, not 0 to 100. Thresholds should be read on that scale (SC-15).
+- **Cost.** One `strength_features` call per bar after the first pivot, with the bar arrays prepared once per frame.
+  A 500-bar frame with both functions takes well under 2 s (tested). Cost weight 4; `min_bars` 100 (the swing
+  warm-up).
+- **Tests.**
+  - `tests/test_s5a4_zone_strength.py` (9):
+    - parity for both sides;
+    - the distance sign;
+    - truncation for degrees 0 and 1;
+    - IST against UTC;
+    - validation and units (a 0-100 score is not a price);
+    - cost;
+    - the 5-70 scale.
+  - Mutation checks, 6 killed:
+    - origin at the confirmation bar;
+    - a pivot used before it was confirmed;
+    - the support zone to the body top;
+    - either pivot kind;
+    - time-zone-aware stamps;
+    - the distance sign.
+  - One equivalent mutant: wall-clock instead of UTC stamps, used the same way on both sides.
+- **Next (S5-C).** Category C.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-12. Validation set for category A.** The plan names the BANKNIFTY engine fixtures as the validation set, but no
   BANKNIFTY bar fixtures are in this repository. Only the expiry calendars are. Provisional: the S5-A tests use the
   session-shaped generator (`tests/sample_market.py`), the same one the trade-port tests use. The NIFTY holdout stays
   sealed.
   - Owner question: should a BANKNIFTY bar sample (from your own data, outside the holdout) be added as a fixture?
+- **SC-15. The swing zone and its strength scale.** Provisional:
+  - The zone is the pivot candle from its extreme to its body.
+  - The score runs 5-70 until a leg classifier and 1-minute time at price are available.
+  - Owner questions: should the zone be wider (for example the base candles before the pivot)? Should the score be
+    rescaled to 0-100 over the parts that are known?
 - **SC-14. Degree-3 swings and the fetch window.** Provisional: documented, not fixed. A D3 pivot can differ when
   the screen's total lookback (and so the fetch start) changes.
   - Owner question: should D3 be computed from a fixed warm-up anchor (for example, always 400 bars before now)?

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Database, FlaskConical } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { CandleSource, OHLCVBar, OptionChain } from "../types";
+import type { CandleSource, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../types";
+import { DataTierBadge } from "./DataTierBadge";
 import { generateSampleCandles } from "../utils/sampleData";
 
 /** Phase AA: one switch for every research page - deterministic sample candles, or the tenant's
@@ -30,6 +31,8 @@ export interface CandleSourceState {
   loading: boolean;
   label: string;
   fetch: (symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (symbol: string) => number; seedFor?: (symbol: string) => number; daily?: boolean }) => Promise<FetchedCandles>;
+  /** BT1 (flag byob_data_tier): the data tier of the last broker fetch; undefined with the flag off or in sample mode. */
+  dataTier?: DataTierBadgeInfo;
   /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
   fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
@@ -47,14 +50,18 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
   const [lookbackDays, setLookbackDays] = useState(defaultLookbackDays);
   const [sources, setSources] = useState<CandleSource[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dataTier, setDataTier] = useState<DataTierBadgeInfo | undefined>(undefined);
 
   useEffect(() => {
     if (!user) { setSources([]); setMode("sample"); return; }
     let cancelled = false;
     api.marketDataSources().then((r) => {
       if (cancelled) return;
-      setSources(r.sources);
-      const first = r.sources.find((s) => s.usable);
+      // BT1: with byob_data_tier on, a broker whose data may not be shown live (execution-only / pending) is not a candle
+      // source for this user even with a valid token; with the flag off `tier_a` is absent and nothing changes.
+      const list = r.sources.map((s) => (s.tier_a === false ? { ...s, usable: false } : s));
+      setSources(list);
+      const first = list.find((s) => s.usable);
       if (first && !broker) setBroker(first.broker);
     }).catch(() => { if (!cancelled) setSources([]); });
     return () => { cancelled = true; };
@@ -78,6 +85,7 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     setLoading(true);
     try {
       const res = await api.marketDataCandles(clean, timeframe, lookbackDays, "NSE", broker || undefined);
+      setDataTier(res.data_tier);
       const candles: Record<string, OHLCVBar[]> = {};
       const warnings = [...res.warnings];
       for (const [symbol, entry] of Object.entries(res.symbols)) {
@@ -99,6 +107,7 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     setLoading(true);
     try {
       const res = await api.marketDataOptionChains(clean, expiry, broker || undefined);
+      setDataTier(res.data_tier);
       const chains: Record<string, OptionChain> = {};
       const warnings = [...res.warnings];
       for (const [symbol, entry] of Object.entries(res.symbols)) {
@@ -111,7 +120,8 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     }
   }
 
-  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains };
+  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains,
+           dataTier: mode === "broker" ? dataTier : undefined };
 }
 
 export function DataSourceBar({ source, note }: { source: CandleSourceState; note?: string }) {
@@ -135,6 +145,7 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
             <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))} className="w-16 rounded bg-surface-2 border border-border px-1 py-0.5 text-xs text-fg" /> days
           </label>
           {source.loading && <span className="text-fg-muted">fetching…</span>}
+          <DataTierBadge badge={source.dataTier} />
         </>
       )}
       <span className="text-fg-muted">

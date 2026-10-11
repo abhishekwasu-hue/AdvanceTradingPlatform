@@ -885,25 +885,6 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   symbols. The `max_tokens` truncation test lands with
   the provider work in P0.8-C (providers only return text today).
 
-### 2026-10-11 00:43 IST - Part CH (advanced charting): spec received, design note, ADR-0023
-- docs/specs/ATP_CHARTING_SPEC.md stored; docs/design/CHARTING.md maps ProChart (483 lines, lw-charts 4, 5 users) onto
-  one ChartEngine interface; ADR-0023 (provisional): engines are adapters, drawings/layers/actions live above them,
-  drawings in our own schema so an engine switch loses nothing; numbers from data, never pixels; actions = proposals.
-- Order CH0..CH7; open questions CH-1..CH-5 (TradingView access is Abhi's application; the v5 drawing plugin is not
-  vendored until its licence is confirmed).
-
-### 2026-10-11 02:49 IST - CH1a: chart drawings storage
-- `drawing/1` schema with time/price anchors and per-kind rules.
-- `chart_drawings` table: per user and symbol, versioned (409 on a stale edit), lock (423), soft delete, cap 500.
-  Migration `d7f9b1c3e5a7`, checked on Postgres.
-- Export/import `atp-drawings/1`: all or nothing, lossless.
-- Tests: `tests/test_ch1_chart_drawings.py` (3), plus a mutation check.
-
-### 2026-10-11 02:53 IST - CH1b: ChartEngine interface + ProChart behind it
-- `src/charting`: `engine.ts` (the interface), `drawings.ts` (`drawing/1`, rules, API client with `DrawingConflict`),
-  `lightweight.ts` (the B-lite adapter: hline, trendline, ray, measure; the rest kept; layers; events; dispose).
-- ProChart: `onEngine` prop, no visible change.
-- Tests: 7 new, 59 frontend tests in total; `tsc` clean.
 ### 2026-10-10 21:40 IST - Hostinger KVM 2 production host: deploy preparation (nothing run on a server)
 - What: three one-line blocks (bootstrap as root, deploy as `atp`, rollback) + a status block, generated from
   `deploy/hostinger/*.sh` into `docs/DEPLOY_HOSTINGER_ONELINERS.txt`; `docker-compose.hostinger.yml` (memory limit per

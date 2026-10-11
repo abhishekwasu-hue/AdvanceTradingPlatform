@@ -177,7 +177,81 @@ frontend plus a small table. CH3 follows. CH4 waits for the lake (part B) and U1
 - **Next (CH2c).** Interactive drawing tools on the chart (click to place anchors, drag handles, select, delete),
   stored through `drawingsApi`, with undo/redo over versions and lock.
 
+## CH2c-1 (built): the drawing tools without a chart
+`frontend/src/charting/tools.ts`. A pointer on the chart becomes a data point (time in epoch seconds, price) before it
+reaches this file, so every tool is a plain function or one controller, tested without a browser. CH2c-2 wires the
+chart's pointer events and a toolbar to it.
+
+- **Placing.**
+  - One click per anchor, and each anchor keeps its rule: a stop or target is price-only, a vline is time-only.
+  - While placing, the pointer stands in for every missing anchor, so the drawing follows it.
+  - The last click saves the drawing and selects it.
+  - A drawing the backend would refuse is not sent (`drawingProblem`), and the message is shown.
+  - Escape drops a half-placed drawing.
+- **Hit-testing.**
+  - The drawing under a pane point, within 6 px.
+  - Handles win over bodies, and the drawing painted last wins.
+  - Distances are geometric: to a segment, inside or to a box or polygon, and a box around a label.
+  - Handle positions:
+    - a price-only anchor sits at the time of the drawing's first timed anchor, else mid-pane;
+    - a time-only anchor sits mid-height.
+- **Dragging.**
+  - A handle moves one anchor, keeping its rule.
+  - The body moves in **bars** (`logicalToTime`, the inverse of `timeToLogical`), not seconds, so a drag across a
+    night or a weekend keeps the shape.
+  - The drag is shown live and saved once at the end, with its version. A move that changed nothing saves nothing.
+- **Lock.** A locked drawing does not move, delete, or undo/redo, and the message says to unlock it first. The server
+  refuses too (423).
+- **Undo / redo.**
+  - Client-side over the saves (create, move, delete), capped at 100 steps. A new edit clears redo.
+  - Undoing a delete re-creates the drawing under a new id, and the later steps follow the new id.
+- **Conflicts.**
+  - A stale edit (another tab) shows the latest version, or drops a drawing deleted elsewhere.
+  - It also forgets that drawing's undo steps, so an undo never overwrites someone else's change.
+  - Any other error keeps the drawing as it was and shows the message.
+- **One edit at a time.** Edits run in order, so a double click never saves twice in parallel against the same
+  version.
+- **Tests.** `tools.test.ts` (12).
+  - A real bug was caught on the first run: a failed create showed no message.
+  - 9 mutation checks, all killed:
+    - the body drag in seconds;
+    - a conflict keeps the undo steps;
+    - no re-key after a re-create;
+    - a new edit keeps redo;
+    - edits in parallel;
+    - a locked drawing moves;
+    - a no-op drag saves;
+    - handles ignored;
+    - history uncapped.
+- **Review follow-up (fresh-eyes pass).**
+  - **A drag released before its save returns stays where it was dropped.** It is shown at once, and a second drag
+    builds on it. Before, the second drag started from the old shape and undid the first on the server.
+  - **Delete and lock read the drawing when their queued turn comes,** not when the key is pressed. A delete right
+    after a move removes the moved drawing, and undo brings that one back. Two quick lock toggles unlock.
+  - **404 (deleted elsewhere) now counts as a conflict.** Before, it was a generic error, which left a ghost drawing
+    and an undo that failed forever. The client maps 404 to `DrawingConflict(null)` for update, delete and lock.
+  - **After a conflict, a drag queued behind the failed one is not saved.** It was built on a version that another
+    tab replaced.
+  - **"Nothing changed" compares by meaning.** Times are compared as instants, because the server writes `…:00Z`.
+    A drag that wanders back to its start saves nothing.
+  - **Reload goes through the edit queue.**
+  - **The test fake now answers like the server:** normalised times, and a missing drawing as a 404 conflict.
+    5 new tests, and 5 mutations of the fixes are all killed.
+  - **Known, not changed.** A lock set in another tab is not refreshed until reload. A local edit then gets the
+    server's 423 message.
+- **Next (CH2c-2).**
+  - Pointer events on `LightweightEngine`: down, move and up converted with `coordinateToTime` and
+    `coordinateToPrice`, and chart scrolling paused while dragging.
+  - A toolbar in ProChart with the kinds, delete, lock, undo/redo, and Escape.
+  - A text prompt for text drawings.
+  - A headless check.
+
 ## Open questions (provisional answers, work continues)
+- **CH-7. What undo covers.** Provisional:
+  - Undo/redo cover create, move and delete, in this tab, until the page reloads.
+  - Lock and unlock are not undo steps.
+  - A conflict from another tab drops that drawing's steps.
+  - Owner question: should undo history survive a reload (stored per user)? Should lock be undoable?
 - **CH-1. Order against parts H, S, B.** As above.
 - **CH-2. TradingView Advanced Charts access** is a business application by Abhi (company and product details; the
   logo is required; licensed for company web apps). Track B goes ahead regardless; CH7 waits for access.

@@ -61,7 +61,8 @@ export function drawingProblem(d: DrawingV1): string | null {
   return null;
 }
 
-/** Thrown when the drawing changed elsewhere (another tab, another device) since this edit was made. */
+/** Thrown when the drawing changed elsewhere (another tab, another device) since this edit was made: 409 with the
+ * current drawing, or 404 (deleted elsewhere) with `current` null. */
 export class DrawingConflict extends Error {
   readonly current: StoredDrawing | null;
 
@@ -73,6 +74,7 @@ export class DrawingConflict extends Error {
 }
 
 function conflictFrom(error: unknown): never {
+  if (error instanceof ApiError && error.status === 404) throw new DrawingConflict(null);   // deleted elsewhere
   if (error instanceof ApiError && error.status === 409) {
     let current: StoredDrawing | null = null;
     try {
@@ -96,7 +98,7 @@ export const drawingsApi = {
   update: (stored: StoredDrawing, drawing: DrawingV1) =>
     request<StoredDrawing>(`${base}/${stored.id}`, { method: "PUT", body: JSON.stringify({ version: stored.version, drawing }) }).catch(conflictFrom),
   lock: (stored: StoredDrawing, locked: boolean) =>
-    request<StoredDrawing>(`${base}/${stored.id}/lock`, { method: "POST", body: JSON.stringify({ locked }) }),
+    request<StoredDrawing>(`${base}/${stored.id}/lock`, { method: "POST", body: JSON.stringify({ locked }) }).catch(conflictFrom),
   remove: (stored: StoredDrawing) =>
     request<{ deleted: number }>(`${base}/${stored.id}?version=${stored.version}`, { method: "DELETE" }).catch(conflictFrom),
   exportDoc: (symbol: string, exchange = "NSE") =>

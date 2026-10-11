@@ -2001,6 +2001,9 @@ class AlertRuleRecord(Base):
     last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     last_problem: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # S4b-2: when the rule fires - "bar_close" (closed bars only, the default) or "intrabar" (on the forming bar, at most
+    # once per bar and symbol; needs the `screener_intrabar` flag, off by default).
+    fire_on: Mapped[str] = mapped_column(String(10), nullable=False, default="bar_close", server_default="bar_close")
 
 
 class AlertEventRecord(Base):

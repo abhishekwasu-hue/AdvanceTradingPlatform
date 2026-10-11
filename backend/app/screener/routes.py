@@ -153,9 +153,10 @@ async def archive_screen(screen_id: int, user: User = Depends(require_trader), s
 
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
-                       lookback: Dict[str, int], now: Optional[datetime] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
-    A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data."""
+    A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
+    `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
@@ -169,7 +170,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     problems: Dict[str, str] = {}
     for symbol in symbols:
         try:
-            bars = await service.get_candles(symbol, exchange, interval)
+            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                          else service.get_candles(symbol, exchange, interval))
         except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
             problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
             continue
@@ -180,11 +182,12 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
         fetched_tf = _FETCH_TF[interval]
-        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))      # never the bar still forming
+        if not include_forming:
+            df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
         if df.empty:
             problems[symbol] = "no closed bars from the broker"
             continue
-        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf)}
+        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames))
     return universe, problems, f"broker:{record.broker_name}"
 

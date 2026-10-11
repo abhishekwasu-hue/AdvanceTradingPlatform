@@ -69,9 +69,10 @@ def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
     return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
 
 
-def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
-    """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed. Intraday buckets
-    start at the exchange open, like the broker's charts and the Strategy Builder (`declarative._IST_OPEN_UTC`)."""
+def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = False) -> pd.DataFrame:
+    """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed (kept only for
+    S4b-2 intrabar alerts, `keep_forming`). Intraday buckets start at the exchange open, like the broker's charts and
+    the Strategy Builder (`declarative._IST_OPEN_UTC`)."""
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     if "oi" in base.columns:
         agg["oi"] = "last"
@@ -80,7 +81,7 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
         from app.strategy_engine.declarative import _IST_OPEN_UTC
         kwargs["origin"] = base.index[0].normalize() + _IST_OPEN_UTC
     out = base.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
-    if len(out) and len(base):
+    if len(out) and len(base) and not keep_forming:
         last_base_close = base.index[-1] + _DURATION[base_tf]
         if out.index[-1] + _DURATION[tf] > last_base_close:
             out = out.iloc[:-1]

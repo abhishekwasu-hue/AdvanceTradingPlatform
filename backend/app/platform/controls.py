@@ -114,10 +114,15 @@ FEATURE_FLAGS: Dict[str, str] = {
     # are confirmed (docs/BROKER_DATA_TERMS.md), never pooled or shown to another user; everything else EOD; every number
     # carries its data tier. OFF: market data reads are exactly as before. Places no order.
     "byob_data_tier": "Bring-your-own-broker data tier: live data only through each user's own confirmed broker session, EOD otherwise, data-tier badges",
+    # U6 BK1 (docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md): the breakout screens (B1/B2/B4/B7/B13/B14), the quality
+    # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
+    # Research only - matches, never orders.
+    "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier",
+                               "screener_breakouts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

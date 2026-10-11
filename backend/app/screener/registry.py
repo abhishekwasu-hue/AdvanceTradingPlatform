@@ -45,6 +45,7 @@ class Spec:
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
+    flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -72,6 +73,10 @@ REVERSAL_MIN_BARS = 25                            # the median range of 20 bars 
 BREAK_EXTRA_BARS = 21                             # RealBreak: the median range (20 bars) before the earliest candidate, plus one
 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
+_DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
+_SIDE = Arg("side", STR, choices=("up", "down"))
+BREAKOUT_FLAG = "screener_breakouts"
+BREAKOUT_MIN_BARS = 50                            # ATR warm-up plus a leg pivot before the first signal
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 
@@ -158,7 +163,43 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
     Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
     Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
+    # U6 BK1: breakout screens (app/screener/breakouts) - one signal per leg, closed bars only; behind `screener_breakouts`.
+    # The defaults below are the breakout parameters' defaults (app/screener/breakouts/params.py, tested equal).
+    Spec("RangeBreakout", "filter", BOOL, None, (_SIDE, Arg("n", "window", 20, False), Arg("k", NUM, 0.2, False), Arg("v", NUM, 1.5, False),
+                                                 Arg("mode", STR, "fixed", False, choices=("fixed", "auto"))),
+         cost=4.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B1: close beyond the n-bar range (mode auto: the consolidation before the bar) by k ATR on volume >= v x average"),
+    Spec("SwingBreakout", "filter", BOOL, None, (_SIDE, _DEGREE1, Arg("k", NUM, 0.2, False)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B2: close beyond the last CONFIRMED swing high (up) / low (down) of the degree by k ATR"),
+    Spec("SwingBreakType", "classifier", CAT, None, (_SIDE, _DEGREE1, Arg("k", NUM, 0.2, False)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, values=("BOS", "CHOCH", ""), flag=BREAKOUT_FLAG,
+         doc="B2: on a SwingBreakout bar, BOS (with the swing trend) or CHOCH (against it); empty on other bars"),
+    Spec("NRBreakout", "filter", BOOL, None, (_SIDE, Arg("setup", STR, "nr7", False, choices=("inside", "nr4", "nr7")),
+                                              Arg("v", NUM, 1.5, False), Arg("k", NUM, 0.2, False)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B4: the bar after an inside / NR4 / NR7 bar closes beyond it by k ATR on volume >= v x average"),
+    Spec("NewHighBreakout", "filter", BOOL, None, (_SIDE, Arg("weeks", "window", 52, False), Arg("v", NUM, 1.5, False), Arg("k", NUM, 0.2, False)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B7: close beyond the high (up) / low (down) of the previous N calendar weeks by k ATR on volume >= v x average;"
+             " no match until the history covers the N weeks"),
+    Spec("RangeExpansion", "filter", BOOL, None, (_SIDE, Arg("k", NUM, 2.0, False), Arg("v", NUM, 1.5, False)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B13: bar range >= k x ATR with the close in the top (up) / bottom (down) third, volume >= v x average"),
+    Spec("VolumeBreakout", "filter", BOOL, None, (_SIDE, Arg("v", NUM, 2.0, False), Arg("n", "window", 20, False)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B14: volume >= v x average with a directional candle at or through the n-bar high (up) / low (down)"),
+    Spec("RelVolume", "factor", NUM, "ratio", (Arg("n", "window", 20, False),), extra_bars=1, flag=BREAKOUT_FLAG,
+         doc="volume / the mean volume of the n bars before this one"),
+    Spec("ATRPercentile", "factor", NUM, "pct", (Arg("n", "window", 14, False), Arg("lookback", "window", 100, False)), cost=2.0,
+         extra_bars=1, flag=BREAKOUT_FLAG, doc="percentile (0-100) of the previous bar's ATR / close among the last `lookback` bars"),
+    Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
+         values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
+         doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
+             " both are labelled. With @tf it is the higher timeframe's trend from its closed bars"),
 )}
+
+BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
 
 
 def describe() -> Dict[str, Dict[str, object]]:
@@ -174,4 +215,4 @@ def describe() -> Dict[str, Dict[str, object]]:
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

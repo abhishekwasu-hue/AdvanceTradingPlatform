@@ -90,6 +90,11 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail={"message": "the condition did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
+    from app.screener.breakouts import gate as breakout_gate                 # U6 BK1: breakout functions need their flag
+    blocked = await breakout_gate.blocked_calls(session, user.tenant_id, ast)
+    if blocked:
+        why = breakout_gate.refusal(blocked)
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

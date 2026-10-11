@@ -185,6 +185,9 @@ class _Eval:
         def num(i: int, default: float) -> float:
             return float(_last(self.ev(args[i], tf))) if len(args) > i else default
 
+        def _text(i: int, default: str) -> str:
+            return str(self.ev(args[i], tf)) if len(args) > i else default
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
             "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
@@ -219,6 +222,21 @@ class _Eval:
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
+            # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
+            "RangeBreakout": lambda: _breakout(f, "B1", str(self.ev(args[0], tf)), {"range_n": win(1, 20), "min_break_atr": num(2, 0.2),
+                                                                                       "vol_mult": num(3, 1.5), "range_mode": _text(4, "fixed")}),
+            "SwingBreakout": lambda: _breakout(f, "B2", str(self.ev(args[0], tf)), {"swing_degree": int(num(1, 1)), "min_break_atr": num(2, 0.2)}),
+            "SwingBreakType": lambda: _breakout(f, "B2", str(self.ev(args[0], tf)), {"swing_degree": int(num(1, 1)), "min_break_atr": num(2, 0.2)},
+                                                "type"),
+            "NRBreakout": lambda: _breakout(f, "B4", str(self.ev(args[0], tf)), {"nr_setup": _text(1, "nr7"), "vol_mult": num(2, 1.5),
+                                                                                 "min_break_atr": num(3, 0.2)}),
+            "NewHighBreakout": lambda: _breakout(f, "B7", str(self.ev(args[0], tf)), {"high_weeks": win(1, 52), "vol_mult": num(2, 1.5),
+                                                                                      "min_break_atr": num(3, 0.2)}),
+            "RangeExpansion": lambda: _breakout(f, "B13", str(self.ev(args[0], tf)), {"expansion_k": num(1, 2.0), "vol_mult": num(2, 1.5)}),
+            "VolumeBreakout": lambda: _breakout(f, "B14", str(self.ev(args[0], tf)), {"shock_mult": num(1, 2.0), "range_n": win(2, 20)}),
+            "RelVolume": lambda: _rel_volume(f, win(0, 20)),
+            "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
+            "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -441,6 +459,50 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     near = closes[lo:j + 1] >= level if side == "below" else closes[lo:j + 1] <= level
     hit = np.flatnonzero(near)
     return None if hit.size == 0 else lo + int(hit[0]) + 1
+
+
+def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
+    from app.screener.breakouts import params as bp
+    try:
+        return bp.settings(**overrides)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+
+
+def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal") -> pd.Series:
+    """U6 BK1: one breakout screen's per-leg signal on each bar (or, `type`, BOS / CHOCH on B2 signal bars), from
+    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal)."""
+    from app.screener.breakouts.screens import evaluate_screen
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown breakout side {side!r}")
+    p = _breakout_params(overrides)
+    try:
+        out = evaluate_screen(f, screen, p, sides=(side,))[side]
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what == "type":
+        return out["event"].where(out["signal"], "").astype(object)
+    return out["signal"].astype(bool)
+
+
+def _rel_volume(f: pd.DataFrame, n_: int) -> pd.Series:
+    from app.screener.breakouts.screens import Bars
+    return pd.Series(Bars(f, _breakout_params({"vol_avg_n": n_})).rvol, index=f.index)
+
+
+def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
+    from app.screener.breakouts.quality import atr_percentile_series
+    from app.screener.breakouts.screens import Bars
+    b = Bars(f, _breakout_params({"atr_n": atr_n}))
+    return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
+
+
+def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
+    from app.screener.breakouts.screens import Bars
+    try:
+        return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

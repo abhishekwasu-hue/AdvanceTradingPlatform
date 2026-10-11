@@ -28,8 +28,10 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import compile_screen, nodes
+from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.registry import FUNCTIONS, describe
+from app.screener.validator import Problem
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -98,14 +100,27 @@ async def _flag(session: AsyncSession, user: User) -> None:
 @router.get("/registry")
 async def registry(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
-    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": describe()}
+    entries = describe()
+    if not await breakout_gate.enabled(session, user.tenant_id):            # U6 BK1: the breakout family stays hidden
+        entries = {k: v for k, v in entries.items() if not (k in FUNCTIONS and FUNCTIONS[k].flag)}
+    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
 @router.post("/validate")
 async def validate_screen(body: ValidateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
-    return _view(*_compiled(body.source, body.base_tf, body.params))
+    ast, validated = _compiled(body.source, body.base_tf, body.params)
+    await _gate(session, user, ast, validated)
+    return _view(ast, validated)
+
+
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
+    """U6 BK1: a screen using a breakout function while `screener_breakouts` is off fails validation, with the reason."""
+    blocked = await breakout_gate.blocked_calls(session, user.tenant_id, ast)
+    if blocked:
+        validated.ok = False
+        validated.problems.append(Problem(breakout_gate.refusal(blocked)))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -125,8 +140,9 @@ async def list_screens(include_archived: bool = False, user: User = Depends(get_
     return [_screen_dict(r) for r in await session.scalars(q.order_by(ScreenRecord.id.desc()))]
 
 
-def _apply(row: ScreenRecord, body: ScreenBody) -> None:
+async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
     ast, validated = _compiled(body.source, body.base_tf, body.params)
+    await _gate(session, user, ast, validated)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
@@ -138,7 +154,7 @@ def _apply(row: ScreenRecord, body: ScreenBody) -> None:
 async def create_screen(body: ScreenBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     row = ScreenRecord(tenant_id=user.tenant_id, created_by=user.id, name="", source_text="", ast_json="{}")
-    _apply(row, body)
+    await _apply(session, user, row, body)
     session.add(row)
     await session.commit()
     return _screen_dict(row)
@@ -148,7 +164,7 @@ async def create_screen(body: ScreenBody, user: User = Depends(require_trader), 
 async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
-    _apply(row, body)
+    await _apply(session, user, row, body)
     await session.commit()
     return _screen_dict(row)
 
@@ -235,6 +251,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
+    await _gate(session, user, ast, validated)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)

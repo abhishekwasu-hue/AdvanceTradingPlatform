@@ -30,7 +30,7 @@ import pandas as pd
 from app.price_action.zones.detect import (DEMAND_ZONE, SUPPLY_ZONE, detect_demand_supply_zones, detect_order_blocks, find_overnight_gaps,
                                            first_touch_event, role_by_price)
 from app.price_action.zones.levels import compute_dynamic_sr, find_support_resistance_levels
-from app.price_action.zones.lifecycle import ZoneTracker, frame_swings, new_tracker, origin_side, track_zone
+from app.price_action.zones.lifecycle import ZoneTracker, new_tracker, origin_side, prepare, track_zone
 from app.price_action.zones.memory import zone_tolerance
 from app.price_action.zones.settings import TF_MINUTES, ZoneSettings
 
@@ -74,32 +74,33 @@ def tracker_fields(tracker: ZoneTracker) -> Dict[str, Any]:
             "tracker": tracker.to_dict()}
 
 
-def _state_row(zone: Dict[str, Any], timeframe: str, df: pd.DataFrame, trade_after: pd.DataFrame, settings: ZoneSettings,
-               swings: Any) -> Dict[str, Any]:
-    """`df` is the timeframe's frame (reset index); `trade_after` the slice Trade scans for its first touch."""
+def _state_row(zone: Dict[str, Any], timeframe: str, prepared: Any, trade_after: pd.DataFrame, settings: ZoneSettings) -> Dict[str, Any]:
+    """`prepared` is the timeframe's frame (lifecycle.prepare); `trade_after` the slice Trade scans for its first touch."""
     ev = first_touch_event(zone["zone_low"], zone["zone_high"], trade_after)
     if ev is not None:
         ev = {**ev, "bar": int(trade_after.index[ev["bar"]])}
     tracker = new_tracker(zone["zone_low"], zone["zone_high"], origin_side(zone["zone_type"], zone["zone_low"], zone["zone_high"], None))
-    track_zone(tracker, df, settings, start_after=zone.get("confirmed_at", zone["formed_at"]), swings=swings)
+    track_zone(tracker, prepared, settings, start_after=zone.get("confirmed_at", zone["formed_at"]))
     return {"zone_type": zone["zone_type"], "timeframe": timeframe, "zone_low": zone["zone_low"], "zone_high": zone["zone_high"],
             "strength": None, "formed_at": zone["formed_at"], "confirmed_at": zone.get("confirmed_at"), "first_touch": ev,
             **tracker_fields(tracker)}
 
 
-def line_tracker(level: float, df: pd.DataFrame, formed_at: Any, settings: ZoneSettings) -> ZoneTracker:
-    """A fresh tracker for a line level known on `formed_at`: band = level +/- the memory tolerance of its frame, side by
-    the frame's last close."""
+def line_tracker(level: float, df: pd.DataFrame, formed_at: Any, settings: ZoneSettings, tol: Optional[float] = None) -> ZoneTracker:
+    """A fresh tracker for a line level known on `formed_at`: band = level +/- the memory tolerance of its frame (pass
+    `tol` when it is already known), side by the frame's last close."""
     price = float(df["close"].iloc[-1])
-    return new_tracker(level, level, origin_side("LEVEL", level, level, price), tol=zone_tolerance(df, price, settings), start_at=formed_at)
+    tol = zone_tolerance(df, price, settings) if tol is None else tol
+    return new_tracker(level, level, origin_side("LEVEL", level, level, price), tol=tol, start_at=formed_at)
 
 
 def _level_rows(levels: Dict[str, Any], prefix: str, timeframe: str, df: pd.DataFrame, settings: ZoneSettings) -> List[Dict[str, Any]]:
     rows = []
     formed_at = df["timestamp"].iloc[-1]
+    tol = zone_tolerance(df, float(df["close"].iloc[-1]), settings)
     for side, name in (("support", "SUPPORT"), ("resistance", "RESISTANCE")):
         for lv in levels.get(side, []):
-            tracker = line_tracker(lv["level"], df, formed_at, settings)
+            tracker = line_tracker(lv["level"], df, formed_at, settings, tol)
             rows.append({"zone_type": f"{prefix}{name}", "timeframe": timeframe, "zone_low": lv["level"], "zone_high": lv["level"],
                          "strength": lv["touches"], "formed_at": formed_at, "confirmed_at": formed_at, "first_touch": None,
                          **tracker_fields(tracker)})
@@ -146,18 +147,18 @@ def compute_all_zones(frames: Frames, dynamic_frames: Optional[Frames] = None, s
     if df_z is not None and len(df_z):
         df_z = df_z.reset_index(drop=True)
         ts = pd.to_datetime(df_z["timestamp"])
-        sw = frame_swings(df_z, s)
+        sw = prepare(df_z, s)
         for zone in detect_order_blocks(df_z, s) + detect_demand_supply_zones(df_z, s):
             after = df_z[ts > pd.Timestamp(zone["formed_at"])].iloc[1:]           # Trade skips the first bar after formation
-            rows.append(_state_row(zone, s.zone_timeframe, df_z, after, s, sw))
+            rows.append(_state_row(zone, s.zone_timeframe, sw, after, s))
 
     df_g = frames.get(s.gap_timeframe)
     if df_g is not None and len(df_g) >= 2:
         df_g = df_g.reset_index(drop=True)
         ts = pd.to_datetime(df_g["timestamp"])
-        sw = frame_swings(df_g, s)
+        sw = prepare(df_g, s)
         for gap in find_overnight_gaps(df_g, s):
-            rows.append(_state_row(gap, s.gap_timeframe, df_g, df_g[ts > pd.Timestamp(gap["formed_at"])], s, sw))
+            rows.append(_state_row(gap, s.gap_timeframe, sw, df_g[ts > pd.Timestamp(gap["formed_at"])], s))
 
     price = current_price if current_price is not None else _latest_close([df_z, df_sr, df_g, *dyn.values()], s.session_timezone)
     for row in rows:

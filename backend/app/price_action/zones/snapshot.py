@@ -17,8 +17,8 @@ import pandas as pd
 
 from app.price_action.zones.compute import Frames, compute_all_zones, line_tracker, tracker_fields
 from app.price_action.zones.detect import role_by_price
-from app.price_action.zones.lifecycle import ZoneTracker, frame_swings, track_zone
-from app.price_action.zones.memory import CLASSIC_PREFIX, DYNAMIC_PREFIX, apply_memory
+from app.price_action.zones.lifecycle import ZoneTracker, prepare, track_zone
+from app.price_action.zones.memory import CLASSIC_PREFIX, DYNAMIC_PREFIX, apply_memory, zone_tolerance
 from app.price_action.zones.settings import ZoneSettings
 
 LINE_TYPES = {f"{p}{side}" for p in (CLASSIC_PREFIX, DYNAMIC_PREFIX) for side in ("SUPPORT", "RESISTANCE")}
@@ -87,7 +87,8 @@ def build_snapshot(frames: Frames, dynamic_frames: Optional[Frames] = None, sett
         now = df["timestamp"].iloc[-1]
         merged = apply_memory(mine, prev, {tf: df}, now, s, prefix=prefix) if prev and s.memory_enabled else \
             [{**r, "remembered": False} for r in mine]
-        swings = frame_swings(df, s)
+        prepared = prepare(df, s)
+        tol = zone_tolerance(df, float(df["close"].iloc[-1]), s)
         for r in merged:
             r.setdefault("remembered", False)
             old = prev_line.get(zone_key(r))
@@ -95,8 +96,8 @@ def build_snapshot(frames: Frames, dynamic_frames: Optional[Frames] = None, sett
                 tracker = ZoneTracker.from_dict(old["tracker"])
                 r["confirmed_at"] = old.get("confirmed_at") or r.get("confirmed_at")
             else:
-                tracker = line_tracker(float(r["zone_low"]), df, now, s)
-            track_zone(tracker, df, s, swings=swings)
+                tracker = line_tracker(float(r["zone_low"]), df, now, s, tol)
+            track_zone(tracker, prepared, s)
             r.update(tracker_fields(tracker))
             out.append(r)
 

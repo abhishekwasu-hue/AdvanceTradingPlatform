@@ -182,11 +182,13 @@ def apply_memory(rows: List[Dict[str, Any]], previous: Optional[Iterable[Mapping
     """The nightly refresh with memory (Trade apply_memory_to_zone_rows): for each timeframe in `frames` (its bars), the
     rows of one family (`prefix` DYNAMIC_SR_ or "" for classical S/R) are replaced by the merge of today's levels and the
     previous run's live levels; every other row is untouched. A new level is stamped `now`; a remembered one keeps its
-    formed time. Merged rows carry "remembered" (True when not found today). settings.memory_enabled False -> unchanged."""
+    formed time. Merged rows carry "remembered" (True when not found today). settings.memory_enabled False -> unchanged.
+    Unlike Trade (which returned an empty table untouched) a night with no level of the family today still keeps the
+    remembered ones - each family is merged on its own here, so "nothing found today" is a normal case."""
     s = _s(settings)
-    if not rows or not s.memory_enabled:
-        return rows
     previous = list(previous or [])
+    if not s.memory_enabled or (not rows and not previous):
+        return rows
     out = rows
     for tf, df in frames.items():
         if df is None or not len(df):

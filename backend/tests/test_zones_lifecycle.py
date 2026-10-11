@@ -257,3 +257,15 @@ def test_zone_key_is_stable_identity():
     ob = {"zone_type": "BULLISH_OB", "timeframe": "1h", "zone_low": 1.0, "zone_high": 2.0, "formed_at": T0}
     assert zone_key(ob) != zone_key({**ob, "formed_at": T0 + pd.Timedelta(hours=1)})
     assert ZoneEvent("TOUCH") is ZoneEvent.TOUCH
+
+
+def test_memory_keeps_remembered_levels_on_a_night_with_no_level_found():
+    from app.price_action.zones.memory import apply_memory
+    df = path([100 + (i % 7) for i in range(60)], freq="15min")
+    prev = [{"zone_type": "DYNAMIC_SR_SUPPORT", "timeframe": "15m", "zone_low": 101.0, "zone_high": 101.0, "strength": 3,
+             "formed_at": df["timestamp"].iloc[10], "state": "tested"},
+            {"zone_type": "DYNAMIC_SR_SUPPORT", "timeframe": "15m", "zone_low": 102.0, "zone_high": 102.0, "strength": 3,
+             "formed_at": df["timestamp"].iloc[10], "state": "invalidated"}]
+    out = apply_memory([], prev, {"15m": df}, df["timestamp"].iloc[-1])
+    assert [(r["zone_low"], r["remembered"], r["formed_at"]) for r in out] == [(101.0, True, df["timestamp"].iloc[10])]   # never the dead one
+    assert apply_memory([], prev, {"15m": df}, df["timestamp"].iloc[-1], resolve_settings({"memory_enabled": False})) == []

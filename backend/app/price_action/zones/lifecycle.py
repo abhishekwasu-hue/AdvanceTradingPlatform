@@ -172,29 +172,55 @@ def _structure(side: str, lo: float, hi: float, swings: Swings, highs: np.ndarra
     return max(cands) if cands else None
 
 
-def track_zone(tracker: ZoneTracker, bars: pd.DataFrame, settings: Optional[ZoneSettings] = None, start_after: Any = None,
-               swings: Optional[Swings] = None) -> ZoneTracker:
-    """Advance `tracker` over the bars stamped after max(start_after, tracker.last_bar_at) (bars oldest first, columns
-    timestamp / open / high / low / close). Mutates and returns the tracker. An invalidated tracker never changes."""
+@dataclass
+class PreparedBars:
+    """A frame read once for many zones: stamps, OHLC arrays and the swings by the bar that confirms them."""
+    ts: pd.Series
+    ns: np.ndarray                              # the stamps as int64 nanoseconds (for a fast search)
+    open: np.ndarray
+    high: np.ndarray
+    low: np.ndarray
+    close: np.ndarray
+    swings: Swings
+    confirmed_at: Dict[int, List[Tuple[str, int]]]
+
+
+def prepare(bars: pd.DataFrame, settings: Optional[ZoneSettings] = None, swings: Optional[Swings] = None) -> PreparedBars:
     s = settings if settings is not None else ZoneSettings()
-    if tracker.state == ZoneState.INVALIDATED.value or bars is None or not len(bars):
-        return tracker
     bars = bars.reset_index(drop=True)
-    ts = pd.to_datetime(bars["timestamp"])
-    after = tracker.last_bar_at if tracker.last_bar_at is not None else start_after
-    first = 0 if after is None else int((ts <= _align(after, ts, s.session_timezone)).sum())        # bars are oldest first
-    n = len(bars)
-    if first >= n:
-        return tracker
-    o, h = bars["open"].to_numpy(float), bars["high"].to_numpy(float)
-    low, c = bars["low"].to_numpy(float), bars["close"].to_numpy(float)
-    order = s.structure_swing_order
     sw = swings if swings is not None else frame_swings(bars, s)
     confirmed_at: Dict[int, List[Tuple[str, int]]] = {}
     for i in sw[0]:
-        confirmed_at.setdefault(i + order, []).append(("high", i))
+        confirmed_at.setdefault(i + s.structure_swing_order, []).append(("high", i))
     for i in sw[1]:
-        confirmed_at.setdefault(i + order, []).append(("low", i))
+        confirmed_at.setdefault(i + s.structure_swing_order, []).append(("low", i))
+    ts = pd.to_datetime(bars["timestamp"])
+    return PreparedBars(ts=ts, ns=ts.to_numpy().astype("datetime64[ns]").astype("int64") if getattr(ts.dt, "tz", None) is None
+                        else ts.dt.tz_convert("UTC").dt.tz_localize(None).to_numpy().astype("datetime64[ns]").astype("int64"), open=bars["open"].to_numpy(float), high=bars["high"].to_numpy(float),
+                        low=bars["low"].to_numpy(float), close=bars["close"].to_numpy(float), swings=sw, confirmed_at=confirmed_at)
+
+
+def track_zone(tracker: ZoneTracker, bars: "pd.DataFrame | PreparedBars", settings: Optional[ZoneSettings] = None, start_after: Any = None,
+               swings: Optional[Swings] = None) -> ZoneTracker:
+    """Advance `tracker` over the bars stamped after max(start_after, tracker.last_bar_at) (bars oldest first, columns
+    timestamp / open / high / low / close - or `prepare(bars)` once for many zones of one frame). Mutates and returns
+    the tracker. An invalidated tracker never changes."""
+    s = settings if settings is not None else ZoneSettings()
+    if tracker.state == ZoneState.INVALIDATED.value or bars is None:
+        return tracker
+    if isinstance(bars, pd.DataFrame):
+        if not len(bars):
+            return tracker
+        bars = prepare(bars, s, swings)
+    ts = bars.ts
+    n = len(ts)
+    after = tracker.last_bar_at if tracker.last_bar_at is not None else start_after
+    first = 0 if after is None else int(np.searchsorted(bars.ns, _align(after, ts, s.session_timezone).value, side="right"))
+    if first >= n:
+        return tracker
+    o, h, low, c = bars.open, bars.high, bars.low, bars.close
+    order = s.structure_swing_order
+    sw, confirmed_at = bars.swings, bars.confirmed_at
     lo, hi = tracker.band_low, tracker.band_high
     fbuf, sbuf = s.flip_buffer_pct / 100, s.structure_buffer_pct / 100
 

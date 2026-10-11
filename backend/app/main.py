@@ -231,6 +231,7 @@ class BacktestRequest(BaseModel):
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
+    execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
 
 
 class PaperExecuteResponse(BaseModel):

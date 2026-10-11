@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { oauthErrorText } from "../utils/oauthErrors";
 import { useAuth } from "../auth/AuthContext";
 import AlertChannelsCard from "../components/AlertChannelsCard";
 import AiProviderCard from "../components/AiProviderCard";
@@ -67,7 +68,7 @@ export default function SettingsPage() {
       if (params.get("connected") === "1") {
         setOauthOutcome({ ok: true, text: `Logged in to ${broker} - session token stored (encrypted) and marked valid for today.` });
       } else if (params.get("error")) {
-        setOauthOutcome({ ok: false, text: `${broker} login did not complete: ${params.get("error")}` });
+        setOauthOutcome({ ok: false, text: `${broker} login did not complete: ${oauthErrorText(params.get("error") ?? "")}` });
       }
       window.history.replaceState(window.history.state, "", window.location.pathname);
     } catch {

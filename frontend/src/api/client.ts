@@ -40,6 +40,8 @@ import type {
   InviteInfo,
   LoginEvent,
   ExitNowResponse,
+  PaperAccount,
+  PaperLadder,
   MarkPriceResponse,
   MarketStructureResult,
   MfaStatus,
@@ -493,7 +495,15 @@ export const api = {
     return response.json() as Promise<ContractNoteIngest>;
   },
 
-  /** Z3 "Exit now" (approval-only on): closes a PAPER position at once at the live price, else the last price seen. */
+  /** Z3-b: the caller's own PAPER account and progression ladder (404 while the `paper_account` flag is off). */
+  paperAccount: () => request<PaperAccount>("/paper/account"),
+  paperLadder: () => request<PaperLadder>("/paper/ladder"),
+  setPaperCapital: (startingCapital: number) =>
+    request<PaperAccount>("/paper/account", { method: "PUT", body: JSON.stringify({ starting_capital: startingCapital }) }),
+  paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
+  paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
+
+  /** Z3 "Exit now" (approval-only or the PAPER account on): closes a PAPER position at once at the live price, else the last price seen. */
   exitNow: (tradeId: number) => request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST" }),
 
   markPrice: (tradeId: number, currentPrice: number) =>

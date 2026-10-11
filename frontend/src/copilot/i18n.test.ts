@@ -66,11 +66,13 @@ describe("Copilot i18n keys", () => {
     for (const k of ["PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY"]) expect(lookup(`watch.action.${k}`)).toBeTypeOf("string");
   });
 
-  it("has a second-language line for every interview key the Idea Builder asks for", () => {
+  it("puts the second-language line under the interview questions only (ATP review 12)", () => {
     const idea = files.find((f) => f.rel.endsWith("IdeaBuilderTab.tsx"))!;
-    const keys = [...idea.text.matchAll(/\bline\("(\w+)"\)/g)].map((m) => m[1]);
-    expect(keys.length).toBeGreaterThan(20);
-    for (const k of keys) expect(INTERVIEW_MR, k).toHaveProperty(k);
+    // no fixed UI line (buttons, status, template cards) carries a Marathi line any more
+    expect([...idea.text.matchAll(/\bline\("(\w+)"\)/g)]).toHaveLength(0);
+    // what is left: the question card (BilingualQuestion) and the questions echoed in the chat
+    expect(idea.text.match(/<BilingualQuestion\b/g)).toHaveLength(1);
+    expect(idea.text.match(/<Secondary\b/g)).toHaveLength(1);
   });
 
   it("interpolates with the i18next syntax", () => {

@@ -98,3 +98,54 @@ def test_deploy_sh_takes_the_host_overlay():
     overlay = (ROOT / "docker-compose.hostinger.yml").read_text()             # compose-only tags (!override): read as text
     for knob in ("${REDIS_MAXMEMORY:-384mb}", "${MEM_POSTGRES:-2g}", "${MEM_BACKEND:-1536m}", "${MEM_WORKER:-1536m}", "${PG_SHARED_BUFFERS:-512MB}"):
         assert knob in overlay, knob                                            # every number overridable from .env
+
+
+# --- H-2 (answered 2026-10-10): Cloudflare R2 off-site, B2 alternative, restore test from R2 -----------------------
+
+_FAKE_RCLONE = r'''#!/bin/sh
+# Just enough rclone for offsite_fetch.sh against a local directory standing in for the bucket.
+cmd="$1"; shift
+case "$cmd" in
+  lsf) dir="$1"; shift; pats=""
+       while [ $# -gt 0 ]; do case "$1" in --include) pats="$pats $2"; shift 2;; *) shift;; esac; done
+       for f in "$dir"/*; do b="$(basename "$f")"; for p in $pats; do case "$b" in $p) echo "$b";; esac; done; done ;;
+  copyto) [ -f "$1" ] || exit 3; cp "$1" "$2" ;;
+  *) exit 2 ;;
+esac
+'''
+
+
+def test_restore_test_fetches_the_newest_dump_and_its_checksum_from_off_site(tmp_path):
+    if not shutil.which("sh"):
+        pytest.skip("no sh")
+    bindir, bucket, dest = tmp_path / "bin", tmp_path / "bucket", tmp_path / "restore"
+    bindir.mkdir(); (bucket / "backups").mkdir(parents=True); dest.mkdir()
+    (bindir / "rclone").write_text(_FAKE_RCLONE); (bindir / "rclone").chmod(0o755)
+    for name in ("atp_atp_20261008T183000Z.dump.enc", "atp_atp_20261009T183000Z.dump.enc", "notes.txt"):
+        (bucket / "backups" / name).write_text(name)
+    (bucket / "backups" / "atp_atp_20261009T183000Z.dump.enc.sha256").write_text("abc")
+    (dest / "atp_atp_20261001T183000Z.dump.enc").write_text("old test copy")
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "OFFSITE_REMOTE": str(bucket)}
+    script = str(ROOT / "scripts/backup/offsite_fetch.sh")
+    out = subprocess.run(["sh", script, str(dest)], env=env, capture_output=True, text=True, check=True).stdout.strip()
+    assert out == str(dest / "atp_atp_20261009T183000Z.dump.enc")                    # the newest by its UTC stamp
+    assert sorted(p.name for p in dest.iterdir()) == ["atp_atp_20261009T183000Z.dump.enc", "atp_atp_20261009T183000Z.dump.enc.sha256"]
+    for f in (bucket / "backups").iterdir():
+        if f.name.startswith("atp_"):
+            f.unlink()
+    assert subprocess.run(["sh", script, str(dest)], env=env, capture_output=True, text=True).returncode == 1   # nothing off-site: fails
+
+
+def test_r2_is_the_off_site_default_with_b2_as_the_alternative_and_no_credential_outside_dotenv():
+    overlay = (ROOT / "docker-compose.hostinger.yml").read_text()
+    for line in ("OFFSITE_REMOTE: ${OFFSITE_REMOTE:-offsite:atp-backups}", "RCLONE_CONFIG_OFFSITE_PROVIDER: ${OFFSITE_S3_PROVIDER:-Cloudflare}",
+                 "RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${OFFSITE_S3_ACCESS_KEY:-}", "RCLONE_CONFIG_B2_TYPE: b2",
+                 "RCLONE_CONFIG_B2_KEY: ${OFFSITE_B2_APPLICATION_KEY:-}", "/restore:ro"):
+        assert line in overlay, line
+    deploy = (ROOT / "deploy/hostinger/deploy.sh").read_text()
+    for key in ("OFFSITE_S3_ENDPOINT", "OFFSITE_S3_ACCESS_KEY", "OFFSITE_S3_SECRET_KEY"):
+        assert f"s/^{key}=.*/{key}=CHANGE_ME/" in deploy, key                          # the deploy stops until R2 is filled in
+    assert "s/^OFFSITE_REMOTE=.*/OFFSITE_REMOTE=offsite:atp-backups/" in deploy and "OFFSITE_S3_PROVIDER=Cloudflare" in deploy
+    runbook = (ROOT / "docs/DEPLOY_HOSTINGER_MR.md").read_text()
+    assert "offsite_fetch.sh /restore" in runbook and "verify_backup.sh \"$F\"" in runbook and "Object Read & Write" in runbook
+    assert "/var/backups/atp-restore-test" in (ROOT / "deploy/hostinger/bootstrap.sh").read_text()

@@ -1,7 +1,7 @@
 """PW6 endpoints.
 
 * `/api/admin/beta/...` (SUPER_ADMIN with an MFA-verified session): create, list and revoke closed-beta invite codes,
-  read the cohort size against the cap, and read the feedback users sent.
+  read the cohort size against the cap, move the rollout stage (Z10-e, audited), and read the feedback users sent.
 * `POST /api/pwa/events` (no login, rate-limited per IP): one install/update event from the installed app. The body is
   two enums - which event and which platform family - and only increments a Prometheus counter. Nothing is stored:
   no user id, no IP (the rate limiter keeps a short-lived per-IP counter in memory/Redis and nothing else), no text.
@@ -99,8 +99,26 @@ async def revoke_invite_code(code_id: int, admin: User = Depends(require_role())
 
 @admin_router.get("/cohort")
 async def cohort(session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
-    used, cap = await invites.cohort_size(session), invites.cohort_cap()
-    return {"gate_on": await flag_enabled(session, "beta_cohort_gate"), "cap": cap, "used": used, "remaining": max(0, cap - used)}
+    """`cap` is the effective cap the gate enforces, min(stage, BETA_COHORT_CAP); `remaining` / `headroom` the places
+    left under it."""
+    return await invites.cohort_view(session, gate_on=await flag_enabled(session, "beta_cohort_gate"))
+
+
+class StageBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    stage: int
+    reason: Optional[str] = Field(default=None, max_length=200)
+
+
+@admin_router.put("/cohort/stage")
+async def set_cohort_stage(body: StageBody, admin: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
+    """Z10-e: move the rollout stage. Up one stage at a time with a reason; down to any lower stage. Audited."""
+    try:
+        await invites.set_stage(session, admin, body.stage, body.reason)
+    except invites.StageChangeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
+    return await invites.cohort_view(session, gate_on=await flag_enabled(session, "beta_cohort_gate"))
 
 
 @admin_router.get("/feedback")

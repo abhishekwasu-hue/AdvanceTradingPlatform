@@ -9,7 +9,7 @@ interface AuthState {
    * calls `completeMfaLogin`. Resolves to null when the login is complete. */
   login: (email: string, password: string) => Promise<string | null>;
   completeMfaLogin: (mfaToken: string, code: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, inviteCode?: string) => Promise<void>;
   acceptInvite: (token: string, password: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   logout: () => void;
@@ -66,8 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
-  async function register(email: string, password: string) {
-    const response = await api.register(email, password);
+  async function register(email: string, password: string, inviteCode?: string) {
+    const response = await api.register(email, password, inviteCode);
     setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
   }

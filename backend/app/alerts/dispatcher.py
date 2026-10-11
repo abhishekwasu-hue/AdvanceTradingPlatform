@@ -24,8 +24,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, encrypt_config, severity_reaches
+from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, decrypt_raw, encrypt_config, severity_reaches
 from app.alerts import webpush
+from app.alerts.deeplink import app_path, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
 from app.market_data.calendar import IST
@@ -47,6 +48,14 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+def _push_wants(channel: AlertChannelRecord, notification: NotificationRecord) -> bool:
+    try:
+        categories = decrypt_raw(channel).get("categories")
+    except ValueError:
+        return True                                        # undecryptable: let the send report the real error
+    return push_wanted(categories, notification.event_type, notification.severity)
+
+
 async def enqueue_for_notification(session: AsyncSession, notification: NotificationRecord) -> List[AlertDeliveryRecord]:
     """One outbox row per enabled channel whose severity floor this notification reaches.
     Does not commit - `notify()` commits right after."""
@@ -59,6 +68,8 @@ async def enqueue_for_notification(session: AsyncSession, notification: Notifica
     for channel in channels:
         if not severity_reaches(notification.severity, channel.min_severity):
             continue
+        if channel.channel_type == AlertChannelType.PUSH.value and not _push_wants(channel, notification):
+            continue                                       # PW3: a category this organisation turned off for push
         row = AlertDeliveryRecord(
             tenant_id=notification.tenant_id, notification_id=notification.id, channel_id=channel.id,
             status=AlertDeliveryStatus.PENDING.value, next_attempt_at=_utcnow(),
@@ -253,7 +264,7 @@ async def send_push(config: PushConfig, notification: NotificationRecord, client
     the caller can prune them. Raises only when no device could be reached."""
     payload = {"title": f"[{notification.severity}] {notification.title}", "body": notification.message[:300],
                "event_type": notification.event_type, "severity": notification.severity, "notification_id": notification.id,
-               "url": "/?page=notifications"}
+               "url": app_path(notification)}                        # PW3: opens the exact screen (a same-origin path)
     gone: List[str] = []
     errors: List[str] = []
     delivered = 0
@@ -322,7 +333,8 @@ async def send_via_channel(
         if gone:
             remaining = [s for s in config.subscriptions if str(s.endpoint) not in gone]  # type: ignore[union-attr]
             if remaining:
-                channel.encrypted_config = encrypt_config(PushConfig(subscriptions=remaining), channel.tenant_id)
+                channel.encrypted_config = encrypt_config(PushConfig(subscriptions=remaining, categories=config.categories),  # type: ignore[union-attr]
+                                                          channel.tenant_id)
             logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
     elif channel.channel_type == AlertChannelType.SMS.value:
         await send_sms(config, notification, client)  # type: ignore[arg-type]

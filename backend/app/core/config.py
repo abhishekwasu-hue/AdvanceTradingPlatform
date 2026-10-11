@@ -438,3 +438,8 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
 OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
+
+# PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
+# this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes
+# included). The flag is off by default, so the cap does nothing until the operator turns the gate on.
+BETA_COHORT_CAP = _bounded_int("BETA_COHORT_CAP", 500, 1, 1_000_000)

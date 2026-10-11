@@ -1,6 +1,7 @@
 import { LogOut, Lock, Mail, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, setToken } from "../api/client";
+import { ApiError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import { ROLE_LABELS, type InviteInfo, type MfaStatus, type SessionInfo } from "../types";
 import MfaCard from "../components/MfaCard";
@@ -27,6 +28,9 @@ export default function AccountPage() {
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  // PW6: the closed-beta invite code - the field opens when the server asks for one (or the visitor says they have one).
+  const [betaCode, setBetaCode] = useState("");
+  const [betaField, setBetaField] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -198,9 +202,10 @@ export default function AccountPage() {
         const result = await api.forgotPassword(email);
         setNotice(result.detail);
       } else {
-        await register(email, password);
+        await register(email, password, betaCode.trim() || undefined);
       }
     } catch (err) {
+      if (mode === "register" && err instanceof ApiError && /"code"\s*:\s*"beta_(invite|cohort)_/.test(err.body)) setBetaField(true);
       setError(String(err));
     } finally {
       setLoading(false);
@@ -284,6 +289,25 @@ export default function AccountPage() {
             </div>
           </div>
           )}
+          {mode === "register" && (betaField ? (
+            <div>
+              <label htmlFor="beta-invite-code" className="block text-xs text-fg-muted mb-1">Beta invite code</label>
+              <input
+                id="beta-invite-code"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={64}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                className="w-full rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono tracking-wider uppercase focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-colors"
+                value={betaCode}
+                onChange={(e) => setBetaCode(e.target.value)}
+              />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setBetaField(true)} className="text-xs text-fg-muted hover:text-fg hover:underline">
+              Have a beta invite code?
+            </button>
+          ))}
           {error && <div className="text-xs text-down">{error}</div>}
           <button
             type="submit"

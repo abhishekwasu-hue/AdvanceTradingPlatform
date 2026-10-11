@@ -1,14 +1,16 @@
 /**
  * U5: the condition canvas drawn as a funnel - the page's one memorable element. The universe enters at the top as a
  * count, every stage narrows the stream, and the survivor trail on the right edge shows how many symbols are still in
- * after each stage. The stages sit inside one ALL bracket (a continuous left edge); ANY / NOT groups come with
- * GroupBracket. When a stage removes the last symbols its trail turns warn and offers to show what it removes.
+ * after each stage. The stages sit inside one ALL bracket (a continuous left edge); a group stage draws its own ANY /
+ * NOT bracket inside it (D2). When a stage removes the last symbols its trail turns warn and offers to show what it
+ * removes. "Add a condition" adds a block of the kind picked beside it.
  */
 import { Plus } from "lucide-react";
 import { useEffect, useState, type DragEvent } from "react";
 import { Button, cx } from "../components/primitives";
-import { duplicateStage, moveStage, newStage, trail, type FunnelResult, type Registry, type Stage } from "./model";
-import { StageRow } from "./StageRow";
+import { duplicateStage, isLive, moveStage, newBlock, newStage, trail, type FunnelResult, type Registry, type Stage, type StageKind } from "./model";
+import { SelectInline } from "./ParamInline";
+import { KIND_LABEL, StageRow } from "./StageRow";
 import "./screener.css";
 
 export interface StarterTemplate { name: string; summary: string; build: (reg: Registry) => Stage[] }
@@ -30,6 +32,7 @@ export interface FunnelCanvasProps {
   universe: number;                  // symbols the scan will read
   funnel: FunnelResult | null;       // the last run
   fresh: boolean;                    // the scan is still the one that ran (stages, timeframe, symbols): counts show only then
+  live?: boolean;                    // the counts come from a live preview (not a stored run)
   matched: number | null;
   problems: Record<string, string>;  // stage id -> what to fix
   runKey?: number;                   // bumps on every run: replays the fill
@@ -41,10 +44,11 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
   const { stages, registry, scanTf, funnel, onChange } = props;
   const [dragId, setDragId] = useState<string | null>(null);
   const [showing, setShowing] = useState<string | null>(null);
+  const [kind, setKind] = useState<StageKind>("indicator");
   const rows = trail(stages, funnel, props.fresh);
   useEffect(() => { setShowing(null); }, [props.runKey]);              // a new run closes the old "what this removes" list
   const total = props.fresh ? funnel?.with_data ?? null : null;      // "with data" belongs to the run's universe only
-  const enabledCount = stages.filter((s) => s.enabled).length;
+  const enabledCount = stages.filter(isLive).length;
   const step = enabledCount ? Math.min(60, 300 / enabledCount) : 0;     // the fill reaches the last stage within 600 ms
 
   const update = (id: string, s: Stage) => onChange(stages.map((x) => (x.id === id ? s : x)));
@@ -70,7 +74,8 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
             {STARTERS.map((t) => (
               <Button key={t.name} size="sm" onClick={() => onChange(t.build(registry))} title={t.summary}>{t.name}</Button>
             ))}
-            <Button size="sm" variant="primary" onClick={() => onChange([newStage(registry)])}><Plus size={14} /> Add a condition</Button>
+            <Button size="sm" variant="primary" onClick={() => onChange([newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
+            <KindPicker value={kind} onChange={setKind} />
           </div>
         </div>
       </section>
@@ -87,19 +92,19 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
         <span className="absolute -left-1 top-1/2 -translate-y-1/2 -rotate-90 text-t12 font-medium text-fg-muted" aria-hidden>All</span>
         <ol aria-label="Stages - every one must pass" className="rounded-control border border-border bg-surface">
           {stages.map((s, i) => {
-            if (s.enabled) enabledIndex += 1;
-            const delay = s.enabled ? enabledIndex * step : 0;
+            if (isLive(s)) enabledIndex += 1;                                   // an empty group is not a stage
+            const delay = isLive(s) ? enabledIndex * step : 0;
             return (
               <StageRow
                   key={s.id} trailDelayMs={delay}
                   stage={s} index={i} registry={registry} scanTf={scanTf} trail={rows[i]} total={total}
-                  problem={props.problems[s.id] ?? null}
+                  problem={props.problems[s.id] ?? null} problems={props.problems}
                   onChange={(next) => update(s.id, next)}
                   onMove={(d) => onChange(moveStage(stages, s.id, d))}
                   onDuplicate={() => onChange(duplicateStage(stages, s.id))}
                   onRemove={() => onChange(stages.filter((x) => x.id !== s.id))}
                   onShowRemoved={() => { setShowing(showing === s.id ? null : s.id); props.onShowRemoved?.(s.id); }}
-                  removedList={showing === s.id && rows[i].survivors != null ? funnel?.stages[enabledIndex]?.removed ?? [] : null}
+                  removedList={showing === s.id && rows[i].survivors != null ? funnel?.stages[enabledIndex]?.removed ?? "run" : null}
                   onDragStart={(e) => { setDragId(s.id); e.dataTransfer.effectAllowed = "move"; }}
                   onDragEnd={() => setDragId(null)}
                   onDragOver={(e) => { if (dragId) e.preventDefault(); }}
@@ -111,8 +116,11 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
         </ol>
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 pl-6">
-        <Button size="sm" onClick={() => onChange([...stages, newStage(registry)])}><Plus size={14} /> Add a condition</Button>
-        <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} />
+        <span className="inline-flex items-center gap-1">
+          <Button size="sm" onClick={() => onChange([...stages, newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
+          <KindPicker value={kind} onChange={setKind} />
+        </span>
+        <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
       </div>
     </section>
   );
@@ -131,15 +139,23 @@ function FunnelHead({ universe, withData = null }: { universe: number; withData?
 }
 
 /** The canvas's one live region: a single summary per run ("Matched 4 of 48"), not a count per stage. */
-function MatchedFoot({ matched, of, kills }: { matched: number | null; of: number | null; kills: boolean }) {
+function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of: number | null; kills: boolean; live: boolean }) {
   return (
-    <p className="text-t12 text-fg-muted" aria-live="polite" aria-atomic="true">
+    // one announcement per Run; live previews update the number quietly (they come after every pause in editing)
+    <p className="text-t12 text-fg-muted" aria-live={live ? "off" : "polite"} aria-atomic="true">
       Matched{" "}
       <span className={cx("font-mono font-tabular text-t18 font-semibold", matched == null ? "text-fg-muted" : kills || matched === 0 ? "text-warn" : "text-signal")}>
         {matched ?? "–"}
       </span>
       {matched != null && of != null && <span> of <span className="font-mono font-tabular">{of}</span></span>}
       {matched == null && <span className="sr-only">not counted yet</span>}
+      {matched != null && live && <span className="ml-1.5 rounded-full border border-border px-1.5 text-t12" title="Counted as you edit; Run stores a scan">live</span>}
     </p>
   );
+}
+
+const KINDS: StageKind[] = ["indicator", "filter", "category", "rank", "group"];
+
+function KindPicker({ value, onChange }: { value: StageKind; onChange: (k: StageKind) => void }) {
+  return <SelectInline label="Kind of condition to add" mono={false} value={value} options={KINDS} format={(k) => KIND_LABEL[k as StageKind]} onChange={(k) => onChange(k as StageKind)} />;
 }

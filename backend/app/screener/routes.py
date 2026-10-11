@@ -28,12 +28,18 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import compile_screen, nodes
-from app.screener.registry import describe
+from app.core.rate_limit import user_rate_limit
+from app.screener.registry import FUNCTIONS, describe
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 FLAG = "screener_v2"
+# U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
+run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
+# Data the run path loads today: bars only. A screen using a function that needs more is refused with the reason
+# (the U1-d universe data and the option chain join here when they are wired in).
+RUN_PROVIDES: frozenset = frozenset()
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -65,6 +71,7 @@ class RunBody(BaseModel):
     params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
+    preview: bool = Field(default=False, description="U5 D2 live counts while editing: the same evaluation, not stored as a run")
 
 
 def _compiled(source: Union[str, Dict[str, Any]], base_tf: str, params: Dict[str, Any]) -> Tuple[Any, Any]:
@@ -203,7 +210,17 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     return universe, problems, f"broker:{record.broker_name}"
 
 
-@router.post("/run")
+def missing_data(ast: Any) -> List[str]:
+    """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
+    out: List[str] = []
+    for node in nodes.walk(ast):
+        spec = FUNCTIONS.get(getattr(node, "name", "")) if isinstance(node, nodes.Call) else None
+        if spec and any(need not in RUN_PROVIDES for need in spec.needs) and spec.name not in out:
+            out.append(spec.name)
+    return out
+
+
+@router.post("/run", dependencies=[Depends(run_rate_limit)])
 async def run(body: RunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Runs a saved screen or ad-hoc source over up to 50 symbols, on server bars only; stores the run."""
     await _flag(session, user)
@@ -220,12 +237,27 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     ast, validated = _compiled(source, base_tf, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
+    missing = missing_data(ast)
+    if missing:
+        raise HTTPException(status_code=422, detail={"message": f"{', '.join(m + '()' for m in missing)} need data the screener run does not load "
+                                                                "yet (sector / index / F&O lists or the option chain); a run uses bars only",
+                                                     "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback)
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
     stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
     results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
+    payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
+               "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
+               "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+    if body.preview:
+        # U5 D2 review: a preview is not stored, so it returns counts only - the match list itself comes from a Run,
+        # which is stored and can be reproduced.
+        counts = {"universe": len(symbols), "with_data": stages["with_data"],
+                  "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in stages["stages"]]}
+        return {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
+                "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),
                               ast_version=nodes.VERSION, base_tf=base_tf, universe_json=json.dumps(symbols), data_source=data_source,
@@ -233,9 +265,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                               duration_ms=int((time.monotonic() - started) * 1000))
     session.add(run_row)
     await session.commit()
-    return {"run_id": run_row.id, "text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
-            "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
-            "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
+    return {"run_id": run_row.id, "preview": False, **payload}
 
 
 @router.get("/runs/{run_id}")

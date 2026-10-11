@@ -109,3 +109,29 @@ export function SelectInline({ value, options, label, mono = true, format = Stri
     </span>
   );
 }
+
+export interface TextInlineProps { value: string; label: string; placeholder?: string; onChange: (v: string) => void }
+
+/** Free text in the sentence (an index name, a list of sector names): commits on Enter or leaving, Escape cancels. */
+export function TextInline({ value, label, placeholder = "type a value", onChange }: TextInlineProps) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+  // control characters have no place in a value (ScreenQL strings do not read JSON's \uXXXX escapes)
+  const clean = (t: string) => t.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  const commit = () => { if (clean(text) !== value) onChange(clean(text)); };
+  return (
+    <input
+      aria-label={label}
+      value={text}
+      placeholder={placeholder}
+      size={Math.max(placeholder.length, text.length + 1)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); commit(); }
+        if (e.key === "Escape") { e.preventDefault(); setText(value); }
+      }}
+      className="rounded-control border border-transparent bg-transparent px-1 font-mono text-t13 text-fg placeholder:text-fg-muted/60 hover:border-border focus:border-border focus:outline-none focus:ring-2 focus:ring-brand"
+    />
+  );
+}

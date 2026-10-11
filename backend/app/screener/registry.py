@@ -43,6 +43,7 @@ class Spec:
     min_bars: int = 0               # S5-A: a floor on the bars needed (swings need history before the first pivot)
     values: Tuple[str, ...] = ()    # S5-A: a classifier's only values (a literal outside them is refused); empty = open
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
+    needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -136,15 +137,15 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " then displacement, acceptance (no reclaim) or a failed retest - a wick or a reclaimed close is a false break"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
-    Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain"),
+    Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain", needs=("option_chain",)),
     Spec("ChainBias", "classifier", CAT, None, (), cost=2.0, timeframed=False,
-         values=("BULLISH", "BEARISH", "NEUTRAL", "CONFLICTING"), doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING"),
-    Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying"),
-    Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)"),
-    Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)"),
-    Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small"),
-    Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date"),
-    Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date"),
+         values=("BULLISH", "BEARISH", "NEUTRAL", "CONFLICTING"), doc="option-chain bias: BULLISH / BEARISH / NEUTRAL / CONFLICTING", needs=("option_chain",)),
+    Spec("MaxPainDistancePct", "factor", NUM, "pct", (), cost=2.0, timeframed=False, doc="|underlying - max pain| as % of the underlying", needs=("option_chain",)),
+    Spec("Sector", "classifier", CAT, None, (), timeframed=False, doc="NSE sector (as of the run date)", needs=("reference",)),
+    Spec("Industry", "classifier", CAT, None, (), timeframed=False, doc="NSE industry (as of the run date)", needs=("reference",)),
+    Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
+    Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
+    Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
 )}
 
 
@@ -157,7 +158,7 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "defaults": {a.name: a.default for a in spec.args if a.default is not None},
                           "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
-                          "field": spec.name in FIELDS, "doc": spec.doc}
+                          "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
     return out
 
 

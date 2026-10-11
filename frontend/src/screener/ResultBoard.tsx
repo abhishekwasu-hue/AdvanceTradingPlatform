@@ -1,12 +1,15 @@
 /**
- * U5: the result board - D1 has the table view (dense, sortable). Matched symbols first; a symbol the scan could not
- * read says why. Heatmap, chart grid, RRG and the F&O dashboard join as more views; why-matched chips per stage come
- * with the live survivor counts.
+ * U5: the result board - the table view (dense, sortable). Matched symbols first; a symbol the scan could not read
+ * says why. D2: a "Stages" column of why-matched chips - one per top-level stage, filled when the symbol passed that
+ * stage on its own, hollow when it did not - with the stage's words on hover and for screen readers. Heatmap, chart
+ * grid, RRG and the F&O dashboard join as more views (D3).
  */
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
+
+export interface WhyChip { id: string; summary: string; passed: boolean }
 
 export type SortKey = "symbol" | "result";
 export interface SortState { key: SortKey; dir: "asc" | "desc" }
@@ -27,9 +30,10 @@ export interface ResultBoardProps {
   running?: boolean;
   runKey?: number;
   stale?: boolean;           // the scan changed since this run: the rows are kept, dimmed, with a note to run again
+  why?: (symbol: string) => WhyChip[];
 }
 
-export function ResultBoard({ results, running = false, runKey, stale = false }: ResultBoardProps) {
+export function ResultBoard({ results, running = false, runKey, stale = false, why }: ResultBoardProps) {
   const [sort, setSort] = useState<SortState>({ key: "result", dir: "asc" });
   const rows = useMemo(() => (results ? sortResults(results, sort) : []), [results, sort]);
   const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -58,6 +62,7 @@ export function ResultBoard({ results, running = false, runKey, stale = false }:
               <tr className="h-row border-b border-border">
                 <SortHeader label="Symbol" active={sort.key === "symbol"} dir={sort.dir} onClick={() => toggle("symbol")} />
                 <SortHeader label="Result" active={sort.key === "result"} dir={sort.dir} onClick={() => toggle("result")} />
+                {why && <th scope="col" className="px-4 text-left font-medium">Stages</th>}
               </tr>
             </thead>
             <tbody>
@@ -72,6 +77,7 @@ export function ResultBoard({ results, running = false, runKey, stale = false }:
                         ? <span className="text-warn" title={r.reason}>Could not be read · <span className="text-fg-muted">{r.reason}</span></span>
                         : <span className="text-fg-muted">Did not match</span>}
                   </td>
+                  {why && <td className="px-4"><WhyChips chips={why(r.symbol)} /></td>}
                 </tr>
               ))}
             </tbody>
@@ -91,5 +97,20 @@ function SortHeader({ label, active, dir, onClick }: { label: string; active: bo
         {active && (dir === "asc" ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />)}
       </button>
     </th>
+  );
+}
+
+/** One dot per top-level stage: filled = passed on its own, hollow = did not. Words on hover and for screen readers. */
+export function WhyChips({ chips }: { chips: WhyChip[] }) {
+  if (!chips.length) return <span className="text-t12 text-fg-muted"><span aria-hidden>–</span><span className="sr-only">not evaluated</span></span>;
+  return (
+    <span className="inline-flex items-center gap-1" data-testid="why-chips">
+      {chips.map((c, i) => (
+        <span key={c.id} title={`Stage ${i + 1}: ${c.summary} - ${c.passed ? "passed" : "did not pass"}`}
+              className={cx("h-2.5 w-2.5 rounded-full border", c.passed ? "border-signal bg-signal" : "border-fg-muted/60 bg-transparent")}>
+          <span className="sr-only">{`Stage ${i + 1}, ${c.summary}: ${c.passed ? "passed" : "did not pass"}.`}</span>
+        </span>
+      ))}
+    </span>
   );
 }

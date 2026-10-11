@@ -53,8 +53,10 @@ async def persist_trade(
     without an account" demo flow. LIVE fills carry the broker's entry and stop-loss order ids so
     the position monitor can cancel the stop on a target exit and reconciliation can match fills.
 
-    Z6: the journal captures the fill right after the commit (own session, `discipline_engine` flag, never raises).
-    `journal_source` says where the trade came from when the caller knows (Z3 approvals: "PROPOSAL"; scans: "SCAN").
+    Z6: the journal captures the fill right after the commit - the flag is read on this session's own connection
+    (cached), the capture itself is queued and runs off the trade path, and it never raises or waits.
+    `journal_source` says where the trade came from when the caller knows (webhook: "WEBHOOK"; public API: "API";
+    Z3 approvals will pass "PROPOSAL", scans "SCAN").
     """
     record = TradeRecord(
         tenant_id=user.tenant_id,

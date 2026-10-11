@@ -17,9 +17,11 @@ The mission adds a hard rule: ATP explains numbers and never advises. The trade 
 1. **Separate journal tables.** These are `journal_entries`, `journal_tags` and `journal_settings`, keyed by trade or
    user. No new columns go on `trades`: the trade row stays the execution record, and the journal is derived data that
    can be rebuilt from it.
-2. **Capture hooks after the commit, in their own session, flag-gated, never raising.** The hooks sit at the existing
-   single points (entry, monitor marks, stop change, exit). A journal fault can never fail or roll back a trade, and
-   nothing in the order path waits on it. Whatever a hook missed is rebuilt from the trade row on read.
+2. **Capture hooks after the commit, off the trade path, flag-gated, never raising.** The hooks sit at the existing
+   single points (entry, monitor marks, stop change, exit). The flag is read on the caller's own connection (cached),
+   and the work is queued to one background task with its own session and a timeout, so a journal fault can never
+   fail, roll back, delay or block a trade or an exit, and nothing in the order path waits on it or on a second pool
+   connection. Whatever a hook missed is rebuilt from the trade row on read.
 3. **Pure detectors and score.** No database, no clock and no AI in `detectors.py` and `score.py`. The same inputs
    always give the same tags and score; tests shuffle the inputs to check this.
 4. **Every threshold is a per-trader setting** with a documented, reasoned default and a range

@@ -14,8 +14,9 @@ Tags:
 * moved_stop_against - a stop change that moved the stop farther from the entry (more risk);
 * no_stop            - no protective stop at entry (missing, zero, or on the wrong side of the entry);
 * overtrading        - trades beyond the daily norm (fixed, or the trader's own median times a multiple);
-* early_exit         - closed between the stop and the first target for a reason none of the platform's exit rules
-                       gave (a hand exit with no invalidation);
+* early_exit         - closed between the stop and the first target by the trader's own decision (an exit by hand,
+                       an approved AI-action exit) rather than by one of the platform's exit rules, with no
+                       invalidation;
 * held_through_event - open across the start of a market event (events calendar) that applies to the underlying.
 
 Legs of one multi-leg structure (same `group_id`) are one decision: they count once for the daily norm and are never
@@ -33,13 +34,17 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tupl
 from app.journal.settings import DisciplineSettings
 from app.market_data.calendar import IST
 
-# Exit reasons the platform's own rules write (stop, target, time rule, square-off, structure exits, kill switch, AI
-# action approved by the trader, stop guard...). An exit whose reason contains none of these was taken by hand.
+# Exit reasons the platform's own rules write (stop, target, time rule, square-off, structure exits, kill switch, stop
+# guard...). An exit whose reason contains none of these was taken by hand.
 SYSTEMATIC_EXIT_MARKERS: Tuple[str, ...] = (
     "stop", "target", "time", "square", "end of day", "eod", "structure", "spread", "breakeven", "breached", "trail",
-    "premium floor", "premium ceiling", "emergency", "kill", "expir", "lockout", "reconcil", "invalidat", "ai action",
+    "premium floor", "premium ceiling", "emergency", "kill", "expir", "lockout", "reconcil", "invalidat",
     "protective",
 )
+# Exit reasons that are the TRADER's decision even when they mention a stop or a target: an approved AI-action exit
+# ("AI action #12 (stop_too_wide) approved" - the trader pressed Approve; the AI only proposed) and a hand exit ("Exit
+# now", "by hand", "manual"). Checked before the systematic markers.
+TRADER_EXIT_MARKERS: Tuple[str, ...] = ("ai action", "exit now", "by hand", "manual")
 
 
 @dataclass(frozen=True)
@@ -273,7 +278,16 @@ def overtrading(trades: Sequence[JournalTrade], s: DisciplineSettings, targets: 
     return out
 
 
+def is_trader_exit(reason: Optional[str]) -> bool:
+    text = (reason or "").lower()
+    return any(marker in text for marker in TRADER_EXIT_MARKERS)
+
+
 def is_systematic_exit(reason: Optional[str]) -> bool:
+    """An exit one of the platform's rules took on its own. A trader's decision (`is_trader_exit`) never is, whatever
+    words its reason carries."""
+    if is_trader_exit(reason):
+        return False
     text = (reason or "").lower()
     return any(marker in text for marker in SYSTEMATIC_EXIT_MARKERS)
 

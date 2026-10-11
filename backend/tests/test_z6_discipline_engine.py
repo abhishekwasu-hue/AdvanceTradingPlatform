@@ -150,6 +150,18 @@ def test_early_exit_is_a_hand_exit_between_stop_and_target():
     assert not detectors.is_systematic_exit("Closed by hand")
 
 
+def test_early_exit_counts_approved_ai_exits_and_exit_now_as_the_traders_decision():
+    # The reason close_position writes for an approved AI EXIT_POSITION proposal (app/ai/monitor.execute); the rule
+    # name may itself mention a stop - the trader pressed Approve, so it is still the trader's exit.
+    ai_exit = jt(1, exit_at=(6, 10, 30), exit_price=101.0, reason="AI action #12 (stop_too_wide) approved", pnl=10.0)
+    exit_now = jt(2, exit_at=(6, 10, 30), exit_price=100.5, reason="Exit now", pnl=5.0)
+    rule = jt(3, exit_at=(6, 10, 30), exit_price=101.0, reason="Trailing stop", pnl=10.0)
+    found = only("early_exit", detect([ai_exit, exit_now, rule], S, now=NOW))
+    assert sorted(d.trade_id for d in found) == [1, 2]
+    assert detectors.is_trader_exit("AI action #12 (stop_too_wide) approved") and not detectors.is_systematic_exit("Exit now (manual)")
+    assert detectors.is_systematic_exit("Spread target (value 10.00 <= 12)") and not detectors.is_trader_exit("Spread target")
+
+
 def test_held_through_event_respects_scope_and_kinds():
     budget = MarketEvent(1, "BUDGET", None, ist(7, 11, 0), "Union budget")
     results_other = MarketEvent(2, "RESULTS", "RELIANCE", ist(7, 9, 15))
@@ -267,6 +279,7 @@ def _flag(on: bool) -> None:
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
             await session.commit()
     _run(go())
+    capture.reset_flag_cache()   # the hooks cache the flag for FLAG_TTL_SECONDS
 
 
 @pytest.fixture
@@ -426,6 +439,7 @@ def test_capture_hooks_write_the_journal_only_with_the_flag_on():
     async def flag_off_part():
         async with _session_factory() as session:
             off = await persist_trade(session, user, trade())
+            await capture.drain()
             assert await session.scalar(select(JournalEntryRecord).where(JournalEntryRecord.trade_id == off.id)) is None
 
     async def flag_on_part():
@@ -438,6 +452,7 @@ def test_capture_hooks_write_the_journal_only_with_the_flag_on():
             from app.trading.position_monitor import close_position
             outcome = await close_position(session, on, 101.0, "Closed by hand")
             assert outcome.closed
+        await capture.drain()            # the hooks only queue; the journal is written off the trade path
         async with _session_factory() as session:
             entry = await session.scalar(select(JournalEntryRecord).where(JournalEntryRecord.trade_id == on.id))
             assert entry is not None and entry.source == "PROPOSAL" and entry.mode == "PAPER"
@@ -469,6 +484,7 @@ def test_capture_never_raises_into_the_trade_path(monkeypatch):
             async with _session_factory() as session:
                 rec = await persist_trade(session, user, Trade(symbol="NIFTY", strategy_id="s", direction=SignalDirection.LONG,
                                                                entry_time=datetime.now(timezone.utc), entry_price=100.0, quantity=1, stop_loss=98.0))
+                await capture.drain()   # the failing job ran (and was swallowed) without touching the trade
                 return rec.id, rec.entry_price
         trade_id, price = _run(go())
         assert trade_id and price == 100.0

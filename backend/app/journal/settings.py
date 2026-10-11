@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field, fields
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
@@ -141,8 +142,8 @@ def from_stored(raw: Optional[str]) -> DisciplineSettings:
 
 
 async def load(session: AsyncSession, user: User) -> DisciplineSettings:
-    row = await session.scalar(select(JournalSettingsRecord).where(JournalSettingsRecord.user_id == user.id))
-    return from_stored(row.settings_json if row is not None else None)
+    stored = await session.scalar(select(JournalSettingsRecord.settings_json).where(JournalSettingsRecord.user_id == user.id))
+    return from_stored(stored)
 
 
 async def save(session: AsyncSession, user: User, values: Dict[str, Any]) -> DisciplineSettings:
@@ -151,10 +152,12 @@ async def save(session: AsyncSession, user: User, values: Dict[str, Any]) -> Dis
     merged = validate(values, current)
     defaults = DisciplineSettings().to_dict()
     diff = {k: v for k, v in merged.to_dict().items() if v != defaults[k]}
-    row = await session.scalar(select(JournalSettingsRecord).where(JournalSettingsRecord.user_id == user.id))
-    if row is None:
-        row = JournalSettingsRecord(tenant_id=user.tenant_id, user_id=user.id)
-        session.add(row)
-    row.settings_json = json.dumps(diff, sort_keys=True)
+    from app.journal.capture import dialect_insert   # local: capture does not import the settings
+    stored = json.dumps(diff, sort_keys=True)
+    now = datetime.now(timezone.utc)
+    stmt = dialect_insert(session, JournalSettingsRecord.__table__).values(tenant_id=user.tenant_id, user_id=user.id, settings_json=stored,
+                                                                            updated_at=now)
+    # One atomic upsert on the unique user_id: two saves at once never collide into a duplicate-key error.
+    await session.execute(stmt.on_conflict_do_update(index_elements=["user_id"], set_={"settings_json": stored, "updated_at": now}))
     await session.commit()
     return merged

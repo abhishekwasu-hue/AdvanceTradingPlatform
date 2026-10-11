@@ -17,6 +17,8 @@ What a whitelisted chat can do:
   owner, once. Allowed over Telegram: PAUSE_DEPLOYMENT / REDUCE_RISK / REVIEW_STRATEGY on **PAPER**
   deployments. Anything touching a LIVE deployment, and every EXIT_POSITION, answers "web +
   authenticator only" (the decision by the operator; ADR-0006, Phase C3 step-up).
+  PW5: a third one-time button, **Snooze 1h**, on its own row: not a decision - the proposal stays
+  PROPOSED, is hidden for an hour (never past its expiry) and is sent again once, with fresh buttons.
 
 Rate limit 20 messages a minute per chat; every handled update is metered (`telegram_inbound`).
 """
@@ -48,6 +50,7 @@ from app.billing.service import meter
 from app.core import config as app_config
 from app.core.enums import AlertChannelType, UserRole
 from app.db.models import AiActionRecord, AlertChannelRecord, StrategyDeploymentRecord, TelegramCallbackRecord, Tenant, TradeRecord, User
+from app.market_data.calendar import IST
 from app.risk_engine.routes import get_tenant_risk_config
 from app.core.models import RiskConfig
 
@@ -61,6 +64,8 @@ AUDIT_STRANGERS_PER_HOUR = 5     # a stranger's messages are audited this often 
 METRIC = "telegram_inbound"
 TELEGRAM_ACTIONS = ("PAUSE_DEPLOYMENT", "REDUCE_RISK", "REVIEW_STRATEGY")      # EXIT_POSITION and anything LIVE: web + authenticator only
 CALLBACK_PREFIX = "p:"
+SNOOZE_MINUTES = 60                 # PW5: the Telegram Snooze button (the app offers more choices)
+SNOOZE_LABEL = "1h"
 COMMANDS = ("/help", "/start", "/brief", "/positions", "/risk", "/news", "/levels", "/thesis", "/why")
 _rate: Dict[Tuple[int, str], Deque[float]] = defaultdict(deque)
 
@@ -265,19 +270,21 @@ async def telegram_allowed(session: AsyncSession, action: AiActionRecord) -> Tup
 
 
 async def keyboard_for(session: AsyncSession, action: AiActionRecord, chat_id: str, now: Optional[datetime] = None) -> Optional[dict]:
-    """Two one-time buttons for a proposal, or None when Telegram may not decide it."""
+    """One-time Approve / Reject (and, PW5, Snooze 1h) buttons for a proposal, or None when Telegram may not decide it."""
     allowed, _ = await telegram_allowed(session, action)
     if not allowed or action.status != "PROPOSED":
         return None
     now = now or datetime.now(timezone.utc)
-    buttons = []
-    for decision, label in (("approve", "Approve"), ("reject", "Reject")):
+    buttons: Dict[str, dict] = {}
+    for decision, label in (("approve", "✅ Approve"), ("reject", "❌ Reject"), ("snooze", f"⏰ Snooze {SNOOZE_LABEL}")):
         nonce = secrets.token_urlsafe(18)
         session.add(TelegramCallbackRecord(tenant_id=action.tenant_id, action_id=action.id, nonce=nonce, decision=decision, chat_id=str(chat_id),
                                            signature=_signature(action.tenant_id, action.id, nonce, decision), expires_at=action.expires_at, created_at=now))
-        buttons.append({"text": f"{'✅' if decision == 'approve' else '❌'} {label}", "callback_data": f"{CALLBACK_PREFIX}{nonce}"})
+        buttons[decision] = {"text": label, "callback_data": f"{CALLBACK_PREFIX}{nonce}"}
     await session.flush()
-    return {"inline_keyboard": [buttons]}
+    # PW5: Snooze sits on its own row under Approve / Reject - the same one-time nonce mechanism; pressing any of the
+    # three uses up the other two, and the wake-up reminder arrives with fresh buttons.
+    return {"inline_keyboard": [[buttons["approve"], buttons["reject"]], [buttons["snooze"]]]}
 
 
 async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: TelegramConfig, data: str, chat_id: str, *, now: Optional[datetime] = None,
@@ -335,6 +342,15 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
                                                                           TelegramCallbackRecord.id != row.id, TelegramCallbackRecord.used_at.is_(None)).values(used_at=now))
     del siblings
     await session.commit()
+    if row.decision == "snooze":
+        # PW5: not a decision - the proposal stays PROPOSED and comes back once after SNOOZE_MINUTES (cut at its expiry).
+        try:
+            action = await monitor.snooze(session, action, user, until=now + timedelta(minutes=SNOOZE_MINUTES), via=f"Telegram chat {chat_id} by user {from_id}", now=now)
+        except ValueError as exc:
+            return f"Could not snooze: {exc}"
+        wake = action.snoozed_until
+        at = (wake if wake.tzinfo else wake.replace(tzinfo=timezone.utc)).astimezone(IST).strftime("%H:%M") if wake else "?"
+        return f"Proposal #{action.id} snoozed until {at} IST - it will be sent again then (it still expires on time)."
     try:
         action = await monitor.decide(session, action, user, approve=(row.decision == "approve"), note=f"via Telegram chat {chat_id} by user {from_id}", now=now)
     except ValueError as exc:

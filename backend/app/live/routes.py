@@ -3,7 +3,7 @@
 A proposal approved on Telegram (or in another tab, or by a teammate) must update the Watchtower without a reload, and
 the reverse. The app keeps one stream open: `GET /api/live/stream` (Server-Sent Events over fetch, so the bearer token
 travels in a header). The server checks a tiny per-organisation signature once a second - the open proposals and the
-latest decision, the newest notification - and sends an event only when it changed. No data rides the stream: the
+latest decision or snooze, the newest notification - and sends an event only when it changed. No data rides the stream: the
 page reloads what it shows through the normal, authorised endpoints.
 
 Each stream lives at most `STREAM_SECONDS` and the client reconnects; a comment line every 15 s keeps proxies from
@@ -46,7 +46,10 @@ async def signature(session: AsyncSession, tenant_id: int) -> Dict[str, Tuple]:
     """What the pages care about, per topic. Equal signatures = nothing to reload."""
     actions = (await session.execute(
         select(func.count(AiActionRecord.id).filter(AiActionRecord.status == "PROPOSED"), func.max(AiActionRecord.id),
-               func.max(AiActionRecord.decided_at), func.max(AiActionRecord.executed_at))
+               func.max(AiActionRecord.decided_at), func.max(AiActionRecord.executed_at),
+               # PW5: a snooze (or its wake) hides or shows a proposal, so it is a change too.
+               func.count(AiActionRecord.id).filter(AiActionRecord.status == "PROPOSED", AiActionRecord.snoozed_until.is_not(None)),
+               func.max(AiActionRecord.snoozed_until))
         .where(AiActionRecord.tenant_id == tenant_id)
     )).one()
     notes = (await session.execute(

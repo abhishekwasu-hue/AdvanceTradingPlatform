@@ -1782,6 +1782,22 @@ export interface AiAction {
   result: string | null;
   expires_at: string | null;
   created_at: string | null;
+  /** PW5: hidden from the pending list until this time (never later than expires_at). */
+  snoozed_until?: string | null;
+  /** PW5: the deployment's or position's mode; the approval itself still decides LIVE vs PAPER on the server. */
+  mode?: "PAPER" | "LIVE" | null;
+  /** PW5: the closing order's facts for "Trade in your broker app" (flag broker_app_links, exits on open positions only). */
+  ticket?: BrokerTicket | null;
+}
+
+export interface BrokerTicket {
+  broker: string | null;
+  exchange: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  instrument_kind: string;
+  publisher_api_key: string | null;
 }
 
 // ---- Phase M: platform controls, portfolio, degradation, incidents, optimisation ----------------

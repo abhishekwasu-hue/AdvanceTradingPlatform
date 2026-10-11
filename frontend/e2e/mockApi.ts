@@ -91,10 +91,23 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
       actionsState.set(action.id, decided);
       return route.fulfill({ json: decided });
     }
+    // PW5: snooze keeps the proposal PROPOSED and hides it from ?status=PROPOSED until it wakes (as the backend does).
+    const snooze = url.match(/^\/ai\/actions\/(\d+)\/snooze$/);
+    if (snooze && method === "POST") {
+      const action = actionsState.get(Number(snooze[1]));
+      if (!action) return route.fulfill({ status: 404, json: { detail: "No such proposal" } });
+      if (action.status !== "PROPOSED") return route.fulfill({ status: 409, json: { detail: `Action is ${action.status}; only PROPOSED actions can be snoozed` } });
+      const body = (json() as { minutes?: number; until?: string } | null) ?? {};
+      const until = body.until ?? new Date(Date.now() + (body.minutes ?? 60) * 60_000).toISOString();
+      const snoozed = { ...action, snoozed_until: until };
+      actionsState.set(action.id, snoozed);
+      return route.fulfill({ json: snoozed });
+    }
     if (/^\/ai\/actions(\?|$)/.test(url) && method === "GET") {
       const status = new URL(request.url()).searchParams.get("status");
       const all = [...actionsState.values()].sort((a, b) => b.id - a.id);
-      return route.fulfill({ json: status ? all.filter((a) => a.status === status) : all });
+      const asleep = (a: Action) => a.status === "PROPOSED" && typeof a.snoozed_until === "string" && new Date(a.snoozed_until).getTime() > Date.now();
+      return route.fulfill({ json: status ? all.filter((a) => a.status === status && !(status === "PROPOSED" && asleep(a))) : all });
     }
     if (method === "PUT" && /\/risk-settings$/.test(url)) return route.fulfill({ json: json() });
     if (method === "POST" && /\/ai\/interview\/plan$/.test(url)) return route.fulfill({ json: interviewPlan });

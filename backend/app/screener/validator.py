@@ -98,6 +98,20 @@ class _Checker:
             return 1
         return int(value)
 
+    def choice(self, arg: Any, sig: Any, owner: Any) -> None:
+        """S5-A: an argument with a fixed set of values must be a literal (or a parameter) from that set."""
+        if isinstance(arg, (n.Num, n.Str)):
+            value: Any = arg.value
+        elif isinstance(arg, n.Param):
+            value = self.params.get(arg.name)
+        else:
+            self.err(f"{owner.name}: argument {sig.name!r} must be one of {', '.join(map(str, sig.choices))}", arg)
+            return
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if isinstance(value, bool) or value not in sig.choices:
+            self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
+
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
@@ -151,6 +165,8 @@ class _Checker:
         if isinstance(node, n.Compare):
             (lt, lu), (rt, ru) = self.check(node.left, tf), self.check(node.right, tf)
             self.comparable(node, (lt, lu), (rt, ru), node.op)
+            self.domain(node.left, [node.right])
+            self.domain(node.right, [node.left])
             return BOOL, None
         if isinstance(node, n.Between):
             v, lo, hi = self.check(node.value, tf), self.check(node.low, tf), self.check(node.high, tf)
@@ -168,6 +184,7 @@ class _Checker:
                     self.err("IN takes literals only", item)
                     continue
                 self.comparable(node, v, self.check(item, tf), "IN")
+            self.domain(node.value, list(node.items))
             return BOOL, None
         if isinstance(node, n.Logic):
             if node.op not in ("ALL", "ANY"):
@@ -184,6 +201,17 @@ class _Checker:
             return BOOL, None
         self.err(f"not a ScreenQL node: {type(node).__name__}", node)
         return BOOL, None
+
+    def domain(self, cat: Any, others: List[Any]) -> None:
+        """S5-A review: a classifier with a fixed set of values refuses a literal outside it (`SwingDirection() == "up"`
+        would otherwise validate and never match)."""
+        spec = FUNCTIONS.get(cat.name) if isinstance(cat, n.Call) else None
+        if spec is None or not spec.values:
+            return
+        for other in others:
+            value = other.value if isinstance(other, n.Str) else self.params.get(other.name) if isinstance(other, n.Param) else None
+            if isinstance(value, str) and value not in spec.values:
+                self.err(f"{spec.name} is one of {', '.join(v for v in spec.values if v)}; {value!r} never matches", other)
 
     def comparable(self, node: Any, left: T, right: T, op: str) -> None:
         (lt, lu), (rt, ru) = left, right
@@ -234,6 +262,8 @@ class _Checker:
             units.append(u)
             if sig.type != t and not (sig.type == STR and t == STR):
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
+            elif sig.choices:
+                self.choice(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:
@@ -249,7 +279,7 @@ class _Checker:
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
                 window = max(window, a.default if isinstance(a.default, int) else 1)
-        self._need(own_tf, offset + max(window, 1) + (1 if node.name in ("CrossAbove", "CrossBelow") else 0))
+        self._need(own_tf, offset + max(window, 1, spec.min_bars) + spec.extra_bars)
         self.out.cost += spec.cost * (1 + window / 100)
         if spec.returns == NUM:
             unit = spec.unit

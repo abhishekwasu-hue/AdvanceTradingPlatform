@@ -206,6 +206,11 @@ class _Eval:
             "PatternBearish": lambda: _pattern(f, "BEARISH"),
             "NearSupport": lambda: _near_zone(f, "NEAR_SUPPORT", num(0, 0.5), win(1, 3)),
             "NearResistance": lambda: _near_zone(f, "NEAR_RESISTANCE", num(0, 0.5), win(1, 3)),
+            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf))),
+            "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
+            "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
+            "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
+            "MedianRange": lambda: _median_range(f, win(0, 20)),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -247,6 +252,44 @@ def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:
 def _pattern(f: pd.DataFrame, direction: str) -> bool:
     from app.price_action.candlestick_patterns import detect_patterns_at
     return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+
+
+def _pattern_series(f: pd.DataFrame, name: str) -> pd.Series:
+    """S5-A: True on each bar where the named pattern shows (`candlestick_patterns.pattern_masks`, vectorised: a whole
+    frame costs about as much as one bar did). The first two bars are False."""
+    from app.price_action.candlestick_patterns import pattern_masks
+    masks = pattern_masks(f)
+    if name not in masks:
+        raise ScreenRuntimeError(f"unknown pattern {name!r}")
+    return pd.Series(masks[name], index=f.index)
+
+
+def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """S5-A: (last confirmed swing high, last confirmed swing low, UP/DOWN) on every bar, from the causal swing engine
+    (app/price_action/causal_swings.py, default settings). A pivot counts from the bar that CONFIRMED it - when price
+    had come back from the extreme by the degree's threshold - never from the extreme bar itself (no look-ahead)."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = f.index
+    high, low = np.full(len(f), np.nan), np.full(len(f), np.nan)
+    direction = np.full(len(f), None, dtype=object)
+    for p in cs.degree_pivots(frame, degree, s):                         # confirmation order
+        c = int(p.confirmed_idx)                                          # type: ignore[arg-type]
+        (high if p.kind == "H" else low)[c] = p.price
+        direction[c] = "DOWN" if p.kind == "H" else "UP"
+    hi = pd.Series(high, index=f.index).ffill()
+    lo = pd.Series(low, index=f.index).ffill()
+    d = pd.Series(direction, index=f.index).ffill()          # None before the first pivot: missing, never matches
+    return hi, lo, d
+
+
+def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:
+    from app.price_action.breaks import median_range
+    return pd.Series(median_range(f, max(1, n_)), index=f.index)
 
 
 def _near_zone(f: pd.DataFrame, kind: str, tolerance_pct: float, window: int) -> bool:
@@ -366,15 +409,19 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
     out: List[Match] = []
     for d in universe:
-        short = [tf for tf, bars in validated.lookback.items() if tf in d.frames and len(d.frames[tf]) < bars] if check_history else []
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
             out.append(Match(d.symbol, False, f"no {base_tf} bars"))
             continue
+        ev = _Eval(d, base_tf, params, constants[d.symbol])
+        # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
+        # daily bars; a few days of 5m bars would otherwise give NaN with no reason)
+        short = [tf for tf, bars in validated.lookback.items()
+                 if (tf in d.frames or n.TF_MINUTES.get(tf, 0) > n.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars] if check_history else []
         if short:
             out.append(Match(d.symbol, False, f"not enough history on {', '.join(sorted(short))}"))
             continue
         try:
-            value = _last(_Eval(d, base_tf, params, constants[d.symbol]).ev(ast, base_tf))
+            value = _last(ev.ev(ast, base_tf))
         except ScreenRuntimeError as exc:
             out.append(Match(d.symbol, False, str(exc)))
             continue

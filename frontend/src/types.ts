@@ -1978,16 +1978,38 @@ export interface QuantExposure {
 }
 
 // Phase AA: broker candles for the research pages.
-export interface CandleSource { broker: string; account_label: string; token_status: string; token_expires_at: string | null; usable: boolean }
+export interface CandleSource {
+  broker: string; account_label: string; token_status: string; token_expires_at: string | null; usable: boolean;
+  /** BT1 (flag byob_data_tier): the broker's data-terms status and whether its data may be shown live to this user. */
+  data_status?: "confirmed" | "execution-only" | "pending"; tier_a?: boolean;
+}
+
+/** BT1: the data tier a number is shown under. "A" = live through the user's own broker session, "C" = EOD. */
+export interface DataTierBadgeInfo {
+  tier: "A" | "C"; label: string; source: string; broker: string | null; display_name: string | null;
+  as_of: string | null; eod_date: string | null; stale: boolean; stale_reason: string | null; alerts_suppressed: boolean;
+  reason?: string | null; cap?: number | null; broker_cap?: number | null; poll_seconds?: number | null; degraded?: boolean;
+  symbol?: string | null; exchange?: string | null;
+}
+export interface DataTierSession {
+  broker: string; display_name: string; account_label: string; data_status: string; token_usable: boolean; tier_a: boolean;
+  broker_cap: number | null; requires_user_data_subscription: boolean; cap?: number; symbols?: number; dropped?: number; degraded?: boolean; poll_seconds?: number;
+}
+/** `GET /api/market-data/data-tier`: `enabled: false` (flag off) means pages show no badge. */
+export interface DataTierResponse {
+  enabled: boolean; badge?: DataTierBadgeInfo; market_wide?: DataTierBadgeInfo; eod_date?: string | null; sessions?: DataTierSession[];
+}
 export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
 export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
-  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null }>; warnings: string[]; note: string;
+  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null }>; warnings: string[]; note: string;
+  data_tier?: DataTierBadgeInfo;
 }
 
 export interface LtpResponse {
   symbol: string; exchange: string; source_broker: string; fetched_at: string; ltp: number; timestamp: string | null; age_seconds: number | null;
   stale: boolean; stale_reason: string | null; source: "tick" | "quote" | "ltp"; bid: number | null; ask: number | null; volume: number | null;
+  data_tier?: DataTierBadgeInfo;
 }
 
 // Phase AB: go-live checklists.
@@ -1997,7 +2019,8 @@ export interface ReadinessChecklist { target: string; ready: boolean; summary: {
 // Phase AD: broker option chains and exchange holidays.
 export interface OptionChainsResponse {
   source: { broker: string; account_label: string }; expiry: string | null; fetched_at: string;
-  symbols: Record<string, { chain: OptionChain | null; rows: number; error: string | null }>; warnings: string[]; note: string;
+  symbols: Record<string, { chain: OptionChain | null; rows: number; error: string | null; data_tier?: DataTierBadgeInfo | null }>; warnings: string[]; note: string;
+  data_tier?: DataTierBadgeInfo;
 }
 export interface MarketHoliday { id: number; exchange: string; holiday_date: string; description: string }
 

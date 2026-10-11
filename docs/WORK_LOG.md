@@ -1580,3 +1580,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   - Migration `a7d3e9f1c5b8`.
 - Open questions Z3-1 to Z3-9. Not done, by the rules: nothing deployed, no flag turned on, no LIVE path, no broker API
   order.
+### 2026-10-11 18:15 IST - Trade port map (docs only)
+- `docs/TRADE_PORT_MAP.md`: every Trade module and folder (Trade@eafc872, read-only) with its purpose, ATP equivalent,
+  status and parity test, grouped as Phase 0 / N-list / G / already ported / unscheduled / not needed. 191 rows:
+  7 ported, 16 partial, 9 partial (unverified), 10 in progress (Z7a), 50 missing (25 of them G, waiting), 99 not needed.
+  Every ATP path cited exists on main, except the two spec files that arrive with PR #165.
+- Findings: Trade's `order_safety.py` has no freeze-quantity split, price band / circuit check or max-order-value
+  check (build new in ATP); the expiry "next if today" rule is already ported (`ExpiryBook.choose`) but not wired; the
+  IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
+  and no Stocko adapter.
+- `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).

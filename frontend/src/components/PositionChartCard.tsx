@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useBrokerChart } from "./chartHistory";
 import ProChart, { chartWindowUrl, directionMarker, useLiveLtp, type PriceLineSpec } from "./ProChart";
+import { SymbolTierBadge } from "./DataTierBadge";
 import { useCandleSource } from "./DataSource";
 import { Card, signClass } from "./ui";
 import type { TradeRecord } from "../types";
@@ -68,6 +69,7 @@ export default function PositionChartCard({ positions }: { positions: TradeRecor
         {p && derivative && <span className="text-fg-muted">charting the underlying <b className="text-fg">{chartSymbol}</b>; the position is in <b className="text-fg">{p.symbol}</b></span>}
         {p && (
           <span className="ml-auto flex items-center gap-3 font-tabular">
+            <SymbolTierBadge symbol={chartSymbol} exchange={chartExchange} live={live.ltp?.data_tier} />
             {held != null && <span className="text-fg-muted">{derivative ? "premium" : "LTP"} <b className="text-fg">{held.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b></span>}
             {pnl != null && <span className={`font-bold ${signClass(pnl, 0)}`}>{Math.round(pnl) > 0 ? "+" : Math.round(pnl) < 0 ? "-" : ""}₹{Math.abs(pnl).toLocaleString("en-IN", { maximumFractionDigits: 0 })} unrealised</span>}
             {source.sources.filter((s) => s.usable).length > 1 && (

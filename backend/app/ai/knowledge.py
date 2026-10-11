@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from app.ai.interview import tr
-from app.ai import grounding, output_filter, wording
+from app.ai import grounding, output_filter, prompt_versions, wording
 
 
 @dataclass(frozen=True)
@@ -471,6 +471,9 @@ symbol you write must come from the MARKET MEMORY, the CONCEPT NOTES or the ques
 {notes}"""
 
 
+PROMPT_VERSION = prompt_versions.version_of("guide", GUIDE_PROMPT)      # H-C1 f
+
+
 def ai_context(lang: str, concepts: List[Concept], memory: Optional[dict], profile: Optional[dict]) -> str:
     notes = "\n".join(f"- {c.en}: {c.body_en}" for c in concepts) or "- (none matched)"
     mem_lines = []
@@ -490,6 +493,7 @@ async def ai_answer(provider, question: str, lang: str, memory: Optional[dict], 
     base = answer(question, lang, memory)
     concepts = [BY_ID[c["id"]] for c in base["concepts"] if c["id"] in BY_ID]
     system = ai_context(lang, concepts, memory, profile)
+    prompt_versions.stamp(provider, PROMPT_VERSION)
     try:
         text = (await provider.complete(system, f"QUESTION:\n{question.strip()}", max_tokens=1200)).strip()
     except Exception as exc:  # noqa: BLE001 - the library answer is always there

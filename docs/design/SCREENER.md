@@ -732,6 +732,37 @@ with the indicator block, and the result table.
   - D5: Lighthouse, the visual-regression suite in CI, 50-stage performance.
   - The universe picker (index, sector, F&O chips) comes from U1-d. D1 takes typed symbols, up to the run limit of 50.
 
+## U5 D2 (built): the other block forms, groups, live counts, why it matched
+- **Block forms** (`StageRow.tsx`; one row shell, a body per kind). Each reads as a sentence edited in place:
+  - **Filter**: a yes / no function of the bar - `Pattern("doji")@15m`, `NearSupport(0.5, 3)`, `IsFnO()`,
+    `IndexMember("NIFTY 50")`, `ReversalAt(PDH(), "bearish")`. The crosses stay in the indicator block. A new filter
+    starts from the first one with no text to type.
+  - **Category**: a classifier is / is not one value (`==`, `!=`) or one of several (`IN (...)`, `NOT (... IN ...)`).
+    Values with a fixed set are toggle chips; the others (Sector, Industry) are typed.
+  - **Rank**: `Rank(PctChange(close, 5)) <= 10` or `PercentileRank(...) >= 90`, across the universe.
+  - **Group**: ANY of its blocks (`( a OR b )`) or NOT all of them (`NOT ( a AND b )`), drawn as its own bracket
+    with its label inside the ALL bracket; its blocks nest, can be added, edited, moved (Alt+arrow), duplicated and
+    switched off. A group is one funnel stage (the funnel counts top-level stages).
+  - Argument kinds: a literal number with no registry default (`tolerance_pct`) is a number, a `level` picks from
+    PDH() / PDL() / PDC() / DayOpen() / close, a free string is typed.
+  - "Add a condition" adds a block of the kind picked beside it.
+- **Live counts.** Once the current text passes the check and the trader pauses (0.9 s), a preview run
+  (`POST /run` with `preview: true`: evaluated exactly like a run, not stored) fills the trails and the matched count,
+  marked "live". A Run's counts take over while the scan is unchanged. "Live counts while editing" in the Universe
+  panel turns previews off. Previews read the same server bars (cached per symbol by the market-data service).
+- **Why it matched.** The run's funnel carries `passes` - for each evaluated symbol, whether it passed each stage on
+  its own (even after an earlier stage removed it). The result table's "Stages" column shows one dot per stage
+  (filled = passed), with the stage's words on hover and for screen readers. Shown only while the scan is the one
+  that ran.
+- **Problems** land on the innermost block they point at (`stageSpans` walks into groups).
+- **Contract.** `builderTexts.json` now has 23 cases covering every kind, nested groups and a disabled block in a
+  group; both sides test it.
+- **Tests.** Frontend: `model.test.ts` (20: D2 adds block predicates, defaults, every kind starts usable, group text
+  with disabled and empty groups, innermost spans, deep duplicate, why chips). Backend: `test_u5_funnel.py`
+  (passes per stage), `test_s1d_screener_api.py` (passes in the API, preview not stored). Headless Chromium: adding a
+  group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
+  live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

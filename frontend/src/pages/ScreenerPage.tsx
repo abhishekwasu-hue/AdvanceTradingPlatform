@@ -14,11 +14,13 @@ import type { PageProps } from "../routes";
 import { screenerApi, type RunResponse } from "../screener/api";
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas } from "../screener/FunnelCanvas";
-import { parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { ResultBoard } from "../screener/ResultBoard";
 import "../screener/screener.css";
 
 const VALIDATE_DELAY_MS = 350;
+/** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
+const PREVIEW_DELAY_MS = 900;
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError && e.status === 404) return "The screener is not turned on for this organisation yet.";
@@ -40,6 +42,9 @@ export default function ScreenerPage(_props: PageProps) {
   const [run, setRun] = useState<RunResponse | null>(null);
   const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
   const [validating, setValidating] = useState(false);
+  const [live, setLive] = useState(true);
+  const [preview, setPreview] = useState<{ res: RunResponse; stamp: RunStamp } | null>(null);
+  const previewSeq = useRef(0);
   const [ranAt, setRanAt] = useState<Date | null>(null);
   const [runKey, setRunKey] = useState(0);
   const [savedId, setSavedId] = useState<number | undefined>(undefined);
@@ -79,6 +84,21 @@ export default function ScreenerPage(_props: PageProps) {
   const canRun = !!registry && !!text && symbols.length > 0 && !validating && Object.keys(problems).length === 0 && !otherProblem && !running;
   const now = useMemo(() => (registry ? runStamp(registry, stages, scanTf, symbols) : null), [registry, stages, scanTf, symbols]);
   const fresh = !!now && sameRun(ran, now);
+  const liveFresh = !fresh && !!now && !!preview && sameRun(preview.stamp, now);
+
+  // Live counts while editing: after the check passes and the trader pauses, a preview run fills the trails.
+  const canPreview = live && !!registry && !!text && symbols.length > 0 && !validating && Object.keys(problems).length === 0 && !otherProblem && !running && !fresh;
+  useEffect(() => {
+    const seq = ++previewSeq.current;
+    if (!canPreview || !now || (preview && sameRun(preview.stamp, now))) return undefined;
+    const stamp = now;
+    const timer = window.setTimeout(() => {
+      screenerApi.preview(text, scanTf, symbols).then((res) => {
+        if (seq === previewSeq.current) setPreview({ res, stamp });
+      }).catch(() => undefined);                       // a live count is a convenience; Run reports errors
+    }, PREVIEW_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [canPreview, now, preview, text, scanTf, symbols]);
 
   const doRun = useCallback(async () => {
     if (!registry || !canRun || !now) return;
@@ -114,10 +134,11 @@ export default function ScreenerPage(_props: PageProps) {
     }
   };
 
-  const rows = trail(stages, run?.funnel ?? null, fresh);
+  // the counts shown: the run's while the scan is the one that ran, else a live preview's for the current scan
+  const shown = fresh ? run : liveFresh ? preview?.res ?? null : null;
+  const rows = trail(stages, shown?.funnel ?? null, !!shown);
   const killer = rows.find((r) => r.kills);
-  // the matched count shows only while the scan is the one that ran (stages, timeframe and symbols unchanged)
-  const matchedNow = fresh && run ? run.matched.length : null;
+  const matchedNow = shown ? shown.matched.length : null;
 
   if (loadError) {
     return <div className="rounded-panel border border-border bg-surface-1 p-4 text-t13 text-fg-muted">{loadError}</div>;
@@ -160,6 +181,10 @@ export default function ScreenerPage(_props: PageProps) {
             {TIMEFRAMES.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
           </select>
           </div>
+          <label className="mt-3 flex items-center gap-2 text-t12 text-fg-muted">
+            <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} className="h-3.5 w-3.5 accent-[rgb(var(--signal))]" data-testid="live-counts" />
+            Live counts while editing
+          </label>
           <p className="mt-4 text-t12 text-fg-muted">Closed bars only, read from your broker. A scan lists symbols that meet your own conditions; it is not advice.</p>
           </div>
         </aside>
@@ -167,8 +192,8 @@ export default function ScreenerPage(_props: PageProps) {
         {/* Conditions: the funnel */}
         <div className="screener-canvas">
           {registry ? (
-            <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={run?.funnel ?? null}
-                          fresh={fresh} matched={matchedNow} problems={problems} runKey={runKey} onChange={setStages} />
+            <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={problems} runKey={runKey} onChange={setStages} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}
@@ -186,7 +211,8 @@ export default function ScreenerPage(_props: PageProps) {
               </div>
             </div>
           )}
-          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh} />
+          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
+                       why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined} />
           {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
         </div>
       </div>

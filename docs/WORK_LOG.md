@@ -999,3 +999,10 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   New open questions SC-16 (U2/U4 not received) and SC-17 (three columns inside the app shell).
 - P1 spec received (profitability, manual trading, Options Strategy Builder). It starts after U5 D1 with P1-a, the
   options builder core port.
+
+### 2026-10-11 07:10 IST - U5 D2: block forms, ANY / NOT groups, live counts, why-matched chips
+- Filter, category and rank blocks and ANY / NOT groups (nested blocks inside their own bracket); "Add a condition"
+  takes the kind picked beside it. Problems land on the innermost block.
+- Live counts: a preview run (not stored) after the check passes and editing pauses; "live" mark; can be turned off.
+- Why it matched: the run's funnel carries each symbol's pass per stage; dots in the result table.
+- Contract fixture now covers every kind (23 cases). vitest 88, headless checks for D1 and D2 pass.

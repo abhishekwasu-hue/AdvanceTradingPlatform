@@ -1,11 +1,15 @@
 import {
+  CandlestickSeries,
   ColorType,
   CrosshairMode,
   LineStyle,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef, useState } from "react";
@@ -55,6 +59,7 @@ export default function CandleChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);   // CH2: v5 markers are a series plugin
   const activeLinesRef = useRef<IPriceLine[]>([]);
   const [themeTick, setThemeTick] = useState(0); // bumps on a theme change so lines, zones and markers recolour
 
@@ -73,7 +78,7 @@ export default function CandleChart({
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: c.border },
       rightPriceScale: { borderColor: c.border },
     });
-    const series = chart.addCandlestickSeries({
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: c.up,
       downColor: c.down,
       borderVisible: false,
@@ -82,6 +87,7 @@ export default function CandleChart({
     });
     chartRef.current = chart;
     seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series, []);
 
     const handleResize = () => {
       if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth });
@@ -94,6 +100,7 @@ export default function CandleChart({
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      markersRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height]);
@@ -164,7 +171,7 @@ export default function CandleChart({
     const sortedMarkers = [...markers].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
-    series.setMarkers(
+    markersRef.current?.setMarkers(
       sortedMarkers.map((m) => ({
         time: Math.floor(new Date(m.timestamp).getTime() / 1000) as UTCTimestamp,
         position: m.position,

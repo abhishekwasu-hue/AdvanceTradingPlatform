@@ -16,6 +16,7 @@ from app.ai.providers import DEFAULT_MODELS, AnthropicProvider, OpenAIProvider, 
 from app.ai.regime import classify_regime, regime_blocks, validate_filter
 from app.db.models import AiActionRecord, AiProviderConfigRecord, CustomStrategyRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
 from app.secrets_store.encryption import decrypt_text
+from tests.server_evidence import serve_candles
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant as _worker_tenant, _trades, _worker
 from tests.utils import make_series, noisy_uptrend
@@ -168,7 +169,7 @@ class _ScriptedProvider:
         return self.answers.pop(0)
 
 
-def test_generator_retries_once_then_review_gate_requires_backtest_before_approval():
+def test_generator_retries_once_then_review_gate_requires_backtest_before_approval(monkeypatch):
     headers, me = _owner("ai-gen@example.com")
 
     async def gen(provider):
@@ -187,7 +188,8 @@ def test_generator_retries_once_then_review_gate_requires_backtest_before_approv
     refused = client.post(f"/api/ai/drafts/{draft_id}/approve", headers=headers, json={})
     assert refused.status_code == 400 and "Backtest" in refused.json()["detail"]
 
-    bt = client.post(f"/api/ai/drafts/{draft_id}/backtest", headers=headers, json={"symbol": "TEST", "base_timeframe": "1min", "candles": _candles(noisy_uptrend(400))})
+    serve_candles(monkeypatch, _candles(noisy_uptrend(400)))           # H-C1 a: the server fetches the evidence
+    bt = client.post(f"/api/ai/drafts/{draft_id}/backtest", headers=headers, json={"symbol": "TEST", "base_timeframe": "1min"})
     assert bt.status_code == 200, bt.text
     assert bt.json()["draft"]["status"] == "BACKTESTED" and bt.json()["run"]["strategy_id"] == f"ai_draft_{draft_id}"
     assert bt.json()["run"]["id"] == bt.json()["draft"]["backtest_run_id"]

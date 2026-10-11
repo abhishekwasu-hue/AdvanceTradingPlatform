@@ -5,6 +5,12 @@ import { DataSourceBar, useCandleSource } from "../components/DataSource";
 import type { OptionChainAnalysis } from "../types";
 import { generateSampleOptionChain } from "../utils/sampleData";
 import { PageHeader } from "../components/primitives";
+import OiBanner from "../components/OiBanner";
+import OiHistoryTable from "../components/OiHistoryTable";
+import OiAlertsCard from "../components/OiAlertsCard";
+import OiSettingsCard from "../components/OiSettingsCard";
+import StrikeOiChart from "../components/StrikeOiChart";
+import { getToken } from "../api/client";
 
 const BIAS_COLOR: Record<string, string> = {
   BULLISH: "text-up",
@@ -14,7 +20,8 @@ const BIAS_COLOR: Record<string, string> = {
 };
 
 export default function OptionChainPage() {
-  const [underlying, setUnderlying] = useState("NIFTY");
+  // A deep link (?underlying=, e.g. from an OI alert) opens that underlying; otherwise the page default.
+  const [underlying, setUnderlying] = useState(() => new URLSearchParams(window.location.search).get("underlying")?.trim() || "NIFTY");
   const [ltp, setLtp] = useState(22000);
   const [tilt, setTilt] = useState<"bullish" | "bearish" | "mixed">("bullish");
   const [loading, setLoading] = useState(false);
@@ -22,8 +29,11 @@ export default function OptionChainPage() {
   const [analysis, setAnalysis] = useState<OptionChainAnalysis | null>(null);
   const source = useCandleSource();            // Phase AD: live chain through the broker session
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
+  // OI Banner (O3): the collector's view of the underlying last analysed (stored 5-minute snapshots, not this fetch).
+  const [oiUnderlying, setOiUnderlying] = useState(underlying.trim().toUpperCase());
 
   async function analyze() {
+    setOiUnderlying(underlying.trim().toUpperCase());
     setLoading(true);
     setError(null);
     try {
@@ -89,6 +99,18 @@ export default function OptionChainPage() {
       </Card>
 
       {error && <div className="text-sm text-down">{error}</div>}
+
+      {getToken() && oiUnderlying && (
+        <>
+          <OiBanner underlying={oiUnderlying} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card title={`${oiUnderlying} OI history`}><OiHistoryTable underlying={oiUnderlying} /></Card>
+            <Card title={`${oiUnderlying} OI by strike`}><StrikeOiChart underlying={oiUnderlying} /></Card>
+          </div>
+          <Card title="OI banner settings"><OiSettingsCard underlying={oiUnderlying} /></Card>
+          <Card title="OI banner alerts"><OiAlertsCard underlying={oiUnderlying} /></Card>
+        </>
+      )}
 
       {analysis && (
         <>

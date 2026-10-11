@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import pricing
+from app.ai.pii import redact
 from app.ai.providers import Completion, LLMProvider, ProviderError
 from app.billing.service import meter
 from app.db.models import LlmCallRecord, Tenant, UsageRecord
@@ -115,12 +116,14 @@ def _sha(text: Optional[str]) -> Optional[str]:
 
 async def log_call(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], feature: str, provider: str, model: str, prompt_version: Optional[str],
                    system: str, user: str, response: Optional[str], status: str, result: Optional[Completion], cost_usd: float = 0.0) -> None:
-    """P0.8-D: the full LLM input and output, hashed and in clear, in `llm_calls` (never deleted). Joins the caller's
-    transaction in a savepoint like the usage rows."""
+    """P0.8-D: the full LLM input and output in `llm_calls` (rows never deleted). H-C1 e: the stored text has personal
+    data masked (`app.ai.pii`); the hashes are of the original text. Joins the caller's transaction in a savepoint like
+    the usage rows."""
     async with session.begin_nested():
         session.add(LlmCallRecord(tenant_id=tenant_id, user_id=user_id, feature=feature, provider=provider, model=model or "", prompt_version=prompt_version,
                                   system_sha256=_sha(system) or "", user_sha256=_sha(user) or "", response_sha256=_sha(response),
-                                  system_text=system or "", user_text=user or "", response_text=response, status=status[:300],
+                                  system_text=redact(system or "", strict=False), user_text=redact(user or ""),       # H-C1 e: PII masked
+                                  response_text=redact(response), status=status[:300],
                                   input_tokens=(result.input_tokens + result.cache_read_tokens + result.cache_write_tokens) if result else 0,
                                   output_tokens=result.output_tokens if result else 0, cost_usd=float(cost_usd or 0.0)))
         await session.flush()
@@ -167,7 +170,7 @@ class MeteredProvider:
             self.spent["cost_usd"] += cost
         try:
             await log_call(self.session, tenant_id=self.tenant_id, user_id=self.user_id, feature=self.feature, provider=self.inner.name,
-                           model=(result.model if result else "") or self.inner.model, prompt_version=self.prompt_version, system=system, user=user,
+                           model=(result.model if result else "") or self.inner.model, prompt_version=self.prompt_version or f"unversioned:{self.feature}", system=system, user=user,
                            response=response, status=status, result=result, cost_usd=cost)
         except Exception as exc:  # noqa: BLE001 - the audit row is logged, never the cause of a failed answer
             logger.warning("LLM call not logged for tenant %s (%s): %s", self.tenant_id, self.feature, exc)
@@ -183,6 +186,26 @@ class MeteredProvider:
 
     async def complete(self, system: str, user: str, *, max_tokens: int = 2000) -> str:
         return (await self.complete_full(system, user, max_tokens=max_tokens)).text
+
+    @property
+    def supports_tools(self) -> bool:
+        return hasattr(self.inner, "complete_tools")
+
+    async def complete_tools(self, system: str, messages, tools, *, max_tokens: int = 4000):
+        """H-C2: one agent step, metered and logged like every other call (the logged "user" text is the newest message)."""
+        import json as _json
+        last = _json.dumps(messages[-1].get("content") if messages else "", default=str)[:20000]
+        step = getattr(self.inner, "complete_tools", None)
+        if step is None:
+            raise ProviderError(f"{self.inner.name} has no tool use")
+        try:
+            turn = await step(system, messages, tools, max_tokens=max_tokens)
+        except ProviderError as exc:
+            await self._record(exc.usage, system, last, None, f"error: {str(exc)[:280]}")
+            raise
+        calls = ", ".join(c.name for c in turn.calls)
+        await self._record(turn.usage, system, last, turn.text + (f"\n[tool calls: {calls}]" if calls else ""), "ok")
+        return turn
 
 
 def spent_by(provider: Any) -> Optional[Dict[str, Any]]:

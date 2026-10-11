@@ -11,7 +11,7 @@ from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.risk_engine.risk_manager import RiskManager, TradingDayState
 from app.strategy_engine.base import BaseStrategy
-from app.trading.exit_logic import determine_exit_price
+from app.backtest.models import ModelSet
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.backtest.analytics import build_analytics
 from app.backtest.options import IST, to_utc
@@ -30,6 +30,7 @@ def run_backtest(
     base_tf: str,
     risk_config: RiskConfig,
     exit_rules: Optional[ExitRules] = None,
+    models: Optional[ModelSet] = None,
 ) -> BacktestResult:
     """Event-driven backtest over historical OHLCV bars.
 
@@ -47,7 +48,12 @@ def run_backtest(
     register_frames(frames.values())   # causal indicators on the windows: computed once per run (realism 3)
     min_hist = strategy.min_history()[primary_tf]
 
+    # Realism C2: execution models; the default set is exactly the engine before C2 (golden test).
+    models = models or ModelSet()
     broker = PaperBroker()
+    if not models.is_default:
+        broker.slippage_model = models.slippage_model(broker.slippage_pct)
+    fill = models.fill_model()
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
     contract_spec = get_contract_spec(symbol)
@@ -88,10 +94,7 @@ def run_backtest(
                 if update.time_exit_reason:
                     outcome = (update.time_exit_reason, float(bar["close"]))
             if outcome is None:
-                outcome = determine_exit_price(
-                    direction, open_trade.stop_loss, open_trade.target1, open_trade.target2,
-                    bar["low"], bar["high"], open_price=float(bar["open"]) if "open" in bar else None,
-                )
+                outcome = fill.exit(direction, open_trade.stop_loss, open_trade.target1, open_trade.target2, bar)
             if outcome is None and rules is not None:
                 best_price = update.best_price
                 if update.stop_changed:

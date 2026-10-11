@@ -88,6 +88,7 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.option_chain.routes import router as oi_banner_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -99,6 +100,8 @@ from app.portfolio.routes import router as portfolio_router
 from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
+from app.compliance.routes import router as compliance_router
+from app.charts.drawings import router as chart_drawings_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -189,6 +192,7 @@ app.include_router(ai_router)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
+app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)
@@ -198,6 +202,8 @@ app.include_router(tax_router)
 app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
+app.include_router(compliance_router)
+app.include_router(chart_drawings_router)
 
 _default_risk_config = RiskConfig()
 
@@ -229,6 +235,7 @@ class BacktestRequest(BaseModel):
     data_source: str = "uploaded"
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
+    execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
 
 
 class PaperExecuteResponse(BaseModel):
@@ -564,6 +571,10 @@ async def scanner_run(request: ScannerRequest, _: User = Depends(get_current_use
     building block the no-code Strategy Builder uses. Pure function of its input - no persistence,
     needs a logged-in caller (P0.1 / S3: CPU-bound work is not offered to anonymous callers).
     """
+    from app.core import config as app_config
+    if app_config.SCANNER_ENGINE == "screenql":
+        from app.scanner.screenql import run_scanner_screenql
+        return await run_in_threadpool(run_scanner_screenql, request)
     return await run_in_threadpool(run_scanner, request)
 
 

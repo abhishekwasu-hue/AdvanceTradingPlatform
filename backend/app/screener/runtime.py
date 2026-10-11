@@ -38,6 +38,9 @@ _DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes
                              "1M": DateOffset(months=1)}
 
 
+EXCHANGE_TZ = "Asia/Kolkata"
+
+
 class ScreenRuntimeError(ValueError):
     """The screen cannot run as given (not validated, missing base data)."""
 
@@ -62,6 +65,11 @@ class Match:
 
 
 def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
+    """When a bar that starts at `index` has closed. Months are counted in exchange time (BK1 verification B): a month
+    labelled 1 Aug 00:00 IST is 31 Jul 18:30 UTC, and one calendar month on from the UTC stamp clipped to 30 Aug -
+    a day before the month's last session - so the month was visible early."""
+    if tf == "1M" and getattr(index, "tz", None) is not None:
+        return (index.tz_convert(EXCHANGE_TZ) + _DURATION[tf]).tz_convert(index.tz)
     return index + _DURATION[tf]
 
 
@@ -71,9 +79,6 @@ def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
     if df.empty:
         return df
     return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
-
-
-EXCHANGE_TZ = "Asia/Kolkata"
 
 
 def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
@@ -107,8 +112,8 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     if src is not base:
         out.index = out.index.tz_convert(tz)
     if len(out) and len(base) and not keep_forming:
-        last_base_close = base.index[-1] + _DURATION[base_tf]
-        if out.index[-1] + _DURATION[tf] > last_base_close:
+        last_base_close = bar_close(base.index[-1:], base_tf)[0]
+        if bar_close(out.index[-1:], tf)[0] > last_base_close:
             out = out.iloc[:-1]
     return out
 
@@ -122,7 +127,11 @@ class _Eval:
 
     def frame(self, tf: str) -> pd.DataFrame:
         if tf not in self.frames:
-            self.frames[tf] = resample(self.frames[self.base_tf], self.base_tf, tf)
+            src = self.base_tf
+            # U6 BK1 verification (A): weekly / monthly from a given daily frame (the deeper history) on an intraday screen
+            if "1d" in self.frames and n.TF_MINUTES[self.base_tf] < n.TF_MINUTES["1d"] < n.TF_MINUTES[tf]:
+                src = "1d"
+            self.frames[tf] = resample(self.frames[src], src, tf)
         return self.frames[tf]
 
     def align(self, value: Any, src_tf: str, dst_tf: str) -> Any:

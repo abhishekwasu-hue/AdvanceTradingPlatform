@@ -106,7 +106,7 @@ def history_bars(screen: str, signal_tf: str, params: Dict[str, Any]) -> int:
 
 
 async def _frames(session: AsyncSession, user: User, symbols: List[str], exchange: str, signal_tf: str,
-                  context: tuple, bars: int = SIGNAL_HISTORY_BARS) -> tuple:
+                  context: tuple, tier: Optional[Dict[str, Any]] = None, bars: int = SIGNAL_HISTORY_BARS) -> tuple:
     """Closed bars per symbol for the signal timeframe and every context timeframe.
 
     * A daily-or-coarser signal: one daily fetch; the signal and every context frame are built from the daily bars (L8: a
@@ -114,22 +114,25 @@ async def _frames(session: AsyncSession, user: User, symbols: List[str], exchang
     * An intraday signal: the signal timeframe's fetch (1h for 2h / 4h); intraday context is resampled from it, and
       daily-or-coarser context is built from a separate daily fetch (deeper than the intraday window). `bars`: signal
       bars to fetch (U6 BK2: whole sessions for the intraday screens, `history_bars`)."""
+    tier = tier if tier is not None else {}                           # BT1b: the run's own user session, its data-tier badge
     daily_tf = bp.TF_MINUTES["1d"]
     frames: Dict[str, Dict[str, pd.DataFrame]] = {}
     if bp.TF_MINUTES[signal_tf] >= daily_tf:
-        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": SIGNAL_HISTORY_BARS})
+        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
+                                                     user_id=user.id, tier_out=tier)
         for d in daily:
             base = d.frames["1d"]
             frames[d.symbol] = {tf: style.resample(base, "1d", tf) for tf in (signal_tf, *context)}
         return frames, problems, source
     fetch_tf = FETCH_TF.get(signal_tf, signal_tf)
-    universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, fetch_tf, {fetch_tf: bars})
+    universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, fetch_tf, {fetch_tf: bars},
+                                                    user_id=user.id, tier_out=tier)
     for d in universe:
         f = d.frames[fetch_tf]
         frames[d.symbol] = {signal_tf: style.resample(f, fetch_tf, signal_tf) if fetch_tf != signal_tf else f}
     daily_ctx = [tf for tf in context if bp.TF_MINUTES[tf] >= daily_tf]
     if daily_ctx and frames:
-        daily, _, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS})
+        daily, _, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS}, user_id=user.id)
         for d in daily:
             for tf in daily_ctx:
                 frames[d.symbol][tf] = style.resample(d.frames["1d"], "1d", tf)
@@ -176,7 +179,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     bars = history_bars(spec["screen"], spec["signal_tf"], spec["params"])
-    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"], bars)
+    tier: Dict[str, Any] = {}
+    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"], tier, bars)
     notes: List[str] = []
     rows, graded, hidden = await run_in_threadpool(_grade_all, spec, frames, body.within, body.include_htf_failed, calendar, notes)
     reasons: Dict[str, str] = {**dict(problems), **graded}
@@ -185,7 +189,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
             "screenql": text, "engine_only_reason": why, "data_source": source, "scanned": len(symbols), "rows": rows,
             "columns": list(templates.RESULT_COLUMNS) + (list(templates.INTRADAY_COLUMNS) if spec["screen"] in INTRADAY_SCREENS else []),
             "problems": reasons, "notes": notes[:50], "as_of": datetime.now(timezone.utc).isoformat(),
-            "htf_filter": bp.validate(spec["params"])[0]["htf_filter"], "htf_failed_hidden": hidden, "history_note": HISTORY_NOTE,
+            **tier, "htf_filter": bp.validate(spec["params"])[0]["htf_filter"], "htf_failed_hidden": hidden, "history_note": HISTORY_NOTE,
             "disclaimer": quality.DISCLAIMER}
 
 

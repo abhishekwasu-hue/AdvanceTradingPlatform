@@ -52,6 +52,7 @@ class Spec:
     window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
     min_sessions: int = 0                  # U6 BK2: whole sessions of history it needs (intraday; on top of min_bars)
     sessions_arg: Optional[str] = None     # U6 BK2: the argument that sets min_sessions (prior sessions + the current one)
+    fetch_degree_bars: Tuple[int, ...] = ()  # U6 BK1: bars to FETCH by degree (fetch sizing only; min_bars decides refusal)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -218,12 +219,13 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("ATRPercentile", "factor", NUM, "pct", (_bk("atr_n", "n", "window"), _bk("atr_pct_lookback", "lookback", "window")), cost=2.0,
          window_sum=True, flag=BREAKOUT_FLAG,
          doc="percentile (0-100) of the previous bar's ATR / close among the last `lookback` bars (needs n + lookback bars)"),
-    # min_bars 1: a context frame shorter than the trend's warm-up (40 bars at D0) reads as missing (unknown) instead of
-    # refusing the symbol, so `NOT DowTrend(0)@1M == "DOWN"` (not against) still passes on a short monthly history (H1)
-    Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=1,
+    # Refusal vs fetch: min_bars 1 - a context frame shorter than the trend's warm-up (dow_min_bars, 40 at D0) reads as
+    # missing (unknown), which `DowTrend(0)@tf != "DOWN"` treats as not passing (cautious); the fetch is sized for the
+    # swing history (100 / 250 / 600 / 1200 bars by degree) so the trend can be read.
+    Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=1, fetch_degree_bars=SWING_DEGREE_MIN_BARS,
          values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
          doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
-             " both are labelled and on the frame's first 40 / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
+             " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
              " timeframe's trend from its closed bars"),
     # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one
     # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.

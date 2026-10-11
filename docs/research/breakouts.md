@@ -47,7 +47,7 @@ parameters included).
   a wide breakout bar does not set its own yardstick.
 - **Higher-timeframe trend.** A Dow trend is read only after 40 bars at D0. Measured on the session generator (40 seeds,
   daily and weekly): the trend on the last bar from N bars agrees with the full history 95.5 % at N = 30, 98.7 % at 40,
-  99.9 % at 60. An unknown trend does not block "not against" but earns no point.
+  99.9 % at 60 (`dow_min_bars`). An unknown trend blocks "not against" - the cautious reading - and earns no point.
 - **One signal per leg.** After a signal the side re-arms after a confirmed pullback swing, a failed break, or a new base
   (`leg_rearm_bars` bars without a new extreme).
 - **Quality overlay.** An equal-weight checklist of 6 points: higher-timeframe agreement (one point per context
@@ -131,7 +131,8 @@ How BK2 uses them:
 | `shock_mult` | B14 | 2 | Upper end of the 1.5-2x practitioner range: a shock, not a confirmation. |
 | `level_tol_atr` | B14 | 0.25 | A quarter ATR: inside one bar's noise. |
 | `htf_degree` | quality | 0 | D0 (1.5 x ATR) is already a structure swing on a higher timeframe; Dow theory labels. |
-| `htf_filter` | quality | not_against | HTF agreement had the largest effect in the one quantitative study (spec §1); not_against keeps range-bound context. |
+| `dow_min_bars` | quality | 40 | Measured on the session generator (40 seeds): the last-bar trend from N bars agrees with the full history 95.5 % at 30, 98.7 % at 40, 99.9 % at 60. |
+| `htf_filter` | quality | not_against | HTF agreement had the largest effect in the one quantitative study (spec §1); not_against keeps range-bound context, never an unknown one. |
 | `acceptance_closes` | quality | 2 | N closes beyond = acceptance (spec §1); 2 matches the price_action break rule (break_no_reclaim_bars = 1). |
 | `retest_tol_atr` | quality | 0.25 | A quarter ATR: inside one bar's noise. |
 | `failed_break_bars` | quality | 3 | Failed-break rule 'back inside within N bars' (spec §1); 3 bars = practitioner 'it should work at once'. |
@@ -161,4 +162,4 @@ How BK2 uses them:
 | `or_minutes` | B16 | 15 | Crabel (1990) opening range; 15 / 30 / 60 minutes are the windows named in spec B16 (15 = the platform's ORB strategy). |
 | `day_level` | B17 | first_hour | The B17 levels named in the spec. |
 | `first_hour_min` | B17 | 60 | The first trading hour (09:15-10:15 on NSE) by name. |
-| `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, ... (see style.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |
+| `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, 1d -> 1w, ... (see params.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |

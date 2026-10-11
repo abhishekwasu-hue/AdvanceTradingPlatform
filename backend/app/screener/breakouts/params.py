@@ -25,10 +25,11 @@ class Param:
     group: str = "common"                     # common / B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / intraday / quality / style
 
 
-# The context ladder: signal timeframe -> the two higher timeframes read for context (a weekly signal has one).
+# The context ladder: signal timeframe -> the two higher timeframes read for context. Daily and weekly signals have one:
+# a monthly Dow trend needs dow_min_bars (40) months and the daily fetch holds about 13 (open question BK1-2).
 DEFAULT_CONTEXT_LADDER: Dict[str, List[str]] = {
     "1m": ["5m", "15m"], "3m": ["15m", "1h"], "5m": ["15m", "1h"], "15m": ["1h", "1d"],
-    "30m": ["2h", "1d"], "1h": ["1d", "1w"], "2h": ["1d", "1w"], "4h": ["1d", "1w"], "1d": ["1w", "1M"], "1w": ["1M"],
+    "30m": ["2h", "1d"], "1h": ["1d", "1w"], "2h": ["1d", "1w"], "4h": ["1d", "1w"], "1d": ["1w"], "1w": ["1M"],
 }
 
 PARAMS: Tuple[Param, ...] = (
@@ -85,8 +86,11 @@ PARAMS: Tuple[Param, ...] = (
     # --- quality overlay --------------------------------------------------------------------------------------------------
     Param("htf_degree", 0, "swing degree for the Dow trend on each context timeframe (HH+HL = up, LH+LL = down, else range)",
           "D0 (1.5 x ATR) is already a structure swing on a higher timeframe; Dow theory labels.", 0, 3, group="quality"),
-    Param("htf_filter", "not_against", "templates: agree (every context up for a long), not_against (none down) or off",
-          "HTF agreement had the largest effect in the one quantitative study (spec §1); not_against keeps range-bound context.",
+    Param("dow_min_bars", 40, "a D0 Dow trend is read only after this many bars of its frame (missing before: never a guess)",
+          "Measured on the session generator (40 seeds): the last-bar trend from N bars agrees with the full history 95.5 % at 30, 98.7 % at 40, 99.9 % at 60.",
+          20, 500, group="quality"),
+    Param("htf_filter", "not_against", "templates: agree (every context up for a long), not_against (every context known and none down) or off",
+          "HTF agreement had the largest effect in the one quantitative study (spec §1); not_against keeps range-bound context, never an unknown one.",
           choices=("agree", "not_against", "off"), group="quality"),
     Param("acceptance_closes", 2, "accepted after this many consecutive closes beyond the level (the breakout bar counts)",
           "N closes beyond = acceptance (spec §1); 2 matches the price_action break rule (break_no_reclaim_bars = 1).", 1, 20, group="quality"),

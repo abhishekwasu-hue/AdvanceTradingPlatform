@@ -49,10 +49,8 @@ SCREENS: Dict[str, str] = {
 SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w"), **{k: intraday.TIMEFRAMES for k in intraday.SCREENS}}
 INTRADAY_SCREENS: Tuple[str, ...] = tuple(intraday.SCREENS)
 SIDES = ("up", "down")
-# Bars a Dow trend needs before it is read, by swing degree. D0 measured on the session generator (40 seeds, daily and
-# weekly, the last bar on N bars vs the full history): 30 bars agree 95.5 %, 40 bars 98.7 %, 60 bars 99.9 %; 40 is the
-# smallest that a ~272-session daily fetch satisfies for weekly context (57 weeks). D1-D3 keep the swing history
-# (registry SWING_DEGREE_MIN_BARS) - not measured for the trend.
+# Bars a Dow trend needs before it is read, by swing degree: D0 is the `dow_min_bars` parameter (40, measured - see
+# params.py); D1-D3 keep the swing history (registry SWING_DEGREE_MIN_BARS), not measured for the trend.
 DOW_MIN_BARS: Tuple[int, ...] = (40, 250, 600, 1200)
 COLUMNS = ("raw", "signal", "level", "fail_level", "base_len", "base_high", "base_low", "wick", "event", "days_since", "through")
 
@@ -171,8 +169,8 @@ class Bars:
 
     def dow(self, degree: int) -> np.ndarray:
         """Dow trend on every bar from the swings confirmed by that bar: UP (last high HH and last low HL), DOWN (LH + LL),
-        RANGE (anything else once both kinds are labelled), None before that - and None on the first DOW_MIN_BARS[degree]
-        bars of the frame, where a shorter history could read a different trend (unknown, never a guess)."""
+        RANGE (anything else once both kinds are labelled), None before that - and None on the first `dow_min_bars` (D0)
+        or DOW_MIN_BARS[degree] bars of the frame, where a shorter history could read a different trend (unknown, never a guess)."""
         if degree not in self._dow:
             out = np.full(self.n, None, dtype=object)
             last: Dict[str, Optional[float]] = {"H": None, "L": None}
@@ -191,7 +189,8 @@ class Bars:
                         cur = "UP" if (label["H"], label["L"]) == ("HH", "HL") else "DOWN" if (label["H"], label["L"]) == ("LH", "LL") else "RANGE"
                     k += 1
                 out[t] = cur
-            out[:min(self.n, DOW_MIN_BARS[degree])] = None
+            warm = int(self.p["dow_min_bars"]) if degree == 0 else DOW_MIN_BARS[degree]
+            out[:min(self.n, warm)] = None
             self._dow[degree] = out
         return self._dow[degree]
 

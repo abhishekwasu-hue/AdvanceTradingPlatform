@@ -66,6 +66,7 @@ from app.instruments.master import sync_upstox
 from app.backtest import chain_recorder
 from app.instruments.contracts import ContractResolutionError, ContractRules, resolve_contract
 from app.instruments.spreads import parse_custom_legs, resolve_structure
+from app.execution import approval
 from app.execution.multileg import execute_structure
 from app.execution.signal_execution import execute_signal_for_user
 from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs, market_session_status, session_family
@@ -84,6 +85,9 @@ from app.trading.position_monitor import close_position, exchange_for_trade, mon
 from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
+
+# BT1b: what a deployment says while its organisation (flag byob_data_tier on) has no confirmed-data broker session.
+WAITING_FOR_CONFIRMED_DATA = "Waiting for Upstox/Dhan data: no new entries; exits continue"
 
 WORKER_NAME = "trading_worker"
 LOCK_KEY = "atp:trading_worker:lock"
@@ -210,7 +214,6 @@ class TradingWorker:
         # agent wants classified even without a filter (those with open positions).
         self._regimes: Dict[int, str] = {}
         self._regime_wanted: set = set()
-        self._last_ai_expiry_day = None
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
@@ -314,14 +317,16 @@ class TradingWorker:
                 else:
                     logger.debug("Market closed: %s", reason)
                 # BT1: open / refresh / close each user's own broker session (flag byob_data_tier; market closed = day end).
-                try:
-                    byob = await self.byob.sync(session, now, market_open="NSE" in self._open_families)
-                    report.byob_sessions = byob.active
-                    report.errors.extend(byob.errors)
-                except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
-                    logger.exception("BYOB session sync failed")
-                    report.errors.append(f"byob sessions: {exc}")
-                    await session.rollback()
+                # BT1b: its own DB session, so a failure here never rolls back the cycle's session.
+                async with self.session_factory() as byob_session:
+                    try:
+                        byob = await self.byob.sync(byob_session, now, market_open="NSE" in self._open_families)
+                        report.byob_sessions = byob.active
+                        report.errors.extend(byob.errors)
+                    except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
+                        logger.exception("BYOB session sync failed")
+                        report.errors.append(f"byob sessions: {exc}")
+                        await byob_session.rollback()
                 if self.lake is not None:
                     try:
                         report.lake_bars = (await self.lake.drain(session, now)).inserted
@@ -362,6 +367,15 @@ class TradingWorker:
                     logger.exception("Waking snoozed proposals failed")
                     await session.rollback()
                     report.errors.append(f"ai snooze wake: {exc}")
+                # Z3 (review M6): proposal expiry for every organisation, every cycle, market open or not - also for an
+                # organisation with no deployment or a lapsed token (entry proposals live minutes; an approval interrupted
+                # between decide and execute is failed after ORPHAN_MINUTES so it never holds a deployment's slot).
+                try:
+                    await ai_monitor.expire_stale(session, now)
+                except Exception as exc:  # noqa: BLE001 - housekeeping; never breaks trading or delivery
+                    logger.exception("Expiring proposals failed")
+                    await session.rollback()
+                    report.errors.append(f"ai expiry: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
@@ -515,6 +529,11 @@ class TradingWorker:
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
 
+    async def _byob_on(self, session: AsyncSession, tenant_id: int) -> bool:
+        """BT1b: the bring-your-own-broker data tier is on for this organisation (flag byob_data_tier, off by default)."""
+        from app.platform.controls import flag_enabled
+        return await flag_enabled(session, "byob_data_tier", tenant_id)
+
     async def _first_usable_broker(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
         """The tenant's first ACTIVE account with a usable session (read-only use), or None."""
         await ensure_tenant_key(session, tenant_id)
@@ -553,6 +572,8 @@ class TradingWorker:
                 async with self.session_factory() as own:
                     with bind_log_context(tenant_id=tenant_id):
                         try:
+                            if await self._byob_on(own, tenant_id):
+                                continue   # BT1b: platform-wide OI rows are never read through a per-user (BYOB) session
                             broker = await self._first_usable_broker(own, tenant_id, now)
                             if broker is None:
                                 continue
@@ -591,7 +612,8 @@ class TradingWorker:
             self._last_memory[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
-                    if not broker_reads:
+                    if not broker_reads or await self._byob_on(session, tenant_id):
+                        # BT1b: organisation-wide memory / sentiment are not fed from a per-user (BYOB) session.
                         written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     await ensure_tenant_key(session, tenant_id)
@@ -711,6 +733,17 @@ class TradingWorker:
             if adapter is not None:
                 adapters[_adapter_key(account.broker_name, account.account_label)] = adapter
 
+        # BT1b (flag byob_data_tier): prefer a broker whose data terms allow display in ATP (Upstox, Dhan) as the
+        # organisation's data source; its cache is kept to this organisation (below) and it is never streamed into the
+        # platform-wide tick keys or the lake (each user's own session streams through the fan-in instead).
+        byob = await self._byob_on(session, tenant_id)
+        from app.market_data.data_terms import confirmed_brokers
+        confirmed = confirmed_brokers()
+        if byob:
+            adapters = dict(sorted(adapters.items(), key=lambda kv: 0 if kv[0].split("@")[0] in confirmed else 1))
+            # Every org-wide stream of this organisation stops (whatever broker it was on, also on the early return
+            # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
+            await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again from Settings"
@@ -720,6 +753,10 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        if byob and hasattr(market_data, "cache_namespace"):
+            # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
+            # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
+            market_data.cache_namespace = f"org.t{tenant_id}"
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
@@ -740,7 +777,9 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if app_config.STREAMING_QUOTES_ENABLED:
+        if app_config.STREAMING_QUOTES_ENABLED and not byob:
+            # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
+            # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
 
         # Exits before entries.
@@ -780,7 +819,10 @@ class TradingWorker:
             report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user.id, families=due_square_off)
         monitored = open_families - due_square_off
         if monitored:
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored)
+            # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
+            exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
+            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
+                                                    exit_approval=exit_approval)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
@@ -795,6 +837,14 @@ class TradingWorker:
             # Exits above still ran (a suspended org's open risk is still real); no new entries.
             for dep in deployments:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
+            await session.commit()
+            return
+        data_key = next((k for k, a in adapters.items() if a is data_broker), getattr(data_broker, "name", ""))
+        if byob and data_key.split("@")[0] not in confirmed:
+            # BT1b / BT1-4: with the bring-your-own-broker data tier on, no new evaluation on a broker whose terms do not
+            # allow its data in ATP (execution-only / pending). Exits, square-off and the stop guard above still ran.
+            for dep in deployments:
+                dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
@@ -850,7 +900,8 @@ class TradingWorker:
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
         # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
         try:
-            report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+            if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
+                report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
@@ -864,9 +915,6 @@ class TradingWorker:
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
-            if self._last_ai_expiry_day != now.astimezone(IST).date():
-                await ai_monitor.expire_stale(session, now)
-                self._last_ai_expiry_day = now.astimezone(IST).date()
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
@@ -1006,6 +1054,10 @@ class TradingWorker:
                     await session.commit()
                     return False
 
+        # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
+        if await approval.required(session, dep.tenant_id, dep):
+            return await self._propose_entry(session, dep, signal, signal_ts, now)
+
         contract = None
         rules = ContractRules.from_deployment(dep)
         structure_kind = OptionStrategy(dep.option_strategy or "SINGLE")
@@ -1056,6 +1108,36 @@ class TradingWorker:
         await session.commit()
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
         return result.executed
+
+    async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime) -> bool:
+        """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
+        Phase 0 proposes the underlying (cash) only: a LIVE deployment places nothing through ATP, and option / future /
+        structure deployments are not proposed yet - each says so on the deployment instead."""
+        skip = None
+        if dep.mode == ExecutionMode.LIVE.value:
+            skip = "Approval-only (Phase 0): ATP places no LIVE entry - deploy in PAPER to get entry proposals"
+        elif ContractRules.from_deployment(dep).derived or (dep.option_strategy or "SINGLE") != "SINGLE":
+            skip = "Approval-only (Phase 0): option / future deployments are not proposed yet - only the underlying is"
+        dep.last_signal_at = signal_ts                      # this signal bar is handled either way
+        dep.consecutive_failures = 0
+        if skip is not None:
+            dep.last_error = f"Signal at {signal_ts.isoformat()} skipped. {skip}"
+            await session.commit()
+            return False
+        try:
+            row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
+                                               idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
+                                               requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
+                                               user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
+        except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
+            dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
+            await session.commit()
+            return False
+        dep.last_error = (f"Waiting for approval: entry proposal #{row.id}" if row is not None
+                          else f"Signal at {signal_ts.isoformat()} not proposed: an earlier entry proposal of this deployment is still open")
+        await session.commit()
+        logger.info("Deployment %s signal %s -> entry proposal %s", dep.id, signal.direction.value, row.id if row is not None else "-")
+        return False
 
     async def _evaluate_structure(
         self, session: AsyncSession, dep: StrategyDeploymentRecord, user: User, market_data: MarketDataService,

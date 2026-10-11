@@ -436,7 +436,7 @@ def _engine_series(screen, f, tf, params):
 
 
 @pytest.mark.parametrize("screen,tf,params", [
-    ("B16", "5m", {"tod_vol_mult": 1.0, "htf_filter": "off"}), ("B16", "15m", {"or_minutes": 30, "tod_vol_mult": 0.0}),
+    ("B16", "5m", {"tod_vol_mult": 1.0, "htf_filter": "off"}), ("B16", "15m", {"or_minutes": 30, "tod_vol_mult": 0.0, "htf_filter": "off"}),
     ("B16", "5m", {"tod_vol_mult": 0.0, "vwap_agree": False, "skip_first_min": 30, "min_break_atr": 0.0}),
     ("B17", "15m", {"day_level": "first_hour", "tod_vol_mult": 0.0, "htf_filter": "off"}),
     ("B17", "5m", {"day_level": "prev_day", "tod_vol_mult": 1.0, "htf_filter": "off"}),
@@ -501,7 +501,7 @@ def test_intraday_run_api_fetches_whole_sessions_and_uses_the_exchange_clock(mon
         f = sessions_frame(history() + [orb_day()])
         asked = []
 
-        async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False):
+        async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **kw):
             asked.append((base_tf, dict(lookback), exchange))
             return [SymbolData(s, {base_tf: f}) for s in symbols], {}, "broker:fake"
         monkeypatch.setattr(bk_routes, "fetch_frames", fake_fetch)

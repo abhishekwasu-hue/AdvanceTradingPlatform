@@ -228,7 +228,7 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
         df, source = bars_to_dataframe(body.candles), evidence.client_source(body.data_source)
     else:
         df, source = await evidence.server_frame(session, user.tenant_id, body.symbol, body.exchange, body.base_timeframe,
-                                                 broker=body.broker, lookback_days=body.lookback_days)
+                                                 broker=body.broker, lookback_days=body.lookback_days, user=user)
     result = run_backtest(copy.copy(strategy), df, body.symbol.upper(), body.base_timeframe, risk)
     headline = {k: getattr(result, k, None) for k in ("total_trades", "win_rate", "net_pnl", "max_drawdown", "profit_factor", "expectancy", "gross_pnl", "total_charges")}
     headline["analytics"] = result.analytics
@@ -329,7 +329,7 @@ async def _df_for(session: AsyncSession, user: User, body: InterviewPlanBody):
         return interview.frame_from_candles(body.candles[-interview.MAX_BARS:]), evidence.client_source(body.data_source)
     symbol = body.symbol or body.answers.symbol
     df, source = await evidence.server_frame(session, user.tenant_id, symbol, body.exchange, body.base_timeframe, broker=body.broker,
-                                             lookback_days=body.lookback_days or 30)
+                                             lookback_days=body.lookback_days or 30, user=user)
     return df.tail(interview.MAX_BARS), source
 
 
@@ -507,9 +507,15 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(ge
     """Reads the market now through this tenant's broker session (the worker does the same on its own),
     and the global cues. Without a broker session the global cues alone are read; with neither, 409."""
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
     try:
+        if await live_access.byob_on(session, user.tenant_id):
+            # BT1b: market memory and sentiment are stored for the whole organisation, so they are not fed from one
+            # user's own broker session while the bring-your-own-broker data tier is on: global cues only.
+            raise live_access.LiveDataRefused("Market memory is shared in your organisation, so it is not read through your own "
+                                              "broker session (bring-your-own-broker data tier): global cues only.")
         record = await _pick_record(session, user.tenant_id, body.broker, "primary")
     except HTTPException as exc:
         if exc.status_code != 409:
@@ -609,10 +615,15 @@ async def list_actions(status: Optional[str] = Query(default=None, max_length=10
     return await proposal_card.enrich(session, user.tenant_id, rows)
 
 
-async def _action(session: AsyncSession, action_id: int, user: User) -> AiActionRecord:
+async def _action(session: AsyncSession, action_id: int, user: User, *, deciding: bool = False) -> AiActionRecord:
     row = await session.get(AiActionRecord, action_id)
     if row is None or row.tenant_id != user.tenant_id:
         raise HTTPException(status_code=404, detail="No such proposal")
+    if deciding:
+        # Z3 (review L8): a proposal for one person (an entry, an "Exit now?") is theirs - or the organisation OWNER's - to decide.
+        from app.execution.approval import may_decide
+        if not may_decide(user, row):
+            raise HTTPException(status_code=403, detail="This proposal belongs to another member; only they or the organisation owner can decide it")
     return row
 
 
@@ -637,20 +648,16 @@ async def approve_action(action_id: int, body: NoteBody, user: User = Depends(re
     otherwise tells the user to close from the Positions page. P0.8 / A2: a LIVE deployment or
     position needs the authenticator step-up the Telegram message promises (same rule as creating
     or resuming a LIVE deployment); A1: a LIVE exit squares off at the broker the trade went through."""
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     if await _action_is_live(session, row):
         await ensure_live_step_up(session, user, session_id, "Approving an AI proposal on a LIVE deployment")
     try:
         row = await monitor.decide(session, row, user, approve=True, note=body.note)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    price_lookup = broker = None
-    if row.action == "EXIT_POSITION":
-        from app.ai.worker_bridge import price_lookup_for_tenant
-        from app.trading.position_monitor import broker_for_trade
-        price_lookup = await price_lookup_for_tenant(session, user.tenant_id)
-        trade = await session.get(TradeRecord, row.trade_id) if row.trade_id else None
-        broker = await broker_for_trade(session, trade)
+    # An exit needs a live price (and, LIVE, the trade's broker); Z3: an entry is re-quoted at the live price.
+    from app.execution.approval import execution_sources
+    price_lookup, broker = await execution_sources(session, row, user)
     row = await monitor.execute(session, row, user, price_lookup=price_lookup, broker=broker)
     await _sync_telegram(session, row)
     return monitor.as_dict(row)
@@ -664,7 +671,7 @@ async def _sync_telegram(session: AsyncSession, row) -> None:
 
 @router.post("/actions/{action_id}/reject")
 async def reject_action(action_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     try:
         row = await monitor.decide(session, row, user, approve=False, note=body.note)
     except ValueError as exc:
@@ -692,7 +699,7 @@ async def snooze_action(action_id: int, body: SnoozeBody, user: User = Depends(r
             raise HTTPException(status_code=422, detail="until must be in the next 7 days")
     else:
         until = now + timedelta(minutes=int(body.minutes or 0))
-    row = await _action(session, action_id, user)
+    row = await _action(session, action_id, user, deciding=True)
     try:
         row = await monitor.snooze(session, row, user, until=until, via="web", now=now)
     except ValueError as exc:
@@ -975,20 +982,29 @@ async def _strategist_frames(session: AsyncSession, user: User, body: Strategist
     if body.candles:
         return interview.frame_from_candles(body.candles[-6000:]), None, "candles"
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
     from app.market_data.service import MarketDataService
-    record = await _pick_record(session, user.tenant_id, body.broker, "primary")
-    adapter = build_adapter(record)
     symbol, exchange = body.symbol.strip().upper(), body.exchange.strip().upper()
+    namespace = None
+    if await live_access.byob_on(session, user.tenant_id):
+        # BT1b: the user's own confirmed session, cached for that session only.
+        own = await live_access.user_source(session, user, [(symbol, exchange)], broker=body.broker)
+        if not own.allows(symbol, exchange):
+            raise live_access.LiveDataRefused(own.reason(symbol, exchange))
+        record, namespace = own.record, own.namespace
+    else:
+        record = await _pick_record(session, user.tenant_id, body.broker, "primary")
+    adapter = build_adapter(record)
     try:
-        bars = await MarketDataService(adapter, lookback_days=12).get_candles(symbol, exchange, "1min")
+        bars = await MarketDataService(adapter, lookback_days=12, cache_namespace=namespace).get_candles(symbol, exchange, "1min")
     except Exception as exc:  # noqa: BLE001 - say what the broker said
         raise HTTPException(status_code=502, detail=f"Could not fetch {symbol} candles from {record.broker_name}: {type(exc).__name__}: {exc}"[:300]) from exc
     if not bars:
         raise HTTPException(status_code=422, detail=f"{record.broker_name} returned no candles for {symbol}")
     day = None
     try:
-        day_bars = await MarketDataService(adapter, lookback_days=400).get_candles(symbol, exchange, "day")
+        day_bars = await MarketDataService(adapter, lookback_days=400, cache_namespace=namespace).get_candles(symbol, exchange, "day")
         day = bars_to_dataframe(day_bars) if day_bars else None
         if day is not None and day.index.tz is None:
             day.index = day.index.tz_localize("UTC")

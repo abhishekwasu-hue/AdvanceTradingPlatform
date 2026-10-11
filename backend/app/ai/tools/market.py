@@ -46,12 +46,21 @@ def _r(x: Any, nd: int = 2) -> Optional[float]:
 async def _frame(ctx: ToolContext, symbol: str, exchange: str, timeframe: str, days: int) -> Tuple[pd.DataFrame, str]:
     """Server candles through the organisation's broker session (the H-C1 a path) -> (frame, source)."""
     from app.ai import evidence
-    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days)
+    return await evidence.server_frame(ctx.session, ctx.tenant_id, symbol, exchange, timeframe, lookback_days=days, user=ctx.user)
 
 
-async def _broker(ctx: ToolContext) -> Tuple[Any, str]:
+async def _broker(ctx: ToolContext, symbol: str, exchange: str) -> Tuple[Any, str]:
+    """The broker session a quote / chain is read through. BT1b (flag `byob_data_tier`): only the asking user's own
+    session at a confirmed broker, for a symbol inside its budget; otherwise 409 (the tool reports the reason)."""
     from app.brokers.token_lifecycle import build_adapter
+    from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
+    if await live_access.byob_on(ctx.session, ctx.tenant_id):
+        own = await live_access.user_source(ctx.session, ctx.user if getattr(ctx.user, "tenant_id", None) == ctx.tenant_id else None,
+                                            [(symbol, exchange)])
+        if not own.allows(symbol, exchange):
+            raise live_access.LiveDataRefused(own.reason(symbol, exchange))
+        return own.adapter(), own.source
     record = await _pick_record(ctx.session, ctx.tenant_id, None, "primary")
     return build_adapter(record), f"broker:{record.broker_name}"
 
@@ -113,7 +122,7 @@ async def get_candles(ctx: ToolContext, args: _CandleArgs) -> ToolResult:
 async def get_quote(ctx: ToolContext, args: _QuoteArgs) -> ToolResult:
     """The latest quote (LTP, day open/high/low, previous close, volume) from the broker session."""
     try:
-        adapter, source = await _broker(ctx)
+        adapter, source = await _broker(ctx, args.symbol.upper(), args.exchange)
     except HTTPException as exc:
         return _failed("quote", exc)
     quote = await adapter.get_quote_for_symbol(args.symbol.upper(), args.exchange)
@@ -149,7 +158,7 @@ def summarise_chain(chain: Any) -> Dict[str, Any]:
 async def get_option_chain(ctx: ToolContext, args: _ChainArgs) -> ToolResult:
     """The option chain for an underlying: totals, PCR, max pain, the biggest OI strikes and the strikes around the ATM."""
     try:
-        adapter, source = await _broker(ctx)
+        adapter, source = await _broker(ctx, args.underlying.upper(), "NFO")
     except HTTPException as exc:
         return _failed("option_chain", exc)
     chain = await adapter.get_option_chain(args.underlying.upper(), args.expiry)

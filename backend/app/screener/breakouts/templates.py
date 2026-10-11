@@ -39,6 +39,7 @@ SIGNAL_KEYS.update({
     "B17": _INTRADAY + ("day_level", "first_hour_min", "intraday_max_per_session"),
     "B18": _INTRADAY + ("leg_degree", "leg_rearm_bars"),
 })
+CONTEXT_KEYS: Tuple[str, ...] = ("dow_min_bars",)   # changes the context filter, not a ScreenQL argument
 CALLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "B1": ("RangeBreakout", ("range_n", "min_break_atr", "vol_mult", "range_mode")),
     "B2": ("SwingBreakout", ("swing_degree", "min_break_atr")),
@@ -70,10 +71,11 @@ class Template:
 
 TEMPLATES: Tuple[Template, ...] = (
     Template("swing_1h_range", "Swing 1H range breakout", "B1", "1h", note="20-bar range on 1H, context Daily + Weekly"),
-    Template("daily_swing_break", "Daily swing-high / low break (BOS / CHoCH)", "B2", "1d", note="D1 swing on Daily, context Weekly + Monthly"),
+    Template("daily_swing_break", "Daily swing-high / low break (BOS / CHoCH)", "B2", "1d", note="D1 swing on Daily, context Weekly"),
     Template("intraday_15m_nr7", "Intraday 15m NR7 breakout", "B4", "15m", note="NR7 setup bar, next-bar break, context 1H + Daily"),
     Template("daily_52w_high", "Daily 52-week high breakout", "B7", "1d", direction="up", note="close above the prior 52-week high on volume"),
-    Template("weekly_52w_high", "Weekly 52-week high breakout", "B7", "1w", direction="up", note="weekly close above the prior 52-week high"),
+    Template("weekly_52w_high", "Weekly 52-week high breakout", "B7", "1w", direction="up", params={"htf_filter": "off"},
+             note="weekly close above the prior 52-week high; no context filter - a monthly trend needs 40 months of history (BK1-2)"),
     Template("intraday_15m_expansion", "Intraday 15m ATR expansion", "B13", "15m", note="wide-range bar >= 2 ATR with a directional close"),
     Template("intraday_5m_volume", "Intraday 5m volume breakout", "B14", "5m", note="volume shock at the 20-bar high / low"),
     # U6 BK2 (spec §4 "Intraday ORB"): stop reference = the opening-range midpoint for the "Then" template (spec B16)
@@ -111,8 +113,9 @@ def _htf_items(side: str, context: Tuple[str, ...], p: Dict[str, Any]) -> List[n
     items: List[n.Node] = []
     for tf in context:
         trend = n.Call("DowTrend", [n.Num(float(p["htf_degree"]))], tf=tf)
-        # not_against is NOT (trend == against): a missing (unknown) trend passes, as in quality.htf_pass
-        items.append(n.Compare("==", trend, n.Str(with_)) if p["htf_filter"] == "agree" else n.Not(n.Compare("==", trend, n.Str(against))))
+        # not_against is trend != against: a missing (unknown) trend never passes (a comparison with a missing value is
+        # false), as in quality.htf_pass - so an alert never fires on a context it could not read
+        items.append(n.Compare("==", trend, n.Str(with_)) if p["htf_filter"] == "agree" else n.Compare("!=", trend, n.Str(against)))
     return items
 
 
@@ -125,7 +128,7 @@ def screenql_ast(screen: str, signal_tf: str, params: Optional[Dict[str, Any]] =
     if not style.screenql_expressible(signal_tf, *context):
         return None, f"screenql/1 has no {', '.join('@' + t for t in (signal_tf, *context) if not style.screenql_expressible(t))} yet - engine only"
     _, args = CALLS[screen]
-    hidden = [k for k in SIGNAL_KEYS[screen] if k not in args and p[k] != bp.DEFAULTS[k]]
+    hidden = [k for k in SIGNAL_KEYS[screen] + CONTEXT_KEYS if k not in args and p[k] != bp.DEFAULTS[k]]
     if hidden:
         return None, f"{', '.join(hidden)} changed from the default and is not a ScreenQL argument - engine only"
     sides = ("up", "down") if p["direction"] == "both" else (p["direction"],)

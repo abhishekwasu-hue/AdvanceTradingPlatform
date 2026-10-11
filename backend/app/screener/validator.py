@@ -112,6 +112,15 @@ class _Checker:
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
 
+    def bounded(self, arg: Any, sig: Any, owner: Any) -> None:
+        """U6 BK1: a number argument with a range must be a literal (or a parameter) inside it."""
+        value: Any = arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return                                                    # not a literal: the type checks report it
+        lo, hi = sig.bounds
+        if not lo <= float(value) <= hi:
+            self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+
     def degree_bars(self, node: Any, spec: Any) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
         largest when it cannot be read (the choice check reports that separately)."""
@@ -271,12 +280,19 @@ class _Checker:
             if key not in known_kw:
                 self.err(f"{node.name} has no argument {key!r}", node.kwargs[key])
         window = 0
+        windows: List[int] = []
         units: List[Optional[str]] = []
+        if spec.timeframes and own_tf not in spec.timeframes:
+            self.err(f"{node.name} runs on {' / '.join('@' + t for t in spec.timeframes)} bars only, not @{own_tf}", node)
         sigs = [spec.args[0]] * len(node.args) if spec.varargs else list(spec.args[:len(node.args)])
         for arg_node, sig in zip(node.args, sigs):
             if sig.type == "window":
-                window = max(window, self.window(arg_node, node))
+                w = self.window(arg_node, node)
+                windows.append(w)
+                window = max(window, w)
                 units.append(None)
+                if sig.bounds:
+                    self.bounded(arg_node, sig, node)
                 continue
             t, u = self.check(arg_node, own_tf)
             units.append(u)
@@ -284,6 +300,8 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.bounds:
+                self.bounded(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:
@@ -301,7 +319,11 @@ class _Checker:
                 self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node)
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
+                windows.append(a.default if isinstance(a.default, int) else 1)
                 window = max(window, a.default if isinstance(a.default, int) else 1)
+        if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
+            window = sum(windows)
+        window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
         min_bars = spec.min_bars
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))

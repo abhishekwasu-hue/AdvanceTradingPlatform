@@ -29,6 +29,7 @@ from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import compile_screen, nodes
 from app.screener import zones as zone_gate
+from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
@@ -124,11 +125,13 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
-    """Z7a-3: a screen using a market-zone function while `market_zones` is off fails validation, with the reason."""
-    blocked = await zone_gate.blocked_calls(session, user.tenant_id, ast)
-    if blocked:
-        validated.ok = False
-        validated.problems.append(Problem(zone_gate.refusal(blocked)))
+    """Z7a-3 / U6 BK1: a screen using a flagged function (market zones, breakouts) while its flag is off fails
+    validation, with the reason."""
+    for gate in (zone_gate, breakout_gate):
+        blocked = await gate.blocked_calls(session, user.tenant_id, ast)
+        if blocked:
+            validated.ok = False
+            validated.problems.append(Problem(gate.refusal(blocked)))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:

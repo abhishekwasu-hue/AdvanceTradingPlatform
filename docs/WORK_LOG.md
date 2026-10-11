@@ -1608,3 +1608,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+
+### 2026-10-11 - Z7 / U6 BK1 breakout screens (flag screener_breakouts, off)
+- `app/screener/breakouts/`: B1 range / consolidation, B2 swing break (BOS / CHoCH on causal swings), B4 inside / NR4 / NR7
+  (mother-bar rule), B7 N-week high, B13 range expansion, B14 volume breakout. All are causal series on closed bars,
+  with one signal per leg.
+- Quality overlay: grade A / B / C with the reasons. Checks: higher-timeframe Dow trend on the two context timeframes,
+  volume expansion, base dry-up, ATR-percentile regime, room to the next opposing level (swings plus zones S/R).
+  Hard filter: the liquidity floor. Follow-up: failed / accepted status and the retest flag.
+- Style / timeframe selector: Intraday or Swing, signal timeframe -> context ladder, aligned by close time.
+- ScreenQL functions over the same series. Pre-built templates whose ScreenQL text matches the engine bar by bar.
+- Catalog and run API. The flag gate also covers the registry, validate, saved screens, `/run` and alert rules.
+- Every threshold is a parameter with a default and a research note (`docs/research/breakouts.md`).
+- Open questions: BK1-1..BK1-7.

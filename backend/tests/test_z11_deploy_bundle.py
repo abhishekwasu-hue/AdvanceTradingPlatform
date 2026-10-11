@@ -28,14 +28,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 ATP_SH = ROOT / "deploy" / "atp.sh"
 SECRETS = {
-    "POSTGRES_PASSWORD": "SENTINEL-pg-7c1d9e",
-    "JWT_SECRET_KEY": "SENTINEL-jwt-55aa01",
-    "SECRETS_ENCRYPTION_KEY": "SENTINEL-master-key-0b6f2c7f9a1e4d3c8b5a6f7e2d1c0b9a8f7e6d5c4b3=",
-    "METRICS_TOKEN": "SENTINEL-metrics-31f0",
-    "BACKUP_ENCRYPTION_PASSPHRASE": "SENTINEL-backup-pass-9e2b",
+    "POSTGRES_PASSWORD": "FAKEFAKE-pg-7c1d9e",
+    "JWT_SECRET_KEY": "FAKEFAKE-jwt-55aa01",
+    "SECRETS_ENCRYPTION_KEY": "FAKEFAKE-master-key-first",
+    "METRICS_TOKEN": "FAKEFAKE-metrics-31f0",
+    "BACKUP_ENCRYPTION_PASSPHRASE": "FAKEFAKE-backup-pass-9e2b",
 }
-R2 = {"OFFSITE_S3_ENDPOINT": "https://example-account.r2.cloudflarestorage.com", "OFFSITE_S3_ACCESS_KEY": "SENTINEL-r2-access-11aa",
-      "OFFSITE_S3_SECRET_KEY": "SENTINEL-r2-secret-22bb"}
+R2 = {"OFFSITE_S3_ENDPOINT": "https://example-account.r2.cloudflarestorage.com", "OFFSITE_S3_ACCESS_KEY": "FAKEFAKE-r2-access-11aa",
+      "OFFSITE_S3_SECRET_KEY": "FAKEFAKE-r2-secret-22bb"}
 
 pytestmark = pytest.mark.skipif(not all(shutil.which(t) for t in ("bash", "git", "openssl", "tar", "flock", "sha256sum")),
                                 reason="needs bash, git, openssl, tar, flock, sha256sum")
@@ -451,7 +451,7 @@ def test_missing_or_placeholder_secrets_stop_before_anything_runs(host):
 def test_a_changed_secrets_key_is_refused_and_never_rotated(host):
     assert host.run("deploy", host.sha_a).returncode == 0
     before = len(host.state["calls"])
-    host.write_env(extra={"SECRETS_ENCRYPTION_KEY": "SENTINEL-master-key-DIFFERENT-000000000000000000000000="})
+    host.write_env(extra={"SECRETS_ENCRYPTION_KEY": "FAKEFAKE-master-key-different"})
     res = host.run("deploy")
     assert res.returncode == 20 and "NOT the key this server deployed with" in res.all
     assert host.mutating(before) == []
@@ -677,3 +677,16 @@ def test_documented_one_off_backup_commands_override_the_service_entrypoint():
                     "/opt/atp/deploy/atp.sh rollback", "rollback --restore-db", "/opt/atp/deploy/atp.sh backup --verify",
                     "/opt/atp/deploy/atp.sh restore-check", "<SERVER_IP>", "Rollback rehearsal"):
         assert command in runbook, command
+
+
+def test_install_runs_bootstrap_checks_then_deploy_then_the_first_backup_and_restore_check(host):
+    res = host.run("install")
+    assert res.returncode == 0, res.all
+    out = res.stdout
+    steps = [out.index("bootstrap checks"), out.index("==> preflight"), out.index("deployed "), out.index("first backup + restore check"),
+             out.index("restore into a scratch database"), out.index("install: done")]
+    assert steps == sorted(steps)
+    assert host.state["verified"] == ["latest"]                                     # R2 not configured: the local copy was verified
+    shutil.rmtree(host.restore_dir)
+    res = host.run("install")
+    assert res.returncode == 10 and "run the bootstrap block as root" in res.all

@@ -370,7 +370,7 @@ check_key_live() {
   else warn "no key fingerprint recorded yet (the first deploy records it)"; fi
   if dc exec -T backend test -f scripts/check_secrets_key.py >/dev/null 2>&1; then
     local out
-    if out="$(dc exec -T backend python scripts/check_secrets_key.py 2>&1)"; then ok "$out"; else bad "$out"; fi
+    if out="$(dc exec -T backend python scripts/check_secrets_key.py 2>&1 | tail -n 1)"; then ok "$out"; else bad "$out"; fi
   else info "key check script not in this image (older release) - skipped"; fi
 }
 
@@ -445,7 +445,8 @@ cmd_deploy() {
 
   step "release"
   printf '    + git -C %s fetch -q --tags origin\n' "$ATP_DIR"
-  git -C "$ATP_DIR" fetch -q --tags origin      # also under --dry-run: it only updates origin/*, nothing that runs
+  git -C "$ATP_DIR" fetch -q --tags origin \
+    || die "git fetch failed - is the read-only deploy key still on GitHub? (ssh -T git@github.com)" 1   # also under --dry-run: only origin/* moves
   local sha prev
   sha="$(git -C "$ATP_DIR" rev-parse --verify -q "$ref^{commit}")" || die "unknown ref '$ref'" 2
   if ! git -C "$ATP_DIR" merge-base --is-ancestor "$sha" origin/main && [ "${ATP_ALLOW_UNMERGED:-0}" != "1" ]; then
@@ -456,7 +457,7 @@ cmd_deploy() {
   RELEASE="$(release_of "$sha")"
   info "deploying ${sha:0:12} $(git -C "$ATP_DIR" log -1 --format='%s' "$sha" | cut -c1-80)"
   info "running now: ${prev:0:12}${prev:+ }${prev:-nothing recorded (first deploy)}"
-  [ "$prev" = "$sha" ] && info "same release as running - converging (idempotent re-run)"
+  if [ "$prev" = "$sha" ]; then info "same release as running - converging (idempotent re-run)"; fi
   run git -C "$ATP_DIR" checkout -q --detach "$sha"
 
   step "database and cache"
@@ -546,6 +547,7 @@ cmd_deploy() {
 
   cmd_schedule quiet
   prune_images
+  if [ "$DRY_RUN" = "1" ]; then printf '\ndry-run: nothing changed (deploy %s would follow the steps above)\n' "${sha:0:12}"; return 0; fi
   if ! health_summary; then
     printf '\nThe release runs but is not healthy. Roll back with:\n    %s/deploy/atp.sh rollback\n' "$ATP_DIR"
     exit 1
@@ -611,7 +613,7 @@ cmd_rollback() {
     fi
   else
     info "${cur:0:12} did not change the schema: code-only rollback"
-    [ "$restore_db" = "1" ] && die "--restore-db is not needed: ${cur:0:12} did not migrate (no pre-migration backup was taken)" 2
+    if [ "$restore_db" = "1" ]; then die "--restore-db is not needed: ${cur:0:12} did not migrate (no pre-migration backup was taken)" 2; fi
   fi
   if [ "$restore_db" = "1" ] && [ "$backup" = "-" ]; then die "no pre-migration backup recorded for ${cur:0:12}" 2; fi
   if [ "$(date +%u)" -le 5 ] && [ "$(date +%H%M)" -ge 0900 ] && [ "$(date +%H%M)" -le 1530 ]; then
@@ -657,7 +659,7 @@ cmd_rollback() {
       -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db' AND pid <> pg_backend_pid()" \
       -c "ALTER DATABASE \"$db\" RENAME TO \"$kept\"" -c "ALTER DATABASE \"$scratch\" RENAME TO \"$db\"" \
       || { dc up -d --no-deps --no-build "${app_services[@]}" || true; die "database swap failed - the app was restarted on the live database" 1; }
-    ok "$db is the restored copy; the previous database is kept as $kept (drop it once satisfied: runbook section 8)"
+    ok "$db is the restored copy; the previous database is kept as $kept (drop it once satisfied: runbook section 9)"
   fi
 
   sync_db_ahead      # is the database ahead of the target code? (code-only rollback of a migrating release)

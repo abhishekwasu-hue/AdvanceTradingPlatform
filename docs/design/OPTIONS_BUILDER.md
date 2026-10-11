@@ -156,6 +156,78 @@ deployment, kill-switch or broker-adapter module was loaded, even indirectly.
   strike, Infinity, an oversized chain); the no-order-path check. Each new test was checked against a mutant of the
   code it guards.
 
+## P1-c2 (built): the builder page
+`/options-builder` (sidebar: Research > Options Builder), `src/pages/OptionsBuilderPage.tsx` and `src/optionsBuilder/`.
+Research only: nothing on the page places an order. The basket to the order ticket is P1-d.
+- **Instrument inputs.** Underlying (a label), spot, strike step, lot size, template width (default 2 strike steps),
+  base IV, near and next expiry. The instrument's numbers are the trader's inputs from the instrument master; nothing
+  is defaulted to one instrument (OB-6).
+- **Template gallery.** Families as tabs, each template a card with its expiry shape (premiums left out: the shape,
+  not the money). Calendars and diagonals say "two expiries" instead of a misleading shape. A pick builds the legs at
+  the ATM (spot snapped to the step), priced by the model at the base IV and marked "model" until the trader types
+  real prices.
+- **Payoff canvas (the memorable element).** One SVG chart with:
+  - the expiry payoff and the curve on the chosen date (dashed when it is in the future);
+  - profit shaded above zero and loss below, split at the exact crossings;
+  - the probability cone (one and two expected moves) behind the curves;
+  - spot and breakevens;
+  - a hover readout of both curves.
+
+  The strikes are handles on the x-axis. Drag one, or focus it and press ← / →, and the strike moves on the
+  instrument's grid. Legs priced by the model are re-priced for their new strike (evaluate returns each leg's
+  `theoretical`); a typed premium is never touched.
+- **Sliders.** Days forward (up to the nearest expiry) and an IV shift (−10 to +20 points).
+- **Leg table.** Side, type, strike (snapped on blur), expiry, lots, premium with a "model" badge, IV, delta and
+  theta per day per leg; add and remove; hedge legs listed first.
+- **Metrics card.**
+  - Net credit or debit; max profit and max loss ("Unlimited" for an undefined risk, with the reason on hover);
+    reward to risk; a risk gauge (max loss against max profit).
+  - PoP, probability-weighted P&L, expected move, breakevens, theta per day, delta and vega.
+  - How each number was computed (exact or numerical) and the "estimate, not a forecast" disclaimer.
+  - A calendar shows "see the curve" for max profit and loss.
+- **Layout.** Canvas and legs on the left, metrics on the right (320 px). On a phone everything stacks, with the
+  payoff before the legs. The page uses the full width.
+- **Review follow-up** (independent review of P1-c):
+  - Net premium leaves futures legs out: a covered call or collar no longer shows the future's price as a debit.
+  - Each evaluation is kept with the legs it was asked for. Rows, Greeks and re-pricing match by leg id, and only
+    while the leg is still the contract that was evaluated. After a removal or a side switch no row shows another
+    leg's numbers, and a reply that lands after a further drag never writes an old strike's price. A failed
+    evaluation clears the canvas and the metrics (never the previous strategy's numbers beside new legs); the
+    payoff is marked busy while it catches up.
+  - Number cells keep what is typed. Clearing a cell or typing a half-finished number is editing, not 0 sent to the
+    server; leaving the cell shows the leg's value again. An empty IV cell means "solve from the premium".
+  - The chart's range covers every strike with a margin (8 % to 60 % of spot), so no strike is drawn at the edge at
+    the wrong price and a wide template keeps its wings.
+  - The strike handles are real sliders to assistive technology (the chart is a group, not an image), with a
+    minimum and maximum, and are numbered as in the leg table.
+  - Reward to risk is "–" when no price makes a profit and "Unlimited" when profit has no cap; the hover readout
+    copes with repeated prices; a cancelled pointer ends a drag.
+- **Second review follow-up** (a fresh reviewer on the follow-up commits):
+  - A failed evaluation no longer removes the chart. The last curves stay, dimmed, with "These curves are for the legs
+    before your last change", the metrics say they are updating, rows that no longer match their leg are blank, and a
+    drag or a focused strike handle is never lost. A 429 is asked again after 3 seconds.
+  - A model premium is re-priced only when its contract changed since it was priced (`priced_for`), never because the
+    clock moved between two replies. Near expiry, fast time decay could otherwise keep the page evaluating on its own.
+  - While a strike is dragged, the chart's x-range is held still (a reply never rescales the axis under the pointer),
+    and the handle stops at the chart's edge; the range widens to the new strikes when the drag ends.
+  - A strike typed in the leg table is sent on Enter or when the cell is left, so typing "22100" never sends 2, 22,
+    221. Until the trader types, a cell follows its leg, so a re-priced premium shows even while the cell has focus.
+  - The payoff is `aria-busy` also while the spot or a slider changed since the last reply. Strike handles take
+    Home / End / Page Up / Page Down, and every key is held inside the handle's minimum and maximum.
+- **Tests.**
+  - `src/optionsBuilder/model.test.ts` (18): hedge first, snapping, net premium (futures left out), reward to risk,
+    scales, paths, sign areas at exact crossings, the cone, thumbnails (none for calendars), money format, days, nice
+    ticks, re-pricing and Greeks matched by id (reordered, removed, switched, moved on since), the chart range.
+  - API test: `theoretical` equals the premium of model-priced legs.
+  - Headless Chromium against the real builder API (a router-only server): fill the inputs, pick an iron condor
+    (4 legs, 2 breakevens, model badges), move a strike by keyboard (the premium is re-priced and max loss
+    follows), drag a strike with the mouse, move the date (dashed curve), a short strangle ("Unlimited"), a calendar
+    ("see the curve"), light mode and the phone; no page errors. After the review: removing a leg keeps each row's
+    own delta, clearing lots and typing 5 gives 5, a cleared strike sends nothing, a covered call shows the call's
+    credit, a 422 clears the curve and the metrics, a wide template keeps every strike inside the chart, and the
+    strike handles are sliders with a minimum and maximum (screenshots `ob-07`, `ob-08`).
+  - Stories: `Options Builder/Parts` (payoff, legs, metrics) on an iron condor fixture from the API.
+
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not
   supply it. Provisional (built in P1-b): `chain.raw_chain` gives the model's seller PoP (lognormal, the option's own
@@ -163,6 +235,12 @@ deployment, kill-switch or broker-adapter module was loaded, even indirectly.
   model's? Default: the model's, so every broker reads the same way.
 - **OB-2. The iron butterfly's PoP proxy** (from the wings' PoP) is kept as in the source, but it is an approximation.
   Provisional: kept for parity; P1-b shows a model PoP beside it.
+- **OB-6. Instrument numbers on the builder page.** P1-c2 takes spot, strike step, lot size and expiries as typed
+  inputs. Provisional: P1-d fills them from the instrument master and the broker's quote / chain (and builds legs by
+  clicking strikes on the chain); typing stays possible.
+- **OB-7. The builder uses the main design tokens.** The U5 tokens (`--signal`, the inset surface) are on the
+  screener branch (#146), not on main. Provisional: the builder uses main's tokens (brand, up / down) and moves to
+  `--signal` for its curve when #146 is merged.
 - **OB-3. Ratios and unequal lots.** The gallery has ratio and back spreads (1 x 2). The P1-a per-lot result
   (`build_strategy_result_from_legs`) refuses unequal lots, as in the source. Provisional: the builder shows ratios
   through the model (`value_curve`, `payoff_extremes`, which handle any lots), and execution of a ratio waits for

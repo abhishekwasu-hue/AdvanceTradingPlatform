@@ -215,7 +215,9 @@ def _evaluate(body: EvaluateBody) -> Dict[str, Any]:
         "prices": prices, "today": today, "on_date": curve_on, "days_forward": body.days_forward, "iv_shift": body.iv_shift,
         "summary": summary,
         "legs": [{**{k: leg.get(k) for k in ("direction", "option_type", "strike", "premium", "lots", "lot_size", "expiry", "iv", "iv_source")},
-                  "greeks": model.net_greeks([leg], body.spot, as_of, iv_shift=body.iv_shift, r=body.rate)} for leg in legs],
+                  "greeks": model.net_greeks([leg], body.spot, as_of, iv_shift=body.iv_shift, r=body.rate),
+                  # the model's price now at the leg's own IV: what a leg priced by the model is worth after an edit
+                  "theoretical": round(model.leg_theoretical(leg, body.spot, as_of, r=body.rate), 2)} for leg in legs],
         "single_expiry": single, "disclaimer": DISCLAIMER,
     }
     if single:

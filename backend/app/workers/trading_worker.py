@@ -295,6 +295,14 @@ class TradingWorker:
                 # Out-of-app alert delivery (Telegram/email) rides on this loop, market open or not:
                 # a TOKEN_EXPIRED raised at 03:31 must reach a phone before 09:15.
                 try:
+                    # S3a: alert-rule events -> grouped notifications (quiet hours, caps, digests) before the outbox drain.
+                    from app.alerts import engine as alert_engine
+                    await alert_engine.flush(session, now)
+                except Exception as exc:  # noqa: BLE001 - a rule problem must never stop the outbox drain
+                    logger.exception("Alert rule flush failed")
+                    await session.rollback()
+                    report.errors.append(f"alert flush: {exc}")
+                try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")

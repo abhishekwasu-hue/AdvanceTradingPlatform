@@ -1,3 +1,4 @@
+import { LineSeries } from "lightweight-charts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANCHOR_RULES, DrawingConflict, drawingProblem, drawingsApi, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike, type LineSeriesLike } from "./lightweight";
@@ -60,7 +61,7 @@ describe("drawings API client", () => {
 
 function fakes() {
   const priceLines: { price: number; title: string }[] = [];
-  const lineSeries: { data: { time: number; value: number }[]; removed: boolean }[] = [];
+  const lineSeries: { data: { time: number; value: number }[]; removed: boolean; definition: unknown }[] = [];
   const handlers: Record<string, ((p: unknown) => void)[]> = { cross: [], click: [], range: [] };
   const candles: CandleSeriesLike & { data: unknown[]; updates: unknown[] } = {
     data: [], updates: [],
@@ -70,7 +71,7 @@ function fakes() {
     removePriceLine(l) { priceLines.splice(priceLines.indexOf(l as never), 1); },
   };
   const chart: ChartLike = {
-    addLineSeries() { const s = { data: [] as { time: number; value: number }[], removed: false, setData(d: { time: number; value: number }[]) { this.data = d; } }; lineSeries.push(s); return s as unknown as LineSeriesLike; },
+    addSeries(definition) { const s = { definition, data: [] as { time: number; value: number }[], removed: false, setData(d: { time: number; value: number }[]) { this.data = d; } }; lineSeries.push(s); return s as unknown as LineSeriesLike; },
     removeSeries(s) { (s as unknown as { removed: boolean }).removed = true; },
     subscribeCrosshairMove(h) { handlers.cross.push(h as (p: unknown) => void); },
     unsubscribeCrosshairMove(h) { handlers.cross = handlers.cross.filter((x) => x !== h); },
@@ -94,6 +95,7 @@ describe("LightweightEngine (B-lite)", () => {
     engine.addDrawing("b", sample("trendline"));
     engine.addDrawing("c", sample("fib_retracement"));
     expect(f.priceLines.map((l) => l.price)).toEqual([101.5]);
+    expect(f.lineSeries[0].definition).toBe(LineSeries);                                // v5: series by definition
     expect(f.lineSeries[0].data).toEqual([{ time: Date.parse(T1) / 1000, value: 100 }, { time: Date.parse(T2) / 1000, value: 101 }]);
     expect(engine.supports("fib_retracement")).toBe(false);
     const layout = engine.serialize();

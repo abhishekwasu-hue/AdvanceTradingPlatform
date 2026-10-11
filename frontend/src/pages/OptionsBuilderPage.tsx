@@ -1,23 +1,37 @@
 /**
- * P1-c2: the Options Strategy Builder (spec §3.3). The payoff canvas carries the page: expiry and the chosen-date
- * curves, the probability cone and draggable strikes. Templates on top, legs below the canvas, the numbers on the
- * right; on a phone the payoff comes first and the legs follow.
+ * P1-c2 / Z5: the Options Strategy Builder (spec §3.3). The payoff canvas carries the page: expiry and T+0 curves,
+ * max-loss shading, the probability cone and draggable strikes. Templates on top, legs below the canvas, the numbers,
+ * "Place as basket" and "Save strategy" on the right, adjustments and compare (a later release) at the bottom; on a
+ * phone the payoff comes first and the legs follow.
  *
- * Research only: nothing here places an order. The instrument's numbers (spot, strike step, lot size, template width)
+ * Research only: nothing here places an order ("Place as basket" shows the hedge-first basket; placing it in PAPER
+ * comes with the plan-before-trade ticket). The instrument's numbers (spot, strike step, lot size, template width)
  * are the trader's inputs - nothing is defaulted to one instrument. Template premiums are the model's until real ones
  * are typed, and are marked so.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Layers, Save } from "lucide-react";
 import { ApiError } from "../api/errors";
-import { Input, PageHeader } from "../components/primitives";
+import { Button, Input, PageHeader } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { builderApi } from "../optionsBuilder/api";
+import { builderApi, wireLegs, type SavedStrategy } from "../optionsBuilder/api";
+import { BasketDialog } from "../optionsBuilder/BasketDialog";
 import { LegTable } from "../optionsBuilder/LegTable";
 import { MetricsCard } from "../optionsBuilder/MetricsCard";
-import { contractKey, daysBetween, evaluatedById, hedgeFirst, isCurrent, legId, rangePctFor, repriceModelLegs, snapStrike, type Evaluated, type Leg, type TemplateInfo } from "../optionsBuilder/model";
+import {
+  builderAreas, contractKey, daysBetween, evaluatedById, hedgeFirst, isCurrent, legId, rangePctFor, repriceModelLegs, snapStrike, type Evaluated, type Leg,
+  type TemplateInfo,
+} from "../optionsBuilder/model";
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
+import { SaveDialog, savedAvailability, type SavedState } from "../optionsBuilder/SaveDialog";
 import { TemplateGallery } from "../optionsBuilder/TemplateGallery";
+import { useMediaQuery } from "../utils/useMediaQuery";
+
+/** Desktop layout (legs left, numbers right) from Tailwind's lg breakpoint. */
+const WIDE_QUERY = "(min-width: 1024px)";
+const DEFAULT_BROKERAGE = "20";
+const MAX_BROKERAGE = 1000;                                 // the API's limit on brokerage_per_order
 
 const EVALUATE_DELAY_MS = 200;
 /** After a 429 the page waits this long and asks again, once per wait (the server's limit is per minute). */
@@ -36,6 +50,13 @@ function positive(text: string): number | null {
   const n = Number(text);
   return text.trim() !== "" && Number.isFinite(n) && n > 0 ? n : null;
 }
+
+function nonNegative(text: string): number | null {
+  const n = Number(text);
+  return text.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+const str = (v: number | null | undefined) => (v == null ? "" : String(v));
 
 export default function OptionsBuilderPage(_props: PageProps) {
   const toast = useToast();
@@ -57,7 +78,14 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const [dragging, setDragging] = useState(false);
   const frozenRange = useRef<number | null>(null);          // the x-range held while a strike is dragged
   const [retry, setRetry] = useState(0);
+  const [brokerageText, setBrokerageText] = useState(DEFAULT_BROKERAGE);
+  const [basketOpen, setBasketOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saved, setSaved] = useState<SavedState>("unknown");
+  const wide = useMediaQuery(WIDE_QUERY);
+  const phone = useMediaQuery("(max-width: 767px)");
   const asOf = useMemo(todayIst, []);
+  const brokerage = Math.min(nonNegative(brokerageText) ?? Number(DEFAULT_BROKERAGE), MAX_BROKERAGE);   // the API caps it
 
   const spot = positive(spotText);
   const step = positive(stepText);
@@ -70,6 +98,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
 
   useEffect(() => {
     builderApi.catalog().then(setCatalog).catch((e: unknown) => setProblem(errorText(e)));
+    savedAvailability().then((a) => setSaved(a.state)).catch(() => setSaved("off"));
   }, []);
   useEffect(() => { if (daysForward > maxDays) setDaysForward(maxDays); }, [daysForward, maxDays]);
 
@@ -79,7 +108,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
     const n = ++seq.current;
     if (!legs.length || spot == null) { setEvaluated(null); setProblem(null); return undefined; }
     const sent = legs;
-    const params = { spot, daysForward, ivShift };
+    const params = { spot, daysForward, ivShift, brokerage };
     // while a strike is dragged the chart's x-range stays put (a reply must not rescale the axis under the pointer);
     // it widens to cover the new strikes once the drag ends
     const range = dragging && frozenRange.current != null ? frozenRange.current : rangePctFor(spot, sent);
@@ -87,8 +116,8 @@ export default function OptionsBuilderPage(_props: PageProps) {
     let retryTimer: number | undefined;
     const timer = window.setTimeout(() => {
       builderApi.evaluate({
-        legs: sent.map(({ id: _id, premium_source: _src, priced_for: _key, ...l }) => l), spot, as_of: asOf, days_forward: daysForward,
-        iv_shift: ivShift / 100, range_pct: range, points: 241,
+        legs: wireLegs(sent), spot, as_of: asOf, days_forward: daysForward,
+        iv_shift: ivShift / 100, range_pct: range, points: 241, brokerage_per_order: brokerage,
       }).then((evaluation) => {
         if (n !== seq.current) return;
         setProblem(null);
@@ -105,10 +134,10 @@ export default function OptionsBuilderPage(_props: PageProps) {
         });
     }, EVALUATE_DELAY_MS);
     return () => { window.clearTimeout(timer); window.clearTimeout(retryTimer); };
-  }, [legs, spot, asOf, daysForward, ivShift, dragging, retry]);
+  }, [legs, spot, asOf, daysForward, ivShift, dragging, retry, brokerage]);
   const evaluation = evaluated?.evaluation ?? null;
   const rows = useMemo(() => evaluatedById(legs, evaluated), [legs, evaluated]);
-  const fresh = spot != null && isCurrent(legs, evaluated, { spot, daysForward, ivShift });
+  const fresh = spot != null && isCurrent(legs, evaluated, { spot, daysForward, ivShift }) && evaluated?.params?.brokerage === brokerage;
 
   const pick = async (name: string) => {
     if (!ready || spot == null || step == null || lotSize == null || width == null || iv == null) return;
@@ -136,6 +165,25 @@ export default function OptionsBuilderPage(_props: PageProps) {
       expiry: nearExpiry, iv: iv != null ? iv / 100 : null, premium_source: "manual" }]);
   };
 
+  const loadSaved = (s: SavedStrategy) => {
+    const i = s.inputs;
+    setUnderlying(s.underlying);
+    setSpotText(str(i.spot));
+    setStepText(str(i.step));
+    setLotText(str(i.lot_size));
+    setWidthText(str(i.width));
+    setIvText(str(i.base_iv));
+    setNearExpiry(i.near_expiry ?? "");
+    setNextExpiry(i.next_expiry ?? "");
+    setDaysForward(0);
+    setLegs(hedgeFirst(s.legs.map((l) => {
+      const leg: Leg = { ...l, id: legId(), iv: l.iv ?? null, premium_source: l.premium_source ?? "manual" };
+      return leg.premium_source === "model" ? { ...leg, priced_for: contractKey(leg) } : leg;
+    })));
+    toast.success(`Loaded ${s.name}.`);
+  };
+  const savedInputs = { spot, step, lot_size: lotSize, width: positive(widthText), base_iv: iv, near_expiry: nearExpiry || null, next_expiry: nextExpiry || null };
+
   const field = (label: string, value: string, set: (v: string) => void, extra: Record<string, unknown> = {}) => (
     <Input label={label} value={value} onChange={(e) => set(e.target.value)} inputMode="decimal" {...extra} />
   );
@@ -144,54 +192,87 @@ export default function OptionsBuilderPage(_props: PageProps) {
     <div className="space-y-4">
       <PageHeader title="Options Builder" description="Build a strategy, see its payoff today and at expiry, and read the numbers before you trade. Model estimates for research, not advice." />
 
-      <section aria-label="Instrument" className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-1 p-4 sm:grid-cols-4 xl:grid-cols-8">
-        {field("Underlying", underlying, setUnderlying, { inputMode: "text", placeholder: "name (label only)" })}
-        {field("Spot", spotText, setSpotText, { "data-testid": "spot" })}
-        {field("Strike step", stepText, setStepText, { hint: "from the instrument master" })}
-        {field("Lot size", lotText, setLotText, { hint: "from the instrument master" })}
-        {field("Template width", widthText, setWidthText, { placeholder: step ? `${2 * step}` : "points", hint: "default: 2 strike steps" })}
-        {field("Base IV %", ivText, setIvText, { hint: "prices template legs" })}
-        <Input label="Near expiry" type="date" value={nearExpiry} onChange={(e) => setNearExpiry(e.target.value)} />
-        <Input label="Next expiry" type="date" value={nextExpiry} onChange={(e) => setNextExpiry(e.target.value)} hint="calendars, diagonals" />
-      </section>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" style={{ gridTemplateAreas: builderAreas(wide, legs.length > 0) }} data-testid="builder-grid">
+        <section aria-label="Instrument" style={{ gridArea: "inst" }} className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface-1 p-4 sm:grid-cols-4 xl:grid-cols-9">
+          {field("Underlying", underlying, setUnderlying, { inputMode: "text", placeholder: "e.g. NIFTY" })}
+          {field("Spot", spotText, setSpotText, { "data-testid": "spot" })}
+          {field("Strike step", stepText, setStepText, { hint: "from the instrument master" })}
+          {field("Lot size", lotText, setLotText, { hint: "from the instrument master" })}
+          {field("Template width", widthText, setWidthText, { placeholder: step ? `${2 * step}` : "points", hint: "default: 2 strike steps" })}
+          {field("Base IV %", ivText, setIvText, { hint: "prices template legs" })}
+          <Input label="Near expiry" type="date" value={nearExpiry} onChange={(e) => setNearExpiry(e.target.value)} />
+          <Input label="Next expiry" type="date" value={nextExpiry} onChange={(e) => setNextExpiry(e.target.value)} hint="calendars, diagonals" />
+          {field("Brokerage / order", brokerageText, setBrokerageText, { hint: "₹, for the cost line", "data-testid": "brokerage" })}
+        </section>
 
-      {catalog && (
-        <TemplateGallery families={catalog.families} templates={catalog.templates} onPick={(n) => void pick(n)} disabled={!ready} />
-      )}
-      {!ready && <p className="text-xs text-fg-muted">Fill in the spot, strike step, lot size, base IV and near expiry to build from a template.</p>}
-      {problem && <p role="alert" className="text-sm text-warn">{problem}</p>}
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="min-w-0 space-y-4">
-          <section aria-label="Payoff" aria-busy={!!evaluation && !fresh} className="rounded-xl border border-border bg-surface-1 p-4">
-            {evaluation && !fresh && problem && (
-              <p className="mb-2 text-xs text-warn" data-testid="payoff-stale">These curves are for the legs before your last change. Fix the problem above to update them.</p>
-            )}
-            {evaluation && spot != null && step != null ? (
-              <div className={!fresh && problem ? "opacity-60" : undefined}>
-                <PayoffCanvas evaluation={evaluation} legs={legs} spot={spot} step={step} onDragging={setDragging}
-                              onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
-              </div>
-            ) : (
-              <div className="flex h-64 items-center justify-center text-sm text-fg-muted">The payoff appears here once there is a leg.</div>
-            )}
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <label className="block text-xs text-fg-muted">
-                Date: {daysForward === 0 ? "today" : `in ${daysForward} days`}
-                <input type="range" min={0} max={maxDays} value={Math.min(daysForward, maxDays)} onChange={(e) => setDaysForward(Number(e.target.value))}
-                       className="mt-1 w-full accent-[rgb(var(--brand))]" aria-label="Days forward" disabled={!legs.length} />
-              </label>
-              <label className="block text-xs text-fg-muted">
-                IV shift: {ivShift > 0 ? "+" : ""}{ivShift} points
-                <input type="range" min={-10} max={20} value={ivShift} onChange={(e) => setIvShift(Number(e.target.value))}
-                       className="mt-1 w-full accent-[rgb(var(--brand))]" aria-label="IV shift in points" disabled={!legs.length} />
-              </label>
-            </div>
-          </section>
-          <LegTable legs={legs} rows={rows} step={step ?? 0} onChange={(next) => setLegs(hedgeFirst(next))} onAdd={addLeg} />
+        <div style={{ gridArea: "tmpl" }} className="min-w-0 space-y-2">
+          {catalog && (
+            <TemplateGallery families={catalog.families} templates={catalog.templates} onPick={(n) => void pick(n)} disabled={!ready} />
+          )}
+          {!ready && <p className="text-xs text-fg-muted">Fill in the spot, strike step, lot size, base IV and near expiry to build from a template.</p>}
         </div>
-        <MetricsCard evaluation={evaluation} legs={legs} stale={!!evaluation && !fresh} />
+
+        <section aria-label="Payoff" aria-busy={!!evaluation && !fresh} style={{ gridArea: "pay" }} className="min-w-0 rounded-xl border border-border bg-surface-1 p-3 sm:p-4">
+          {problem && <p role="alert" className="mb-2 text-sm text-warn">{problem}</p>}
+          {evaluation && !fresh && problem && (
+            <p className="mb-2 text-xs text-warn" data-testid="payoff-stale">These curves are for the legs before your last change. Fix the problem above to update them.</p>
+          )}
+          {evaluation && spot != null && step != null ? (
+            <div className={!fresh && problem ? "opacity-60" : undefined}>
+              <PayoffCanvas evaluation={evaluation} legs={legs} spot={spot} step={step} onDragging={setDragging}
+                            onStrikeChange={(id, strike) => setLegs((all) => all.map((l) => (l.id === id ? { ...l, strike } : l)))} />
+            </div>
+          ) : (
+            <div className="flex h-48 items-center justify-center text-center text-sm text-fg-muted sm:h-64">The payoff appears here once there is a leg.</div>
+          )}
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            <label className="block text-xs text-fg-muted">
+              Date: {daysForward === 0 ? "today" : `in ${daysForward} days`}
+              <input type="range" min={0} max={maxDays} value={Math.min(daysForward, maxDays)} onChange={(e) => setDaysForward(Number(e.target.value))}
+                     className="mt-1 h-11 w-full accent-[rgb(var(--brand))] sm:h-auto" aria-label="Days forward" disabled={!legs.length} />
+            </label>
+            <label className="block text-xs text-fg-muted">
+              IV shift: {ivShift > 0 ? "+" : ""}{ivShift} points
+              <input type="range" min={-10} max={20} value={ivShift} onChange={(e) => setIvShift(Number(e.target.value))}
+                     className="mt-1 h-11 w-full accent-[rgb(var(--brand))] sm:h-auto" aria-label="IV shift in points" disabled={!legs.length} />
+            </label>
+          </div>
+        </section>
+
+        <div style={{ gridArea: "legs" }} className="min-w-0">
+          <LegTable legs={legs} rows={rows} step={step ?? 0} onChange={(next) => setLegs(hedgeFirst(next))} onAdd={addLeg} compact={phone} />
+        </div>
+
+        <div style={{ gridArea: "side" }} className="min-w-0 space-y-3 lg:self-start">
+          <MetricsCard evaluation={evaluation} stale={!!evaluation && !fresh} />
+          <section aria-label="Actions" className="space-y-2 rounded-xl border border-border bg-surface-1 p-4">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="primary" icon={<Layers size={14} />} disabled={!legs.length} onClick={() => setBasketOpen(true)} data-testid="place-basket">Place as basket</Button>
+              <Button icon={<Save size={14} />} disabled={saved !== "on"} onClick={() => setSaveOpen(true)} data-testid="save-strategy">Save strategy</Button>
+            </div>
+            <p className="text-[11px] leading-snug text-fg-muted">
+              Placing goes to PAPER with the plan-before-trade ticket; this page places no order.
+              {saved === "off" && " Saving strategies is not turned on for your organisation yet."}
+            </p>
+          </section>
+        </div>
+
+        <details style={{ gridArea: "drawer" }} className="group rounded-xl border border-border bg-surface-1" data-testid="adjust-drawer">
+          <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-fg">
+            Adjustments and compare
+            <span className="text-xs font-normal text-fg-muted group-open:hidden">Coming later</span>
+          </summary>
+          <p className="border-t border-border px-4 py-3 text-xs text-fg-muted">
+            Roll a leg, add a hedge, convert to an iron condor or close one side - each with its before and after payoff - and compare up to three
+            strategies side by side. These arrive in a later release.
+          </p>
+        </details>
       </div>
+
+      <BasketDialog open={basketOpen} onOpenChange={setBasketOpen} underlying={underlying} legs={legs} errorText={errorText} />
+      {saved === "on" && (
+        <SaveDialog open={saveOpen} onOpenChange={setSaveOpen} underlying={underlying} inputs={savedInputs} legs={legs} onLoad={loadSaved} errorText={errorText} />
+      )}
     </div>
   );
 }

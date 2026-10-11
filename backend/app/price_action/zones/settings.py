@@ -21,8 +21,8 @@ TRADE_TF_SUFFIX = {"1m": "1M", "5m": "5M", "15m": "15M", "30m": "30M", "1h": "60
 class SRV3Settings(BaseModel):
     """Scored, multi-timeframe S/R levels (Trade sr_levels_v3.SRConfig) - field for field, Trade defaults."""
     prd: Dict[str, int] = Field(default_factory=lambda: {"5m": 10, "15m": 10, "30m": 10, "1h": 10, "4h": 5, "1d": 5, "1w": 3})
-    lookback_days: Dict[str, float] = Field(default_factory=lambda: {"5m": 3, "15m": 5, "30m": 8, "1h": 10, "4h": 45, "1d": 250,
-                                                                     "1w": 1100})
+    lookback_days: Dict[str, float] = Field(default_factory=lambda: {"5m": 3.0, "15m": 5.0, "30m": 8.0, "1h": 10.0, "4h": 45.0, "1d": 250.0,
+                                                                     "1w": 1100.0})
     tf_factor: Dict[str, float] = Field(default_factory=lambda: {"5m": 0.6, "15m": 1.0, "30m": 1.4, "1h": 2.0, "4h": 2.5, "1d": 3.0,
                                                                  "1w": 3.5})
     tf_confluence_points: Dict[str, float] = Field(default_factory=lambda: {"5m": 3.0, "15m": 5.0, "30m": 7.0, "1h": 10.0, "4h": 12.0,

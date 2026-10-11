@@ -263,6 +263,24 @@ def test_feedback_is_stored_sanitised():
     assert row.user_agent is not None and len(row.user_agent) == 200 and "tok123" not in (row.screen + row.message)
 
 
+
+def test_erasure_removes_the_users_feedback():
+    from app.db.models import User
+    from app.retention.service import erase_user
+    headers = _headers("pw6-fb-erase@example.com")
+    me = client.get("/api/auth/me", headers=headers).json()
+    r = client.post("/api/feedback", headers=headers, json={"message": "My phone is 98200 00000", "app_version": "dev", "screen": "/"})
+    assert r.status_code == 201, r.text
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, me["id"])
+            user.is_active = False
+            await erase_user(session, user, actor_id=None)
+            await session.commit()
+            return list(await session.scalars(select(FeedbackRecord).where(FeedbackRecord.user_id == me["id"])))
+    assert _run(go()) == []
+
 def test_feedback_validation():
     headers = _headers("pw6-fb-bad@example.com")
     ok = {"message": "hi", "app_version": "dev", "screen": "/"}

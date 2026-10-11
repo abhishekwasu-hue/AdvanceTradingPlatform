@@ -311,3 +311,17 @@ def test_evidence_ages_out_with_retention(screener_on, monkeypatch):
             return report.deleted.get("screen_evidence"), await session.get(ScreenEvidenceRecord, eid)
     deleted, row = _run(go())
     assert deleted >= 1 and row is None
+
+
+def test_an_evidence_failure_never_fails_the_run(screener_on, monkeypatch):
+    _set(evidence_charts=True)
+    headers, _me = _owner("u8-fail@example.com")
+    _serve_bars(monkeypatch)
+    from app.screener import evidence as ev
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("renderer bug")
+    monkeypatch.setattr(ev, "build_pack", boom)
+    body = _screen_run(headers, symbols=["UP", "DOWN"])
+    assert body["matched"] == ["UP"] and body["results"][0].get("evidence_id") is None
+    assert client.get(f"/api/screener/runs/{body['run_id']}", headers=headers).json()["matched"] == 1

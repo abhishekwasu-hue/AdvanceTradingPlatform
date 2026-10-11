@@ -82,9 +82,10 @@ async def store_for_run(session: AsyncSession, *, tenant_id: int, user_id: Optio
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, base_tf, params, exchange, data_source, run_id,
                                         screen_name, MAX_PER_RUN)
         rows = [_record(p, tenant_id=tenant_id, user_id=user_id, run_id=run_id) for p in packs.values()]
-        for row in rows:
-            session.add(row)
-        await session.flush()
+        async with session.begin_nested():               # a failed insert rolls back the packs only, never the run
+            for row in rows:
+                session.add(row)
+            await session.flush()
         return {row.symbol: row.id for row in rows}
     except Exception as exc:  # noqa: BLE001 - evidence never fails a run
         logger.warning("Evidence not stored for run %s: %s", run_id, exc.__class__.__name__)
@@ -119,18 +120,19 @@ async def store_for_events(session: AsyncSession, rule: Any, events: List[Tuple[
             name = str(rule.name)
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, rule.base_tf, params, rule.exchange or "NSE",
                                         data_source, None, name, MAX_PER_RULE)
-        stored = 0
+        rows = []
         for event, data in events[:MAX_PER_RULE]:
             pack = packs.get(data.symbol)
             if pack is None:
                 continue
             row = _record(pack, tenant_id=rule.tenant_id, user_id=rule.created_by, alert_event_id=event.id)
             row.bar_time = event.bar_time                 # the alert's own bar label (the session open for a daily bar)
-            session.add(row)
-            stored += 1
-        if stored:
-            await session.flush()
-        return stored
+            rows.append(row)
+        if rows:
+            async with session.begin_nested():           # a failed insert rolls back the packs only, never the events
+                session.add_all(rows)
+                await session.flush()
+        return len(rows)
     except Exception as exc:  # noqa: BLE001 - evidence never stops an alert
         logger.warning("Evidence not stored for alert rule %s: %s", getattr(rule, "id", "?"), exc.__class__.__name__)
         return 0

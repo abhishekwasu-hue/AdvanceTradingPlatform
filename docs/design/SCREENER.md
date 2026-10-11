@@ -981,6 +981,14 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 
 - **Validation (L1, L2).** Breakout arguments carry their parameter's range. `NewHighBreakout` runs on @1d / @1w only
   and asks for weeks x 5 daily bars. `ATRPercentile` asks for n + lookback bars.
 
+## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
+Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
+- Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
+  evaluator builds it in the same pass, and bars after the match are dropped.
+- "Show on chart" draws ONLY the screen's conditions, with the verify strip (the engine's values and pass / fail).
+- EV2: the same chart as a deterministic PNG, sent to the user's own linked Telegram chat.
+- Open questions EV-1 .. EV-9.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

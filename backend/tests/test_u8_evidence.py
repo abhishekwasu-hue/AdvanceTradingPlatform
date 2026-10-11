@@ -331,3 +331,14 @@ def test_the_frontend_sample_is_the_backend_pack():
     assert SAMPLE.read_text(encoding="utf-8") == text
     pack = json.loads(text)
     assert {d["kind"] for d in pack["drawables"]} == {"box", "overlay", "pane", "band"} and any(d["failed"] for d in pack["drawables"])
+
+
+def test_ranks_in_the_pack_are_the_runs_ranks_over_the_same_universe():
+    from app.screener.evidence_store import _build_for
+    universe = [SymbolData(s, {"1d": _daily(jump=j)}) for s, j in (("A", 0.0), ("B", 5.0), ("C", -5.0))]
+    ast, validated = compile_screen("Rank(close) <= 2 AND close > 0", base_tf="1d")
+    matches = {m.symbol: m.matched for m in run_screen(ast, validated, universe, base_tf="1d")}
+    packs = _build_for(ast, validated, universe, [d for d in universe if matches[d.symbol]], "1d", {}, "NSE", None, None, None, 10)
+    assert set(packs) == {"A", "B"}
+    assert {s: p["matched"] for s, p in packs.items()} == {"A": True, "B": True}
+    assert packs["B"]["rows"][0]["terms"][0]["value"] == 1.0 and packs["A"]["rows"][0]["terms"][0]["value"] == 2.0

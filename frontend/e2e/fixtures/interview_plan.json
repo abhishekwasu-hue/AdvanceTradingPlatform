@@ -1,0 +1,1606 @@
+{
+ "language": "en",
+ "answers": {
+  "language": "en",
+  "experience": "new",
+  "capital": 50000.0,
+  "risk": "conservative",
+  "daily_loss": 1.0,
+  "style": "scalping",
+  "instrument": "index",
+  "symbol": "NIFTY 50",
+  "vehicle": "underlying",
+  "time": "active",
+  "goal": "learn",
+  "view": "bullish"
+ },
+ "market": {
+  "last_price": 24190.91,
+  "base_timeframe": "1min",
+  "work_timeframe": "5min",
+  "today": {
+   "date": "2026-10-09",
+   "change_pct": 0.46,
+   "trend": "UP",
+   "vwap": 24091.79,
+   "above_vwap": true,
+   "bars": 375
+  },
+  "regime": {
+   "kind": "RANGING",
+   "confidence": 0.51,
+   "adx": 19.84,
+   "ema_fast": 24118.74,
+   "ema_slow": 24101.03,
+   "ema_slope_pct": 0.062,
+   "atr_pct": 0.147,
+   "atr_ratio": 1.156,
+   "bars": 600,
+   "reasons": [
+    "ADX 19.8",
+    "EMA20 above EMA50",
+    "EMA20 slope +0.06% / 10 bars",
+    "ATR 0.15% of price, 1.16x its median"
+   ]
+  },
+  "higher_timeframe": "30min",
+  "higher_regime": {
+   "kind": "RANGING",
+   "confidence": 0.83,
+   "adx": 13.5,
+   "ema_fast": 24080.91,
+   "ema_slow": 24035.12,
+   "ema_slope_pct": 0.205,
+   "atr_pct": 0.311,
+   "atr_ratio": 0.969,
+   "bars": 104,
+   "reasons": [
+    "ADX 13.5",
+    "EMA20 above EMA50",
+    "EMA20 slope +0.20% / 10 bars",
+    "ATR 0.31% of price, 0.97x its median"
+   ]
+  },
+  "structure": {
+   "trend": "UPTREND",
+   "last_event": {
+    "event": "BOS",
+    "direction": "BULLISH",
+    "level": 24179.12
+   }
+  },
+  "support": {
+   "low": 24170.93,
+   "high": 24171.49,
+   "source": "prev_day_high"
+  },
+  "resistance": {
+   "low": 24200.67,
+   "high": 24249.12,
+   "source": "pivot_R1"
+  },
+  "atr_pct": 0.147,
+  "volatile": false,
+  "bias": "BULLISH",
+  "bias_score": 2,
+  "bias_reasons": [
+   "structure makes higher highs and higher lows",
+   "today is up and price holds above VWAP"
+  ],
+  "regime_text": "sideways range",
+  "higher_regime_text": "sideways range"
+ },
+ "recommended": {
+  "strategy_id": "bb_rsi_reversion_5m",
+  "name": "Bollinger + RSI Reversion",
+  "family": "reversion",
+  "timeframes": [
+   "5min"
+  ],
+  "description": "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+  "regime_fit": 3.0,
+  "score": 5.75,
+  "evidence": {
+   "tested": true,
+   "total_trades": 3,
+   "win_rate": 33.33,
+   "net_pnl": -695.91,
+   "profit_factor": 0.74,
+   "text": "only 3 trade(s) on recent candles - too few to judge"
+  },
+  "last_signal": {
+   "symbol": "NIFTY 50",
+   "strategy_id": "bb_rsi_reversion_5m",
+   "strategy_name": "Bollinger + RSI Reversion",
+   "direction": "NO_TRADE",
+   "timestamp": "2026-10-09T09:55:00Z",
+   "entry": null,
+   "stop_loss": null,
+   "target1": null,
+   "target2": null,
+   "risk_reward": null,
+   "score": 0,
+   "grade": "No Trade",
+   "reasons": [
+    "No re-entry into the Bollinger band after an RSI extreme"
+   ],
+   "timeframe_combo": "5min"
+  }
+ },
+ "alternatives": [
+  {
+   "strategy_id": "rsi_adx_momentum_5m",
+   "name": "RSI + ADX Momentum Scalper",
+   "family": "momentum",
+   "timeframes": [
+    "5min"
+   ],
+   "description": "Momentum bursts: RSI strength confirmed by a rising ADX on 5-minute candles.",
+   "regime_fit": 0.5,
+   "score": 0.98,
+   "evidence": {
+    "tested": true,
+    "total_trades": 9,
+    "win_rate": 55.56,
+    "net_pnl": -115.79,
+    "profit_factor": 0.98,
+    "text": "9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk)"
+   },
+   "last_signal": {
+    "symbol": "NIFTY 50",
+    "strategy_id": "rsi_adx_momentum_5m",
+    "strategy_name": "RSI + ADX Momentum Scalper",
+    "direction": "NO_TRADE",
+    "timestamp": "2026-10-09T09:55:00Z",
+    "entry": null,
+    "stop_loss": null,
+    "target1": null,
+    "target2": null,
+    "risk_reward": null,
+    "score": 0,
+    "grade": "No Trade",
+    "reasons": [
+     "No aligned RSI/DI/ADX momentum setup"
+    ],
+    "timeframe_combo": "5min"
+   }
+  },
+  {
+   "strategy_id": "mtf_1m_15m_trend_pullback",
+   "name": "MTF Scalper 1m/15m",
+   "family": "trend",
+   "timeframes": [
+    "1min",
+    "15min"
+   ],
+   "description": "Follows the 15-minute trend, enters on a 1-minute pullback.",
+   "regime_fit": 0.0,
+   "score": 0.0,
+   "evidence": {
+    "tested": false,
+    "total_trades": 0,
+    "win_rate": 0.0,
+    "net_pnl": 0.0,
+    "profit_factor": null,
+    "text": "not tested - it fits this market less well"
+   },
+   "last_signal": null
+  }
+ ],
+ "ranking": [
+  {
+   "strategy_id": "bb_rsi_reversion_5m",
+   "name": "Bollinger + RSI Reversion",
+   "score": 5.75
+  },
+  {
+   "strategy_id": "rsi_adx_momentum_5m",
+   "name": "RSI + ADX Momentum Scalper",
+   "score": 0.98
+  },
+  {
+   "strategy_id": "mtf_1m_15m_trend_pullback",
+   "name": "MTF Scalper 1m/15m",
+   "score": 0.0
+  },
+  {
+   "strategy_id": "ema_rsi_scalper_1m",
+   "name": "EMA + RSI Scalper",
+   "score": 0.0
+  },
+  {
+   "strategy_id": "supertrend_adx_scalper_1m",
+   "name": "Supertrend + ADX Scalper",
+   "score": 0.0
+  },
+  {
+   "strategy_id": "mtf_1m_5m_trend_pullback",
+   "name": "MTF Scalper 1m/5m",
+   "score": -0.25
+  }
+ ],
+ "risk_config": {
+  "capital": 50000.0,
+  "risk_per_trade_pct": 0.5,
+  "max_daily_loss_pct": 1.0,
+  "max_trades_per_day": 6,
+  "max_open_positions": 2,
+  "max_consecutive_losses": 3,
+  "min_risk_reward": 1.5,
+  "lot_size": 1,
+  "max_portfolio_risk_pct": 1.5,
+  "stop_cooldown_minutes": 30,
+  "dd_level_1_pct": 5.0,
+  "dd_level_2_pct": 10.0,
+  "event_size_cut_pct": 50.0
+ },
+ "deployment": {
+  "strategy_id": "bb_rsi_reversion_5m",
+  "symbol": "NIFTY 50",
+  "exchange": "NSE",
+  "timeframe": "1min",
+  "mode": "PAPER",
+  "instrument_kind": "FUTURE",
+  "expiry_rule": "NEAREST",
+  "exit_rules": {
+   "break_even_at_r": 1.0,
+   "time_exit_at": "15:10"
+  },
+  "regime_filter": [
+   "RANGING",
+   "QUIET"
+  ],
+  "holding": "INTRADAY"
+ },
+ "sections": [
+  {
+   "id": "market",
+   "title": "Market view",
+   "title_mr": "Market चे विश्लेषण",
+   "lines": [
+    "Today: +0.46% from the open (up), price above VWAP 24,091.79.",
+    "Latest trend (30min): sideways range.",
+    "Current regime (5min): sideways range - ADX 19.8; EMA20 above EMA50.",
+    "Market structure: uptrend, last BOS bullish at 24,179.12.",
+    "Nearest support 24,170.93-24,171.49, resistance 24,200.67-24,249.12 (last price 24,190.91)."
+   ]
+  },
+  {
+   "id": "strategy",
+   "title": "Template (you choose)",
+   "title_mr": "Template (तुम्ही निवडा)",
+   "lines": [
+    "This template: Bollinger + RSI Reversion (mean reversion, 5min). A description of its rules, not a recommendation - you choose.",
+    "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+    "Backtest on these candles (sideways range regime): only 3 trade(s) on recent candles - too few to judge.",
+    "Its rules enter only in these regimes: RANGING, QUIET - on other days it does not trade.",
+    "Other template: RSI + ADX Momentum Scalper - 9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk).",
+    "Other template: MTF Scalper 1m/15m - not tested - it fits this market less well."
+   ]
+  },
+  {
+   "id": "risk",
+   "title": "Risk management",
+   "title_mr": "Risk management",
+   "lines": [
+    "Risk per trade: 0.5% of trading capital = ₹250. The quantity is calculated from this and the stop distance - never chosen by feel.",
+    "Daily loss limit: 1% = ₹500 - then no new trades that day.",
+    "At most 6 trades a day, 2 open position(s) at a time, pause after 3 losses in a row.",
+    "After a stop-loss: 30 minutes cool-down on that symbol. Drawdown 5% halves the size; 10% pauses new entries."
+   ]
+  },
+  {
+   "id": "capital",
+   "title": "Capital in these settings",
+   "title_mr": "या settings मधले भांडवल",
+   "lines": [
+    "The risk settings are computed on a trading capital of ₹50,000 - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+    "Open risk across all positions stays under 1.5% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket."
+   ]
+  },
+  {
+   "id": "rr",
+   "title": "Risk : reward and exits",
+   "title_mr": "Risk : reward आणि exit",
+   "lines": [
+    "Minimum reward:risk 1:1.5 - a trade that cannot make 1.5x its risk is skipped. Arithmetic: at 1:1.5 the break-even win rate before costs is 40%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
+    "Stop moves to cost once the trade is 1R in profit; it never moves against you.",
+    "Everything still open is closed at 15:10 - no overnight risk."
+   ]
+  },
+  {
+   "id": "contract",
+   "title": "What will be traded",
+   "title_mr": "काय trade होईल",
+   "lines": [
+    "NIFTY futures, nearest expiry",
+    "For your information: a futures lot carries the full lot value (price × lot size) as exposure, and the broker blocks margin of roughly 10-15% of it; gains and losses run on the whole lot value. At about 24,191, one lot's value is that price times the lot size. Buying an option is another way to trade the index - the loss is capped at the premium. The plan keeps futures, as you chose."
+   ]
+  },
+  {
+   "id": "checklist",
+   "title": "Checked before every trade",
+   "title_mr": "प्रत्येक trade आधी तपासले जाते",
+   "lines": [
+    "Trend and regime agree with the strategy (regime filter)",
+    "Stop-loss defined before entry, at least 1 ATR away",
+    "Reward at least 1.5x the risk",
+    "Size from risk %, never from feel; never averaging a loser",
+    "Daily loss limit and losing-streak pause respected",
+    "No entries on blocked event days (results, policy)"
+   ]
+  },
+  {
+   "id": "steps",
+   "title": "How it works if you choose",
+   "title_mr": "निवडल्यास पुढे काय होते",
+   "lines": [
+    "If you choose a template: read its rules and backtest above; the risk settings apply only when you press the button.",
+    "On this platform anything new runs in PAPER first - the worker trades it with no real money.",
+    "The PAPER record after 2 weeks or 30 trades shows win rate, average win vs loss and rule breaks.",
+    "LIVE is possible only through the Go-Live checklist; whether to go LIVE is your decision."
+   ]
+  }
+ ],
+ "warnings": [
+  "This read used SAMPLE candles. Switch Data to broker candles for the real market today."
+ ],
+ "ai_prompt": "I am a new trader. Capital for trading 50,000 INR (of 50,000); risk 0.5% per trade, daily loss limit 1%, at most 6 trades a day. Style: scalping. Instrument: NIFTY 50 via underlying. Goal: learn. Time: active. Market now: today +0.46% (up), price above VWAP; 5min regime RANGING, 30min regime RANGING; structure UPTREND; overall bias BULLISH; support 24170.93-24171.49; resistance 24200.67-24249.12. Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:1.5. For reference, the template ranked first on these candles was Bollinger + RSI Reversion (ranking by regime fit and backtest evidence, not a recommendation).",
+ "disclaimer": "Educational decision support, not investment advice. Past results on these candles do not promise future profit. Paper-trade first.",
+ "option": {
+  "id": "balanced",
+  "label": "Balanced",
+  "summary": "Middle risk, middle number of trades",
+  "label_mr": "संतुलित",
+  "summary_mr": "मध्यम risk, मध्यम trades",
+  "regime_filter_open": true,
+  "headline": {
+   "strategy": "Bollinger + RSI Reversion",
+   "risk_pct": 0.5,
+   "trades_per_day": 6,
+   "min_rr": 1.5
+  }
+ },
+ "options": [
+  {
+   "language": "en",
+   "answers": {
+    "language": "en",
+    "experience": "new",
+    "capital": 50000.0,
+    "risk": "conservative",
+    "daily_loss": 1.0,
+    "style": "scalping",
+    "instrument": "index",
+    "symbol": "NIFTY 50",
+    "vehicle": "underlying",
+    "time": "active",
+    "goal": "learn",
+    "view": "bullish"
+   },
+   "market": {
+    "last_price": 24190.91,
+    "base_timeframe": "1min",
+    "work_timeframe": "5min",
+    "today": {
+     "date": "2026-10-09",
+     "change_pct": 0.46,
+     "trend": "UP",
+     "vwap": 24091.79,
+     "above_vwap": true,
+     "bars": 375
+    },
+    "regime": {
+     "kind": "RANGING",
+     "confidence": 0.51,
+     "adx": 19.84,
+     "ema_fast": 24118.74,
+     "ema_slow": 24101.03,
+     "ema_slope_pct": 0.062,
+     "atr_pct": 0.147,
+     "atr_ratio": 1.156,
+     "bars": 600,
+     "reasons": [
+      "ADX 19.8",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.06% / 10 bars",
+      "ATR 0.15% of price, 1.16x its median"
+     ]
+    },
+    "higher_timeframe": "30min",
+    "higher_regime": {
+     "kind": "RANGING",
+     "confidence": 0.83,
+     "adx": 13.5,
+     "ema_fast": 24080.91,
+     "ema_slow": 24035.12,
+     "ema_slope_pct": 0.205,
+     "atr_pct": 0.311,
+     "atr_ratio": 0.969,
+     "bars": 104,
+     "reasons": [
+      "ADX 13.5",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.20% / 10 bars",
+      "ATR 0.31% of price, 0.97x its median"
+     ]
+    },
+    "structure": {
+     "trend": "UPTREND",
+     "last_event": {
+      "event": "BOS",
+      "direction": "BULLISH",
+      "level": 24179.12
+     }
+    },
+    "support": {
+     "low": 24170.93,
+     "high": 24171.49,
+     "source": "prev_day_high"
+    },
+    "resistance": {
+     "low": 24200.67,
+     "high": 24249.12,
+     "source": "pivot_R1"
+    },
+    "atr_pct": 0.147,
+    "volatile": false,
+    "bias": "BULLISH",
+    "bias_score": 2,
+    "bias_reasons": [
+     "structure makes higher highs and higher lows",
+     "today is up and price holds above VWAP"
+    ],
+    "regime_text": "sideways range",
+    "higher_regime_text": "sideways range"
+   },
+   "recommended": {
+    "strategy_id": "mtf_1m_15m_trend_pullback",
+    "name": "MTF Scalper 1m/15m",
+    "family": "trend",
+    "timeframes": [
+     "1min",
+     "15min"
+    ],
+    "description": "Follows the 15-minute trend, enters on a 1-minute pullback.",
+    "regime_fit": 0.0,
+    "score": 0.0,
+    "evidence": {
+     "tested": false,
+     "total_trades": 0,
+     "win_rate": 0.0,
+     "net_pnl": 0.0,
+     "profit_factor": null,
+     "text": "not tested - it fits this market less well"
+    },
+    "last_signal": null
+   },
+   "alternatives": [
+    {
+     "strategy_id": "bb_rsi_reversion_5m",
+     "name": "Bollinger + RSI Reversion",
+     "family": "reversion",
+     "timeframes": [
+      "5min"
+     ],
+     "description": "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+     "regime_fit": 3.0,
+     "score": 5.75,
+     "evidence": {
+      "tested": true,
+      "total_trades": 3,
+      "win_rate": 33.33,
+      "net_pnl": -695.91,
+      "profit_factor": 0.74,
+      "text": "only 3 trade(s) on recent candles - too few to judge"
+     },
+     "last_signal": {
+      "symbol": "NIFTY 50",
+      "strategy_id": "bb_rsi_reversion_5m",
+      "strategy_name": "Bollinger + RSI Reversion",
+      "direction": "NO_TRADE",
+      "timestamp": "2026-10-09T09:55:00Z",
+      "entry": null,
+      "stop_loss": null,
+      "target1": null,
+      "target2": null,
+      "risk_reward": null,
+      "score": 0,
+      "grade": "No Trade",
+      "reasons": [
+       "No re-entry into the Bollinger band after an RSI extreme"
+      ],
+      "timeframe_combo": "5min"
+     }
+    },
+    {
+     "strategy_id": "rsi_adx_momentum_5m",
+     "name": "RSI + ADX Momentum Scalper",
+     "family": "momentum",
+     "timeframes": [
+      "5min"
+     ],
+     "description": "Momentum bursts: RSI strength confirmed by a rising ADX on 5-minute candles.",
+     "regime_fit": 0.5,
+     "score": 0.98,
+     "evidence": {
+      "tested": true,
+      "total_trades": 9,
+      "win_rate": 55.56,
+      "net_pnl": -115.79,
+      "profit_factor": 0.98,
+      "text": "9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk)"
+     },
+     "last_signal": {
+      "symbol": "NIFTY 50",
+      "strategy_id": "rsi_adx_momentum_5m",
+      "strategy_name": "RSI + ADX Momentum Scalper",
+      "direction": "NO_TRADE",
+      "timestamp": "2026-10-09T09:55:00Z",
+      "entry": null,
+      "stop_loss": null,
+      "target1": null,
+      "target2": null,
+      "risk_reward": null,
+      "score": 0,
+      "grade": "No Trade",
+      "reasons": [
+       "No aligned RSI/DI/ADX momentum setup"
+      ],
+      "timeframe_combo": "5min"
+     }
+    }
+   ],
+   "ranking": [
+    {
+     "strategy_id": "bb_rsi_reversion_5m",
+     "name": "Bollinger + RSI Reversion",
+     "score": 5.75
+    },
+    {
+     "strategy_id": "rsi_adx_momentum_5m",
+     "name": "RSI + ADX Momentum Scalper",
+     "score": 0.98
+    },
+    {
+     "strategy_id": "mtf_1m_15m_trend_pullback",
+     "name": "MTF Scalper 1m/15m",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "ema_rsi_scalper_1m",
+     "name": "EMA + RSI Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "supertrend_adx_scalper_1m",
+     "name": "Supertrend + ADX Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "mtf_1m_5m_trend_pullback",
+     "name": "MTF Scalper 1m/5m",
+     "score": -0.25
+    }
+   ],
+   "risk_config": {
+    "capital": 50000.0,
+    "risk_per_trade_pct": 0.3,
+    "max_daily_loss_pct": 0.9,
+    "max_trades_per_day": 5,
+    "max_open_positions": 2,
+    "max_consecutive_losses": 3,
+    "min_risk_reward": 2.0,
+    "lot_size": 1,
+    "max_portfolio_risk_pct": 0.9,
+    "stop_cooldown_minutes": 30,
+    "dd_level_1_pct": 5.0,
+    "dd_level_2_pct": 10.0,
+    "event_size_cut_pct": 50.0
+   },
+   "deployment": {
+    "strategy_id": "mtf_1m_15m_trend_pullback",
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "timeframe": "1min",
+    "mode": "PAPER",
+    "instrument_kind": "FUTURE",
+    "expiry_rule": "NEAREST",
+    "exit_rules": {
+     "break_even_at_r": 1.0,
+     "time_exit_at": "15:10"
+    },
+    "regime_filter": [
+     "TRENDING_UP",
+     "TRENDING_DOWN"
+    ],
+    "holding": "INTRADAY"
+   },
+   "sections": [
+    {
+     "id": "market",
+     "title": "Market view",
+     "title_mr": "Market चे विश्लेषण",
+     "lines": [
+      "Today: +0.46% from the open (up), price above VWAP 24,091.79.",
+      "Latest trend (30min): sideways range.",
+      "Current regime (5min): sideways range - ADX 19.8; EMA20 above EMA50.",
+      "Market structure: uptrend, last BOS bullish at 24,179.12.",
+      "Nearest support 24,170.93-24,171.49, resistance 24,200.67-24,249.12 (last price 24,190.91)."
+     ]
+    },
+    {
+     "id": "strategy",
+     "title": "Template (you choose)",
+     "title_mr": "Template (तुम्ही निवडा)",
+     "lines": [
+      "This template: MTF Scalper 1m/15m (trend following, 1min/15min). A description of its rules, not a recommendation - you choose.",
+      "Follows the 15-minute trend, enters on a 1-minute pullback.",
+      "Backtest on these candles (sideways range regime): not tested - it fits this market less well.",
+      "Its rules enter only in these regimes: TRENDING_UP, TRENDING_DOWN - on other days it does not trade.",
+      "Other template: Bollinger + RSI Reversion - only 3 trade(s) on recent candles - too few to judge.",
+      "Other template: RSI + ADX Momentum Scalper - 9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk)."
+     ]
+    },
+    {
+     "id": "risk",
+     "title": "Risk management",
+     "title_mr": "Risk management",
+     "lines": [
+      "Risk per trade: 0.3% of trading capital = ₹150. The quantity is calculated from this and the stop distance - never chosen by feel.",
+      "Daily loss limit: 0.9% = ₹450 - then no new trades that day.",
+      "At most 5 trades a day, 2 open position(s) at a time, pause after 3 losses in a row.",
+      "After a stop-loss: 30 minutes cool-down on that symbol. Drawdown 5% halves the size; 10% pauses new entries.",
+      "Safe option: 0.3% risk per trade, at most 5 trade(s) a day, reward at least 1:2 - fewer, better trades."
+     ]
+    },
+    {
+     "id": "capital",
+     "title": "Capital in these settings",
+     "title_mr": "या settings मधले भांडवल",
+     "lines": [
+      "The risk settings are computed on a trading capital of ₹50,000 - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+      "Open risk across all positions stays under 0.9% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket."
+     ]
+    },
+    {
+     "id": "rr",
+     "title": "Risk : reward and exits",
+     "title_mr": "Risk : reward आणि exit",
+     "lines": [
+      "Minimum reward:risk 1:2 - a trade that cannot make 2x its risk is skipped. Arithmetic: at 1:2 the break-even win rate before costs is 33%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
+      "Stop moves to cost once the trade is 1R in profit; it never moves against you.",
+      "Everything still open is closed at 15:10 - no overnight risk."
+     ]
+    },
+    {
+     "id": "contract",
+     "title": "What will be traded",
+     "title_mr": "काय trade होईल",
+     "lines": [
+      "NIFTY futures, nearest expiry",
+      "For your information: a futures lot carries the full lot value (price × lot size) as exposure, and the broker blocks margin of roughly 10-15% of it; gains and losses run on the whole lot value. At about 24,191, one lot's value is that price times the lot size. Buying an option is another way to trade the index - the loss is capped at the premium. The plan keeps futures, as you chose."
+     ]
+    },
+    {
+     "id": "checklist",
+     "title": "Checked before every trade",
+     "title_mr": "प्रत्येक trade आधी तपासले जाते",
+     "lines": [
+      "Trend and regime agree with the strategy (regime filter)",
+      "Stop-loss defined before entry, at least 1 ATR away",
+      "Reward at least 2x the risk",
+      "Size from risk %, never from feel; never averaging a loser",
+      "Daily loss limit and losing-streak pause respected",
+      "No entries on blocked event days (results, policy)"
+     ]
+    },
+    {
+     "id": "steps",
+     "title": "How it works if you choose",
+     "title_mr": "निवडल्यास पुढे काय होते",
+     "lines": [
+      "If you choose a template: read its rules and backtest above; the risk settings apply only when you press the button.",
+      "On this platform anything new runs in PAPER first - the worker trades it with no real money.",
+      "The PAPER record after 2 weeks or 30 trades shows win rate, average win vs loss and rule breaks.",
+      "LIVE is possible only through the Go-Live checklist; whether to go LIVE is your decision."
+     ]
+    }
+   ],
+   "warnings": [
+    "This read used SAMPLE candles. Switch Data to broker candles for the real market today.",
+    "This template does not fit today's regime well - its rules would produce few or no trades today."
+   ],
+   "ai_prompt": "I am a new trader. Capital for trading 50,000 INR (of 50,000); risk 0.3% per trade, daily loss limit 0.9%, at most 5 trades a day. Style: scalping. Instrument: NIFTY 50 via underlying. Goal: learn. Time: active. Market now: today +0.46% (up), price above VWAP; 5min regime RANGING, 30min regime RANGING; structure UPTREND; overall bias BULLISH; support 24170.93-24171.49; resistance 24200.67-24249.12. Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:2. For reference, the template ranked first on these candles was MTF Scalper 1m/15m (ranking by regime fit and backtest evidence, not a recommendation).",
+   "disclaimer": "Educational decision support, not investment advice. Past results on these candles do not promise future profit. Paper-trade first.",
+   "option": {
+    "id": "safe",
+    "label": "Safe",
+    "summary": "Less risk, fewer trades, bigger reward per trade",
+    "label_mr": "सावध",
+    "summary_mr": "कमी risk, कमी trades, प्रत्येक trade मध्ये मोठे target",
+    "regime_filter_open": false,
+    "headline": {
+     "strategy": "MTF Scalper 1m/15m",
+     "risk_pct": 0.3,
+     "trades_per_day": 5,
+     "min_rr": 2.0
+    }
+   },
+   "candidate_id": 154
+  },
+  {
+   "language": "en",
+   "answers": {
+    "language": "en",
+    "experience": "new",
+    "capital": 50000.0,
+    "risk": "conservative",
+    "daily_loss": 1.0,
+    "style": "scalping",
+    "instrument": "index",
+    "symbol": "NIFTY 50",
+    "vehicle": "underlying",
+    "time": "active",
+    "goal": "learn",
+    "view": "bullish"
+   },
+   "market": {
+    "last_price": 24190.91,
+    "base_timeframe": "1min",
+    "work_timeframe": "5min",
+    "today": {
+     "date": "2026-10-09",
+     "change_pct": 0.46,
+     "trend": "UP",
+     "vwap": 24091.79,
+     "above_vwap": true,
+     "bars": 375
+    },
+    "regime": {
+     "kind": "RANGING",
+     "confidence": 0.51,
+     "adx": 19.84,
+     "ema_fast": 24118.74,
+     "ema_slow": 24101.03,
+     "ema_slope_pct": 0.062,
+     "atr_pct": 0.147,
+     "atr_ratio": 1.156,
+     "bars": 600,
+     "reasons": [
+      "ADX 19.8",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.06% / 10 bars",
+      "ATR 0.15% of price, 1.16x its median"
+     ]
+    },
+    "higher_timeframe": "30min",
+    "higher_regime": {
+     "kind": "RANGING",
+     "confidence": 0.83,
+     "adx": 13.5,
+     "ema_fast": 24080.91,
+     "ema_slow": 24035.12,
+     "ema_slope_pct": 0.205,
+     "atr_pct": 0.311,
+     "atr_ratio": 0.969,
+     "bars": 104,
+     "reasons": [
+      "ADX 13.5",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.20% / 10 bars",
+      "ATR 0.31% of price, 0.97x its median"
+     ]
+    },
+    "structure": {
+     "trend": "UPTREND",
+     "last_event": {
+      "event": "BOS",
+      "direction": "BULLISH",
+      "level": 24179.12
+     }
+    },
+    "support": {
+     "low": 24170.93,
+     "high": 24171.49,
+     "source": "prev_day_high"
+    },
+    "resistance": {
+     "low": 24200.67,
+     "high": 24249.12,
+     "source": "pivot_R1"
+    },
+    "atr_pct": 0.147,
+    "volatile": false,
+    "bias": "BULLISH",
+    "bias_score": 2,
+    "bias_reasons": [
+     "structure makes higher highs and higher lows",
+     "today is up and price holds above VWAP"
+    ],
+    "regime_text": "sideways range",
+    "higher_regime_text": "sideways range"
+   },
+   "recommended": {
+    "strategy_id": "bb_rsi_reversion_5m",
+    "name": "Bollinger + RSI Reversion",
+    "family": "reversion",
+    "timeframes": [
+     "5min"
+    ],
+    "description": "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+    "regime_fit": 3.0,
+    "score": 5.75,
+    "evidence": {
+     "tested": true,
+     "total_trades": 3,
+     "win_rate": 33.33,
+     "net_pnl": -695.91,
+     "profit_factor": 0.74,
+     "text": "only 3 trade(s) on recent candles - too few to judge"
+    },
+    "last_signal": {
+     "symbol": "NIFTY 50",
+     "strategy_id": "bb_rsi_reversion_5m",
+     "strategy_name": "Bollinger + RSI Reversion",
+     "direction": "NO_TRADE",
+     "timestamp": "2026-10-09T09:55:00Z",
+     "entry": null,
+     "stop_loss": null,
+     "target1": null,
+     "target2": null,
+     "risk_reward": null,
+     "score": 0,
+     "grade": "No Trade",
+     "reasons": [
+      "No re-entry into the Bollinger band after an RSI extreme"
+     ],
+     "timeframe_combo": "5min"
+    }
+   },
+   "alternatives": [
+    {
+     "strategy_id": "rsi_adx_momentum_5m",
+     "name": "RSI + ADX Momentum Scalper",
+     "family": "momentum",
+     "timeframes": [
+      "5min"
+     ],
+     "description": "Momentum bursts: RSI strength confirmed by a rising ADX on 5-minute candles.",
+     "regime_fit": 0.5,
+     "score": 0.98,
+     "evidence": {
+      "tested": true,
+      "total_trades": 9,
+      "win_rate": 55.56,
+      "net_pnl": -115.79,
+      "profit_factor": 0.98,
+      "text": "9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk)"
+     },
+     "last_signal": {
+      "symbol": "NIFTY 50",
+      "strategy_id": "rsi_adx_momentum_5m",
+      "strategy_name": "RSI + ADX Momentum Scalper",
+      "direction": "NO_TRADE",
+      "timestamp": "2026-10-09T09:55:00Z",
+      "entry": null,
+      "stop_loss": null,
+      "target1": null,
+      "target2": null,
+      "risk_reward": null,
+      "score": 0,
+      "grade": "No Trade",
+      "reasons": [
+       "No aligned RSI/DI/ADX momentum setup"
+      ],
+      "timeframe_combo": "5min"
+     }
+    },
+    {
+     "strategy_id": "mtf_1m_15m_trend_pullback",
+     "name": "MTF Scalper 1m/15m",
+     "family": "trend",
+     "timeframes": [
+      "1min",
+      "15min"
+     ],
+     "description": "Follows the 15-minute trend, enters on a 1-minute pullback.",
+     "regime_fit": 0.0,
+     "score": 0.0,
+     "evidence": {
+      "tested": false,
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "net_pnl": 0.0,
+      "profit_factor": null,
+      "text": "not tested - it fits this market less well"
+     },
+     "last_signal": null
+    }
+   ],
+   "ranking": [
+    {
+     "strategy_id": "bb_rsi_reversion_5m",
+     "name": "Bollinger + RSI Reversion",
+     "score": 5.75
+    },
+    {
+     "strategy_id": "rsi_adx_momentum_5m",
+     "name": "RSI + ADX Momentum Scalper",
+     "score": 0.98
+    },
+    {
+     "strategy_id": "mtf_1m_15m_trend_pullback",
+     "name": "MTF Scalper 1m/15m",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "ema_rsi_scalper_1m",
+     "name": "EMA + RSI Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "supertrend_adx_scalper_1m",
+     "name": "Supertrend + ADX Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "mtf_1m_5m_trend_pullback",
+     "name": "MTF Scalper 1m/5m",
+     "score": -0.25
+    }
+   ],
+   "risk_config": {
+    "capital": 50000.0,
+    "risk_per_trade_pct": 0.5,
+    "max_daily_loss_pct": 1.0,
+    "max_trades_per_day": 6,
+    "max_open_positions": 2,
+    "max_consecutive_losses": 3,
+    "min_risk_reward": 1.5,
+    "lot_size": 1,
+    "max_portfolio_risk_pct": 1.5,
+    "stop_cooldown_minutes": 30,
+    "dd_level_1_pct": 5.0,
+    "dd_level_2_pct": 10.0,
+    "event_size_cut_pct": 50.0
+   },
+   "deployment": {
+    "strategy_id": "bb_rsi_reversion_5m",
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "timeframe": "1min",
+    "mode": "PAPER",
+    "instrument_kind": "FUTURE",
+    "expiry_rule": "NEAREST",
+    "exit_rules": {
+     "break_even_at_r": 1.0,
+     "time_exit_at": "15:10"
+    },
+    "regime_filter": [
+     "RANGING",
+     "QUIET"
+    ],
+    "holding": "INTRADAY"
+   },
+   "sections": [
+    {
+     "id": "market",
+     "title": "Market view",
+     "title_mr": "Market चे विश्लेषण",
+     "lines": [
+      "Today: +0.46% from the open (up), price above VWAP 24,091.79.",
+      "Latest trend (30min): sideways range.",
+      "Current regime (5min): sideways range - ADX 19.8; EMA20 above EMA50.",
+      "Market structure: uptrend, last BOS bullish at 24,179.12.",
+      "Nearest support 24,170.93-24,171.49, resistance 24,200.67-24,249.12 (last price 24,190.91)."
+     ]
+    },
+    {
+     "id": "strategy",
+     "title": "Template (you choose)",
+     "title_mr": "Template (तुम्ही निवडा)",
+     "lines": [
+      "This template: Bollinger + RSI Reversion (mean reversion, 5min). A description of its rules, not a recommendation - you choose.",
+      "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+      "Backtest on these candles (sideways range regime): only 3 trade(s) on recent candles - too few to judge.",
+      "Its rules enter only in these regimes: RANGING, QUIET - on other days it does not trade.",
+      "Other template: RSI + ADX Momentum Scalper - 9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk).",
+      "Other template: MTF Scalper 1m/15m - not tested - it fits this market less well."
+     ]
+    },
+    {
+     "id": "risk",
+     "title": "Risk management",
+     "title_mr": "Risk management",
+     "lines": [
+      "Risk per trade: 0.5% of trading capital = ₹250. The quantity is calculated from this and the stop distance - never chosen by feel.",
+      "Daily loss limit: 1% = ₹500 - then no new trades that day.",
+      "At most 6 trades a day, 2 open position(s) at a time, pause after 3 losses in a row.",
+      "After a stop-loss: 30 minutes cool-down on that symbol. Drawdown 5% halves the size; 10% pauses new entries."
+     ]
+    },
+    {
+     "id": "capital",
+     "title": "Capital in these settings",
+     "title_mr": "या settings मधले भांडवल",
+     "lines": [
+      "The risk settings are computed on a trading capital of ₹50,000 - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+      "Open risk across all positions stays under 1.5% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket."
+     ]
+    },
+    {
+     "id": "rr",
+     "title": "Risk : reward and exits",
+     "title_mr": "Risk : reward आणि exit",
+     "lines": [
+      "Minimum reward:risk 1:1.5 - a trade that cannot make 1.5x its risk is skipped. Arithmetic: at 1:1.5 the break-even win rate before costs is 40%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
+      "Stop moves to cost once the trade is 1R in profit; it never moves against you.",
+      "Everything still open is closed at 15:10 - no overnight risk."
+     ]
+    },
+    {
+     "id": "contract",
+     "title": "What will be traded",
+     "title_mr": "काय trade होईल",
+     "lines": [
+      "NIFTY futures, nearest expiry",
+      "For your information: a futures lot carries the full lot value (price × lot size) as exposure, and the broker blocks margin of roughly 10-15% of it; gains and losses run on the whole lot value. At about 24,191, one lot's value is that price times the lot size. Buying an option is another way to trade the index - the loss is capped at the premium. The plan keeps futures, as you chose."
+     ]
+    },
+    {
+     "id": "checklist",
+     "title": "Checked before every trade",
+     "title_mr": "प्रत्येक trade आधी तपासले जाते",
+     "lines": [
+      "Trend and regime agree with the strategy (regime filter)",
+      "Stop-loss defined before entry, at least 1 ATR away",
+      "Reward at least 1.5x the risk",
+      "Size from risk %, never from feel; never averaging a loser",
+      "Daily loss limit and losing-streak pause respected",
+      "No entries on blocked event days (results, policy)"
+     ]
+    },
+    {
+     "id": "steps",
+     "title": "How it works if you choose",
+     "title_mr": "निवडल्यास पुढे काय होते",
+     "lines": [
+      "If you choose a template: read its rules and backtest above; the risk settings apply only when you press the button.",
+      "On this platform anything new runs in PAPER first - the worker trades it with no real money.",
+      "The PAPER record after 2 weeks or 30 trades shows win rate, average win vs loss and rule breaks.",
+      "LIVE is possible only through the Go-Live checklist; whether to go LIVE is your decision."
+     ]
+    }
+   ],
+   "warnings": [
+    "This read used SAMPLE candles. Switch Data to broker candles for the real market today."
+   ],
+   "ai_prompt": "I am a new trader. Capital for trading 50,000 INR (of 50,000); risk 0.5% per trade, daily loss limit 1%, at most 6 trades a day. Style: scalping. Instrument: NIFTY 50 via underlying. Goal: learn. Time: active. Market now: today +0.46% (up), price above VWAP; 5min regime RANGING, 30min regime RANGING; structure UPTREND; overall bias BULLISH; support 24170.93-24171.49; resistance 24200.67-24249.12. Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:1.5. For reference, the template ranked first on these candles was Bollinger + RSI Reversion (ranking by regime fit and backtest evidence, not a recommendation).",
+   "disclaimer": "Educational decision support, not investment advice. Past results on these candles do not promise future profit. Paper-trade first.",
+   "option": {
+    "id": "balanced",
+    "label": "Balanced",
+    "summary": "Middle risk, middle number of trades",
+    "label_mr": "संतुलित",
+    "summary_mr": "मध्यम risk, मध्यम trades",
+    "regime_filter_open": true,
+    "headline": {
+     "strategy": "Bollinger + RSI Reversion",
+     "risk_pct": 0.5,
+     "trades_per_day": 6,
+     "min_rr": 1.5
+    }
+   },
+   "candidate_id": 155
+  },
+  {
+   "language": "en",
+   "answers": {
+    "language": "en",
+    "experience": "new",
+    "capital": 50000.0,
+    "risk": "conservative",
+    "daily_loss": 1.0,
+    "style": "scalping",
+    "instrument": "index",
+    "symbol": "NIFTY 50",
+    "vehicle": "underlying",
+    "time": "active",
+    "goal": "learn",
+    "view": "bullish"
+   },
+   "market": {
+    "last_price": 24190.91,
+    "base_timeframe": "1min",
+    "work_timeframe": "5min",
+    "today": {
+     "date": "2026-10-09",
+     "change_pct": 0.46,
+     "trend": "UP",
+     "vwap": 24091.79,
+     "above_vwap": true,
+     "bars": 375
+    },
+    "regime": {
+     "kind": "RANGING",
+     "confidence": 0.51,
+     "adx": 19.84,
+     "ema_fast": 24118.74,
+     "ema_slow": 24101.03,
+     "ema_slope_pct": 0.062,
+     "atr_pct": 0.147,
+     "atr_ratio": 1.156,
+     "bars": 600,
+     "reasons": [
+      "ADX 19.8",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.06% / 10 bars",
+      "ATR 0.15% of price, 1.16x its median"
+     ]
+    },
+    "higher_timeframe": "30min",
+    "higher_regime": {
+     "kind": "RANGING",
+     "confidence": 0.83,
+     "adx": 13.5,
+     "ema_fast": 24080.91,
+     "ema_slow": 24035.12,
+     "ema_slope_pct": 0.205,
+     "atr_pct": 0.311,
+     "atr_ratio": 0.969,
+     "bars": 104,
+     "reasons": [
+      "ADX 13.5",
+      "EMA20 above EMA50",
+      "EMA20 slope +0.20% / 10 bars",
+      "ATR 0.31% of price, 0.97x its median"
+     ]
+    },
+    "structure": {
+     "trend": "UPTREND",
+     "last_event": {
+      "event": "BOS",
+      "direction": "BULLISH",
+      "level": 24179.12
+     }
+    },
+    "support": {
+     "low": 24170.93,
+     "high": 24171.49,
+     "source": "prev_day_high"
+    },
+    "resistance": {
+     "low": 24200.67,
+     "high": 24249.12,
+     "source": "pivot_R1"
+    },
+    "atr_pct": 0.147,
+    "volatile": false,
+    "bias": "BULLISH",
+    "bias_score": 2,
+    "bias_reasons": [
+     "structure makes higher highs and higher lows",
+     "today is up and price holds above VWAP"
+    ],
+    "regime_text": "sideways range",
+    "higher_regime_text": "sideways range"
+   },
+   "recommended": {
+    "strategy_id": "rsi_adx_momentum_5m",
+    "name": "RSI + ADX Momentum Scalper",
+    "family": "momentum",
+    "timeframes": [
+     "5min"
+    ],
+    "description": "Momentum bursts: RSI strength confirmed by a rising ADX on 5-minute candles.",
+    "regime_fit": 0.5,
+    "score": 0.98,
+    "evidence": {
+     "tested": true,
+     "total_trades": 9,
+     "win_rate": 55.56,
+     "net_pnl": -115.79,
+     "profit_factor": 0.98,
+     "text": "9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk)"
+    },
+    "last_signal": {
+     "symbol": "NIFTY 50",
+     "strategy_id": "rsi_adx_momentum_5m",
+     "strategy_name": "RSI + ADX Momentum Scalper",
+     "direction": "NO_TRADE",
+     "timestamp": "2026-10-09T09:55:00Z",
+     "entry": null,
+     "stop_loss": null,
+     "target1": null,
+     "target2": null,
+     "risk_reward": null,
+     "score": 0,
+     "grade": "No Trade",
+     "reasons": [
+      "No aligned RSI/DI/ADX momentum setup"
+     ],
+     "timeframe_combo": "5min"
+    }
+   },
+   "alternatives": [
+    {
+     "strategy_id": "bb_rsi_reversion_5m",
+     "name": "Bollinger + RSI Reversion",
+     "family": "reversion",
+     "timeframes": [
+      "5min"
+     ],
+     "description": "Fades stretched moves: outside the Bollinger band with RSI extreme, back to the mean.",
+     "regime_fit": 3.0,
+     "score": 5.75,
+     "evidence": {
+      "tested": true,
+      "total_trades": 3,
+      "win_rate": 33.33,
+      "net_pnl": -695.91,
+      "profit_factor": 0.74,
+      "text": "only 3 trade(s) on recent candles - too few to judge"
+     },
+     "last_signal": {
+      "symbol": "NIFTY 50",
+      "strategy_id": "bb_rsi_reversion_5m",
+      "strategy_name": "Bollinger + RSI Reversion",
+      "direction": "NO_TRADE",
+      "timestamp": "2026-10-09T09:55:00Z",
+      "entry": null,
+      "stop_loss": null,
+      "target1": null,
+      "target2": null,
+      "risk_reward": null,
+      "score": 0,
+      "grade": "No Trade",
+      "reasons": [
+       "No re-entry into the Bollinger band after an RSI extreme"
+      ],
+      "timeframe_combo": "5min"
+     }
+    },
+    {
+     "strategy_id": "mtf_1m_15m_trend_pullback",
+     "name": "MTF Scalper 1m/15m",
+     "family": "trend",
+     "timeframes": [
+      "1min",
+      "15min"
+     ],
+     "description": "Follows the 15-minute trend, enters on a 1-minute pullback.",
+     "regime_fit": 0.0,
+     "score": 0.0,
+     "evidence": {
+      "tested": false,
+      "total_trades": 0,
+      "win_rate": 0.0,
+      "net_pnl": 0.0,
+      "profit_factor": null,
+      "text": "not tested - it fits this market less well"
+     },
+     "last_signal": null
+    }
+   ],
+   "ranking": [
+    {
+     "strategy_id": "bb_rsi_reversion_5m",
+     "name": "Bollinger + RSI Reversion",
+     "score": 5.75
+    },
+    {
+     "strategy_id": "rsi_adx_momentum_5m",
+     "name": "RSI + ADX Momentum Scalper",
+     "score": 0.98
+    },
+    {
+     "strategy_id": "mtf_1m_15m_trend_pullback",
+     "name": "MTF Scalper 1m/15m",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "ema_rsi_scalper_1m",
+     "name": "EMA + RSI Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "supertrend_adx_scalper_1m",
+     "name": "Supertrend + ADX Scalper",
+     "score": 0.0
+    },
+    {
+     "strategy_id": "mtf_1m_5m_trend_pullback",
+     "name": "MTF Scalper 1m/5m",
+     "score": -0.25
+    }
+   ],
+   "risk_config": {
+    "capital": 50000.0,
+    "risk_per_trade_pct": 0.5,
+    "max_daily_loss_pct": 1.0,
+    "max_trades_per_day": 8,
+    "max_open_positions": 2,
+    "max_consecutive_losses": 3,
+    "min_risk_reward": 1.5,
+    "lot_size": 1,
+    "max_portfolio_risk_pct": 1.5,
+    "stop_cooldown_minutes": 30,
+    "dd_level_1_pct": 5.0,
+    "dd_level_2_pct": 10.0,
+    "event_size_cut_pct": 50.0
+   },
+   "deployment": {
+    "strategy_id": "rsi_adx_momentum_5m",
+    "symbol": "NIFTY 50",
+    "exchange": "NSE",
+    "timeframe": "1min",
+    "mode": "PAPER",
+    "instrument_kind": "FUTURE",
+    "expiry_rule": "NEAREST",
+    "exit_rules": {
+     "break_even_at_r": 1.5,
+     "time_exit_at": "15:10"
+    },
+    "regime_filter": [
+     "TRENDING_UP",
+     "TRENDING_DOWN"
+    ],
+    "holding": "INTRADAY"
+   },
+   "sections": [
+    {
+     "id": "market",
+     "title": "Market view",
+     "title_mr": "Market चे विश्लेषण",
+     "lines": [
+      "Today: +0.46% from the open (up), price above VWAP 24,091.79.",
+      "Latest trend (30min): sideways range.",
+      "Current regime (5min): sideways range - ADX 19.8; EMA20 above EMA50.",
+      "Market structure: uptrend, last BOS bullish at 24,179.12.",
+      "Nearest support 24,170.93-24,171.49, resistance 24,200.67-24,249.12 (last price 24,190.91)."
+     ]
+    },
+    {
+     "id": "strategy",
+     "title": "Template (you choose)",
+     "title_mr": "Template (तुम्ही निवडा)",
+     "lines": [
+      "This template: RSI + ADX Momentum Scalper (momentum, 5min). A description of its rules, not a recommendation - you choose.",
+      "Momentum bursts: RSI strength confirmed by a rising ADX on 5-minute candles.",
+      "Backtest on these candles (sideways range regime): 9 trades on recent candles, win rate 56%, net ₹-116 (on ₹1 lakh at 1% risk).",
+      "Its rules enter only in these regimes: TRENDING_UP, TRENDING_DOWN - on other days it does not trade.",
+      "Other template: Bollinger + RSI Reversion - only 3 trade(s) on recent candles - too few to judge.",
+      "Other template: MTF Scalper 1m/15m - not tested - it fits this market less well."
+     ]
+    },
+    {
+     "id": "risk",
+     "title": "Risk management",
+     "title_mr": "Risk management",
+     "lines": [
+      "Risk per trade: 0.5% of trading capital = ₹250. The quantity is calculated from this and the stop distance - never chosen by feel.",
+      "Daily loss limit: 1% = ₹500 - then no new trades that day.",
+      "At most 8 trades a day, 2 open position(s) at a time, pause after 3 losses in a row.",
+      "After a stop-loss: 30 minutes cool-down on that symbol. Drawdown 5% halves the size; 10% pauses new entries.",
+      "Active option: up to 8 trades a day at 0.5% risk each, reward at least 1:1.5; the daily loss limit still stops the day."
+     ]
+    },
+    {
+     "id": "capital",
+     "title": "Capital in these settings",
+     "title_mr": "या settings मधले भांडवल",
+     "lines": [
+      "The risk settings are computed on a trading capital of ₹50,000 - the figure you entered. How much of your money to put to work is your decision; the platform does not advise on allocation.",
+      "Open risk across all positions stays under 1.5% of trading capital; NIFTY/BANK NIFTY/FIN NIFTY count as one bucket."
+     ]
+    },
+    {
+     "id": "rr",
+     "title": "Risk : reward and exits",
+     "title_mr": "Risk : reward आणि exit",
+     "lines": [
+      "Minimum reward:risk 1:1.5 - a trade that cannot make 1.5x its risk is skipped. Arithmetic: at 1:1.5 the break-even win rate before costs is 40%; brokerage, taxes and slippage raise it - judge the backtest's net figures, not this ratio.",
+      "Stop moves to cost once the trade is 1.5R in profit; it never moves against you.",
+      "Everything still open is closed at 15:10 - no overnight risk."
+     ]
+    },
+    {
+     "id": "contract",
+     "title": "What will be traded",
+     "title_mr": "काय trade होईल",
+     "lines": [
+      "NIFTY futures, nearest expiry",
+      "For your information: a futures lot carries the full lot value (price × lot size) as exposure, and the broker blocks margin of roughly 10-15% of it; gains and losses run on the whole lot value. At about 24,191, one lot's value is that price times the lot size. Buying an option is another way to trade the index - the loss is capped at the premium. The plan keeps futures, as you chose."
+     ]
+    },
+    {
+     "id": "checklist",
+     "title": "Checked before every trade",
+     "title_mr": "प्रत्येक trade आधी तपासले जाते",
+     "lines": [
+      "Trend and regime agree with the strategy (regime filter)",
+      "Stop-loss defined before entry, at least 1 ATR away",
+      "Reward at least 1.5x the risk",
+      "Size from risk %, never from feel; never averaging a loser",
+      "Daily loss limit and losing-streak pause respected",
+      "No entries on blocked event days (results, policy)"
+     ]
+    },
+    {
+     "id": "steps",
+     "title": "How it works if you choose",
+     "title_mr": "निवडल्यास पुढे काय होते",
+     "lines": [
+      "If you choose a template: read its rules and backtest above; the risk settings apply only when you press the button.",
+      "On this platform anything new runs in PAPER first - the worker trades it with no real money.",
+      "The PAPER record after 2 weeks or 30 trades shows win rate, average win vs loss and rule breaks.",
+      "LIVE is possible only through the Go-Live checklist; whether to go LIVE is your decision."
+     ]
+    }
+   ],
+   "warnings": [
+    "This read used SAMPLE candles. Switch Data to broker candles for the real market today.",
+    "This template does not fit today's regime well - its rules would produce few or no trades today.",
+    "On these candles this template lost money. Any template is judged on 30+ paper trades, not on one backtest."
+   ],
+   "ai_prompt": "I am a new trader. Capital for trading 50,000 INR (of 50,000); risk 0.5% per trade, daily loss limit 1%, at most 8 trades a day. Style: scalping. Instrument: NIFTY 50 via underlying. Goal: learn. Time: active. Market now: today +0.46% (up), price above VWAP; 5min regime RANGING, 30min regime RANGING; structure UPTREND; overall bias BULLISH; support 24170.93-24171.49; resistance 24200.67-24249.12. Build one rule-based strategy that fits this regime, with a stop at least 1 ATR away and reward:risk of at least 1:1.5. For reference, the template ranked first on these candles was RSI + ADX Momentum Scalper (ranking by regime fit and backtest evidence, not a recommendation).",
+   "disclaimer": "Educational decision support, not investment advice. Past results on these candles do not promise future profit. Paper-trade first.",
+   "option": {
+    "id": "active",
+    "label": "Active",
+    "summary": "More opportunities, same safety rules",
+    "label_mr": "सक्रिय",
+    "summary_mr": "जास्त संधी, सुरक्षेचे नियम तेच",
+    "regime_filter_open": false,
+    "headline": {
+     "strategy": "RSI + ADX Momentum Scalper",
+     "risk_pct": 0.5,
+     "trades_per_day": 8,
+     "min_rr": 1.5
+    }
+   },
+   "candidate_id": 156
+  }
+ ],
+ "best_option": null,
+ "preferences": {
+  "risk_bias": 0,
+  "trades_bias": 0,
+  "reward_bias": 0,
+  "simplicity": 0,
+  "rejected": [],
+  "chosen": [
+   {
+    "at": "2026-10-07T02:35:29.473141+00:00",
+    "option": "balanced",
+    "strategy_id": null
+   },
+   {
+    "at": "2026-10-08T06:31:57.735637+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T06:35:53.989735+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T06:37:50.735706+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T06:40:44.645369+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T07:15:55.527174+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T07:17:52.603488+00:00",
+    "option": "balanced",
+    "strategy_id": "mtf_1m_15m_trend_pullback"
+   },
+   {
+    "at": "2026-10-08T07:44:00.543323+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T07:46:08.525301+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T07:51:57.691776+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T07:55:22.248945+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T07:57:22.354579+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T08:35:40.237593+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T08:37:53.033618+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   },
+   {
+    "at": "2026-10-08T08:39:59.664264+00:00",
+    "option": "balanced",
+    "strategy_id": "bb_rsi_reversion_5m"
+   }
+  ],
+  "feedback_log": [],
+  "match_history": []
+ },
+ "feedback_options": [
+  {
+   "code": "too_risky",
+   "en": "Too risky for me",
+   "mr": "मला risk जास्त वाटतो"
+  },
+  {
+   "code": "more_risk_ok",
+   "en": "I can take a little more risk",
+   "mr": "थोडा जास्त risk चालेल"
+  },
+  {
+   "code": "too_many_trades",
+   "en": "Too many trades",
+   "mr": "खूप trades होतील"
+  },
+  {
+   "code": "too_few_trades",
+   "en": "Too few opportunities",
+   "mr": "संधी खूप कमी"
+  },
+  {
+   "code": "low_reward",
+   "en": "Reward is too small",
+   "mr": "नफा कमी वाटतो"
+  },
+  {
+   "code": "not_understood",
+   "en": "I don't understand this strategy",
+   "mr": "ही strategy समजली नाही"
+  },
+  {
+   "code": "want_swing",
+   "en": "I want swing - hold for days",
+   "mr": "मला swing हवे - काही दिवस धरायचे"
+  },
+  {
+   "code": "no_time",
+   "en": "I don't have time to watch",
+   "mr": "पाहायला वेळ नाही"
+  },
+  {
+   "code": "dislike_strategy",
+   "en": "Not this strategy",
+   "mr": "ही strategy नको"
+  }
+ ],
+ "desired": {
+  "risk_pct": 0.5,
+  "trades": 6,
+  "rr": 1.5
+ },
+ "candidate_id": 155
+}

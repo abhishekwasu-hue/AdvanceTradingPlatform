@@ -314,7 +314,8 @@ async def mark_price(
     # LIVE positions are squared off at the broker inside close_position (using the deployment's
     # broker session); a LIVE trade with no usable session stays open and the 409 says so.
     broker = await broker_for_trade(session, trade)
-    outcome = await close_position(session, trade, exit_price, reason, broker=broker, user_id=user.id)
+    outcome = await close_position(session, trade, exit_price, reason, broker=broker, user_id=user.id,
+                                   underlying_price=request.underlying_price)
     if not outcome.closed:
         raise HTTPException(status_code=409, detail="; ".join(outcome.warnings) or "Position could not be closed")
     return MarkPriceResponse(closed=True, exit_reason=reason, exit_price=outcome.exit_price, pnl=outcome.pnl)

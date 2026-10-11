@@ -35,6 +35,7 @@ def _platform_state_reset_per_module():
     from sqlalchemy import delete
 
     from app.db.models import MarketEventRecord
+    from app.journal import capture
     from app.platform import controls
     from tests.test_auth_api import _session_factory
 
@@ -47,4 +48,5 @@ def _platform_state_reset_per_module():
         asyncio.run(reset())
     except Exception:  # noqa: BLE001 - a module that never touched the database has nothing to reset
         pass
+    capture.reset_flag_cache()   # Z6: the journal hooks cache the flags they just saw reset
 

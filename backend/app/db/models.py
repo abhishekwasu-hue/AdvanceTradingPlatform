@@ -1982,3 +1982,65 @@ class SymbolHistoryRecord(Base):
     source: Mapped[str] = mapped_column(String(40), nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexRecord(Base):
+    """U1-b: one index (broad / sectoral / thematic / strategy). The catalogue is data (app/universe/data/indices.json);
+    `broker_symbols` maps the index to each broker's spelling (JSON object)."""
+
+    __tablename__ = "indices"
+
+    index_code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    family: Mapped[str] = mapped_column(String(20), nullable=False)          # BROAD / SECTORAL / THEMATIC / STRATEGY / FIXED_INCOME
+    base_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    method: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    broker_symbols: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    has_derivatives: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class IndexMembershipRecord(Base):
+    """U1-b: an ISIN's membership of an index as a half-open range [valid_from, valid_to). A rebalance closes ranges and
+    opens new ones; nothing is overwritten. `start_observed` = the start is only the first file we saw it in (the real
+    inclusion may be earlier - backfill U1-e extends it from older files, never by guessing). `weight` is the latest
+    published weight, not a history."""
+
+    __tablename__ = "index_membership"
+    __table_args__ = (UniqueConstraint("index_code", "isin", "valid_from", name="uq_index_membership_range"),
+                      Index("ix_index_membership_lookup", "index_code", "valid_from", "valid_to"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    index_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ClassificationRecord(Base):
+    """U1-b: an ISIN's industry classification over time (scheme NSE: macro-economic sector -> sector -> industry ->
+    basic industry). A level the source does not give stays NULL - never inferred."""
+
+    __tablename__ = "classifications"
+    __table_args__ = (UniqueConstraint("isin", "scheme", "valid_from", name="uq_classification_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    scheme: Mapped[str] = mapped_column(String(12), nullable=False, default="NSE")
+    macro_sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    basic_industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    start_observed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -374,6 +374,10 @@ class TradingWorker:
                         from app.universe.sync import sync_equity_lists
                         u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
                         report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
+                        from app.universe import indices as universe_indices                     # U1-b: constituents after the list
+                        idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
+                        report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
+                                                      indices_refused=sum(1 for r in idx if r.refused))
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")

@@ -289,6 +289,8 @@ LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower()
 UNIVERSE_SYNC_ENABLED = os.environ.get("UNIVERSE_SYNC_ENABLED", "false").lower() in ("1", "true", "yes")
 UNIVERSE_SYNC_HOUR_IST = int(os.environ.get("UNIVERSE_SYNC_HOUR_IST", "18") or 18)
 UNIVERSE_MIN_ROWS_RATIO = float(os.environ.get("UNIVERSE_MIN_ROWS_RATIO", "0.9") or 0.9)
+# U1-b: an index file that would change more than this share of the members held in one day is refused for review.
+UNIVERSE_MAX_CHURN_RATIO = float(os.environ.get("UNIVERSE_MAX_CHURN_RATIO", "0.2") or 0.2)
 UNIVERSE_USER_AGENT = os.environ.get("UNIVERSE_USER_AGENT", "Mozilla/5.0 (compatible; ATP-reference-sync/1.0)")
 _UNIVERSE_FILE_URLS_DEFAULT = {
     "equity_list": "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",

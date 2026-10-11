@@ -124,6 +124,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill (CLI), the nightly EOD fetch (worker) and
     # the admin's manual file / corporate-action / holiday uploads. OFF: all of them refuse and nothing contacts NSE.
     "history_backfill": "Daily NSE bhavcopy backfill and nightly EOD fetch into the shared lake (cash, indices, F&O futures)",
+    # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
+    # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
+    # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
+    "approval_only_entries": "Approval-only entries: automatic entries become proposals; Approve places a PAPER order at a re-quoted price",
     # U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library taxonomy (method x setup) and the gallery
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
@@ -132,7 +136,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "screener_gallery"})
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

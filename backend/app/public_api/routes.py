@@ -6,6 +6,7 @@ deployments). Every endpoint is tenant-scoped from the key, rate-limited per key
 against the plan, and answers with plain JSON. `GET /api/public/v1/docs` is the developer
 portal's machine-readable page (scopes, endpoints, limits, error codes, idempotency).
 """
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -176,6 +177,15 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
     signal = Signal(symbol=body.symbol.upper(), strategy_id=body.strategy_id, strategy_name=body.strategy_id, direction=body.direction,
                     timestamp=datetime.now(timezone.utc), entry=body.entry, stop_loss=body.stop_loss, target1=body.target1, target2=body.target2,
                     risk_reward=rr, score=50, grade=SignalGrade.VALID, reasons=[f"public API key {p.key.name}"], timeframe_combo="external")
+    from app.execution import approval
+    if await approval.required(session, p.tenant.id):
+        # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; the PAPER order waits for Approve in the app.
+        key = f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else f"api:{p.key.id}:{uuid.uuid4().hex}"
+        row = await approval.propose_entry(session, p.tenant.id, signal=signal, strategy_id=body.strategy_id, source="public_api",
+                                           idempotency_key=key, requested_mode=body.mode, user_id=p.user.id)
+        return {"order_id": None, "status": "PROPOSED" if row is not None else "DUPLICATE", "executed": False, "trade_id": None,
+                "proposal_id": row.id if row is not None else None,
+                "reasons": ["Approval-only mode: the signal was raised as an entry proposal - approve it to place the PAPER order"]}
     result, order = await execute_signal_for_user(session, p.user, mode=body.mode, strategy_id=body.strategy_id, signal=signal,
                                                   idempotency_key=f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else None,
                                                   journal_source="API")   # Z6: the journal says where the trade came from

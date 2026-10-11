@@ -151,6 +151,99 @@ def test_build_refuses_holes_unexplained_drops_and_shrinking():
             ne.check_against(Path(tmp), rows[1:], meta)
 
 
+def test_a_403_refuses_the_build_and_is_never_cached_as_no_file(monkeypatch, tmp_path):
+    """ATP review 5: a 403 is a block, not a holiday - the run refuses (exit 2, nothing written) and the cache keeps
+    no 'no file' marker for it; a 404 on an old day is cached, on a day that may be unpublished yet it is not."""
+    import io
+    import urllib.error
+
+    def answer(code):
+        def urlopen(req, timeout=60):
+            raise urllib.error.HTTPError(req.full_url, code, "x", {}, io.BytesIO(b""))
+        return urlopen
+    old, recent = D("2024-01-02"), dt.date.today() - dt.timedelta(days=1)
+    while recent.weekday() >= 5:
+        recent -= dt.timedelta(days=1)
+    archive = ne.Archive(tmp_path / "cache", pause=0, retries=1)
+    monkeypatch.setattr(ne.urllib.request, "urlopen", answer(403))
+    assert archive.day(old) is None and archive.forbidden == 1           # one refused day (both file names 403)
+    assert not list((tmp_path / "cache").iterdir())                       # nothing remembered for a refused day
+    # a 403 on one file name while the other answers is not a refusal
+    import gzip as _gz
+    import zipfile as _zf
+    buf = io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        z.writestr("x.csv", legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")))
+    blob = buf.getvalue()
+
+    def mixed(req, timeout=60):
+        if "BhavCopy_NSE_FO" in req.full_url:
+            raise urllib.error.HTTPError(req.full_url, 403, "x", {}, io.BytesIO(b""))
+
+        class R:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return blob
+        return R()
+    monkeypatch.setattr(ne.urllib.request, "urlopen", mixed)
+    fresh = ne.Archive(tmp_path / "cache2", pause=0, retries=1)
+    assert fresh.day(D("2024-01-03")) and fresh.forbidden == 0
+    assert _gz.decompress((tmp_path / "cache2" / "20240103.csv.gz").read_bytes()).decode().startswith("INSTRUMENT")  # cached gzipped
+    monkeypatch.setattr(ne.urllib.request, "urlopen", answer(404))
+    assert archive.day(old) is None and (tmp_path / "cache" / "20240102.none").exists()
+    assert archive.day(recent) is None and not (tmp_path / "cache" / f"{recent:%Y%m%d}.none").exists()
+
+    # main(): any 403 left after the retries refuses the run, even when the guards would have passed
+    good = {D("2024-01-02"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-03"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-08"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-15"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024"))}
+
+    class Blocked(ne.Archive):
+        """Every week still has a file (the guards pass), but one read was refused with a 403."""
+        def day(self, d):
+            if d == D("2024-01-15"):
+                self.forbidden += 1
+            return good.get(d)
+    monkeypatch.setattr(ne, "Archive", Blocked)
+    out = tmp_path / "out"
+    assert ne.main(["--start", "2024-01-01", "--end", "2024-01-16", "--out", str(out), "--workers", "1"]) == 2
+    assert not out.exists()
+
+
+def test_check_against_compares_from_the_new_start_and_older_rows_are_kept(tmp_path):
+    """ATP review 6: a run from a later --start is compared only on the expiries it read, and keeps the committed rows
+    before its start (and a contract's earlier first-seen day)."""
+    full = {D("2024-01-02"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-03"): legacy(("OPTIDX", "BANKNIFTY", "03-Jan-2024"), ("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-08"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-15"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-22"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-25"): legacy(("FUTIDX", "BANKNIFTY", "25-Jan-2024")),
+            D("2024-01-29"): legacy(("FUTIDX", "BANKNIFTY", "29-Feb-2024"))}
+    rows, meta = ne.build(D("2024-01-01"), D("2024-01-30"), full.get, workers=1)
+    ne.write(rows, meta, tmp_path)
+    assert [r["expiry"] for r in rows if r["symbol"] == "BANKNIFTY"][:2] == ["2024-01-03", "2024-01-25"]
+    later, later_meta = ne.build(D("2024-01-08"), D("2024-01-30"), full.get, workers=1)
+    assert "2024-01-03" not in {r["expiry"] for r in later}                 # this run never read the 3 Jan expiry
+    with pytest.raises(ne.BuildRefused, match="fewer"):
+        ne.check_against(tmp_path, later, later_meta)                    # old rule: counts years it never read
+    ne.check_against(tmp_path, later, later_meta, D("2024-01-08"))      # compared from its own start: passes
+    merged = ne.merge_previous(tmp_path, later, later_meta, D("2024-01-08"))
+    assert [(r["expiry"], r["first_seen"]) for r in merged if r["symbol"] == "BANKNIFTY"][:2] == \
+        [("2024-01-03", "2024-01-02"), ("2024-01-25", "2024-01-02")]     # kept, and the earlier first-seen day
+    assert later_meta["coverage_start"] == meta["coverage_start"] and later_meta["rows"] == len(merged)
+    assert "this run's range only" in later_meta["note"]
+    # a start that leaves a gap after the committed coverage end would claim coverage never read: refused
+    with pytest.raises(ne.BuildRefused, match="gap"):
+        ne.merge_previous(tmp_path, later, dict(later_meta, coverage_start="2024-03-04"), D("2024-03-01"))
+
+
 # --- part 2: the committed data and the backtest calendar ----------------------------------------------------------------
 def _rows(symbol):
     rows = expiry_data.listed(symbol)
@@ -249,10 +342,15 @@ def test_no_weekday_rule_is_left_for_banknifty_and_outside_the_data_is_an_error(
     cal = ExpiryCalendar.for_underlying("BANKNIFTY")
     with pytest.raises(expiry_data.ExpiryDataMissing):
         cal.expiries(start - dt.timedelta(days=1))
-    # after the last file read: only what was listed by then, nothing invented; none left -> no expiry for that bar
-    later = end + dt.timedelta(days=10)
+    # after the last file read, within the grace: only what was listed by then, nothing invented
+    later = end + dt.timedelta(days=expiry_data.STALE_GRACE_DAYS)
     assert cal.expiries(later, 3) == [e for e, _, seen in _bank() if e >= later][:3]
-    assert cal.expiries(D("2099-01-01")) == [] and cal.select(ExpiryRule.NEAREST, D("2099-01-01")) is None
+    # past the grace the file is stale: an error, never a silent "no expiry" (the backtest skips and counts the bar)
+    for day in (later + dt.timedelta(days=1), D("2099-01-01")):
+        with pytest.raises(expiry_data.ExpiryDataStale):
+            cal.expiries(day)
+        with pytest.raises(expiry_data.ExpiryDataStale):
+            cal.select(ExpiryRule.NEAREST, day)
     # the far leg is chosen as listed on the bar day, also when the near expiry lies past the last file read
     near = cal.select(ExpiryRule.NEAREST, end)
     assert cal.far_expiry(near, as_of=end) == next(e for e, _, seen in _bank() if e > near and seen <= end)
@@ -265,3 +363,28 @@ def test_no_weekday_rule_is_left_for_banknifty_and_outside_the_data_is_an_error(
     assert book.source == "listed" and len(book.items) == len(_bank())
     # an explicit weekday still pins a synthetic calendar (a what-if run)
     assert ExpiryCalendar.for_underlying("BANKNIFTY", weekday=3).data_symbol is None
+
+
+def test_an_unreadable_grace_setting_never_breaks_the_import():
+    assert expiry_data._grace_days("abc") == 10 and expiry_data._grace_days("-3") == 10 and expiry_data._grace_days("4") == 4
+
+
+def test_refresh_workflow_starts_ci_first_never_fails_on_the_pr_and_caches_bhavcopies():
+    """ATP review 3 + 7: CI is dispatched on the data branch before the pull request is opened; a pull request Actions
+    may not open is a warning (and run summary), not a failed run; the bhavcopy download directory is cached."""
+    from pathlib import Path
+
+    import yaml
+    root = Path(__file__).resolve().parents[2]
+    steps = yaml.safe_load((root / ".github/workflows/nse-expiries.yml").read_text())["jobs"]["build"]["steps"]
+    names = [s.get("name", s.get("uses", "")) for s in steps]
+    ci, pr = names.index("Start CI on the data branch"), names.index("Open the refresh pull request")
+    assert ci < pr and "gh workflow run ci.yml --ref data/nse-expiries" in steps[ci]["run"]
+    assert "gh workflow run" not in steps[pr]["run"] and "exit 1" not in steps[pr]["run"]
+    assert "if ! gh workflow run" in steps[ci]["run"]                    # a refused dispatch never skips the PR step
+    assert "::warning" in steps[pr]["run"] and "GITHUB_STEP_SUMMARY" in steps[pr]["run"]
+    cache = next(s for s in steps if s.get("uses", "").startswith("actions/cache@"))
+    assert len(cache["uses"].split("@")[1]) == 40                         # pinned to a commit (P0.7)
+    assert cache["with"]["path"] == "${{ runner.temp }}/bhav"
+    build = next(s for s in steps if s.get("name") == "Read the bhavcopies and build the expiry file")
+    assert names.index(cache.get("name", "")) < names.index(build["name"]) and '--cache "$RUNNER_TEMP/bhav"' in build["run"]

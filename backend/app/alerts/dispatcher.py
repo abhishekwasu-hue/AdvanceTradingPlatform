@@ -482,20 +482,21 @@ async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: date
     PENDING) or "lost" (its lease ran out on the last attempt: DEAD, reason worker_lost). One conditional UPDATE each, so
     of two workers racing for a row exactly one wins. The attempt is counted here, so a send that kills its worker still
     uses up an attempt and a poison row cannot loop for ever."""
+    delivery_id = delivery.id
     free = or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= now)
     values: Dict[str, Any] = {"lease_until": now + timedelta(seconds=LEASE_SECONDS), "claimed_by": WORKER_ID, "attempts": AlertDeliveryRecord.attempts + 1}
     if delivery.idem_key is None:                          # a row queued before the flag: keyed on its first claim
         values["idem_key"] = delivery_key(delivery.notification_id, delivery.channel_id, delivery.address)
     claim = (update(AlertDeliveryRecord)
-             .where(AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
+             .where(AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
                     AlertDeliveryRecord.attempts < MAX_ATTEMPTS)
              .values(**values).execution_options(synchronize_session=False))
     try:
-        mine = await session.execute(claim)
+        async with session.begin_nested():                 # a failed claim rolls back to here only: the drain's rows stay loaded
+            mine = await session.execute(claim)
     except IntegrityError:                                 # another row already holds this delivery's key: a duplicate
-        await session.rollback()
         await session.execute(update(AlertDeliveryRecord).where(
-            AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value)
+            AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value)
             .values(status=AlertDeliveryStatus.SUPPRESSED.value, reason_code="duplicate", lease_until=None,
                     last_error="The same delivery is already queued (same notification, channel and address)")
             .execution_options(synchronize_session=False))
@@ -506,7 +507,7 @@ async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: date
     if state == "taken":
         lost = await session.execute(
             update(AlertDeliveryRecord)
-            .where(AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
+            .where(AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
                    AlertDeliveryRecord.attempts >= MAX_ATTEMPTS)
             .values(status=AlertDeliveryStatus.DEAD.value, reason_code="worker_lost", lease_until=None,
                     last_error="The worker sending the last attempt stopped before it finished; it may or may not have arrived")

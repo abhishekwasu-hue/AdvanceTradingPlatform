@@ -3,7 +3,7 @@
 Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order:
 - P1-a: the core port (this);
 - P1-b: T+0 / IV / time, PoP, templates, selectors UI;
-- P1-c: builder UI and basket.
+- P1-c: builder API (P1-c1) and builder UI (P1-c2); the basket to the order ticket is P1-d.
 
 ## P1-a (built): the core port
 - **Where.** `backend/app/options_builder/`, ported from Trade@73f652c:
@@ -116,6 +116,45 @@ Spec: `docs/specs/ATP_PROFITABILITY_MANUAL_TRADING_OSB_SPEC.md` §3. Build order
   - FUT carry by hand; no volatility; the zero tolerance; key precision; IV read both ways against the LTP.
   - The adapter's PoP for a short leg, and the selectors on an adapted chain.
   - Mutation checks: 20 / 20 killed.
+
+## P1-c1 (built): the builder API
+`app/options_builder/routes.py`, under the `options_builder` flag. It is a kill flag, on by default, because the
+builder is research only. Every endpoint needs a login, and none places, stages or sizes an order. A test walks every
+module's syntax tree: the package imports only an allowlist of `app.*` modules (the option-chain maths, the broker
+`OptionChain` data shape, config, rate limit, auth, the session and the flag), uses no dynamic import, and never names
+an order call. A second test imports the routes in a fresh interpreter and checks that no execution, trading, risk,
+deployment, kill-switch or broker-adapter module was loaded, even indirectly.
+- **Limits** (from the P1-c reviews). The flag is checked before the body is validated, so a switched-off builder
+  answers 503 to any well-formed JSON (malformed JSON is still a 422 from the framework's parser). Template, evaluate
+  and suggest share a limit of 300 calls a minute per user. The model work runs
+  in the thread pool, not on the event loop. Prices, strikes and the spot must be finite, positive and below 10^7. A
+  template whose width puts a strike at or below zero is a 422. A chain is read up to 1,000 strikes.
+- `GET /api/options-builder/catalog`: the 38 templates by family, with their legs as offsets and whether a template
+  needs two expiries.
+- `POST /api/options-builder/template`: the legs of a template at an ATM strike, width, expiries and lot count, all
+  given by the caller (the instrument master on the page). A calendar without its next expiry is a 422.
+- `POST /api/options-builder/evaluate` takes legs (direction, type, strike, premium, lots, lot size, expiry, IV
+  optional) plus spot, `as_of`, `days_forward`, `iv_shift`, the range and the number of points. It returns:
+  - the price grid, today's curve, the curve on the chosen date, and the expiry payoff;
+  - exact extremes, with `null` plus a flag for unbounded (JSON has no infinity);
+  - profitable intervals, breakevens, and the summary (PoP, expected move, probability-weighted P&L, `method`);
+  - net and per-leg Greeks;
+  - a disclaimer.
+
+  Details:
+  - A leg without an IV has it solved from its premium at the caller's `rate` (`iv_source` says so), so repricing at
+    that rate gives the premium back; with neither, it is a 422.
+  - `as_of` is a plain date (that day's close) or a datetime with its time zone. A naive datetime is refused, never
+    guessed.
+  - Legs with different expiries get no expiry payoff or extremes (`null`); their summary is numerical.
+- `POST /api/options-builder/suggest`: a ported selector rule (iron condor, iron butterfly, credit spread by PoP /
+  fixed / ITM, naked ITM) on a broker `OptionChain` through the adapter. It returns the rule, the ATM used, how PoP
+  was made, and the result or `found: false`. Rules that need a direction refuse to run without one.
+- Tests (`tests/test_p1c_options_builder_api.py`, 11): auth and the flag (also before the body); catalog and
+  template; model pricing; evaluate against the model functions; unbounded and calendar handling; IV solved or
+  refused, at the given rate, and the clock rules; suggest; bad numbers refused (negative wing, negative spot, zero
+  strike, Infinity, an oversized chain); the no-order-path check. Each new test was checked against a mutant of the
+  code it guards.
 
 ## Open questions (provisional answers taken)
 - **OB-1. The PoP definition.** The selectors use the broker's `option_greeks.pop`, Upstox's. Other brokers may not

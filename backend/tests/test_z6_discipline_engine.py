@@ -533,3 +533,31 @@ def test_migration_chains_into_a_single_head():
     text = Path(rev.path).read_text()
     for table in ("journal_entries", "journal_tags", "journal_settings"):
         assert f"'{table}'" in text
+
+
+# --- journal source from the webhook and the public API ---------------------------------------------------------------
+
+def test_webhook_and_public_api_pass_their_journal_source(monkeypatch):
+    from app.execution import signal_execution
+    from app.public_api.keys import limiter
+    from tests.test_phase_k_commercial import _owner
+    from tests.test_tradingview_webhook import _alert, _get_token
+    seen = []
+    original = signal_execution.persist_trade
+
+    async def recording(*args, **kwargs):
+        seen.append(kwargs.get("journal_source"))
+        return await original(*args, **kwargs)
+    monkeypatch.setattr(signal_execution, "persist_trade", recording)
+
+    token, _, _ = _run(_register_user_and_get_id("z6-source-webhook@example.com"))
+    hook = _get_token(_h(token))
+    assert client.post(f"/api/webhooks/tradingview/{hook}", json=_alert()).json()["executed"] is True
+
+    limiter.reset()
+    headers, _ = _owner("z6-source-api@example.com", plan="business")
+    key = client.post("/api/api-keys", headers=headers, json={"name": "z6", "scopes": ["write:signals"]}).json()["key"]
+    body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "reliance", "direction": "LONG", "entry": 2500, "stop_loss": 2490, "target1": 2520}
+    assert client.post("/api/public/v1/signals", headers={"X-API-Key": key}, json=body).status_code == 201
+    assert seen == ["WEBHOOK", "API"]
+    assert "API" in capture.SOURCES and "WEBHOOK" in capture.SOURCES

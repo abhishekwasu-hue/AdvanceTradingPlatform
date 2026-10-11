@@ -13,6 +13,7 @@ import { useCostEstimate } from "../cost";
 import { useCopilotT } from "../i18n";
 import CandidateCard from "./lab/CandidateCard";
 import DraftsPanel from "./lab/DraftsPanel";
+import ResearchPanel from "./lab/ResearchPanel";
 import StudyView from "./lab/StudyView";
 import { Panel, Stagger, StaggerItem } from "./shared";
 
@@ -169,6 +170,7 @@ export default function StrategyLabTab() {
       )}
 
       <DraftsPanel source={source} symbol={symbol} />
+      <ResearchPanel symbol={symbol} />
       <RegimeCheck source={source} symbol={symbol} />
     </div>
   );

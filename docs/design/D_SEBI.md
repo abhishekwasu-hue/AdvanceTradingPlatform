@@ -81,11 +81,11 @@ configured pre-open time when a LIVE deployment's token will not last the sessio
 ## Status
 | # | Item | Status |
 |---|---|---|
-| D1 | algo id format + threshold + audit | partly exists; gap planned (PR 5) |
+| D1 | algo id format + threshold + audit | done: `app/compliance/algo_id.py` (per-broker format, generic vs registered id, `algo_order` audit rows) |
 | D2 | OPS throttle, exits first, 429 back-off | planned (PR 2) |
 | D3 | order-type policy per broker | planned (PR 3) |
 | D4 | static IP model + UI + checklist | runbook only; model planned (PR 4) |
-| D5 | generic daily login + reminder | partly exists; planned (PR 5) |
+| D5 | generic daily login + reminder | done: `app/brokers/login_reminder.py` (login method per broker, pre-open reminder from the worker) |
 | D6 | go-live checklist items | partly exists; planned (PR 6) |
 | D7 | FutEq / MWPL, expiry-day margin, lot as-of | needs part B data; planned (PR 6) |
 | D8 | COMPLIANCE_IN.md + tests | skeleton in PR 1 |

@@ -187,6 +187,11 @@ Every trading morning, before 09:15 IST:
    take no entries and PAPER ones have no candles - each deployment's row on the Autopilot tab
    says exactly that in its Note column, and a `TOKEN_EXPIRED` CRITICAL notification is raised
    once. Nothing needs to be resumed afterwards: deployments pick up on the next cycle.
+   **Pre-open reminder (D5, rule IN-SEBI.login.daily):** on NSE trading days, from
+   `reminder_minutes_before_open` before 09:15 (rule-set data, default 30), every organisation with an
+   ACTIVE deployment whose broker session will not last until the close gets one WARNING
+   ("Log in to <broker> before the open") naming how that broker logs in (OAuth / login code / paste
+   token). Once per organisation per day, also across a worker restart; API-key venues are skipped.
 1a. **Instrument master.** The worker downloads Upstox's public instrument master once a day from
    08:00 IST (`INSTRUMENT_SYNC_EXCHANGES`, default NSE). `GET /api/instrument-master/status`
    shows what is loaded and when; if it is stale on an F&O trading day (a download failure is on

@@ -1,6 +1,7 @@
 # Prometheus alerting rules for the SLOs in docs/SLO.md (Phase G2).
 # Load with `rule_files: [prometheus-alerts.yml]`; scrape backend:8000/metrics and worker:9102/metrics.
-# Every rule names the SLO it protects; thresholds are the SLO's own numbers.
+# Every rule names the SLO it protects; thresholds are the SLO's own numbers. `runbook` points to the on-call page
+# (docs/OPERATIONS.md 1.9, Z10-e); rollback is 1.9.5.
 groups:
   - name: atp-trading-engine
     rules:
@@ -10,7 +11,7 @@ groups:
         labels: {severity: critical, slo: "SLO-2 engine liveness"}
         annotations:
           summary: "Trading worker heartbeat is {{ $value }}s old"
-          runbook: "docs/OPERATIONS.md#17-trading-worker-runbook"
+          runbook: "docs/OPERATIONS.md#192-worker-stale"
 
       - alert: TradingWorkerNeverSeen
         expr: atp_worker_heartbeat_age_seconds == -1
@@ -18,6 +19,7 @@ groups:
         labels: {severity: critical, slo: "SLO-2 engine liveness"}
         annotations:
           summary: "No trading worker heartbeat has ever been written"
+          runbook: "docs/OPERATIONS.md#192-worker-stale"
 
       - alert: WorkerCycleOverBudget
         expr: histogram_quantile(0.99, sum(rate(atp_worker_cycle_duration_seconds_bucket[15m])) by (le)) > 60
@@ -31,6 +33,7 @@ groups:
         labels: {severity: critical, slo: "SLO-4 market-data freshness"}
         annotations:
           summary: "Signals/exits are being refused on stale market data ({{ $value }} in 10m)"
+          runbook: "docs/OPERATIONS.md#191-data-stale"
 
       - alert: WorkerLockLost
         expr: increase(atp_worker_lock_lost_total[10m]) > 0
@@ -68,6 +71,7 @@ groups:
         labels: {severity: critical, slo: "SLO-5 broker health"}
         annotations:
           summary: "Circuit breaker OPEN for broker {{ $labels.broker }} - new LIVE entries paused"
+          runbook: "docs/OPERATIONS.md#194-broker-down"
 
       - alert: LiveOrdersFailing
         expr: increase(atp_orders_total{mode="LIVE",status="FAILED"}[15m]) > 0
@@ -113,12 +117,14 @@ groups:
         labels: {severity: warning, slo: "SLO-8 alert delivery"}
         annotations:
           summary: "{{ $value }} out-of-app alerts waiting to be delivered"
+          runbook: "docs/OPERATIONS.md#193-outbox-backlog"
 
       - alert: AlertDeliveriesFailing
         expr: increase(atp_alert_deliveries_total{status="FAILED"}[1h]) > 0
         labels: {severity: warning, slo: "SLO-8 alert delivery"}
         annotations:
           summary: "Telegram/email alert deliveries are failing"
+          runbook: "docs/OPERATIONS.md#193-outbox-backlog"
 
       - alert: CredentialStuffing
         expr: atp_login_failures_15m > 50

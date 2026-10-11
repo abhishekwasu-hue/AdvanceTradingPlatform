@@ -1282,6 +1282,122 @@ standby replica is safe only with Redis providing the cycle lock. The database i
 replication (a managed Postgres offering's standard multi-AZ/read-replica feature) before this
 claim extends to the data layer too.
 
+### 1.9 On-call runbooks and the status page (Z10-e, G7)
+
+One page per alert. Each says what fired, what the platform already does on its own, what to check and what to do.
+Server commands come from the Z11 deploy runbook, [`docs/deploy/HOSTINGER_RUNBOOK.md`](deploy/HOSTINGER_RUNBOOK.md)
+(PR #186; its section 1 lists every `deploy/atp.sh` command). They are linked here, not repeated. Until #186 is
+merged, the older `deploy/hostinger/status.sh` and `rollback.sh` blocks still work (`docs/DEPLOY_HOSTINGER_MR.md`).
+
+Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits are never gated (ADR-0004).
+
+**Where to look first**
+
+| Source | Who | What it shows |
+|---|---|---|
+| `/status` (`GET /api/status`) | anyone, no login; flag `public_status_page`, off by default | API, trading engine, market data (EOD date, NSE open, number of live sessions through users' own brokers), alert delivery lag, maintenance and incident banner. States and short sentences only. |
+| `GET /api/system/health/deep`, `/health/dependencies` | operator (unauthenticated, no secrets) | database, migrations, worker heartbeat, Redis, broker circuits, broker-uncertain organisations |
+| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)) |
+| Prometheus rules `scripts/monitoring/prometheus-alerts.yml` | operator | each rule's `runbook` annotation points to a page below |
+| Admin console | SUPER_ADMIN | incidents, maintenance mode, flags, beta rollout stage |
+
+**The public status page.** Turn it on in Admin > Feature flags (`public_status_page`). It reads only the probes above
+and `app/incidents`; it shows no error text, version, host, latency, user or organisation. Incidents scoped to one
+organisation are left out. A platform-wide incident shows as "Incident" (WARNING) or "Major incident" (CRITICAL,
+EMERGENCY), "investigating" (OPEN) or "monitoring" (MITIGATED), and its start time; its title and summary stay in the
+admin console. The answer is cached for 15 seconds and rate-limited to 60 calls per minute per IP. While the database
+does not answer, the endpoint answers 503 with an outage body (the flag cannot be read then).
+
+**Every incident.** Open one in Admin > Incidents for anything users notice (that is what puts the banner on
+`/status`), set it to MITIGATED when the fix is in, and resolve it with the root cause. Downtime is measured from the
+start.
+
+#### 1.9.1 Data stale
+
+*Fires:* Prometheus `MarketDataStale` (decisions refused on stale candles or quotes, SLO-4); `/status` shows Market
+data "Degraded" when the newest EOD file is older than the last closed session; data-tier badges say "stale".
+
+*Already happening:* signals on stale candles are skipped and logged on the deployment (`Skipped: market data stale`);
+alerts on stale data are held back (BT1 `alerts_suppressed`, G5); an exit decision on a stale quote waits one cycle.
+Nothing to reset when the data is fresh again.
+
+*Check and act:*
+1. Intraday (candles / quotes): is it one user or everyone? One user: their broker token (Settings > Broker session
+   health; the daily login). Everyone on one broker: see 1.9.4. Everyone: the worker (1.9.2) and the clock on the host.
+2. End of day: the nightly EOD job runs from 19:00 IST with the `history_backfill` flag on (HB1). Check
+   `GET /api/admin/history-backfill/progress` for `blocked` / `failed` days. NSE sometimes publishes late; the next
+   night's catch-up picks it up. To load it now: upload the day's file on that endpoint, or run
+   `docker compose exec backend python -m app.market_lake.bhavcopy_backfill nightly` (docs/design/HB_HISTORY_BACKFILL.md).
+3. If users are affected for more than a session, open an incident (WARNING) so `/status` says so.
+
+#### 1.9.2 Worker stale
+
+*Fires:* `TradingWorkerStalled` (heartbeat older than 180 s) or `TradingWorkerNeverSeen` (SLO-2); `/status` shows
+Trading engine "Outage" during market hours, "Degraded" when the market is closed.
+
+*Already happening:* the API keeps serving. Open PAPER positions are only re-evaluated when the worker runs again; no
+order is sent meanwhile.
+
+*Check and act:*
+1. `deploy/atp.sh health` (one worker container, running and healthy). Restart the worker container only (the full
+   `docker compose` file list is in the runbook's section 9), then follow section 1.7 above.
+2. Read the worker log lines around the last heartbeat; `last_error` on `GET /api/system/worker-status` names a
+   failing cycle step. A stopped heartbeat usually means the container is gone, not a cycle bug.
+3. `WorkerLockLost` at the same time: Redis memory or a second worker (section 1.2b).
+4. If it cannot be back before 15:15 IST, open an incident (CRITICAL) and say so on `/status`; PAPER positions can be
+   closed by hand from the Positions page.
+
+#### 1.9.3 Outbox backlog
+
+*Fires:* `AlertOutboxBacklog` (more than 20 alerts waiting for 10 minutes) or `AlertDeliveriesFailing` (SLO-8);
+`/status` shows Alert delivery "Degraded" above a 3-minute lag, "Outage" above 15 minutes.
+
+*Already happening:* raising an alert only writes outbox rows, so nothing upstream slows down. Each delivery is retried
+with backoff, then dead-lettered (`reason_code = dead_letter`) with its last error kept.
+
+*Check and act:*
+1. Is the worker running (1.9.2)? The worker drains the outbox every cycle; a stalled worker is the usual cause.
+2. One channel or all? Telegram down, an SMTP password changed or a web-push key rotated shows in the failed rows'
+   `last_error` (`GET /api/alerts/dead-letters` per organisation; `atp_alert_deliveries_total{channel,status}`).
+3. Fix the channel, then retry the dead letters (`POST /api/alerts/deliveries/{id}/retry`, or the dead-letter list
+   in the alert rules panel). In-app notifications were never affected.
+
+#### 1.9.4 Broker down
+
+*Fires:* many users' sessions at one broker failing at once (logins, quotes, candles; `atp_broker_calls_total{broker,
+outcome}`), or, on the order path, `BrokerCircuitOpen` / `OpsThrottle429Burst` (SLO-5). Phase 0 sends nothing to a
+broker's order API, so the last two should stay silent; if one fires, treat it as an incident (G6, "no API order path").
+
+*Already happening:* live data through that broker (Tier A) stops updating for its users; the freshness checks mark it
+stale and alerts on it are held back (1.9.1). Other brokers and EOD data are not affected. "Trade in your broker app"
+links still open the broker's own app.
+
+*Check and act:*
+1. The broker's own status page or support channel. `GET /api/system/health/dependencies` shows each circuit.
+2. If it stays down for more than a few minutes in market hours: open an incident (WARNING) naming no user, and
+   optionally add the broker in Admin > Platform controls > Disabled brokers so the UI says LIVE is paused there.
+3. When it is back: remove it from Disabled brokers, resolve the incident.
+
+#### 1.9.5 Rollback
+
+*When:* a deploy made things worse (health checks fail after the deploy, error budget burning, a feature broke for
+users) and a fix forward is not minutes away.
+
+*Do:* follow the Z11 runbook, [section 9 "Rollback, and when a migration makes it unsafe"](deploy/HOSTINGER_RUNBOOK.md#9-rollback-and-when-a-migration-makes-it-unsafe):
+`deploy/atp.sh rollback --dry-run`, then `deploy/atp.sh rollback` (code only), or `rollback --restore-db` when the
+release's migration was not additive. Then `deploy/atp.sh health`. Open an incident (`/status` shows it), and resolve it
+once the fixed release is deployed again. The rollback rehearsal (a Phase 0 exit criterion) is in the same section.
+
+#### 1.9.6 Staged beta rollout (50 -> 200 -> 500)
+
+The beta cohort grows in stages. Sign-up through invite codes (flag `beta_cohort_gate`) stops at the effective cap,
+min(stage, `BETA_COHORT_CAP`). Admin > Beta rollout shows the stage, the effective cap, the places used and the
+headroom. **Moving up** is one stage at a time, needs a reason and is written to the audit trail
+(`beta_cohort_stage_raised`). Move up only after the current stage has run a full week of trading days with: no open
+incident, `/status` green, the runbooks above exercised at least once, and the rollback rehearsed. **Moving down**
+(`beta_cohort_stage_lowered`) closes sign-up sooner; existing accounts are never touched. The `BETA_COHORT_STAGE`
+setting (default 50) only applies until a stage has been set in the console. Details: `docs/BETA_COHORT.md`.
+
 ## 2. Data Governance
 
 ### 2.1 Data classification

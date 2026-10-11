@@ -32,7 +32,24 @@ Refusals are `403` with a machine-readable code and a sentence for the user:
 | `beta_invite_revoked` | The code was revoked |
 | `beta_invite_expired` | The code is past its expiry |
 | `beta_invite_used` | Every use of the code is spent |
-| `beta_cohort_full` | The cohort has reached `BETA_COHORT_CAP` |
+| `beta_cohort_full` | The cohort has reached the effective cap, min(stage, `BETA_COHORT_CAP`) (section 1a) |
+
+### 1a. Staged rollout (Z10-e): 50 -> 200 -> 500
+
+The cohort grows in stages, `BETA_COHORT_STAGES` = 50, 200, 500. The gate stops at the **effective cap,
+min(stage, `BETA_COHORT_CAP`)**. With the defaults (stage 50, cap 500) sign-up stops after 50 accounts.
+
+- The stage is moved in **Admin > Beta rollout** (or `PUT /api/admin/beta/cohort/stage`, SUPER_ADMIN with an
+  MFA-verified session). It is stored in `platform_controls` (key `beta_cohort_stage`); no migration.
+- **Up**: one stage at a time (50 -> 200, then 200 -> 500), with a reason of at least 3 characters. Skipping a stage or
+  leaving out the reason is refused with `400` and changes nothing.
+- **Down**: to any lower stage, no reason needed. Existing accounts are never touched; sign-up just stops sooner.
+- Every move is written to the audit log: `beta_cohort_stage_raised` / `beta_cohort_stage_lowered`, with
+  `<from> -> <to> (effective cap, BETA_COHORT_CAP, used): reason`. Setting the current stage again writes nothing.
+- The **`BETA_COHORT_STAGE`** environment setting (default **50**; a value that is not a stage falls back to 50) is the
+  stage only until one is set in the console.
+- The admin card shows the stage, the effective cap and why (stage or `BETA_COHORT_CAP`), places used, the headroom
+  left and when the stage was last set. The on-call page for moving up is `docs/OPERATIONS.md` 1.9.6.
 
 ### Turning it on
 
@@ -53,7 +70,8 @@ All endpoints are SUPER_ADMIN only and need an MFA-verified session, like the re
 | `POST /api/admin/beta/invite-codes` `{"max_uses": 1, "expires_in_days": 30, "note": "wave 1"}` | Creates a code. **The plain code is in this response only.** `max_uses` 1 to 1000 (default 1), `expires_in_days` 1 to 365 (omit for no expiry), `note` up to 200 characters. |
 | `GET /api/admin/beta/invite-codes` | Lists codes: id, note, max_uses, used_count, expires_at, revoked_at, created_by, created_at and `state` (active, revoked, expired, exhausted). Never the code, never its hash. |
 | `POST /api/admin/beta/invite-codes/{id}/revoke` | Revokes a code; accounts already created with it are not affected. |
-| `GET /api/admin/beta/cohort` | `{"gate_on", "cap", "used", "remaining"}` |
+| `GET /api/admin/beta/cohort` | `{"gate_on", "cap", "used", "remaining", "stage", "stages", "next_stage", "env_cap", "capped_by_env", "headroom", "stage_source", "stage_set_by", "stage_set_at"}` - `cap` is the effective cap (section 1a) |
+| `PUT /api/admin/beta/cohort/stage` `{"stage": 200, "reason": "wave 1 ran a week cleanly"}` | Moves the rollout stage (section 1a). Audited. |
 
 A code looks like `K7QM-2XRA-PZ9D-H4WN`: 16 characters from an alphabet without look-alikes (no 0/O, 1/I/L), about
 80 bits. Case, spaces and dashes do not matter when it is typed. Only the SHA-256 of the normalised code is stored

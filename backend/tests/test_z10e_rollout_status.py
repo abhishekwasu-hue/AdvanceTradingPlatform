@@ -1,7 +1,9 @@
 """Z10-e (G7 + rollout): the staged beta cohort (50 -> 200 -> 500, audited) and the public status page."""
 import asyncio
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -431,3 +433,32 @@ def test_worst_ignores_unknown():
     assert status_page.worst(["unknown", "operational"]) == "operational"
     assert status_page.worst(["degraded", "operational", "outage"]) == "outage"
     assert status_page.worst(["unknown"]) == "unknown"
+
+
+# --- runbooks -------------------------------------------------------------------------------------------------------------
+
+def _anchors(markdown: str) -> set:
+    out = set()
+    for line in markdown.splitlines():
+        m = re.match(r"^#{1,6}\s+(.*)$", line)
+        if m:
+            slug = re.sub(r"[^\w\- ]", "", m.group(1).strip().lower()).replace(" ", "-")
+            out.add(slug)
+    return out
+
+
+def test_every_alert_runbook_link_resolves_and_each_alert_has_a_page():
+    root = Path(__file__).resolve().parents[2]
+    ops = (root / "docs/OPERATIONS.md").read_text(encoding="utf-8")
+    anchors = _anchors(ops)
+    for page in ("191-data-stale", "192-worker-stale", "193-outbox-backlog", "194-broker-down", "195-rollback", "196-staged-beta-rollout-50---200---500"):
+        assert page in anchors, page
+    rules = (root / "scripts/monitoring/prometheus-alerts.yml").read_text(encoding="utf-8")
+    for anchor in re.findall(r'runbook: "docs/OPERATIONS\.md#([^"]+)"', rules):
+        assert anchor in anchors, anchor
+    for alert, page in (("TradingWorkerStalled", "192"), ("MarketDataStale", "191"), ("AlertOutboxBacklog", "193"), ("BrokerCircuitOpen", "194")):
+        block = rules.split(f"alert: {alert}", 1)[1].split("- alert:", 1)[0]
+        assert f"OPERATIONS.md#{page}-" in block, alert
+    # The Z11 deploy runbook is linked, not copied.
+    assert "deploy/HOSTINGER_RUNBOOK.md#9-rollback-and-when-a-migration-makes-it-unsafe" in ops
+    assert "deploy/atp.sh rollback" in ops and "--restore-db" in ops

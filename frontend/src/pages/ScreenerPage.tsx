@@ -227,8 +227,8 @@ export default function ScreenerPage(_props: PageProps) {
         </div>
       </div>
 
-      {/* Phone: the live count and Run stay in reach */}
-      <div className={cx("fixed inset-x-0 bottom-0 z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}>
+      {/* Phone: the live count and Run stay in reach - PW2: just above the app's bottom navigation */}
+      <div className={cx("fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 border-t border-border bg-surface-1 px-4 py-2 sm:hidden")}>
         <p className="text-t12 text-fg-muted">
           Matched <span className="font-mono font-tabular text-t15 font-semibold text-signal">{matchedNow ?? "–"}</span>
           <span> of <span className="font-mono font-tabular">{symbols.length}</span></span>

@@ -1,17 +1,18 @@
 /**
- * CH1 (ADR-0023), "B-lite": `ChartEngine` over the lightweight-charts v4 chart that ProChart already draws.
+ * CH1/CH2 (ADR-0023): `ChartEngine` over the lightweight-charts v5 chart that ProChart already draws.
  *
  * ProChart keeps rendering its candles, indicators, price lines, zones and markers exactly as before (no visible
  * change); this adapter adds what sits above the interface:
- * - drawings: `hline` as a price line; `trendline`, `ray` and `measure` as a two-point line. The other kinds are kept
- *   in the layout (nothing is lost) and drawn once the v5 primitives core lands (CH2) - `supports()` says which;
- * - layers: their lines as price lines (markers stay ProChart's job until CH2 merges them);
+ * - drawings: `hline` as a price line (it keeps its axis label); every other `drawing/1` kind as a v5 series primitive
+ *   (CH2b, `primitives.ts` + `geometry.ts`), placed by time/price so it follows scroll, zoom and timeframe changes;
+ * - layers: their lines as price lines (markers stay ProChart's job);
  * - events: crosshair, click, visible range.
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
-import type { UTCTimestamp } from "lightweight-charts";
-import type { DrawingKind, DrawingV1 } from "./drawings";
+import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
+import { timeToLogical, type Converters } from "./geometry";
+import { DrawingPrimitive } from "./primitives";
 
 // The slice of the lightweight-charts API this adapter uses (structural, so tests can pass a fake).
 type PriceLineLike = object;
@@ -21,12 +22,15 @@ export interface CandleSeriesLike {
   update(bar: unknown): void;
   createPriceLine(options: PriceLineOptionsLike): PriceLineLike;
   removePriceLine(line: PriceLineLike): void;
+  priceToCoordinate(price: number): number | null;
+  data(): readonly { time: unknown }[];
+  subscribeDataChanged(handler: () => void): void;
+  unsubscribeDataChanged(handler: () => void): void;
+  attachPrimitive(primitive: DrawingPrimitive): void;
+  detachPrimitive(primitive: DrawingPrimitive): void;
 }
-export interface LineSeriesLike { setData(data: { time: UTCTimestamp; value: number }[]): void }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
 export interface ChartLike {
-  addLineSeries(options: Record<string, unknown>): LineSeriesLike;
-  removeSeries(series: LineSeriesLike): void;
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   unsubscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   subscribeClick(handler: (p: MouseParamsLike) => void): void;
@@ -34,17 +38,18 @@ export interface ChartLike {
   timeScale(): {
     subscribeVisibleTimeRangeChange(handler: (r: { from: unknown; to: unknown } | null) => void): void;
     unsubscribeVisibleTimeRangeChange(handler: (r: { from: unknown; to: unknown } | null) => void): void;
+    logicalToCoordinate(logical: number): number | null;
   };
 }
 
 const LINE_STYLE = { solid: 0, dotted: 1, dashed: 2 } as const;
-const SUPPORTED: ReadonlySet<DrawingKind> = new Set<DrawingKind>(["hline", "trendline", "ray", "measure"]);
-const toSec = (iso: string) => Math.floor(Date.parse(iso) / 1000);
+const SUPPORTED: ReadonlySet<DrawingKind> = new Set(Object.keys(ANCHOR_RULES) as DrawingKind[]);
+const timeSec = (t: unknown): number => (typeof t === "number" ? t : typeof t === "string" ? Math.floor(Date.parse(t) / 1000) : NaN);
 
-type Rendered = { kind: "priceLine"; line: PriceLineLike } | { kind: "series"; series: LineSeriesLike } | { kind: "none" };
+type Rendered = { kind: "priceLine"; line: PriceLineLike } | { kind: "primitive"; primitive: DrawingPrimitive } | { kind: "none" };
 
 export class LightweightEngine implements ChartEngine {
-  readonly name = "lightweight-v4";
+  readonly name = "lightweight-v5";
   private symbol: string | null = null;
   private timeframe: string | null = null;
   private studies = new Map<string, StudySpec>();
@@ -54,6 +59,7 @@ export class LightweightEngine implements ChartEngine {
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
   private disposed = false;
+  private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
 
   constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null) {
     const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
@@ -61,11 +67,36 @@ export class LightweightEngine implements ChartEngine {
     const range = (r: { from: unknown; to: unknown } | null) => {
       if (r && typeof r.from === "number" && typeof r.to === "number") this.emit({ type: "visibleRangeChanged", from: r.from, to: r.to });
     };
+    const dataChanged = () => { this.barTimes = null; };
+    candles.subscribeDataChanged(dataChanged);
+    this.unsubs.push(() => candles.unsubscribeDataChanged(dataChanged));
     chart.subscribeCrosshairMove(cross);
     chart.subscribeClick(click);
     chart.timeScale().subscribeVisibleTimeRangeChange(range);
     this.unsubs.push(() => chart.unsubscribeCrosshairMove(cross), () => chart.unsubscribeClick(click),
                      () => chart.timeScale().unsubscribeVisibleTimeRangeChange(range));
+  }
+
+  // Assumes the candles carry every time point of the main chart's time scale (true in ProChart: all main-chart series
+  // share the candle times, gaps as whitespace), so an index into the candle data is the chart's logical index.
+  private times(): number[] {
+    if (!this.barTimes) this.barTimes = this.candles.data().map((b) => timeSec(b.time)).filter(Number.isFinite);
+    return this.barTimes;
+  }
+
+  /** Converters for one paint: anchor time -> fractional bar index -> x; price -> y on the candle scale. */
+  private converters(width: number, height: number): Converters | null {
+    const times = this.times();
+    if (times.length === 0) return null;
+    const scale = this.chart.timeScale();
+    return {
+      x: (t) => {
+        const logical = timeToLogical(times, t);
+        return logical == null ? null : scale.logicalToCoordinate(logical);
+      },
+      y: (p) => this.candles.priceToCoordinate(p),
+      width, height,
+    };
   }
 
   private price(p: MouseParamsLike): number | null {
@@ -85,6 +116,12 @@ export class LightweightEngine implements ChartEngine {
   supports(kind: DrawingKind) { return SUPPORTED.has(kind); }
 
   addDrawing(id: string, drawing: DrawingV1) {
+    const current = this.rendered.get(id);
+    if (current?.kind === "primitive" && drawing.kind !== "hline") {     // same primitive, new anchors: no re-attach
+      this.drawings.set(id, drawing);
+      current.primitive.setDrawing(drawing);
+      return;
+    }
     this.removeDrawing(id);
     this.drawings.set(id, drawing);
     this.rendered.set(id, this.draw(drawing));
@@ -98,7 +135,7 @@ export class LightweightEngine implements ChartEngine {
   removeDrawing(id: string) {
     const r = this.rendered.get(id);
     if (r?.kind === "priceLine") this.candles.removePriceLine(r.line);
-    if (r?.kind === "series") this.chart.removeSeries(r.series);
+    if (r?.kind === "primitive") this.candles.detachPrimitive(r.primitive);
     this.rendered.delete(id);
     this.drawings.delete(id);
   }
@@ -111,15 +148,10 @@ export class LightweightEngine implements ChartEngine {
     if (d.kind === "hline" && d.anchors[0]?.p != null) {
       return { kind: "priceLine", line: this.candles.createPriceLine({ price: d.anchors[0].p, color, lineWidth: width, lineStyle, axisLabelVisible: true, title: d.text ?? "" }) };
     }
-    if ((d.kind === "trendline" || d.kind === "ray" || d.kind === "measure") && d.anchors.length === 2) {
-      const pts = d.anchors.map((a) => ({ time: toSec(a.t ?? "") as UTCTimestamp, value: a.p ?? NaN }))
-        .filter((pt) => Number.isFinite(pt.time) && Number.isFinite(pt.value)).sort((x, y) => x.time - y.time);
-      if (pts.length !== 2 || pts[0].time === pts[1].time) return { kind: "none" };
-      const series = this.chart.addLineSeries({ color, lineWidth: width, lineStyle, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-      series.setData(pts);
-      return { kind: "series", series };
-    }
-    return { kind: "none" };                                   // kept in the layout; drawn by the CH2 primitives core
+    if (d.kind === "hline") return { kind: "none" };
+    const primitive = new DrawingPrimitive(d, (w, h) => this.converters(w, h));
+    this.candles.attachPrimitive(primitive);
+    return { kind: "primitive", primitive };
   }
 
   setLayer(id: string, data: LayerData | null) {

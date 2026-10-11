@@ -12,9 +12,11 @@
 """
 import asyncio
 import json
+import os
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.core.models import OHLCVBar
@@ -371,24 +373,64 @@ def test_sizing_edges():
 
 # --- L1: atomic entry slots ---------------------------------------------------------------------------------------------
 
-def test_entries_per_day_slot_is_atomic_and_given_back_when_the_entry_is_refused():
-    t = _tenant_t("slots")
-    _org(t)
-    _flag(by_default.FLAG, t["tenant_id"])
-    client.put("/api/paper/risk", headers=t["headers"], json={"max_trades_per_day": 1})
+@pytest.fixture(params=["sqlite", "postgresql"])
+def slot_db_url(request, tmp_path):
+    """A private database with a real connection pool: concurrent sessions must not share the suite's single in-memory
+    connection (that would break it for every later test)."""
+    if request.param == "sqlite":
+        return f"sqlite+aiosqlite:///{tmp_path / 'slots.db'}"
+    url = os.environ.get("Z5_TEST_PG_URL")
+    if not url:
+        pytest.skip("Z5_TEST_PG_URL not set")
+    return url
 
-    async def two_at_once():
-        from app.execution.signal_execution import execute_signal_for_user
 
-        async def one():
-            async with _session_factory() as session:
-                user = await session.get(User, t["user_id"])
-                result, _ = await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=_sig(),
-                                                          idempotency_key=f"slot:{uuid.uuid4().hex}")
-                return result.executed
-        return await asyncio.gather(one(), one())
-    assert sorted(_run(two_at_once())) == [False, True]
+def test_entries_per_day_slot_is_atomic(slot_db_url):
+    """Two entries of one user at the same moment with one slot left: exactly one takes it (the conditional UPDATE on the
+    PAPER account row is the serialisation point; the second waits and then sees the slot gone)."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import AsyncAdaptedQueuePool
+    from app.db.base import Base
+    from app.db.models import Tenant
 
+    async def go():
+        engine = create_async_engine(slot_db_url, poolclass=AsyncAdaptedQueuePool, pool_size=2, max_overflow=0)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as s:
+                tenant = Tenant(name="z5 slots")
+                s.add(tenant)
+                await s.flush()
+                user = User(tenant_id=tenant.id, email=f"z5-slots-{uuid.uuid4().hex[:10]}@example.com", hashed_password="x")
+                s.add(user)
+                await s.flush()
+                s.add(PaperAccountRecord(tenant_id=tenant.id, user_id=user.id, starting_capital=1_000_000, paused=False))
+                await s.commit()
+            gate = asyncio.Event()
+
+            async def one(hold: bool):
+                async with factory() as s:
+                    me = await s.get(User, user.id)
+                    if not hold:
+                        await gate.wait()                       # the second starts while the first still holds its slot
+                    refused = await by_default.reserve_entry(s, me, 1)
+                    if hold:
+                        gate.set()
+                        await asyncio.sleep(0.3)                # keep the transaction open: the other must wait for it
+                    await s.commit()
+                    return refused
+            first, second = await asyncio.gather(one(True), one(False))
+            assert first is None and second is not None and "entries per day" in second
+            async with factory() as s:
+                assert await s.scalar(select(PaperAccountRecord.entries_count).where(PaperAccountRecord.user_id == user.id)) == 1
+        finally:
+            await engine.dispose()
+    asyncio.run(go())
+
+
+def test_an_entry_refused_later_gives_its_slot_back():
     u = _tenant_t("slots-release")
     _org(u)
     _flag(by_default.FLAG, u["tenant_id"])

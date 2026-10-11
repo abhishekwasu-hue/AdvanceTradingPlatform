@@ -94,3 +94,29 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Provisional: rows, hashes and costs are never deleted. Personal data is masked at write time. The text is scrubbed
     on the trader's erasure / "forget me". Age-based scrubbing exists (`RETENTION_LLM_TEXT_DAYS`) but is off by default.
   - Deleting data is the owner's decision (§14), so the period is left to the owner.
+
+## H-C2a (built): tool registry, bounded loop, audit - read tools only
+- **Tools.** `app/ai/tools/` is a typed registry:
+  - each tool has a pydantic input model whose JSON schema has `additionalProperties: false`, a kind, cost units and a
+    timeout;
+  - the tenant comes from the session (an extra argument such as `tenant_id` is refused);
+  - every result is `{data, as_of, source, data_timestamps}`;
+  - news results are `<untrusted_data>`, escaped.
+  - The first tools are `get_market_snapshot`, `get_news`, `get_positions`, `get_pnl_today` and `get_risk_limits`.
+- **Loop.** `app/ai/agent.py` stops on max steps, max tool calls, wall time or a provider error.
+  - Tools run one at a time on the request's session, because an AsyncSession is not safe for concurrent use.
+  - The answer contract: every number must come from the tool outputs or the question (H-C1 d), and the H-C1 c filter
+    applies. A failing answer gets one rewrite; after that the deterministic data summary is shown.
+- **Provider seam.** `AnthropicProvider.complete_tools` uses provider-native tool use with our tool specs. The assistant
+  content, thinking blocks included, is sent back unchanged. `MeteredProvider.complete_tools` meters and logs every
+  step. Providers without tool use (the rules, and OpenAI until H-C2b) fall back to the ordinary Copilot answer.
+- **Audit.** One `agent_runs` row per request (question as a hash, prompt version, model, limits, outcome) and one
+  `agent_steps` row per tool call (arguments, output hash, ok, duration). Both tables are in `NEVER_DELETED`, like
+  `llm_calls`.
+- **Route.** `POST /api/ai/agent/ask` sits behind the new `ai_agent` flag, which is off by default, and keeps the
+  existing acknowledgement gate and AI rate limit.
+- **H-C2b next:**
+  - proposal tools with the injection guard (intent allow-list, a reason that cites the trader's message);
+  - the JSON answer contract (claims with their source tool call);
+  - an OpenAI tools adapter;
+  - candles, quote, chain and backtest tools.

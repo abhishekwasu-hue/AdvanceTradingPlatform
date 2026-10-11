@@ -16,9 +16,9 @@ Each screen gives, per side ("up" = breakout, "down" = breakdown), a frame with:
   fail_level  the level a close back inside of means "failed" (B4: the mother bar's opposite extreme - the mother-bar rule)
   base_len, base_high, base_low   the base / reference window before the break
   wick        a wick beyond the level with the close not beyond it (a sweep, not a breakout; B1 / B2 / B4 / B7)
-  event       B2: BOS (break with the swing trend) or CHOCH (against it, or no trend yet); B4: the setup; B7: fresh / extended;
-              B16: OR<minutes>; B17: FIRST_HOUR / PDH / PDL / FIRST_CANDLE / PREMARKET; B18: HOD / LOD
-  days_since  B7: sessions since the old high (low) was set
+  event       B2: BOS (break with the swing trend), CHOCH (against it) or BREAK (range / no trend read yet); B4: the setup;
+              B7: fresh / extended; B16: OR<minutes>; B17: FIRST_HOUR / PDH / PDL / FIRST_CANDLE / PREMARKET; B18: HOD / LOD
+  days_since  B7: calendar days since the old high (low) was set
   through     B14: the close went through the level by the minimum distance
 The down side is the up rule on mirrored prices (high <-> -low), so the two sides cannot drift apart.
 """
@@ -49,6 +49,11 @@ SCREENS: Dict[str, str] = {
 SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w"), **{k: intraday.TIMEFRAMES for k in intraday.SCREENS}}
 INTRADAY_SCREENS: Tuple[str, ...] = tuple(intraday.SCREENS)
 SIDES = ("up", "down")
+# Bars a Dow trend needs before it is read, by swing degree. D0 measured on the session generator (40 seeds, daily and
+# weekly, the last bar on N bars vs the full history): 30 bars agree 95.5 %, 40 bars 98.7 %, 60 bars 99.9 %; 40 is the
+# smallest that a ~272-session daily fetch satisfies for weekly context (57 weeks). D1-D3 keep the swing history
+# (registry SWING_DEGREE_MIN_BARS) - not measured for the trend.
+DOW_MIN_BARS: Tuple[int, ...] = (40, 250, 600, 1200)
 COLUMNS = ("raw", "signal", "level", "fail_level", "base_len", "base_high", "base_low", "wick", "event", "days_since", "through")
 
 
@@ -166,7 +171,8 @@ class Bars:
 
     def dow(self, degree: int) -> np.ndarray:
         """Dow trend on every bar from the swings confirmed by that bar: UP (last high HH and last low HL), DOWN (LH + LL),
-        RANGE (anything else once both kinds are labelled), None before that (unknown)."""
+        RANGE (anything else once both kinds are labelled), None before that - and None on the first DOW_MIN_BARS[degree]
+        bars of the frame, where a shorter history could read a different trend (unknown, never a guess)."""
         if degree not in self._dow:
             out = np.full(self.n, None, dtype=object)
             last: Dict[str, Optional[float]] = {"H": None, "L": None}
@@ -185,6 +191,7 @@ class Bars:
                         cur = "UP" if (label["H"], label["L"]) == ("HH", "HL") else "DOWN" if (label["H"], label["L"]) == ("LH", "LL") else "RANGE"
                     k += 1
                 out[t] = cur
+            out[:min(self.n, DOW_MIN_BARS[degree])] = None
             self._dow[degree] = out
         return self._dow[degree]
 
@@ -268,7 +275,7 @@ def _b2(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> Non
     own = "H" if s.sign > 0 else "L"
     piv = [pv for pv in b.pivots(degree) if pv.kind == own]
     trend = b.dow(degree)
-    with_trend = "UP" if s.sign > 0 else "DOWN"
+    with_trend = "UP" if s.sign > 0 else "DOWN"                         # BOS with it, CHOCH against it, BREAK otherwise
     level = np.full(b.n, np.nan)
     origin = np.full(b.n, -1)
     k, cur, cur_bar, used = 0, np.nan, -1, False
@@ -283,7 +290,8 @@ def _b2(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> Non
         level[t], origin[t] = cur, cur_bar
         if np.isfinite(buf[t]) and s.c[t] > cur + buf[t]:
             raw[t], used = True, True
-            out["event"][t] = "BOS" if (t > 0 and trend[t - 1] == with_trend) else "CHOCH"
+            prior = trend[t - 1] if t > 0 else None
+            out["event"][t] = "BOS" if prior == with_trend else "BREAK" if prior in (None, "RANGE") else "CHOCH"
     _, wick = _beyond(s, b, level, p["min_break_atr"])
     out["raw"][:] = raw
     out["level"][:], out["fail_level"][:] = level, level
@@ -348,11 +356,12 @@ def _b7(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> Non
         if not len(seg):
             continue
         at = lo_pos + len(seg) - 1 - int(np.argmax(seg[::-1]))   # the most recent bar that set the old extreme
-        out["days_since"][j] = j - at
+        days = int((idx[j] - idx[at]) / pd.Timedelta(days=1))                 # calendar days: the same on Daily and Weekly
+        out["days_since"][j] = days
         out["base_len"][j] = j - at
         out["base_high"][j] = prior[j]
         out["base_low"][j] = s.l[at:j].min()
-        out["event"][j] = "FRESH" if j - at >= int(p["fresh_min_days"]) else "EXTENDED"
+        out["event"][j] = "FRESH" if days >= int(p["fresh_min_days"]) else "EXTENDED"
 
 
 def _b13(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> None:

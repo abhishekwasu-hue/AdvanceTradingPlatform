@@ -73,9 +73,13 @@ def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
     return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
 
 
+EXCHANGE_TZ = "Asia/Kolkata"
+
+
 def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
-    """The 09:15 IST anchor of intraday buckets on the first bar's day, in the index's own time zone. The day is the UTC
-    day (09:15 IST is 03:45 UTC on the same date): normalising an IST-aware index first would anchor at 03:45 IST."""
+    """09:15 IST on the first bar's date, in the index's own time zone. U6 BK1 review (M5): normalising an IST-aware stamp
+    gave IST midnight, so 03:45 later was 03:45 IST and 1h bars started at 09:45 / 2h at 11:45 (Fyers / Dhan / Kite
+    frames are IST-aware). A naive index is read as UTC, as before."""
     from app.strategy_engine.declarative import _IST_OPEN_UTC
     first = index[0]
     if first.tzinfo is None:
@@ -91,9 +95,17 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     if "oi" in base.columns:
         agg["oi"] = "last"
     kwargs: Dict[str, Any] = {"label": "left", "closed": "left"}
+    tz = getattr(base.index, "tz", None)
+    src = base
     if n.TF_MINUTES[tf] < n.TF_MINUTES["1d"] and len(base):
         kwargs["origin"] = session_origin(base.index)
-    out = base.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
+    elif tz is not None and len(base):
+        # U6 BK1 review (M6): sessions, weeks and months are exchange-calendar buckets. Daily bars stamped 00:00 IST are
+        # 18:30 UTC the day before; bucketing them in UTC put a Monday into the previous week (a week seen a day early).
+        src = base.tz_convert(EXCHANGE_TZ)
+    out = src.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
+    if src is not base:
+        out.index = out.index.tz_convert(tz)
     if len(out) and len(base) and not keep_forming:
         last_base_close = base.index[-1] + _DURATION[base_tf]
         if out.index[-1] + _DURATION[tf] > last_base_close:
@@ -120,7 +132,8 @@ class _Eval:
         avail = pd.Series(value.to_numpy(), index=bar_close(value.index, src_tf))
         avail = avail[~avail.index.duplicated(keep="last")].sort_index()
         dst_close = bar_close(self.frame(dst_tf).index, dst_tf)
-        out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
+        with pd.option_context("future.no_silent_downcasting", True):       # a category series stays object (no dtype guess)
+            out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)
 
     def ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds

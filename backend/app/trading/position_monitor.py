@@ -40,6 +40,7 @@ from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
 from app.notifications.service import notify
+from app.journal import capture as journal_capture
 from app.trading import stop_state
 from app.trading.exit_rules import ExitRules, apply_exit_rules
 from app.trading.exit_logic import check_contract_exit
@@ -294,7 +295,7 @@ async def _square_off_live(
 async def close_position(
     session: AsyncSession, trade: TradeRecord, exit_price: float, reason: str, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, now: Optional[datetime] = None,
-    stop_dead: bool = False,
+    stop_dead: bool = False, underlying_price: Optional[float] = None,
 ) -> CloseOutcome:
     """Closes one open position. PAPER: books the exit at `exit_price`. LIVE: squares off at the
     broker first (see module docstring) and books the realised fill; if the broker leg fails the
@@ -342,6 +343,9 @@ async def close_position(
     if outcome.broker_exit_order_id:
         trade.exit_order_id = outcome.broker_exit_order_id
     await session.commit()
+    # Z6: flag read on this session's connection (cached), the capture queued off the exit path; never raises or waits.
+    # `underlying_price` (the quote an option exit was judged on) gives the journal IV at exit.
+    await journal_capture.on_exit(session, trade, underlying_price=underlying_price)
     stop_state.forget(trade.id)   # the stop guard's counters and alert cooldowns die with the position
 
     outcome.closed = True
@@ -445,20 +449,22 @@ async def _monitor_group(
     reason = group_exit(legs, prices, underlying_price)
     if reason is None:
         return []
-    return await close_group(session, legs, prices, reason, broker=broker, user_id=user_id)
+    return await close_group(session, legs, prices, reason, broker=broker, user_id=user_id, underlying_price=underlying_price)
 
 
 async def close_group(
     session: AsyncSession, legs: List[TradeRecord], prices: Dict[int, float], reason: str, *,
-    broker: Optional[BrokerInterface], user_id: Optional[int],
+    broker: Optional[BrokerInterface], user_id: Optional[int], underlying_price: Optional[float] = None,
 ) -> List[CloseOutcome]:
-    """Shorts first (risk off), then the wings. Each leg books its own P&L."""
+    """Shorts first (risk off), then the wings. Each leg books its own P&L. `underlying_price`: the quote the exit was
+    judged on (journal IV at exit only)."""
     outcomes: List[CloseOutcome] = []
     for leg in sorted(legs, key=lambda l: 0 if l.leg_role == "SHORT" else 1):
         leg_broker = broker if leg.mode == ExecutionMode.LIVE.value else None
         if leg.mode == ExecutionMode.LIVE.value and leg_broker is None:
             leg_broker = await broker_for_trade(session, leg)
-        outcomes.append(await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id))
+        outcomes.append(await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
+                                             underlying_price=underlying_price))
     return outcomes
 
 
@@ -511,6 +517,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 logger.warning("Could not move broker stop %s for trade %s: %s", trade.sl_order_id, trade.id, exc)
     if changed:
         await session.commit()
+        if update.stop_changed:   # Z6: flag on this session's connection (cached), capture queued; never waits
+            await journal_capture.on_stop_change(session, trade, float(old_stop), float(update.stop_loss),
+                                                 source=f"exit rule: {update.stop_reason or 'stop moved'}")
     return update.time_exit_reason
 
 
@@ -576,7 +585,8 @@ async def monitor_open_positions(
         trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
         if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
             trade_broker = await broker_for_trade(session, trade)
-        outcomes.append(await close_position(session, trade, exit_price, reason, broker=trade_broker, user_id=user_id))
+        outcomes.append(await close_position(session, trade, exit_price, reason, broker=trade_broker, user_id=user_id,
+                                             underlying_price=underlying_price))
     if marked:
         # P0.5 / T6: persist the marks of positions that stayed open (close_position committed its own).
         try:
@@ -584,6 +594,10 @@ async def monitor_open_positions(
         except Exception as exc:  # noqa: BLE001 - a failed mark write must not fail the sweep
             logger.warning("Could not persist position marks: %s", exc)
             await session.rollback()
+        else:
+            # Z6: the price range each open position has seen (MAE / MFE); queued off the sweep, never raises or waits.
+            await journal_capture.on_marks(session, tenant_id, {t.id: float(t.mark_price) for t in open_trades
+                                                                 if t.exit_time is None and t.mark_price is not None})
     return outcomes
 
 

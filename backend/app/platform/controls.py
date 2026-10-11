@@ -90,6 +90,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
     "options_builder": "Options Strategy Builder: payoff, T+0 model, PoP and strike suggestions (research only, places no orders)",
+    "options_builder_saved": "Options Builder: save strategies and load them again, shared within the organisation (research data only)",
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.
     "marketplace_ai_listings": "Allow AI-originated strategies (AI drafts, strategist adoptions) to be listed on the marketplace",
     "thesis_stock_targets": "Show price targets and a confidence % in the thesis of a single stock (indices always show them)",
@@ -110,6 +111,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
+    # Z6 / P1-e (ADR-0026): journal auto-capture, behaviour tags and the weekly discipline score. OFF: no capture, the
+    # /api/journal routes answer 503 and the Journal page says it is not enabled. Numbers only; it never touches an order.
+    "discipline_engine": "Discipline engine: auto-journal of every trade, behaviour tags, weekly discipline score and review (numbers only)",
     # BT1 (beta spec §2/§4a, Phase 0): live data only through each user's own broker session at a broker whose data terms
     # are confirmed (docs/BROKER_DATA_TERMS.md), never pooled or shown to another user; everything else EOD; every number
     # carries its data tier. OFF: market data reads are exactly as before. Places no order.
@@ -117,6 +121,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # HB0 (docs/design/HB_HISTORY_BACKFILL.md): lets the operator run the R2 history import by hand (CLI). OFF: the
     # importer refuses to start. Nothing runs on a schedule; 1-minute data only ever goes to the owner's tenant.
     "history_import": "History import from the R2 store: daily bars into the shared lake, 1-minute bars into the owner's private store",
+    # HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill (CLI), the nightly EOD fetch (worker) and
+    # the admin's manual file / corporate-action / holiday uploads. OFF: all of them refuse and nothing contacts NSE.
+    "history_backfill": "Daily NSE bhavcopy backfill and nightly EOD fetch into the shared lake (cash, indices, F&O futures)",
     # U6 BK1 (docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md): the breakout screens (B1/B2/B4/B7/B13/B14), the quality
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
@@ -124,8 +131,8 @@ FEATURE_FLAGS: Dict[str, str] = {
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "byob_data_tier", "history_import",
-                               "screener_breakouts"})
+                               "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
+                               "history_backfill", "options_builder_saved", "screener_breakouts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

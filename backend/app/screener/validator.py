@@ -112,6 +112,15 @@ class _Checker:
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
 
+    def bounded(self, arg: Any, sig: Any, owner: Any) -> None:
+        """U6 BK1: a number argument with a range must be a literal (or a parameter) inside it."""
+        value: Any = arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return                                                    # not a literal: the type checks report it
+        lo, hi = sig.bounds
+        if not lo <= float(value) <= hi:
+            self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+
     def degree_bars(self, node: Any, spec: Any) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
         largest when it cannot be read (the choice check reports that separately)."""
@@ -131,21 +140,6 @@ class _Checker:
             return spec.degree_min_bars[int(value)]
         except (TypeError, ValueError, IndexError):
             return max(spec.degree_min_bars)
-
-    def param_ranges(self, node: Any, spec: Any) -> None:
-        """A breakout function's literal (or parameter) arguments within the breakout parameter they set
-        (app/screener/breakouts/params.py: range and choices), so a bad value fails here, not on the first run."""
-        from app.screener.breakouts.params import arg_problem
-        for sig, arg in zip(spec.args, node.args):
-            if isinstance(arg, (n.Num, n.Str, n.Bool)):
-                value: Any = arg.value
-            elif isinstance(arg, n.Param) and arg.name in self.params:
-                value = self.params[arg.name]
-            else:
-                continue
-            problem = arg_problem(spec.name, sig.name, value)
-            if problem:
-                self.err(problem, arg)
 
     def sessions_needed(self, node: Any, spec: Any) -> int:
         """U6 BK2: whole sessions a function needs - its fixed `min_sessions`, or the `sessions_arg` argument (literal,
@@ -300,12 +294,19 @@ class _Checker:
             if key not in known_kw:
                 self.err(f"{node.name} has no argument {key!r}", node.kwargs[key])
         window = 0
+        windows: List[int] = []
         units: List[Optional[str]] = []
+        if spec.timeframes and own_tf not in spec.timeframes:
+            self.err(f"{node.name} runs on {' / '.join('@' + t for t in spec.timeframes)} bars only, not @{own_tf}", node)
         sigs = [spec.args[0]] * len(node.args) if spec.varargs else list(spec.args[:len(node.args)])
         for arg_node, sig in zip(node.args, sigs):
             if sig.type == "window":
-                window = max(window, self.window(arg_node, node))
+                w = self.window(arg_node, node)
+                windows.append(w)
+                window = max(window, w)
                 units.append(None)
+                if sig.bounds:
+                    self.bounded(arg_node, sig, node)
                 continue
             t, u = self.check(arg_node, own_tf)
             units.append(u)
@@ -313,6 +314,8 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.bounds:
+                self.bounded(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:
@@ -320,8 +323,6 @@ class _Checker:
             t, _ = self.check(arg_node, own_tf)
             if t != kw_sig.type:
                 self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node)
-        if spec.flag is not None:                                     # U6 breakout family: arguments within the parameter ranges
-            self.param_ranges(node, spec)
         for i in spec.price_args:
             if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
                 self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i])
@@ -332,12 +333,14 @@ class _Checker:
                 self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node)
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
+                windows.append(a.default if isinstance(a.default, int) else 1)
                 window = max(window, a.default if isinstance(a.default, int) else 1)
+        if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
+            window = sum(windows)
+        window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
         min_bars = spec.min_bars
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
-        if spec.timeframes and own_tf not in spec.timeframes:         # U6 BK2: intraday-session functions
-            self.err(f"{node.name} runs on {' / '.join(spec.timeframes)} bars, not {own_tf}", node)
         sessions = self.sessions_needed(node, spec)
         if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
             min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))

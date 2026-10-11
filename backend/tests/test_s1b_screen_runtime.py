@@ -196,7 +196,7 @@ def test_breakout_series_u6_bk1():
         assert _ev(text, data).dtype == bool, text
     jump = _sym([100.0] * 60 + [104.0])                                         # closes 3 above the 10-bar high (101)
     assert bool(_ev('RangeBreakout("up", 10, 0, 0)', jump).iloc[-1]) and not _ev('RangeBreakout("up", 10, 0, 0)', jump).iloc[:-1].any()
-    assert set(_ev('SwingBreakType("up", 0)', data).unique()) <= {"BOS", "CHOCH", ""}
+    assert set(_ev('SwingBreakType("up", 0)', data).unique()) <= {"BOS", "CHOCH", "BREAK", ""}
     assert _ev("RelVolume(5)", data).dropna().eq(1.0).all()                    # constant volume
     assert _ev("ATRPercentile(14, 50)", data).dropna().between(0, 100).all()
     assert set(_ev("DowTrend(0)", data).dropna().unique()) <= {"UP", "DOWN", "RANGE"}

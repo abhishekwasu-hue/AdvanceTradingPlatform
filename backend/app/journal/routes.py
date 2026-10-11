@@ -1,0 +1,124 @@
+"""Z6: `/api/journal/*` - the trader's own journal, behaviour tags and discipline score (behind `discipline_engine`).
+
+Personal: every route reads and writes only the logged-in trader's rows; another user's trade or tag answers 404,
+exactly like one that does not exist. Read-only towards trading: nothing here places, changes or blocks an order.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.dependencies import get_current_user
+from app.db.models import JournalTagRecord, User
+from app.db.session import get_session
+from app.journal import FLAG, capture, service
+from app.journal import settings as journal_settings
+from app.journal.settings import COMPONENT_TAGS, RANGES, TAGS, DisciplineSettings, SettingsError
+from app.platform.controls import require_flag
+
+router = APIRouter(prefix="/api/journal", tags=["journal"])
+
+WEEK_PATTERN = r"^\d{4}-W\d{2}$"
+
+
+async def _flag(session: AsyncSession, user: User) -> None:
+    await require_flag(session, FLAG, user.tenant_id)
+
+
+def _settings_payload(s: DisciplineSettings) -> Dict[str, Any]:
+    return {"settings": s.to_dict(), "defaults": DisciplineSettings().to_dict(), "ranges": {k: list(v) for k, v in RANGES.items()},
+            "components": {k: list(v) for k, v in COMPONENT_TAGS.items()}, "tags": list(TAGS)}
+
+
+@router.get("/settings")
+async def get_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """The trader's thresholds and score weights, the documented defaults and each number's allowed range."""
+    await _flag(session, user)
+    return _settings_payload(await journal_settings.load(session, user))
+
+
+@router.put("/settings")
+async def put_settings(body: Dict[str, Any], user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Changes some settings (keys not sent keep their value). 422 names the first bad key."""
+    await _flag(session, user)
+    try:
+        saved = await journal_settings.save(session, user, body)
+    except SettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _settings_payload(saved)
+
+
+def _week_or_422(week: Optional[str]) -> Optional[str]:
+    if week is None:
+        return None
+    try:
+        service.week_bounds(week)
+    except service.WeekError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return week
+
+
+@router.get("/week")
+async def journal_week(week: Optional[str] = Query(default=None, pattern=WEEK_PATTERN), user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """One IST week of the trader's journal (default: this week): every trade's plan vs execution, fills, costs,
+    MAE / MFE, holding time, chart references, Greeks at entry for options, its behaviour tags - and the week's
+    discipline score with its components. Detectors run on every read, so new trades and changed settings show at once."""
+    await _flag(session, user)
+    data = await service.refresh_week(session, user, _week_or_422(week))
+    tags_by_trade: Dict[int, List[JournalTagRecord]] = {}
+    for tag in data["tags"]:
+        tags_by_trade.setdefault(tag.trade_id, []).append(tag)
+    return {"week": data["week"], "start": data["start"].isoformat(), "end": data["end"].isoformat(),
+            "entries": [service.entry_dict(t, data["entries"].get(t.id), tags_by_trade.get(t.id, [])) for t in data["trades"]],
+            "score": data["score"]}
+
+
+@router.get("/trades/{trade_id}")
+async def journal_trade(trade_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flag(session, user)
+    trade = await service.own_trade(session, user, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="No such trade")
+    entries = await capture.ensure_entries(session, [trade])
+    await session.commit()
+    tags = list(await session.scalars(select(JournalTagRecord).where(JournalTagRecord.trade_id == trade.id, JournalTagRecord.user_id == user.id)
+                                      .order_by(JournalTagRecord.tag)))
+    return service.entry_dict(trade, entries.get(trade.id), tags)
+
+
+class TagBody(BaseModel):
+    tag: str = Field(min_length=2, max_length=30)
+    note: Optional[str] = Field(default=None, max_length=300)
+
+
+@router.post("/trades/{trade_id}/tags", status_code=201)
+async def add_tag(trade_id: int, body: TagBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """The trader tags a trade by hand (a behaviour the detectors cannot see). Stored as CONFIRMED."""
+    await _flag(session, user)
+    trade = await service.own_trade(session, user, trade_id)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="No such trade")
+    try:
+        row = await service.add_user_tag(session, user, trade, body.tag.strip().lower(), body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return service.tag_dict(row)
+
+
+class TagDecision(BaseModel):
+    status: str = Field(pattern=r"^(CONFIRMED|DISMISSED|SUGGESTED)$")
+
+
+@router.patch("/tags/{tag_id}")
+async def decide_tag(tag_id: int, body: TagDecision, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Confirm or dismiss a tag (SUGGESTED puts it back to undecided). A dismissed tag never counts in the score."""
+    await _flag(session, user)
+    row = await service.set_tag_status(session, user, tag_id, body.status)
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such tag")
+    return service.tag_dict(row)

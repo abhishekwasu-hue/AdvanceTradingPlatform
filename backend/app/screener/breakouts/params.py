@@ -72,8 +72,8 @@ PARAMS: Tuple[Param, ...] = (
     # --- B7 N-week high ---------------------------------------------------------------------------------------------------
     Param("high_weeks", 52, "the prior high (low) is the highest high (lowest low) of the previous N calendar weeks",
           "52-week high (George & Hwang 2004 52-week-high momentum; O'Neil's new-high rule).", 1, 520, group="B7"),
-    Param("fresh_min_days", 25, "the old high was set at least this many sessions before the break -> 'fresh' (from a base), else 'extended'",
-          "About 5 weeks, O'Neil's minimum flat-base length.", 1, 500, group="B7"),
+    Param("fresh_min_days", 35, "the old high was set at least this many CALENDAR days before the break -> 'fresh' (from a base), else 'extended'",
+          "5 weeks, O'Neil's minimum flat-base length (calendar days, so Daily and Weekly read the same).", 1, 3650, group="B7"),
     # --- B13 ATR / range expansion ----------------------------------------------------------------------------------------
     Param("expansion_k", 2.0, "the bar's range is at least k x ATR", "Wide-range bar convention (Crabel range expansion; 2 x ATR).",
           0.5, 20.0, group="B13"),
@@ -236,6 +236,9 @@ def validate(overrides: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any]
     if clean["grade_b_min"] > clean["grade_a_min"]:
         errors.append("grade_b_min must not be above grade_a_min - defaults used")
         clean["grade_a_min"], clean["grade_b_min"] = DEFAULTS["grade_a_min"], DEFAULTS["grade_b_min"]
+    if clean["dryup_n"] > clean["vol_avg_n"]:
+        errors.append("dryup_n must not be above vol_avg_n (the dry-up window sits inside the average) - defaults used")
+        clean["dryup_n"], clean["vol_avg_n"] = DEFAULTS["dryup_n"], DEFAULTS["vol_avg_n"]
     if clean["tod_min_sessions"] > clean["tod_sessions"]:
         errors.append("tod_min_sessions must not be above tod_sessions - defaults used")
         clean["tod_sessions"], clean["tod_min_sessions"] = DEFAULTS["tod_sessions"], DEFAULTS["tod_min_sessions"]
@@ -253,47 +256,10 @@ def settings(**overrides: Any) -> Dict[str, Any]:
     return clean
 
 
-# ScreenQL breakout function -> {argument: the parameter it sets}. The validator checks a literal (or a screen parameter)
-# against that parameter's range / choices, so a bad value is refused when the screen is saved, not when it first runs.
-SCREENQL_ARGS: Dict[str, Dict[str, str]] = {
-    "RangeBreakout": {"n": "range_n", "k": "min_break_atr", "v": "vol_mult", "mode": "range_mode"},
-    "SwingBreakout": {"degree": "swing_degree", "k": "min_break_atr"},
-    "SwingBreakType": {"degree": "swing_degree", "k": "min_break_atr"},
-    "NRBreakout": {"setup": "nr_setup", "v": "vol_mult", "k": "min_break_atr"},
-    "NewHighBreakout": {"weeks": "high_weeks", "v": "vol_mult", "k": "min_break_atr"},
-    "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"},
-    "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
-    "RelVolume": {"n": "vol_avg_n"},
-    "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"},
-    "DowTrend": {"degree": "htf_degree"},
-    "ORBreakout": {"minutes": "or_minutes", "v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
-    "DayLevelBreak": {"level": "day_level", "v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
-    "DayExtremeBreak": {"v": "tod_vol_mult", "vwap": "vwap_agree", "skip": "skip_first_min", "k": "min_break_atr"},
-    "RelVolumeTOD": {"sessions": "tod_sessions", "mode": "tod_mode"},
-}
-
-
-def arg_problem(function: str, arg: str, value: Any) -> Optional[str]:
-    """Why `value` is not allowed for a breakout function's argument (None: fine, or not a parameter argument)."""
-    name = SCREENQL_ARGS.get(function, {}).get(arg)
-    if name is None:
-        return None
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    if name == "tod_sessions":                     # RelVolumeTOD(sessions): at least one prior session, as many as the window
-        clean, errors = validate({name: value, "tod_min_sessions": 1})
-    else:
-        clean, errors = validate({name: value})
-    if errors:
-        return f"{function}: {arg} {value!r} - {errors[0].replace(' - default used', '').replace(' - defaults used', '')}"
-    return None
-
-
 def describe() -> List[Dict[str, Any]]:
     """The parameters as data (the builder's 'Breakout' and 'Breakout quality' block fields, the docs page)."""
     return [{"name": p.name, "default": _copy(p.default), "doc": p.doc, "note": p.note, "group": p.group,
              "min": p.low, "max": p.high, "choices": list(p.choices)} for p in PARAMS]
 
 
-__all__ = ["PARAMS", "DEFAULTS", "BY_NAME", "Param", "TF_MINUTES", "DEFAULT_CONTEXT_LADDER", "validate", "settings", "describe",
-           "SCREENQL_ARGS", "arg_problem"]
+__all__ = ["PARAMS", "DEFAULTS", "BY_NAME", "Param", "TF_MINUTES", "DEFAULT_CONTEXT_LADDER", "validate", "settings", "describe"]

@@ -60,11 +60,11 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str) -> pd.DataFrame:
     ScreenQL screen and the engine read the same bars); 2h / 4h are anchored at the exchange open like it, and a trailing
     bucket that had not closed is dropped."""
     from app.screener.runtime import resample as runtime_resample
-    from app.screener.runtime import session_origin
     if tf == base_tf:
         return base
     if tf not in EXTRA_TFS:
         return runtime_resample(base, base_tf, tf)
+    from app.screener.runtime import session_origin
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     if "oi" in base.columns:
         agg["oi"] = "last"

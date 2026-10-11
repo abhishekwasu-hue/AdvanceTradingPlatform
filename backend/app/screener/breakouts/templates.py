@@ -111,7 +111,8 @@ def _htf_items(side: str, context: Tuple[str, ...], p: Dict[str, Any]) -> List[n
     items: List[n.Node] = []
     for tf in context:
         trend = n.Call("DowTrend", [n.Num(float(p["htf_degree"]))], tf=tf)
-        items.append(n.Compare("==", trend, n.Str(with_)) if p["htf_filter"] == "agree" else n.Compare("!=", trend, n.Str(against)))
+        # not_against is NOT (trend == against): a missing (unknown) trend passes, as in quality.htf_pass
+        items.append(n.Compare("==", trend, n.Str(with_)) if p["htf_filter"] == "agree" else n.Not(n.Compare("==", trend, n.Str(against))))
     return items
 
 

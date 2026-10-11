@@ -1562,6 +1562,42 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   stream), PW2 (mobile layout, on its branch), BYOK-V1 #160 (flag vision_byok off), PW6 in progress. All draft, all
   flags off, nothing deployed.
 
+### 2026-10-11 - Z6 (P1-e): journal auto-capture, behaviour tags, discipline score, weekly review (flag off)
+- Split in two stacked draft PRs: Z6-a = auto-capture hooks, detectors, score, settings, `/api/journal` (backend);
+  Z6-b = weekly review (backend) and the Journal & Discipline page. Flag `discipline_engine`, default OFF.
+- Decisions taken without the owner (OPEN_QUESTIONS Z6-1..Z6-4):
+  * The journal is personal (per user), not tenant-wide.
+  * The defaults are reasoned, not fitted (research note in `docs/design/DISCIPLINE_ENGINE.md`).
+  * IV at exit stays empty until the exit path has an underlying quote.
+  * "Early exit" means an exit by hand between the stop and the first target.
+- Capture hooks run after the trade commit, in their own session, and never raise. Z3's PAPER fills flow in through
+  `persist_trade` with no Z3 change; the integration point for labelling them is documented.
+- No order behaviour changed. Two contract-meta dicts carry the underlying's price at the signal (`underlying_entry`),
+  which only the journal reads; it is not stored on the trade.
+- Review fixes (Z6-a, PR #171):
+  * H1: a hook no longer opens a session (and a second pool connection) while the caller holds its own. The flag is
+    read on the caller's connection, cached 10 s; with the flag on the work is queued to one background task (own
+    session, 15 s timeout, bounded queue). Fills, exits, the kill-switch flatten loop and the no-stop emergency exit
+    never wait on the journal. Tests: two-connection pool, flag-off connection count, a stuck job.
+  * M1: entries / tags / settings are upserts (ON CONFLICT), the price range is widened atomically, IV is written once,
+    and two refreshes of one trader serialise on a PostgreSQL advisory lock. Concurrency tests run on SQLite and, with
+    `Z6_TEST_PG_URL`, on PostgreSQL.
+  * L1: approved AI-action exits and "Exit now" count as the trader's decision for `early_exit`; `moved_stop_against`
+    waits for a stop-edit path (OPEN_QUESTIONS Z6-5).
+  * L2: the webhook journals as WEBHOOK, the public API as API (Z3's PROPOSAL comes with #173, Z6-6); IV at exit is
+    solved from the underlying quote an option exit was judged on.
+  * L3: merged main (BT1's `byob_data_tier` flag next to `discipline_engine`, both default OFF; zones in mypy.ini).
+### 2026-10-11 13:20 IST - Z5 part 1 (P1-c): Options Strategy Builder page completed to spec §3.3
+- Existed (P1-c1 #151, P1-c2 #152): builder API (catalog, template, evaluate, suggest) and the page (canvas with cone and
+  draggable strikes, gallery, leg table, metrics).
+- Added: T+0 curve beside the dated one, hatched loss area and a max-loss line, shape-coded buy / sell handles with
+  44 px hit areas and a phone-sized viewBox, gamma / vega per leg and leg cards on phones, payoff-first phone layout;
+  metrics from the engine (net premium, R:R, labelled margin estimate, cost to open from the India cost table, gauge);
+  "Place as basket" (hedge-first basket from a new review-only route; PAPER placing waits for P1-d, button disabled
+  with a note); "Save strategy" (tenant-scoped, flag `options_builder_saved` off, migration `option_strategies`);
+  adjustments / compare drawer placeholder.
+- Tests: backend new 9 (+1 guard), full suite 4652 passed; vitest 233; Playwright builder spec 12 (desktop + mobile).
+- Open: OB-8 (margin), OB-9 (saving flag), OB-10 (PAPER basket). Nothing deployed, no flag turned on, no LIVE path.
 ### 2026-10-11 18:15 IST - Trade port map (docs only)
 - `docs/TRADE_PORT_MAP.md`: every Trade module and folder (Trade@eafc872, read-only) with its purpose, ATP equivalent,
   status and parity test, grouped as Phase 0 / N-list / G / already ported / unscheduled / not needed. 191 rows:

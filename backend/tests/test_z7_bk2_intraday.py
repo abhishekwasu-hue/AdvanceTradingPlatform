@@ -57,8 +57,10 @@ def test_screenql_argument_defaults_are_the_intraday_parameter_defaults():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():
             assert spec[arg].default == bp.DEFAULTS[param], (fn, arg)
+            if bp.BY_NAME[param].low is not None:                            # and their range is the parameter's
+                assert spec[arg].bounds == (bp.BY_NAME[param].low, bp.BY_NAME[param].high), (fn, arg)
+            assert tuple(spec[arg].choices) == tuple(bp.BY_NAME[param].choices), (fn, arg)
         assert FUNCTIONS[fn].flag == "screener_breakouts"
-    assert {fn: bp.SCREENQL_ARGS[fn] for fn in want} == want
     assert FUNCTIONS["ORBreakout"].min_sessions == bp.DEFAULTS["tod_sessions"] + 1
     assert set(FUNCTIONS["ORBreakout"].timeframes) == set(style.STYLES["intraday"])
 
@@ -631,13 +633,65 @@ def test_every_intraday_template_can_match_within_the_real_fetch_windows(broker_
 def test_screenql_arguments_are_checked_against_the_parameter_ranges_when_validated():
     def problems(text, **params):
         return [p.message for p in compile_screen(text, base_tf="5m", params=params)[1].problems]
-    assert problems('ORBreakout("up", 0)') == ["ORBreakout: minutes 0 - or_minutes: must be between 1 and 240"]
-    assert problems('ORBreakout("up", 15.5)') == ["ORBreakout: minutes 15.5 - or_minutes: invalid value 15.5"]
+    assert problems('ORBreakout("up", 0)') == ["ORBreakout: minutes must be between 1 and 240, got 0"]
     assert problems('DayLevelBreak("up", "first_hour", 1.5, TRUE, 300) AND close > 0') == [
-        "DayLevelBreak: skip 300 - skip_first_min: must be between 0 and 240"]
-    assert problems('DayExtremeBreak("up", -1)') == ["DayExtremeBreak: v -1 - tod_vol_mult: must be between 0 and 20"]
-    assert problems('RelVolumeTOD(1) > 2') == ["RelVolumeTOD: sessions 1 - tod_sessions: must be between 2 and 120"]
-    assert problems('RangeBreakout("up", 20, 9)') == ["RangeBreakout: k 9 - min_break_atr: must be between 0 and 5"]   # BK1 too
+        "DayLevelBreak: skip must be between 0 and 240, got 300"]
+    assert problems('DayLevelBreak("up", "lunch")') and problems('RelVolumeTOD(2, "daily") > 1')        # choices
+    assert problems('DayExtremeBreak("up", -1)') == ["DayExtremeBreak: v must be between 0 and 20, got -1"]
+    assert problems('RelVolumeTOD(1) > 2') == ["RelVolumeTOD: sessions must be between 2 and 120, got 1"]
     assert problems('ORBreakout("up", $m)', m=500) and not problems('ORBreakout("up", $m)', m=30)        # screen parameters too
     assert not problems('ORBreakout("up", 30, 2, FALSE, 0, 0)') and not problems('RelVolumeTOD(3) > 2')
+    assert problems('ORBreakout("up")', ) == [] and problems('ORBreakout("up")@1h')                     # intraday timeframes only
 
+
+# --------------------------------------------------------------------------- alert gating of the BK2 functions (M1-M3)
+def test_intraday_breakout_alerts_are_gated_bar_close_only_and_pause_while_off():
+    from app.alerts import barclose
+    from app.db.models import AlertEventRecord, AlertRuleRecord
+    from sqlalchemy import select
+    from tests.test_auth_api import _session_factory, client
+    from tests.test_phase_l_ai import _owner
+    from tests.test_s4a_barclose import FakeFetch, _rule
+    from tests.test_z7_bk1_api import _save_breakout_screen, _set
+
+    _set(screener_v2=True, screener_breakouts=False)
+    try:
+        headers, me = _owner("bk2-gate@example.com")
+        sid = _save_breakout_screen(headers, source='DayExtremeBreak("up")', tf="5m")
+        r = client.post("/api/alerts/rules", json={"name": "s", "kind": "screen", "screen_id": sid, "symbols": ["TCS"]}, headers=headers)
+        assert r.status_code == 422 and "DayExtremeBreak()" in str(r.json())                    # a screen rule while off
+        _set(screener_breakouts=True, screener_intrabar=True)
+        r = client.post("/api/alerts/rules", json={"name": "i", "kind": "instrument", "symbol": "TCS", "condition": 'ORBreakout("up")',
+                                                   "base_tf": "5m", "fire_on": "intrabar"}, headers=headers)
+        assert r.status_code == 422 and "bar close only" in str(r.json())                       # never on a forming bar
+        _set(screener_breakouts=False, screener_intrabar=False)
+
+        f = sessions_frame(history() + [orb_day()])
+        rid = _rule(me["tenant_id"], symbol="TCS", condition='ORBreakout("up")', tf="5m")
+        fetch = FakeFetch({"TCS": f.iloc[:ORB_BAR + 1]})
+        now = (f.index[ORB_BAR] + timedelta(minutes=6)).to_pydatetime()
+
+        def cycle(at):
+            async def go():
+                async with _session_factory() as session:
+                    await barclose.run_due(session, now=at, fetch=fetch, holidays=set())
+                    rule = await session.get(AlertRuleRecord, rid)
+                    events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.rule_id == rid)))
+                    out = (rule.status, rule.last_problem, len(events))
+                    rule.status = "paused"
+                    await session.commit()
+                    return out
+            return asyncio.run(go())
+
+        async def reactivate():
+            async with _session_factory() as session:
+                (await session.get(AlertRuleRecord, rid)).status = "active"
+                await session.commit()
+        status, problem, fired = cycle(now)
+        assert status == "active" and "ORBreakout()" in problem and fired == 0                  # paused by the flag, not dropped
+        asyncio.run(reactivate())
+        _set(screener_breakouts=True)
+        status, problem, fired = cycle(now + timedelta(minutes=2))
+        assert status == "active" and problem is None and fired == 1                            # resumes on the same bar
+    finally:
+        _set(screener_v2=False, screener_breakouts=False, screener_intrabar=False)

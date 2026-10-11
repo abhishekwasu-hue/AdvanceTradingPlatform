@@ -141,10 +141,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     "alerts_reliable_outbox": "Reliable alert outbox: claimed deliveries (never sent twice by two workers), idempotency keys, dead letters and replay",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
+DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery",
-                               "alerts_stale_guard", "alerts_reliable_outbox"})
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

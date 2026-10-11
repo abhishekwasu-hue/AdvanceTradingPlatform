@@ -545,7 +545,8 @@ async def dispatch_pending(
     now = now or _utcnow()
     query = (
         select(AlertDeliveryRecord)
-        .where(AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, AlertDeliveryRecord.next_attempt_at <= now)
+        .where(AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, AlertDeliveryRecord.next_attempt_at <= now,
+               or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= now))   # claimed rows: someone else's
     )
     if tenant_id is not None:
         query = query.where(AlertDeliveryRecord.tenant_id == tenant_id)

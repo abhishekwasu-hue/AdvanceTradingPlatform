@@ -92,7 +92,7 @@ def register(tool: Tool) -> Tool:
 
 
 def registry() -> Dict[str, Tool]:
-    from app.ai.tools import proposals, read  # noqa: F401 - registers the tools on first use
+    from app.ai.tools import market, proposals, read  # noqa: F401 - registers the tools on first use
     return dict(_REGISTRY)
 
 

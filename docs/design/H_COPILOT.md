@@ -180,3 +180,24 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - A `length` stop or an HTTP error is a `ProviderError`.
   - `MeteredProvider.supports_tools` now turns on for OpenAI as well.
 - **Tests.** `tests/test_hc2b2_contract_openai.py` (7).
+
+## H-C2b-3 (built): market and research read tools
+- `app/ai/tools/market.py` adds five tools: `get_candles`, `get_quote`, `get_option_chain`, `get_market_regime` and
+  `run_backtest`.
+- **Server data only.** Candles come through `evidence.server_frame`, the H-C1 a path through the organisation's broker
+  session. The quote and the chain come from the same session. No tool accepts candles; an extra argument is refused by
+  the input model.
+- **No broker session.** Every tool fails closed with the fix location (Settings > Brokers). None falls back to sample
+  data.
+- **Small outputs.**
+  - candles: the range, the change and the last 5 bars;
+  - chain: totals, PCR, max pain, the top 3 OI strikes each side and ±5 strikes around the ATM;
+  - backtest: statistics only, plus `sample: insufficient` below the compliance minimum (30 trades) and a note that the
+    results are simulated.
+- **Backtest execution.** It runs off the event loop (`asyncio.to_thread`) under a 45 s timeout, with the
+  organisation's risk settings.
+- **Tests.** `tests/test_hc2b3_market_tools.py` (6) covers schema, no-session, as-of, chain math, backtest and an agent
+  answer that cites `get_candles`.
+- **Still open from ADR-0019's tool list:** `get_sentiment`, `get_global_cues` and `get_events_calendar`
+  (market_snapshot already carries the sentiment and cues), `validate_dsl`, `run_scanner`, and `get_orders`. These are
+  for H-C3, the research loop.

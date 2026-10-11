@@ -23,7 +23,7 @@ from app.brokers.base import BrokerInterface
 from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
-from app.market_data.calendar import IST, MARKET_OPEN
+from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
 from app.observability.metrics import MARKET_DATA_STALE
 
@@ -74,6 +74,35 @@ def _session_origin(df: pd.DataFrame) -> pd.Timestamp:
     return origin
 
 
+_INTRADAY_SECONDS = {"1min": 60, "3min": 180, "5min": 300, "10min": 600, "15min": 900, "30min": 1800, "60min": 3600}
+_NSE_SESSION_FAMILY = frozenset({"NSE", "BSE", "NFO", "BFO"})
+
+
+def forming_capped_ttl(last_bar_start: datetime, interval: str, exchange: str, now: datetime, ttl_seconds: int) -> int:
+    """Z10-b fix: a cached candle list never outlives the bar that was still forming when it was fetched. Otherwise a
+    copy taken at 09:29:30 is served at 09:30:10 and its 09:25 bar - cut off 30 seconds early - reads as the closed
+    bar (a bar-close alert or a strategy then decides on part of a bar). The entry expires when that bar closes: its
+    start plus the interval, or the 15:30 IST close for the NSE family's last bucket and daily bar."""
+    start = last_bar_start if last_bar_start.tzinfo else last_bar_start.replace(tzinfo=timezone.utc)
+    now = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    session_close = None
+    if exchange.upper() in _NSE_SESSION_FAMILY:
+        session_close = datetime.combine(start.astimezone(IST).date(), MARKET_CLOSE, IST)
+    if interval == "day":
+        if session_close is None:
+            return ttl_seconds
+        ends = session_close
+    elif interval in _INTRADAY_SECONDS:
+        ends = start + timedelta(seconds=_INTRADAY_SECONDS[interval])
+        if session_close is not None and start < session_close < ends:
+            ends = session_close
+    else:
+        return ttl_seconds
+    if ends <= now:
+        return ttl_seconds                                  # the newest bar had already closed: the usual TTL
+    return max(1, min(ttl_seconds, int((ends - now).total_seconds())))
+
+
 class MarketDataService:
     def __init__(
         self, broker: BrokerInterface, *, cache_ttl_seconds: int = DEFAULT_CANDLE_CACHE_TTL_SECONDS,
@@ -105,7 +134,8 @@ class MarketDataService:
 
         bars = await self._fetch(symbol, exchange, interval, now)
         if bars:
-            await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), self.cache_ttl_seconds)
+            ttl = forming_capped_ttl(bars[-1].timestamp, interval, exchange, now or datetime.now(timezone.utc), self.cache_ttl_seconds)
+            await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
         return bars
 
     async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:

@@ -14,20 +14,26 @@ changes an order.
 * the hourly cap holds the overflow for the next digest (reason "rate_cap"), critical excepted;
 * digest rules collect their events and send one notification per rule when the hourly / end-of-day bucket closes.
 Every event ends sent, suppressed or held with a reason code; deliveries carry priority, group id and digest bucket.
+
+Z10-b: with `alerts_stale_guard` on, an instant rule's event whose bar is no longer current when it would be sent (held
+by quiet hours or the cap, or flushed late) is suppressed (reason "stale_data", `app/alerts/staleness.py`); digests
+list past matches by design and are not judged here. With `alerts_reliable_outbox` on, a flush that crashed after its
+notification was committed is completed on the next cycle instead of raising the alert twice (`_adopt_orphan`).
 """
 from __future__ import annotations
 
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.alerts import staleness
 from app.core.enums import NotificationSeverity, NotificationType
 from app.db.models import AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, NotificationRecord
 
@@ -169,6 +175,35 @@ async def _send(session: AsyncSession, rule: AlertRuleRecord, events: List[Alert
     return note
 
 
+async def _hardened(session: AsyncSession, tenant_id: int, memo: Dict[int, bool]) -> bool:
+    from app.alerts.dispatcher import outbox_hardened
+    return await outbox_hardened(session, tenant_id, memo)
+
+
+async def _adopt_orphan(session: AsyncSession, rule: AlertRuleRecord, events: List[AlertEventRecord], now: datetime, group_id: str,
+                        bucket: Optional[str]) -> bool:
+    """Z10-b (flag `alerts_reliable_outbox`): `notify()` commits the notification and its outbox rows before this flush
+    marks the events sent. A crash in between (worker killed, a later group failing) leaves the events pending, and the
+    next flush would raise the same alert a second time. The same alert - this organisation, the same title and
+    message, raised after these events, linked to no event - is adopted instead of sent again."""
+    title, body = _message(rule, events, bucket)
+    since = min(_utc(e.created_at) for e in events)
+    linked = select(AlertEventRecord.id).where(AlertEventRecord.notification_id == NotificationRecord.id).exists()
+    note = await session.scalar(select(NotificationRecord).where(
+        NotificationRecord.tenant_id == rule.tenant_id, NotificationRecord.event_type == NotificationType.SCREEN_ALERT.value,
+        NotificationRecord.title == title, NotificationRecord.message == body, NotificationRecord.created_at >= since, ~linked)
+        .order_by(NotificationRecord.id).limit(1))
+    if note is None:
+        return False
+    await session.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.notification_id == note.id)
+                          .values(priority=rule.priority, group_id=group_id, digest_bucket=bucket).execution_options(synchronize_session=False))
+    from app.alerts.links import add_linked_delivery                    # idempotent: an existing row for the chat is kept
+    await add_linked_delivery(session, rule.tenant_id, note.id, rule.created_by, priority=rule.priority, group_id=group_id, digest_bucket=bucket)
+    for e in events:
+        e.status, e.reason_code, e.group_id, e.notification_id, e.sent_at = "sent", None, group_id, note.id, now
+    return True
+
+
 async def flush(session: AsyncSession, now: Optional[datetime] = None, tenant_id: Optional[int] = None) -> Dict[str, int]:
     """Turn pending / held events into grouped notifications under each organisation's policy. Returns counters."""
     now = _utc(now or datetime.now(timezone.utc))
@@ -182,6 +217,9 @@ async def flush(session: AsyncSession, now: Optional[datetime] = None, tenant_id
     rules = {r.id: r for r in await session.scalars(select(AlertRuleRecord).where(AlertRuleRecord.id.in_({e.rule_id for e in events})))}
     policies: Dict[int, Policy] = {}
     groups: Dict[Tuple[int, str], List[AlertEventRecord]] = {}
+    guard: Dict[int, bool] = {}
+    hardened: Dict[int, bool] = {}
+    holidays: List[Set[date]] = []
     for e in events:
         rule = rules.get(e.rule_id)
         if rule is None:
@@ -195,6 +233,16 @@ async def flush(session: AsyncSession, now: Optional[datetime] = None, tenant_id
                 continue
             groups.setdefault((rule.id, f"digest|{bucket}"), []).append(e)
             continue
+        if await staleness.guard_on(session, e.tenant_id, guard):
+            # Z10-b: an event held (quiet hours, hourly cap) or flushed late is only sent while its bar is still current.
+            if not holidays:
+                from app.market_data.calendar import load_holidays
+                holidays.append(await load_holidays(session, "NSE"))
+            if staleness.alert_badge(e.bar_time, rule.base_tf, now, holidays[0])["alerts_suppressed"]:
+                e.status, e.reason_code = "suppressed", staleness.REASON
+                out["suppressed"] = out.get("suppressed", 0) + 1
+                staleness.count_suppressed("alert_flush")
+                continue
         if e.status == "pending" and now - _utc(e.created_at) < timedelta(seconds=policy.group_window_seconds):
             continue                                                   # the bar's burst may still be arriving
         groups.setdefault((rule.id, f"bar|{_utc(e.bar_time).isoformat()}"), []).append(e)
@@ -214,6 +262,9 @@ async def flush(session: AsyncSession, now: Optional[datetime] = None, tenant_id
                 out["held"] += len(members)
                 continue
         group_id = hashlib.sha256(f"{rule_id}|{key}".encode()).hexdigest()[:32]
+        if await _hardened(session, rule.tenant_id, hardened) and await _adopt_orphan(session, rule, members, now, group_id, digest_id):
+            out["sent"] += len(members)
+            continue
         await _send(session, rule, members, now, group_id, digest_id)
         out["sent"] += len(members)
     await session.commit()

@@ -101,6 +101,7 @@ ORDER_ENTRY_LATENCY = _histogram("order_entry_latency_seconds", "Signal-to-fill 
 ACTIVE_DEPLOYMENTS = _gauge("active_deployments", "Deployments in ACTIVE status", ("mode",))
 OPEN_POSITIONS = _gauge("open_positions", "Open trades", ("mode",))
 ALERT_OUTBOX_PENDING = _gauge("alert_outbox_pending", "Alert deliveries waiting to be sent")
+ALERT_OUTBOX_DEAD = _gauge("alert_outbox_dead", "Alert deliveries dead-lettered after every attempt, waiting for an operator (Z10-b)")
 WORKER_HEARTBEAT_AGE = _gauge("worker_heartbeat_age_seconds", "Seconds since the trading worker's last heartbeat row (-1 = never)")
 LOGIN_FAILURES_15M = _gauge("login_failures_15m", "Failed login attempts in the last 15 minutes")
 
@@ -145,6 +146,8 @@ async def refresh_db_gauges(session: AsyncSession, now: Optional[datetime] = Non
 
     pending = await session.scalar(select(func.count()).select_from(AlertDeliveryRecord).where(AlertDeliveryRecord.status == "PENDING"))
     ALERT_OUTBOX_PENDING.set(pending or 0)
+    dead = await session.scalar(select(func.count()).select_from(AlertDeliveryRecord).where(AlertDeliveryRecord.status == "DEAD"))
+    ALERT_OUTBOX_DEAD.set(dead or 0)
 
     heartbeat = await session.scalar(select(WorkerHeartbeatRecord).where(WorkerHeartbeatRecord.worker_name == "trading_worker"))
     if heartbeat is None or heartbeat.last_seen_at is None:

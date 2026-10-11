@@ -1512,6 +1512,13 @@ class AlertDeliveryRecord(Base):
     reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # S3b-2: a per-user destination on the channel (a linked Telegram chat); NULL = the channel's own address.
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Z10-b (flag alerts_reliable_outbox): one key per delivery (notification x channel x address), unique, so a
+    # duplicate cycle cannot queue the same delivery twice; sent to receivers that can dedupe (webhook / SMS
+    # `Idempotency-Key`, email `Message-ID`). A worker claims a row with a lease before sending it, so two workers never
+    # send the same row; a worker killed mid-send leaves a lease that expires, and the row is claimed again.
+    idem_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class CompanyRecord(Base):

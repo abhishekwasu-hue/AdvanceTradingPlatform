@@ -169,15 +169,20 @@ async def put_policy(body: PolicyBody, user: User = Depends(require_trader), ses
     return body.model_dump()
 
 
+RETRYABLE = ("FAILED", "DEAD")                            # Z10-b: DEAD = gave up after MAX_ATTEMPTS (alerts_reliable_outbox)
+
+
 @router.get("/dead-letters")
 async def dead_letters(limit: int = 100, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
-    """S3b: deliveries that gave up after every retry (or whose channel was off), for the operator to look at or retry."""
+    """S3b: deliveries that gave up after every retry (or whose channel was off), for the operator to look at or retry.
+    Z10-b: also DEAD rows (flag alerts_reliable_outbox)."""
     rows = await session.execute(select(AlertDeliveryRecord, AlertChannelRecord.channel_type).join(
         AlertChannelRecord, AlertChannelRecord.id == AlertDeliveryRecord.channel_id).where(
-        AlertDeliveryRecord.tenant_id == user.tenant_id, AlertDeliveryRecord.status == "FAILED").order_by(AlertDeliveryRecord.id.desc())
+        AlertDeliveryRecord.tenant_id == user.tenant_id, AlertDeliveryRecord.status.in_(RETRYABLE)).order_by(AlertDeliveryRecord.id.desc())
         .limit(max(1, min(limit, 500))))
     return [{"id": d.id, "notification_id": d.notification_id, "channel": ctype, "attempts": d.attempts, "reason": d.reason_code,
-             "last_error": d.last_error, "group_id": d.group_id, "created_at": d.created_at.isoformat() if d.created_at else None}
+             "last_error": d.last_error, "group_id": d.group_id, "created_at": d.created_at.isoformat() if d.created_at else None,
+             "status": d.status}
             for d, ctype in rows.all()]
 
 
@@ -187,9 +192,10 @@ async def retry_delivery(delivery_id: int, user: User = Depends(require_trader),
     row = await session.scalar(select(AlertDeliveryRecord).where(AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.tenant_id == user.tenant_id))
     if row is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    if row.status != "FAILED":
+    if row.status not in RETRYABLE:
         raise HTTPException(status_code=409, detail=f"Only failed deliveries can be retried (this one is {row.status})")
     row.status, row.attempts, row.reason_code, row.next_attempt_at = "PENDING", 0, None, datetime.now(timezone.utc)
+    row.lease_until = None                                # Z10-b: the idempotency key stays, so a receiver can drop a repeat
     await session.commit()
     return {"id": row.id, "status": row.status}
 

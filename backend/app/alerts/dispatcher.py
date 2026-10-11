@@ -4,6 +4,17 @@
 network, so the execution pipeline that raised a CRITICAL alert is never slowed or failed by a
 dead SMTP server. `dispatch_pending` does the sending; the trading worker calls it every cycle
 (market open or not), and the Settings "send test" button calls `send_via_channel` directly.
+
+Z10-b, per organisation and off by default:
+* `alerts_reliable_outbox` - a worker *claims* a row before sending it (a conditional UPDATE that takes a lease of
+  `LEASE_SECONDS` and counts the attempt), so two workers never send the same row; a worker killed mid-send leaves a
+  lease that expires, and the row is claimed again (at least once - receivers that can dedupe get the row's
+  `idem_key`: webhook / SMS `Idempotency-Key`, email `Message-ID`). After `MAX_ATTEMPTS` the row is DEAD (reason
+  dead_letter, or worker_lost when its last attempt never came back), for the operator to replay. Each delivery has
+  one idempotency key (notification x channel x address, unique), so a duplicate cycle cannot queue it twice.
+* `alerts_stale_guard` - a screen / instrument alert is not sent once its bars are no longer current
+  (`app/alerts/staleness.py`; a retry, a held delivery, a replayed dead letter): the row is SUPPRESSED (reason
+  stale_data). Every other notification type - trades, exits, risk, broker, system - is always sent (ADR-0004).
 """
 import asyncio
 import hashlib
@@ -11,21 +22,24 @@ import hmac
 import json
 import html
 import logging
+import os
 import re
 import smtplib
-from datetime import datetime, timedelta, timezone
+import socket
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, MutableMapping, Optional, Set, Tuple
 
 import httpx
 
 from app.core.egress import check_url_resolved
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
 from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, decrypt_raw, encrypt_config, severity_reaches
-from app.alerts import webpush
+from app.alerts import staleness, webpush
 from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -38,6 +52,11 @@ MAX_ATTEMPTS = 5
 BASE_BACKOFF_SECONDS = 30
 TELEGRAM_API = "https://api.telegram.org"
 SEND_TIMEOUT_SECONDS = 10.0
+OUTBOX_FLAG = "alerts_reliable_outbox"
+# A claimed row is someone else's for this long. Above the worst single send (an SMS gateway or a push fan-out is several
+# SEND_TIMEOUT_SECONDS requests), so a live worker never loses its row mid-send.
+LEASE_SECONDS = 120
+WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"[:64]
 
 
 def _utcnow() -> datetime:
@@ -46,6 +65,22 @@ def _utcnow() -> datetime:
 
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def delivery_key(notification_id: int, channel_id: int, address: Optional[str] = None) -> str:
+    """Z10-b: the idempotency key of one delivery - the same notification, channel and address always give the same key."""
+    return hashlib.sha256(f"atp-delivery|{notification_id}|{channel_id}|{address or ''}".encode()).hexdigest()
+
+
+async def outbox_hardened(session: AsyncSession, tenant_id: int, memo: Optional[MutableMapping[int, bool]] = None) -> bool:
+    """Flag `alerts_reliable_outbox` for this organisation (remembered in `memo` for the rest of a drain)."""
+    if memo is not None and tenant_id in memo:
+        return memo[tenant_id]
+    from app.platform.controls import flag_enabled
+    on = await flag_enabled(session, OUTBOX_FLAG, tenant_id)
+    if memo is not None:
+        memo[tenant_id] = on
+    return on
 
 
 def _push_wants(channel: AlertChannelRecord, notification: NotificationRecord) -> bool:
@@ -65,14 +100,22 @@ async def enqueue_for_notification(session: AsyncSession, notification: Notifica
         )
     )
     rows: List[AlertDeliveryRecord] = []
+    keyed = await outbox_hardened(session, notification.tenant_id)
+    queued: Set[str] = set()
+    if keyed:                                              # Z10-b: a second enqueue of the same notification adds nothing
+        queued = {k for k in await session.scalars(select(AlertDeliveryRecord.idem_key).where(
+            AlertDeliveryRecord.notification_id == notification.id)) if k}
     for channel in channels:
         if not severity_reaches(notification.severity, channel.min_severity):
             continue
         if channel.channel_type == AlertChannelType.PUSH.value and not _push_wants(channel, notification):
             continue                                       # PW3: a category this organisation turned off for push
+        key = delivery_key(notification.id, channel.id) if keyed else None
+        if key is not None and key in queued:
+            continue
         row = AlertDeliveryRecord(
             tenant_id=notification.tenant_id, notification_id=notification.id, channel_id=channel.id,
-            status=AlertDeliveryStatus.PENDING.value, next_attempt_at=_utcnow(),
+            status=AlertDeliveryStatus.PENDING.value, next_attempt_at=_utcnow(), idem_key=key,
         )
         session.add(row)
         rows.append(row)
@@ -190,7 +233,7 @@ def sign_webhook(secret: str, body: bytes, timestamp: str) -> str:
 
 
 async def send_webhook(config: WebhookConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
-                       alert: Optional[dict] = None) -> None:
+                       alert: Optional[dict] = None, idempotency_key: Optional[str] = None) -> None:
     """Phase K4: HMAC-signed JSON POST. A filtered-out event type is a silent success. S3b: versioned body, optional
     Chartink shape for screen alerts, schema header."""
     if config.event_types and notification.event_type not in config.event_types:
@@ -202,6 +245,8 @@ async def send_webhook(config: WebhookConfig, notification: NotificationRecord, 
     headers = {"Content-Type": "application/json", "X-ATP-Timestamp": timestamp, "X-ATP-Signature": sign_webhook(config.secret, body, timestamp),
                "X-ATP-Event": notification.event_type, "X-ATP-Schema": "chartink/1" if chartink else WEBHOOK_SCHEMA,
                "User-Agent": "ATP-Webhooks/1.0"}
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key                # Z10-b: the same on every retry of this delivery
     await check_url_resolved(str(config.url))                       # P0.2 / S5: resolved right before the request
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
@@ -235,7 +280,8 @@ def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: s
     return _fill_template(config.body_template, values), None
 
 
-async def send_sms(config: SmsConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> None:
+async def send_sms(config: SmsConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+                   idempotency_key: Optional[str] = None) -> None:
     """Phase O3: one gateway request per recipient; the first failure is raised after trying all."""
     await check_url_resolved(str(config.url))                       # P0.2 / S5
     owns_client = client is None
@@ -245,6 +291,8 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
         for number in config.to_numbers:
             body, _ = render_sms(config, notification, number)
             headers = {"Content-Type": config.content_type, "User-Agent": "ATP-Alerts/1.0", **config.headers}
+            if idempotency_key:
+                headers["Idempotency-Key"] = hashlib.sha256(f"{idempotency_key}|{number}".encode()).hexdigest()  # one per recipient
             try:
                 if config.method == "GET":
                     response = await client.get(str(config.url), params=dict(p.split("=", 1) for p in body.split("&") if "=" in p), headers=headers)
@@ -291,8 +339,14 @@ async def send_push(config: PushConfig, notification: NotificationRecord, client
     return gone
 
 
+def _message_id(idempotency_key: str, address: Optional[str] = None) -> str:
+    """Z10-b: the same Message-ID on every retry of one delivery (one per recipient), so a mail server can drop a repeat."""
+    token = hashlib.sha256(f"{idempotency_key}|{(address or '').strip().lower()}".encode()).hexdigest()[:40] if address else idempotency_key
+    return f"<{token}@atp-alerts>"
+
+
 async def _send_screen_alert_email(session: Optional[AsyncSession], channel: AlertChannelRecord, config: EmailConfig, subject: str,
-                                   plain: str) -> None:
+                                   plain: str, idempotency_key: Optional[str] = None) -> None:
     """S3b-2: one mail per recipient, each with its own signed unsubscribe link (when PUBLIC_BASE_URL is set);
     addresses that opted out are skipped."""
     from app.alerts.links import opted_out, unsubscribe_url
@@ -301,23 +355,26 @@ async def _send_screen_alert_email(session: Optional[AsyncSession], channel: Ale
     for address in recipients:
         if address.strip().lower() in skip:
             continue
+        extra = {"Message-ID": _message_id(idempotency_key, address)} if idempotency_key else None
         url = unsubscribe_url(channel.tenant_id, address)
         if url is None:
-            await send_email(config, subject, plain, to=[address])
+            await send_email(config, subject, plain, to=[address], headers=extra)
             continue
         body = f"{plain}\n\nStop screen-alert emails to this address: {url}"
         await send_email(config, subject, body, to=[address],
-                         headers={"List-Unsubscribe": f"<{url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"})
+                         headers={"List-Unsubscribe": f"<{url}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click", **(extra or {})})
 
 
 async def send_via_channel(
     channel: AlertChannelRecord, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None, alert: Optional[dict] = None,
-    address: Optional[str] = None, session: Optional[AsyncSession] = None,
+    address: Optional[str] = None, session: Optional[AsyncSession] = None, idempotency_key: Optional[str] = None,
 ) -> None:
     """Sends one notification through one channel. Raises on failure with a message safe to store.
-    A PUSH channel whose devices have gone gets its config rewritten in place (caller commits)."""
+    A PUSH channel whose devices have gone gets its config rewritten in place (caller commits).
+    `idempotency_key` (Z10-b) goes to receivers that can dedupe a repeated send: webhook / SMS headers, email Message-ID."""
     config = decrypt_config(channel)
     plain, html_body = render_text(notification)
+    mail_headers = {"Message-ID": _message_id(idempotency_key)} if idempotency_key else None
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
         if address and address == config.chat_id:  # type: ignore[union-attr]
             return                                         # S3b-2: the linked chat is the channel's own chat - sent once already
@@ -327,11 +384,11 @@ async def send_via_channel(
     elif channel.channel_type == AlertChannelType.EMAIL.value:
         subject = f"[{notification.severity}] {notification.title}"
         if notification.event_type == NotificationType.SCREEN_ALERT.value:
-            await _send_screen_alert_email(session, channel, config, subject, plain)  # type: ignore[arg-type]
+            await _send_screen_alert_email(session, channel, config, subject, plain, idempotency_key)  # type: ignore[arg-type]
         else:
-            await send_email(config, subject, plain)  # type: ignore[arg-type]
+            await send_email(config, subject, plain, headers=mail_headers)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.WEBHOOK.value:
-        await send_webhook(config, notification, client, alert)  # type: ignore[arg-type]
+        await send_webhook(config, notification, client, alert, idempotency_key=idempotency_key)  # type: ignore[arg-type]
     elif channel.channel_type == AlertChannelType.PUSH.value:
         gone = await send_push(config, notification, client)  # type: ignore[arg-type]
         if gone:
@@ -341,7 +398,7 @@ async def send_via_channel(
                                                           channel.tenant_id)
             logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
     elif channel.channel_type == AlertChannelType.SMS.value:
-        await send_sms(config, notification, client)  # type: ignore[arg-type]
+        await send_sms(config, notification, client, idempotency_key=idempotency_key)  # type: ignore[arg-type]
     else:
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
 
@@ -420,6 +477,60 @@ async def alert_context(session: AsyncSession, notification: NotificationRecord)
 
 # --- the drain -----------------------------------------------------------------------------------
 
+async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: datetime) -> str:
+    """Z10-b: take the row for this worker - "ok", "taken" (another worker holds a live lease, or it is no longer
+    PENDING) or "lost" (its lease ran out on the last attempt: DEAD, reason worker_lost). One conditional UPDATE each, so
+    of two workers racing for a row exactly one wins. The attempt is counted here, so a send that kills its worker still
+    uses up an attempt and a poison row cannot loop for ever."""
+    free = or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= now)
+    values: Dict[str, Any] = {"lease_until": now + timedelta(seconds=LEASE_SECONDS), "claimed_by": WORKER_ID, "attempts": AlertDeliveryRecord.attempts + 1}
+    if delivery.idem_key is None:                          # a row queued before the flag: keyed on its first claim
+        values["idem_key"] = delivery_key(delivery.notification_id, delivery.channel_id, delivery.address)
+    claim = (update(AlertDeliveryRecord)
+             .where(AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
+                    AlertDeliveryRecord.attempts < MAX_ATTEMPTS)
+             .values(**values).execution_options(synchronize_session=False))
+    try:
+        mine = await session.execute(claim)
+    except IntegrityError:                                 # another row already holds this delivery's key: a duplicate
+        await session.rollback()
+        await session.execute(update(AlertDeliveryRecord).where(
+            AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value)
+            .values(status=AlertDeliveryStatus.SUPPRESSED.value, reason_code="duplicate", lease_until=None,
+                    last_error="The same delivery is already queued (same notification, channel and address)")
+            .execution_options(synchronize_session=False))
+        await session.commit()
+        await session.refresh(delivery)
+        return "taken"
+    state = "ok" if getattr(mine, "rowcount", 0) == 1 else "taken"
+    if state == "taken":
+        lost = await session.execute(
+            update(AlertDeliveryRecord)
+            .where(AlertDeliveryRecord.id == delivery.id, AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, free,
+                   AlertDeliveryRecord.attempts >= MAX_ATTEMPTS)
+            .values(status=AlertDeliveryStatus.DEAD.value, reason_code="worker_lost", lease_until=None,
+                    last_error="The worker sending the last attempt stopped before it finished; it may or may not have arrived")
+            .execution_options(synchronize_session=False))
+        state = "lost" if getattr(lost, "rowcount", 0) == 1 else "taken"
+    await session.commit()                                 # the claim is visible to every other worker before the send
+    await session.refresh(delivery)
+    return state
+
+
+async def _stale_alert(session: AsyncSession, notification: NotificationRecord, now: datetime, holidays: List[Set[date]]) -> Optional[str]:
+    """Z10-b: why this screen / instrument alert may no longer be sent (its newest bar is no longer current), or None."""
+    from app.db.models import AlertEventRecord, AlertRuleRecord
+    events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.notification_id == notification.id)))
+    if not events:
+        return "the alert's data time is unknown (no alert events behind it)"
+    rule = await session.get(AlertRuleRecord, events[0].rule_id)
+    if not holidays:
+        from app.market_data.calendar import load_holidays
+        holidays.append(await load_holidays(session, "NSE"))
+    badge = staleness.alert_badge(max(_as_utc(e.bar_time) for e in events), rule.base_tf if rule is not None else None, now, holidays[0])
+    return badge["stale_reason"] if badge["alerts_suppressed"] else None
+
+
 async def dispatch_pending(
     session: AsyncSession, *, limit: int = 50, client: Optional[httpx.AsyncClient] = None, now: Optional[datetime] = None,
     tenant_id: Optional[int] = None,
@@ -427,7 +538,9 @@ async def dispatch_pending(
     """Sends every due PENDING delivery once, returning (sent, failed_this_round). A failure
     schedules a retry with exponential backoff (30s, 60s, 120s, ...) until MAX_ATTEMPTS, then the
     row is FAILED for good. One bad channel never delays another: each row commits on its own.
-    `tenant_id` narrows the drain to one tenant (the worker passes none: platform-wide)."""
+    `tenant_id` narrows the drain to one tenant (the worker passes none: platform-wide).
+    Z10-b: claimed with a lease, DEAD after the last attempt (`alerts_reliable_outbox`); a stale screen alert is
+    SUPPRESSED instead of sent (`alerts_stale_guard`). Both per organisation; see the module docstring."""
     now = now or _utcnow()
     query = (
         select(AlertDeliveryRecord)
@@ -437,7 +550,20 @@ async def dispatch_pending(
         query = query.where(AlertDeliveryRecord.tenant_id == tenant_id)
     due = list(await session.scalars(query.order_by(AlertDeliveryRecord.id).limit(limit)))
     sent = failed = 0
+    hardened: Dict[int, bool] = {}
+    guard: Dict[int, bool] = {}
+    holidays: List[Set[date]] = []
     for delivery in due:
+        reliable = await outbox_hardened(session, delivery.tenant_id, hardened)
+        if reliable:
+            claim = await _claim(session, delivery, now)
+            if claim == "taken":
+                continue                                   # another worker is sending it (or already did)
+            if claim == "lost":
+                ALERT_DELIVERIES.labels(channel="unknown", status=AlertDeliveryStatus.DEAD.value).inc()
+                logger.error("Alert delivery %s: its last attempt's worker was lost; dead-lettered", delivery.id)
+                failed += 1
+                continue
         channel = await session.get(AlertChannelRecord, delivery.channel_id)
         notification = await session.get(NotificationRecord, delivery.notification_id)
         if channel is not None:
@@ -446,29 +572,45 @@ async def dispatch_pending(
             delivery.status = AlertDeliveryStatus.FAILED.value
             delivery.last_error = "Channel disabled or removed before delivery"
             delivery.reason_code = "channel_disabled"
+            delivery.lease_until = None
             await session.commit()
             failed += 1
             continue
+        if notification.event_type in staleness.SUPPRESSIBLE and delivery.digest_bucket is None \
+                and await staleness.guard_on(session, delivery.tenant_id, guard):
+            why = await _stale_alert(session, notification, now, holidays)
+            if why is not None:
+                delivery.status = AlertDeliveryStatus.SUPPRESSED.value
+                delivery.reason_code = staleness.REASON
+                delivery.last_error = why[:500]
+                delivery.lease_until = None
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
+                staleness.count_suppressed("alert_send")
+                logger.info("Alert delivery %s suppressed: %s", delivery.id, why)
+                await session.commit()
+                continue
         try:
             if not await _telegram_proposal_buttons(session, channel, notification, client) \
                     and not await _telegram_oi_buttons(session, channel, notification, client):
                 await send_via_channel(channel, notification, client, await alert_context(session, notification), address=delivery.address,
-                                       session=session)
+                                       session=session, idempotency_key=delivery.idem_key if reliable else None)
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
-            delivery.attempts += 1
+            if not reliable:
+                delivery.attempts += 1                     # reliable: counted when the row was claimed
             delivery.last_error = str(exc)[:500]
             channel.last_error = delivery.last_error
             if delivery.attempts >= MAX_ATTEMPTS:
-                delivery.status = AlertDeliveryStatus.FAILED.value
+                delivery.status = AlertDeliveryStatus.DEAD.value if reliable else AlertDeliveryStatus.FAILED.value
                 delivery.reason_code = "dead_letter"               # S3b: kept for the operator; retry from the dead-letter list
-                ALERT_DELIVERIES.labels(channel=channel.channel_type, status="FAILED").inc()
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=delivery.status).inc()
                 logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, delivery.attempts, exc)
             else:
                 delivery.next_attempt_at = now + timedelta(seconds=BASE_BACKOFF_SECONDS * (2 ** (delivery.attempts - 1)))
                 logger.warning("Alert delivery %s failed (attempt %d): %s", delivery.id, delivery.attempts, exc)
             failed += 1
         else:
-            delivery.attempts += 1
+            if not reliable:
+                delivery.attempts += 1
             delivery.status = AlertDeliveryStatus.SENT.value
             ALERT_DELIVERIES.labels(channel=channel.channel_type, status="SENT").inc()
             delivery.sent_at = now
@@ -476,6 +618,7 @@ async def dispatch_pending(
             channel.last_delivered_at = now
             channel.last_error = None
             sent += 1
+        delivery.lease_until = None
         await session.commit()
     if sent or failed:
         logger.info("Alert dispatch: %d sent, %d failed/retried", sent, failed)

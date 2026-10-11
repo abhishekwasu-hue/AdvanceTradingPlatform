@@ -132,11 +132,19 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
+    # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
+    # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
+    # system notifications are never held back. OFF: unchanged.
+    "alerts_stale_guard": "Stale-data guard for alerts: no screen or instrument alert is recorded or sent on market data that is no longer current",
+    # Z10-b: outbox reliability - a worker claims a delivery with a lease before sending, one idempotency key per
+    # delivery, a DEAD state after the last attempt, operator replay of dead letters. OFF: the outbox is unchanged.
+    "alerts_reliable_outbox": "Reliable alert outbox: claimed deliveries (never sent twice by two workers), idempotency keys, dead letters and replay",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery"})
+                               "history_backfill", "options_builder_saved", "approval_only_entries", "screener_gallery",
+                               "alerts_stale_guard", "alerts_reliable_outbox"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

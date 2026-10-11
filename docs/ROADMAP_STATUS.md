@@ -20,20 +20,13 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | not started | - | 0 |
 | Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | not started | - | 0 |
 
-Also first: docs/TRADE_PORT_MAP.md (Trade repo -> ATP map; Phase 0 ports fold into Z3/Z5/Z10). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
+docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; see below). Parked until Z11 merges: BYOK-V3 (N5; work so far kept on branch claude/byok-v3-scan-daily), E/U4 auto modes, F, G, CH3-CH7 beyond evidence charts, BV vendor tier, Capacitor/Tauri, crypto, IBKR, K.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).
 
-Working rules: docs/WORKING_RULES.md (multitasking and self-review are required). Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Own PRs are merged when CI is green and review passes (owner's Phase 0 rule); flags stay off.
-Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
-Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
-
-Last update: 2026-10-11 10:05 IST.
-
-## Trade port map
+### Trade port map
 
 docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872) to ATP, with status and parity tests.
-This section stands on its own because PR #165, which adds the Phase 0 section, is not merged yet. Move it under
-Phase 0 when #165 merges. Each port PR updates its row in the map and these counts.
+Each port PR updates its row in the map and these counts.
 
 | Status | Rows (of 191) |
 |---|---|
@@ -47,6 +40,12 @@ Phase 0 when #165 merges. Each port PR updates its row in the map and these coun
 Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (missing),
 India VIX gate (missing), PAPER journal / Telegram commands (partial), PAPER exit engine (partial), expiry rule
 (partial: ported, not wired).
+
+Working rules: docs/WORKING_RULES.md (multitasking and self-review are required). Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Own PRs are merged when CI is green and review passes (owner's Phase 0 rule); flags stay off.
+Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
+Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
+
+Last update: 2026-10-11 10:05 IST.
 
 ## Parts and status
 

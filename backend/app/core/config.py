@@ -115,6 +115,8 @@ SUPER_ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("SUPER_ADMIN_EMA
 # Phase D1: refuse LIVE orders for tenants that have not entered their exchange-issued algo id
 # (SEBI retail-algo framework). Off by default so a PAPER-only or pre-registration deployment
 # keeps working; turn on once live trading is offered to customers.
+# Part D7: refuse new F&O entries on an underlying in the exchange's ban period (lake MWPL / OI data). Off by default.
+FO_BAN_CHECK_ENABLED = os.environ.get("FO_BAN_CHECK_ENABLED", "false").lower() in ("1", "true", "yes")
 # H-C1 a: AI approval evidence (draft backtests, interview options) must run on server-fetched candles; client-posted
 # candles are recorded as "sample" and cannot approve or deploy. On by default (a safety rule, not a feature).
 AI_EVIDENCE_SERVER_ONLY = os.environ.get("AI_EVIDENCE_SERVER_ONLY", "true").lower() in ("1", "true", "yes")
@@ -174,6 +176,16 @@ QUOTE_MAX_STALE_SECONDS = int(os.environ.get("QUOTE_MAX_STALE_SECONDS", "120"))
 # symbols its deployments and open positions need; get_ltp uses a tick younger than
 # TICK_MAX_AGE_SECONDS (default: the quote staleness limit) and falls back to REST otherwise.
 STREAMING_QUOTES_ENABLED = os.environ.get("STREAMING_QUOTES_ENABLED", "false").lower() in ("1", "true", "yes")
+# Part B2: streamed ticks -> 1-minute bars in the market data lake (md_candles, source stream:<broker>). Needs the stream.
+LAKE_TICK_WRITER_ENABLED = os.environ.get("LAKE_TICK_WRITER_ENABLED", "false").lower() in ("1", "true", "yes")
+# Part B3: data-quality thresholds for lake bars (events only - nothing is deleted or blocked).
+LAKE_SPIKE_PCT = float(os.environ.get("LAKE_SPIKE_PCT", "10"))
+LAKE_LATE_SECONDS = float(os.environ.get("LAKE_LATE_SECONDS", "300"))
+LAKE_MISMATCH_PCT = float(os.environ.get("LAKE_MISMATCH_PCT", "0.5"))
+# Part B4: also adjust prices for dividends in the adjusted view (splits and bonuses always are).
+LAKE_ADJUST_DIVIDENDS = os.environ.get("LAKE_ADJUST_DIVIDENDS", "false").lower() in ("1", "true", "yes")
+# Part B5: most bars one /api/market-data/history request returns (narrow the window for more).
+LAKE_HISTORY_MAX_BARS = int(os.environ.get("LAKE_HISTORY_MAX_BARS", "5000"))
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 
 # Phase G2: per-broker circuit breaker on call health (distinct from the kill switch). When more
@@ -317,6 +329,38 @@ STOP_LIMIT_BAND_PCT: Optional[float] = _band_pct(os.environ.get("STOP_LIMIT_BAND
 # confirmed wing fill lets the shorts go at the full quantity). Default off while LIVE changes are gated (G-LIVE).
 LIVE_STRICT_WING_FILL = os.environ.get("LIVE_STRICT_WING_FILL", "false").lower() in ("1", "true", "yes")
 
+
+# Screener addendum U1: NSE universe reference data (securities, symbol history, ...). Off until the operator has
+# recorded each file's terms in docs/DATA_SOURCES.md. The URLs are the exchange's published download files.
+UNIVERSE_SYNC_ENABLED = os.environ.get("UNIVERSE_SYNC_ENABLED", "false").lower() in ("1", "true", "yes")
+UNIVERSE_SYNC_HOUR_IST = int(os.environ.get("UNIVERSE_SYNC_HOUR_IST", "18") or 18)
+UNIVERSE_MIN_ROWS_RATIO = float(os.environ.get("UNIVERSE_MIN_ROWS_RATIO", "0.9") or 0.9)
+# U1-b: an index file that would change more than this share of the members held in one day is refused for review.
+UNIVERSE_MAX_CHURN_RATIO = float(os.environ.get("UNIVERSE_MAX_CHURN_RATIO", "0.2") or 0.2)
+UNIVERSE_USER_AGENT = os.environ.get("UNIVERSE_USER_AGENT", "Mozilla/5.0 (compatible; ATP-reference-sync/1.0)")
+_UNIVERSE_FILE_URLS_DEFAULT = {
+    "equity_list": "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
+    "sme_equity_list": "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv",
+    "etf_list": "https://nsearchives.nseindia.com/content/equities/eq_etfseclist.csv",
+    "symbol_changes": "https://nsearchives.nseindia.com/content/equities/symbolchange.csv",
+    # U1-c: {ddmmyyyy} is filled with the trade date.
+    "index_close_all": "https://nsearchives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv",
+    "fo_lots": "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv",
+    "fo_ban": "https://nsearchives.nseindia.com/content/fo/fo_secban.csv",
+}
+
+
+def _universe_urls() -> dict:
+    import json
+    raw = os.environ.get("UNIVERSE_FILE_URLS", "").strip()
+    try:
+        extra = json.loads(raw) if raw else {}
+    except ValueError:
+        extra = {}
+    return {**_UNIVERSE_FILE_URLS_DEFAULT, **(extra if isinstance(extra, dict) else {})}
+
+
+UNIVERSE_FILE_URLS = _universe_urls()
 # S1c (ADR-0021): which engine runs POST /api/scanner/run - "legacy" (app/scanner/engine.py) or "screenql" (the same
 # filters as one ScreenQL screen, parity-tested). Default legacy until the owner switches it; the response is identical.
 SCANNER_ENGINE = os.environ.get("SCANNER_ENGINE", "legacy").strip().lower()

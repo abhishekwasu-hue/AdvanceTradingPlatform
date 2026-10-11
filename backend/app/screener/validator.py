@@ -112,6 +112,26 @@ class _Checker:
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
 
+    def degree_bars(self, node: Any, spec: Any) -> int:
+        """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
+        largest when it cannot be read (the choice check reports that separately)."""
+        pos = next((i for i, a in enumerate(spec.args) if a.name == "degree"), None)
+        if pos is None:
+            return max(spec.degree_min_bars)
+        arg = node.args[pos] if pos < len(node.args) else None
+        if arg is None:
+            value: Any = spec.args[pos].default
+        elif isinstance(arg, n.Num):
+            value = arg.value
+        elif isinstance(arg, n.Param):
+            value = self.params.get(arg.name)
+        else:
+            value = None
+        try:
+            return spec.degree_min_bars[int(value)]
+        except (TypeError, ValueError, IndexError):
+            return max(spec.degree_min_bars)
+
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
@@ -282,7 +302,10 @@ class _Checker:
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
                 window = max(window, a.default if isinstance(a.default, int) else 1)
-        self._need(own_tf, offset + max(window, 1, spec.min_bars) + spec.extra_bars)
+        min_bars = spec.min_bars
+        if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
+            min_bars = max(min_bars, self.degree_bars(node, spec))
+        self._need(own_tf, offset + max(window, 1, min_bars) + spec.extra_bars)
         self.out.cost += spec.cost * (1 + window / 100)
         if spec.returns == NUM:
             unit = spec.unit

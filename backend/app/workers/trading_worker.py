@@ -72,6 +72,7 @@ from app.market_data.calendar import IST, all_session_statuses, intraday_cutoffs
 from app.market_data.freshness import candle_staleness
 from app.market_data.service import MarketDataService
 from app.market_data.stream import StreamManager
+from app.market_lake.recorder import LakeRecorder
 from app.observability.metrics import MARKET_DATA_STALE
 from app.reconciliation.service import broker_uncertain_reason, reconcile_accounts, run_reconciliation
 from app.secrets_store.envelope import ensure_tenant_key
@@ -125,12 +126,14 @@ class CycleReport:
     billing: Optional[Dict[str, int]] = None
     ai_proposals: int = 0
     master_synced: Optional[Dict[str, int]] = None
+    universe_synced: Optional[Dict[str, int]] = None      # U1-a
     stale_skips: int = 0
     reconciled: int = 0
     open_exchanges: List[str] = field(default_factory=list)
     stops_rearmed: int = 0
     streams_connected: int = 0   # Phase S: websocket quote streams currently connected
     memory_snapshots: int = 0    # Phase AR: market-memory rows written this cycle
+    lake_bars: int = 0           # B2: 1-minute bars written to the lake this cycle
     login_reminders: int = 0     # D5: pre-open daily-login reminders raised this cycle
     oi_snapshots: int = 0        # OI Banner O2: option-chain OI slots stored this cycle
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
@@ -206,6 +209,7 @@ class TradingWorker:
         self._last_ai_expiry_day = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
+        self._last_universe_sync_day = None   # U1-a
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -215,6 +219,12 @@ class TradingWorker:
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
         # symbols the tenant's deployments and open positions need (STREAMING_QUOTES_ENABLED).
         self.streams = StreamManager()
+        # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
+        self.lake = None
+        if app_config.LAKE_TICK_WRITER_ENABLED:
+            from app.market_data import stream as stream_module
+            self.lake = LakeRecorder()
+            stream_module.tick_listeners.append(self.lake.on_tick)
         # Phase T: last balance refresh attempt per broker account (failures throttled too).
         self._last_account_refresh: Dict[int, datetime] = {}
         # Phase AR: last market-memory capture per tenant (UTC).
@@ -289,6 +299,13 @@ class TradingWorker:
                         return report   # H-1: another replica holds the lock - its cycle runs the housekeeping
                 else:
                     logger.debug("Market closed: %s", reason)
+                if self.lake is not None:
+                    try:
+                        report.lake_bars = (await self.lake.drain(session, now)).inserted
+                    except Exception as exc:  # noqa: BLE001 - the lake must never break trading
+                        logger.exception("Lake bar write failed")
+                        report.errors.append(f"lake: {exc}")
+                        await session.rollback()
                 # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
                 try:
                     report.redis_memory_ratio = await self.redis_guard.check_memory(session)
@@ -334,6 +351,13 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - reference data; never blocks trading
                     logger.exception("OI banner collection failed")
                     report.errors.append(f"oi banner: {exc}")
+                # OI Banner O4b: the day's banner digest after each tenant's digest time (any time, market open or not).
+                try:
+                    from app.option_chain import oi_alerts
+                    async with self.session_factory() as own:
+                        await oi_alerts.send_digests(own, now)
+                except Exception as exc:  # noqa: BLE001 - a digest never blocks the cycle
+                    logger.warning("OI banner digest failed: %s", exc)
                 # Phase AX: the end-of-day summary - once per IST weekday from 15:35, one
                 # notification per organisation with a deployment or a trade today. Read-only.
                 ist_now = now.astimezone(IST)
@@ -387,6 +411,27 @@ class TradingWorker:
                         logger.exception("Instrument master sync failed")
                         report.errors.append(f"instrument master: {exc}")
                         self._last_master_sync_day = ist_now.date()  # retry tomorrow, not every minute
+                # Screener addendum U1-a: the NSE equity lists and symbol changes, once per IST day after
+                # UNIVERSE_SYNC_HOUR_IST, only when the operator has turned it on (files' terms recorded first).
+                if app_config.UNIVERSE_SYNC_ENABLED and not nse.is_open and self._last_universe_sync_day != ist_now.date() \
+                        and ist_now.hour >= app_config.UNIVERSE_SYNC_HOUR_IST:
+                    self._last_universe_sync_day = ist_now.date()      # success or failure: next try is tomorrow
+                    try:
+                        from app.universe.sources import NseArchiveSource
+                        from app.universe.sync import sync_equity_lists
+                        u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
+                        report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
+                        from app.universe import indices as universe_indices                     # U1-b: constituents after the list
+                        idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
+                        report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
+                                                      indices_refused=sum(1 for r in idx if r.refused))
+                        from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
+                        fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
+                        report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
+                                                      banned=len(fo.banned), fo_refused=len(fo.refused))
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Universe sync failed")
+                        report.errors.append(f"universe sync: {exc}")
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -476,6 +521,16 @@ class TradingWorker:
                         except Exception as exc:  # noqa: BLE001 - try the next tenant's session
                             await own.rollback()
                             logger.warning("OI snapshot of %s through tenant %s failed: %s", underlying, tenant_id, exc)
+            # O4: each following tenant's banner state and alerts for this slot (also when the read failed: a stale
+            # collector is itself an alert). Its own session; a failure never stops the cycle.
+            from app.option_chain import oi_alerts
+            for tenant_id in sorted({t for t, _ in tenants}):
+                async with self.session_factory() as own:
+                    try:
+                        await oi_alerts.evaluate_tenant(own, tenant_id, underlying, now, market_open=True)
+                    except Exception as exc:  # noqa: BLE001
+                        await own.rollback()
+                        logger.warning("OI alerts of %s for tenant %s failed: %s", underlying, tenant_id, exc)
         return stored
 
     async def _market_memory(self, session: AsyncSession, now: datetime, broker_reads: bool = True) -> int:
@@ -845,6 +900,18 @@ class TradingWorker:
             dep.last_error = None
             await session.commit()
             return False
+        # OI Banner O5: opt-in OI gates before a NEW entry (this path never runs for exits - ADR-0004). Fail-closed.
+        if getattr(dep, "oi_gates", None):
+            from app.option_chain import oi_gates
+            oi_direction = oi_gates.direction_of(signal.direction.value if hasattr(signal.direction, "value") else signal.direction)
+            if oi_direction is not None:
+                verdict = await oi_gates.check_entry(session, dep.tenant_id, master.underlying_of(dep.symbol), oi_direction,
+                                                     oi_gates.parse_gates(dep.oi_gates), now)
+                if not verdict.allowed:
+                    dep.last_signal_at = signal_ts                     # this signal is done; the next one is checked afresh
+                    dep.last_error = f"Signal at {signal_ts.isoformat()} skipped by OI gates: " + "; ".join(verdict.reasons)[:400]
+                    await session.commit()
+                    return False
 
         contract = None
         rules = ContractRules.from_deployment(dep)

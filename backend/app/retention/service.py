@@ -24,7 +24,7 @@ from app.audit.log import write_audit_log
 from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
-    OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
+    OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
     AlertDeliveryRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserSessionRecord,
 )
@@ -79,6 +79,8 @@ def _rules(now: datetime, policy: RetentionPolicy):
             select(OISnapshotRecord.id).where(OISnapshotRecord.captured_at < _cutoff(now, policy.oi_snapshots_days)))),
         ("oi_snapshots", OISnapshotRecord, OISnapshotRecord.captured_at < _cutoff(now, policy.oi_snapshots_days)),
         ("oi_day_baselines", OIDayBaselineRecord, OIDayBaselineRecord.first_seen_at < _cutoff(now, policy.oi_snapshots_days)),
+        ("oi_banner_states", OIBannerStateRecord, OIBannerStateRecord.created_at < _cutoff(now, policy.oi_snapshots_days)),
+        ("oi_alert_log", OIAlertLogRecord, OIAlertLogRecord.created_at < _cutoff(now, policy.oi_snapshots_days)),
         ("market_snapshots", MarketSnapshotRecord, MarketSnapshotRecord.captured_at < _cutoff(now, policy.market_snapshots_days)),
         # Phase BB: feed items age out; a person's cited MANUAL entry never does (it is their claim, kept).
         ("news_events_feed", NewsEventRecord, (NewsEventRecord.origin == "FEED") & (NewsEventRecord.created_at < _cutoff(now, policy.news_feed_days))),

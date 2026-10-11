@@ -269,6 +269,14 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
     live_streams = config.STREAMING_QUOTES_ENABLED
     items.append(Item("streaming", "Streaming quotes (optional)", "ok" if live_streams else "info", "enabled" if live_streams else "REST polling",
                       "" if live_streams else "Set STREAMING_QUOTES_ENABLED=true after the first live confirmation of the tick decoders.", "STREAMING_QUOTES_ENABLED"))
+    # Part D6: what only a human can evidence (vendor, strategy class, AI, DPDP) - LIVE scope, `warn` at worst so a PAPER
+    # go-live is never blocked by paperwork.
+    from app.compliance import golive
+    for g in await golive.evaluate(session):
+        items.append(Item(f"golive.{g.id}", g.title, g.status, g.detail[:200],
+                          "" if g.status == "ok" else ("Record where the evidence lives: PUT /api/compliance/golive/evidence"
+                                                        if g.kind == "evidence" else "See docs/COMPLIANCE_IN.md for this check."),
+                          "admin", scope="LIVE"))
     return Checklist(target="PLATFORM", items=items)
 
 

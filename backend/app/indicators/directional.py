@@ -2,8 +2,10 @@ import numpy as np
 import pandas as pd
 
 from app.indicators.volatility import true_range
+from app.indicators.prefix_cache import prefix_cached
 
 
+@prefix_cached
 def adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     up_move = df["high"].diff()
     down_move = -df["low"].diff()

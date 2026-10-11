@@ -78,7 +78,7 @@ export default function AskCopilotTab() {
     stopReveal();
     setText("");
     setTurns((all) => [...all, { id: nextId.current++, role: "user", text: q, shown: q.length }]);
-    const reply = await task.run([t("ask.step.route"), t("ask.step.facts"), t("ask.step.write")], (signal) => api.aiCopilot(q, undefined, signal));
+    const reply = await task.run([t("ask.step.route"), t("ask.step.facts"), t("ask.step.write")], (signal) => api.aiCopilot(q, "en", signal));   // ATP review 12: the UI is English, so is the answer
     if (reply) setTurns((all) => [...all, { id: nextId.current++, role: "ai", text: reply.answer, reply, shown: 0 }]);
   }
 

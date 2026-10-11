@@ -29,8 +29,8 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 
 One row per top-level `.py` file (140) and per folder (35: 25 code packages and 10 others such as `tests/`,
 `research/`, `data/`), except three folders that are split because their parts have different statuses: `paper/`
-(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest). 140 + 32 + 9 + 8 + 2 =
-**191 rows**.
+(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest), plus one planned Trade module
+(the level-bot confirmation gate, added 2026-10-11). 140 + 32 + 9 + 8 + 2 + 1 = **192 rows**.
 
 | Status | Rows |
 |---|---|
@@ -38,14 +38,14 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 4 |
-| missing | 50 (25 of them are G rows that wait for the owner's "stable" mark) |
+| missing | 51 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
-| **Total** | **191** |
+| **Total** | **192** |
 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 0 | 11 | 4 | 0 | 4 | 2 |
-| 2. Right after Phase 0 (N-list) | 28 | 4 | 3 | 3 | 4 | 14 | 0 |
+| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
@@ -124,6 +124,7 @@ The six safety checks the spec lists for `order_safety.py`:
 | `dynamic_sr_instant_trader.py` | Template: 1-min / 5-min instant reversal at dynamic S/R levels | none | missing: template | none (Trade has `tests/test_dynamic_sr_instant_trader.py`) |
 | `srv2_momentum_reversal_strategy.py` | Template: 15 / 30 / 60-minute dynamic S/R reversal with a momentum filter | none | missing: template | none (Trade has `tests/test_srv2_momentum_reversal_strategy.py`) |
 | `classic_sr_reversal_trader.py` | Template: classic S/R reversal | none | missing: template | none (Trade has `tests/test_classic_sr_reversal_trader.py`) |
+| `bots_common/level_reaction.py` (level-bot confirmation gate, Trade TRADE_SESSION_LEVEL_BOTS_CONFIRMATION.md; in progress in Trade) | One shared gate for the level bots: trend first -> stored level is only a candidate area -> handover study inside the area (trend-side vs counter-side candle size and volume, wedge / channel / double-top patterns) -> dominant commitment candle on higher volume -> Vision -> Telegram approval | none | missing: N-list (N1 / U4 proposal engine uses the same rules); wait for the Trade replay report (touch vs confirmation) before porting | none yet |
 | `gap_fill_reversal_strategy.py` | Template: 1H Supertrend trend -> opening gap -> gap fill -> reversal | `backend/app/price_action/gap_context.py` (placeholder only) | missing: template | none |
 | `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` ported to `backend/app/price_action/zones/detect.py` (Z7a-1, #168) | none (Trade has `tests/test_page_mtf_multi.py`) |
 | `oi_greeks_vix_strategy.py` | Template: OI + Greeks + India VIX decision tree | `backend/app/option_chain/oi_regime.py` (the OI part) | missing: template | none |

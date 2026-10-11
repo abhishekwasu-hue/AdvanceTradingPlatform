@@ -1616,3 +1616,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
   on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
 - BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.
+### 2026-10-11 IST - Z7a-3: market-zones chart layer + ScreenQL zone functions (branch only, no PR: open-PR limit)
+- Branch `claude/z7a3-zones-chart-screenql` from Z7a-2 (#176), Z7a-2 updates merged in (never rebased).
+- Chart layer (pure, reusable server-side for U8 evidence images): `app/price_action/zones/chart.py` - role by price,
+  distance, provisional 0-100 strength, at most 6 bands (3 per role by proximity, strongest of each overlapping
+  cluster, 10 % cap), labels "demand <price> (fresh/tested/flipped)" + touch count; browser port
+  `frontend/src/charting/marketZones.ts` checked against the same 23 cases (`tests/fixtures/zones/chart_bands_cases.json`).
+- Read API: `zones/read.py` (zones_as_of per tenant; bar-by-bar timeline equal to zones_as_of at every bar close) and
+  `GET /api/charts/layers/market-zones` (flag `market_zones`, 503 while off; labelled platform fallback).
+- ScreenQL: `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength` (`app/screener/zones.py`), snapshot as of each bar's
+  close; hidden / refused while the flag is off (BK1 pattern), alert rules refused, paused at bar close, never intrabar.
+- Frontend: `LayerData.bands` drawn as a `LayerPrimitive` by the lightweight engine; `MarketZonesLayer` + legend on the
+  full-window chart. Open questions Z7a3-1 .. Z7a3-8. No order path, no flag turned on.

@@ -215,7 +215,8 @@ Until then, `backup` and `restore-check` work on the local copies and print `R2 
   - CI lints this: `scripts/migration_rollback_safety.py lint` fails on a missing marker, or on `True` next to a
     drop, rename, type change or NOT NULL without a server default, unless a reviewed `ROLLBACK_SAFE_REASON` is
     given.
-  - The five older migrations that change types or nullability are marked `False`.
+  - Nine older migrations are marked `False`: five change column types or nullability, and four add a UNIQUE
+    constraint to an existing table and have not been reviewed.
 - **Code-only (default).** If the database is ahead of the target release, the **newer** image checks two things:
   that the database revision descends from the target's head, and that every migration in between is
   `ROLLBACK_SAFE`.

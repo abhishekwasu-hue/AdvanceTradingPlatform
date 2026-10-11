@@ -11,7 +11,8 @@ Two uses:
     python scripts/migration_rollback_safety.py lint
         CI (tests/test_z11_migration_rollback_safety.py). Fails when a migration does not declare ROLLBACK_SAFE, or
         declares True while its upgrade() drops / renames a table or column, changes a column type, makes a column
-        NOT NULL, adds a NOT NULL column without a server default, or runs SQL doing any of that. A reviewed exception
+        NOT NULL, adds a NOT NULL column without a server default, adds a UNIQUE / CHECK constraint, or runs SQL doing any
+        of that. A reviewed exception
         sets ROLLBACK_SAFE_REASON = "<why the old code is unaffected>" next to ROLLBACK_SAFE = True.
 
     python scripts/migration_rollback_safety.py check --db-revision <rev> --target-head <rev>
@@ -30,7 +31,9 @@ from typing import Dict, List, Optional
 BACKEND = Path(__file__).resolve().parents[1]
 VERSIONS = BACKEND / "alembic" / "versions"
 _RISKY_SQL = re.compile(r"\b(drop\s+(table|column)|rename\s+(to|column)|alter\s+column\s+\w+\s+(set\s+data\s+)?type|set\s+not\s+null)\b", re.I)
-_ALWAYS_RISKY = {"drop_table", "drop_column", "rename_table"}
+_ALWAYS_RISKY = {"drop_table", "drop_column", "rename_table",
+                 # a new UNIQUE / CHECK constraint on an existing table can refuse a write the previous release still makes
+                 "create_unique_constraint", "create_check_constraint"}
 
 
 def _kw(call: ast.Call, name: str):
@@ -93,12 +96,20 @@ def lint(versions: Path = VERSIONS) -> List[str]:
         declared = _declared(source)
         safe = declared.get("ROLLBACK_SAFE")
         if not isinstance(safe, bool):
-            problems.append(f"{path.name}: declare ROLLBACK_SAFE = True/False (Z11 rollback safety)")
+            risky = sorted(set(risky_operations(source)))
+            hint = (f"ROLLBACK_SAFE = False    # {', '.join(risky)}" if risky else
+                    "ROLLBACK_SAFE = True     # additive: the previous release runs on this schema")
+            problems.append(f"{path.name}: missing ROLLBACK_SAFE (Z11). Add this line under `down_revision` / `depends_on`:\n"
+                            f"    {hint}\n"
+                            "  True only when the previous release's code keeps working on the upgraded schema; otherwise False "
+                            "(a code-only rollback past it is then refused and deploy/atp.sh rollback --restore-db is used).")
             continue
         risky = risky_operations(source)
         if safe and risky and not declared.get("ROLLBACK_SAFE_REASON"):
-            problems.append(f"{path.name}: ROLLBACK_SAFE = True but upgrade() has {', '.join(sorted(set(risky)))} - "
-                            "set ROLLBACK_SAFE = False, or ROLLBACK_SAFE_REASON = \"<why old code is unaffected>\"")
+            problems.append(f"{path.name}: ROLLBACK_SAFE = True but upgrade() has {', '.join(sorted(set(risky)))} (Z11). Either set\n"
+                            "    ROLLBACK_SAFE = False\n"
+                            "  or, after review, keep True and add next to it\n"
+                            "    ROLLBACK_SAFE_REASON = \"<why the previous release's code is unaffected>\"")
     return problems
 
 

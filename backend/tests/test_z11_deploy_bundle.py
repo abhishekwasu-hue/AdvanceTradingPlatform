@@ -989,6 +989,7 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
         "notnull.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False))\n", True),
         "sql.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('ALTER TABLE t ALTER COLUMN c SET NOT NULL')\n", True),
         "missing.py": (head + "\ndef upgrade():\n    op.create_table('t')\n", True),
+        "unique.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_unique_constraint('uq', 't', ['a'])\n", True),
         "additive.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False, server_default='0'))\n"
                         "    op.create_table('u', sa.Column('id', sa.Integer(), nullable=False))\n\ndef downgrade():\n    op.drop_table('u')\n", False),
         "marked_unsafe.py": (head + "ROLLBACK_SAFE = False\n\ndef upgrade():\n    op.drop_table('t')\n", False),
@@ -998,3 +999,5 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
         (tmp_path / name).write_text(src)
     flagged = {p.split(":")[0] for p in mod.lint(tmp_path)}
     assert flagged == {name for name, (_, bad) in cases.items() if bad}
+    message = "\n".join(mod.lint(tmp_path))
+    assert "missing.py: missing ROLLBACK_SAFE (Z11). Add this line" in message and "ROLLBACK_SAFE = True     # additive" in message

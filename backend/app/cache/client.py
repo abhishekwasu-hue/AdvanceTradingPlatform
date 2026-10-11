@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 import redis.asyncio as redis
 
-from app.core.config import REDIS_URL
+from app.core.config import CACHE_MAX_TTL_SECONDS, REDIS_URL
 
 _client: Optional["redis.Redis"] = None
 
@@ -41,10 +41,32 @@ async def cache_incr_window(key: str, ttl_seconds: int) -> Optional[int]:
 
 
 async def cache_set(key: str, value: str, ttl_seconds: int) -> None:
+    """H-1: a cache entry always expires, and soon (at most CACHE_MAX_TTL_SECONDS) - Redis evicts only keys with a TTL
+    (`volatile-lru`), so a cache key without one could never make room under memory pressure. Out-of-range TTLs are
+    clamped, never refused: a cache write must not fail the request that made it."""
     try:
-        await _get_client().set(key, value, ex=ttl_seconds)
+        await _get_client().set(key, value, ex=min(max(1, int(ttl_seconds)), CACHE_MAX_TTL_SECONDS))
     except Exception:
         pass
+
+
+async def cache_lock_holder(key: str) -> Tuple[Optional[str], bool]:
+    """H-1: who holds the lock now -> (holder or None, redis_reachable). Tells a lock that was evicted (None) from one a
+    second replica took (another holder) from Redis being down."""
+    try:
+        return await _get_client().get(key), True
+    except Exception:
+        return None, False
+
+
+async def cache_memory_ratio() -> Optional[float]:
+    """H-1: used_memory / maxmemory, or None when Redis is unreachable or runs without a cap (maxmemory 0)."""
+    try:
+        info = await _get_client().info("memory")
+        cap = float(info.get("maxmemory") or 0)
+        return float(info.get("used_memory") or 0) / cap if cap > 0 else None
+    except Exception:
+        return None
 
 
 # P0.1 / S2: compare-and-act in one Redis round trip, so a lock that expired and was taken by another

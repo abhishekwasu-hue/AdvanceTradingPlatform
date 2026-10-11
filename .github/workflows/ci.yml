@@ -46,7 +46,7 @@ jobs:
 
       - name: ruff (backend/ruff.toml)
         working-directory: backend
-        run: ruff check app tests
+        run: ruff check app tests evals
 
       - name: mypy (backend/mypy.ini - gated packages only)
         working-directory: backend

@@ -257,7 +257,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         counts = {"universe": len(symbols), "with_data": stages["with_data"],
                   "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in stages["stages"]]}
         return {"run_id": None, "preview": True, "text": payload["text"], "base_tf": base_tf, "data_source": data_source,
-                "scanned": len(symbols), "matched_count": len(payload["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
+                "scanned": len(symbols), "matched_count": sum(1 for r in results if r["matched"]), "funnel": counts, "disclaimer": DISCLAIMER}
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),
                               ast_version=nodes.VERSION, base_tf=base_tf, universe_json=json.dumps(symbols), data_source=data_source,

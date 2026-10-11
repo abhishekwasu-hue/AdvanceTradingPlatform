@@ -2308,7 +2308,66 @@ class HistoryImportFileRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
-# --- Screener addendum U1: NSE universe reference data (as-of) ------------------------------------------------------------
+class HistoryBackfillFileRecord(Base):
+    """HB1: one NSE daily file - a segment (`cm` cash bhavcopy, `fo` F&O bhavcopy, `index` all-indices closes) for one
+    trade date - and what the backfill did with it. The resume point (a `done` day is never fetched again) and the
+    progress source of the admin page. Status: pending | running | done | no_file (the archive has no file: a holiday,
+    a weekend, or not published yet) | blocked (the archive refused after its retries - upload the file by hand) |
+    refused (the file failed a check; nothing written) | failed (unexpected error; retried on the next run)."""
+
+    __tablename__ = "history_backfill_files"
+    __table_args__ = (UniqueConstraint("segment", "trade_date", name="uq_history_backfill_file"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    segment: Mapped[str] = mapped_column(String(8), nullable=False)                # cm | fo | index
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    origin: Mapped[str | None] = mapped_column(String(16), nullable=True)          # nse_archives | local_dir | upload
+    file_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    file_format: Mapped[str | None] = mapped_column(String(16), nullable=True)     # cm_legacy | cm_udiff | cm_full | fo_legacy | ...
+    # What the bars' volume counts: shares (cash), contracts (legacy F&O), unconfirmed (UDiFF F&O TtlTradgVol),
+    # withheld (F&O volume stored as 0 until the unit is settled), none (indices).
+    volume_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)          # of the bytes as received (zip or csv)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_read: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows_loaded: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    corrected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class MdIsinSymbolRecord(Base):
+    """HB1: which symbol an ISIN traded under, as OBSERVED in the exchange's own daily cash files - one row per
+    contiguous run (first and last trade date seen), so a rename and back (X -> Y -> X) is two X runs. Survivorship-free
+    by construction - a delisted or suspended name keeps its rows - and the join that stitches one company's daily
+    history across symbol changes and ISIN changes (`app.market_lake.by_isin`). Kept apart from U1's `symbol_history`
+    (derived from the exchange's symbol-change file) so neither rewrites the other."""
+
+    __tablename__ = "md_isin_symbols"
+    __table_args__ = (UniqueConstraint("exchange", "isin", "symbol", "first_date", name="uq_md_isin_symbol_run"),
+                      Index("ix_md_isin_symbols_symbol", "exchange", "symbol"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False, default="NSE")
+    isin: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    series: Mapped[str] = mapped_column(String(4), nullable=False)               # the series of the latest row seen
+    first_date: Mapped[date] = mapped_column(Date, nullable=False)
+    last_date: Mapped[date] = mapped_column(Date, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+# --- Screener addendum U1: NSE universe reference data (as-of)------------------------------------------------------------
 class SecurityRecord(Base):
     """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the
     tradability layer and joins on ISIN/symbol. `last_seen_on` is the last equity-list file that carried it; a security

@@ -101,6 +101,8 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - Draft and deployment proposals need a new execute path, so they wait for the owner's answer.
   - The untrusted-text quote check covers news read before the proposal call. (a) and (b) always apply, so the
     trader's message must ask for the action in every case.
+- **H-8. Plain-text agent answers.** Provisional: they are accepted without claims (grounding and the filter still
+  apply), and the evals measure the rate. Strict JSON-only can follow once the rate is known.
 
 ## H-C2a (built): tool registry, bounded loop, audit - read tools only
 - **Tools.** `app/ai/tools/` is a typed registry:
@@ -156,3 +158,25 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **Limit (provisional, H-7).** The untrusted-text check sees only data read before the proposal call. When the model
   reads news after proposing in the same turn, only checks (a) and (b) protect that call. Both still require the
   trader's own message to ask for the action.
+
+## H-C2b-2 (built): the JSON answer contract and the OpenAI tools adapter
+- **Contract** (ADR-0019 §4). The final answer is one JSON object, `{text, claims[{statement, source}],
+  disclaimers[]}`, where `source` is the id of a tool call in this request. It is parsed by `agent.parse_answer`,
+  which tolerates a ```json fence. The checks are:
+  - every number in the text comes from the tool outputs or the question (H-C1 d);
+  - each claim cites a successful call of this request, and its numbers come from that very call's result;
+  - the output filter runs on the text, the claims and the disclaimers.
+  - A failure gets one rewrite (the model is told which claim and why), then the data summary.
+  - The route returns `claims`, `disclaimers`, `agent.contract` and each tool call's `id`, so the UI can cite sources
+    (H-C8).
+- **Plain text (provisional, H-8).** A plain-text answer is still accepted, as text without claims
+  (`contract: "plain"`); grounding and the filter still apply. H-C10 evals will measure how often it happens, and
+  strict mode can follow.
+- **OpenAI** (ADR-0019 §6). `OpenAIProvider.complete_tools` uses Chat Completions function tools.
+  - The loop's Anthropic-shaped messages are translated: assistant blocks become `tool_calls`, and each `tool_result`
+    becomes one `tool` message.
+  - The reply comes back as Anthropic-shaped blocks, so `agent.py` stays provider-neutral.
+  - Arguments that are not valid JSON are refused by the tool's input model.
+  - A `length` stop or an HTTP error is a `ProviderError`.
+  - `MeteredProvider.supports_tools` now turns on for OpenAI as well.
+- **Tests.** `tests/test_hc2b2_contract_openai.py` (7).

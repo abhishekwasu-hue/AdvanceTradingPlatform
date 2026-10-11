@@ -39,6 +39,7 @@ from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
 from app.execution.ops_throttle import OpsThrottle
+from app.compliance.static_ip import live_entry_problem
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
 from app.cache.client import cache_lock_holder, cache_release_lock, cache_renew_lock, cache_try_lock
 from app.core import config as app_config
@@ -692,6 +693,12 @@ class TradingWorker:
                 dep.last_error = "Worker lock was lost this cycle (Redis eviction?) - no new entries until the next cycle; exits continue"
                 await session.commit()
                 continue
+            if dep.mode == ExecutionMode.LIVE.value:
+                ip_problem = await live_entry_problem(session, tenant_id, dep.broker_name)   # Part D4 (flag-gated)
+                if ip_problem:
+                    dep.last_error = ip_problem
+                    await session.commit()
+                    continue
             if dep.mode == ExecutionMode.LIVE.value and self.require_lock_for_live and self._lock_degraded:
                 dep.last_error = "Redis replica lock unavailable - LIVE entries paused this cycle (a second worker could double-trade); exits continue"
                 await session.commit()

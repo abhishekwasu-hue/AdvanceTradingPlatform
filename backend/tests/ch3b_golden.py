@@ -16,6 +16,7 @@ The Trade files are read with `git archive` at TRADE_COMMIT into a temporary dir
 """
 import importlib
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -75,6 +76,7 @@ def import_trade(path: str = TRADE_PATH) -> Optional[types.SimpleNamespace]:
         for k in [k for k in sys.modules if k.split(".")[0] in names or k.startswith("plotly")]:
             sys.modules.pop(k)
         sys.modules.update(saved)
+        shutil.rmtree(tmp, ignore_errors=True)                         # the modules are loaded; the copy is not needed
     return ns
 
 

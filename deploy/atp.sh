@@ -1183,8 +1183,8 @@ if c:
     # the superuser: a view or function the archive created runs with the reader's rights. The role gets a fresh password
     # for this check only (handed to the container through the environment, not argv) and is NOLOGIN again right after.
     verify_pw="$(openssl rand -hex 24)"
+    VERIFY_ROLE_LOGIN=1   # before the call: if it half-succeeds (or the run stops there), on_exit still sets NOLOGIN
     if verify_role_login "$verify_pw"; then
-      VERIFY_ROLE_LOGIN=1
       # shellcheck disable=SC2016  # expands inside the backend container (its own DATABASE_URL, never printed)
       if ATP_VERIFY_PW="$verify_pw" dc run --rm --no-deps -T -e ATP_VERIFY_DB="$SCRATCH_DB" -e ATP_VERIFY_ROLE="$VERIFY_ROLE" -e ATP_VERIFY_PW \
         backend sh -c 'u="${DATABASE_URL%/*}"; case "$u" in *@*) ;; *) exit 1 ;; esac
@@ -1192,7 +1192,10 @@ if c:
         chain="intact"; ok "audit hash chain intact in the restored copy (read as $VERIFY_ROLE)"
       else chain="broken"; bad "audit hash chain does NOT verify in the restored copy"; fi
       if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; else warn "could not make $VERIFY_ROLE NOLOGIN again - retried on exit"; fi
-    else chain="not_checked"; bad "audit chain: could not let $VERIFY_ROLE log in to read the restored copy - not checked as the superuser"; fi
+    else
+      chain="not_checked"; bad "audit chain: could not let $VERIFY_ROLE log in to read the restored copy - not checked as the superuser"
+      if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; fi
+    fi
   else info "audit chain: not run (nothing restored)"; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true

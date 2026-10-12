@@ -13,8 +13,8 @@ Two uses:
         declares True while its upgrade() drops / renames a table or column, changes a column type, makes a column
         NOT NULL, drops a server default, adds a NOT NULL column without a server default, adds a UNIQUE / CHECK / FOREIGN
         KEY constraint or a unique index to a table that existed before, or runs SQL doing any of that or rewriting rows
-        (UPDATE / DELETE), or runs SQL built at run time (an f-string, .format(), % or +: the literal parts do not show
-        what runs). A reviewed exception
+        (UPDATE / DELETE), or runs SQL (execute / exec_driver_sql) that is not one string literal - built at run time,
+        the literal parts do not show what runs. upgrade() includes the module's helpers it calls. A reviewed exception
         sets ROLLBACK_SAFE_REASON = "<why the old code is unaffected>" next to ROLLBACK_SAFE = True.
 
     python scripts/migration_rollback_safety.py check --db-revision <rev> --target-head <rev>
@@ -52,22 +52,37 @@ def _is_false(node) -> bool:
     return isinstance(node, ast.Constant) and node.value is False
 
 
-def _strings(node) -> List[str]:
-    return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+def _single_literal(call: ast.Call) -> Optional[str]:
+    """The SQL when the statement is ONE string literal - "..." , text("..."), sa.text("...") (optionally .bindparams(...)),
+    or an f-string without a placeholder - else None: SQL built at run time (an f-string with a placeholder, .format(),
+    % or +, a variable, a helper's return value, a SQLAlchemy construct) shows nothing a pattern could check."""
+    node = call.args[0] if call.args else (_kw(call, "sqltext") or _kw(call, "statement"))
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "bindparams"
+            and isinstance(node.func.value, ast.Call)):
+        node = node.func.value
+    if isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords and (
+            (isinstance(node.func, ast.Name) and node.func.id == "text")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "text")):
+        node = node.args[0]
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr) and all(isinstance(v, ast.Constant) for v in node.values):
+        return "".join(str(v.value) for v in node.values if isinstance(v, ast.Constant))
+    return None
 
 
-def _built_sql(node) -> bool:
-    """SQL assembled at run time - an f-string, str.format(), `%` or `+` on strings: the literal parts alone do not show
-    what runs (f"UPDATE {t} SET ..." has no table name for the risky-SQL pattern to see)."""
-    for n in ast.walk(node):
-        if isinstance(n, ast.JoinedStr) and any(isinstance(v, ast.FormattedValue) for v in n.values):
-            return True
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "format" and _strings(n.func.value):
-            return True
-        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Mod, ast.Add)) and (_strings(n.left) or _strings(n.right)):
-            if not (isinstance(n.left, ast.Constant) and isinstance(n.right, ast.Constant)):
-                return True
-    return False
+def _reachable_bodies(tree: ast.Module, upgrade: ast.FunctionDef) -> List[ast.FunctionDef]:
+    """upgrade() and every module-level function it calls, directly or through another one (a helper doing the work)."""
+    defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    seen, todo, out = {upgrade.name}, [upgrade], []
+    while todo:
+        fn = todo.pop()
+        out.append(fn)
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in defs and n.func.id not in seen:
+                seen.add(n.func.id)
+                todo.append(defs[n.func.id])
+    return out
 
 
 def _arg(call: ast.Call, index: int, name: str):
@@ -81,11 +96,13 @@ def risky_operations(source: str) -> List[str]:
     upgrade = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"), None)
     if upgrade is None:
         return []
-    calls = [n for n in ast.walk(upgrade) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+    bodies = _reachable_bodies(tree, upgrade)
+    nodes = [n for body in bodies for n in ast.walk(body)]
+    calls = [n for n in nodes if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
     created = {_arg(c, 0, "table_name") for c in calls if isinstance(c.func, ast.Attribute) and c.func.attr == "create_table"}
     # `with op.batch_alter_table("t") as batch_op:` - batch operations name no table; they act on the batch's table.
     batch_tables = {}
-    for node in ast.walk(upgrade):
+    for node in nodes:
         if isinstance(node, (ast.With, ast.AsyncWith)):
             for item in node.items:
                 ctx = item.context_expr
@@ -123,14 +140,12 @@ def risky_operations(source: str) -> List[str]:
             for col in (a for a in call.args if isinstance(a, ast.Call)):
                 if _is_false(_kw(col, "nullable")) and _kw(col, "server_default") is None:
                     found.append("add_column NOT NULL without server_default")
-        elif op == "execute":
-            texts = _strings(call)
-            if not texts:
-                found.append("execute with a non-literal argument: review needed")
-            elif any(_RISKY_SQL.search(s) for s in texts):
-                found.append("execute: risky SQL")
-            elif _built_sql(call):
-                found.append("execute with SQL built at run time (f-string / format / % / +): review needed")
+        elif op in ("execute", "exec_driver_sql"):
+            sql = _single_literal(call)
+            if sql is None:
+                found.append(f"{op} with SQL that is not a single literal (built at run time): review needed")
+            elif _RISKY_SQL.search(sql):
+                found.append(f"{op}: risky SQL")
     return found
 
 

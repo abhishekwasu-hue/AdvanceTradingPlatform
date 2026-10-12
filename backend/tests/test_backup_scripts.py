@@ -179,3 +179,14 @@ def test_counts_alembic_and_audit_chain_on_the_copy_run_as_the_restore_role(tmp_
         if report.get("restored_into"):
             _psql(f'DROP DATABASE IF EXISTS "{report["restored_into"]}"')
         _psql(f'DROP DATABASE IF EXISTS "{src_db}"')
+
+
+def test_a_database_url_without_a_user_is_refused_rather_than_read_as_the_superuser(tmp_path):
+    """Z11 review LOW-5: the copy is only ever read as the restore role. A URL with no user part (libpq takes PGUSER)
+    cannot be rewritten to log in as atp_restore, so the verify stops before restoring anything."""
+    from urllib.parse import urlparse
+    u = urlparse(DB_URL.replace("postgresql+asyncpg://", "postgresql://"))
+    env = _env(tmp_path, DATABASE_URL=f"postgresql://{u.hostname}:{u.port or 5432}{u.path}", PGUSER=u.username or "", PGPASSWORD=u.password or "")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+    run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and "names no user" in run.stderr and "restoring" not in run.stderr

@@ -48,6 +48,11 @@ if [ -n "$ROLE" ]; then
     || die "could not prepare the restore role $ROLE (VERIFY_RESTORE_ROLE= restores as the connecting user)"
   psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\" OWNER \"$ROLE\"" >/dev/null || die "could not create scratch database $SCRATCH"
   RESTORE_URL="$(printf '%s' "$SCRATCH_URL" | sed "s#^\(postgresql://\)[^@/]*@#\1$ROLE@#")"
+  # The copy is only ever read as the restore role: a URL without a user part would keep the connecting (superuser) login.
+  case "$RESTORE_URL" in
+    *"://$ROLE@"*) ;;
+    *) die "cannot log in as $ROLE: the database URL names no user (postgresql://user@host/db) - nothing restored" ;;
+  esac
 else
   psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
 fi

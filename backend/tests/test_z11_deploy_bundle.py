@@ -1086,6 +1086,8 @@ def test_restore_check_reads_the_copy_as_the_restore_role_with_a_one_run_passwor
     res = host.run("restore-check")
     assert res.returncode == 1 and "not checked as the superuser" in res.stdout
     assert len(host.state["chain_checked"]) == before and "chain=not_checked" in (host.dir / ".deploy/last_restore_check").read_text()
+    assert host.state["role_sql"][-1] == 'ALTER ROLE "atp_restore" NOLOGIN PASSWORD NULL;'   # a failed LOGIN is still undone
+    assert "VERIFY_ROLE_LOGIN=1   # before the call" in ATP_SH.read_text()
 
 
 def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_ones(tmp_path):
@@ -1128,6 +1130,19 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
                                 "    op.execute(f\"SELECT create_hypertable('{t}', 'ts')\")\n", False),
         "fstring_plain.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(f\"CREATE INDEX ix ON n (a)\")\n"
                              "    op.execute('CREATE INDEX ' 'iy ON n (b)')\n", False),   # no placeholder, implicit concatenation: literal
+        # review LOW-6: any statement that is not ONE literal, exec_driver_sql too, and the helpers upgrade() calls
+        "driver_sql.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().exec_driver_sql(STATEMENT)\n", True),
+        "driver_sql_update.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().exec_driver_sql('UPDATE t SET c = 1')\n", True),
+        "core_construct.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().execute(t.update().values(c=1))\n", True),
+        "helper_sql.py": (head + "ROLLBACK_SAFE = True\n\ndef _sql(t):\n    return 'UPDATE ' + t + ' SET c = 1'\n\n"
+                          "def upgrade():\n    op.execute(_sql('t'))\n", True),
+        "helper_drop.py": (head + "ROLLBACK_SAFE = True\n\ndef _inner():\n    op.drop_column('t', 'c')\n\ndef _outer():\n    _inner()\n\n"
+                           "def upgrade():\n    _outer()\n", True),
+        "helper_unused.py": (head + "ROLLBACK_SAFE = True\n\ndef _never_called():\n    op.drop_column('t', 'c')\n\n"
+                             "def upgrade():\n    op.create_table('n', sa.Column('id', sa.Integer()))\n", False),
+        "text_literal.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(sa.text('CREATE INDEX ix ON n (a)'))\n"
+                            "    op.get_bind().execute(text('SELECT 1').bindparams())\n", False),
+        "text_update.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().execute(sa.text('UPDATE t SET c = :v').bindparams(v=1))\n", True),
     }
     for name, (src, _) in cases.items():
         (tmp_path / name).write_text(src)
@@ -1136,7 +1151,9 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
     message = "\n".join(mod.lint(tmp_path))
     assert "missing.py: missing ROLLBACK_SAFE (Z11). Add ONE of these lines" in message and "ROLLBACK_SAFE = True     # the previous" in message
     assert "ROLLBACK_SAFE = False    # it does not" in message and "unsure means False" in message
-    assert "fstring.py: ROLLBACK_SAFE = True but upgrade() has execute with SQL built at run time (f-string / format / % / +): review needed" in message
+    assert "fstring.py: ROLLBACK_SAFE = True but upgrade() has execute with SQL that is not a single literal (built at run time): review needed" in message
+    assert "driver_sql.py: ROLLBACK_SAFE = True but upgrade() has exec_driver_sql with SQL that is not a single literal" in message
+    assert "helper_drop.py: ROLLBACK_SAFE = True but upgrade() has drop_column" in message
 
 
 # --- N1: only encrypted, sealed dumps are ever restored; the gate runs before Postgres / Redis are touched -----------

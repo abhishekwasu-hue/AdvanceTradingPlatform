@@ -376,13 +376,32 @@ def test_sizing_edges():
 @pytest.fixture(params=["sqlite", "postgresql"])
 def slot_db_url(request, tmp_path):
     """A private database with a real connection pool: concurrent sessions must not share the suite's single in-memory
-    connection (that would break it for every later test)."""
+    connection (that would break it for every later test). On Postgres (`Z5_TEST_PG_URL`, set in CI) a scratch
+    database is created for the test and dropped after it, so the server's own database stays untouched."""
     if request.param == "sqlite":
-        return f"sqlite+aiosqlite:///{tmp_path / 'slots.db'}"
+        yield f"sqlite+aiosqlite:///{tmp_path / 'slots.db'}"
+        return
     url = os.environ.get("Z5_TEST_PG_URL")
     if not url:
         pytest.skip("Z5_TEST_PG_URL not set")
-    return url
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import create_async_engine
+    base = make_url(url)
+    name = f"z5_slots_{uuid.uuid4().hex[:10]}"
+
+    async def ddl(statement: str) -> None:
+        engine = create_async_engine(base, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                from sqlalchemy import text
+                await conn.execute(text(statement))
+        finally:
+            await engine.dispose()
+    asyncio.run(ddl(f'CREATE DATABASE "{name}"'))
+    try:
+        yield base.set(database=name).render_as_string(hide_password=False)
+    finally:
+        asyncio.run(ddl(f'DROP DATABASE IF EXISTS "{name}"'))
 
 
 def test_entries_per_day_slot_is_atomic(slot_db_url):

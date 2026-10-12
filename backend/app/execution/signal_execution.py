@@ -225,7 +225,7 @@ async def execute_signal_for_user(
         day_state = await build_trading_day_state(session, user)
         daily_limit = -abs(effective_risk_config.capital * effective_risk_config.max_daily_loss_pct / 100)
         guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=underlying_signal.symbol, cfg=effective_risk_config,
-                                  direction=underlying_signal.direction.value) if day_state.daily_pnl > daily_limit else GuardianVerdict()
+                                  direction=underlying_signal.direction.value, user_id=user.id) if day_state.daily_pnl > daily_limit else GuardianVerdict()
         if guard.reasons:
             order.reasons_json = json.dumps(guard.reasons)
             order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(guard.reasons))

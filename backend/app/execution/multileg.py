@@ -163,7 +163,7 @@ async def execute_structure(
         cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
         guardian_notes.extend(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
-                              direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
+                              direction=signal.direction.value, user_id=user.id) if state.daily_pnl > daily_limit else GuardianVerdict()
     if guard.reasons:
         await _reject_all(session, orders, guard.reasons)
         await notify(session, user.tenant_id, NotificationType.RISK_REJECTION, title=f"Structure refused by the risk guardian: {structure.underlying_symbol}",

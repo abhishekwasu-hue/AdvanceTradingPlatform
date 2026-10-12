@@ -45,6 +45,7 @@ import type {
   ExperienceStatus,
   RuinCalc,
   ExposureView,
+  ContextPanel,
   ExpectedMove,
   WhatIfResult,
   WhatIfSubject,
@@ -526,6 +527,8 @@ export const api = {
     request<WhatIfResult>("/decision/what-if", { method: "POST", body: JSON.stringify(body) }),
   /** N2-4: exposure / correlation of the caller's own positions, and the expected-move cone for the chart. */
   decisionExposure: (days = 90) => request<ExposureView>(`/decision/exposure?days=${days}`),
+  /** N2-5: the market context panel (404 while `context_panel` is off). */
+  contextPanel: () => request<ContextPanel>("/context/panel"),
   decisionExpectedMove: (instrument: string, horizon: number, iv?: number) =>
     request<ExpectedMove>(`/decision/expected-move?instrument=${encodeURIComponent(instrument)}&horizon=${horizon}${iv != null ? `&iv=${iv}` : ""}`),
 

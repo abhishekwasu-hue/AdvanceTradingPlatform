@@ -205,6 +205,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N2-4: also the exposure view (own positions by underlying and sector, beta, correlated pairs, from the daily lake)
     # and the expected-move cone on the chart.
     "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, what-if for your own open positions, exposure and correlation view, expected-move cone on the chart (information only)",
+    # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
+    # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
+    # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
+    # only (plus the organisation's own events). OFF: /api/context/panel answers 404.
+    "context_panel": "Market context panel: regime, breadth, India VIX and its rank, FII / DII, global cues and this week's events (information only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -212,7 +217,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
-                               "decision_tools"})
+                               "decision_tools", "context_panel"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

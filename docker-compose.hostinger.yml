@@ -58,6 +58,10 @@ services:
       # PAPER-only with nothing for the owner to set - first boot seeds live_trading OFF and phase0_paper_only ON where no
       # entry is stored (never overwriting a later owner change). Leaving Phase 0 is a later owner decision (.env).
       ATP_DEPLOYMENT_PHASE: ${ATP_DEPLOYMENT_PHASE:-phase0}
+      # LD-7: one API process per vCPU (KVM 2). bcrypt is shared out between them (app/auth/security.py), and the pools
+      # stay under PG_MAX_CONNECTIONS (60): API 2 x (5 + 5) + trading worker 15 + research worker 15 = 50.
+      API_WORKERS: ${API_WORKERS:-2}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
     deploy:
       resources:
         limits:

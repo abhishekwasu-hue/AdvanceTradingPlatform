@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
@@ -247,7 +247,8 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
-                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
+                       release: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
@@ -255,7 +256,9 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
     (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
     reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
-    `tier_out` receives the data-tier badge of what was read."""
+    `tier_out` receives the data-tier badge of what was read.
+    `release` (LD-7, a request whose session has only read so far): the pool connection goes back before the broker
+    calls; the worker's callers keep their transaction."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -282,6 +285,8 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     else:
         record = await _pick_record(session, tenant_id, None, "primary")
         service = MarketDataService(build_adapter(record), lookback_days=days)
+    if release:
+        await release_connection(session)
     universe: List[SymbolData] = []
     newest: List[datetime] = []
     for symbol in symbols:
@@ -391,10 +396,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier)
+                                                               user_id=user.id, tier_out=tier, release=True)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
+    await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
     stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,

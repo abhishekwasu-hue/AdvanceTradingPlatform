@@ -54,6 +54,15 @@ DATABASE_URL = os.environ.get(
 # schema migrations run as the owning role through this URL (scripts/db_roles.sql creates both).
 # Unset = same URL as the app, which is how a single-role dev database keeps working.
 MIGRATION_DATABASE_URL = os.environ.get("MIGRATION_DATABASE_URL", "").strip() or DATABASE_URL
+# LD-7: the connection pool of ONE process (an API worker process, the trading worker, the research worker). With
+# API_WORKERS > 1 every API process has its own pool, so the database sees API_WORKERS x (size + overflow) from the API
+# alone - keep that, plus the workers' pools, under Postgres `max_connections` (the Hostinger overlay does the sum).
+DB_POOL_SIZE = max(1, int(os.environ.get("DB_POOL_SIZE", "5")))
+DB_MAX_OVERFLOW = max(0, int(os.environ.get("DB_MAX_OVERFLOW", "10")))
+DB_POOL_TIMEOUT_SECONDS = max(1.0, float(os.environ.get("DB_POOL_TIMEOUT_SECONDS", "30")))
+# LD-7: how many API processes uvicorn runs (scripts/serve_api.sh reads the same variable). Sizes per-process limits
+# that are meant to be per host, such as the bcrypt thread limit (app/auth/security.py).
+API_WORKERS = max(1, int(os.environ.get("API_WORKERS", "1") or "1"))
 
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_JWT_SECRET)

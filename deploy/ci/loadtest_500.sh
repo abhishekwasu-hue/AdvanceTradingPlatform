@@ -29,6 +29,9 @@ done
 [ "$(id -u)" != "0" ] || { echo "run as the deploy user (atp), not root" >&2; exit 2; }
 [ "$keep" = "1" ] || trap '"$SCRIPT_DIR/stack.sh" down >/dev/null 2>&1 || true' EXIT
 
+# LD-7: the API as production runs it on this host (docker-compose.hostinger.yml: 2 processes on the KVM 2), not the CI
+# runner's 3 - the shell's value wins over the stack's env file.
+export API_WORKERS="${API_WORKERS:-2}"
 "$SCRIPT_DIR/stack.sh" up
 "$SCRIPT_DIR/stack.sh" seed "$users"
 host="$(hostname) ($(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB)"

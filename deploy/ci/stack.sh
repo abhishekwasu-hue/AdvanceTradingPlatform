@@ -9,7 +9,7 @@
 #   deploy/ci/stack.sh seed N             N load-test users (deploy/ci/seed_users.py) -> $STATE/load_accounts.csv
 #   deploy/ci/stack.sh load [options]     the sharded load test (backend/scripts/loadtest.py); see cmd_load
 #   deploy/ci/stack.sh run ARGS...        python ARGS in the ci-runner tool container
-#   deploy/ci/stack.sh api-workers N      restart the API with N processes (the load test's lever run; production: 1)
+#   deploy/ci/stack.sh api-workers N [--cpus C]  restart the API with N processes (CI default 3; Hostinger 2), at most C CPUs
 #   deploy/ci/stack.sh logs | ps | diag   container logs / state; diag writes them under $STATE/diag
 #   deploy/ci/stack.sh down               stop and delete the stack and its volumes
 #
@@ -187,15 +187,19 @@ sample_stats() {
   done
 }
 
-# The load test's lever run: restart the API with N processes (uvicorn --workers N; production runs 1).
+# Restart the API with N processes (API_WORKERS, backend/scripts/serve_api.sh; CI default 3, Hostinger 2), optionally
+# capped at C CPUs (`--cpus C`: the Hostinger-shaped run gives the API the KVM 2's two vCPUs).
 cmd_api_workers() {
   ensure_env
-  local n="${1:?api-workers N}"
+  local n="${1:?api-workers N [--cpus C]}" cpus=""
+  [ "${2:-}" = "--cpus" ] && cpus="${3:?--cpus C}"
   case "$n" in *[!0-9]*|"") die "api-workers takes a number" 2 ;; esac
-  sed -i '/^ATP_CI_API_WORKERS=/d' "$ENV_FILE"
-  echo "ATP_CI_API_WORKERS=$n" >> "$ENV_FILE"
-  step "API with $n process(es)"
+  case "$cpus" in *[!0-9.]*) die "--cpus takes a number" 2 ;; esac
+  sed -i '/^API_WORKERS=/d' "$ENV_FILE"
+  echo "API_WORKERS=$n" >> "$ENV_FILE"
+  step "API with $n process(es)${cpus:+, at most $cpus CPUs}"
   dc up -d --wait --wait-timeout 300 backend
+  if [ -n "$cpus" ]; then docker update --cpus "$cpus" "$(dc ps -q backend)" > /dev/null; fi
 }
 
 cmd_diag() {

@@ -26,7 +26,7 @@ from app.db.models import (
 )
 from app.notifications.service import notify
 from app.core.enums import NotificationSeverity, NotificationType
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.secrets_store.envelope import ensure_tenant_key
 from app.auth import verification
 from app.platform.controls import flag_enabled
@@ -182,7 +182,10 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     # in this transaction - a sign-up that fails below does not use the code up. The operator's own configured
     # SUPER_ADMIN addresses (SUPER_ADMIN_EMAILS) are exempt: they issue the codes, so they cannot need one.
     beta_code = None
-    if not is_configured_super_admin(request.email) and await flag_enabled(session, "beta_cohort_gate"):
+    beta_gate = not is_configured_super_admin(request.email) and await flag_enabled(session, "beta_cohort_gate")
+    await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
+    hashed_password = await hash_password_async(request.password)
+    if beta_gate:
         from app.beta.invites import redeem
         beta_code = await redeem(session, request.invite_code)
 
@@ -192,7 +195,7 @@ async def register(request: RegisterRequest, http_request: Request, response: Re
     await ensure_tenant_key(session, tenant.id)  # Phase N1: every tenant gets its own data key
 
     user = User(
-        tenant_id=tenant.id, email=request.email, hashed_password=await hash_password_async(request.password),
+        tenant_id=tenant.id, email=request.email, hashed_password=hashed_password,
         role=UserRole.SUPER_ADMIN.value if is_configured_super_admin(request.email) else UserRole.OWNER.value,
     )
     session.add(user)
@@ -225,6 +228,8 @@ async def login(request: LoginRequest, http_request: Request, response: Response
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="captcha_required", headers={"X-Captcha": "required"})
 
     user = await session.scalar(select(User).where(User.email == email))
+    # LD-7: no pool connection is held while bcrypt runs (reads only so far; the writes below open a new transaction).
+    await release_connection(session)
     # Always run a bcrypt comparison, even for an unknown email, so this endpoint's response
     # time doesn't leak whether an email is registered (see _DUMMY_PASSWORD_HASH above).
     password_ok = await verify_password_async(request.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
@@ -362,9 +367,11 @@ async def accept_invite(token: str, request: AcceptInviteRequest, http_request: 
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     _enforce_password_policy(request.password, record.email)
     legal_versions = await _legal_versions(session, request.legal_acceptance, record.tenant_id)
+    await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
+    hashed_password = await hash_password_async(request.password)
 
     user = User(
-        tenant_id=record.tenant_id, email=record.email, hashed_password=await hash_password_async(request.password), role=record.role,
+        tenant_id=record.tenant_id, email=record.email, hashed_password=hashed_password, role=record.role,
     )
     session.add(user)
     await session.flush()
@@ -591,6 +598,7 @@ async def reset_password(token: str, request: ResetPasswordRequest, http_request
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="This account is no longer active")
     _enforce_password_policy(request.password, user.email)
+    await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
     user.hashed_password = await hash_password_async(request.password)
     record.used_at = datetime.now(timezone.utc)
     await revoke_all_sessions(session, user.id, "password reset")
@@ -608,6 +616,7 @@ async def change_password(
 ) -> TokenResponse:
     """Requires the current password. Every *other* session is ended; this one continues with
     a fresh token pair."""
+    await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
     if not await verify_password_async(request.current_password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
     if request.current_password == request.new_password:
@@ -781,6 +790,7 @@ async def mfa_disable(
     password alone can switch the second factor off."""
     if not user.mfa_enabled:
         raise HTTPException(status_code=400, detail="Two-factor authentication is not enabled")
+    await release_connection(session)                       # LD-7: reads only so far; no pool connection held during bcrypt
     if not await verify_password_async(request.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Password is incorrect")
     ok, _ = await mfa.verify_code(session, user, request.code)

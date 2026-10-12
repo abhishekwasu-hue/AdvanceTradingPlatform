@@ -38,7 +38,7 @@ from app.billing.service import meter
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.market_data import entitlement
 from app.market_data.calendar import load_holidays
 from app.market_data.data_terms import terms_for
@@ -180,6 +180,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     service = MarketDataService(build_adapter(record), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
+    # LD-7: the broker calls below can take seconds; no pool connection is held meanwhile (reads only so far - the meter
+    # write after the loop opens a new transaction).
+    await release_connection(session)
 
     out: Dict[str, dict] = {}
     fetched = 0

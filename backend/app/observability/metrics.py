@@ -15,11 +15,17 @@ token-protected, see `METRICS_TOKEN`) and on a small HTTP server in the worker
 
 `prometheus_client` metrics are registered once per process; the module guards re-import (tests
 reload modules) by reusing existing collectors from the default registry.
+
+LD-7: with several API processes (`API_WORKERS` > 1) `scripts/serve_api.sh` sets `PROMETHEUS_MULTIPROC_DIR` (emptied at
+start-up), each process writes its series there, and `/metrics` - whichever process answers it - merges them: counters
+and histograms summed over the processes, a gauge the value most recently set by any of them (the DB gauges are set
+at scrape time, so that is the fresh one).
 """
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +43,7 @@ def _counter(name: str, doc: str, labels=()):
 
 
 def _gauge(name: str, doc: str, labels=()):
-    return _existing(f"{NAMESPACE}_{name}") or Gauge(name, doc, labels, namespace=NAMESPACE)
+    return _existing(f"{NAMESPACE}_{name}") or Gauge(name, doc, labels, namespace=NAMESPACE, multiprocess_mode="mostrecent")
 
 
 def _histogram(name: str, doc: str, labels=(), buckets=Histogram.DEFAULT_BUCKETS):
@@ -168,4 +174,10 @@ async def refresh_db_gauges(session: AsyncSession, now: Optional[datetime] = Non
 
 
 def render() -> tuple[bytes, str]:
+    if os.environ.get("PROMETHEUS_MULTIPROC_DIR"):
+        # LD-7: every API process's series, merged (see the module docstring).
+        from prometheus_client import multiprocess
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        return generate_latest(registry), CONTENT_TYPE_LATEST
     return generate_latest(REGISTRY), CONTENT_TYPE_LATEST

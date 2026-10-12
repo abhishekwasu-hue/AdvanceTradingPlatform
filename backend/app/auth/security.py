@@ -50,7 +50,13 @@ def _cpu_count() -> int:
         return max(1, os.cpu_count() or 1)
 
 
-BCRYPT_CONCURRENCY = _cpu_count()
+def _bcrypt_concurrency() -> int:
+    """The CPUs this process may use, shared among the API processes of the host (LD-7: with API_WORKERS processes, each
+    takes its share, so the host as a whole still runs about one bcrypt check per CPU at a time; never below one)."""
+    return max(1, _cpu_count() // max(1, config.API_WORKERS))
+
+
+BCRYPT_CONCURRENCY = _bcrypt_concurrency()
 _bcrypt_limiters: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]" = weakref.WeakKeyDictionary()
 
 

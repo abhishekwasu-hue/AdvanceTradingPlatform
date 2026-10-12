@@ -147,25 +147,25 @@ jobs:
           deploy/ci/stack.sh load --name load-busy --users "$USERS" --seconds 180 --ramp 150 --think 10 \
             --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
 
-      - name: Lever (not a production setting) - the primary profile with 2 API processes
+      - name: Hostinger-shaped (approximation, does not decide the job) - the primary profile, 2 API processes on 2 CPUs
         if: always() && steps.primary.outcome != 'skipped'
         continue-on-error: true
         run: |
-          deploy/ci/stack.sh api-workers 2
-          deploy/ci/stack.sh load --name load-2procs --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API with 2 processes (experiment)" \
-            --report "$RUNNER_TEMP/atp-ci-state/load-2procs.md"
+          deploy/ci/stack.sh api-workers 2 --cpus 2
+          deploy/ci/stack.sh load --name load-kvm2 --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2 (2 processes, 2 CPUs)" \
+            --report "$RUNNER_TEMP/atp-ci-state/load-kvm2.md"
 
       - name: Summary
         if: always()
         run: |
           {
             echo "## Load test ($USERS users)"
-            for f in load-primary load-busy load-2procs; do
+            for f in load-primary load-busy load-kvm2; do
               [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && { echo; echo "### $f"; cat "$RUNNER_TEMP/atp-ci-state/$f.md"; }
             done
           } >> "$GITHUB_STEP_SUMMARY" || true
-          for f in load-primary load-busy load-2procs; do
+          for f in load-primary load-busy load-kvm2; do
             [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
           done
           true

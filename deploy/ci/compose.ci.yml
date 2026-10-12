@@ -58,13 +58,14 @@ services:
       args:
         BASE_IMAGE: atp-backend:${ATP_RELEASE:-latest}
     pull_policy: never
-    # The image's own CMD, with the number of API processes as a knob for the load test's lever run
-    # (ATP_CI_API_WORKERS, default 1 = exactly what production runs).
-    command: ["sh", "-c", "python scripts/migrate_guard.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"$${FORWARDED_ALLOW_IPS:-127.0.0.1}\" --workers $${ATP_CI_API_WORKERS:-1}"]
+    # The image's own CMD (scripts/serve_api.sh). LD-7: API_WORKERS processes, sized for the runner (4 vCPU, shared with
+    # the load generator, the fake broker and Postgres): 3 unless the env file says otherwise (`stack.sh api-workers N`;
+    # the Hostinger overlay's own default is 2, one per vCPU).
+    command: ["sh", "scripts/serve_api.sh"]
     environment:
       <<: *faketime
       GLOBAL_CUES_ENABLED: "false"
-      ATP_CI_API_WORKERS: ${ATP_CI_API_WORKERS:-1}
+      API_WORKERS: ${API_WORKERS:-3}
     extra_hosts: *broker_hosts
     volumes:
       - ci_tls:/ci-tls:ro

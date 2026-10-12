@@ -279,10 +279,11 @@ export default function TeamPage() {
               SEBI's retail algo framework requires every algorithmic order to carry the identifier the exchange
               issued when your broker registered the algo. Enter it here once and every entry, stop-loss and exit
               order this platform places is tagged <code>{(algoId || "ALGOID")}-strategy-leg</code> at the broker;
-              the tag is also stored on each order for reconciliation. Leave blank until registration is done.
+              the tag is also stored on each order for reconciliation. At most 16 characters, so the id fits the broker's tag
+              whole. Leave blank until registration is done.
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <input className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono w-56" placeholder="e.g. NSE1234567" value={algoId} maxLength={32}
+              <input className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono w-56" placeholder="e.g. NSE1234567" value={algoId} maxLength={16}
                 onChange={(e) => setAlgoId(e.target.value)} />
               <button disabled={busy || algoId === (tenant.algo_id ?? "")} onClick={() => act(algoId ? "Algo id saved - new orders will carry it." : "Algo id cleared.", () => api.setTenantAlgoId(algoId))}
                 className="rounded border border-border hover:bg-surface-2 text-fg px-4 py-1.5 text-sm disabled:opacity-50">Save</button>

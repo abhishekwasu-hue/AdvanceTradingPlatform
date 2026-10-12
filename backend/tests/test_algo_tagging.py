@@ -159,3 +159,27 @@ def test_exit_order_carries_algo_id():
     exits = [o for o in broker.placed if o.order_type == "MARKET"]
     assert exits and exits[-1].tag == "NSE55-ema_rsi_s-EXIT" and len(exits[-1].tag) <= 20
     assert exits[-1].transaction_type == OrderSide.SELL
+
+
+def test_an_algo_id_longer_than_16_characters_is_refused_on_save():
+    """Z10c-6: an id that would not fit `<algo id>-ENT` in the 20-character tag whole is refused with a clear 422, and the
+    saved id is left as it was."""
+    from app.execution.tagging import ALGO_ID_MAX_SAVED, DEFAULT_MAX_TAG_LENGTH
+    headers = _headers("algo-length@example.com")
+    assert client.patch("/api/team/tenant", json={"algo_id": "NSE4242"}, headers=headers).status_code == 200
+
+    too_long = "A" * (ALGO_ID_MAX_SAVED + 1)
+    res = client.patch("/api/team/tenant", json={"algo_id": too_long}, headers=headers)
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert "17 characters" in detail and "at most 16" in detail and "cut short" in detail and "Nothing was saved" in detail
+    assert client.get("/api/team/tenant", headers=headers).json()["algo_id"] == "NSE4242"
+    assert client.patch("/api/team/tenant", json={"algo_id": "B" * 32}, headers=headers).status_code == 422   # the pattern's max
+
+    exactly = "C" * ALGO_ID_MAX_SAVED
+    ok = client.patch("/api/team/tenant", json={"algo_id": f" {exactly} "}, headers=headers)
+    assert ok.status_code == 200 and ok.json()["algo_id"] == exactly
+    # 16 is the length that reaches the broker whole on an entry tag at the default limit
+    tag = build_order_tag(strategy_id="ema_rsi_scalper_1m", leg=LEG_ENTRY, algo_id=exactly, max_length=DEFAULT_MAX_TAG_LENGTH)
+    assert tag == f"{exactly}-ENT" and len(tag) == DEFAULT_MAX_TAG_LENGTH
+    assert client.patch("/api/team/tenant", json={"algo_id": "not valid!"}, headers=headers).status_code == 400   # charset: as before

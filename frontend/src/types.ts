@@ -1829,6 +1829,10 @@ export interface AiAction {
   risk_check?: ProposalRiskCheck | null;
   /** Z5 (flag risk_by_default): each short strike's breach chance, when the proposal carries option legs. */
   strike_breach?: StrikeBreachBlock | null;
+  /** N1 F3 (flag portfolio_risk): the owner's own PAPER book after this entry, taken at its most (server text). */
+  portfolio_impact?: { line: string; bucket: string; bucket_gross_pct: number | null; bucket_risk_pct: number | null;
+    total_risk_pct: number | null; positions: number; entry_risk: number;
+    limits: { max_sector_pct: number; max_correlated_risk_pct: number; max_open_positions: number } } | null;
 }
 
 export interface BrokerTicket {

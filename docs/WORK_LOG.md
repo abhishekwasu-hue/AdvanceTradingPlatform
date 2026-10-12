@@ -1853,6 +1853,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: "Experience level" card on Positions (progression i18n), with a story.
 - Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
 
+## Fix: the trading worker acts per deployment as its creator (TX-3)
+
+- Branch `claude/fix-worker-acting-user` (from main). The worker filed every deployment's entries of an organisation
+  under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
+  could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
+- Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
+  active member of the same organisation with a trading role; no recorded creator keeps the organisation's acting user. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- Review: a creator who is removed, inactive, of another organisation, or without a trading role / `trading:write`
+  makes the deployment open NO new entries (skipped with `last_error`; OPEN_QUESTIONS TX-4) instead of re-attributing
+  them; exits untouched. The lookup sits inside the per-deployment try (a failure falls back to the acting user and the
+  loop goes on). Approval-only proposals use the same resolved user.
+- No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
+- Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
+  still closes both; removed / foreign / VIEWER creators open no entries while the removed member's open position is
+  still squared off; no creator and a failed lookup fall back; approval-only proposals go to the resolved user).
 ## Fix: tax report reads only the caller's own trades (BT1b) + FY-dependent statute (TX-1 follow-up)
 
 - Branch `claude/fix-tax-report-own` (from main). Phase 0 bug: `/api/tax/report`, `/api/tax/report.csv` and

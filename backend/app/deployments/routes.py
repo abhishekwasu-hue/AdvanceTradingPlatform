@@ -549,7 +549,7 @@ async def preview_contract(
     spot = request.spot
     spot_source = "supplied" if spot else None
     if spot is None and rules.instrument_kind == InstrumentKind.OPTION:
-        spot = await _spot_from_broker(session, user.tenant_id, request.symbol)
+        spot = await _spot_from_broker(session, user.tenant_id, request.symbol, user=user)
         spot_source = "broker" if spot else None
     today = as_of or datetime.now(IST).date()
     out = {"symbol": request.symbol.upper().strip(), "kind": rules.instrument_kind.value, "rules": describe_rules(rules.to_rules()), "as_of": today.isoformat(),
@@ -557,7 +557,7 @@ async def preview_contract(
     chain_provider = None
     adapter = None
     if rules.strike_filters is not None or rules.option_strategy != OptionStrategy.SINGLE:
-        adapter = await _usable_adapter(session, user.tenant_id)
+        adapter = await _usable_adapter(session, user.tenant_id, user=user, symbol=request.symbol)
         if adapter is not None:
             async def chain_provider(underlying_symbol: str, expiry):  # noqa: E306
                 return await adapter.get_option_chain(underlying_symbol, expiry)
@@ -575,7 +575,10 @@ async def preview_contract(
                 out["structures"][direction.value] = {"error": str(exc)}
                 continue
             entry = structure.as_dict()
-            if adapter is not None:
+            refusal = await _legs_refusal(session, user, [leg.contract.tradingsymbol for leg in structure.legs]) if adapter is not None else None
+            if refusal is not None:
+                entry["metrics_error"] = refusal
+            elif adapter is not None:
                 try:
                     premiums = {leg.contract.tradingsymbol: await contract_ltp(adapter, leg.contract) for leg in structure.legs}
                     entry["metrics"] = structure_metrics(structure, premiums, target_credit_pct=rules.target_credit_pct,
@@ -596,22 +599,61 @@ async def preview_contract(
     return out
 
 
-async def _usable_adapter(session: AsyncSession, tenant_id: int):
+async def _legs_refusal(session: AsyncSession, user: User, symbols: List[str]) -> Optional[str]:
+    """BT1b (flag `byob_data_tier`): why the legs may not be quoted through the user's own session (None = they may)."""
+    from app.market_data import live_access
+    if not await live_access.byob_on(session, user.tenant_id):
+        return None
+    try:
+        own = await live_access.user_source(session, user, [(s, "NFO") for s in symbols])
+    except live_access.LiveDataRefused as exc:
+        return str(exc.detail)
+    blocked = [s for s in symbols if not own.allows(s, "NFO")]
+    return own.reason(blocked[0], "NFO") if blocked else None
+
+
+async def _own_adapter(session: AsyncSession, user: Optional[User], symbol: str, exchange: str):
+    """BT1b (flag `byob_data_tier`): the user's own confirmed session for this symbol, or None (preview without quotes)."""
+    from app.market_data import live_access
+    try:
+        own = await live_access.user_source(session, user, [(symbol, exchange)])
+    except live_access.LiveDataRefused:
+        return None
+    return own.adapter() if own.allows(symbol, exchange) else None
+
+
+async def _usable_adapter(session: AsyncSession, tenant_id: int, user: Optional[User] = None, symbol: Optional[str] = None):
+    from app.market_data import live_access
+    if await live_access.byob_on(session, tenant_id):
+        underlying = instrument_master.underlying_of(symbol or "")
+        return await _own_adapter(session, user, underlying or (symbol or ""), "NFO")
     stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
     usable = [r for r in stored if token_is_usable(r)]
     return build_adapter(usable[0]) if usable else None
 
 
-async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str) -> Optional[float]:
-    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
-    usable = [r for r in stored if token_is_usable(r)]
-    if not usable:
-        return None
+async def _spot_from_broker(session: AsyncSession, tenant_id: int, symbol: str, user: Optional[User] = None) -> Optional[float]:
+    from app.market_data import live_access
     try:
-        adapter = build_adapter(usable[0])
         underlying = instrument_master.underlying_of(symbol)
         candle_symbol = instrument_master.INDEX_SYMBOLS.get(underlying, symbol.upper().strip())
         exchange = instrument_master.INDEX_EXCHANGE.get(underlying, "NSE")
+    except Exception as exc:  # noqa: BLE001 - a preview must not 500 on an odd symbol
+        logger.warning("Spot lookup for %s failed: %s", symbol, exc)
+        return None
+    if await live_access.byob_on(session, tenant_id):
+        adapter = await _own_adapter(session, user, candle_symbol, exchange)
+        if adapter is None:
+            return None
+    else:
+        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id)))
+        usable = [r for r in stored if token_is_usable(r)]
+        if not usable:
+            return None
+        adapter = None
+    try:
+        if adapter is None:
+            adapter = build_adapter(usable[0])
         return float(await adapter.get_ltp_for_symbol(candle_symbol, exchange))
     except Exception as exc:  # noqa: BLE001 - a preview must not 500 on a broker hiccup
         logger.warning("Spot lookup for %s failed: %s", symbol, exc)

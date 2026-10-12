@@ -30,6 +30,8 @@ class BrokersBody(BaseModel):
 class FlagBody(BaseModel):
     on: bool
     tenants: List[int] = Field(default_factory=list, max_length=500)
+    # Z10-f: `legal_pages` is refused while a legal document has an open [PLACEHOLDER]; true switches it on anyway (audited).
+    override_open_placeholders: bool = False
 
 
 class ScopeOverridesBody(BaseModel):
@@ -108,9 +110,14 @@ async def get_flags(session: AsyncSession = Depends(get_session)) -> dict:
 @admin_router.put("/flags/{name}")
 async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     try:
-        return await controls.set_flag(session, user, name, on=body.on, tenants=body.tenants)
+        flags = await controls.set_flag(session, user, name, on=body.on, tenants=body.tenants,
+                                        override_open_placeholders=body.override_open_placeholders)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if name == "public_status_page":                                     # Z10-e: the public page follows at once
+        from app.observability.status_page import reset_cache
+        reset_cache()
+    return flags
 
 
 @status_router.get("/features")

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_role
+from app.auth.scopes import require_scope
 from app.core.enums import RiskLimitType, RiskScope, UserRole
 from app.db.models import RiskEventRecord, RiskLimitRecord, User
 from app.db.session import get_session
@@ -90,7 +91,7 @@ async def list_limits(
     return [RiskLimitResponse.from_record(r) for r in rows]
 
 
-@router.put("/limits", response_model=RiskLimitResponse)
+@router.put("/limits", response_model=RiskLimitResponse, dependencies=[Depends(require_scope("risk:write"))])
 async def upsert_limit(
     request: RiskLimitRequest, user: User = Depends(require_role(UserRole.OWNER)), session: AsyncSession = Depends(get_session),
 ) -> RiskLimitResponse:
@@ -127,7 +128,7 @@ async def upsert_limit(
     return RiskLimitResponse.from_record(record)
 
 
-@router.delete("/limits/{limit_id}", status_code=204)
+@router.delete("/limits/{limit_id}", status_code=204, dependencies=[Depends(require_scope("risk:write"))])
 async def delete_limit(
     limit_id: int, user: User = Depends(require_role(UserRole.OWNER)), session: AsyncSession = Depends(get_session),
 ) -> None:

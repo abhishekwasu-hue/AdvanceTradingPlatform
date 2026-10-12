@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { Badge, Button, Dialog, fieldClass } from "../../components/primitives";
 import StepUpDialog, { isStepUpError } from "../../components/StepUpDialog";
 import VisionReportPanel from "../../components/VisionReportPanel";
+import RiskCheckPanel from "../../proposals/RiskCheckPanel";
 import { brokerAppLink, openBrokerAppLink } from "../../proposals/brokerLinks";
 import { evidenceSummary, snoozeChoices, timeLeft } from "../../proposals/snooze";
 import type { AiAction } from "../../types";
@@ -94,6 +95,7 @@ export default function ProposalCard({ a, onDecided, snoozed = false, now = new 
         <summary className="cursor-pointer py-1 hover:text-fg">{t("watch.evidenceAll")}</summary>
         <pre className="mt-1 max-w-full overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-[11px] text-fg">{JSON.stringify(a.evidence, null, 2)}</pre>
       </details>
+      <RiskCheckPanel a={a} />
       <VisionReportPanel actionId={a.id} />
 
       <p className={`flex items-center gap-1.5 text-xs ${left && left.hours === 0 ? "text-warn" : "text-fg-muted"}`} data-testid="watch-time-left">

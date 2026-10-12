@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.platform import phase0_lock
 from app.execution.ops_throttle import OpsThrottle
 from app.compliance.static_ip import live_entry_problem
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
@@ -85,6 +86,9 @@ from app.trading.position_monitor import close_position, exchange_for_trade, mon
 from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
+
+# BT1b: what a deployment says while its organisation (flag byob_data_tier on) has no confirmed-data broker session.
+WAITING_FOR_CONFIRMED_DATA = "Waiting for Upstox/Dhan data: no new entries; exits continue"
 
 WORKER_NAME = "trading_worker"
 LOCK_KEY = "atp:trading_worker:lock"
@@ -144,6 +148,7 @@ class CycleReport:
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
+    market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -219,6 +224,8 @@ class TradingWorker:
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
+        self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
+        self._market_zones_task: Optional["asyncio.Task[None]"] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -230,6 +237,7 @@ class TradingWorker:
         self.streams = StreamManager()
         # BT1: per-user broker sessions for the bring-your-own-broker data tier (flag byob_data_tier, off by default).
         self.byob = UserSessionFanIn()
+        self._last_vix: Dict[int, datetime] = {}    # Z5: when each organisation's India VIX reading was last taken
         # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
         self.lake = None
         if app_config.LAKE_TICK_WRITER_ENABLED:
@@ -251,6 +259,8 @@ class TradingWorker:
         self._stop.set()
         if self._history_eod_task is not None and not self._history_eod_task.done():
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
+        if self._market_zones_task is not None and not self._market_zones_task.done():
+            self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -293,6 +303,8 @@ class TradingWorker:
 
         try:
             async with self.session_factory() as session:
+                # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
+                await phase0_lock.is_on(session, None)
                 # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
                 wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
@@ -314,14 +326,33 @@ class TradingWorker:
                 else:
                     logger.debug("Market closed: %s", reason)
                 # BT1: open / refresh / close each user's own broker session (flag byob_data_tier; market closed = day end).
+                # BT1b: its own DB session, so a failure here never rolls back the cycle's session.
+                async with self.session_factory() as byob_session:
+                    try:
+                        byob = await self.byob.sync(byob_session, now, market_open="NSE" in self._open_families)
+                        report.byob_sessions = byob.active
+                        report.errors.extend(byob.errors)
+                    except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
+                        logger.exception("BYOB session sync failed")
+                        report.errors.append(f"byob sessions: {exc}")
+                        await byob_session.rollback()
+                # Z5 / P1-d: the daily loss lockout is recorded when a user's PAPER day reaches the limit through open marks,
+                # not only when something reads it (closes record it themselves). After the exits; never blocks one.
                 try:
-                    byob = await self.byob.sync(session, now, market_open="NSE" in self._open_families)
-                    report.byob_sessions = byob.active
-                    report.errors.extend(byob.errors)
-                except Exception as exc:  # noqa: BLE001 - a user's data session must never break trading
-                    logger.exception("BYOB session sync failed")
-                    report.errors.append(f"byob sessions: {exc}")
+                    from app.risk_engine import by_default as risk_by_default
+                    await risk_by_default.sweep(session, now)
+                except Exception as exc:  # noqa: BLE001 - bookkeeping; never breaks trading
+                    logger.exception("Daily loss lockout sweep failed")
+                    report.errors.append(f"lockout sweep: {exc}")
                     await session.rollback()
+                # Z5 (Trade check_vix_spike_halt): the India VIX reading for each organisation with the gate on, from 09:20 IST.
+                if nse.is_open:
+                    try:
+                        await self._vix_readings(session, now)
+                    except Exception as exc:  # noqa: BLE001 - a missing reading makes the gate fail safe for bullish entries only
+                        logger.exception("India VIX reading failed")
+                        report.errors.append(f"vix reading: {exc}")
+                        await session.rollback()
                 if self.lake is not None:
                     try:
                         report.lake_bars = (await self.lake.drain(session, now)).inserted
@@ -485,6 +516,16 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                     logger.exception("History EOD job not started")
                     report.errors.append(f"history eod: {exc}")
+                # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, NSE closed (flag `market_zones`, off by
+                # default). Started as its own task (own sessions, a time budget), so it never holds up a cycle - exits,
+                # stop guards and MCX square-off keep running. Reference data; never trades.
+                if not nse.is_open:
+                    try:
+                        report.market_zones_started = await self._maybe_start_market_zones(session, now)
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Market zones job not started")
+                        report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -524,6 +565,11 @@ class TradingWorker:
         finally:
             await cache_release_lock(LOCK_KEY, self.holder_id)
 
+    async def _byob_on(self, session: AsyncSession, tenant_id: int) -> bool:
+        """BT1b: the bring-your-own-broker data tier is on for this organisation (flag byob_data_tier, off by default)."""
+        from app.platform.controls import flag_enabled
+        return await flag_enabled(session, "byob_data_tier", tenant_id)
+
     async def _first_usable_broker(self, session: AsyncSession, tenant_id: int, now: datetime) -> Optional[BrokerInterface]:
         """The tenant's first ACTIVE account with a usable session (read-only use), or None."""
         await ensure_tenant_key(session, tenant_id)
@@ -562,6 +608,8 @@ class TradingWorker:
                 async with self.session_factory() as own:
                     with bind_log_context(tenant_id=tenant_id):
                         try:
+                            if await self._byob_on(own, tenant_id):
+                                continue   # BT1b: platform-wide OI rows are never read through a per-user (BYOB) session
                             broker = await self._first_usable_broker(own, tenant_id, now)
                             if broker is None:
                                 continue
@@ -600,7 +648,8 @@ class TradingWorker:
             self._last_memory[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
-                    if not broker_reads:
+                    if not broker_reads or await self._byob_on(session, tenant_id):
+                        # BT1b: organisation-wide memory / sentiment are not fed from a per-user (BYOB) session.
                         written += (await market_memory.capture_global(session, tenant_id, now=now))["globals"]
                         continue
                     await ensure_tenant_key(session, tenant_id)
@@ -646,6 +695,48 @@ class TradingWorker:
                     logger.exception("Market memory for tenant %s failed", tenant_id)
                     await session.rollback()
         return written
+
+    async def _vix_readings(self, session: AsyncSession, now: datetime) -> int:
+        """Z5: one India VIX reading per organisation with the `vix_gate` flag on, when due (from 09:20 IST, then every
+        VIX_GATE_CAPTURE_MINUTES), through its entitled data path (app/risk_engine/vix_gate.py). A failed read is stored
+        with its reason. Returns the readings taken."""
+        from app.platform.controls import feature_flags
+        from app.risk_engine import vix_gate
+        entry = (await feature_flags(session)).get(vix_gate.FLAG) or {}
+        if entry.get("on"):
+            tenant_ids = sorted(set(await session.scalars(select(User.tenant_id).where(User.is_active.is_(True)).distinct())))
+        else:
+            tenant_ids = sorted(int(t) for t in entry.get("tenants") or [])
+        taken = 0
+        for tenant_id in tenant_ids:
+            if not vix_gate.due(self._last_vix.get(tenant_id), now):
+                continue
+            with bind_log_context(tenant_id=tenant_id):
+                try:
+                    user = await self._acting_user(session, tenant_id, [])
+                    members = list(await session.scalars(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+                                                         .order_by(User.id)))
+                    broker = None
+                    if user is not None:
+                        for account in await list_accounts(session, tenant_id):
+                            if account.status == "ACTIVE":
+                                broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+                                if broker is not None:
+                                    break
+                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory,
+                                                      now=now, members=members)
+                    self._last_vix[tenant_id] = now          # a reading (good or failed) is stored: the next one is due later
+                    taken += 1
+                except Exception as exc:  # noqa: BLE001 - one organisation's reading must not stop the others
+                    logger.exception("India VIX reading for tenant %s failed", tenant_id)
+                    await session.rollback()
+                    try:                                     # store why, so the gate can say it; else retry next cycle
+                        await vix_gate.capture(session, tenant_id, None, now=now, source="none", error=f"reading failed: {type(exc).__name__}: {exc}"[:150])
+                        self._last_vix[tenant_id] = now
+                    except Exception:  # noqa: BLE001 - no reading stored: due again on the next cycle
+                        logger.exception("Storing the failed India VIX reading for tenant %s failed", tenant_id)
+                        await session.rollback()
+        return taken
 
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
         """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
@@ -720,6 +811,17 @@ class TradingWorker:
             if adapter is not None:
                 adapters[_adapter_key(account.broker_name, account.account_label)] = adapter
 
+        # BT1b (flag byob_data_tier): prefer a broker whose data terms allow display in ATP (Upstox, Dhan) as the
+        # organisation's data source; its cache is kept to this organisation (below) and it is never streamed into the
+        # platform-wide tick keys or the lake (each user's own session streams through the fan-in instead).
+        byob = await self._byob_on(session, tenant_id)
+        from app.market_data.data_terms import confirmed_brokers
+        confirmed = confirmed_brokers()
+        if byob:
+            adapters = dict(sorted(adapters.items(), key=lambda kv: 0 if kv[0].split("@")[0] in confirmed else 1))
+            # Every org-wide stream of this organisation stops (whatever broker it was on, also on the early return
+            # below): a user's credential streams only through the per-user fan-in, never into md:tick:* or the lake.
+            await self.streams.drop_prefix(f"{tenant_id}:")
         data_broker = next(iter(adapters.values()), None)
         if data_broker is None:
             message = "No usable broker session (token expired or missing) - log in again from Settings"
@@ -729,6 +831,10 @@ class TradingWorker:
             logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
+        if byob and hasattr(market_data, "cache_namespace"):
+            # BT1b: this organisation's own cache keys - never the platform-wide md:candles / md:tick keys another
+            # organisation reads (get_ltp then polls REST unless a tick arrives under these keys).
+            market_data.cache_namespace = f"org.t{tenant_id}"
         self._cycle_chains = {}
         # Phase T: balances first, so a capital policy decides on this cycle's numbers.
         await self._refresh_accounts(session, accounts, adapters, now)
@@ -749,7 +855,9 @@ class TradingWorker:
                                       if account is not None else "primary credential by EXPLICIT")
             routes[dep.id] = (account, label)
         self._routes = routes
-        if app_config.STREAMING_QUOTES_ENABLED:
+        if app_config.STREAMING_QUOTES_ENABLED and not byob:
+            # BT1b: with byob_data_tier on, a user's credential is streamed only by the per-user fan-in (its own keys,
+            # never the lake) - not also by this org-wide stream (no second websocket on the same token, no shared ticks).
             await self._stream_quotes(session, tenant_id, adapters, data_broker, deployments, report)
 
         # Exits before entries.
@@ -792,7 +900,7 @@ class TradingWorker:
             # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
             exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
-                                                    exit_approval=exit_approval)
+                                                    exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
@@ -807,6 +915,14 @@ class TradingWorker:
             # Exits above still ran (a suspended org's open risk is still real); no new entries.
             for dep in deployments:
                 dep.last_error = f"Organisation is {tenant.status}: no new entries"
+            await session.commit()
+            return
+        data_key = next((k for k, a in adapters.items() if a is data_broker), getattr(data_broker, "name", ""))
+        if byob and data_key.split("@")[0] not in confirmed:
+            # BT1b / BT1-4: with the bring-your-own-broker data tier on, no new evaluation on a broker whose terms do not
+            # allow its data in ATP (execution-only / pending). Exits, square-off and the stop guard above still ran.
+            for dep in deployments:
+                dep.last_error = WAITING_FOR_CONFIRMED_DATA
             await session.commit()
             return
         active = [d for d in deployments if d.status == DeploymentStatus.ACTIVE.value]
@@ -862,7 +978,8 @@ class TradingWorker:
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
         # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
         try:
-            report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+            if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
+                report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
@@ -907,6 +1024,31 @@ class TradingWorker:
                 await fetcher.aclose()
 
         self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
+        """Z7a-2: starts the nightly market-zones pass as a background task when it is due and the flag is on for anyone.
+        One task per worker; the job's advisory lock keeps a second replica out. The day counts as done only when a pass
+        worked through the whole plan - a pass that ran out of time (or failed) is started again on a later cycle."""
+        from app.price_action.zones import job as zones_job
+
+        day = zones_job.nightly_due(now, self._last_market_zones_day)
+        if day is None or (self._market_zones_task is not None and not self._market_zones_task.done()):
+            return False
+        if not await zones_job.any_enabled(session):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        if not await zones_job.eod_ready(session, day, now):
+            return False                                 # HB1's EOD ingest for the day is still running: asked again next cycle
+
+        async def run() -> None:
+            try:
+                result = await zones_job.run_nightly(self.session_factory, now=now)
+                if result.get("complete"):
+                    self._last_market_zones_day = day
+            except Exception:  # noqa: BLE001 - reference data; never reaches trading
+                logger.exception("Market zones job failed")
+
+        self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
 
     def _spawn_vision_drain(self) -> None:
@@ -1259,7 +1401,7 @@ class TradingWorker:
             ops = self._ops.get(key)
             if ops is None:
                 ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
-        return RateLimitedBroker(adapter, budget, ops=ops)
+        return RateLimitedBroker(adapter, budget, ops=ops, tenant_id=tenant_id)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

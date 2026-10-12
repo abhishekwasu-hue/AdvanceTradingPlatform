@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NAV } from "./components/Sidebar";
-import { PAGES, pageFromPath, pathFor } from "./routes";
+import { PAGES, isStatusPath, pageFromPath, pathFor } from "./routes";
 
 describe("routes", () => {
   it("gives every sidebar entry and the account page a URL that maps back to it", () => {
@@ -22,5 +22,13 @@ describe("routes", () => {
     expect(pageFromPath("/settings/foo")).toBeNull();
     expect(pageFromPath("/ai-copilot/today/x")).toBeNull();
     expect(pageFromPath("/copilot/ask/x")).toBeNull();
+  });
+});
+
+describe("isStatusPath (Z10-e)", () => {
+  it("matches /status with or without a trailing slash, nothing else", () => {
+    expect(isStatusPath("/status")).toBe(true);
+    expect(isStatusPath("/status/")).toBe(true);
+    for (const p of ["/", "/statuses", "/status/x", "/Status", "/settings"]) expect(isStatusPath(p)).toBe(false);
   });
 });

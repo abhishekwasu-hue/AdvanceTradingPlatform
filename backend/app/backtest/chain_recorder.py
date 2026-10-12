@@ -8,6 +8,10 @@ roughly 50 rows a capture and a few thousand a day per underlying; retention tri
 than `RETENTION_CHAIN_SNAPSHOTS_DAYS` (default 400). The table is platform-wide: the first
 tenant's worker cycle to reach an underlying in an interval records it for everyone, and a
 capture within the interval by another tenant is skipped.
+
+Z10-c: an uploaded row (`source = "upload:<tenant id>"`) is that organisation's own history. Only the uploader's
+backtests and reads see it, and it never counts as the recorder's capture, so one organisation's upload neither prices
+another's backtest nor stops the live recording.
 """
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.backtest.options import OptionChainSnapshotRow
@@ -31,8 +35,27 @@ CHAIN_SNAPSHOT_ATM_SPAN = int(os.environ.get("CHAIN_SNAPSHOT_ATM_SPAN", "12"))
 MAX_ROWS_PER_QUERY = 200_000
 
 
+UPLOAD_SOURCE = "upload"
+
+
 def recording_enabled() -> bool:
     return CHAIN_SNAPSHOT_INTERVAL_MINUTES > 0
+
+
+def upload_source(tenant_id: int) -> str:
+    return f"{UPLOAD_SOURCE}:{int(tenant_id)}"
+
+
+def _recorded():
+    """Rows the platform recorded itself (shared by every organisation)."""
+    return ~OptionChainSnapshotRecord.source.like(f"{UPLOAD_SOURCE}%")
+
+
+def visible_to(tenant_id: Optional[int]):
+    """The recorder's rows plus the organisation's own uploads (Z10-c); with no organisation, the recorder's rows only."""
+    if tenant_id is None:
+        return _recorded()
+    return or_(_recorded(), OptionChainSnapshotRecord.source == upload_source(tenant_id))
 
 
 def rows_from_chain(chain: OptionChain, underlying: str, now: datetime, *, span: int = CHAIN_SNAPSHOT_ATM_SPAN,
@@ -63,7 +86,7 @@ async def last_capture(session: AsyncSession, underlying: str, *, since: Optiona
     """The newest capture for the underlying, optionally within (since, until]. The recorder asks
     for the current interval only, so a backfilled or future-dated upload never blocks live
     recording."""
-    q = select(func.max(OptionChainSnapshotRecord.captured_at)).where(OptionChainSnapshotRecord.underlying == underlying)
+    q = select(func.max(OptionChainSnapshotRecord.captured_at)).where(OptionChainSnapshotRecord.underlying == underlying, _recorded())
     if since is not None:
         q = q.where(OptionChainSnapshotRecord.captured_at > since)
     if until is not None:
@@ -87,17 +110,19 @@ async def record_chain(session: AsyncSession, underlying: str, chain: OptionChai
     return len(rows)
 
 
-async def store_uploaded(session: AsyncSession, underlying: str, rows: Sequence[OptionChainSnapshotRow], *, source: str = "upload") -> int:
+async def store_uploaded(session: AsyncSession, underlying: str, rows: Sequence[OptionChainSnapshotRow], *, tenant_id: int) -> int:
     """Persist user-supplied history (a CSV export of a chain recorder, say) - Phase W lets a
-    tenant bring its own quotes. Exact duplicates (same contract and timestamp) are skipped."""
+    tenant bring its own quotes. Exact duplicates (same contract and timestamp) of a row this tenant
+    can already see are skipped. Z10-c: the rows are the tenant's own (`upload:<tenant id>`)."""
     if not rows:
         return 0
+    source = upload_source(tenant_id)
     stamps = {r.timestamp.astimezone(timezone.utc) if r.timestamp.tzinfo else r.timestamp.replace(tzinfo=timezone.utc) for r in rows}
     existing = set()
     if stamps:
         q = select(OptionChainSnapshotRecord.expiry, OptionChainSnapshotRecord.strike, OptionChainSnapshotRecord.right, OptionChainSnapshotRecord.captured_at).where(
             and_(OptionChainSnapshotRecord.underlying == underlying, OptionChainSnapshotRecord.captured_at >= min(stamps),
-                 OptionChainSnapshotRecord.captured_at <= max(stamps)))
+                 OptionChainSnapshotRecord.captured_at <= max(stamps), visible_to(tenant_id)))
         for expiry, strike, right, captured in (await session.execute(q)).all():
             if captured is not None and captured.tzinfo is None:
                 captured = captured.replace(tzinfo=timezone.utc)
@@ -116,21 +141,25 @@ async def store_uploaded(session: AsyncSession, underlying: str, rows: Sequence[
     return written
 
 
-async def load_rows(session: AsyncSession, underlying: str, start: datetime, end: datetime, *, limit: int = MAX_ROWS_PER_QUERY) -> List[OptionChainSnapshotRow]:
-    """Recorded quotes for the underlying between two instants (the candle span of a backtest)."""
+async def load_rows(session: AsyncSession, underlying: str, start: datetime, end: datetime, *, tenant_id: Optional[int],
+                    limit: int = MAX_ROWS_PER_QUERY) -> List[OptionChainSnapshotRow]:
+    """Recorded quotes for the underlying between two instants (the candle span of a backtest): the recorder's rows and
+    `tenant_id`'s own uploads, never another organisation's."""
     q = (select(OptionChainSnapshotRecord)
          .where(and_(OptionChainSnapshotRecord.underlying == underlying, OptionChainSnapshotRecord.captured_at >= start,
-                     OptionChainSnapshotRecord.captured_at <= end))
+                     OptionChainSnapshotRecord.captured_at <= end, visible_to(tenant_id)))
          .order_by(OptionChainSnapshotRecord.captured_at, OptionChainSnapshotRecord.id).limit(limit))
     return [OptionChainSnapshotRow(timestamp=r.captured_at if r.captured_at.tzinfo else r.captured_at.replace(tzinfo=timezone.utc), expiry=r.expiry,
                                    strike=r.strike, right=r.right, ltp=r.ltp, iv=r.iv, oi=r.oi, underlying_ltp=r.underlying_ltp)
             for r in await session.scalars(q)]
 
 
-async def coverage(session: AsyncSession, underlying: Optional[str] = None) -> List[Dict]:
-    """What has been recorded: per underlying, the span, row count and distinct capture days."""
+async def coverage(session: AsyncSession, underlying: Optional[str] = None, *, tenant_id: Optional[int] = None) -> List[Dict]:
+    """What has been recorded: per underlying, the span, row count and distinct capture days (the recorder's rows and
+    `tenant_id`'s own uploads)."""
     q = select(OptionChainSnapshotRecord.underlying, func.min(OptionChainSnapshotRecord.captured_at), func.max(OptionChainSnapshotRecord.captured_at),
-               func.count(OptionChainSnapshotRecord.id), func.count(func.distinct(OptionChainSnapshotRecord.expiry))).group_by(OptionChainSnapshotRecord.underlying)
+               func.count(OptionChainSnapshotRecord.id), func.count(func.distinct(OptionChainSnapshotRecord.expiry))).where(
+        visible_to(tenant_id)).group_by(OptionChainSnapshotRecord.underlying)
     if underlying:
         q = q.where(OptionChainSnapshotRecord.underlying == underlying)
     out = []

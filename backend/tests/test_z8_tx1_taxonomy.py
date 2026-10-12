@@ -133,21 +133,21 @@ def test_every_registered_backend_template_source_is_fully_filed():
 
 
 def test_the_guard_catches_an_unfiled_template_an_orphan_and_an_unregistered_source():
-    import app.screener.legends  # noqa: F401 - U7 LG1: the sources already filed stay registered beside the fake one
-    tax = tx.load()
-    base = {name: src for name, src in tx.sources().items() if name != "breakouts"}
-    fake = {**base, "breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
+    base = _data()
+    base["screens"] = [s for s in base["screens"] if s["source"] not in ("breakouts", "legends")]   # the filed U6 / U7 templates aside
+    tax, _ = tx.parse(base)
+    fake = {"breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
     problems = tx.coverage_problems(tax, fake)
     assert problems == ["template 'breakouts.daily_52w_high' from source 'breakouts' is not filed in the taxonomy "
                         "(add it to app/screener/data/taxonomy.json)"]
-    data = _data()
+    data = base
     entry = dict(data["screens"][0], id="breakouts.daily_52w_high", source="breakouts", name="Daily 52-week high breakout",
                  definition="Close above the prior 52-week high on volume.", method="price_action", setup="breakout")
     data["screens"].append(entry)
     filed, lint = tx.parse(data)
     assert lint == [] and tx.coverage_problems(filed, fake) == []                          # filed: the guard is satisfied
-    assert tx.coverage_problems(filed, base) == ["taxonomy source 'breakouts' is not registered (register_source) - its screens would never show"]
-    gone = {**base, "breakouts": tx.Source("breakouts", lambda: [], None)}
+    assert tx.coverage_problems(filed, {}) == ["taxonomy source 'breakouts' is not registered (register_source) - its screens would never show"]
+    gone = {"breakouts": tx.Source("breakouts", lambda: [], None)}
     assert tx.coverage_problems(filed, gone) == ["taxonomy entry 'breakouts.daily_52w_high' names a template that source 'breakouts' does not have"]
 
 
@@ -165,13 +165,17 @@ def test_the_matrix_has_every_cell_and_counts_the_filed_screens():
     assert set(m) == {x.id for x in tax.methods} and all(set(row) == {s.id for s in tax.setups} for row in m.values())
     assert sum(sum(r.values()) for r in m.values()) == len(tax.screens)
     assert m["indicator"]["momentum"] == 1 and m["indicator"]["reversal"] == 1 and m["indicator"]["pullback"] == 1
-    assert m["price_action"]["breakout"] == 0                                              # an empty cell stays, as 0
+    assert m["fundamental"]["breakout"] == 0                                               # an empty cell stays, as 0
+    assert m["price_action"]["breakout"] == 10 and m["indicator"]["breakout"] == 1 and m["volume_flow"]["breakout"] == 1   # U6 BK1 / BK2
 
 
 def test_the_frontend_sample_is_the_server_payload():
     """src/screener/taxonomySample.json feeds the frontend tests and stories; regenerate it with
     `python -m app.screener.taxonomy > ../frontend/src/screener/taxonomySample.json` after changing the data file."""
-    assert json.loads(SAMPLE.read_text(encoding="utf-8")) == json.loads(json.dumps(tx.payload(tx.load())))
+    import app.main  # noqa: F401 - registers every template source
+    hidden = tx.default_hidden()                                       # flagged-off sources (U6 breakouts) as a new org sees it
+    assert "breakouts" in hidden
+    assert json.loads(SAMPLE.read_text(encoding="utf-8")) == json.loads(json.dumps(tx.payload(tx.load(), hidden_sources=hidden)))
 
 
 def test_the_api_is_off_by_default_and_needs_both_flags():

@@ -23,6 +23,8 @@ class Arg:
     default: Optional[object] = None
     required: bool = True
     choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
+    literal_only: bool = False      # Z10-a: a setting read once (a literal or a $parameter), never an expression per bar
+    bounds: Optional[Tuple[float, float]] = None   # U6 BK1: inclusive range of a number (checked at validation)
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,14 @@ class Spec:
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
+    flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
+    timeframes: Tuple[str, ...] = ()       # U6 BK1: the only timeframes it runs on (empty = any)
+    window_bars: Tuple[Tuple[str, int], ...] = ()   # U6 BK1: bars per window unit by timeframe (weeks -> 5 daily bars)
+    window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
+    min_sessions: int = 0                  # U6 BK2: whole sessions of history it needs (intraday; on top of min_bars)
+    sessions_arg: Optional[str] = None     # U6 BK2: the argument that sets min_sessions (prior sessions + the current one)
+    tf_multiple_args: Tuple[str, ...] = ()  # U6 BK2: minute arguments that must be a whole number of the timeframe's bars
+    fetch_degree_bars: Tuple[int, ...] = ()  # U6 BK1: bars to FETCH by degree (fetch sizing only; min_bars decides refusal)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -72,6 +82,30 @@ REVERSAL_MIN_BARS = 25                            # the median range of 20 bars 
 BREAK_EXTRA_BARS = 21                             # RealBreak: the median range (20 bars) before the earliest candidate, plus one
 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
+_DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
+_SIDE = Arg("side", STR, choices=("up", "down"))
+BREAKOUT_FLAG = "screener_breakouts"
+
+
+def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[object, ...] = ()) -> Arg:
+    """A breakout argument whose default and range are the breakout parameter's (app/screener/breakouts/params.py)."""
+    from app.screener.breakouts.params import BY_NAME
+    p = BY_NAME[name]
+    bounds = (float(p.low), float(p.high)) if p.low is not None and p.high is not None else None
+    # a NUM setting is read once for the whole series (Z10-a literal_only): a literal or a $parameter, never an expression
+    return Arg(arg, type_, None if required else p.default, required, choices=choices or p.choices, bounds=bounds,
+               literal_only=type_ == NUM)
+
+
+BREAKOUT_MIN_BARS = 50                            # ATR warm-up plus a leg pivot before the first signal
+# U6 BK2: the intraday screens read the same time of day in the previous `tod_sessions` sessions (20) plus the current one
+INTRADAY_SCREEN_TFS = ("1m", "3m", "5m", "15m")
+INTRADAY_SERIES_TFS = ("1m", "3m", "5m", "15m", "30m", "1h")
+TOD_SESSIONS = 20
+_V_TOD = _bk("tod_vol_mult", "v", NUM)
+_VWAP = _bk("vwap_agree", "vwap", BOOL)
+_SKIP = _bk("skip_first_min", "skip", NUM)
+_K = _bk("min_break_atr", "k", NUM)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 
@@ -99,10 +133,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     # S1c: the Strategy Builder / scanner indicators (same implementation as app/strategy_engine/declarative.py)
     Spec("PlusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="+DI"),
     Spec("MinusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="-DI"),
-    Spec("Supertrend", "factor", NUM, "price", (Arg("n", "window", 10, False), Arg("k", NUM, 3.0, False)), doc="Supertrend line"),
-    Spec("BBUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="upper Bollinger band"),
-    Spec("BBMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="middle Bollinger band"),
-    Spec("BBLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False)), doc="lower Bollinger band"),
+    Spec("Supertrend", "factor", NUM, "price", (Arg("n", "window", 10, False), Arg("k", NUM, 3.0, False, literal_only=True)), doc="Supertrend line"),
+    Spec("BBUpper", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="upper Bollinger band"),
+    Spec("BBMid", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="middle Bollinger band"),
+    Spec("BBLower", "factor", NUM, "price", (Arg("n", "window", 20, False), Arg("k", NUM, 2.0, False, literal_only=True)), doc="lower Bollinger band"),
     Spec("DayOpen", "factor", NUM, "price", (), doc="the session's opening price"),
     Spec("PDH", "factor", NUM, "price", (), cost=1.5, doc="previous session high"),
     Spec("PDL", "factor", NUM, "price", (), cost=1.5, doc="previous session low"),
@@ -118,9 +152,9 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="latest structure event: BOS_BULLISH / BOS_BEARISH / CHOCH_BULLISH / CHOCH_BEARISH (empty when none)"),
     Spec("PatternBullish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bullish candlestick pattern on the last bar"),
     Spec("PatternBearish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bearish candlestick pattern on the last bar"),
-    Spec("NearSupport", "filter", BOOL, None, (Arg("tolerance_pct", NUM), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
+    Spec("NearSupport", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a support zone edge"),
-    Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
+    Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a resistance zone edge"),
     # S5-A: price action as series (bar by bar, causal), so they work with offsets, @timeframe, Count and alerts
     Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES),), cost=2.0, min_bars=3,
@@ -158,7 +192,79 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
     Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
     Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
+    # U6 BK1: breakout screens (app/screener/breakouts) - one signal per leg, closed bars only; behind `screener_breakouts`.
+    # The defaults below are the breakout parameters' defaults (app/screener/breakouts/params.py, tested equal).
+    Spec("RangeBreakout", "filter", BOOL, None, (_SIDE, _bk("range_n", "n", "window"), _bk("min_break_atr", "k", NUM), _bk("vol_mult", "v", NUM),
+                                                 _bk("range_mode", "mode", STR)),
+         cost=4.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B1: close beyond the n-bar range (mode auto: the consolidation before the bar) by k ATR on volume >= v x average"),
+    Spec("SwingBreakout", "filter", BOOL, None, (_SIDE, _DEGREE1, _bk("min_break_atr", "k", NUM)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B2: close beyond the last CONFIRMED swing high (up) / low (down) of the degree by k ATR"),
+    Spec("SwingBreakType", "classifier", CAT, None, (_SIDE, _DEGREE1, _bk("min_break_atr", "k", NUM)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, values=("BOS", "CHOCH", "BREAK", ""), flag=BREAKOUT_FLAG,
+         doc="B2: on a SwingBreakout bar, BOS (with the swing trend), CHOCH (against it) or BREAK (range / no trend yet); empty on"
+             " other bars"),
+    Spec("NRBreakout", "filter", BOOL, None, (_SIDE, _bk("nr_setup", "setup", STR), _bk("vol_mult", "v", NUM), _bk("min_break_atr", "k", NUM)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B4: the bar after an inside / NR4 / NR7 bar closes beyond it by k ATR on volume >= v x average"),
+    Spec("NewHighBreakout", "filter", BOOL, None, (_SIDE, _bk("high_weeks", "weeks", "window"), _bk("vol_mult", "v", NUM), _bk("min_break_atr", "k", NUM)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG, timeframes=("1d", "1w"), window_bars=(("1d", 5), ("1w", 1)),
+         doc="B7 (Daily / Weekly): close beyond the high (up) / low (down) of the previous N calendar weeks by k ATR on volume >= v x"
+             " average; no match until the history covers the N weeks"),
+    Spec("RangeExpansion", "filter", BOOL, None, (_SIDE, _bk("expansion_k", "k", NUM), _bk("vol_mult", "v", NUM)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B13: bar range >= k x ATR with the close in the top (up) / bottom (down) third, volume >= v x average"),
+    Spec("VolumeBreakout", "filter", BOOL, None, (_SIDE, _bk("shock_mult", "v", NUM), _bk("range_n", "n", "window")), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B14: volume >= v x average with a directional candle at or through the n-bar high (up) / low (down)"),
+    Spec("RelVolume", "factor", NUM, "ratio", (_bk("vol_avg_n", "n", "window"),), extra_bars=1, flag=BREAKOUT_FLAG,
+         doc="volume / the mean volume of the n bars before this one"),
+    Spec("ATRPercentile", "factor", NUM, "pct", (_bk("atr_n", "n", "window"), _bk("atr_pct_lookback", "lookback", "window")), cost=2.0,
+         window_sum=True, flag=BREAKOUT_FLAG,
+         doc="percentile (0-100) of the previous bar's ATR / close among the last `lookback` bars (needs n + lookback bars)"),
+    # Refusal vs fetch: min_bars 1 - a context frame shorter than the trend's warm-up (dow_min_bars, 40 at D0) reads as
+    # missing (unknown), which `DowTrend(0)@tf != "DOWN"` treats as not passing (cautious); the fetch is sized for the
+    # swing history (100 / 250 / 600 / 1200 bars by degree) so the trend can be read.
+    Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=1, fetch_degree_bars=SWING_DEGREE_MIN_BARS,
+         values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
+         doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
+             " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
+             " timeframe's trend from its closed bars"),
+    # U6 BK2: intraday breakouts on the exchange session (app/screener/breakouts/intraday.py, session.py) - closed bars, one
+    # signal per leg; the session clock comes from the exchange calendar. Defaults = the breakout parameters' defaults.
+    Spec("ORBreakout", "filter", BOOL, None, (_SIDE, _bk("or_minutes", "minutes", NUM), _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         tf_multiple_args=("minutes",),
+         doc="B16: the first close beyond the high (up) / low (down) of the session's first `minutes` by k ATR, with relative volume"
+             " by time of day >= v and the close on the breakout side of the session VWAP (vwap); no signal in the first `skip`"
+             " minutes; once per side per session"),
+    Spec("DayLevelBreak", "filter", BOOL, None, (_SIDE, _bk("day_level", "level", STR),
+                                                 _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         doc="B17: the first close beyond the first hour's, the previous session's, the first candle's or the pre-open bars' high (up)"
+             " / low (down) by k ATR, confirmed like ORBreakout"),
+    Spec("DayExtremeBreak", "filter", BOOL, None, (_SIDE, _V_TOD, _VWAP, _SKIP, _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=TOD_SESSIONS + 1, timeframes=INTRADAY_SCREEN_TFS, flag=BREAKOUT_FLAG,
+         doc="B18: a close beyond the session's high (up) / low (down) so far by k ATR, with relative volume by time of day >= v and"
+             " VWAP agreement; once per leg"),
+    Spec("RelVolumeTOD", "factor", NUM, "ratio", (_bk("tod_sessions", "sessions", "window"), _bk("tod_mode", "mode", STR)),
+         cost=2.0, sessions_arg="sessions", timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
+         doc="volume (mode cumulative: the session's volume so far) / the mean of the same time of day in the previous `sessions`"
+             " sessions (prior sessions only; at least 5)"),
+    Spec("SessionVWAP", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
+         doc="VWAP from the session open on the exchange calendar (pre-open bars left out); equals VWAP on regular-session bars"),
 )}
+
+BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
+
+
+# Z10-a (U3 G2): functions answered for the LAST bar only - the structure / pattern / zone filters, the option chain,
+# reference data as of the run date and the cross-sectional ranks. Read as a series, their single answer would be
+# repeated on every earlier bar, so a function that reads a history (READS_HISTORY) would count, average or compare
+# today's answer as if it had held all along. The validator refuses that combination.
+LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
+READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag"})
 
 
 def describe() -> Dict[str, Dict[str, object]]:
@@ -169,9 +275,13 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "choices": {a.name: list(a.choices) for a in spec.args if a.choices}, "values": list(spec.values),
                           "defaults": {a.name: a.default for a in spec.args if a.default is not None},
                           "types": {a.name: a.type for a in spec.args}, "cross_sectional": spec.cross_sectional,
+                          "literal": [a.name for a in spec.args if a.literal_only],
                           "kwargs": [a.name for a in spec.kwargs], "varargs": spec.varargs, "timeframed": spec.timeframed,
                           "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
+        if spec.timeframes:                                          # U6 BK2: only the entries limited to some timeframes
+            out[spec.name]["timeframes"] = list(spec.timeframes)
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "Spec", "Arg", "describe", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "MAX_WINDOW",
+           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

@@ -141,11 +141,22 @@ async def open_position_greeks(
         select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.exit_time.is_(None),
                                   TradeRecord.instrument_kind == "OPTION").order_by(TradeRecord.id)
     ))
-    stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
-    usable = [r for r in stored if token_is_usable(r)]
-    if rows and not usable:
-        raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in from Settings)")
-    adapter = build_adapter(usable[0]) if usable else None
+    from app.market_data import live_access
+    own = None
+    if await live_access.byob_on(session, user.tenant_id):
+        # BT1b: premiums and spots only through this user's own confirmed session (409 with the reason otherwise).
+        if rows:
+            wanted = [(t.symbol, t.exchange or "NFO") for t in rows] + [
+                (t.underlying_symbol, instrument_master.INDEX_EXCHANGE.get(instrument_master.underlying_of(t.underlying_symbol), "NSE"))
+                for t in rows if t.underlying_symbol]
+            own = await live_access.user_source(session, user, wanted, priority=live_access.Priority.POSITION)
+        adapter = own.adapter() if own is not None else None
+    else:
+        stored = list(await session.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)))
+        usable = [r for r in stored if token_is_usable(r)]
+        if rows and not usable:
+            raise HTTPException(status_code=409, detail="Greeks need live premiums - no usable broker session (log in from Settings)")
+        adapter = build_adapter(usable[0]) if usable else None
     today = today_ist().isoformat()   # P0.6: the exchange's date, not the container's UTC date
     spots: dict = {}
     legs_out: List[dict] = []
@@ -160,10 +171,15 @@ async def open_position_greeks(
         if strike is None or right is None:
             skipped.append({"trade_id": trade.id, "reason": f"cannot read strike/right from {trade.symbol}"})
             continue
+        if own is not None and not own.allows(trade.symbol, trade.exchange or "NFO"):
+            skipped.append({"trade_id": trade.id, "reason": own.reason(trade.symbol, trade.exchange or "NFO")})
+            continue
         try:
             if trade.underlying_symbol not in spots:
                 underlying = instrument_master.underlying_of(trade.underlying_symbol)
                 exchange = instrument_master.INDEX_EXCHANGE.get(underlying, "NSE")
+                if own is not None and not own.allows(trade.underlying_symbol, exchange):
+                    raise ContractExecutionError(own.reason(trade.underlying_symbol, exchange))   # BT1b: spot outside the budget
                 spots[trade.underlying_symbol] = float(await adapter.get_ltp_for_symbol(trade.underlying_symbol, exchange))
             attempts = [trade.instrument_key] if trade.instrument_key and "|" in trade.instrument_key else []
             attempts.append(trade.symbol)

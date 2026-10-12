@@ -43,7 +43,7 @@ assumption.
   `tenants`/`orders`/`trades`/`audit_logs` counts are within the source's, re-verifies the audit
   hash chain in the copy (`python -m app.audit.verify_chain`), drops the scratch database and
   prints a one-line JSON report with `status: ok`. Run it monthly and keep the report:
-  `docker compose run --rm backup sh /scripts/verify_backup.sh latest`. CI runs the same
+  `docker compose run --rm --entrypoint sh backup /scripts/verify_backup.sh latest`. CI runs the same
   rehearsal on every push (`tests/test_backup_scripts.py`), including the encrypted and tampered
   cases.
 - **Restore for real**: `scripts/backup/restore.sh <file|latest>` (asks you to type the database
@@ -58,12 +58,12 @@ assumption.
 - **Continuous WAL archiving** is on in `docker-compose.yml` (`archive_mode=on`, five-minute
   `archive_timeout`, segments copied into the `wal_archive` volume). Copy that volume off the host
   with the dumps.
-- **Weekly base backup**: `docker compose run --rm backup sh /scripts/base_backup.sh` (or from
+- **Weekly base backup**: `docker compose run --rm --entrypoint sh backup /scripts/base_backup.sh` (or from
   cron). It writes `backups/base/<stamp>/`, keeps the newest `BASE_BACKUP_KEEP` (4) and prunes WAL
   older than the oldest kept base backup. Alert when `LAST_BASE_BACKUP_OK` is older than 8 days.
 - **Recover to an instant** (e.g. just before a bad bulk change at 11:04 IST):
   1. stop the API and worker (`docker compose stop backend worker`);
-  2. `docker compose run --rm -v atp_pitr:/pitr backup sh /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
+  2. `docker compose run --rm -v atp_pitr:/pitr --entrypoint sh backup /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
   3. start a scratch Postgres on that directory (`docker run --rm -v atp_pitr:/var/lib/postgresql/data postgres:17-alpine`),
      which replays WAL to the target and promotes; verify `alembic current`, open trades and
      `python -m app.audit.verify_chain` against it;
@@ -1149,6 +1149,35 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
   10 verdicts the organisation's "news trust" (useful share, floor 0.25) scales the thesis news factor; the
   summary endpoint shows precision per source so a noisy source can be switched off in the feed settings.
 
+### 1.6aj Phase 0 PAPER-only lock (Z10-c)
+
+- **Owner step at install - turn it on yourself.** Admin Console -> Feature flags (Admin > Controls) -> `phase0_paper_only`
+  -> on. The flag is OFF by default and nothing turns it on for you: no code, migration, script or deploy step (the
+  bootstrap, `deploy.sh` and `atp.sh` included) ever changes it. A health report may show "phase0_paper_only off" as
+  an owner action; it never flips it. Turning it on (or off) is an audit event (`feature_flag_set`).
+- **What it does while on**: every new LIVE entry is refused - at the entry checks (the reason
+  "Phase 0 PAPER-only lock ..." on the order trail, single-leg and multi-leg alike) and again at the broker-order
+  chokepoint in the worker (an order the platform built as an entry - `intent` ENTRY - gets a REJECTED answer without
+  reaching the broker; the worker re-reads the flag every cycle). PAPER is
+  untouched. With the flag off and tenants listed in its allow-list, only those tenants are locked.
+- **What it never does**: block an exit. Exits of an existing LIVE position, protective stops, stop moves and cancels
+  pass (ADR-0004). It does not change the `live_trading` flag (still a kill flag, ON by default - owner decision
+  Z10-3 / Z11-7), a plan, or a deployment's mode.
+- **Check it**: Admin Console -> Feature flags shows the state; a LIVE deployment's refused entry names the lock in
+  its order trail and its `last_error`.
+- **"No API order path reachable"** (Phase 0 exit criterion) is also a test: `tests/test_z10c_order_paths.py` fails
+  when any API route or process entry point can reach a broker order method outside its allow-list, and no API route
+  may reach an entry at all. The allow-listed routes are exits only (close a position, emergency exit, an approved
+  exit proposal).
+- **Tenancy and scope sweep** (`tests/test_z10c_tenancy_sweep.py`): every `/api/*` route is classified in
+  `tests/tenancy_route_table.py`; a new route fails the build until it is. The sweep then checks, for every route,
+  that an anonymous call, a VIEWER, a member denied every scope, a member denied the route's catalogue scope and
+  another organisation are refused as the class says, and that another organisation never sees or changes this
+  organisation's rows. A member reporting 403 with `X-Missing-Scope: risk:write` (or another scope) after this
+  release was denied that scope on the Team page - since Z10-c the denial is enforced. STRATEGY_CREATOR members no
+  longer edit risk settings / limits or broker accounts (their role never had `risk:write` / `brokers:write`); an
+  owner who wants that grants the scope on the Team page.
+
 ### 1.7 Trading worker runbook
 
 * **Start / restart:** `docker compose up -d worker` (or `python -m app.workers.trading_worker`
@@ -1282,6 +1311,133 @@ standby replica is safe only with Redis providing the cycle lock. The database i
 replication (a managed Postgres offering's standard multi-AZ/read-replica feature) before this
 claim extends to the data layer too.
 
+### 1.9 On-call runbooks and the status page (Z10-e, G7)
+
+One page per alert. Each says what fired, what the platform already does on its own, what to check and what to do.
+Server commands come from the Z11 deploy runbook, [`docs/deploy/HOSTINGER_RUNBOOK.md`](deploy/HOSTINGER_RUNBOOK.md)
+(PR #186; its section 1 lists every `deploy/atp.sh` command). They are linked here, not repeated. Until #186 is
+merged, the older `deploy/hostinger/status.sh` and `rollback.sh` blocks still work (`docs/DEPLOY_HOSTINGER_MR.md`).
+
+Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits are never gated (ADR-0004).
+
+**Where to look first**
+
+| Source | Who | What it shows |
+|---|---|---|
+| `/status` (`GET /api/status`) | anyone, no login; flag `public_status_page`, off by default | API, trading engine, market data (EOD date, NSE open, number of live sessions through users' own brokers), alert delivery lag, maintenance and incident banner. States and short sentences only. |
+| `GET /api/system/health/deep`, `/health/dependencies` | operator (unauthenticated, no secrets) | database, migrations, worker heartbeat, Redis, broker circuits, broker-uncertain organisations |
+| `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)); `OWNER ACTION NEEDED` (exit 10) names a flag to set |
+| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags against the Phase 0 posture ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-owner-step-in-admin--controls)): `live_trading` off, `phase0_paper_only` on. Read-only. |
+| `backend/scripts/session_check.py` | owner (run by `atp.sh deploy` / `rollback`) | whether any exchange session is open with open positions; a deploy or restart stops with exit 3 while it is ([runbook section 8](deploy/HOSTINGER_RUNBOOK.md#8-what-deploy-does-step-by-step)) |
+| Prometheus rules `scripts/monitoring/prometheus-alerts.yml` | operator | each rule's `runbook` annotation points to a page below |
+| Admin console | SUPER_ADMIN | incidents, maintenance mode, flags, beta rollout stage |
+
+**The public status page.** Turn it on in Admin > Feature flags (`public_status_page`), the same owner step as the
+other Phase 0 flags (runbook section 4a; `atp.sh` never changes a flag). The page and `atp.sh health` read the same
+probes (`/api/system/health/deep`). It reads only the probes above
+and `app/incidents`; it shows no error text, version, host, latency, user or organisation. Incidents scoped to one
+organisation are left out. A platform-wide incident shows as "Incident" (WARNING) or "Major incident" (CRITICAL,
+EMERGENCY), "investigating" (OPEN) or "monitoring" (MITIGATED), and its start time; its title and summary stay in the
+admin console. The answer is cached for 15 seconds (an outage answer for 5), built by one request at a time, and rate-limited to 60
+calls per minute per IP; turning the flag on or off clears the cache. With the flag off it answers a plain 404. While
+the database does not answer within 2 seconds, or the flag cannot be read, the endpoint answers 503 with an outage body.
+
+**Every incident.** Open one in Admin > Incidents for anything users notice (that is what puts the banner on
+`/status`), set it to MITIGATED when the fix is in, and resolve it with the root cause. Downtime is measured from the
+start.
+
+#### 1.9.1 Data stale
+
+*Fires:* Prometheus `MarketDataStale` (decisions refused on stale candles or quotes, SLO-4); `/status` shows Market
+data "Degraded" when the newest EOD file is older than the last closed session; data-tier badges say "stale".
+
+*Already happening:* signals on stale candles are skipped and logged on the deployment (`Skipped: market data stale`);
+alerts on stale data are held back (BT1 `alerts_suppressed`, G5); an exit decision on a stale quote waits one cycle.
+Nothing to reset when the data is fresh again.
+
+*Check and act:*
+1. Intraday (candles / quotes): is it one user or everyone? One user: their broker token (Settings > Broker session
+   health; the daily login). Everyone on one broker: see 1.9.4. Everyone: the worker (1.9.2) and the clock on the host.
+2. End of day: the nightly EOD job runs from 19:00 IST with the `history_backfill` flag on (HB1). Check
+   `GET /api/admin/history-backfill/progress` for `blocked` / `failed` days. NSE sometimes publishes late; the next
+   night's catch-up picks it up. To load it now: upload the day's file on that endpoint, or run
+   `docker compose exec backend python -m app.market_lake.bhavcopy_backfill nightly` (docs/design/HB_HISTORY_BACKFILL.md).
+3. If users are affected for more than a session, open an incident (WARNING) so `/status` says so.
+
+#### 1.9.2 Worker stale
+
+*Fires:* `TradingWorkerStalled` (heartbeat older than 180 s) or `TradingWorkerNeverSeen` (SLO-2); `/status` shows
+Trading engine "Outage" during market hours, "Degraded" when the market is closed.
+
+*Already happening:* the API keeps serving. Open PAPER positions are only re-evaluated when the worker runs again; no
+order is sent meanwhile.
+
+*Check and act:*
+1. `deploy/atp.sh health` (one worker container, running and healthy). Restart the worker container only (the full
+   `docker compose` file list is in the runbook's section 9), then follow section 1.7 above.
+2. Read the worker log lines around the last heartbeat; `last_error` on `GET /api/system/worker-status` names a
+   failing cycle step. A stopped heartbeat usually means the container is gone, not a cycle bug.
+3. `WorkerLockLost` at the same time: Redis memory or a second worker (section 1.2b).
+4. If it cannot be back before 15:15 IST, open an incident (CRITICAL) and say so on `/status`; PAPER positions can be
+   closed by hand from the Positions page.
+
+#### 1.9.3 Outbox backlog
+
+*Fires:* `AlertOutboxBacklog` (more than 20 alerts waiting for 10 minutes) or `AlertDeliveriesFailing` (SLO-8);
+`/status` shows Alert delivery "Degraded" above a 3-minute lag, "Outage" above 15 minutes.
+
+*Already happening:* raising an alert only writes outbox rows, so nothing upstream slows down. Each delivery is retried
+with backoff, then dead-lettered (`reason_code = dead_letter`) with its last error kept.
+
+*Check and act:*
+1. Is the worker running (1.9.2)? The worker drains the outbox every cycle; a stalled worker is the usual cause.
+2. One channel or all? Telegram down, an SMTP password changed or a web-push key rotated shows in the failed rows'
+   `last_error` (`GET /api/alerts/dead-letters` per organisation; `atp_alert_deliveries_total{channel,status}`).
+3. Fix the channel, then retry the dead letters (`POST /api/alerts/deliveries/{id}/retry`, or the dead-letter list
+   in the alert rules panel). In-app notifications were never affected.
+
+#### 1.9.4 Broker down
+
+*Fires:* many users' sessions at one broker failing at once (logins, quotes, candles; `atp_broker_calls_total{broker,
+outcome}`), or, on the order path, `BrokerCircuitOpen` / `OpsThrottle429Burst` (SLO-5). Phase 0 sends nothing to a
+broker's order API, so the last two should stay silent; if one fires, treat it as an incident (G6, "no API order path").
+
+*Already happening:* live data through that broker (Tier A) stops updating for its users; the freshness checks mark it
+stale and alerts on it are held back (1.9.1). Other brokers and EOD data are not affected. "Trade in your broker app"
+links still open the broker's own app.
+
+*Check and act:*
+1. The broker's own status page or support channel. `GET /api/system/health/dependencies` shows each circuit.
+2. If it stays down for more than a few minutes in market hours: open an incident (WARNING) naming no user, and
+   optionally add the broker in Admin > Platform controls > Disabled brokers so the UI says LIVE is paused there.
+3. When it is back: remove it from Disabled brokers, resolve the incident.
+
+#### 1.9.5 Rollback
+
+*When:* a deploy made things worse (health checks fail after the deploy, error budget burning, a feature broke for
+users) and a fix forward is not minutes away.
+
+*Before:* `scripts/session_check.py` (the session gate) refuses a restart while an exchange session is open with
+open positions (exit 3); the migration guard refuses while NSE is open. Wait for the close unless the runbook's
+override is accepted for that one run.
+
+*Do:* follow the Z11 runbook, [section 9 "Rollback, and when a migration makes it unsafe"](deploy/HOSTINGER_RUNBOOK.md#9-rollback-and-when-a-migration-makes-it-unsafe):
+`deploy/atp.sh rollback --dry-run`, then `deploy/atp.sh rollback` (code only), or `rollback --restore-db` when the
+release's migration was not additive (since Z11 every migration declares `ROLLBACK_SAFE`; `False` means a code-only
+rollback is unsafe). Then `deploy/atp.sh health`, which must end `health: OK`. Open an incident (`/status` shows it), and resolve it
+once the fixed release is deployed again. The rollback rehearsal (a Phase 0 exit criterion) is in the same section.
+
+#### 1.9.6 Staged beta rollout (50 -> 200 -> 500)
+
+The beta cohort grows in stages. Sign-up through invite codes (flag `beta_cohort_gate`) stops at the effective cap,
+min(stage, `BETA_COHORT_CAP`). Admin > Beta rollout shows the stage, the effective cap, the places used and the
+headroom. **Moving up** is one stage at a time, needs a reason and is written to the audit trail
+(`beta_cohort_stage_raised`). Move up only after the current stage has run a full week of trading days with: no open
+incident, `/status` green, `deploy/atp.sh health` ending `health: OK` (flag posture included, runbook section 4a),
+the runbooks above exercised at least once, and the rollback rehearsed. **Moving down**
+(`beta_cohort_stage_lowered`) closes sign-up sooner; existing accounts are never touched. The `BETA_COHORT_STAGE`
+setting (default 50) only applies until a stage has been set in the console. Details: `docs/BETA_COHORT.md`.
+
 ## 2. Data Governance
 
 ### 2.1 Data classification
@@ -1361,3 +1517,54 @@ PBKDF2-derived key before they touch disk, and `restore.sh`/`verify_backup.sh` r
 passphrase (a wrong one fails the restore, it does not produce a plausible-looking database). The
 passphrase is the one secret that must survive losing the server - store it with the same care as
 `SECRETS_ENCRYPTION_KEY`, and rehearse a restore with it at least once a quarter.
+
+### 2.6 Legal pages, their acceptance and the support bot (Z10-f)
+
+**Flag `legal_pages` (off by default).** While it is off nothing below exists for users: `/api/legal/*` answers 404,
+sign-up ignores `legal_acceptance`, the form has no consent box, nobody sees the banner and the support bot leaves the
+legal pages out. The admin API (`PUT /api/admin/controls/flags/legal_pages`) refuses `on` - or an organisation
+allow-list - while any document still has an open `[PLACEHOLDER]`; send `"override_open_placeholders": true` to switch
+it on anyway (audited as `legal_pages_placeholder_override`). Fill the placeholders and have the text reviewed first.
+
+**Legal pages.** The Privacy notice (DPDP Act 2023), Terms of use and Risk disclosure are versioned Markdown in
+`backend/app/legal/content/{privacy,terms,risk}.md`, each headed "Draft — to be reviewed by a lawyer before launch".
+With the flag on they are public: `/legal/privacy`, `/legal/terms`, `/legal/risk` in the app (no sign-in, no app shell) and
+`GET /api/legal/documents[/{slug}]`. The privacy notice does not copy configuration: retention days come from the
+retention policy (section 2.3, `RETENTION_*`) and the breach-notice hours and log retention from `in_sebi.json`
+(`IN-SEBI.golive.checklist`), filled in when the page is served. Company facts that do not exist yet stay as
+`[SQUARE BRACKET]` placeholders (`open_placeholders` in the API response) until the company is registered.
+
+To change a document: edit its file, bump its `version` (a date), ship it. Everyone is asked again on their next
+sign-in - also when the text changes without a version bump (the acceptance is bound to the text's SHA-256).
+
+**Acceptance.** With the flag on, sign-up and team join require the acceptance (400 `legal_acceptance_required`
+without it): the form's box sends each document's version and the SHA-256 of the text it showed, and a version or text
+that is no longer current gets 409 `legal_version_changed` (the form reloads the text - the documents are served
+`no-cache` with an ETag). Accounts created before the flag was on, and everyone after a document changes, see a banner
+after signing in: "I have read and accept" records it, "Later" hides it until the next sign-in (no limit on how often -
+OPEN_QUESTIONS Z10F-7). It is a banner, never a modal or a route gate: positions, exits and every other screen keep
+working. Each acceptance is a row in `ai_acknowledgements` (`kind` = `legal_terms` / `legal_privacy` / `legal_risk`,
+`version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
+
+**Support bot** (flag `support_bot`, **off by default**; off = `POST /api/ai/support/ask` answers 404 and the help
+button is hidden). How-to answers from `backend/app/support/content/help.md` and, while `legal_pages` is on, the legal
+pages (help entries marked `requires: legal_pages` are left out while it is off). It refuses advice
+questions (what to buy or sell, targets, tips, "will X go up" and the advice / guarantee words), questions about the
+user's own positions, orders or P&L (it reads none) and requests to place, change, cancel or exit orders (it has no
+tool that can). Below the confidence floor (`SUPPORT_BOT_MIN_CONFIDENCE`, default 0.5) it hands the question to the
+feedback form instead of guessing. With the organisation's own AI provider configured (Settings > AI provider, data
+consent accepted, the user has accepted the AI Copilot acknowledgement, `ai_copilot` on) the provider may reword the
+matching help passage; the reworded text is shown only if it passes the advice / guarantee filter, the banned-word and
+the numbers checks, else the help text is shown. Review H1 hardening: the question is normalised first (NFKC, no
+zero-width characters, Cyrillic/Greek look-alikes mapped); advice is also recognised in Hindi, Hinglish and Marathi and
+in spaced-out words; order and account requests are checked clause by clause; a question with letters outside English
+never goes to the model; and a model text is rejected when it has letters outside English, a ticker or number that is
+not in the help passages (the question is not trusted), a trade verb the top passage does not use, a claimed action
+("I closed", "has been placed"), or fewer than 80 % of its words from the passages. Personal data in the question is
+masked before it is sent. There is no platform key: one organisation's key is never used for
+another. Limits (checked after the flag, so a 404 spends nothing): the AI endpoints' per-user / per-organisation units
+(`AI_RATE_WEIGHTS` "POST support/ask" = 1) plus `SUPPORT_BOT_RATE_PER_MINUTE` (default 20) per user; model tier: the
+`support` task (cheap). Metric: `atp_support_bot_answers_total{outcome,source}`.
+
+To add or fix a help answer, edit `help.md` (one `## ` question per entry, `keywords:`, `page:` = an app path). The
+tests screen every entry through the advice filter.

@@ -1264,7 +1264,7 @@ export interface AlertDelivery {
   notification_id: number;
   title: string;
   severity: NotificationSeverity;
-  status: "PENDING" | "SENT" | "FAILED";
+  status: "PENDING" | "SENT" | "FAILED" | "DEAD" | "SUPPRESSED";
   attempts: number;
   last_error: string | null;
   created_at: string;
@@ -1825,6 +1825,10 @@ export interface AiAction {
   mode?: "PAPER" | "LIVE" | null;
   /** PW5: the closing order's facts for "Trade in your broker app" (flag broker_app_links, exits on open positions only). */
   ticket?: BrokerTicket | null;
+  /** Z5 / P1-d (flag risk_by_default): your risk cap, size and cost line for a waiting entry proposal. */
+  risk_check?: ProposalRiskCheck | null;
+  /** Z5 (flag risk_by_default): each short strike's breach chance, when the proposal carries option legs. */
+  strike_breach?: StrikeBreachBlock | null;
 }
 
 export interface BrokerTicket {
@@ -2391,4 +2395,91 @@ export interface PaperLadder {
   stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
   criteria: LadderCriterion[]; met: number; measured: number;
   summary: Record<string, number | null>; as_of: string;
+}
+
+/** Z5 / P1-d: the ticket's cost line (server estimate; a contract note replaces it). */
+export interface TicketCostLine {
+  items: { brokerage: number; stt: number; exchange: number; sebi: number; stamp: number; gst: number; slippage: number };
+  total: number; at_stop_total: number; break_even_move: number | null; break_even_pct: number | null;
+  gross_reward: number; gross_risk: number; net_reward: number; net_risk: number; net_reward_risk: number | null;
+  segment: string; rates_of: string; slippage_pct_per_side: number; brokerage_per_order: number; basis: string;
+}
+
+export interface TicketSizing {
+  capital_basis: number; risk_per_trade_pct: number; risk_per_trade_amount: number; user_cap: number | null; org_cap: number;
+  binding: string; size_multiplier: number; cap: number; override_cap: number; lot_size: number; risk_per_unit: number;
+  suggested_quantity: number; suggested_lots: number; quantity: number; lots: number | null; risk_amount: number;
+  risk_pct_of_capital: number | null; gauge: number | null; within_cap: boolean; override: boolean; gauge_zone: "ok" | "override" | "over";
+}
+
+export type TicketSetup = "PULLBACK_AT_LEVEL" | "SR_FLIP" | "BREAKOUT_RETEST" | "RANGE_EDGE" | "OI_IV" | "OTHER";
+
+/** Z5 / P1-d: the plan the ticket is built from (POST /api/paper/ticket/preview and /api/paper/ticket). */
+export interface TicketPlan {
+  symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; entry: number; stop_loss: number; target: number;
+  time_stop?: string | null; invalidation?: string | null; checklist: Record<string, boolean>;
+  quantity?: number | null; override?: boolean; override_reason?: string | null;
+}
+
+/** Z5 / P1-d: the plan checked by the server - every number here comes from the backend. */
+export interface TicketView {
+  symbol: string; direction: "LONG" | "SHORT"; setup: TicketSetup; setup_label: string | null; mode: "PAPER";
+  entry: number; stop_loss: number; target: number; time_stop: string | null; invalidation: string | null;
+  reward_risk: number | null; min_reward_risk: number; sizing: TicketSizing;
+  checklist: { key: string; label: string; checked: boolean; auto: boolean }[]; checklist_complete: boolean;
+  costs: TicketCostLine | null; errors: string[]; refusals: string[]; warnings: string[]; can_place: boolean;
+  confirm_label: string | null; as_of: string;
+}
+
+/** Z5 / P1-d: a stored plan and what became of it. */
+export interface TradePlanView {
+  id: number; status: "PENDING" | "PLACED" | "PROPOSED" | "REFUSED" | "FAILED"; symbol: string; direction: string; setup: string; setup_label: string;
+  entry: number; stop_loss: number; target: number; reward_risk: number | null; time_stop: string | null; invalidation: string | null;
+  checklist: Record<string, boolean>; checklist_complete: boolean; quantity: number; risk_amount: number; risk_cap: number;
+  override: boolean; override_reason: string | null; costs: TicketCostLine | Record<string, never>; reasons: string[];
+  order_id: number | null; trade_id: number | null; filled: { quantity: number; price: number; risk_amount: number } | null; created_at: string;
+  /** Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order. */
+  proposal: { id: number; status: string; result: string | null } | null;
+}
+
+export interface RiskByDefaultSettings {
+  risk_per_trade_pct: number; risk_per_trade_amount: number; daily_loss_pct: number; max_trades_per_day: number; min_rr: number;
+}
+
+export interface VixGateStatus {
+  enabled: boolean; state: string; underlyings: string[];
+  latest: { last: number | null; prev_close: number | null; change_pct: number | null; error: string | null; captured_at: string } | null;
+  bullish_paused: boolean; size_multiplier: number; messages: string[];
+  settings: { spike_pct: number; high_level: number; size_cut_pct: number; max_age_minutes: number };
+}
+
+/** Z5 / P1-d: the caller's risk-by-default state (GET /api/paper/risk; 404 while the `risk_by_default` flag is off). */
+export interface PaperRiskStatus {
+  mode: "PAPER"; settings: RiskByDefaultSettings; effective: RiskByDefaultSettings; defaults: RiskByDefaultSettings; notes: string[];
+  /** A loosening waits for the next IST day (a tightening applies at once). */
+  pending: { values: Partial<RiskByDefaultSettings>; from: string } | null;
+  bounds: Record<keyof RiskByDefaultSettings, [number, number]>; labels: Record<keyof RiskByDefaultSettings, string>;
+  capital_basis: number; risk_cap: { amount: number; binding: string; by_pct: number };
+  today: { realised: number; open_marks: number; pnl: number; worst: number; limit: number; used: number | null; entries: number; max_entries: number };
+  lockout: { kind: string; reason: string; pnl: number; limit: number; locked_at: string; until: string } | null;
+  overrides: { today: number; total: number }; override_max_multiple: number; override_min_reason_chars: number;
+  vix_gate: VixGateStatus; setups: Record<TicketSetup, string>; checklist: Record<string, string>; exits: string; as_of: string;
+}
+
+/** Z5 (Trade strike_breach_model): one short strike's breach chance before expiry (model estimate). */
+export interface StrikeBreachLeg {
+  leg: number; option_type: "CE" | "PE"; strike: number; side: "put" | "call"; expiry: string; sessions: number; dte: number | null;
+  status: "ok" | "in_the_money" | "expired"; z?: number; distance_pct?: number; regime?: string;
+  prob_close: number | null; prob_touch: number | null; extrapolated?: boolean; note?: string;
+  required_distance?: Record<string, { z: number; distance_pct: number; strike: number } | null>;
+}
+
+export interface StrikeBreachBlock {
+  available: boolean; reason: string | null; legs: StrikeBreachLeg[]; note: string; features?: Record<string, number>;
+}
+
+/** Z5 / P1-d: the caller's risk by default applied to a waiting entry proposal (flag risk_by_default). */
+export interface ProposalRiskCheck {
+  sizing: TicketSizing; costs: TicketCostLine | null; refusals: string[]; warnings: string[]; errors: string[];
+  reward_risk: number | null; min_reward_risk: number;
 }

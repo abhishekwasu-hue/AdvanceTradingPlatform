@@ -1512,6 +1512,13 @@ class AlertDeliveryRecord(Base):
     reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # S3b-2: a per-user destination on the channel (a linked Telegram chat); NULL = the channel's own address.
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Z10-b (flag alerts_reliable_outbox): one key per delivery (notification x channel x address), unique, so a
+    # duplicate cycle cannot queue the same delivery twice; sent to receivers that can dedupe (webhook / SMS
+    # `Idempotency-Key`, email `Message-ID`). A worker claims a row with a lease before sending it, so two workers never
+    # send the same row; a worker killed mid-send leaves a lease that expires, and the row is claimed again.
+    idem_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class CompanyRecord(Base):
@@ -2217,8 +2224,73 @@ class PaperAccountRecord(Base):
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
+    # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
+    risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
+    entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entries_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class TradePlanRecord(Base):
+    """Z5 / P1-d (P1 spec 1.2): the plan behind a PAPER ticket - setup, direction, entry / stop / target, reward:risk,
+    time stop, invalidation note and the pre-trade checklist - with the sizing it was checked against (the user's risk
+    cap, the quantity, a deliberate override and its reason) and the cost line. Stored with the order and the position it
+    produced (or the reasons it was refused), so the plan can be compared with what happened. Personal: tenant + user."""
+
+    __tablename__ = "trade_plans"
+    __table_args__ = (Index("ix_trade_plans_user_created", "user_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    setup: Mapped[str] = mapped_column(String(30), nullable=False)
+    entry: Mapped[float] = mapped_column(Price, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Price, nullable=False)
+    target: Mapped[float] = mapped_column(Price, nullable=False)
+    reward_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
+    time_stop: Mapped[str | None] = mapped_column(String(10), nullable=True)          # "HH:MM" IST
+    invalidation: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    checklist_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    checklist_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_amount: Mapped[float] = mapped_column(Money, nullable=False)
+    risk_cap: Mapped[float] = mapped_column(Money, nullable=False)
+    override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    costs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | PROPOSED | REFUSED | FAILED
+    reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order (Z3-a).
+    proposal_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class RiskLockoutRecord(Base):
+    """Z5 / P1-d (P1 spec 1.1): a user's daily loss lockout - recorded the first time their PAPER net P&L of the IST day
+    reaches the limit, and kept for the rest of that day even if the P&L recovers. It stops new PAPER entries and entry
+    proposals of that user only; exits are never locked (ADR-0004). One row per user, mode, day and kind."""
+
+    __tablename__ = "risk_lockouts"
+    __table_args__ = (UniqueConstraint("user_id", "mode", "trading_day", "kind", name="uq_risk_lockouts_user_day_kind"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    trading_day: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="DAILY_LOSS")
+    pnl: Mapped[float] = mapped_column(Money, nullable=False)
+    limit_amount: Mapped[float] = mapped_column(Money, nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    locked_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a
@@ -2402,6 +2474,79 @@ class HistoryImportFileRecord(Base):
     started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     imported_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+# --- Z7a-2: market zones (demand / supply, order blocks, S/R, gaps) with lifecycle and level memory ------------------------
+class MarketZoneSettingRecord(Base):
+    """Z7a-2: a tenant's market-zone settings for one instrument ("*" = the tenant's default for every instrument), the
+    OI banner pattern. `enabled` asks the nightly zone job to follow the instrument; `overrides` is a JSON object of
+    ZoneSettings fields layered over the platform defaults (zones/store.py PLATFORM_DEFAULTS + MARKET_ZONES_DEFAULTS)."""
+
+    __tablename__ = "market_zone_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "instrument_key", name="uq_market_zone_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)                    # lake key "NSE:BANKNIFTY" or "*"
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class MarketZoneRunRecord(Base):
+    """Z7a-2: one stored snapshot of an instrument's zones, computed from the shared lake bars that closed by `as_of`
+    (never later bars, never a tenant's private data). scope "platform" = the default settings (shared by every tenant
+    without overrides); "tenant:<id>" = that tenant's own settings (`settings_hash` tells them apart). Append-only: the
+    zones as of T are the run with the latest as_of <= T."""
+
+    __tablename__ = "market_zone_runs"
+    __table_args__ = (UniqueConstraint("scope", "instrument_key", "as_of", name="uq_market_zone_run"),)   # also the as-of lookup index
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(24), nullable=False)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)                      # close of the last bar used
+    computed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    settings_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bars: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON {timeframe: bars read}
+    zone_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    previous_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)                 # the run level memory merged with
+    source_last_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)        # newest bar END it read
+    source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
+
+
+class MarketZoneRecord(Base):
+    """Z7a-2: one zone of a stored snapshot - its bounds, role by price, ATP lifecycle state (fresh / tested / flipped /
+    invalidated) and counters, and the tracker the next run continues from (JSON)."""
+
+    __tablename__ = "market_zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_zone_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    zone_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    zone_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    zone_low: Mapped[float] = mapped_column(Float, nullable=False)
+    zone_high: Mapped[float] = mapped_column(Float, nullable=False)
+    strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+    role: Mapped[str | None] = mapped_column(String(20), nullable=True)                        # RESISTANCE_SUPPLY / SUPPORT_DEMAND
+    origin_role: Mapped[str] = mapped_column(String(12), nullable=False)                       # SUPPORT / RESISTANCE
+    state: Mapped[str] = mapped_column(String(12), nullable=False)
+    formed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    first_touch_event: Mapped[str | None] = mapped_column(String(12), nullable=True)          # Trade's FILLED moment (parity)
+    first_touch_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    touches: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    flips: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_event: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    structure_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    remembered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    tracker: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
 
 class HistoryBackfillFileRecord(Base):
@@ -2716,6 +2861,9 @@ class AlertEventRecord(Base):
     condition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     idem_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # Z10-b: the rule's timeframe when the event was recorded - the stale-data check at send time judges the bar by it,
+    # not by whatever the rule says later. NULL for events recorded before this column.
+    base_tf: Mapped[str | None] = mapped_column(String(5), nullable=True)
     priority: Mapped[str] = mapped_column(String(10), nullable=False)
     values_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")     # the trigger values, with their timestamps
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)

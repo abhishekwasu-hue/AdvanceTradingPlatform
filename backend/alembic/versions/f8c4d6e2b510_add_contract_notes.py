@@ -14,6 +14,7 @@ revision: str = 'f8c4d6e2b510'
 down_revision: Union[str, Sequence[str], None] = 'e7b3c5d1a409'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: create_foreign_key on an existing table - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

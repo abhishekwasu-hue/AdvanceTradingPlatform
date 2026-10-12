@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.screener import nodes as n
-from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, MAX_WINDOW, NUM, STR, Spec
+from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NUM, READS_HISTORY, STR, Spec
 
 MAX_OFFSET = 500
 DEFAULT_COST_CAP = 200.0
@@ -36,6 +36,9 @@ class Validated:
     problems: List[Problem] = field(default_factory=list)
     timeframes: Set[str] = field(default_factory=set)
     lookback: Dict[str, int] = field(default_factory=dict)          # timeframe -> bars of history needed
+    # U6 BK1: bars to FETCH per timeframe - at least `lookback`, more where a function reads better on a longer history
+    # than it needs to run (a Dow trend is missing, not refused, on a short frame). Fetch sizing only; never a refusal.
+    fetch_lookback: Dict[str, int] = field(default_factory=dict)
     cost: float = 0.0
     cross_sectional: bool = False
     params_used: Set[str] = field(default_factory=set)
@@ -54,6 +57,7 @@ class _Checker:
     def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True) -> None:
         self.base_tf, self.params, self.strict_units = base_tf, params, strict_units
         self.out = Validated(True)
+        self.last_bar_reported: Set[int] = set()
 
     def err(self, message: str, node: Any) -> None:
         self.out.ok = False
@@ -71,6 +75,7 @@ class _Checker:
     def _need(self, tf: str, bars: int) -> None:
         self.out.timeframes.add(tf)
         self.out.lookback[tf] = max(self.out.lookback.get(tf, 0), bars)
+        self.out.fetch_lookback[tf] = max(self.out.fetch_lookback.get(tf, 0), bars)
 
     def _offset(self, node: Any) -> int:
         if node.offset < 0:
@@ -112,12 +117,49 @@ class _Checker:
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
 
-    def degree_bars(self, node: Any, spec: Any) -> int:
+    def bounded(self, arg: Any, sig: Any, owner: Any) -> None:
+        """U6 BK1: a number argument with a range must be a literal (or a parameter) inside it."""
+        value: Any = arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return                                                    # not a literal: the type checks report it
+        lo, hi = sig.bounds
+        if not lo <= float(value) <= hi:
+            self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+
+    def literal(self, arg: Any, sig: Any, owner: Any) -> None:
+        """Z10-a (U3 G2): a setting of the function (Supertrend / Bollinger `k`, the zone filters' `tolerance_pct`) is
+        one number for the whole series. The runtime reads it once, so an expression there (`ATR(5) / 2`) would take
+        its value on the LAST bar and apply it to every earlier bar - a look-ahead inside Count, CrossAbove, Lag ...
+        Only a literal (optionally negated) or a numeric $parameter is accepted."""
+        node = arg.operand if isinstance(arg, n.Unary) else arg
+        if isinstance(node, n.Num):
+            return
+        if isinstance(node, n.Param):
+            value = self.params.get(node.name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                self.err(f"{owner.name}: {sig.name} must be a number, got ${node.name} = {value!r}", arg)
+            return
+        self.err(f"{owner.name}: {sig.name} must be a number or a $parameter (one value for the whole series), not an expression", arg)
+
+    def history_of_last_bar(self, owner: n.Call) -> None:
+        """Z10-a (U3 G2): a function answered for the last bar only cannot be read back in time - `Count(5,
+        PatternBullish())` would repeat today's answer on the four bars before and count 5 (a look-ahead into those
+        bars). Reported once per inner call, by the outermost history-reading function around it."""
+        for arg in (*owner.args, *owner.kwargs.values()):
+            for inner in n.walk(arg):
+                if isinstance(inner, n.Call) and inner.name in LAST_BAR_ONLY and id(inner) not in self.last_bar_reported:
+                    self.last_bar_reported.add(id(inner))
+                    self.err(f"{inner.name} is known for the last bar only, so {owner.name} cannot read its earlier values; "
+                             f"use it outside {owner.name}" + (' (Pattern("name") is the bar-by-bar form)' if inner.name.startswith("Pattern") else ""),
+                             inner)
+
+    def degree_bars(self, node: Any, spec: Any, table: Optional[Tuple[int, ...]] = None) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
         largest when it cannot be read (the choice check reports that separately)."""
+        table = table if table is not None else spec.degree_min_bars
         pos = next((i for i, a in enumerate(spec.args) if a.name == "degree"), None)
         if pos is None:
-            return max(spec.degree_min_bars)
+            return max(table)
         arg = node.args[pos] if pos < len(node.args) else None
         if arg is None:
             value: Any = spec.args[pos].default
@@ -128,9 +170,23 @@ class _Checker:
         else:
             value = None
         try:
-            return spec.degree_min_bars[int(value)]
+            return table[int(value)]
         except (TypeError, ValueError, IndexError):
-            return max(spec.degree_min_bars)
+            return max(table)
+
+    def sessions_needed(self, node: Any, spec: Any) -> int:
+        """U6 BK2: whole sessions a function needs - its fixed `min_sessions`, or the `sessions_arg` argument (literal,
+        parameter or default) plus the current session."""
+        if spec.sessions_arg is None:
+            return int(spec.min_sessions)
+        pos = next(i for i, a in enumerate(spec.args) if a.name == spec.sessions_arg)
+        arg = node.args[pos] if pos < len(node.args) else None
+        value: Any = spec.args[pos].default if arg is None else arg.value if isinstance(arg, n.Num) else \
+            self.params.get(arg.name) if isinstance(arg, n.Param) else None
+        try:
+            return max(int(spec.min_sessions), int(value) + 1)
+        except (TypeError, ValueError):
+            return int(spec.min_sessions)
 
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
@@ -266,17 +322,26 @@ class _Checker:
         elif not len(needed) <= len(node.args) <= len(spec.args):
             want = f"{len(needed)}" if len(needed) == len(spec.args) else f"{len(needed)}-{len(spec.args)}"
             self.err(f"{node.name} takes {want} argument(s), got {len(node.args)}", node)
+        if spec.name in READS_HISTORY:
+            self.history_of_last_bar(node)
         known_kw = {a.name: a for a in spec.kwargs}
         for key in node.kwargs:
             if key not in known_kw:
                 self.err(f"{node.name} has no argument {key!r}", node.kwargs[key])
         window = 0
+        windows: List[int] = []
         units: List[Optional[str]] = []
+        if spec.timeframes and own_tf not in spec.timeframes:
+            self.err(f"{node.name} runs on {' / '.join('@' + t for t in spec.timeframes)} bars only, not @{own_tf}", node)
         sigs = [spec.args[0]] * len(node.args) if spec.varargs else list(spec.args[:len(node.args)])
         for arg_node, sig in zip(node.args, sigs):
             if sig.type == "window":
-                window = max(window, self.window(arg_node, node))
+                w = self.window(arg_node, node)
+                windows.append(w)
+                window = max(window, w)
                 units.append(None)
+                if sig.bounds:
+                    self.bounded(arg_node, sig, node)
                 continue
             t, u = self.check(arg_node, own_tf)
             units.append(u)
@@ -284,6 +349,11 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.literal_only or sig.bounds:
+                if sig.literal_only:
+                    self.literal(arg_node, sig, node)
+                if sig.bounds:
+                    self.bounded(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:
@@ -301,11 +371,29 @@ class _Checker:
                 self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node)
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
+                windows.append(a.default if isinstance(a.default, int) else 1)
                 window = max(window, a.default if isinstance(a.default, int) else 1)
+        if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
+            window = sum(windows)
+        window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
         min_bars = spec.min_bars
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
+        for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones
+            pos = next(i for i, a in enumerate(spec.args) if a.name == name)
+            arg = node.args[pos] if pos < len(node.args) else None
+            value = (arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param)
+                     else spec.args[pos].default if arg is None else None)
+            step = n.TF_MINUTES.get(own_tf, 0)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < step < n.TF_MINUTES["1d"] and float(value) % step:
+                self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node)
+        sessions = self.sessions_needed(node, spec)
+        if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
+            min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))
         self._need(own_tf, offset + max(window, 1, min_bars) + spec.extra_bars)
+        if spec.fetch_degree_bars:                                    # U6 BK1: fetch more than the refusal needs
+            fetch_need = offset + self.degree_bars(node, spec, spec.fetch_degree_bars)
+            self.out.fetch_lookback[own_tf] = max(self.out.fetch_lookback.get(own_tf, 0), fetch_need)
         self.out.cost += spec.cost * (1 + window / 100)
         if spec.returns == NUM:
             unit = spec.unit

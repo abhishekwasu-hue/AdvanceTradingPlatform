@@ -1,0 +1,6 @@
+# Exact findings only (never a pattern). Each is a fake value in an older commit that the current tree has replaced.
+# Z11: test sentinels in backend/tests/test_z11_deploy_bundle.py at 04b9bb2 ("SENTINEL-..." stand-ins for .env values,
+# renamed to FAKEFAKE-... in 570aa6b); the commit is already on the branch, so it cannot be rewritten without a force push.
+04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:31
+04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:32
+04b9bb2e05892ec42d112c567e726c1bfe728262:backend/tests/test_z11_deploy_bundle.py:generic-api-key:38

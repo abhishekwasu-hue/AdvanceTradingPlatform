@@ -108,6 +108,16 @@ async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str)
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+def _ownership_check(ast: Any) -> None:
+    """N3 S8a (provisional S8-4): the alert loop does not load ownership or events - a rule using them is refused."""
+    from app.screener import nodes
+    from app.screener import ownership as ownership_gate
+    names = ownership_gate.flagged_calls(nodes.from_json(ast) if isinstance(ast, dict) else ast)
+    if names:
+        why = ownership_gate.elsewhere_refusal(names, "alert rules")
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 def _ranking_check(ast: Any) -> None:
     """N3 S7a (provisional S7-6): the alert loop does not load ranking systems, so a screen rule using RankScore is
     refused (it would never fire) - run it from the Screener instead."""
@@ -133,6 +143,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
         _ranking_check(json.loads(screen.ast_json))
+        _ownership_check(json.loads(screen.ast_json))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -145,6 +156,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    _ownership_check(ast)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

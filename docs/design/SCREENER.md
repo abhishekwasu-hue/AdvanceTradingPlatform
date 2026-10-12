@@ -1250,6 +1250,30 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 - **Refused for now:** RankScore inside a screen-history run (S7-5) and in alert rules (S7-6). Information only:
   nothing is placed, and every answer carries the disclaimer.
 
+## N3 S8a (built): ownership and events, category E (flag `screener_ownership`, off; needs `screener_v2`)
+
+Spec §2.4 category E, the first S8 slice (H crypto and I global follow, S8-6). Three ScreenQL functions
+(`app/screener/ownership.py`, `needs: ownership`):
+- `Holding(holder)`: promoter / pledge / fii / dii / public stake in the latest shareholding pattern, %;
+- `HoldingChange(holder, quarters=1)`: that stake minus the one `quarters` (1-8) patterns before, percentage points;
+- `DaysToEvent(kind)`: calendar days to the next results / board_meeting / agm / buyback / dividend / ex_date / any event.
+
+Examples: promoter stake up `HoldingChange("promoter") > 0`; pledge down `HoldingChange("pledge") < 0`; FII / DII
+accumulation `HoldingChange("fii", 1) > 0.5`; results this week `DaysToEvent("results") <= 7`; upcoming ex-date
+`DaysToEvent("ex_date") <= 5`.
+
+- **Point in time.** Every row carries when it became known (`known_from`, S8-1): the day after its cited publication,
+  else when it was stored; a correction from its own time; lake ex-dates from their ingestion. A bar sees only the rows
+  known by its close, so a value never changes when later bars or rows are added. Tests: hand-built timelines,
+  corrections, staleness (S8-2), cut bars equal the full series, later rows change nothing; Z10-a causal cases with a
+  timeline built only from the bars up to each row.
+- **Data.** Shared reference data only: `shareholding_snapshots`, `earnings_calendar_events` (append-only) and
+  `md_corporate_actions`, read once per run for the universe (`ownership.load`). No organisation's own rows.
+- **Run path.** `/run` attaches the rows known now (`RUN_PROVIDES` gains `ownership`). Screen history and alert rules
+  refuse the functions with the reason (S8-4). Flag off: the registry hides them and a screen using one is refused.
+- **Not offered** (no data yet, S8-3): mutual funds separately, SAST / insider, bulk / block deals, index-inclusion
+  candidates. No migration, no new route. Information only: nothing is placed.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

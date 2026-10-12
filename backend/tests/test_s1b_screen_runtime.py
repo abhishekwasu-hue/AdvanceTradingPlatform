@@ -242,6 +242,20 @@ def test_rankscore_n3_s7a():
     COVERED.add("RankScore")
 
 
+def test_ownership_functions_n3_s8a():
+    # deeper checks (point in time, corrections, staleness, cut bars, the store, the routes) are in tests/test_n3_s8a_ownership.py
+    from datetime import date, datetime, timezone
+    from app.screener.ownership import Event, Ownership, Pattern
+    d = _sym([100.0, 100.2, 100.4, 100.6])                                   # 5m bars from 03:45 UTC; the second closes at 03:55
+    seen = datetime(2026, 3, 2, 3, 55, tzinfo=timezone.utc)
+    stakes = {"promoter": 50.0, "pledge": 2.0, "fii": 20.0, "dii": 10.0, "public": 20.0}
+    d.ownership = Ownership([Pattern(date(2025, 12, 31), datetime(2026, 1, 20, tzinfo=timezone.utc), stakes),
+                             Pattern(date(2026, 3, 1), seen, {**stakes, "promoter": 52.5})], [Event("results", date(2026, 3, 5), seen)])
+    assert _ev('Holding("promoter")', d).tolist() == [50.0, 52.5, 52.5, 52.5]
+    assert np.isnan(_ev('HoldingChange("promoter", 1)', d).iloc[0]) and _ev('HoldingChange("promoter", 1)', d).iloc[1] == 2.5
+    assert np.isnan(_ev('DaysToEvent("results")', d).iloc[0]) and _ev('DaysToEvent("any")', d).iloc[-1] == 3.0
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

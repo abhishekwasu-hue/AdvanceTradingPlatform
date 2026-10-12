@@ -34,6 +34,7 @@ from app.screener import legends as lg
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
+from app.screener import ownership as ownership_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -52,7 +53,8 @@ run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
 # N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
-RUN_PROVIDES: frozenset = frozenset({"zones", "rankings"})
+# N3 S8a: and the ownership patterns and events known by each bar's close.
+RUN_PROVIDES: frozenset = frozenset({"zones", "rankings", "ownership"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -176,7 +178,7 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`), the Z7a-3 market-zone functions (`market_zones`) and N3 S7a's RankScore
     (`screener_rankings`; a system it names must be a platform one or this organisation's own)."""
-    for gate in (breakout_gate, zone_gate):
+    for gate in (breakout_gate, zone_gate, ownership_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
@@ -422,6 +424,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
+        await ownership_gate.attach(session, universe, body.exchange, datetime.now(timezone.utc))
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests

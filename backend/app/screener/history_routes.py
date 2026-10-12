@@ -97,6 +97,10 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
                                                      "problems": [p.as_dict() for p in validated.problems]})
     from app.screener import ranking as ranking_gate
     from app.screener import zones as zone_gate
+    from app.screener import ownership as ownership_gate
+    owned = ownership_gate.flagged_calls(ast)
+    if owned:                                     # N3 S8a (provisional S8-4): history does not load ownership / events yet
+        raise HTTPException(status_code=422, detail=ownership_gate.elsewhere_refusal(owned, "screen history runs"))
     if ranking_gate.uses_rankscore(ast):
         # N3 S7a (provisional S7-5): history runs RankScore as the backtest's sort key (rank_system), not inside a screen yet
         raise HTTPException(status_code=422, detail="screen history does not run RankScore() inside a screen yet: rank the backtest's "

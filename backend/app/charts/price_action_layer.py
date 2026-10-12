@@ -8,6 +8,13 @@ GET /api/charts/layers/price-action?instrument=NSE:BANKNIFTY&tf=15m&at=<ISO time
   * The window: bars ending in (`start`, `at`]. `start` defaults to `at` minus DEFAULT_DAYS[tf]; a replay passes the
     start of its first step, so every step reads the same history and only adds bars. At most MAX_DAYS[tf] days and
     MAX_BARS bars - a longer window is refused, never silently cut.
+  * Provenance: only the shared-licensed lake sources (SHARED_SOURCES: NSE bhavcopy, vendor, the operator's history
+    import), preferred in that order, then the highest version; never `stream:*` / `broker:*` rows recorded through one
+    organisation's broker session. A correction (a later version) counts only once ingested by `at`; a bar's first
+    version counts by its END, so imported history can be replayed. A rebuild from 1-minute bars reads at most
+    REBUILD_MAX_DAYS, and every read is row-capped (refused with 422, never cut).
+  * The same computation is kept CACHE_SECONDS (key, timeframe, window, as-of minute); at most 120 requests a minute
+    per user (replay Play asks once a second).
   * Engine: app/price_action/causal_swings.py (confirmed pivots per degree: a pivot exists from the bar that confirmed
     it), app/price_action/breaks.py (real breaks, causal), default settings (app/price_action/pa_settings.py).
   * `degree` (0 smallest .. 3 largest; default DEFAULT_DEGREE) is what the chart shows by default - "significant levels
@@ -23,16 +30,19 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Float, cast, select
+from sqlalchemy import Float, case, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.core.rate_limit import user_rate_limit
 from app.db.models import MdCandleRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
@@ -58,6 +68,20 @@ MAX_BREAK_PIVOTS = 40                 # the newest confirmed pivots per degree w
 MAX_LEVELS_PER_SIDE = 3               # unbroken swing levels drawn above and below the last close (debug: all)
 CONCEPTS = ("swings", "legs", "breaks", "levels", "trend")
 FETCH_PARTITION = 5000
+# Provenance (BT1b, data terms): only sources licensed for every organisation are read, in this preference order -
+# NSE bhavcopy (HB1), a market-data vendor, the operator's history import into the shared lake (HB0). Never
+# `stream:<broker>` / `broker:<name>` rows: those were recorded through one organisation's own broker session.
+SHARED_SOURCES = ("nse_bhav:", "vendor:", "r2:")
+REBUILD_MAX_DAYS = 180                # 1-minute history read to rebuild a timeframe (the market-zones job's cap)
+ROWS_PER_BAR = 3                      # raw rows allowed per bar read (sources x versions) before the read is refused
+MIN_TIME = datetime(1990, 1, 1, tzinfo=timezone.utc)
+CACHE_SECONDS = 30.0
+CACHE_SIZE = 128
+rate_limited = user_rate_limit("chart_price_action", limit=120, window_seconds=60)   # replay Play asks once a second
+
+
+class WindowTooLarge(ValueError):
+    """A read that would exceed its row cap - refused, never cut."""
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -230,21 +254,35 @@ def fingerprint(content: Dict[str, Any]) -> str:
 RowTuple = Tuple[Any, ...]
 
 
-async def _fetch(session: AsyncSession, key: str, label: str, start: datetime, end: datetime) -> List[RowTuple]:
+async def _fetch(session: AsyncSession, key: str, label: str, start: datetime, end: datetime, limit: int) -> List[RowTuple]:
     """Raw bars with END in (start, end] (the lake labels a bar by its end, so a bar still forming at `end` is never
-    read), streamed so the event loop is handed back between partitions. Per END the highest version wins (a correction
-    of a bar <= `end` counts - it is the same bar, not a later one); between sources the order is fixed, so the same rows
-    always give the same layer."""
+    read), from the shared-licensed sources only, streamed so the event loop is handed back between partitions.
+    Per END the preferred source wins, then its highest version - rows are ordered so the winner comes last (the
+    conversion keeps the last row per END). A correction (version > 1) counts only once it was ingested by `end`
+    (point-in-time); a bar's first version counts by its END, so history imported after the fact can be replayed.
+    More than `limit` rows -> WindowTooLarge (refused, never cut)."""
+    rank = case(*[(MdCandleRecord.source.like(f"{prefix}%"), i) for i, prefix in enumerate(SHARED_SOURCES)], else_=len(SHARED_SOURCES))
     query = select(MdCandleRecord.ts, MdCandleRecord.version, cast(MdCandleRecord.open, Float), cast(MdCandleRecord.high, Float),
                    cast(MdCandleRecord.low, Float), cast(MdCandleRecord.close, Float), MdCandleRecord.volume).where(
-        MdCandleRecord.instrument_key == key, MdCandleRecord.timeframe == label, MdCandleRecord.ts > start,
-        MdCandleRecord.ts <= end).order_by(MdCandleRecord.ts, MdCandleRecord.version, MdCandleRecord.source).execution_options(yield_per=FETCH_PARTITION)
+        MdCandleRecord.instrument_key == key, MdCandleRecord.timeframe == label, MdCandleRecord.ts > start, MdCandleRecord.ts <= end,
+        or_(*[MdCandleRecord.source.like(f"{prefix}%") for prefix in SHARED_SOURCES]),
+        or_(MdCandleRecord.version == 1, MdCandleRecord.ingested_at <= end)).order_by(
+        MdCandleRecord.ts, rank.desc(), MdCandleRecord.version, MdCandleRecord.source).limit(limit + 1).execution_options(yield_per=FETCH_PARTITION)
     rows: List[RowTuple] = []
     result = await session.stream(query)
     async for part in result.partitions(FETCH_PARTITION):
         rows.extend(part)
+        if len(rows) > limit:
+            raise WindowTooLarge(f"the window holds more than {limit} lake rows on {label}; choose a later `start`")
         await asyncio.sleep(0)
     return rows
+
+
+async def _has_rows(session: AsyncSession, key: str, label: str, start: datetime, end: datetime) -> bool:
+    """Whether the window holds any shared-licensed row of `label` (one indexed lookup)."""
+    return (await session.scalar(select(MdCandleRecord.ts).where(
+        MdCandleRecord.instrument_key == key, MdCandleRecord.timeframe == label, MdCandleRecord.ts > start, MdCandleRecord.ts <= end,
+        or_(*[MdCandleRecord.source.like(f"{prefix}%") for prefix in SHARED_SOURCES])).limit(1))) is not None
 
 
 def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: bool) -> pd.DataFrame:
@@ -266,11 +304,13 @@ def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: b
 async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime) -> Tuple[pd.DataFrame, Optional[str]]:
     """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday). (frame, source label)."""
     for label in LAKE_LABELS[tf]:
-        rows = await _fetch(session, key, label, start, end)
+        rows = await _fetch(session, key, label, start, end, MAX_BARS * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf in INTRADAY_MINUTES and tf != "1m":
-        rows = await _fetch(session, key, "1m", start, end)
+        if end - start > timedelta(days=REBUILD_MAX_DAYS) and await _has_rows(session, key, "1m", start, end):
+            raise WindowTooLarge(f"{tf} is rebuilt from 1-minute bars for at most {REBUILD_MAX_DAYS} days; choose a later `start`")
+        rows = await _fetch(session, key, "1m", start, end, MAX_BARS * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, True), "lake:1m"
     return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), None
@@ -288,10 +328,35 @@ def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool) -> Dict[str, A
 def _aware(t: Optional[datetime], name: str) -> Optional[datetime]:
     if t is not None and t.tzinfo is None:
         raise HTTPException(status_code=422, detail=f"`{name}` must carry its time zone (for example 2026-10-09T15:30:00+05:30)")
+    if t is not None and t < MIN_TIME:
+        raise HTTPException(status_code=422, detail=f"`{name}` must be in 1990 or later")
     return None if t is None else t.astimezone(timezone.utc)
 
 
-@router.get("/price-action")
+_CACHE: "OrderedDict[tuple, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+
+
+def _cached(key: tuple) -> Optional[Dict[str, Any]]:
+    hit = _CACHE.get(key)
+    if hit is None or hit[0] < time.monotonic():
+        _CACHE.pop(key, None)
+        return None
+    _CACHE.move_to_end(key)
+    return hit[1]
+
+
+def _remember(key: tuple, content: Dict[str, Any]) -> None:
+    _CACHE[key] = (time.monotonic() + CACHE_SECONDS, content)
+    _CACHE.move_to_end(key)
+    while len(_CACHE) > CACHE_SIZE:
+        _CACHE.popitem(last=False)
+
+
+def cache_clear() -> None:
+    _CACHE.clear()
+
+
+@router.get("/price-action", dependencies=[Depends(rate_limited)])
 async def price_action_layer(instrument: str = Query(..., min_length=1, max_length=100), tf: Timeframe = "15m",
                              at: Optional[datetime] = None, start: Optional[datetime] = None,
                              degree: int = Query(default=DEFAULT_DEGREE, ge=0, le=3), debug: bool = False,
@@ -300,7 +365,8 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
     from app.price_action.zones.store import normalise_key
     now = datetime.now(timezone.utc)
     at_utc, start_utc = _aware(at, "at"), _aware(start, "start")
-    when = now if at_utc is None or at_utc > now else at_utc
+    # a live read is as of the current minute (bars that ended by then), so repeated live reads share one computation
+    when = now.replace(second=0, microsecond=0) if at_utc is None or at_utc > now else at_utc
     begin = start_utc if start_utc is not None else when - timedelta(days=DEFAULT_DAYS[tf])
     if begin >= when:
         raise HTTPException(status_code=422, detail="`start` must be before `at`")
@@ -314,11 +380,19 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
     if key is None or key == "*":
         # not an instrument the lake keys (an option contract, odd characters): the chart just has no layer
         return {**head, **build(pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), tf, degree, debug), "reason": NO_BARS}
-    frame, source = await load_frame(session, key, tf, begin, when)
-    if len(frame) > MAX_BARS:
-        raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {MAX_BARS}; choose a later `start`")
-    content = await asyncio.to_thread(build, frame, tf, degree, debug)
-    return {**head, "instrument": key, "source": source, **content, "reason": None if len(frame) else NO_BARS}
+    cache_key = (key, tf, begin, when, degree, debug)
+    hit = _cached(cache_key)
+    if hit is None:
+        try:
+            frame, source = await load_frame(session, key, tf, begin, when)
+        except WindowTooLarge as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        if len(frame) > MAX_BARS:
+            raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {MAX_BARS}; choose a later `start`")
+        content = await asyncio.to_thread(build, frame, tf, degree, debug)
+        hit = {"source": source, **content, "reason": None if len(frame) else NO_BARS}
+        _remember(cache_key, hit)
+    return {**head, "instrument": key, **hit}
 
 
 __all__ = ["router", "FLAG", "compute_layer", "build", "load_frame", "canonical", "fingerprint"]

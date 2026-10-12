@@ -348,7 +348,17 @@ chart's pointer events and a toolbar to it.
   15m == 15m rebuilt from 1m (and a mid-bar `at` ignores the forming bar), flag per organisation, input checks.
   A mutation that reads bars up to two hours past `at` fails two of them. Frontend: `priceAction.test.ts` (10) on the
   same golden (the replay as-of time equals the backend's `as_of`), plus the engine test for segments and labels.
-- Open questions CH3-1 .. CH3-5 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
+- **Review follow-up (#212).**
+  - Look-ahead test of the engine itself: the layer over bars[:n] equals the layer over all bars filtered to what was
+    confirmed by bar n's end (swings, legs, breaks), at every 7th n. A ZigZag reading the next bar's threshold fails it.
+  - No stale layer in replay: every new request clears the layer first (`LayerLoader`); a late answer to an older step
+    is dropped; a failure leaves no layer and says why; the replay never sends `start >= at` (`windowStart`); the live
+    layer is asked again when a new candle starts; a candle time without an offset is read as IST.
+  - Reads are bounded: 1-minute rebuilds at most 180 days, every read row-capped (422, never cut), a 30 s cache per
+    (instrument, timeframe, window, as-of minute) and 120 requests a minute per user.
+  - Provenance: shared-licensed sources only (`nse_bhav:`, `vendor:`, `r2:`; never `stream:` / `broker:`), source
+    preference before version; corrections point-in-time (CH3-3, CH3-6). `at` / `start` before 1990 -> 422.
+- Open questions CH3-1 .. CH3-6 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
 
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:

@@ -4,11 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import golden from "./__fixtures__/pa_layer_golden.json";
 import { labelShapes, layerShapes, segmentShapes, type Converters } from "./geometry";
 import { PriceActionPanel } from "./PriceActionLayer";
+import { ApiError } from "../api/client";
 import {
-  CONCEPTS, DEFAULT_TOGGLES, PA_COLORS, barEndIso, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
+  CONCEPTS, DEFAULT_TOGGLES, LayerLoader, PA_COLORS, barEndIso, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
   type PaLayerResponse, type Toggles,
 } from "./priceAction";
-import { REPLAY_OFF, replayAt, startReplay, stepReplay, visibleCandles } from "./replay";
+import { REPLAY_OFF, parseCandleTime, replayAt, startReplay, stepReplay, visibleCandles, windowStart } from "./replay";
 import { ReplayBar } from "./ReplayBar";
 
 // __fixtures__/pa_layer_golden.json is a byte-identical copy of backend/tests/fixtures/charts/pa_layer_golden.json
@@ -149,5 +150,59 @@ describe("layer geometry and plumbing (CH3)", () => {
     const urls = (fetchMock.mock.calls as unknown as [string][]).map(([u]) => decodeURIComponent(String(u)));
     expect(urls[0]).toContain("/charts/layers/price-action?instrument=NSE:BANKNIFTY&tf=15m&at=2026-03-02T04:00:00.000Z&start=2026-02-01T00:00:00+00:00&debug=true");
     expect(urls[1]).toMatch(/price-action\?instrument=NSE:BANKNIFTY&tf=5m$/);
+  });
+});
+
+describe("no stale layer in replay (CH3a review MED-2)", () => {
+  const deferred = () => {
+    let resolve!: (r: PaLayerResponse) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<PaLayerResponse>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
+  const q = (at: string) => ({ instrument: "NSE:X", tf: "15m" as const, at, start: null, debug: false });
+
+  it("each new step clears the layer at once; an older answer arriving late is dropped; a failure leaves no layer", async () => {
+    const pending: ReturnType<typeof deferred>[] = [];
+    const states: { layer: PaLayerResponse | null; failed: string | null; available: boolean | null }[] = [];
+    const last = () => states[states.length - 1];
+    const loader = new LayerLoader(() => { const d = deferred(); pending.push(d); return d.promise; }, (s) => states.push(s));
+    loader.load(q("2026-03-02T05:00:00Z"));
+    pending[0].resolve({ ...layer, as_of: "2026-03-02T05:00:00Z" });
+    await Promise.resolve(); await Promise.resolve();
+    expect(last().layer?.as_of).toBe("2026-03-02T05:00:00Z");
+    loader.load(q("2026-03-02T04:45:00Z"));                                    // step back
+    expect(last().layer).toBeNull();                                    // the bar-N layer is gone at once
+    loader.load(q("2026-03-02T04:30:00Z"));                                    // and back again before the answer
+    pending[1].resolve({ ...layer, as_of: "2026-03-02T04:45:00Z" });            // the superseded answer arrives
+    await Promise.resolve(); await Promise.resolve();
+    expect(last().layer).toBeNull();
+    pending[2].reject(new ApiError(422, "`start` must be before `at`"));
+    await Promise.resolve(); await Promise.resolve();
+    expect(last()).toMatchObject({ layer: null, available: true });
+    expect(last().failed).toContain("start");
+    const cancel = loader.load(q("2026-03-02T04:15:00Z"));
+    cancel();                                                                   // unmounted / superseded
+    pending[3].resolve(layer);
+    await Promise.resolve(); await Promise.resolve();
+    expect(last().layer).toBeNull();
+    loader.load(q("2026-03-02T04:00:00Z"));
+    pending[4].reject(new ApiError(503, "off"));
+    await Promise.resolve(); await Promise.resolve();
+    expect(last()).toEqual({ layer: null, failed: null, available: false });
+  });
+
+  it("a replay never sends a start at or after its as-of time, and candle times without an offset are IST", () => {
+    expect(windowStart("2026-03-02T05:00:00Z", "2026-02-01T00:00:00+00:00")).toBe("2026-02-01T00:00:00+00:00");
+    expect(windowStart("2026-01-31T05:00:00Z", "2026-02-01T00:00:00+00:00")).toBeNull();     // stepped back before start
+    expect(windowStart("2026-02-01T00:00:00Z", "2026-02-01T00:00:00+00:00")).toBeNull();
+    expect(windowStart(null, "2026-02-01T00:00:00+00:00")).toBeNull();                       // live: no start
+    expect(parseCandleTime("2026-03-02T09:15:00")).toBe(Date.parse("2026-03-02T03:45:00Z"));
+    expect(parseCandleTime("2026-03-02 09:15:00")).toBe(Date.parse("2026-03-02T03:45:00Z"));
+    expect(parseCandleTime("2026-03-02T09:15:00+05:30")).toBe(Date.parse("2026-03-02T03:45:00Z"));
+    expect(parseCandleTime("2026-03-02T03:45:00Z")).toBe(Date.parse("2026-03-02T03:45:00Z"));
+    expect(parseCandleTime("2026-03-02")).toBe(Date.parse("2026-03-01T18:30:00Z"));
+    expect(replayAt([{ timestamp: "2026-03-02T09:15:00" }], { active: true, index: 0, playing: false, start: null }, "15m"))
+      .toBe("2026-03-02T04:00:00.000Z");
   });
 });

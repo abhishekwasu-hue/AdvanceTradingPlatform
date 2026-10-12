@@ -10,7 +10,7 @@
  *
  * Reference levels from past prices - nothing here places, changes or proposes an order.
  */
-import { request } from "../api/client";
+import { ApiError, request } from "../api/client";
 import type { LayerData, LayerLabel, LayerLine, LayerSegment } from "./engine";
 import { withAlpha } from "./geometry";
 
@@ -150,4 +150,36 @@ export function saveToggles(t: Toggles, storage: Pick<Storage, "setItem"> | null
 
 function safeStorage(): Storage | null {
   try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
+}
+
+export interface PaQuery { instrument: string; tf: LayerTf; at: string | null; start: string | null; debug: boolean }
+/** What the chart shows: the layer (null while a request is out or after a failure - never an older answer), a failure
+ * message, and whether the layer exists for this organisation (false: flag off, 503; null: not known yet). */
+export interface LayerState { layer: PaLayerResponse | null; failed: string | null; available: boolean | null }
+
+/**
+ * One request at a time for the layer. A new request (a replay step, a toggle of Debug, a new candle) first clears the
+ * layer, so the chart never shows a layer computed as of another bar while the new one is on its way; an answer to an
+ * older request is dropped; a failure leaves no layer (and says why). 503 means the flag is off: nothing, no message.
+ */
+export class LayerLoader {
+  private seq = 0;
+  private available: boolean | null = null;
+
+  constructor(private readonly fetchLayer: (q: PaQuery) => Promise<PaLayerResponse>, private readonly emit: (s: LayerState) => void) {}
+
+  load(q: PaQuery | null): () => void {
+    const my = ++this.seq;
+    this.emit({ layer: null, failed: null, available: q ? this.available : false });
+    if (!q) return () => {};
+    this.fetchLayer(q).then(
+      (r) => { if (my === this.seq) { this.available = true; this.emit({ layer: r, failed: null, available: true }); } },
+      (e: unknown) => {
+        if (my !== this.seq) return;
+        if (e instanceof ApiError && e.status === 503) { this.available = false; this.emit({ layer: null, failed: null, available: false }); return; }
+        this.emit({ layer: null, failed: e instanceof Error ? e.message : "Price action could not be loaded.", available: this.available });
+      },
+    );
+    return () => { if (my === this.seq) this.seq++; };
+  }
 }

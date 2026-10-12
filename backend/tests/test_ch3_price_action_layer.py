@@ -3,7 +3,10 @@
 * golden: the layer on the frozen synthetic 15m fixture is byte-identical to tests/fixtures/charts/pa_layer_golden.json,
   and the frontend's copy (frontend/src/charting/__fixtures__/) is byte-identical to it;
 * no look-ahead: the layer at bar N never changes when bars after N are added or altered (new bars, higher versions of
-  later bars, another source) - checked through the API on the lake and on the pure function at every 7th bar;
+  later bars, another source) - checked through the API on the lake; and the engine itself is truncation-invariant (the
+  layer over bars[:n] == the layer over all bars filtered to what was confirmed by bar n), at every 7th n;
+* provenance: shared-licensed sources only (never stream: / broker:), source before version, corrections point-in-time;
+  reads capped (1-minute rebuild days, rows), times before 1990 refused, a per-user rate limit, the conversion's guards;
 * replay never repaints: with a fixed `start`, each later step keeps every confirmed swing, break and leg of the step
   before (it only adds), and nothing in a step is later than its `at`;
 * the lake's own 15m bars and 15m rebuilt from its 1-minute bars give the same layer;
@@ -36,7 +39,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _lake_rows(key: str, timeframe: str, bars: pd.DataFrame, source: str = "test", version: int = 1):
+def _lake_rows(key: str, timeframe: str, bars: pd.DataFrame, source: str = "vendor:test", version: int = 1):
     return [MdCandleRecord(instrument_key=key, timeframe=timeframe, ts=pd.Timestamp(b.ts).to_pydatetime(), source=source, version=version,
                            open=float(b.open), high=float(b.high), low=float(b.low), close=float(b.close), volume=0,
                            ingested_at=pd.Timestamp(b.ts).to_pydatetime() + timedelta(seconds=30)) for b in bars.itertuples()]
@@ -66,6 +69,15 @@ def _lake():
     _run(_put(_lake_rows(FROM_1M, "1m", _minutes_from_15m(s15))))
     yield
     _run(_drop([NATIVE, FROM_1M, EMPTY]))
+
+
+@pytest.fixture(autouse=True)
+def _fresh():
+    from app.core import rate_limit
+    L.cache_clear()
+    rate_limit.reset("chart_price_action")
+    yield
+    L.cache_clear()
 
 
 def _flag(on: bool, tenants=()):
@@ -152,11 +164,12 @@ def test_no_lookahead_bars_after_at_never_change_the_layer(owner):
     before = {c: _get(headers, at=_iso(c)) for c in cuts}
     last = cuts[-1]
     later = F[F["bar_end"] > cuts[0]]
-    # altered later bars (a higher version), the same bars from another source, and brand-new bars after the fixture
+    # altered later bars (a higher version), the same bars from a less preferred source, and brand-new bars after the fixture
     moved = later.assign(high=later["high"] * 1.03, low=later["low"] * 0.97, close=later["close"] * 1.02)
     tail = F.tail(60).assign(timestamp=F.tail(60)["timestamp"] + pd.Timedelta(days=60), bar_end=F.tail(60)["bar_end"] + pd.Timedelta(days=60))
-    _run(_put(_lake_rows(NATIVE, "15m", _native(moved), version=2) + _lake_rows(NATIVE, "15m", _native(later.assign(close=later["close"] * 0.9)), source="zz-other")
+    _run(_put(_lake_rows(NATIVE, "15m", _native(moved), version=2) + _lake_rows(NATIVE, "15m", _native(later.assign(close=later["close"] * 0.9)), source="r2:other")
               + _lake_rows(NATIVE, "15m", _native(tail))))
+    L.cache_clear()                                                                # what the lake now holds, not a cached answer
     try:
         for c in cuts[:1]:
             assert _get(headers, at=_iso(c)) == before[c]
@@ -166,21 +179,44 @@ def test_no_lookahead_bars_after_at_never_change_the_layer(owner):
         async def undo():
             async with _session_factory() as session:
                 await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == NATIVE,
-                                                                   (MdCandleRecord.version == 2) | (MdCandleRecord.source == "zz-other")
+                                                                   (MdCandleRecord.version == 2) | (MdCandleRecord.source == "r2:other")
                                                                    | (MdCandleRecord.ts > F["bar_end"].iloc[-1].to_pydatetime())))
                 await session.commit()
         _run(undo())
+    L.cache_clear()
     assert all(_get(headers, at=_iso(c)) == before[c] for c in cuts)
 
 
-def test_no_lookahead_on_the_pure_layer_at_every_seventh_bar():
-    """Layer(bars <= N) == layer(bars <= N of a series whose later bars were replaced), for the debug view (everything)."""
+def _known(body, cutoff: int, searched=None):
+    """What a layer says was known by `cutoff` (epoch s): confirmed swings, the legs between them, breaks confirmed by
+    then (of the swings both runs searched)."""
+    swings = [s for s in body["swings"] if s["status"] == "confirmed" and s["confirmed_time"] <= cutoff]
+    ends = {(s["degree"], s["time"]) for s in swings}
+    legs = [g for g in body["legs"] if g["status"] == "confirmed" and (g["degree"], g["to"]["time"]) in ends]
+    breaks = [b for b in body["breaks"] if b["confirmed_time"] <= cutoff and (searched is None or (b["degree"], b["pivot_time"]) in searched)]
+    return swings, legs, breaks
+
+
+def _searched(body):
+    """(degree, pivot time) of the swings whose breaks a layer looked for: the newest MAX_BREAK_PIVOTS per degree."""
+    out = set()
+    for d in {s["degree"] for s in body["swings"]}:
+        conf = [s for s in body["swings"] if s["degree"] == d and s["status"] == "confirmed"]
+        out |= {(d, s["time"]) for s in conf[-L.MAX_BREAK_PIVOTS:]}
+    return out
+
+
+def test_truncation_invariance_of_swings_legs_and_breaks():
+    """No look-ahead in the engine itself: the layer over bars[:n] equals the layer over every bar, filtered to what was
+    confirmed by bar n's end - for swings (every degree), the legs between them and the real breaks, at every 7th n.
+    A mutation that lets the swing threshold read the next bar (causal_swings ZigZag `thr[i + 1]`) fails it."""
+    full = L.build(F, "15m", L.DEFAULT_DEGREE, True)
     for n in range(40, len(F), 7):
-        noisy = F.copy()
-        noisy.loc[n:, ["open", "high", "low", "close"]] = F.loc[n:, ["open", "high", "low", "close"]].to_numpy() * (1.0 + 0.004 * (n % 5 - 2))
-        a = L.build(F.iloc[:n], "15m", L.DEFAULT_DEGREE, True)
-        b = L.build(noisy.iloc[:n], "15m", L.DEFAULT_DEGREE, True)
-        assert L.canonical(a) == L.canonical(b), n
+        cutoff = int(pd.Timestamp(F["bar_end"].iloc[n - 1]).timestamp())
+        part = L.build(F.iloc[:n], "15m", L.DEFAULT_DEGREE, True)
+        searched = _searched(full) & _searched(part)
+        assert _known(part, cutoff, searched) == _known(full, cutoff, searched), n
+        assert all(s["confirmed_time"] <= cutoff for s in part["swings"] if s["status"] == "confirmed")
 
 
 def test_replay_only_adds_and_never_shows_a_later_time(owner):
@@ -233,7 +269,7 @@ def test_input_checks_and_empty_answers(owner, monkeypatch):
     assert client.get(URL, params={"instrument": NATIVE, "degree": 4}, headers=headers).status_code == 422
     monkeypatch.setattr(L, "MAX_BARS", 100)
     r = client.get(URL, params={"instrument": NATIVE, "at": at, "start": _start()}, headers=headers)
-    assert r.status_code == 422 and "more than 100" in r.text                      # refused, never silently cut
+    assert r.status_code == 422 and "more than" in r.text                          # refused, never silently cut
     monkeypatch.undo()
     for key in (EMPTY, "NFO:BANKNIFTY 26OCT 52000 CE"):
         body = _get(headers, key, at=at)
@@ -242,3 +278,100 @@ def test_input_checks_and_empty_answers(owner, monkeypatch):
     body = client.get(URL, params={"instrument": EMPTY, "at": "2999-01-01T00:00:00+00:00"}, headers=headers).json()
     assert pd.Timestamp(body["at"]) - pd.Timestamp(body["start"]) == pd.Timedelta(days=L.DEFAULT_DAYS["15m"])
     assert pd.Timestamp(body["at"]).year < 2999
+
+
+def test_only_shared_licensed_sources_are_served(owner):
+    """BT1b / data terms: a `stream:<broker>` or `broker:<name>` row (one organisation's own broker session) is never
+    read, even as the only row for a bar or with a higher version; the preferred shared source wins over a less
+    preferred one with a higher version (source first, then version)."""
+    headers, _ = owner
+    at = F["bar_end"].iloc[300]
+    before = _get(headers, at=_iso(at))
+    window = F[(F["bar_end"] > F["bar_end"].iloc[250]) & (F["bar_end"] <= at)]
+    spiky = window.assign(high=window["high"] * 1.2, low=window["low"] * 0.8)
+    lone = window.head(6)                                                            # bars only a stream row has (between the 15m ENDs)
+    newer = lone.assign(timestamp=lone["timestamp"] + pd.Timedelta(minutes=7), bar_end=lone["bar_end"] + pd.Timedelta(minutes=7),
+                        high=lone["high"] * 1.3)
+    _run(_put(_lake_rows(NATIVE, "15m", _native(spiky), source="stream:upstox", version=5) + _lake_rows(NATIVE, "15m", _native(spiky), source="broker:kite")
+              + _lake_rows(NATIVE, "15m", _native(newer), source="stream:upstox")
+              + _lake_rows(NATIVE, "15m", _native(spiky), source="r2:other", version=9)))     # a less preferred source loses whatever its version
+    try:
+        L.cache_clear()
+        assert _get(headers, at=_iso(at)) == before
+    finally:
+        async def undo():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == NATIVE,
+                                                                   MdCandleRecord.source.in_(["stream:upstox", "broker:kite", "r2:other"])))
+                await session.commit()
+        _run(undo())
+    assert L.SHARED_SOURCES == ("nse_bhav:", "vendor:", "r2:")
+
+
+def test_a_correction_counts_once_it_was_ingested(owner):
+    """Point-in-time corrections: a later version of a bar at or before `at` changes the layer only for an `at` after it
+    was ingested; the bar's first version counts by its END (imported history replays)."""
+    headers, _ = owner
+    at = F["bar_end"].iloc[320]
+    before = _get(headers, at=_iso(at))
+    early = F.iloc[200:300]
+    fix = _lake_rows(NATIVE, "15m", _native(early.assign(high=early["high"] * 1.05)), version=7)
+    for r in fix:
+        r.ingested_at = pd.Timestamp(at).to_pydatetime() + timedelta(hours=1)          # ingested after `at`
+    _run(_put(fix))
+    try:
+        L.cache_clear()
+        assert _get(headers, at=_iso(at)) == before
+        L.cache_clear()
+        later = _iso(pd.Timestamp(at) + pd.Timedelta(hours=2))
+        assert _get(headers, at=later)["fingerprint"] != _get(headers, at=_iso(at))["fingerprint"]
+    finally:
+        async def undo():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == NATIVE, MdCandleRecord.version == 7))
+                await session.commit()
+        _run(undo())
+
+
+def test_reads_are_capped_and_old_times_refused(owner, monkeypatch):
+    headers, _ = owner
+    at = _iso(F["bar_end"].iloc[-1])
+    # a rebuild from 1-minute bars over more than REBUILD_MAX_DAYS is refused before reading them
+    far = _iso(F["bar_end"].iloc[-1] - pd.Timedelta(days=L.REBUILD_MAX_DAYS + 5))
+    r = client.get(URL, params={"instrument": FROM_1M, "tf": "1h", "at": at, "start": far}, headers=headers)
+    assert r.status_code == 422 and "1-minute" in r.text
+    # the row cap: the read stops at the cap + 1 and refuses
+    monkeypatch.setattr(L, "ROWS_PER_BAR", 0.01)
+    r = client.get(URL, params={"instrument": FROM_1M, "tf": "15m", "at": at, "start": _start()}, headers=headers)
+    assert r.status_code == 422 and "lake rows" in r.text
+    monkeypatch.undo()
+    for bad in ("0001-01-01T00:00:00+00:00", "1989-12-31T23:59:00+00:00"):
+        assert client.get(URL, params={"instrument": NATIVE, "at": bad}, headers=headers).status_code == 422
+        assert client.get(URL, params={"instrument": NATIVE, "at": at, "start": bad}, headers=headers).status_code == 422
+
+
+def test_requests_are_rate_limited_per_user(owner, monkeypatch):
+    headers, _ = owner
+    other, _ = _owner(f"ch3-rate-{uuid.uuid4().hex[:10]}@example.com")
+    params = {"instrument": EMPTY, "at": _iso(F["bar_end"].iloc[-1])}
+    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(122)]
+    assert codes.count(200) == 120 and codes[-1] == 429
+    assert client.get(URL, params=params, headers=other).status_code == 200
+
+
+def test_to_frame_guards_each_on_its_own():
+    """The conversion keeps closed bars only: an over-read row (END after `end`) and a forming bucket (rebuilt from
+    1-minute bars that do not reach its end) are each dropped."""
+    from datetime import datetime as dt, timezone as tz
+    end = pd.Timestamp(F["bar_end"].iloc[30]).to_pydatetime()
+    rows = [(pd.Timestamp(b).to_pydatetime(), 1, o, h, lo, c, 0) for b, o, h, lo, c in
+            zip(F["bar_end"].iloc[:32], F["open"].iloc[:32], F["high"].iloc[:32], F["low"].iloc[:32], F["close"].iloc[:32])]
+    native = L._to_frame(rows, "15m", NATIVE, end, False)                           # rows 31, 32 end after `end`
+    assert len(native) == 31 and pd.Timestamp(native["bar_end"].iloc[-1]) == pd.Timestamp(end)
+    s15 = F.assign(timestamp=F["timestamp"].dt.tz_convert(IST).dt.tz_localize(None))
+    minutes = _minutes_from_15m(s15.iloc[:3])
+    m_rows = [(pd.Timestamp(m.ts).to_pydatetime(), 1, m.open, m.high, m.low, m.close, 0) for m in minutes.itertuples()]
+    mid = pd.Timestamp(F["bar_end"].iloc[1]).to_pydatetime() + timedelta(minutes=7)  # bar 3 has 7 of its 15 minutes
+    rebuilt = L._to_frame([r for r in m_rows if r[0] <= mid], "15m", FROM_1M, mid, True)
+    assert len(rebuilt) == 2 and pd.Timestamp(rebuilt["bar_end"].iloc[-1]) == pd.Timestamp(F["bar_end"].iloc[1])
+    assert dt(1990, 1, 1, tzinfo=tz.utc) == L.MIN_TIME

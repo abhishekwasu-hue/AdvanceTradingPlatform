@@ -3069,6 +3069,24 @@ class ChartDrawingRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class ChartLayoutRecord(Base):
+    """CH5: one saved multi-chart workspace layout of one user (`layout/1`: grid of 1/2/4/6/8 charts, each with its
+    symbol, timeframe, chart type and link group; which link groups sync symbol / interval / crosshair). Per user and
+    tenant, named, versioned for optimistic concurrency. A picture of the screen: nothing in it places an order."""
+
+    __tablename__ = "chart_layouts"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_chart_layouts_user_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    layout_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class OptionStrategyRecord(Base):
     """Z5 / P1-c (ADR-0025): a strategy saved from the Options Builder - the instrument inputs and the legs as the page
     held them (`strategy_json`), shared within the tenant. Research data only: it places nothing. Archived, never

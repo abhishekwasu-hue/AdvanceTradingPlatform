@@ -219,9 +219,12 @@ def test_time_exit_of_a_locked_user_still_runs(monkeypatch):
     _closed(t, -25_000.0)
     assert _preview(t)["can_place"] is False
     trade_id = _open(t, stop=50.0)
-    _attach(trade_id, _deploy(t), exit_rules=json.dumps({"time_exit_at": "10:00"}))
+    cycle_at = datetime(2026, 9, 25, 10, 30, tzinfo=IST)
+    # The position was opened before the cycle on the cycle's own day: the time exit is judged on the cycle's clock
+    # (`monitor_open_positions(now=...)`), never on the wall clock the suite happens to run at.
+    _attach(trade_id, _deploy(t), exit_rules=json.dumps({"time_exit_at": "10:00"}), entry_time=datetime(2026, 9, 25, 9, 30, tzinfo=IST))
     worker = _worker(monkeypatch, _FakeBroker(ltp=100.0))
-    _run(worker.run_cycle(now=datetime(2026, 9, 25, 10, 30, tzinfo=IST)))
+    _run(worker.run_cycle(now=cycle_at))
     assert (_get(TradeRecord, trade_id).exit_reason or "").startswith("Time exit")
 
 

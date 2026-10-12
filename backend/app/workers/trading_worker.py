@@ -882,7 +882,7 @@ class TradingWorker:
             # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
             exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
-                                                    exit_approval=exit_approval)
+                                                    exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.

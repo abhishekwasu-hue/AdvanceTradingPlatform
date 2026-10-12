@@ -53,7 +53,9 @@
    "today": 0,
    "max_per_day": 3,
    "armed_at": null
-  }
+  },
+  "set_by_you": true,
+  "may_change": true
  },
  "intents": [
   {

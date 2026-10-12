@@ -206,6 +206,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/alerts/rules/{rule_id}/then/intents"): "member",
     ("PUT", "/api/alerts/rules/{rule_id}/then/arm"): "trader",      # N1 X2: the template's own owner only (checked in the route)
     ("DELETE", "/api/alerts/rules/{rule_id}/then/arm"): "trader",   # N1 X2: the template's owner or the organisation OWNER
+    ("GET", "/api/alerts/then"): "member",                   # review of X1b: every Then of the rules the caller sees, one read
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,

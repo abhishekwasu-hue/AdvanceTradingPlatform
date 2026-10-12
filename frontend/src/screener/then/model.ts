@@ -40,6 +40,10 @@ export interface ThenTemplate {
   /** False: the last check is the template owner's and the organisation owner's only (the server sent none). */
   status_shown?: boolean;
   auto_paper?: AutoPaperState;
+  /** Review of X1b: true when the caller set this template (or none is set); false = another member did. */
+  set_by_you?: boolean;
+  /** The server's own check: the rule's creator or the organisation owner (others get a 403, so the panel hides Save). */
+  may_change?: boolean;
 }
 
 export interface ThenIntent {
@@ -49,7 +53,12 @@ export interface ThenIntent {
   commit_line: string | null; confirm_ts: string | null; created_at: string | null;
 }
 
-export interface ThenBody { mode: ThenMode; confirm_tf: ConfirmTf; enabled: boolean; gate: GateOverrides }
+export interface ThenBody { mode: ThenMode; confirm_tf: ConfirmTf; enabled: boolean; gate: GateOverrides; take_over?: boolean }
+
+/** Review of X1b: saving would move another member's template (and its setups) to the caller - confirm first. */
+export function needsTakeOver(t: ThenTemplate | null): boolean {
+  return Boolean(t?.configured) && t?.set_by_you === false;
+}
 
 export function isThenTemplate(x: unknown): x is ThenTemplate {
   const t = x as ThenTemplate | null;

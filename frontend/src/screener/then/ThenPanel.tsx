@@ -11,7 +11,8 @@ import { ApiError } from "../../api/errors";
 import { Badge, Button, Input, Select } from "../../components/primitives";
 import { useThenT, type ThenT } from "./i18n";
 import {
-  ARM_CONFIRM, bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, levelsVars, outcomeOf, placesAutoPaper, visibleModes, withOverride,
+  ARM_CONFIRM, bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, levelsVars, needsTakeOver, outcomeOf, placesAutoPaper,
+  visibleModes, withOverride,
   type ConfirmTf, type ThenBody, type ThenIntent, type ThenMode, type ThenTemplate,
 } from "./model";
 
@@ -126,17 +127,24 @@ export interface DrawerViewProps {
   template: ThenTemplate | null; intents: ThenIntent[] | null; body: ThenBody; onBody: (b: ThenBody) => void;
   errors: string[]; notice: string; busy: boolean; onSave: () => void; onRemove: () => void;
   onArm?: (confirm: string) => void; onDisarm?: () => void;
+  /** Review of X1b: the take-over confirmation is showing (Save was pressed on another member's template). */
+  confirming?: boolean; onConfirmTakeOver?: () => void; onCancelTakeOver?: () => void;
 }
 
 /** The drawer's content (presentational: the container below loads and saves). */
-export function ThenDrawerView({ template, intents, body, onBody, errors, notice, busy, onSave, onRemove, onArm, onDisarm }: DrawerViewProps) {
+export function ThenDrawerView({ template, intents, body, onBody, errors, notice, busy, onSave, onRemove, onArm, onDisarm, confirming = false,
+  onConfirmTakeOver, onCancelTakeOver }: DrawerViewProps) {
   const t = useThenT();
   const defaults = template?.gate_defaults ?? {};
+  const mayChange = template?.may_change !== false;
   return (
     <div className="mt-2 space-y-3 rounded border border-border px-3 py-2" data-testid="then-drawer">
       <div className="text-sm font-medium text-fg">{t("drawer.title")}</div>
       <p className="text-xs text-fg-muted">{t("drawer.intro")}</p>
       {!template?.configured && <p className="text-xs text-fg-muted">{t("drawer.notSet")}</p>}
+      {template?.configured && (
+        <p className="text-xs text-fg-muted" data-testid="then-set-by">{t(template.set_by_you === false ? "drawer.setByOther" : "drawer.setByYou")}</p>
+      )}
       <div className="grid gap-2 sm:grid-cols-3">
         <Select label={t("drawer.mode")} value={body.mode} onChange={(v) => onBody({ ...body, mode: v as ThenMode })}
           options={visibleModes().map((m) => ({ value: m, label: t(`modes.${m}`) }))} />
@@ -163,10 +171,20 @@ export function ThenDrawerView({ template, intents, body, onBody, errors, notice
       </div>
       {errors.length > 0 && <ul role="alert" className="text-xs text-down space-y-0.5">{errors.map((l) => <li key={l}>{l}</li>)}</ul>}
       {notice && <div className="text-xs text-up">{notice}</div>}
-      <div className="flex gap-2">
-        <Button size="sm" onClick={onSave} disabled={busy}>{busy ? t("drawer.saving") : t("drawer.save")}</Button>
-        {template?.configured && <Button size="sm" variant="ghost" onClick={onRemove} disabled={busy}>{t("drawer.remove")}</Button>}
-      </div>
+      {!mayChange ? <p className="text-xs text-fg-muted">{t("drawer.readOnly")}</p> : confirming ? (
+        <div role="alert" className="space-y-2 rounded border border-warn px-2 py-1">
+          <p className="text-xs text-fg">{t("drawer.takeOverWarn")}</p>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={onConfirmTakeOver} disabled={busy}>{busy ? t("drawer.saving") : t("drawer.takeOverConfirm")}</Button>
+            <Button size="sm" variant="ghost" onClick={onCancelTakeOver} disabled={busy}>{t("drawer.cancel")}</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onSave} disabled={busy}>{busy ? t("drawer.saving") : t("drawer.save")}</Button>
+          {template?.configured && <Button size="sm" variant="ghost" onClick={onRemove} disabled={busy}>{t("drawer.remove")}</Button>}
+        </div>
+      )}
       {template?.configured && template.mode === "AUTO_PAPER" && <AutoPaperBox template={template} busy={busy} onArm={onArm} onDisarm={onDisarm} />}
       {template?.configured && <StatusTable template={template} t={t} />}
       {template?.configured && <IntentsTable intents={intents} t={t} />}
@@ -180,34 +198,43 @@ function errorLines(e: unknown): string[] {
   return [String(e)];
 }
 
-/** The chip, the open / hide button and the drawer for one rule (render it only when `scan_then` is on). */
-export function RuleThen({ ruleId }: { ruleId: number }) {
+/** The chip, the open / hide button and the drawer for one rule (render it only when `scan_then` is on). `initial`: the
+ * template from the panel's one batch read (GET /alerts/then) - then this rule makes no read of its own on load. */
+export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTemplate | null }) {
   const t = useThenT();
-  const [template, setTemplate] = useState<ThenTemplate | null>(null);
+  const [template, setTemplate] = useState<ThenTemplate | null>(initial ?? null);
   const [intents, setIntents] = useState<ThenIntent[] | null>(null);
   const [open, setOpen] = useState(false);
-  const [body, setBody] = useState<ThenBody>(bodyOf(null));
+  const [body, setBody] = useState<ThenBody>(bodyOf(initial ?? null));
   const [errors, setErrors] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const load = useCallback(() => {
-    api.ruleThen(ruleId).then((tpl) => { setTemplate(tpl); setBody(bodyOf(tpl)); }).catch((e) => setErrors(errorLines(e)));
-  }, [ruleId]);
+    if (initial !== undefined) return;
+    api.ruleThen(ruleId).then((tpl) => { setTemplate(tpl); setBody(bodyOf(tpl)); setErrors([]); }).catch((e) => setErrors(errorLines(e)));
+  }, [ruleId, initial]);
   useEffect(load, [load]);
+  const loadIntents = useCallback(() => {
+    api.ruleThenIntents(ruleId).then((rows) => { setIntents(rows); setErrors([]); }).catch((e) => setErrors(errorLines(e)));
+  }, [ruleId]);
   useEffect(() => {
-    if (open && template?.configured) api.ruleThenIntents(ruleId).then(setIntents).catch((e) => setErrors(errorLines(e)));
-  }, [open, ruleId, template?.configured]);
-  async function save() {
+    if (open && template?.configured) loadIntents();
+  }, [open, template?.configured, loadIntents]);
+  async function save(takeOver = false) {
     const local = gateErrors(body.gate, t);
     setErrors(local);
     setNotice("");
     if (local.length) return;
+    if (!takeOver && needsTakeOver(template)) { setConfirming(true); return; }   // another member set it: confirm first
     setBusy(true);
     try {
-      const tpl = await api.putRuleThen(ruleId, body);
+      const tpl = await api.putRuleThen(ruleId, takeOver ? { ...body, take_over: true } : body);
       setTemplate(tpl);
       setBody(bodyOf(tpl));
+      setConfirming(false);
       setNotice(t("drawer.saved"));
+      if (open && tpl.configured) loadIntents();
     } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
   }
   async function remove() {
@@ -217,6 +244,7 @@ export function RuleThen({ ruleId }: { ruleId: number }) {
       setTemplate(tpl);
       setBody(bodyOf(tpl));
       setIntents(null);
+      setErrors([]);
       setNotice(t("drawer.removed"));
     } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
   }
@@ -240,10 +268,11 @@ export function RuleThen({ ruleId }: { ruleId: number }) {
     <div>
       <div className="flex items-center gap-2">
         <ThenChip template={template} />
-        <Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)}>{open ? t("hide") : t("open")}</Button>
+        <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? t("hide") : t("open")}</Button>
       </div>
       {open && <ThenDrawerView template={template} intents={intents} body={body} onBody={setBody} errors={errors} notice={notice}
-        busy={busy} onSave={save} onRemove={remove} onArm={arm} onDisarm={disarm} />}
+        busy={busy} onSave={() => save(false)} onRemove={remove} onArm={arm} onDisarm={disarm} confirming={confirming}
+        onConfirmTakeOver={() => save(true)} onCancelTakeOver={() => setConfirming(false)} />}
     </div>
   );
 }

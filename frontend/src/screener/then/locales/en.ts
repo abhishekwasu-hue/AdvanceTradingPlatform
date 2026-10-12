@@ -31,6 +31,12 @@ export const SCAN_THEN_EN = {
     saved: "Saved.",
     removed: "Removed.",
     notSet: "No Then template yet - pick a mode and save to start.",
+    setByYou: "Set by: you",
+    setByOther: "Set by: another member",
+    takeOverWarn: "Saving makes you the owner of this Then; setups will go to you, not to the member who set it.",
+    takeOverConfirm: "Save and take over",
+    cancel: "Cancel",
+    readOnly: "Only the rule's creator or the organisation owner can change this Then.",
     footer: "Setups are information for your own decision. They are not recommendations, and nothing is placed without your approval.",
   },
   auto: {

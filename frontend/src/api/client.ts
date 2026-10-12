@@ -927,6 +927,8 @@ export const api = {
   alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
   // N1 X1b (flag scan_then): a rule's Then template and the setups it sent to the caller (503 while the flag is off).
   ruleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`),
+  /** Review of X1b: every rule's Then in one read (rule id -> template) for the panel's chips. */
+  allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
   putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
   // N1 X2: the template owner arms Auto PAPER (typed confirmation) / the owner or the organisation OWNER disarms it.

@@ -48,6 +48,8 @@ def check_gate(over: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         lo, hi = bound
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TemplateError(f"{key} must be a number")
+        if isinstance(GATE_DEFAULTS[key], int) and float(value) != int(value):
+            raise TemplateError(f"{key} must be a whole number")          # review of X1b: never truncated silently
         cast = type(GATE_DEFAULTS[key])(value)
         if not lo <= cast <= hi:
             raise TemplateError(f"{key} must be between {lo:g} and {hi:g}")

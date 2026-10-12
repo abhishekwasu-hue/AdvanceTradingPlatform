@@ -511,6 +511,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
+    ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,

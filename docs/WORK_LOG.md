@@ -1861,3 +1861,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## S10 (Phase 0 slice): ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+- Branch `claude/n3-s10` (from main). Design: SCREENER.md "S10".
+- Backend: `app/screener/etf.py` + `GET /api/screener/etf` (member, classified); `WhatsAppConfig` + `AlertChannelType.WHATSAPP`
+  (template + opt-in, paid plans, the SMS sender); SMS DLT fields and placeholders; both behind `alerts_whatsapp_dlt`
+  at channel save. No migration (channel types and config are stored as text / encrypted JSON); no new ScreenQL function.
+- Frontend: "ETFs" dialog on the Screener page (`EtfPanel`); WhatsApp section and DLT fields in the alert channels card.
+- Tests: `tests/test_s10_etf_whatsapp.py`; vitest `src/screener/etf.test.tsx`. Open questions S10-1..S10-5.
+

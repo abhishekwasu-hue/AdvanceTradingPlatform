@@ -2,6 +2,7 @@ import { BellRing, Mail, MessageSquare, Send, Webhook } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import WebPushSection from "../alerts/WebPushSection";
+import WhatsAppSection from "../alerts/WhatsAppSection";
 import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
 
@@ -36,8 +37,10 @@ export default function AlertChannelsCard() {
   const [wh, setWh] = useState({ url: "", secret: "", event_types: "", min_severity: "WARNING" as NotificationSeverity, enabled: true });
   const [sms, setSms] = useState({
     preset: "msg91", url: "", headers: "", body_template: "", to_numbers: "", content_type: "application/json",
-    min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
+    min_severity: "CRITICAL" as NotificationSeverity, enabled: true, dlt_entity_id: "", dlt_template_id: "", sender_id: "",
   });
+  // S10 (flag alerts_whatsapp_dlt): the WhatsApp channel and the SMS channel's DLT fields (India).
+  const [s10, setS10] = useState(false);
   const [em, setEm] = useState({
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
@@ -55,7 +58,8 @@ export default function AlertChannelsCard() {
         setSms((prev) => ({
           ...prev, preset: "custom", url: String(s.config.url ?? ""), body_template: String(s.config.body_template ?? ""),
           content_type: String(s.config.content_type ?? "application/json"), to_numbers: ((s.config.to_numbers as string[]) ?? []).join(", "),
-          min_severity: s.min_severity, enabled: s.enabled,
+          min_severity: s.min_severity, enabled: s.enabled, dlt_entity_id: String(s.config.dlt_entity_id ?? ""),
+          dlt_template_id: String(s.config.dlt_template_id ?? ""), sender_id: String(s.config.sender_id ?? ""),
         }));
       }
       const e = list.find((c) => c.channel_type === "EMAIL");
@@ -76,6 +80,7 @@ export default function AlertChannelsCard() {
   }
 
   useEffect(refresh, []);
+  useEffect(() => { api.myFeatures().then((f) => setS10(Boolean(f.alerts_whatsapp_dlt))).catch(() => setS10(false)); }, []);
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(true);
@@ -292,6 +297,14 @@ export default function AlertChannelsCard() {
             <input className={`${input} col-span-2`} placeholder="Recipients, comma separated (+91...)" value={sms.to_numbers} onChange={(e) => setSms({ ...sms, to_numbers: e.target.value })} />
             <input className={input} placeholder="Content type" value={sms.content_type} onChange={(e) => setSms({ ...sms, content_type: e.target.value })} />
           </div>
+          {s10 && (
+            <div className="grid grid-cols-3 gap-2" data-testid="sms-dlt">
+              <input className={input} placeholder="DLT entity id" value={sms.dlt_entity_id} onChange={(e) => setSms({ ...sms, dlt_entity_id: e.target.value })} />
+              <input className={input} placeholder="DLT template id" value={sms.dlt_template_id} onChange={(e) => setSms({ ...sms, dlt_template_id: e.target.value })} />
+              <input className={input} placeholder="Sender header" value={sms.sender_id} onChange={(e) => setSms({ ...sms, sender_id: e.target.value })} />
+              <p className="col-span-3 text-[11px] text-fg-muted">India: messages need your DLT registration; use {"{dlt_template_id} {dlt_entity_id} {sender_id}"} in the body template.</p>
+            </div>
+          )}
           <div className="flex items-center gap-3 text-xs">
             <label className="flex items-center gap-1 text-fg-muted">floor
               <select className="rounded bg-surface-2 border border-border px-1 py-0.5" value={sms.min_severity} onChange={(e) => setSms({ ...sms, min_severity: e.target.value as NotificationSeverity })}>
@@ -304,13 +317,20 @@ export default function AlertChannelsCard() {
             <button disabled={busy || !sms.url || !sms.to_numbers} onClick={() => run("SMS channel saved.", () => api.upsertAlertChannel("sms", {
               enabled: sms.enabled, min_severity: sms.min_severity,
               config: { url: sms.url, headers: parseHeaders(sms.headers), body_template: sms.body_template, content_type: sms.content_type,
-                method: "POST", to_numbers: sms.to_numbers.split(",").map((n) => n.trim()).filter(Boolean) },
+                method: "POST", to_numbers: sms.to_numbers.split(",").map((n) => n.trim()).filter(Boolean),
+                ...(s10 ? Object.fromEntries((["dlt_entity_id", "dlt_template_id", "sender_id"] as const).filter((k) => sms[k].trim()).map((k) => [k, sms[k].trim()])) : {}) },
             }))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Save</button>
             <button disabled={busy || !stored("SMS")} onClick={() => test("SMS")} className="rounded border border-border hover:bg-surface-2 text-fg px-3 py-1 text-xs disabled:opacity-50">Send test</button>
             {stored("SMS") && <button disabled={busy} onClick={() => run("SMS channel removed.", () => api.deleteAlertChannel("sms"))} className="text-xs text-down hover:underline">Remove</button>}
           </div>
         </div>
       </div>
+
+      {s10 && (
+        <div className="mt-3">
+          <WhatsAppSection channel={stored("WHATSAPP")} busy={busy} run={run} test={() => test("WHATSAPP")} status={status("WHATSAPP")} />
+        </div>
+      )}
 
       {error && <div className="mt-3 text-sm text-down">{error}</div>}
       {message && <div className="mt-3 text-sm text-up">{message}</div>}

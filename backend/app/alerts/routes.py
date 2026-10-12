@@ -82,6 +82,27 @@ async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str)
     )
 
 
+S10_FLAG = "alerts_whatsapp_dlt"
+
+
+async def _s10_gate(session: AsyncSession, user: User, kind: str, config: Any) -> None:
+    """S10 seam: the WhatsApp channel and the SMS DLT fields need the `alerts_whatsapp_dlt` flag; WhatsApp needs a paid
+    plan (every message is billed by the provider). Existing SMS channels without DLT fields are untouched."""
+    from app.platform.controls import flag_enabled
+    from app.plans.registry import get_plan
+    whatsapp = kind == AlertChannelType.WHATSAPP.value
+    dlt = kind == AlertChannelType.SMS.value and bool(getattr(config, "uses_dlt", lambda: False)())
+    if not (whatsapp or dlt):
+        return
+    if not await flag_enabled(session, S10_FLAG, user.tenant_id):
+        raise HTTPException(status_code=403, detail="WhatsApp and SMS DLT settings are not turned on for this organisation",
+                            headers={"X-Feature-Disabled": S10_FLAG})
+    if whatsapp:
+        plan = get_plan((await load_tenant(session, user.tenant_id)).plan)
+        if not plan.price_monthly:
+            raise HTTPException(status_code=402, detail=f"WhatsApp alerts need a paid plan; the {plan.name} plan does not include them.")
+
+
 @router.get("/push/public-key")
 async def push_public_key(user: User = Depends(get_current_user)) -> dict:
     """Phase O3: the VAPID public key the browser passes as `applicationServerKey`."""
@@ -123,6 +144,7 @@ async def upsert_alert_channel(
         # Never str(exc): pydantic's text includes the rejected input, i.e. the bot token / password.
         raise HTTPException(status_code=400, detail=safe_validation_message(exc)) from exc
 
+    await _s10_gate(session, user, kind, config)
     if record is None:
         await check_can_add_alert_channel(session, await load_tenant(session, user.tenant_id))
         record = AlertChannelRecord(tenant_id=user.tenant_id, channel_type=kind, created_by=user.id, encrypted_config=encrypt_config(config, user.tenant_id))

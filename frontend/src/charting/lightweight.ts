@@ -35,6 +35,9 @@ export interface CandleSeriesLike {
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
 export interface ChartLike {
   applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
+  // CH5 crosshair link (optional in the structural slice: test fakes without them simply are not followed).
+  setCrosshairPosition?(price: number, time: never, series: never): void;
+  clearCrosshairPosition?(): void;
   paneSize(): { width: number; height: number };
   priceScale(id: string): { width(): number };
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
@@ -242,6 +245,19 @@ export class LightweightEngine implements ChartEngine {
     this.timeframe = layout.timeframe;
     this.studies = new Map(layout.studies.map((s) => [s.id, s]));
     for (const [id, d] of Object.entries(layout.drawings)) this.addDrawing(id, d);
+  }
+
+  /** CH5: the crosshair on this chart's own bar at or before `time` (at that bar's close), or hidden with null. */
+  setCrosshair(time: number | null) {
+    if (this.disposed) return;
+    const times = this.times();
+    if (time == null || times.length === 0 || time < times[0]) { this.chart.clearCrosshairPosition?.(); return; }
+    let lo = 0, hi = times.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= time) lo = mid; else hi = mid - 1; }
+    const bar = this.candles.data()[lo] as { close?: number; value?: number } | undefined;
+    const price = bar?.close ?? bar?.value;
+    if (price == null || !Number.isFinite(price)) { this.chart.clearCrosshairPosition?.(); return; }
+    this.chart.setCrosshairPosition?.(price, times[lo] as never, this.candles as never);
   }
 
   on(listener: (event: EngineEvent) => void) {

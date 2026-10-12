@@ -1,5 +1,5 @@
 import {
-  CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, createChart, createSeriesMarkers,
+  AreaSeries, CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, createChart, createSeriesMarkers,
   type IChartApi, type IPriceLine, type ISeriesApi, type ISeriesMarkersPluginApi, type LogicalRange, type MouseEventParams, type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -16,6 +16,9 @@ import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
 import { LightweightEngine } from "../charting/lightweight";
 import { DrawingToolbar, useDrawingTools } from "../charting/DrawingToolbar";
+import { CHART_TYPE_LABELS, chartView, formatTick, periodSeconds, sessionBreaks, venueZone } from "../charting/chartTypes";
+import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
+import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 
@@ -66,8 +69,20 @@ const fmtIst = (t: number, withDate = true) => {
 };
 const fmt = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? "-" : v.toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 
-function baseOptions(height: number, showTime: boolean, attribution = true) {
+/** CH5-b `venueAxis`: tick labels and the crosshair time in the venue's own zone (UTC for 24x7 crypto, IST otherwise),
+ * with dates on day marks; without it the axis is exactly as before (IST times). */
+function axisOptions(zone: string | null) {
+  if (!zone) return { tick: (t: number) => fmtIst(t, false), time: (t: number) => fmtIst(t, true) };
+  return {
+    tick: (t: number, type: number) => formatTick(t, type, zone),
+    time: (t: number) => new Date(t * 1000).toLocaleString("en-IN", { timeZone: zone, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
+      + (zone === "UTC" ? " UTC" : ""),
+  };
+}
+
+function baseOptions(height: number, showTime: boolean, attribution = true, zone: string | null = null) {
   refreshThemeColors();
+  const axis = axisOptions(zone);
   return {
     height,
     // The TradingView attribution logo stays on the main pane (the library's licence asks for it once); the stacked indicator panes do not repeat it.
@@ -76,8 +91,8 @@ function baseOptions(height: number, showTime: boolean, attribution = true) {
     crosshair: { mode: CrosshairMode.Normal },
     rightPriceScale: { borderColor: COLORS.border, minimumWidth: 72 },
     timeScale: { visible: showTime, timeVisible: true, secondsVisible: false, borderColor: COLORS.border, rightOffset: 4,
-                 tickMarkFormatter: (t: number) => fmtIst(t, false) },
-    localization: { timeFormatter: (t: number) => fmtIst(t, true) },
+                 tickMarkFormatter: axis.tick },
+    localization: { timeFormatter: axis.time },
     // PW2: touch - pinch to zoom, one-finger drag pans the time axis while a vertical swipe still scrolls the page,
     // and a long press shows the crosshair (the library's tracking mode; the next tap hides it).
     handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
@@ -132,12 +147,18 @@ export interface ProChartProps {
   onEngine?: (engine: ChartEngine | null) => void;
   /** CH2c: the drawing toolbar (saved per user and symbol). On for full charts of a symbol; off in mini mode. */
   drawingTools?: boolean;
+  /** CH5-b: candles (default), hollow candles, Heikin Ashi, Renko, range bars, line or area. Renko and range are built
+   * from closed bars only and carry no indicators or volume (their bricks have their own times). */
+  chartType?: ChartType;
+  /** CH5-b: session breaks and the time axis in the venue's own zone (UTC, 24x7 for crypto). Off: the axis as before. */
+  venueAxis?: boolean;
 }
 
 export default function ProChart({
   candles, symbol, timeframe, timeframes, onTimeframeChange, priceLines: priceLinesProp = [], zones = [], markers: markersProp = [], height = 380,
   strategyParams, defaultIndicators, live, liveError, compact: compactProp = false, title, openUrl, fullWindow = false,
   deployable = false, exchange = "NSE", onLoadOlder, loadingOlder = false, olderExhausted = false, onEngine, drawingTools = true,
+  chartType = "candles", venueAxis = false,
 }: ProChartProps) {
   const onLoadOlderRef = useRef(onLoadOlder);
   onLoadOlderRef.current = onLoadOlder;
@@ -187,6 +208,15 @@ export default function ProChart({
   const display = useMemo(() => applyLivePrice(candles, live?.ltp, live?.timestamp ?? live?.fetched_at, timeframe), [candles, live, timeframe]);
   const times = useMemo(() => display.map((c) => toTime(c.timestamp)), [display]);
   const timeIndex = useMemo(() => { const m = new Map<number, number>(); times.forEach((t, i) => m.set(t, i)); return m; }, [times]);
+  // CH5-b: what the price series shows for the chart type. Renko / range use the bars as received (`candles`), closed
+  // ones only; the candle types show the live-priced forming bar like before.
+  const view = useMemo(() => {
+    const live = display.map((c, i) => ({ time: times[i] as number, open: c.open, high: c.high, low: c.low, close: c.close }));
+    const source = chartType === "renko" || chartType === "range"
+      ? candles.map((c) => ({ time: toTime(c.timestamp) as number, open: c.open, high: c.high, low: c.low, close: c.close })) : live;
+    return chartView(chartType, live, source, { periodSec: periodSeconds(timeframe), nowSec: Date.now() / 1000, up: COLORS.up, down: COLORS.down });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [display, times, candles, chartType, timeframe, themeTick]);
 
   const ind = useMemo(() => {
     const cl = closes(display);
@@ -218,6 +248,7 @@ export default function ProChart({
   const charts = useRef<{ main?: IChartApi; vol?: IChartApi; rsi?: IChartApi; adx?: IChartApi }>({});
   const series = useRef<Record<string, ISeriesApi<"Candlestick" | "Line" | "Histogram">>>({});
   const markersPlugin = useRef<ISeriesMarkersPluginApi<Time> | null>(null);   // CH2: v5 markers are a series plugin
+  const breaksRef = useRef<SessionBreaksPrimitive | null>(null);              // CH5-b: session breaks (venueAxis)
   const priceLineRefs = useRef<IPriceLine[]>([]);
   const dataKey = useRef<string>("");
   const lastShape = useRef<{ len: number; lastTime: number }>({ len: 0, lastTime: 0 });
@@ -248,7 +279,7 @@ export default function ProChart({
     const made: IChartApi[] = [];
     const mk = (el: HTMLDivElement | null, h: number, showTime: boolean, attribution = false) => {
       if (!el) return undefined;
-      const c = createChart(el, baseOptions(h, showTime, attribution));
+      const c = createChart(el, baseOptions(h, showTime, attribution, venueAxis ? venueZone(exchange) : null));
       made.push(c);
       return c;
     };
@@ -279,6 +310,14 @@ export default function ProChart({
     }
     series.current = s;
     markersPlugin.current = createSeriesMarkers(s.candles as ISeriesApi<"Candlestick">, []);
+    // CH5-b: line / area chart types draw the closes on their own series (empty otherwise); the candle series stays (made
+    // transparent) because drawings, layers and markers are anchored to it.
+    s.typeLine = mainChart.addSeries(LineSeries, { color: COLORS.emaFast, lineWidth: 2, priceLineVisible: true, lastValueVisible: true });
+    s.typeArea = mainChart.addSeries(AreaSeries, { lineColor: COLORS.emaFast, topColor: "rgba(56,189,248,0.35)", bottomColor: "rgba(56,189,248,0.02)", lineWidth: 2 }) as never;
+    if (venueAxis) {
+      breaksRef.current = new SessionBreaksPrimitive([]);
+      (s.candles as ISeriesApi<"Candlestick">).attachPrimitive(breaksRef.current);
+    }
     dataKey.current = "";
     // CH1: the same chart behind the ChartEngine interface - ProChart keeps drawing everything it drew before.
     const engine = new LightweightEngine(mainChart, s.candles as ISeriesApi<"Candlestick">,
@@ -335,19 +374,29 @@ export default function ProChart({
       engine.dispose();
       onEngineRef.current?.(null);
       for (const c of all) c.remove();
-      charts.current = {}; series.current = {}; priceLineRefs.current = []; markersPlugin.current = null;
+      charts.current = {}; series.current = {}; priceLineRefs.current = []; markersPlugin.current = null; breaksRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartHeight, compact, showVolume, showRsi, showAdx, settings.rsiHigh, settings.rsiMid, settings.rsiLow, settings.adxMin]);
+  }, [chartHeight, compact, showVolume, showRsi, showAdx, settings.rsiHigh, settings.rsiMid, settings.rsiLow, settings.adxMin, venueAxis, exchange]);
 
   // Feed data. A fresh symbol/length reset calls setData + fitContent; a live move updates the last bar only.
   useEffect(() => {
     const s = series.current; const main = charts.current.main;
     if (!s.candles || !main) return;
     if (display.length === 0) { dataKey.current = ""; lastShape.current = { len: 0, lastTime: 0 }; return; }
-    const chartKey = `${symbol ?? ""}|${timeframe ?? ""}`;
+    const chartKey = `${symbol ?? ""}|${timeframe ?? ""}|${chartType}`;
     const key = `${display[0].timestamp}|${chartKey}`;
-    const candleData = display.map((c, i) => ({ time: times[i], open: c.open, high: c.high, low: c.low, close: c.close }));
+    // CH5-b: the chart type's bars (the plain candles, Heikin Ashi, hollow colours, or Renko / range bricks).
+    const candleData = view.bars.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
+    const rowTimes = view.synthetic ? candleData.map((b) => b.time) : times;
+    const transparent = "rgba(0,0,0,0)";
+    s.candles.applyOptions(view.line
+      ? { upColor: transparent, downColor: transparent, wickUpColor: transparent, wickDownColor: transparent, borderVisible: false }
+      : { upColor: COLORS.up, downColor: COLORS.down, wickUpColor: COLORS.up, wickDownColor: COLORS.down, borderVisible: chartType === "hollow" });
+    const closeLine = view.line ? candleData.map((b) => ({ time: b.time, value: b.close })) : [];
+    s.typeLine?.setData(chartType === "line" ? closeLine : []);
+    s.typeArea?.setData(chartType === "area" ? closeLine : []);
+    breaksRef.current?.setTimes(sessionBreaks(rowTimes, exchange, periodSeconds(timeframe)));
     // Incremental only when this is the same series grown by at most one bar (a live tick moved
     // or opened the forming candle); anything else is a new dataset. Lightweight Charts refuses an
     // `update` older than the last bar, so bars are applied oldest first and a refusal falls back
@@ -355,7 +404,7 @@ export default function ProChart({
     const prev = lastShape.current;
     const grown = display.length - prev.len;
     const sameSeries = key === dataKey.current && (grown === 0 || grown === 1) && prev.len > 0 && times[prev.len - 1] === prev.lastTime;
-    let incremental = sameSeries;
+    let incremental = sameSeries && !view.synthetic;            // bricks are rebuilt, never updated in place
     if (incremental) {
       try {
         if (grown === 1) s.candles.update(candleData[candleData.length - 2]);
@@ -373,17 +422,17 @@ export default function ProChart({
       s.candles.setData(candleData);
       dataKey.current = key;
     }
-    prevFirstTime.current = times[0];
+    prevFirstTime.current = rowTimes[0] ?? 0;
     lastShape.current = { len: display.length, lastTime: times[times.length - 1] };
     const setLine = (name: string, data: Series | null, color?: (i: number) => string | undefined) => {
       const ser = s[name]; if (!ser) return;
-      ser.setData(data ? lineData(times, data, color) : []);
+      ser.setData(data && !view.synthetic ? lineData(times, data, color) : []);   // no indicators on bricks
     };
     setLine("emaFast", ind.emaFast); setLine("emaSlow", ind.emaSlow); setLine("sma", ind.sma);
     setLine("bbUpper", ind.bb?.upper ?? null); setLine("bbLower", ind.bb?.lower ?? null); setLine("bbMid", ind.bb?.mid ?? null);
     setLine("vwap", ind.vwap);
     setLine("st", ind.st?.line ?? null, (i) => (ind.st?.direction[i] === -1 ? COLORS.stDown : COLORS.stUp));
-    if (s.vol) s.vol.setData(display.map((c, i) => ({ time: times[i], value: c.volume || 0, color: c.close >= c.open ? COLORS.volUp : COLORS.volDown })));
+    if (s.vol) s.vol.setData(view.synthetic ? [] : display.map((c, i) => ({ time: times[i], value: c.volume || 0, color: c.close >= c.open ? COLORS.volUp : COLORS.volDown })));
     if (s.rsi) setLine("rsi", ind.rsi);
     if (s.adx) { setLine("adx", ind.adx?.adx ?? null); setLine("plusDi", ind.adx?.plusDi ?? null); setLine("minusDi", ind.adx?.minusDi ?? null); }
 
@@ -401,9 +450,9 @@ export default function ProChart({
     // Markers snap to the last bar at or before their time so they never vanish on a coarser timeframe.
     const snapped = markers.map((m) => {
       const t = toTime(m.timestamp);
-      let lo = 0, hi = times.length - 1, best = -1;
-      while (lo <= hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
-      return best < 0 ? null : { time: times[best], position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
+      let lo = 0, hi = rowTimes.length - 1, best = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (rowTimes[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
+      return best < 0 ? null : { time: rowTimes[best], position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
     }).filter((m): m is NonNullable<typeof m> => m !== null).sort((a, b) => a.time - b.time);
     markersPlugin.current?.setMarkers(snapped);
     if (keepRange) {
@@ -411,7 +460,7 @@ export default function ProChart({
       const range = { from: keepRange.from + added, to: keepRange.to + added };
       for (const c of Object.values(charts.current)) c?.timeScale().setVisibleLogicalRange(range);
     } else if (!incremental) for (const c of Object.values(charts.current)) c?.timeScale().fitContent();
-  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe, themeTick]);
+  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe, themeTick, view, chartType, exchange]);
 
   const idx = hover != null ? timeIndex.get(hover) ?? null : display.length - 1;
   const bar = idx != null ? display[idx] : undefined;
@@ -449,6 +498,12 @@ export default function ProChart({
       {/* Header: symbol, last price, change, live badge, timeframe pills, indicator toggles */}
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
         {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
+        {chartType !== "candles" && (
+          <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted"
+                title={view.synthetic ? "Built from closed bars only: a brick never changes once shown. No indicators or volume on bricks." : undefined}>
+            {CHART_TYPE_LABELS[chartType]}{view.size != null ? ` · ${view.synthetic && chartType === "range" ? "range" : "box"} ${view.size}` : ""}
+          </span>
+        )}
         {lastClose != null && (
           <span className={`font-tabular font-bold ${compact ? "text-sm" : "text-base"} ${change != null && change < 0 ? "text-down" : change != null && change > 0 ? "text-up" : "text-fg"}`}>
             {fmt(lastClose)}{change != null && <span className="ml-1.5 text-xs font-semibold">{change >= 0 ? "+" : ""}{fmt(change)} ({changePct?.toFixed(2)}%)</span>}

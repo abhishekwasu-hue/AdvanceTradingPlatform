@@ -10,6 +10,7 @@ import { StudiesPanel } from "../charting/StudiesPanel";
 import { ReplayBar } from "../charting/ReplayBar";
 import { layerTf } from "../charting/priceAction";
 import { REPLAY_OFF, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
+import { api } from "../api/client";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -44,6 +45,14 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const lastClose = shown.length ? shown[shown.length - 1].close : null;
   const candleTimes = useMemo(() => shown.map((c) => Math.floor(Date.parse(c.timestamp) / 1000)), [shown]);
   const candleCloses = useMemo(() => shown.map((c) => c.close), [shown]);
+  // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
+  const [workspaceOn, setWorkspaceOn] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    api.myFeatures().then((f) => { if (live) setWorkspaceOn(f.chart_workspace === true); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [user]);
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -57,6 +66,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         <SymbolTierBadge symbol={symbol} exchange={exchange} live={live.ltp?.data_tier} />
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
+        {workspaceOn && (
+          <a href={`${window.location.pathname}?${new URLSearchParams({ workspace: "1", chart: symbol, tf: timeframe, exchange }).toString()}`}
+             className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Open in workspace</a>
+        )}
         {error && <span className="text-down">{error}</span>}
       </div>
       <ProChart candles={shown} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}

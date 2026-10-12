@@ -55,6 +55,9 @@ export interface ChartEngine {
   setStudy?(id: string, line: StudyLine | null): void;
   serialize(): EngineLayout;
   deserialize(layout: EngineLayout): void;
+  /** CH5: shows the crosshair at this time (its own bar at or before it), or hides it with null - for the workspace's
+   * crosshair link. Optional: an engine without it is simply not followed. */
+  setCrosshair?(time: number | null): void;
   on(listener: (event: EngineEvent) => void): () => void;
   dispose(): void;
 }

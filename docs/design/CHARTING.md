@@ -388,6 +388,84 @@ chart's pointer events and a toolbar to it.
   engine's study lines.
 - **No new ScreenQL function**, so no new Z10-a causal case. Open questions CH6-1 .. CH6-3.
 
+## CH5-a (built): the multi-chart workspace - layouts, link groups, saved layouts, shortcuts
+
+Flag **`chart_workspace`** (off by default, in `DEFAULT_OFF_FLAGS`): while it is off `/api/charts/layouts` answers 503
+and the workspace page says it is not enabled. Charts only; nothing here places, changes or proposes an order.
+
+- **Where.** Its own browser tab, like the single chart: `/?workspace=1` (optionally `&chart=SYMBOL&tf=5min&exchange=NSE`
+  to start from one chart). The single-chart window shows "Open in workspace" while the flag is on.
+- **Layout `layout/1`** (`frontend/src/charting/workspace.ts`, mirrored by `backend/app/charts/layouts.py`):
+  - `grid` 1, 2, 4, 6 or 8 (1x1, 2x1, 2x2, 3x2, 4x2) and one cell per chart: symbol, exchange, timeframe, chart type
+    (stored now, drawn in CH5-b) and an optional link group A-D;
+  - `groups`: per group, which links are on - `symbol`, `interval`, `crosshair` (a new group links the symbol and the
+    crosshair; the interval only when asked, so one symbol on 5m and 1h is one click);
+  - `active`: the chart the keyboard and the drawing tools work on.
+- **Link groups.** A symbol change travels to the charts its group links by symbol, a timeframe change to those linked
+  by interval. A chart joining a group takes the group's linked symbol / interval from a chart already in it, and
+  switching a link on aligns the group to its first chart, so a group never shows two symbols it claims to share. The
+  chart type is per chart, never linked. All of it is pure functions over the layout (tested without a browser).
+- **Crosshair link** (`charting/crosshairLink.ts`). Each chart's engine reports its crosshair time; the link moves the
+  crosshair of the charts its group links by crosshair to the same time. `ChartEngine.setCrosshair(time)` is new
+  (optional on the interface); the lightweight engine puts it on its own bar at or before that time, at that bar's
+  close, so a 5m and a 1h chart line up. The echo of a crosshair the link set is recognised and dropped, synchronous or
+  not, so charts never ping-pong.
+- **Charts.** Each cell is the same ProChart as the single-chart window (own candles, live price, older history on
+  scroll back). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
+  cell's button) shows the active chart at full size.
+- **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
+  tenant, a unique name per user, at most 50, versioned (a stale save gets 409 with the current layout and the page
+  says so; another tab never overwrites). `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the
+  delete names its version), classified in `tests/tenancy_route_table.py` (list "member", writes "self"). The unsaved
+  layout is kept in the browser (`localStorage`), and the last layout used is opened again.
+- **Shortcuts** (`charting/shortcuts.ts`, all with Alt so none collides with the drawing tools or the browser's
+  editing keys; digits by physical key, since Option+1 types "¡" on a Mac; nothing fires while typing in a field):
+  Alt+1/2/4/6/8 grid, Alt+→/← next/previous chart, Alt+↑/↓ timeframe, Alt+G link group, Alt+T chart type,
+  Alt+Enter full size, Alt+K symbol box, Alt+S save, "?" the list.
+- **Tests.** Backend `tests/test_ch5_chart_layouts.py` (4): schema per grid and refusals, flag off -> 503 and the
+  tenant allow-list, per user (another organisation and a teammate get 404), versions and 409, unique names, the cap.
+  Frontend `src/charting/workspace.test.ts` (11): grid shapes and the server's rules, shrinking and growing, symbol /
+  interval / crosshair links and alignment, active chart and timeframe steps, shortcuts, the crosshair link (echoes
+  dropped synchronously and asynchronously, unregister), `setCrosshair` bar placement, the API client's 409 / 404.
+
+## CH5-b (built): chart types, session breaks, the 24x7 axis
+
+Same flag (`chart_workspace`): the workspace's charts get a chart-type picker (Alt+T cycles it) and the venue axis.
+ProChart takes two new props, `chartType` (default `candles`) and `venueAxis` (default off), so every chart outside the
+workspace looks exactly as before.
+
+- **Pure functions** (`frontend/src/charting/chartTypes.ts`, no chart library):
+  - Heikin Ashi: close (O+H+L+C)/4, open the mean of the previous HA open and close (first: (O+C)/2), high / low
+    including them; one bar per source bar at the same time, bar i from bars 0..i only.
+  - Renko (close-based): a brick per full box beyond the last brick's top (up) or bottom (down); a reversal needs a box
+    beyond the last brick's other side, i.e. two boxes from its close. The first brick is measured from the first close.
+  - Range bars: each spans exactly the range from high to low; the next opens where the last closed. Inside a source
+    bar the path is assumed open -> low -> high -> close (up bar) or open -> high -> low -> close (down bar).
+  - Several bricks completed inside one bar get that bar's time, then +1 s each (the chart needs rising times).
+  - **No forming bar, no repainting.** Renko and range are built from `closedBars` (a bar counts once its period has
+    ended) of the bars as received - never the live-priced forming candle - and only completed bricks are returned.
+    The default box / range is a round 0.5 % of the first bar's close (1 / 2 / 2.5 / 5 x 10^k), fixed by the start of
+    the data, so appending bars never changes it. Together: the bricks of any prefix of the bars are a prefix of the
+    bricks of all of them.
+  - Hollow candles: hollow when close >= open, filled otherwise; green or red by the close against the previous close.
+  - Line / area: the closes, on their own series; the candle series stays (transparent) because drawings, layers and
+    markers are anchored to it.
+- **On the chart.** Heikin Ashi and hollow candles keep the source times, so indicators, volume, drawings and the live
+  forming bar work as on candles. Renko and range bricks have their own times: they carry no indicators or volume, are
+  rebuilt (not updated in place), and the header says "Renko · box 20". The legend shows the source bar's OHLC.
+- **Session breaks** (`sessionBreaks` + `sessionBreaksPrimitive.ts`): a dotted vertical line at the first bar of each
+  session, where the calendar date changes in the venue's zone - IST for NSE / BSE / MCX (MCX's 23:30 close stays on
+  its day), UTC for 24x7 crypto venues (midnight UTC, weekends included). None on daily bars.
+- **24x7 axis**: tick labels and the crosshair time in the venue's zone (`formatTick`: the date on day / month / year
+  marks, the time otherwise; "UTC" after crypto times), instead of IST times on every tick.
+- **Tests** (`src/charting/chartTypes.test.ts`, 12): hand-worked Heikin Ashi, Renko (multi-brick bar, non-reversal,
+  reversal) and range bars (exact span, open at the last close, the OHLC path); truncation invariance over all 400
+  prefixes of a seeded walk for Renko, range and Heikin Ashi; a forming bar (even a spike) never reaches the bricks;
+  hollow colours; the box size; goldens for Heikin Ashi, Renko and range over the walk
+  (`src/charting/__fixtures__/chart_types_golden.json`, one line; `UPDATE_GOLDEN=1` regenerates after a deliberate
+  change); session breaks for NSE, MCX, crypto and daily bars; tick labels per zone; the break lines.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

@@ -16,7 +16,9 @@ from tests.test_live_execution import _signal
 from tests.test_phase_r_structures import _execute as _execute_structure, _resolve
 from tests.test_trading_worker import _tenant, _trades
 
-IST_TODAY = datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+def _ist_today() -> str:
+    """Read at call time, not import time: a run that crosses IST midnight must not use yesterday's date."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
 
 
 def _run(coro):
@@ -102,14 +104,14 @@ def test_drawdown_ladder_halves_then_pauses_per_mode():
 def test_event_blackout_blocks_and_size_cut_scales():
     t = _tenant("v1-events@example.com")
     created = client.post("/api/risk-guardian/events", headers=t["headers"], json={
-        "event_date": IST_TODAY, "underlying": "RELIANCE", "kind": "RESULTS", "action": "BLOCK", "description": "Q2 results"})
+        "event_date": _ist_today(), "underlying": "RELIANCE", "kind": "RESULTS", "action": "BLOCK", "description": "Q2 results"})
     assert created.status_code == 201, created.text
     result, order, _ = _execute(t, key="v1-ev-1")
     assert not result.executed and any("Event blackout: RESULTS - Q2 results today" in r and "rule M8" in r for r in result.reasons)
     assert client.delete(f"/api/risk-guardian/events/{created.json()['id']}", headers=t["headers"]).status_code == 204
 
     cut = client.post("/api/risk-guardian/events", headers=t["headers"], json={
-        "event_date": IST_TODAY, "underlying": "", "kind": "RBI_POLICY", "action": "SIZE_CUT", "size_cut_pct": 50, "description": "policy day"})
+        "event_date": _ist_today(), "underlying": "", "kind": "RBI_POLICY", "action": "SIZE_CUT", "size_cut_pct": 50, "description": "policy day"})
     assert cut.status_code == 201
     result, _, trade = _execute(t, key="v1-ev-2")
     assert result.executed, result.reasons
@@ -117,17 +119,17 @@ def test_event_blackout_blocks_and_size_cut_scales():
     # A window that has passed does not apply; an INDEX-bucket event leaves an equity alone.
     client.delete(f"/api/risk-guardian/events/{cut.json()['id']}", headers=t["headers"])
     client.post("/api/risk-guardian/events", headers=t["headers"], json={
-        "event_date": IST_TODAY, "start_time": "00:00", "end_time": "00:01", "kind": "BUDGET", "action": "BLOCK"})
+        "event_date": _ist_today(), "start_time": "00:00", "end_time": "00:01", "kind": "BUDGET", "action": "BLOCK"})
     client.post("/api/risk-guardian/events", headers=t["headers"], json={
-        "event_date": IST_TODAY, "underlying": "INDEX", "kind": "EXPIRY", "action": "BLOCK"})
+        "event_date": _ist_today(), "underlying": "INDEX", "kind": "EXPIRY", "action": "BLOCK"})
     result, _, trade = _execute(t, key="v1-ev-3")
     assert result.executed and trade.quantity == 500, result.reasons
     listed = client.get("/api/risk-guardian/events", headers=t["headers"]).json()
     assert len(listed) == 2 and all(not e["global"] for e in listed)
     # Only the platform operator may add a global event.
-    forbidden = client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": IST_TODAY, "kind": "BUDGET", "action": "BLOCK", "global_event": True})
+    forbidden = client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": _ist_today(), "kind": "BUDGET", "action": "BLOCK", "global_event": True})
     assert forbidden.status_code == 403
-    assert client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": IST_TODAY, "kind": "NONSENSE"}).status_code == 400
+    assert client.post("/api/risk-guardian/events", headers=t["headers"], json={"event_date": _ist_today(), "kind": "NONSENSE"}).status_code == 400
 
 
 def test_portfolio_risk_cap_counts_open_stops_and_buckets():

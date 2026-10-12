@@ -25,7 +25,7 @@ timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and 
 """
 import logging
 from datetime import date, datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
+from app.brokers.base import BrokerInterface
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
@@ -181,7 +182,10 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
         lookback = cap
     base_interval = "day" if daily else "1min"
-    service = MarketDataService(build_adapter(record), lookback_days=lookback, cache_namespace=namespace)
+    # Every broker call of this request takes a token from the credential's API budget (api_budget, shared with /ltp by
+    # every API worker); a cached answer costs none. A symbol that gets no token says so; the others still load.
+    budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
+    service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
 
@@ -213,13 +217,20 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
+        except api_budget.BudgetUsed:
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True}
+            continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
             logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",
                     metadata={"broker": record.broker_name, "timeframe": body.timeframe, "exchange": exchange}, commit=True)
-    if not fetched:
+    budget_used = sorted(s for s, v in out.items() if v.get("budget_used"))
+    if budget_used:
+        warnings.append(f"budget used: {len(budget_used)} symbol(s) not loaded this time to keep the broker's rate limit for the "
+                        f"trading worker ({', '.join(budget_used[:10])}{' ...' if len(budget_used) > 10 else ''}) - they load on the next refresh")
+    if not fetched and not budget_used:
         warnings.append("every symbol failed - check the symbols are the broker's trading symbols and the session token is valid")
     result = {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
               "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),

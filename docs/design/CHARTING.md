@@ -485,10 +485,14 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   call (a short Redis lock) while the others wait for its result - every user and tab on that credential shares it.
   That one call first takes a token from the credential's API budget (`app/market_data/api_budget.py`): fixed windows
   in Redis keyed by the credential row (`record.id`, so BYOK members never share one), counted by every API worker
-  and replica together, checked and counted in one script - per second and per minute at half the worker's
-  conservative limits, and for Upstox at most 500 per 30 minutes (of its 2,000). No token within 2 s: 429
-  (Retry-After 5) and the chart keeps its last price - never a queue that grows while the worker's exits need the same
-  API key. Without Redis (dev) or with Redis unreachable, in-process windows take over. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  and replica together, checked and counted in one script (a refused call counts nowhere) - per second as a burst guard
+  at the worker's conservative rate, per minute at half the worker's limit, and for Upstox at most 500 per 30 minutes
+  (of its 2,000). Only the per-second window is waited for; a full minute or 30 minutes refuses at once. `/ltp` waits
+  at most 2 s, then 429 (Retry-After 5) and the chart keeps its last price - never a queue that grows while the
+  worker's exits need the same API key. `/candles` uses the same budget: every broker call in its symbol loop takes a
+  token (a cached answer costs none), the request waits at most 8 s in all, and a symbol that gets no token comes back
+  with `error: "budget used"` (and a warning) while the others load. Without Redis (dev) or with Redis unreachable,
+  in-process windows take over. CI runs the real script and lock against its redis:7 service (`REDIS_URL`). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and

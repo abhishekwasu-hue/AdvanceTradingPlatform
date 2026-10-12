@@ -26,7 +26,8 @@ costs and what it buys), **Status**.
 | [0019](0019-agent-tools-and-loop.md) | Copilot agent: typed read-only tools, a bounded loop, an answer contract, proposals only | provisional |
 | [0020](0020-ai-evals-and-governance.md) | AI evals in CI and AI governance: golden sets per prompt version, a model registry, a kill switch | provisional |
 | [0013](0013-market-data-lake.md) | Market data lake: TimescaleDB hot tier + Parquet/DuckDB cold tier, one as-of query interface | provisional |
-| 0014, 0015 | reserved: event bus / queue (part E), Trade engine port interface (part G) | - |
+| [0014](0014-execution-intent-queue.md) | Execution core: one intent queue in Postgres, drained by the trading worker, one routing policy; PAPER only, no broker in the core (N1 E1) | provisional |
+| 0015 | reserved: Trade engine port interface (part G) | - |
 | [0016](0016-provider-seams.md) | Provider seams: typed interfaces, registries, capabilities and contract tests for every external capability | provisional |
 | [0017](0017-global-first.md) | Global-first instrument, time, money, cost and rules model; India is the first configuration | provisional |
 | [0018](0018-ibkr-transports.md) | IBKR behind `BrokerInterface` with a transport seam: TWS API via IB Gateway (paper, operator account) now, Web API (OAuth, per tenant) after vendor registration | provisional |

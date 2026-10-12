@@ -38,7 +38,7 @@ Exit codes:
 | `1` | failed (the message says what, and the checkout is back on the release that still runs) |
 | `2` | wrong usage |
 | `3` | refused because of a market session: a migration while NSE is open, or a worker restart while any session (NSE, MCX until 23:30 IST, crypto) is open **and** positions are open |
-| `10` | owner action needed (the message names it: a `.env` key, a deploy key, or a flag in Admin → Controls) |
+| `10` | owner action needed (the message names it: a `.env` key or a deploy key; a flag in Admin → Controls only if someone changed one after install - section 4a) |
 | `20` | `SECRETS_ENCRYPTION_KEY` changed |
 
 Never run `atp.sh` with `bash -x`. Tracing would print the values it reads from `.env`; its normal output never does.
@@ -114,20 +114,45 @@ The script reads these optional settings too, but only to report on them (it nev
 
 Then run `/opt/atp/deploy/atp.sh install`.
 
-## 4a. Phase 0 flags (owner step in Admin → Controls)
+## 4a. Phase 0 flags (nothing to set)
 
-`atp.sh` never turns a feature flag on or off. It reads them with `scripts/flag_posture.py` inside the API container.
-While LIVE can still be entered, `health` and the end of `install` stop with **exit 10** (owner action needed). Once
-you have registered with the email in `SUPER_ADMIN_EMAILS` (section 4; that account is the platform admin and sees
-Admin → Controls once two-factor authentication is on for it - admin pages need a session signed in with the authenticator code):
+There is no flag for you to set. You cannot reach Admin → Controls before the app is deployed, so a Phase 0 install
+starts in the safe state by itself (owner decision of 2026-10-12):
 
-1. Admin → Controls → feature flags → **`live_trading` OFF**, for everyone and with no organisation exceptions. It
-   is on by default because it is a kill flag.
-2. **`phase0_paper_only` ON**, from the release that adds it (Z10-c). It refuses new LIVE entries at the order
-   chokepoint; exits always go through. Releases without it show "not in this release".
-3. Run `/opt/atp/deploy/atp.sh health` again. It should end with `health: OK` (exit 0).
+- The host runs with `ATP_DEPLOYMENT_PHASE=phase0`. `docker-compose.hostinger.yml` and `atp.sh` set it by default, so
+  `.env` needs no line for it.
+- On first boot the API (and the worker) store **`live_trading` OFF** and **`phase0_paper_only` ON**, wherever the
+  stored flags have no entry for them yet. Each write is in the audit log as `phase0_flag_seeded`.
+- They never overwrite a stored entry. A change you make later in Admin → Controls survives every restart and
+  deploy.
+- While `phase0_paper_only` is on:
+  - new LIVE entries are refused at the entry checks and at the broker-order chokepoint;
+  - the worker does not evaluate LIVE deployments;
+  - Admin → Controls refuses to turn `live_trading` on (audited as `feature_flag_refused`).
+- Exits of any existing LIVE position always run (ADR-0004).
+- `/api/system/health/deep` shows why under `checks.live_paths`.
 
-A deploy compares the stored flags before and after and fails if they changed. Nothing in the bundle writes them.
+`atp.sh` itself still never writes a flag. It reads them with `scripts/flag_posture.py` inside the API container:
+
+- `install` and `health` end with `health: OK` (exit 0), with the line
+  `deployment phase: phase0 ... nothing for the owner to set`.
+- They stop with **exit 10** only if someone later turns `live_trading` on, or `phase0_paper_only` off (for
+  example, an owner ending Phase 0).
+- A deploy compares the stored flags before and after and fails if they changed. The one change it accepts is the
+  release's own first-boot seed of an entry that was absent (`live_trading` OFF, `phase0_paper_only` ON).
+
+Leaving Phase 0 is a later owner decision, not an install step:
+
+1. Set `ATP_DEPLOYMENT_PHASE=standard` in `.env`.
+2. Turn `phase0_paper_only` off in Admin → Controls.
+3. Turn `live_trading` on.
+
+`health` then warns "the Phase 0 defaults are not seeded on this host".
+
+Set both flags explicitly in Admin when you leave Phase 0. If the first-boot seed never stored them (for example, the
+stored flags row was unreadable and the seed skipped it), switching the mode puts any absent entry back on the normal
+default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
+resolved to the safe values only because of the mode.
 
 ## 5. DNS and TLS
 
@@ -287,8 +312,8 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
 - **Release:** the running release, and whether the database is ahead of the code.
 - **Encryption key:** the `SECRETS_ENCRYPTION_KEY` fingerprint, and `scripts/check_secrets_key.py` inside the API
   container. That script opens every organisation's data key and prints only counts.
-- **Flags (section 4a):** exit 10 while `live_trading` is on (for anyone) or `phase0_paper_only` is off. The script
-  never changes a flag.
+- **Flags (section 4a):** the deployment phase (`phase0`: the first boot seeded the safe flags, nothing to set), then
+  exit 10 only if `live_trading` is on (for anyone) or `phase0_paper_only` is off. The script never changes a flag.
 - **Settings:** the LIVE switches, R2 and the HB0 settings.
 - **Backups:** the age of the last backup (warning after 26 h), the last off-site sync and the last restore check.
 - **Host:** public ports and disk use.
@@ -358,7 +383,7 @@ entrypoint overridden:
 | You see | Do |
 |---|---|
 | `exit 10 ... fill these in .env` | Fill the named keys (section 4). Only names are printed. |
-| `exit 10 OWNER ACTION NEEDED: turn live_trading OFF / phase0_paper_only ON` | Admin → Controls (section 4a), then `atp.sh health`. |
+| `exit 10 OWNER ACTION NEEDED: turn live_trading OFF / phase0_paper_only ON` | Not expected on a Phase 0 install, which seeds both at first boot. Someone changed a flag afterwards (the audit log says who), or `.env` sets `ATP_DEPLOYMENT_PHASE` to something other than `phase0`. Put the flag back in Admin → Controls (section 4a), then run `atp.sh health`. |
 | `exit 20 SECRETS_ENCRYPTION_KEY ... NOT the key` | Put the previous key back in `.env`. Rotating it is a separate procedure (`scripts/reencrypt_secrets.py`, docs/OPERATIONS.md), never part of a deploy. |
 | `exit 3 migration refused: NSE session open` | Nothing was restarted. Run again after the close. |
 | `exit 3 ... session open and N position(s) open` | Run after every open session has closed (NSE 15:30, MCX 23:30 IST), or close the positions. `ATP_ALLOW_SESSION_RESTART=1` overrides for one run. |
@@ -379,7 +404,8 @@ Logs from scheduled runs are in `/opt/atp/.deploy/logs/`. The release history is
 
 - It never writes, creates or prints `.env` or any secret, and never puts a secret on a command line.
 - It never rotates `SECRETS_ENCRYPTION_KEY`.
-- It never turns a feature flag on or off: not `live_trading`, not `phase0_paper_only`, not any other.
+- It never turns a feature flag on or off: not `live_trading`, not `phase0_paper_only`, not any other. The Phase 0
+  first-boot seed (section 4a) is done by the application in its own deployment mode, never by this script.
 - It never turns on a LIVE switch or a compose profile.
 - It never runs `alembic downgrade`.
 - It never drops a production database: `--restore-db` keeps the old one under a new name, and the scratch copy

@@ -91,10 +91,13 @@ def test_cost_profiles_differ_by_instrument_kind():
     assert 55 < option < 70
     # Futures: 0.02% STT on the sell leg (24600*75 -> 369) dominates.
     assert 480 < future < 580
-    # From 1 Apr 2026 the sell-side STT is 0.15% (options) and 0.05% (futures) - the rates of the trade's own day apply.
+    # From 1 Apr 2026 the sell-side STT is 0.15% (options) and 0.05% (futures) - the rates of the trade's own day apply. Also
+    # from 1 Mar 2026 NSE's transaction charge absorbs the IPFT contribution (NSE/FA/73061): + Rs 49.99 / 9.99 per crore,
+    # plus 18% GST on it.
     later = {"entry_date": date(2026, 4, 1), "exit_date": date(2026, 4, 1)}
-    assert pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **later) - option == pytest.approx(150 * 75 * 0.0005, abs=0.02)
-    assert pb.estimate_round_trip_costs(24500.0, 24600.0, 75, "FUTURE", **later) - future == pytest.approx(24600 * 75 * 0.0003, abs=0.02)
+    exch_option, exch_future = (120 + 150) * 75 * 49.99e-7 * 1.18, (24500 + 24600) * 75 * 9.99e-7 * 1.18
+    assert pb.estimate_round_trip_costs(120.0, 150.0, 75, "OPTION", **later) - option == pytest.approx(150 * 75 * 0.0005 + exch_option, abs=0.02)
+    assert pb.estimate_round_trip_costs(24500.0, 24600.0, 75, "FUTURE", **later) - future == pytest.approx(24600 * 75 * 0.0003 + exch_future, abs=0.02)
 
 
 def test_underlying_exchange_mapping():

@@ -65,5 +65,8 @@ async def resume(user: User = Depends(require_trader), session: AsyncSession = D
 
 @router.get("/ladder")
 async def ladder(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """Z3-b ladder card. N2-1: with `ladder_evidence` on for the organisation, also the discipline criterion from the
+    journal and the user's own figures (information only)."""
     await _enabled(session, user)
-    return await service.ladder(session, user)
+    from app.platform.controls import flag_enabled
+    return await service.ladder(session, user, evidence=await flag_enabled(session, service.EVIDENCE_FLAG, user.tenant_id))

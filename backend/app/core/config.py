@@ -520,6 +520,17 @@ APPROVAL_REQUOTE_MAX_DRIFT_PCT = _bounded_float("APPROVAL_REQUOTE_MAX_DRIFT_PCT"
 APPROVAL_REQUOTE_MAX_DRIFT_TICKS = _bounded_int("APPROVAL_REQUOTE_MAX_DRIFT_TICKS", 0, 0, 100_000)
 APPROVAL_MAX_REQUOTES = _bounded_int("APPROVAL_MAX_REQUOTES", 2, 0, 10)
 
+# N1 E1 (ADR-0014, flag `execution_core`, off by default): the execution core's intent queue. An intent not dispatched
+# within EXECUTION_INTENT_TTL_SECONDS is EXPIRED (a setup is never proposed late); the worker claims at most
+# EXECUTION_CORE_DRAIN_LIMIT per cycle; a claim older than EXECUTION_CORE_CLAIM_STALE_SECONDS (an interrupted worker) is
+# queued again - safe, every route is idempotent on "intent:<id>" - and FAILED after EXECUTION_CORE_MAX_ATTEMPTS claims.
+EXECUTION_INTENT_TTL_SECONDS = _bounded_int("EXECUTION_INTENT_TTL_SECONDS", 300, 30, 24 * 3600)
+EXECUTION_CORE_DRAIN_LIMIT = _bounded_int("EXECUTION_CORE_DRAIN_LIMIT", 50, 1, 1000)
+EXECUTION_CORE_CLAIM_STALE_SECONDS = _bounded_int("EXECUTION_CORE_CLAIM_STALE_SECONDS", 120, 30, 3600)
+EXECUTION_CORE_MAX_ATTEMPTS = _bounded_int("EXECUTION_CORE_MAX_ATTEMPTS", 3, 1, 10)
+# The drain stops claiming new intents once it has run this long in one cycle (the rest wait for the next cycle).
+EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 1, 300)
+
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER
 # stage's criteria from the user's own PAPER trades: at least PAPER_LADDER_MIN_SESSIONS sessions with a PAPER trade, at
@@ -531,6 +542,16 @@ PAPER_MAX_CAPITAL = 100_000_000.0
 PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 1000)
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)
+# N2-1 (P1 §1.4 / §1.5, flag `ladder_evidence`, docs/design/N2_P1FGH.md): the ladder's discipline criterion is the mean
+# Z6 weekly score of the last PAPER_LADDER_DISCIPLINE_WEEKS completed IST weeks with a PAPER trade (looking back at most
+# PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS weeks), met at PAPER_LADDER_MIN_DISCIPLINE or more. The "your figures" block
+# needs PAPER_EVIDENCE_MIN_TRADES closed trades; its risk-of-ruin bound is for a fall of PAPER_EVIDENCE_RUIN_PCT % below
+# the starting capital.
+PAPER_LADDER_MIN_DISCIPLINE = _bounded_int("PAPER_LADDER_MIN_DISCIPLINE", 70, 0, 100)
+PAPER_LADDER_DISCIPLINE_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_WEEKS", 4, 1, 12)
+PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS", 12, 1, 52)
+PAPER_EVIDENCE_MIN_TRADES = _bounded_int("PAPER_EVIDENCE_MIN_TRADES", 20, 2, 10_000)
+PAPER_EVIDENCE_RUIN_PCT = _bounded_float("PAPER_EVIDENCE_RUIN_PCT", 50.0, 1.0, 100.0)
 
 # Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
 # price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep

@@ -155,10 +155,23 @@ default to PAPER, and the ladder's only open stage is PAPER.
 | Sessions with a PAPER trade, at least | `PAPER_LADDER_MIN_SESSIONS` | 20 |
 | Closed PAPER trades, at least | `PAPER_LADDER_MIN_TRADES` | 30 |
 | Largest drawdown, % of peak equity, at most | `PAPER_LADDER_MAX_DRAWDOWN_PCT` | 10 |
-| Discipline score | - | not measured until P1-e |
+| Discipline score | - | not measured until P1-e; with `ladder_evidence` (N2-1), see below |
 
 The card shows each value against its threshold and the next stage, "LIVE (approval-only) · Not available in Phase 0".
 It states facts only: no advice wording, which a test checks, and no switch.
+
+**N2-1 ladder evidence** (flag `ladder_evidence`, off by default; `docs/design/N2_P1FGH.md`). With the flag on, the
+same `GET /api/paper/ladder` also carries:
+
+- the **discipline score** criterion: the mean Z6 weekly score of the last `PAPER_LADDER_DISCIPLINE_WEEKS` (4) completed
+  IST weeks with a PAPER trade (look-back `PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS`, 12), met at
+  `PAPER_LADDER_MIN_DISCIPLINE` (70) or more. The weekly scores are the journal's own and are listed on the card. The
+  criterion is not measured while `discipline_engine` is off.
+- an `evidence` block from the closed PAPER trades: expectancy, profit factor, payoff ratio, a Kelly reference and a
+  risk-of-ruin upper bound (a fall of `PAPER_EVIDENCE_RUIN_PCT`, 50 %, below the starting capital). The figures appear
+  once there are `PAPER_EVIDENCE_MIN_TRADES` (20) closed trades. Information only: nothing feeds sizing.
+
+With the flag off, the answer is the Z3-b one, unchanged (tested).
 
 **Telegram** (the existing bot, with the existing whitelist and approver mapping; `paper_account` flag):
 

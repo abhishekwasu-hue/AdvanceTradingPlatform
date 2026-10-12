@@ -74,7 +74,7 @@ jobs:
   backend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55          # the full suite reached ~30 min on 2026-10-12 and runs were cancelled at the old 30-min cap
     services:
       postgres:
         image: postgres:16-alpine
@@ -124,7 +124,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rf --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
           exit $status
 
@@ -184,7 +184,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf -m lookahead tests/test_z10a_no_lookahead.py 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rf -m lookahead tests/test_z10a_no_lookahead.py tests/test_n1_l2_daily_trend.py 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=lookahead::/' || true
           exit $status
 

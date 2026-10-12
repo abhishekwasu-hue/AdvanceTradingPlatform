@@ -1048,7 +1048,7 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
 ### U6 BK2 review follow-up (#181)
 - **Exchange clock (M1).** `SymbolData.exchange` carries the venue from the screener fetch and the alert engine into the
   runtime, so ScreenQL's session functions use the same clock as the breakout run (an MCX test compares the two).
-  Currency derivatives get their own 09:00-17:00 clock in the screener only; the platform calendar and the trading worker are unchanged (BK2-8). Alert rules on MCX / CDS that use a session function
+  Currency derivatives get their own 09:00-17:00 clock (the platform calendar's `CDS` family, which the trading worker uses too since BK2-8). Alert rules on MCX / CDS that use a session function
   are refused, because the bar-close engine still expects NSE bars (BK2-5).
 - **Daily context on the saved / alert path (M2).** This comes from BK1's verification fix: the fetch is sized for the
   trend, the daily history is attached, and an unknown context blocks `not_against`. The 15m templates fetch the daily

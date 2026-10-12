@@ -358,6 +358,7 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
             max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
             journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
+            exchange=exchange,                    # BK2-8: the position follows its venue's session (CDS, MCX)
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
@@ -557,7 +558,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
     Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.trading.position_monitor import close_group, close_position, exchange_for_trade
+    from app.trading.position_monitor import close_group, close_position, venue_for
     if trade.mode != "PAPER":
         raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     lookup = await price_lookup_for_user(session, user)
@@ -565,7 +566,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
         if lookup is not None:
             try:
-                return float(await lookup(leg.symbol, exchange_for_trade(leg))), "live price"
+                return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
             except Exception as exc:  # noqa: BLE001 - fall back below
                 logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
         if leg.mark_price and recent_mark(leg):

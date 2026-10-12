@@ -30,7 +30,7 @@ from app.notifications.service import notify
 from app.reconciliation.service import broker_uncertain_reason
 from app.core import config
 from app.trading import stop_state
-from app.trading.position_monitor import _find_order, close_position, exchange_for_trade
+from app.trading.position_monitor import _find_order, close_position, venue_for
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ async def exit_unprotected(session: AsyncSession, trade: TradeRecord, broker: Br
     if broker_uncertain or (tenant is not None and broker_uncertain_reason(tenant)):
         logger.warning("No-stop exit skipped for trade %s: tenant is broker-uncertain (%s)", trade.id, why)
         return None
-    exchange = exchange_for_trade(trade)
+    exchange = await venue_for(session, trade)             # BK2-8: a legacy CDS row checks the CDS clock and quote
     market = await market_session_status(session, exchange=exchange)
     if not market.is_open:
         logger.warning("No-stop exit skipped for trade %s: %s", trade.id, market.reason)
@@ -138,7 +138,7 @@ async def _give_up_rearming(session: AsyncSession, tenant: Tenant, trade: TradeR
 
 async def verify_protective_stops(
     session: AsyncSession, tenant: Tenant, broker: BrokerInterface, *, user_id: Optional[int] = None, source: str = "worker",
-    product: str = "MIS", account_id: Optional[int] = None, include_unassigned: bool = True,
+    product: str = "MIS", account_id: Optional[int] = None, include_unassigned: bool = True, families: Optional[set] = None,
 ) -> Dict[str, int]:
     """Re-arms missing/cancelled/rejected stops for the tenant's open LIVE single-leg trades.
     Returns counts: checked, standing, rearmed, filled_pending, failed (+ closed with LIVE_EXIT_IF_NO_STOP).
@@ -146,7 +146,11 @@ async def verify_protective_stops(
     Phase T: `account_id` scopes the check to the trades that sit in that broker account (the
     `broker` must be that account's session); `include_unassigned` also takes trades recorded
     before accounts were tracked. A stop must never be re-armed in a different account from
-    the position it protects."""
+    the position it protects.
+
+    `families` (BK2-8 review LOW-3; None = every trade): only positions whose own venue's session is open right now - a
+    stop is not re-armed into a closed market because another venue (MCX in the evening, CDS after 15:30) is trading.
+    Exits are not decided here: the monitor and the square-off judge every open position on its own clock."""
     counts = {"checked": 0, "standing": 0, "rearmed": 0, "filled_pending": 0, "failed": 0}
     if config.LIVE_EXIT_IF_NO_STOP:
         counts["closed"] = 0
@@ -160,6 +164,11 @@ async def verify_protective_stops(
             scope = or_(scope, TradeRecord.broker_account_id.is_(None))
         query = query.where(scope)
     trades: List[TradeRecord] = list(await session.scalars(query))
+    if trades and families is not None:
+        from app.market_data.calendar import session_family
+        from app.trading.position_monitor import trade_venues
+        venues = await trade_venues(session, trades)
+        trades = [t for t in trades if session_family(venues[t.id]) in families]
     if not trades:
         return counts
     try:
@@ -198,9 +207,10 @@ async def verify_protective_stops(
         tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=order_algo_id(tenant.algo_id, broker.name),
                               max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
         previous = trade.sl_order_id
-        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=exchange_for_trade(trade))   # on the tick, away from the market
+        venue = await venue_for(session, trade)
+        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=venue)   # on the tick, away from the market
         try:
-            response = await broker.place_stop_loss_order(trade.symbol, exchange_for_trade(trade), side, trade.quantity,
+            response = await broker.place_stop_loss_order(trade.symbol, venue, side, trade.quantity,
                                                           trigger_price=trigger,
                                                           product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
                                                           tag=tag)

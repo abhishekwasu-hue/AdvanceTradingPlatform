@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from urllib.parse import parse_qsl, quote
 import html
 import logging
 import os
@@ -279,8 +280,12 @@ def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: s
     text = plain[: config.max_length]
     values = {"to": to_number, "text": text, "title": notification.title[:120], "severity": notification.severity,
               "event_type": notification.event_type}
-    if "json" in config.content_type:
+    if "json" in (config.content_type or "").lower():
         values = {k: json.dumps(v)[1:-1] for k, v in values.items()}  # escape for insertion inside JSON strings
+    else:
+        # Form bodies, query strings and anything else: every substituted value is percent-encoded, so an alert title
+        # such as "x&To=+1555...&Body=spam" stays ONE value and cannot add or override a parameter.
+        values = {k: quote(str(v), safe="") for k, v in values.items()}
     return _fill_template(config.body_template, values), None
 
 
@@ -299,7 +304,8 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
                 headers["Idempotency-Key"] = hashlib.sha256(f"{idempotency_key}|{number}".encode()).hexdigest()  # one per recipient
             try:
                 if config.method == "GET":
-                    response = await client.get(str(config.url), params=dict(p.split("=", 1) for p in body.split("&") if "=" in p), headers=headers)
+                    # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
+                    response = await client.get(str(config.url), params=parse_qsl(body, keep_blank_values=True), headers=headers)
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)
                 if response.status_code >= 300:

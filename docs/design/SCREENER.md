@@ -1274,6 +1274,19 @@ accumulation `HoldingChange("fii", 1) > 0.5`; results this week `DaysToEvent("re
 - **Not offered** (no data yet, S8-3): mutual funds separately, SAST / insider, bulk / block deals, index-inclusion
   candidates. No migration, no new route. Information only: nothing is placed.
 
+## N3 S8c (built): one engine per venue, the field-availability matrix (flag `screener_venues`, off)
+
+Spec §2.4 category I. `app/screener/venues.py` lists each venue (NSE, BSE, NFO, BFO, MCX, CDS; crypto listed, not
+runnable) with its bar fields, the data families (`Spec.needs`) its data carries and its session clock (S8-7).
+- With the flag on, `/run` and `/validate` (given `exchange`) refuse a field or function the venue's data does not
+  carry, naming the venues that have it ("oi: NSE cash equities data has no oi (it is on NFO, BFO, MCX, CDS)").
+  Off, nothing changes.
+- `GET /api/screener/venues` (member, tenancy table) gives the matrix: per venue its fields, data families, the
+  registry functions it can run and those it cannot.
+- The same engine runs every venue; the venue's clock already drives the session functions (U6 BK2). Category H
+  (crypto derivatives screens) waits for a funding / OI / liquidation feed (S8-6).
+- No migration. Information only.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

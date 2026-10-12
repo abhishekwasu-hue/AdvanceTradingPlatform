@@ -35,6 +35,7 @@ from app.screener import ranking as ranking_gate   # registers the `legends` tem
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener import ownership as ownership_gate
+from app.screener import venues as venue_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -73,6 +74,8 @@ class ValidateBody(BaseModel):
     source: Union[str, Dict[str, Any]] = Field(description="ScreenQL text or the builder's JSON tree")
     base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
     params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
+    exchange: Optional[str] = Field(default=None, pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$",
+                                    description="N3 S8c: check the screen against this venue's data (flag screener_venues)")
 
 
 class ScreenBody(ValidateBody):
@@ -126,6 +129,14 @@ async def _flags_off(session: AsyncSession, user: User) -> set:
     return {f for f in flags if not await flag_enabled(session, f, user.tenant_id)}
 
 
+@router.get("/venues")
+async def venues(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """N3 S8c: the field-availability matrix - per venue its bar fields, data families and the functions it can run."""
+    await _flag(session, user)
+    await require_flag(session, venue_gate.FLAG, user.tenant_id)
+    return venue_gate.matrix()
+
+
 @router.get("/taxonomy")
 async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
@@ -170,11 +181,12 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated, body.params)
+    await _gate(session, user, ast, validated, body.params, getattr(body, "exchange", None))
     return _view(ast, validated)
 
 
-async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None,
+                exchange: Optional[str] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`), the Z7a-3 market-zone functions (`market_zones`) and N3 S7a's RankScore
     (`screener_rankings`; a system it names must be a platform one or this organisation's own)."""
@@ -183,6 +195,11 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked)))
+    if exchange and ast is not None and await venue_gate.enabled(session, user.tenant_id):
+        missing = venue_gate.unavailable(ast, exchange)          # N3 S8c: what this venue's data does not carry
+        if missing:
+            validated.ok = False
+            validated.problems.extend(Problem(m) for m in missing)
     if ranking_gate.uses_rankscore(ast):
         if not await ranking_gate.enabled(session, user.tenant_id):
             validated.ok = False
@@ -410,7 +427,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
-    await _gate(session, user, ast, validated, params)
+    await _gate(session, user, ast, validated, params, body.exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)

@@ -218,6 +218,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S8a: ownership and events in ScreenQL (category E) - Holding / HoldingChange from the shareholding patterns and
     # DaysToEvent from the results / board-meeting / AGM / buyback / dividend calendar and the lake's ex-dates, each as
     # known by the bar's close (point in time). OFF: a screen using them is refused with the reason. Information only.
+    # N3 S8c: the per-venue field-availability matrix - a screen run on a venue whose data lacks a field (oi) or a data
+    # family (reference lists, ownership, option chains) is refused with where it is available; GET /api/screener/venues
+    # gives the matrix. OFF: runs behave as before and the route answers 503.
+    "screener_venues": "Screener venue matrix: refuse fields and functions a venue's data does not carry, and list what each venue supports",
     "screener_ownership": "Ownership and event screens: promoter / pledge / FII / DII stakes and their changes, days to results, board meetings and ex-dates (point in time; information only)",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
@@ -230,7 +234,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "screener_history", "screener_backtest", "screener_rankings", "screener_ownership"})
+                               "chart_price_action", "screener_history", "screener_backtest", "screener_rankings", "screener_ownership", "screener_venues"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

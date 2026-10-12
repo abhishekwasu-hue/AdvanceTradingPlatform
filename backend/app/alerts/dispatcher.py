@@ -7,8 +7,9 @@ dead SMTP server. `dispatch_pending` does the sending; the trading worker calls 
 
 Z10-b, per organisation and off by default:
 * `alerts_reliable_outbox` - a worker *claims* a row before sending it (a conditional UPDATE that takes a lease of
-  `LEASE_SECONDS` and counts the attempt), so two workers never send the same row; a worker killed mid-send leaves a
-  lease that expires, and the row is claimed again (at least once - receivers that can dedupe get the row's
+  `LEASE_SECONDS` from the real clock at the claim and counts the attempt), so two workers never send the same row; a
+  send is cut off `LEASE_MARGIN_SECONDS` before its lease ends, and only the claim's holder can write its outcome. A
+  worker killed mid-send leaves a lease that expires, and the row is claimed again (at least once - receivers that can dedupe get the row's
   `idem_key`: webhook / SMS `Idempotency-Key`, email `Message-ID`). After `MAX_ATTEMPTS` the row is DEAD (reason
   dead_letter, or worker_lost when its last attempt never came back), for the operator to replay. Each delivery has
   one idempotency key (notification x channel x address, unique), so a duplicate cycle cannot queue it twice.
@@ -24,8 +25,10 @@ import html
 import logging
 import os
 import re
+import secrets
 import smtplib
 import socket
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any, Dict, List, MutableMapping, Optional, Set, Tuple
@@ -56,7 +59,8 @@ OUTBOX_FLAG = "alerts_reliable_outbox"
 # A claimed row is someone else's for this long. Above the worst single send (an SMS gateway or a push fan-out is several
 # SEND_TIMEOUT_SECONDS requests), so a live worker never loses its row mid-send.
 LEASE_SECONDS = 120
-WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"[:64]
+LEASE_MARGIN_SECONDS = 20                                  # a send is cut off this long before its lease would run out
+WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"[:48]     # + ":" + a token per claim fits claimed_by (64)
 
 
 def _utcnow() -> datetime:
@@ -197,7 +201,7 @@ def webhook_payload(notification: NotificationRecord, alert: Optional[dict] = No
         "schema": WEBHOOK_SCHEMA,
         "id": notification.id, "event_type": notification.event_type, "severity": notification.severity, "title": notification.title,
         "message": notification.message, "created_at": _as_utc(notification.created_at).isoformat(), "tenant_id": notification.tenant_id,
-        "metadata": json.loads(notification.metadata_json) if getattr(notification, "metadata_json", None) else None,
+        "metadata": json.loads(metadata) if (metadata := getattr(notification, "metadata_json", None)) else None,
     }
     if alert:
         body["alert"] = {"schema": ALERT_SCHEMA, **alert}
@@ -477,14 +481,28 @@ async def alert_context(session: AsyncSession, notification: NotificationRecord)
 
 # --- the drain -----------------------------------------------------------------------------------
 
-async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: datetime) -> str:
+@dataclass
+class Claim:
+    """Z10-b: one claim of one row - "ok" (this worker holds it under `token` until `lease_until`), "taken" or "lost"."""
+    state: str
+    delivery_id: int
+    token: Optional[str] = None
+    lease_until: Optional[datetime] = None
+
+
+async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord) -> Claim:
     """Z10-b: take the row for this worker - "ok", "taken" (another worker holds a live lease, or it is no longer
     PENDING) or "lost" (its lease ran out on the last attempt: DEAD, reason worker_lost). One conditional UPDATE each, so
-    of two workers racing for a row exactly one wins. The attempt is counted here, so a send that kills its worker still
-    uses up an attempt and a poison row cannot loop for ever."""
+    of two workers racing for a row exactly one wins. The lease runs from the real clock at the moment of the claim (never
+    from the drain's start: a slow drain must not hand out a lease that is already over), and `claimed_by` carries a
+    token of this claim, so only its holder can write the outcome (`_finish`). The attempt is counted here, so a send
+    that kills its worker still uses up an attempt and a poison row cannot loop for ever."""
     delivery_id = delivery.id
-    free = or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= now)
-    values: Dict[str, Any] = {"lease_until": now + timedelta(seconds=LEASE_SECONDS), "claimed_by": WORKER_ID, "attempts": AlertDeliveryRecord.attempts + 1}
+    clock = _utcnow()
+    token = f"{WORKER_ID}:{secrets.token_hex(6)}"
+    lease_until = clock + timedelta(seconds=LEASE_SECONDS)
+    free = or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= clock)
+    values: Dict[str, Any] = {"lease_until": lease_until, "claimed_by": token, "attempts": AlertDeliveryRecord.attempts + 1}
     if delivery.idem_key is None:                          # a row queued before the flag: keyed on its first claim
         values["idem_key"] = delivery_key(delivery.notification_id, delivery.channel_id, delivery.address)
     claim = (update(AlertDeliveryRecord)
@@ -502,7 +520,7 @@ async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: date
             .execution_options(synchronize_session=False))
         await session.commit()
         await session.refresh(delivery)
-        return "taken"
+        return Claim("taken", delivery_id)
     state = "ok" if getattr(mine, "rowcount", 0) == 1 else "taken"
     if state == "taken":
         lost = await session.execute(
@@ -515,7 +533,26 @@ async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord, now: date
         state = "lost" if getattr(lost, "rowcount", 0) == 1 else "taken"
     await session.commit()                                 # the claim is visible to every other worker before the send
     await session.refresh(delivery)
-    return state
+    return Claim(state, delivery_id, token, lease_until) if state == "ok" else Claim(state, delivery_id)
+
+
+async def _finish(session: AsyncSession, delivery: AlertDeliveryRecord, claim: Optional[Claim], **values: Any) -> bool:
+    """Writes a delivery's outcome. Without the flag (`claim` None): on the loaded row, as before. With it: one
+    conditional UPDATE that only the claim's holder can make (`claimed_by` = this claim's token, still PENDING) - a
+    worker whose lease ran out and was taken over writes nothing (False, logged). The caller commits."""
+    if claim is None:
+        for name, value in values.items():
+            setattr(delivery, name, value)
+        return True
+    values["lease_until"] = None
+    done = await session.execute(update(AlertDeliveryRecord).where(
+        AlertDeliveryRecord.id == claim.delivery_id, AlertDeliveryRecord.claimed_by == claim.token,
+        AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value).values(**values).execution_options(synchronize_session=False))
+    if getattr(done, "rowcount", 0) != 1:
+        logger.warning("Alert delivery %s: this worker's claim was taken over before it finished; outcome %s not written",
+                       claim.delivery_id, values.get("status"))
+        return False
+    return True
 
 
 async def _stale_alert(session: AsyncSession, notification: NotificationRecord, now: datetime, holidays: List[Set[date]]) -> Optional[str]:
@@ -528,7 +565,9 @@ async def _stale_alert(session: AsyncSession, notification: NotificationRecord, 
     if not holidays:
         from app.market_data.calendar import load_holidays
         holidays.append(await load_holidays(session, "NSE"))
-    badge = staleness.alert_badge(max(_as_utc(e.bar_time) for e in events), rule.base_tf if rule is not None else None, now, holidays[0])
+    # The timeframe recorded with the events (Z10-b review: the rule may have been edited since); the rule's for older rows.
+    tf = next((e.base_tf for e in events if e.base_tf), rule.base_tf if rule is not None else None)
+    badge = staleness.alert_badge(max(_as_utc(e.bar_time) for e in events), tf, now, holidays[0])
     return badge["stale_reason"] if badge["alerts_suppressed"] else None
 
 
@@ -546,7 +585,7 @@ async def dispatch_pending(
     query = (
         select(AlertDeliveryRecord)
         .where(AlertDeliveryRecord.status == AlertDeliveryStatus.PENDING.value, AlertDeliveryRecord.next_attempt_at <= now,
-               or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= now))   # claimed rows: someone else's
+               or_(AlertDeliveryRecord.lease_until.is_(None), AlertDeliveryRecord.lease_until <= _utcnow()))   # claimed: someone else's
     )
     if tenant_id is not None:
         query = query.where(AlertDeliveryRecord.tenant_id == tenant_id)
@@ -556,12 +595,12 @@ async def dispatch_pending(
     guard: Dict[int, bool] = {}
     holidays: List[Set[date]] = []
     for delivery in due:
-        reliable = await outbox_hardened(session, delivery.tenant_id, hardened)
-        if reliable:
-            claim = await _claim(session, delivery, now)
-            if claim == "taken":
+        claim: Optional[Claim] = None
+        if await outbox_hardened(session, delivery.tenant_id, hardened):
+            claim = await _claim(session, delivery)
+            if claim.state == "taken":
                 continue                                   # another worker is sending it (or already did)
-            if claim == "lost":
+            if claim.state == "lost":
                 ALERT_DELIVERIES.labels(channel="unknown", status=AlertDeliveryStatus.DEAD.value).inc()
                 logger.error("Alert delivery %s: its last attempt's worker was lost; dead-lettered", delivery.id)
                 failed += 1
@@ -571,10 +610,8 @@ async def dispatch_pending(
         if channel is not None:
             await ensure_tenant_key(session, channel.tenant_id)  # Phase N1
         if channel is None or notification is None or not channel.enabled:
-            delivery.status = AlertDeliveryStatus.FAILED.value
-            delivery.last_error = "Channel disabled or removed before delivery"
-            delivery.reason_code = "channel_disabled"
-            delivery.lease_until = None
+            await _finish(session, delivery, claim, status=AlertDeliveryStatus.FAILED.value, reason_code="channel_disabled",
+                          last_error="Channel disabled or removed before delivery")
             await session.commit()
             failed += 1
             continue
@@ -582,46 +619,52 @@ async def dispatch_pending(
                 and await staleness.guard_on(session, delivery.tenant_id, guard):
             why = await _stale_alert(session, notification, now, holidays)
             if why is not None:
-                delivery.status = AlertDeliveryStatus.SUPPRESSED.value
-                delivery.reason_code = staleness.REASON
-                delivery.last_error = why[:500]
-                delivery.lease_until = None
-                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
-                staleness.count_suppressed("alert_send")
-                logger.info("Alert delivery %s suppressed: %s", delivery.id, why)
+                if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=staleness.REASON,
+                                 last_error=why[:500]):
+                    ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
+                    staleness.count_suppressed("alert_send")
+                    logger.info("Alert delivery %s suppressed: %s", delivery.id, why)
                 await session.commit()
                 continue
+        attempts = delivery.attempts if claim is not None else delivery.attempts + 1   # reliable: counted at the claim
         try:
-            if not await _telegram_proposal_buttons(session, channel, notification, client) \
-                    and not await _telegram_oi_buttons(session, channel, notification, client):
-                await send_via_channel(channel, notification, client, await alert_context(session, notification), address=delivery.address,
-                                       session=session, idempotency_key=delivery.idem_key if reliable else None)
-        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
-            if not reliable:
-                delivery.attempts += 1                     # reliable: counted when the row was claimed
-            delivery.last_error = str(exc)[:500]
-            channel.last_error = delivery.last_error
-            if delivery.attempts >= MAX_ATTEMPTS:
-                delivery.status = AlertDeliveryStatus.DEAD.value if reliable else AlertDeliveryStatus.FAILED.value
-                delivery.reason_code = "dead_letter"               # S3b: kept for the operator; retry from the dead-letter list
-                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=delivery.status).inc()
-                logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, delivery.attempts, exc)
+            send = _send_one(session, channel, notification, delivery, client, delivery.idem_key if claim is not None else None)
+            if claim is not None:
+                # The send must end while the lease is still ours: a send still running at the lease's end could be
+                # repeated by the worker that takes the row over.
+                await asyncio.wait_for(send, timeout=max(1.0, LEASE_SECONDS - LEASE_MARGIN_SECONDS))
             else:
-                delivery.next_attempt_at = now + timedelta(seconds=BASE_BACKOFF_SECONDS * (2 ** (delivery.attempts - 1)))
-                logger.warning("Alert delivery %s failed (attempt %d): %s", delivery.id, delivery.attempts, exc)
+                await send
+        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
+            error = (str(exc) or type(exc).__name__)[:500]
+            channel.last_error = error
+            outcome: Dict[str, Any] = {"attempts": attempts, "last_error": error}
+            if attempts >= MAX_ATTEMPTS:
+                outcome["status"] = AlertDeliveryStatus.DEAD.value if claim is not None else AlertDeliveryStatus.FAILED.value
+                outcome["reason_code"] = "dead_letter"         # S3b: kept for the operator; retry from the dead-letter list
+                if await _finish(session, delivery, claim, **outcome):
+                    ALERT_DELIVERIES.labels(channel=channel.channel_type, status=outcome["status"]).inc()
+                    logger.error("Alert delivery %s gave up after %d attempts: %s", delivery.id, attempts, exc)
+            else:
+                outcome["next_attempt_at"] = now + timedelta(seconds=BASE_BACKOFF_SECONDS * (2 ** (attempts - 1)))
+                if await _finish(session, delivery, claim, **outcome):
+                    logger.warning("Alert delivery %s failed (attempt %d): %s", delivery.id, attempts, exc)
             failed += 1
         else:
-            if not reliable:
-                delivery.attempts += 1
-            delivery.status = AlertDeliveryStatus.SENT.value
-            ALERT_DELIVERIES.labels(channel=channel.channel_type, status="SENT").inc()
-            delivery.sent_at = now
-            delivery.last_error = None
+            if await _finish(session, delivery, claim, attempts=attempts, status=AlertDeliveryStatus.SENT.value, sent_at=now, last_error=None):
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status="SENT").inc()
             channel.last_delivered_at = now
             channel.last_error = None
             sent += 1
-        delivery.lease_until = None
         await session.commit()
     if sent or failed:
         logger.info("Alert dispatch: %d sent, %d failed/retried", sent, failed)
     return sent, failed
+
+
+async def _send_one(session: AsyncSession, channel: AlertChannelRecord, notification: NotificationRecord, delivery: AlertDeliveryRecord,
+                    client: Optional[httpx.AsyncClient], idempotency_key: Optional[str]) -> None:
+    if not await _telegram_proposal_buttons(session, channel, notification, client) \
+            and not await _telegram_oi_buttons(session, channel, notification, client):
+        await send_via_channel(channel, notification, client, await alert_context(session, notification), address=delivery.address,
+                               session=session, idempotency_key=idempotency_key)

@@ -1,7 +1,8 @@
 """Z10-b: the operator's view of the alert outbox across organisations - its state, the dead letters, and their replay.
 
 SUPER_ADMIN with a two-factor session only (like every `/api/admin` router). The listing shows delivery metadata (who,
-which channel type, which event type, attempts, the error) and never a notification's title or message. A replay puts
+which channel type, which event type, attempts, the reason code and a class of the error) and never a notification's
+title or message or the error text (a gateway's error can carry a phone number or an address). A replay puts
 rows back in the outbox with fresh attempts and is written to each organisation's audit trail; the row keeps its
 idempotency key, so a receiver that saw the first send can drop the repeat, and a screen alert whose data has gone
 stale since is suppressed at send time (flag `alerts_stale_guard`). Nothing here sends anything itself, and nothing
@@ -9,6 +10,7 @@ here places, changes or blocks an order.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +31,24 @@ REPLAYABLE = ("DEAD", "FAILED")
 class ReplayBody(BaseModel):
     ids: List[int] = Field(min_length=1, max_length=500)
     reason: str = Field(min_length=3, max_length=200)
+
+
+_HTTP = re.compile(r"\bHTTP\s+(\d)\d\d\b")
+_CLASSES = (("timeout", "timeout"), ("timed out", "timeout"), ("connect", "connection"), ("resolve", "connection"),
+            ("egress", "destination_refused"), ("unauthor", "auth"), ("forbidden", "auth"), ("decrypt", "channel_config"),
+            ("unsubscribed", "push_gone"), ("no reachable device", "push_unreachable"), ("smtp", "smtp"))
+
+
+def error_class(last_error: Optional[str]) -> Optional[str]:
+    """Z10-b review: the operator sees what kind of failure it was, never the text - a gateway's error can carry a phone
+    number or an email address. HTTP status class, timeout, connection, auth, ... or "other"."""
+    if not last_error:
+        return None
+    text = last_error.lower()
+    status = _HTTP.search(last_error)
+    if status:
+        return f"http_{status.group(1)}xx"
+    return next((label for needle, label in _CLASSES if needle in text), "other")
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
@@ -63,7 +83,7 @@ async def dead_letters(tenant_id: Optional[int] = None, limit: int = Query(defau
         query = query.where(AlertDeliveryRecord.tenant_id == tenant_id)
     rows = await session.execute(query.order_by(AlertDeliveryRecord.id.desc()).limit(limit))
     return [{"id": d.id, "tenant_id": d.tenant_id, "notification_id": d.notification_id, "channel": ctype, "event_type": etype,
-             "severity": sev, "status": d.status, "reason": d.reason_code, "attempts": d.attempts, "last_error": d.last_error,
+             "severity": sev, "status": d.status, "reason": d.reason_code, "attempts": d.attempts, "error_class": error_class(d.last_error),
              "idem_key": d.idem_key, "created_at": _iso(d.created_at)}
             for d, ctype, etype, sev in rows.all()]
 

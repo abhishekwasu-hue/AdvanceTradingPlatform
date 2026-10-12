@@ -192,6 +192,11 @@ def test_todays_daily_bar_is_never_built_from_part_of_a_day():
     noon = _bars(ist(TUE, 9, 15), [20.0] * 12, minutes=15)                         # the feed stopped at 12:00
     assert with_today(daily, noon, TUE, complete_only=True) is daily
     assert len(with_today(daily, noon, TUE)) == 2                                  # the intrabar path (forming) still builds it
+    forming = pd.concat([daily, pd.DataFrame({"open": [20.0], "high": [20.0], "low": [20.0], "close": [20.0], "volume": [1.0]},
+                                             index=pd.DatetimeIndex([pd.Timestamp(utc(ist(TUE, 0, 0)))]))])
+    kept = with_today(forming, noon, TUE, complete_only=True)                    # the broker's own (forming) candle for today
+    assert len(kept) == 1 and kept.index[-1] == daily.index[-1]
+    assert with_today(forming, noon, TUE) is forming                              # intrabar path: unchanged
     whole = _bars(ist(TUE, 9, 15), [20.0] * 25, minutes=15)                         # 09:15 .. 15:15
     out = with_today(daily, whole, TUE, complete_only=True)
     assert len(out) == 2 and out.iloc[-1]["volume"] == 25000
@@ -386,6 +391,21 @@ def test_a_screen_alert_without_its_events_is_not_sent():
     assert _rows(me["tenant_id"])[0].status == "SUPPRESSED"                        # data time unknown: fails closed
 
 
+def test_send_time_staleness_uses_the_timeframe_recorded_with_the_event():
+    ctx = _setup("z10b-tf@example.com", staleness.FLAG)
+    _flush(ctx["tid"], ctx["recorded"] + timedelta(seconds=1))
+    assert {e.base_tf for e in _events(ctx["rule_id"])} == {"5m"}
+
+    async def edit_rule():                                                          # the rule is changed to daily afterwards
+        async with _session_factory() as session:
+            await session.execute(update(AlertRuleRecord).where(AlertRuleRecord.id == ctx["rule_id"]).values(base_tf="1d"))
+            await session.commit()
+    _run(edit_rule())
+    http, seen = _capture()
+    assert _dispatch(ctx["tid"], http, utc(ist(TUE, 10, 30))) == (0, 0) and seen == []   # 12 five-minute bars: stale
+    assert _rows(ctx["tid"])[0].status == "SUPPRESSED"
+
+
 def test_a_fresh_screen_alert_is_sent_with_both_flags_on():
     ctx = _setup("z10b-fresh@example.com", staleness.FLAG, dispatcher.OUTBOX_FLAG)
     _flush(ctx["tid"], ctx["recorded"] + timedelta(seconds=1))
@@ -437,7 +457,23 @@ class _Killed(BaseException):
     """What a SIGKILL looks like from inside the coroutine: nothing after the send runs."""
 
 
-def test_a_worker_killed_mid_send_leaves_a_lease_and_the_row_is_sent_again_once_it_expires(monkeypatch):
+class _Clock:
+    """The dispatcher's real clock (`_utcnow`, what leases run on), set by the test."""
+    def __init__(self, at: datetime):
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    c = _Clock(BAR)
+    monkeypatch.setattr(dispatcher, "_utcnow", c)
+    return c
+
+
+def test_a_worker_killed_mid_send_leaves_a_lease_and_the_row_is_sent_again_once_it_expires(monkeypatch, clock):
     ctx = _plain("z10b-killed@example.com", dispatcher.OUTBOX_FLAG)
     real = dispatcher.send_via_channel
     keys: List[str] = []
@@ -449,14 +485,16 @@ def test_a_worker_killed_mid_send_leaves_a_lease_and_the_row_is_sent_again_once_
     with pytest.raises(_Killed):
         _dispatch(ctx["tid"], None, BAR)
     row = _rows(ctx["tid"])[0]
-    assert row.status == "PENDING" and row.attempts == 1 and row.claimed_by == dispatcher.WORKER_ID
+    assert row.status == "PENDING" and row.attempts == 1 and row.claimed_by.startswith(dispatcher.WORKER_ID + ":")
     lease = row.lease_until.replace(tzinfo=timezone.utc) if row.lease_until.tzinfo is None else row.lease_until
     assert lease == BAR + timedelta(seconds=dispatcher.LEASE_SECONDS)
 
     monkeypatch.setattr(dispatcher, "send_via_channel", real)
     http, seen = _capture()
-    assert _dispatch(ctx["tid"], http, BAR + timedelta(seconds=30)) == (0, 0) and seen == []     # another worker: the lease holds
-    assert _dispatch(ctx["tid"], http, lease + timedelta(seconds=1)) == (1, 0)
+    clock.at = BAR + timedelta(seconds=30)
+    assert _dispatch(ctx["tid"], http, clock.at) == (0, 0) and seen == []                        # another worker: the lease holds
+    clock.at = lease + timedelta(seconds=1)
+    assert _dispatch(ctx["tid"], http, clock.at) == (1, 0)
     row = _rows(ctx["tid"])[0]
     assert row.status == "SENT" and row.attempts == 2 and seen[0]["headers"]["idempotency-key"] == keys[0] == row.idem_key
 
@@ -496,8 +534,63 @@ def test_two_workers_never_send_the_same_row(monkeypatch):
         async with _session_factory() as a, _session_factory() as b:
             row_a = await a.get(AlertDeliveryRecord, row_id)
             row_b = await b.get(AlertDeliveryRecord, row_a.id)
-            return await dispatcher._claim(a, row_a, BAR), await dispatcher._claim(b, row_b, BAR)
+            return (await dispatcher._claim(a, row_a)).state, (await dispatcher._claim(b, row_b)).state
     assert _run(race()) == ("ok", "taken")
+
+
+def test_a_slow_drain_never_hands_out_a_lease_that_is_already_over(monkeypatch, clock):
+    """Review of #189 (regression): worker A spends 125 s on row 1, then claims row 2. The lease runs from the clock at
+    the claim, not from A's drain start, so worker B draining at that moment cannot take row 2 as well."""
+    ctx = _plain("z10b-slow-drain@example.com", dispatcher.OUTBOX_FLAG)
+
+    async def second():
+        async with _session_factory() as session:
+            await notify(session, ctx["tid"], NotificationType.SYSTEM_FAILURE, title="Second", severity=NotificationSeverity.CRITICAL)
+    _run(second())
+    sends: List[Any] = []
+    b_result: List[Any] = []
+
+    async def send(channel, notification, *args, **kw):
+        sends.append(("A", notification.title))
+        if notification.title == "Worker stopped":
+            clock.at = BAR + timedelta(seconds=125)                              # a slow SMTP / SMS fan-out
+            return
+        async def b_send(channel, notification, *a, **k):
+            sends.append(("B", notification.title))
+        monkeypatch.setattr(dispatcher, "send_via_channel", b_send)
+        async with _session_factory() as session_b:                               # worker B, on the real clock
+            b_result.append(await dispatcher.dispatch_pending(session_b, now=clock.at, tenant_id=ctx["tid"]))
+        monkeypatch.setattr(dispatcher, "send_via_channel", send)
+    monkeypatch.setattr(dispatcher, "send_via_channel", send)
+    assert _dispatch(ctx["tid"], None, BAR) == (2, 0)
+    assert sends == [("A", "Worker stopped"), ("A", "Second")] and b_result == [(0, 0)]
+
+
+def test_a_send_is_cut_off_before_its_lease_ends(monkeypatch):
+    ctx = _plain("z10b-cutoff@example.com", dispatcher.OUTBOX_FLAG)
+    monkeypatch.setattr(dispatcher, "LEASE_SECONDS", dispatcher.LEASE_MARGIN_SECONDS + 1)      # a 1 s send budget
+
+    async def hangs(*args, **kw):
+        await asyncio.sleep(5)
+    monkeypatch.setattr(dispatcher, "send_via_channel", hangs)
+    assert _dispatch(ctx["tid"], None, BAR) == (0, 1)
+    row = _rows(ctx["tid"])[0]
+    assert (row.status, row.attempts, row.last_error, row.lease_until) == ("PENDING", 1, "TimeoutError", None)
+
+
+def test_only_the_claim_holder_writes_the_outcome(monkeypatch):
+    """A worker whose lease ran out and was taken over (here: the row's claim token changed under it) writes nothing."""
+    ctx = _plain("z10b-holder@example.com", dispatcher.OUTBOX_FLAG)
+    row_id = _rows(ctx["tid"])[0].id
+
+    async def taken_over(*args, **kw):
+        async with _session_factory() as other:
+            await other.execute(update(AlertDeliveryRecord).where(AlertDeliveryRecord.id == row_id).values(claimed_by="other-worker:1"))
+            await other.commit()
+    monkeypatch.setattr(dispatcher, "send_via_channel", taken_over)
+    _dispatch(ctx["tid"], None, BAR)
+    row = _rows(ctx["tid"])[0]
+    assert (row.status, row.claimed_by, row.sent_at) == ("PENDING", "other-worker:1", None)
 
 
 def test_a_duplicate_enqueue_queues_nothing_more():
@@ -557,6 +650,7 @@ def test_a_crashed_flush_is_completed_not_repeated(monkeypatch):
     on = run("z10b-crash@example.com", dispatcher.OUTBOX_FLAG)
     notes = _notes(on["tid"])
     assert len(notes) == 1 and {e.notification_id for e in _events(on["rule_id"])} == {notes[0].id}
+    assert json.loads(notes[0].metadata_json)["group_id"] == _events(on["rule_id"])[0].group_id      # matched by its group
     rows = _rows(on["tid"])
     assert len(rows) == 1 and rows[0].group_id and rows[0].priority == "normal"
 
@@ -597,7 +691,8 @@ def _admin(email: str):
 def test_the_operator_replays_dead_letters_and_it_is_audited():
     ctx = _plain("z10b-replay@example.com", dispatcher.OUTBOX_FLAG)
     row = _rows(ctx["tid"])[0]
-    _set_row(row.id, status="DEAD", reason_code="dead_letter", attempts=dispatcher.MAX_ATTEMPTS, idem_key=row.idem_key)
+    _set_row(row.id, status="DEAD", reason_code="dead_letter", attempts=dispatcher.MAX_ATTEMPTS, idem_key=row.idem_key,
+             last_error="SMS gateway: +919876543210: HTTP 503")
     for path in ("/api/admin/alerts/outbox", "/api/admin/alerts/dead-letters"):
         assert client.get(path, headers=ctx["headers"]).status_code == 403
     assert client.post("/api/admin/alerts/dead-letters/replay", headers=ctx["headers"], json={"ids": [row.id], "reason": "x" * 5}).status_code == 403
@@ -605,7 +700,8 @@ def test_the_operator_replays_dead_letters_and_it_is_audited():
     admin, _ = _admin("z10b-ops@example.com")
     listed = client.get(f"/api/admin/alerts/dead-letters?tenant_id={ctx['tid']}", headers=admin).json()
     assert [(d["id"], d["status"], d["event_type"], d["channel"]) for d in listed] == [(row.id, "DEAD", "SYSTEM_FAILURE", "WEBHOOK")]
-    assert "title" not in listed[0] and "message" not in listed[0]
+    assert "title" not in listed[0] and "message" not in listed[0] and "last_error" not in listed[0]
+    assert listed[0]["error_class"] == "http_5xx" and "9876543210" not in json.dumps(listed)
     assert client.get("/api/admin/alerts/outbox", headers=admin).json()["by_status"]["DEAD"] >= 1
 
     sent = _plain("z10b-replay-sent@example.com")

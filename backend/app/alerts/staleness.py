@@ -15,6 +15,10 @@ quiet hours until 07:00 is still current; a 5-minute alert held for an hour is n
 newer bars (the G1 limit, 3 by default; 0 or less turns the check off, as in G1) = stale. A bar whose time or timeframe
 cannot be read is stale too: the gate fails closed.
 
+Known false negative: the clock is the NSE session (the bar-close engine's own clock, S4a). Bars of an MCX evening
+session (after 15:30 IST) are not counted, so an MCX alert held into the evening is not judged stale by them - it is never
+suppressed wrongly, only possibly sent late (OPEN_QUESTIONS Z10b-8).
+
 The verdict has the BT1 badge's shape (`stale`, `stale_reason`, `alerts_suppressed`), so the data-tier badge and the
 alert path say the same thing about the same data.
 

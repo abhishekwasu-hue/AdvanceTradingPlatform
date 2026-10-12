@@ -2788,6 +2788,9 @@ class AlertEventRecord(Base):
     condition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     idem_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # Z10-b: the rule's timeframe when the event was recorded - the stale-data check at send time judges the bar by it,
+    # not by whatever the rule says later. NULL for events recorded before this column.
+    base_tf: Mapped[str | None] = mapped_column(String(5), nullable=True)
     priority: Mapped[str] = mapped_column(String(10), nullable=False)
     values_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")     # the trigger values, with their timestamps
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)

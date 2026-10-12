@@ -220,7 +220,11 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
 
 def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Iterable[date]) -> Tuple[List[SymbolData], Optional[str]]:
     """Z10-b: the symbols whose data passes the alert badge (`staleness.alert_badge`, timed by the newest bar of the
-    frame the rule reads), and the first refusal reason. A frame without a readable bar time is refused."""
+    frame the rule reads), and the first refusal reason. A frame without a readable bar time is refused.
+
+    Defence in depth: today `closed_frame` already keeps only frames that reach the expected (latest closed) bar, so
+    this refuses nothing on the current paths. It holds the line if a future fetch or cache path lets an old bar through
+    (the test bypasses `closed_frame` to show it)."""
     kept: List[SymbolData] = []
     first: Optional[str] = None
     for data in current:
@@ -372,9 +376,13 @@ def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: dat
     """Appends today's daily bar built from today's intraday bars (label: the session open), unless already present.
     `complete_only` (a bar-close rule; Z10-b fix): only when the intraday bars reach the session's last bucket - a feed
     that stopped at noon must not become "today's close" (the rule then waits for the data, never fires on part of a
-    day)."""
+    day); a candle for today already in the broker's daily history is dropped first (it may still be forming)."""
     if intraday is None or intraday.empty:
         return daily
+    if complete_only and len(daily) and daily.index[-1].astimezone(IST).date() >= today:
+        # Z10-b review: a broker's daily history may already end with today's candle while it is still forming. A
+        # bar-close rule never takes it: today's bar comes only from intraday bars that reach the session's last bucket.
+        daily = daily[[ts.astimezone(IST).date() < today for ts in daily.index]]
     if len(daily) and daily.index[-1].astimezone(IST).date() >= today:
         return daily
     mask = [ts.astimezone(IST).date() == today for ts in intraday.index]

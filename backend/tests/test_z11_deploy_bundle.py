@@ -1054,6 +1054,17 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
                         "    op.create_table('u', sa.Column('id', sa.Integer(), nullable=False))\n\ndef downgrade():\n    op.drop_table('u')\n", False),
         "marked_unsafe.py": (head + "ROLLBACK_SAFE = False\n\ndef upgrade():\n    op.drop_table('t')\n", False),
         "reviewed.py": (head + "ROLLBACK_SAFE = True\nROLLBACK_SAFE_REASON = 'column unused since #120'\n\ndef upgrade():\n    op.drop_column('t', 'c')\n", False),
+        # SQL built at run time: the literal parts ("UPDATE ", " SET c = 1") do not show what runs - review needed
+        "fstring.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    for t in ('a', 'b'):\n        op.execute(f\"UPDATE {t} SET c = 1\")\n", True),
+        "fstring_text.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(sa.text(f\"DELETE FROM {T} WHERE x\"))\n", True),
+        "format.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE {} SET c = 1'.format(T))\n", True),
+        "percent.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE %s SET c = 1' % T)\n", True),
+        "concat.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE ' + T + ' SET c = 1')\n", True),
+        "fstring_select.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(f\"SELECT create_hypertable('{t}', 'ts')\")\n", True),
+        "fstring_reviewed.py": (head + "ROLLBACK_SAFE = True\nROLLBACK_SAFE_REASON = 'hypertables on tables made here'\n\ndef upgrade():\n"
+                                "    op.execute(f\"SELECT create_hypertable('{t}', 'ts')\")\n", False),
+        "fstring_plain.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(f\"CREATE INDEX ix ON n (a)\")\n"
+                             "    op.execute('CREATE INDEX ' 'iy ON n (b)')\n", False),   # no placeholder, implicit concatenation: literal
     }
     for name, (src, _) in cases.items():
         (tmp_path / name).write_text(src)
@@ -1062,6 +1073,7 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
     message = "\n".join(mod.lint(tmp_path))
     assert "missing.py: missing ROLLBACK_SAFE (Z11). Add ONE of these lines" in message and "ROLLBACK_SAFE = True     # the previous" in message
     assert "ROLLBACK_SAFE = False    # it does not" in message and "unsure means False" in message
+    assert "fstring.py: ROLLBACK_SAFE = True but upgrade() has execute with SQL built at run time (f-string / format / % / +): review needed" in message
 
 
 # --- N1: only encrypted, sealed dumps are ever restored; the gate runs before Postgres / Redis are touched -----------

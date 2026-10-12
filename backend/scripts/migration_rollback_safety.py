@@ -13,7 +13,8 @@ Two uses:
         declares True while its upgrade() drops / renames a table or column, changes a column type, makes a column
         NOT NULL, drops a server default, adds a NOT NULL column without a server default, adds a UNIQUE / CHECK / FOREIGN
         KEY constraint or a unique index to a table that existed before, or runs SQL doing any of that or rewriting rows
-        (UPDATE / DELETE). A reviewed exception
+        (UPDATE / DELETE), or runs SQL built at run time (an f-string, .format(), % or +: the literal parts do not show
+        what runs). A reviewed exception
         sets ROLLBACK_SAFE_REASON = "<why the old code is unaffected>" next to ROLLBACK_SAFE = True.
 
     python scripts/migration_rollback_safety.py check --db-revision <rev> --target-head <rev>
@@ -53,6 +54,20 @@ def _is_false(node) -> bool:
 
 def _strings(node) -> List[str]:
     return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def _built_sql(node) -> bool:
+    """SQL assembled at run time - an f-string, str.format(), `%` or `+` on strings: the literal parts alone do not show
+    what runs (f"UPDATE {t} SET ..." has no table name for the risky-SQL pattern to see)."""
+    for n in ast.walk(node):
+        if isinstance(n, ast.JoinedStr) and any(isinstance(v, ast.FormattedValue) for v in n.values):
+            return True
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "format" and _strings(n.func.value):
+            return True
+        if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Mod, ast.Add)) and (_strings(n.left) or _strings(n.right)):
+            if not (isinstance(n.left, ast.Constant) and isinstance(n.right, ast.Constant)):
+                return True
+    return False
 
 
 def _arg(call: ast.Call, index: int, name: str):
@@ -114,6 +129,8 @@ def risky_operations(source: str) -> List[str]:
                 found.append("execute with a non-literal argument: review needed")
             elif any(_RISKY_SQL.search(s) for s in texts):
                 found.append("execute: risky SQL")
+            elif _built_sql(call):
+                found.append("execute with SQL built at run time (f-string / format / % / +): review needed")
     return found
 
 
